@@ -23,9 +23,9 @@ Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm 
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
 
-**Base and order.** Phase 21 starts after `tasks-d.md` T100 (phase D closed) and, by design-e.md DE1, after
-`analog-operators` B4–B7 is on `main`; T101 checks both and stops the batch if one is missing. After T114 the
-orchestrator runs `check_proofs.py generics` (it reads the `checks.md` T114 writes) and dispatches the Verifier for
+**Base and order.** Phase 21 starts after `tasks-d.md` T102 (phase D closed) and, by design-e.md DE1, after
+`analog-operators` B4–B7 is on `main`; T103 checks both and stops the batch if one is missing. After T115 the
+orchestrator runs `check_proofs.py generics` (it reads the `checks.md` T115 writes) and dispatches the Verifier for
 the whole feature.
 
 Rules every task follows (the user's rules, repeated so a worker needs no other file):
@@ -56,7 +56,7 @@ Rules every task follows (the user's rules, repeated so a worker needs no other 
 | Source-level runs | integration | one test per stdlib item against its §22 entry, values computed by Rust in the test | `crates/piperine-parity/tests/source_stdlib_generic.rs`, models in `tests/stdlib_generic/` | `cargo test -p piperine-parity --test source_stdlib_generic` |
 | Book and galleries | integration | every row of a stdlib item flipped; fences held to the checker | `tests/book/*.rs`, `crates/piperine-lang/tests/std_galleries.rs` | `cargo test -p piperine --test book_core_std`, `cargo test -p piperine-lang --test std_galleries` |
 | Repository records | integration | one assertion per removed `GAPS.md` row; the feature's `checks.md` | `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-cli --test docs` |
-| Contract re-read (T101) | none | - (build gate; findings on the Handoff) | - | build gate only |
+| Contract re-read (T103) | none | - (build gate; findings on the Handoff) | - | build gate only |
 
 ## Gate Check Commands
 
@@ -77,22 +77,22 @@ Phases are ordered and run sequentially - each phase completes before the next b
 ### Phase 21: Contract, `std` under the model check, the digital monitors
 
 ```
-T101 → T102 → T103 → T104 → T105 → T106
+T103 → T104 → T105 → T106 → T107 → T108
 ```
 
 ### Phase 22: The analog library items, `m` and noise, and the feature's closure
 
 ```
-T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
+T109 → T110 → T111 → T112 → T113 → T114 → T115
 ```
 
 ---
 
 ## Task Breakdown
 
-### T101: Contract: merge `main` and record what landed
+### T103: Contract: merge `main` and record what landed
 
-**What**: Check that `generics` phase D and `analog-operators` B4–B7 are on `main` (stop and report if either is not, DE1); `git merge origin/main`; record on the Handoff how `delay` and `noise` lower (the IR forms T109 to T111 meet), whether `explicit-unknowns` phase B (T48) has removed the `cast`/`same` intrinsics, and each L58 item's state against design-e.md's table; amend any task below whose text a finding affects.
+**What**: Check that `generics` phase D and `analog-operators` B4–B7 are on `main` (stop and report if either is not, DE1); `git merge origin/main`; record on the Handoff how `delay` and `noise` lower (the IR forms T111 and T112 meet), and each L58 item's state against design-e.md's table; amend any task below whose text a finding affects.
 **Where**: `.specs/features/generics/tasks-e.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: design-e.md "What the code does today"
@@ -111,11 +111,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T102: `std` joins the whole-model check
+### T104: `std` joins the whole-model check
 
 **What**: `ModelCheck` seeds every item of `std` (design.md D2 retired): each item of L58's generics group type-checks with no instantiation and no error (GN-27 AC 3); a library error the check finds is fixed in `std/` with the spec as authority, each fix named in the commit body (a fix that changes a §22 behaviour stops the task).
 **Where**: `crates/piperine-lang/src/types/model.rs`
-**Depends on**: T101
+**Depends on**: T103
 **Reuses**: `ModelCheck`
 **Requirement**: GN-27 (AC 3)
 **Executor**: Sonnet
@@ -132,11 +132,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T103: The checker's stand-ins for library items leave
+### T105: The checker's stand-ins for library items leave
 
-**What**: Every `Callee::Intrinsic` or `Builtin` that stands for an item of L58's generics group (design.md D15) is removed, so each item resolves to its declaration in `std/`; `same` and `cast` stay, their removal being `explicit-unknowns` T48's (DE3); the test walks the group and asserts each resolution.
+**What**: Every `Callee::Intrinsic` or `Builtin` that stands for an item of L58's generics group (design.md D15) is removed, so each item resolves to its declaration in `std/`; `same` and `cast` already compile from source (T55); the test walks the group and asserts each resolution.
 **Where**: `crates/piperine-lang/src/types/table.rs`
-**Depends on**: T102
+**Depends on**: T104
 **Reuses**: `types/intrinsic.rs`
 **Requirement**: GN-27 (AC 1)
 **Executor**: Sonnet
@@ -153,11 +153,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T104: `since` and `MinPulse` against §22
+### T106: `since` and `MinPulse` against §22
 
 **What**: Source tests: `since(d)` reads `now - t` of `d`'s last change and `inf` before the first (§22.1.8); `MinPulse { w }` fails its `require` exactly for a pulse narrower than `w` (§22.5.7); edges placed by `at(..)`, expected instants computed in Rust in the test.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T103
+**Depends on**: T105
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 1)
 **Executor**: Sonnet
@@ -174,11 +174,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T105: `Setup`, `Hold` and `Stable` against §22
+### T107: `Setup`, `Hold` and `Stable` against §22
 
 **What**: Source tests: `Setup { ts }` flags a violation exactly when `d` changed less than `ts` before a rising `clk` (and `viol` follows); `Hold { th }` exactly when `clk` was high less than `th` before `d` changed; `Stable` exactly when `d` changes while `en` holds and did not just change (§22.5.4 to §22.5.6), at `T = u8` and at an enum.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T104
+**Depends on**: T106
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 1, AC 2)
 **Executor**: Sonnet
@@ -195,11 +195,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T106: `inertial` and `Short` against §22
+### T108: `inertial` and `Short` against §22
 
 **What**: Source tests: `inertial(x, tpd)` gives `x` delayed by `tpd` and swallows a pulse shorter than `tpd` (§22.5.8), at `bool` and `u8`; `Short(a, b)` (§11) inside a library-level divider gives one node's voltage and the divider's current, over `Electrical` and `Thermal`.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T105
+**Depends on**: T107
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 1)
 **Executor**: Sonnet
@@ -216,9 +216,9 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T107: `idt`, `idtmod` and the spec's `Water`
+### T109: `idt`, `idtmod` and the spec's `Water`
 
-**What**: Source tests: `idt(x, ic, reset)` of a constant `x` gives `ic + x·t`, a `reset` holding `ic` (§22.2.8), `idt::<Thermal>` with an explicit nature; `idtmod` wraps into `[offset, offset + modulus)` (`rem_euclid` in Rust, §22.2.9); the Part IV §13 `Water` model boils at 373.15 K and vaporizes after `mass · hv` joules; the `elab_structure.rs` L40 pins of `idt`/`Water` left by T70 become these acceptances; `GAPS.md` closes L40's `idt`/`Water` part.
+**What**: Source tests: `idt(x, ic, reset)` of a constant `x` gives `ic + x·t`, a `reset` holding `ic` (§22.2.8), `idt::<Thermal>` with an explicit nature; `idtmod` wraps into `[offset, offset + modulus)` (`rem_euclid` in Rust, §22.2.9); the Part IV §13 `Water` model boils at 373.15 K and vaporizes after `mass · hv` joules; the `elab_structure.rs` L40 pins of `idt`/`Water` left by T71 become these acceptances; `GAPS.md` closes L40's `idt`/`Water` part.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
@@ -237,11 +237,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T108: The `laplace_*` family
+### T110: The `laplace_*` family
 
 **What**: Source tests: `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp` of a first-order low-pass and a second-order section give the step response the closed form gives at sample instants (§22.2.14); `laplace_nd` with `N > D` is `E0304`; a complex root without its conjugate is `E0317`.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T107
+**Depends on**: T109
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 2)
 **Executor**: Sonnet
@@ -258,11 +258,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T109: The `zi_*` family
+### T111: The `zi_*` family
 
 **What**: Source tests: `zi_nd`, `zi_np`, `zi_zd`, `zi_zp` of a first-order filter sampled at `period` give, at each sample, the difference equation run in Rust over the same inputs (§22.2.12, §22.2.13), the steady history after `settle` included.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T108
+**Depends on**: T110
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 2)
 **Executor**: Sonnet
@@ -279,11 +279,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T110: `noise_table`
+### T112: `noise_table`
 
 **What**: Source test: a `noise_table` source with a three-point table gives, in a noise analysis, the output PSD the table gives at the table's frequencies and `table_model`'s `1C` interpolation between them, computed in Rust (§22.2.3).
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T109
+**Depends on**: T111
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 2)
 **Executor**: Sonnet
@@ -300,32 +300,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T111: Noise under `m`
+### T113: No item is refused because it is generic
 
-**What**: `ImplicitScaling` (phase D) multiplies noise power on a flow by `M` and divides noise power on a potential by `M` (§8.5.4); source test: a resistor's thermal noise with `m: 4.0` equals four resistors in parallel, and a potential noise source with `m: 2.0` gives half the power.
-**Where**: `crates/piperine-lang/src/elab/implicit.rs`
-**Depends on**: T110
-**Reuses**: `analog-operators`' noise lowering (T101's record)
-**Requirement**: GN-24 (AC 4)
-**Executor**: Sonnet
-
-**Done when**:
-
-- [ ] `noise_scales_by_m_on_a_flow_and_divides_on_a_potential` passes under `**Run srcstd**`
-- [ ] Gate check passes: Quick
-
-**Tests**: integration
-**Gate**: quick
-
-**Commit**: `feat(elab): noise power under multiplicity`
-
----
-
-### T112: No item is refused because it is generic
-
-**What**: `std_library.rs` walks L58's generics group (`Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`, `MinPulse`) placing or calling each and asserts no refusal names "generic"; an item refused for another form names that form (the `cast` to a tuple holding an enum, `explicit-unknowns` B) and `GAPS.md` lists it under that form's id; `spec.md` GN-27's list strikes `merge`, citing MD-78 (DE2).
+**What**: `std_library.rs` walks L58's generics group (`Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`, `MinPulse`) placing or calling each and asserts no refusal names "generic"; an item refused for another form names that form (none of the group is expected to be blocked once DE1 holds, so the test proves the rule on a dependency crate's generic module that places an `extern` module, L33: refused naming `extern` module, never "generic") and `GAPS.md` lists it under that form's id; GN-27's list in `spec.md` no longer names `merge` (struck at planning, DE2).
 **Where**: `crates/piperine-lang/tests/std_library.rs`
-**Depends on**: T111
+**Depends on**: T112
 **Reuses**: `Elab`, `Types::check_model`
 **Requirement**: GN-27 (AC 1, AC 2)
 **Executor**: Sonnet
@@ -342,11 +321,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T113: Galleries and Book rows of library items
+### T114: Galleries and Book rows of library items
 
 **What**: Every gallery fence and Book row that writes a library item of the group is held to the checker (`std_galleries`) or flips (`inventory.tsv`, `GAPS.md` §11); none is left `refused` for a form of this feature.
 **Where**: `crates/piperine-lang/tests/std_galleries.rs`
-**Depends on**: T112
+**Depends on**: T113
 **Reuses**: `GenericDeclarations`, `tests/book/support`
 **Requirement**: GN-31 (AC 2)
 **Executor**: Sonnet
@@ -364,11 +343,11 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ---
 
-### T114: Phase E and feature bookkeeping
+### T115: Phase E and feature bookkeeping
 
 **What**: `GAPS.md` drops L58's generics group (its other groups keep their ids) and L40's remaining part, updates §9 (VII §22, II §6) and §10; `spec.md` traceability marks every GN row with its phase and the Coverage line counts them; `.specs/STATE.md` MD-81 gains item 8; `ROADMAP.md`'s `generics` rows say delivered; `.specs/features/generics/checks.md` gathers the `**Build**` line, the union of the `Run` lines and every check of `tasks.md`, `tasks-c.md`, `tasks-d.md` and `tasks-e.md` with their proofs (the GN-30 checks once), so `check_proofs.py generics` runs the whole feature.
 **Where**: `GAPS.md`
-**Depends on**: T113
+**Depends on**: T114
 **Reuses**: `docs.rs`
 **Requirement**: GN-31 (AC 1)
 **Executor**: Sonnet
@@ -387,48 +366,45 @@ T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
 
 ## Checks
 
-**C113** - No item of L58's generics group is refused because it is generic. (GN-27, AC 1; T103, T112)
+**C110** - No item of L58's generics group is refused because it is generic. (GN-27, AC 1; T105, T113)
 Proof: run stdlibrary | test each_generics_group_item_resolves_to_its_std_declaration ... ok
 Proof: run stdlibrary | test no_generics_group_item_is_refused_because_generic ... ok
 
-**C114** - An item that needs another feature's form is refused naming that form and listed under its id. (GN-27, AC 2; T112)
+**C111** - An item that needs another feature's form is refused naming that form and listed under its id. (GN-27, AC 2; T113)
 Proof: run stdlibrary | test a_blocked_item_is_refused_naming_its_form ... ok
 
-**C115** - Every item of the group type-checks under the whole-model check with no instantiation and no error. (GN-27, AC 3; T102)
+**C112** - Every item of the group type-checks under the whole-model check with no instantiation and no error. (GN-27, AC 3; T104)
 Proof: run typesmodel | test the_standard_library_is_checked_whole_with_no_instantiation ... ok
 
-**C116** - `since`, `MinPulse`, `Setup`, `inertial` and `Short` run and give their §22 values. (GN-28, AC 1; T104, T105, T106)
+**C113** - `since`, `MinPulse`, `Setup`, `inertial` and `Short` run and give their §22 values. (GN-28, AC 1; T106, T107, T108)
 Proof: run srcstd | test since_reads_the_time_from_the_last_change ... ok
 Proof: run srcstd | test min_pulse_fails_exactly_for_a_narrow_pulse ... ok
 Proof: run srcstd | test setup_hold_and_stable_fail_exactly_on_their_violations ... ok
 Proof: run srcstd | test inertial_delays_and_swallows_short_pulses ... ok
 Proof: run srcstd | test short_makes_one_node_against_section_eleven ... ok
 
-**C117** - Each item whose last other form has landed runs against its §22 entry: `Stable`, `Hold`, `idt`, `idtmod`, `laplace_*`, `zi_*`, `noise_table`. (GN-28, AC 2; T105, T107 to T110)
+**C114** - Each item whose last other form has landed runs against its §22 entry: `Stable`, `Hold`, `idt`, `idtmod`, `laplace_*`, `zi_*`, `noise_table`. (GN-28, AC 2; T107, T109 to T112)
 Proof: run srcstd | test idt_and_idtmod_integrate_against_section_22 ... ok
 Proof: run srcstd | test the_laplace_family_gives_the_closed_form_step_response ... ok
 Proof: run srcstd | test an_improper_or_unpaired_laplace_is_refused ... ok
 Proof: run srcstd | test the_zi_family_follows_its_difference_equation ... ok
 Proof: run srcstd | test noise_table_gives_the_interpolated_psd ... ok
 
-**C118** - Noise power under multiplicity `M` is multiplied on a flow and divided on a potential. (GN-24, AC 4; T111)
-Proof: run srcstd | test noise_scales_by_m_on_a_flow_and_divides_on_a_potential ... ok
-
-**C119** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T107)
+**C115** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
 Proof: run srcstd | test the_water_model_boils_and_vaporizes ... ok
 
-**C120** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T114)
+**C116** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
 Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
 Proof: run docs | test the_generics_checks_file_holds_every_phase ... ok
 
-**C121** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T113)
+**C117** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T114)
 Proof: run galleries | test the_fences_of_the_generic_library_are_checked ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
-**C122** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
+**C118** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-**C123** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
+**C119** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
 ---
@@ -437,7 +413,7 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 
 The phase's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-23): design-e.md DE3, DE4; open questions DE1 and DE2 take their recommended default until the user answers.
+**Settled mid-build:** none yet. Planning (2026-11-23): design-e.md DE3, DE4; DE1 to DE3 answered by the user 2026-11-23 (design-e.md).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
@@ -448,11 +424,11 @@ The phase's live state, written as it happens - a compaction gives no warning.
 ```
 Phase 21 → Phase 22
 
-Phase 21:  T101 → T102 → T103 → T104 → T105 → T106
-Phase 22:  T107 → T108 → T109 → T110 → T111 → T112 → T113 → T114
+Phase 21:  T103 → T104 → T105 → T106 → T107 → T108
+Phase 22:  T109 → T110 → T111 → T112 → T113 → T114 → T115
 ```
 
 | Batch | Phases | Tasks | Notes |
 | ----- | ------ | ----- | ----- |
-| B17 | 21 | T101 to T106 | after phase D and `analog-operators` B4–B7 (DE1); `std` joins the model check |
-| B18 | 22 | T107 to T114 | closes the L58 generics group and the feature; then `check_proofs.py generics` and the Verifier |
+| B17 | 21 | T103 to T108 | after phase D and `analog-operators` B4–B7 (DE1); `std` joins the model check |
+| B18 | 22 | T109 to T115 | closes the L58 generics group and the feature; then `check_proofs.py generics` and the Verifier |

@@ -1,4 +1,4 @@
-# Generics Tasks (phase D: templates and implicit params)
+# Generics Tasks (phase D: templates, `temperature()` and `multiplicity()`)
 
 ## Execution Protocol (MANDATORY -- do not skip)
 
@@ -19,29 +19,30 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabimplicit**: `cargo test -p piperine-lang --test elab_implicit`
 **Run irgen**: `cargo test -p piperine-ir --test generics`
 **Run interp**: `cargo test -p piperine-interp --test frozen`
+**Run tgen**: `cargo test -p piperine-transpile --test generics`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
 **Run apisession**: `cargo test -p piperine-api --test session`
-**Run apiderived**: `cargo test -p piperine-api --test derived`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
+**Run bookanalog**: `cargo test -p piperine --test book_analog`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
 
-**Base and order.** Phase 18 starts after `tasks-c.md` T81 (phase C closed). The answers to design-d.md's open
-questions DD1 to DD3 bind T82, T88, T92, T93 and T96; until the user answers, each takes its recommended default and the
-answer is written on the Handoff. GN-24 AC 4 (noise) is `tasks-e.md` T111.
+**Base and order.** Phase 18 starts after `tasks-c.md` T82 (phase C closed). The user answered DD1 to DD3 on
+2026-11-23 (design-d.md "Questions answered"): phase 20 implements `temperature()` and `multiplicity()` as run settings the
+model reads; T99 starts only after the user answers DQ1 to DQ3 (design-d.md) and follows those answers.
 
 Rules every task follows (the user's rules, repeated so a worker needs no other file):
 
 - **Environment.** Before any cargo command, in the same command: `CARGO_TARGET_DIR=/var/tmp/piperine-target-<lane> TMPDIR=/var/tmp/piperine-tmp-<lane> CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0`, the lane letter the coordinator gives. `/var/tmp/piperine-target` is a read-only trap and is never used. Commands run in the foreground; no polling loop; never `pkill` by pattern; never `git stash`; never `cargo clean`. If `df /` passes 90 %, stop and report.
 - **Gate policy (user, 2026-11-21).** After each task: the `**Build**` line, then `cargo test -p <crate>` for each crate the task touched, then the `Run` lines its `Done when` names. Once at the end of each batch: `cargo test --workspace`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`, `cargo test -p piperine-cli --test twins` and the buck targets.
-- **Parity is untouchable.** `crates/piperine-parity/src/contract.rs` and every `ToleranceContract` are not edited; the 7 twin goldens, the transpile goldens of `crates/piperine-transpile/tests/golden/` (except the one move design-d.md lists under DD1, in T93 and T96) and every parity target stay byte-identical; no tolerance moves.
+- **Parity is untouchable.** `crates/piperine-parity/src/contract.rs` and every `ToleranceContract` are not edited; the 7 twin goldens, the transpile goldens of `crates/piperine-transpile/tests/golden/` and every parity target stay byte-identical; no tolerance moves.
 - **Only design-d.md "Goldens, pins and tests that may move" may move,** under the task it names; a replaced test is replaced by the acceptance test of the criterion that supersedes it, and the commit body names both.
 - **The code follows the spec.** `docs/spec/` is the grammar and semantics authority; a divergence a task cannot fix in its scope stops the task and is reported.
 - **Tests state the spec, not the code.** Expected values are the same expression evaluated by Rust in the test, or the spec's own value; each assertion cites its rule. Test functions have exactly the names `## Checks` cites. No test is removed, weakened or skipped beyond the table above.
@@ -63,9 +64,9 @@ Rules every task follows (the user's rules, repeated so a worker needs no other 
 | Checker (`piperine-lang/src/types`) | integration | every AC the checker decides; each code with its span and the names it gives | `crates/piperine-lang/tests/{types_templates,types_implicit,types_traits}.rs` | `cargo test -p piperine-lang --test types_templates` / `--test types_implicit` |
 | Elaborator (`piperine-lang/src/elab`) | integration | every elaboration-time AC; each code; the POM untouched | `crates/piperine-lang/tests/{elab_templates,elab_implicit}.rs` | `cargo test -p piperine-lang --test elab_templates` / `--test elab_implicit` |
 | IR (`piperine-ir`) | integration | the new field built, checked (valid and refused), printed | `crates/piperine-ir/tests/generics.rs` | `cargo test -p piperine-ir --test generics` |
-| Interpreter refusals | integration | `m`/`dtemp` other than 1 and 0 refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
+| Interpreter refusals | integration | the run-setting reads refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
 | Source-level runs | integration | one test per run-time AC on the Rust backend, expected values computed by Rust in the test | `crates/piperine-parity/tests/{source_templates,source_implicit}.rs` | `cargo test -p piperine-parity --test source_templates` / `--test source_implicit` |
-| Host (`piperine-api`) | integration | listing and setting `m`, `dtemp`; descendants re-derived | `crates/piperine-api/tests/{session,derived}.rs` | `cargo test -p piperine-api --test session` / `--test derived` |
+| Host (`piperine-api`) | integration | the run's temperature and multiplicity; a bad multiplicity refused | `crates/piperine-api/tests/session.rs` | `cargo test -p piperine-api --test session` |
 | Spec text | integration | each amended sentence | `crates/piperine-lang/tests/spec_text.rs` | `cargo test -p piperine-lang --test spec_text` |
 | Book | integration | each owned row flipped or narrowed | `tests/book/*.rs`, `tests/book/inventory.tsv` | `cargo test -p piperine --test book_<chapter>` |
 | Repository records | integration | one assertion per removed `GAPS.md` row | `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-cli --test docs` |
@@ -77,7 +78,7 @@ Rules every task follows (the user's rules, repeated so a worker needs no other 
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
 | Quick | After every task with tests | the `**Build**` line; `cargo test -p <crate>` for each crate the task touched; the `Run` lines its `Done when` names |
-| Full | The last task of each batch, and T96 (it moves every device's generated code) | Quick, then `cargo test --workspace`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`, `cargo test -p piperine-cli --test twins` and the buck targets |
+| Full | The last task of each batch, and T96 and T97 (the ABI, and every `temperature()` caller) | Quick, then `cargo test --workspace`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`, `cargo test -p piperine-cli --test twins` and the buck targets |
 | Build | A task with `Tests: none` | the `**Build**` line, then `cargo test --workspace` |
 
 ---
@@ -89,28 +90,28 @@ Phases are ordered and run sequentially - each phase completes before the next b
 ### Phase 18: The spec amendment and templates
 
 ```
-T82 → T83 → T84 → T85 → T86 → T87
+T83 → T84 → T85 → T86 → T87 → T88
 ```
 
 ### Phase 19: Module trait impls, `inst.name` through templates, the template Book rows
 
 ```
-T88 → T89 → T90 → T91 → T92
+T89 → T90 → T91 → T92 → T93
 ```
 
-### Phase 20: `m` and `dtemp`
+### Phase 20: `temperature()` and `multiplicity()` (user decision 2026-11-23)
 
 ```
-T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
+T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 ```
 
 ---
 
 ## Task Breakdown
 
-### T82: The spec takes impls on module types
+### T83: The spec takes impls on module types
 
-**What**: Amend `docs/spec` per the user's decision of 2026-11-22 and DD3: §3.7 lists a module type among the `impl Tr for` targets and §3.1 allows an inherent `impl` on one, its functions pure functions of the template (no node, quantity or time: `E0122`); the `E0130` row leaves §3.1's errors (DD3 (a)); §8.4 says a bound may combine a trait and `Fn(P)`. `spec.md` GN-03 AC 2 and `tasks.md` check C8 are amended to the decision (the approval line of the decision is quoted). One `spec_text` assertion per sentence.
+**What**: Amend `docs/spec` per the user's decision of 2026-11-22 and DD3: §3.7 lists a module type among the `impl Tr for` targets and §3.1 allows an inherent `impl` on one, its functions pure functions of the template (no node, quantity or time: `E0122`); the `E0130` row leaves §3.1's errors (DD3 (a)); §8.4 says a bound may combine a trait and `Fn(P)`. `spec.md` GN-03 AC 2 was amended at planning (user, 2026-11-23); `tasks.md` check C8's claim is amended here and its proof in T89. One `spec_text` assertion per sentence.
 **Where**: `docs/spec/part_i_values.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `spec_text.rs`
@@ -129,11 +130,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T83: Template values in the checker
+### T84: Template values in the checker
 
 **What**: `types/templates.rs` types `Name { params }` and `Name::<G> { params }` as a value of the module's type wherever a value goes (a `const`, a param value, a function result, a `let` of a const context), replacing the `P0001` of `types/expr.rs`; a required param left unbound is `E0319`; a template-valued expression that is not const is `E0362`; a template as a carried type (`Bit<Bsim4>`, a signal) is `E0112`.
 **Where**: `crates/piperine-lang/src/types/templates.rs`
-**Depends on**: T82
+**Depends on**: T83
 **Reuses**: `Context::Const`, `Checker::generic_placement`
 **Requirement**: GN-21 (AC 1 to AC 4)
 **Executor**: Sonnet
@@ -150,11 +151,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T84: Templates fold from consts and function results
+### T85: Templates fold from consts and function results
 
 **What**: `TemplateFolder` (`elab/templates.rs`) folds a template from a `const`, a param, a template literal of a generic module (its `Instance` part of the interning key) and the result of a function evaluated in `ConstEval` (a binning function returns a `TemplateValue`); two equal templates are one number; a template passed through two template-typed params folds to the innermost binding.
 **Where**: `crates/piperine-lang/src/elab/templates.rs`
-**Depends on**: T83
+**Depends on**: T84
 **Reuses**: `ConstEval`, template interning
 **Requirement**: GN-21 (AC 1), GN-22 (AC 3)
 **Executor**: Sonnet
@@ -171,11 +172,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T85: Placement through a template value in the checker
+### T86: Placement through a template value in the checker
 
 **What**: A call whose callee is a template-valued const expression (`cell(conns)`, `nch(l, w)(d, g, s, b)`, `C1(a, b)`) types as a placement of the template's module, its connections checked against its ports, replacing the `P0001` of `types/call.rs` and `types/module.rs`; a param block on it is `E0361`.
 **Where**: `crates/piperine-lang/src/types/module.rs`
-**Depends on**: T84
+**Depends on**: T85
 **Reuses**: `Checker::placement`, the `E0361` arm
 **Requirement**: GN-22 (AC 1, AC 2)
 **Executor**: Sonnet
@@ -192,11 +193,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T86: Placement through any folded template
+### T87: Placement through any folded template
 
 **What**: `elab/children.rs` places the module of any folded template with its folded params (identical to `Name(conns) { params }`, §8.4.9), replacing the `P0001` "a placement through a template value"; a binning function places the module and params its arguments choose; every param a template-valued expression reads is structural (phase C's `KeyParams`).
 **Where**: `crates/piperine-lang/src/elab/children.rs`
-**Depends on**: T85
+**Depends on**: T86
 **Reuses**: `template_values`, `KeyParams`
 **Requirement**: GN-22 (AC 1, AC 3), GN-20 (AC 1)
 **Executor**: Sonnet
@@ -213,11 +214,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T87: `Fn(P)` bounds on modules
+### T88: `Fn(P)` bounds on modules
 
 **What**: `types/module_bounds.rs` checks a template bound to `C: Fn(P)`: the module's ports have the types and directions of `P`, in order, names not counting, a module with a result included (§8.4.5), else `E0360` naming the first port that differs; a bound `N: Tr + Fn(P)` also needs `impl Tr for` the module (`E0187` naming the module and the trait).
 **Where**: `crates/piperine-lang/src/types/module_bounds.rs`
-**Depends on**: T86
+**Depends on**: T87
 **Reuses**: `Bound::Callable`, `BoundCheck`
 **Requirement**: GN-23 (AC 1, AC 2)
 **Executor**: Sonnet
@@ -234,9 +235,9 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T88: Trait and inherent impls on a module type
+### T89: Trait and inherent impls on a module type
 
-**What**: `Coherence` accepts `impl Mosfet for Bsim4 { .. }` and `impl Bsim4 { .. }`: `self` is the template, functions may read the template's params and return values or templates; a function that probes, reads a quantity or time is `E0122` naming it (DD3); the `E0130` arm leaves the classifier; `an_impl_on_a_module_is_e0130` is replaced by `an_impl_on_a_module_type_is_accepted` (design-d.md pins). A module bound by `N: Mosfet + Fn(..)` without the impl is `E0187` (T87) proven here with a real trait.
+**What**: `Coherence` accepts `impl Mosfet for Bsim4 { .. }` and `impl Bsim4 { .. }`: `self` is the template, functions may read the template's params and return values or templates; a function that probes, reads a quantity or time is `E0122` naming it (DD3); the `E0130` arm leaves the classifier; `an_impl_on_a_module_is_e0130` is replaced by `an_impl_on_a_module_type_is_accepted` (design-d.md pins). A module bound by `N: Mosfet + Fn(..)` without the impl is `E0187` (T88) proven here with a real trait.
 **Where**: `crates/piperine-lang/src/types/coherence.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `ImplTable`, `FunctionClasses`
@@ -255,11 +256,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T89: Module `impl` functions run at elaboration
+### T90: Module `impl` functions run at elaboration
 
 **What**: `TemplateFolder` and `ConstEval` call a module `impl` function on a template (`nmos.vth()` in a param default or a body `let`, a method returning another template for binning), with `self` bound to the folded template and its params readable as fields; static dispatch through a `N: Mosfet` bound picks the bound module's impl.
 **Where**: `crates/piperine-lang/src/elab/templates.rs`
-**Depends on**: T88
+**Depends on**: T89
 **Reuses**: `ImplTable::implementation`, `ConstEval`
 **Requirement**: GN-23 (the decision of 2026-11-22)
 **Executor**: Sonnet
@@ -276,11 +277,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T90: `inst.name` through a template-typed param
+### T91: `inst.name` through a template-typed param
 
 **What**: `inst.name` on an instance placed through a template-typed param (`bank.cells[3][5].sn` in shape) resolves at elaboration against the concrete module the template names (§8.4.8); a missing or non-`pub` item is `E0343`.
 **Where**: `crates/piperine-lang/src/elab/reach_through_templates.rs`
-**Depends on**: T89
+**Depends on**: T90
 **Reuses**: `analog-structure`'s `inst.name` resolution, `TemplateFolder`
 **Requirement**: GN-23 (AC 3)
 **Executor**: Sonnet
@@ -297,11 +298,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T91: Templates run end to end
+### T92: Templates run end to end
 
 **What**: Source tests on the Rust backend: the `MemoryBank`/`Dram1T1C` shape of §8.4 over `Electrical` ports (`C: Fn(Electrical, Electrical)`, generated cells, a cell's `sn` read through `bank.cells[r][c].sn`); `nch` binning at two lengths gives the chosen `vth0` (read through a param probe); the swappable MOSFET (`trait Mosfet`, two analog stand-in models, `DiffPair<N: Mosfet + Fn(..)>`) gives each model's own operating point, computed in Rust in the test.
 **Where**: `crates/piperine-parity/tests/source_templates.rs`
-**Depends on**: T90
+**Depends on**: T91
 **Reuses**: `crates/piperine-parity/tests/templates/*.msl`
 **Requirement**: GN-21, GN-22, GN-23
 **Executor**: Sonnet
@@ -318,11 +319,11 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T92: The template Book rows
+### T93: The template Book rows
 
 **What**: Flip modules#12 (`nch(0.13u, 2u)(d, g, s, b)` places `Bsim4` with the binned `vth0`); add the swappable MOSFET listing to the modules chapter after the binning paragraph (DD6) with an inventory row `run` and its test; narrow modules#10 and cheatsheet#8 to the bundle `Cell` (their test asserts only the bundle's refusal) and hand their §11 rows to `resolved-nets-bundles` under L25 (DD2); `inventory.tsv` and `GAPS.md` §11 follow.
 **Where**: `tests/book/modules.rs`
-**Depends on**: T91
+**Depends on**: T92
 **Reuses**: `Chapter`, `Refusal`
 **Requirement**: GN-31 (AC 2), GN-22, GN-23
 **Executor**: Sonnet
@@ -341,169 +342,191 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ---
 
-### T93: IR `BodyData::implicit`
+### T94: The spec: `temperature()` and `multiplicity()` are run settings the model reads
 
-**What**: `ImplicitParams { multiplicity, offset }` and `BodyData::implicit: Option<ImplicitParams>` (`#[serde(default)]`), the two indices naming `f64` param pins appended after the body's own params; `Ir::check` holds them in range and typed `f64`; the IR printer shows them; the interpreter refuses an instance whose `m` is not 1 or whose `dtemp` is not 0, by name. The elaborator gives every body the pair (DD1 (a)); every moved pin or golden is listed in the commit body.
-**Where**: `crates/piperine-ir/src/model.rs`
+**What**: Amend `docs/spec` to the user's decision of 2026-11-23 (spec.md GN-24 to GN-26 as amended): §8.5.1 to §8.5.6 are replaced by "an instance has no implicit params; `temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature and `None` otherwise; `multiplicity() -> Option<f64>` is `Some(m)` when the run sets a multiplicity and `None` otherwise; nothing scales or offsets a model: the model decides whether to use the value as its temperature all along, as an initial temperature, or to ignore it"; §14.4's `temperature()` row and a new `multiplicity()` row (environment, constant during an analysis); §22's constants gain `AMBIENT_TEMPERATURE = 300.15` (27 °C, ngspice's default), with the sentence that `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the recommended fallback, and `vt()`'s entry says it uses that fallback; §23's run request gains the `multiplicity` key beside `temp`; §8.4.2's sentence on `m` and `dtemp` in a template, the `E0375` row and §8.5's `E0317` row for `m` leave; §8.5.12 and the `"osdi"` contract row give the descriptor the run's values when set and its defaults otherwise; Appendix G.54 is marked superseded. One `spec_text` assertion per sentence.
+**Where**: `docs/spec/part_iii_structure.md`
 **Depends on**: None (its phase follows the previous one)
-**Reuses**: `Param`, `IrBuilder`
-**Requirement**: GN-24, GN-25, GN-29 (AC 1)
+**Reuses**: `spec_text.rs`
+**Requirement**: GN-24, GN-25, GN-26 (amended, user decision 2026-11-23)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `implicit_params_are_built_checked_and_printed` passes under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` covers `m` and `dtemp` under `**Run interp**`
+- [ ] `instances_have_no_implicit_params_in_the_spec`, `temperature_and_multiplicity_are_run_settings_in_the_spec` and `the_recommended_fallback_is_the_ambient_temperature_in_the_spec` pass under `**Run spectext**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(ir): every body carries the implicit params m and dtemp`
+**Commit**: `docs(spec): temperature() and multiplicity() are run settings the model reads`
 
 ---
 
-### T94: The checker binds and reads `m` and `dtemp`
+### T95: IR reads of whether the run set them
 
-**What**: `types/implicit.rs`: `m` and `dtemp` may be bound in a placement's or a template's param block (`E0320` no longer); the names read inside a module are `f64`; a module item (port, param, signal, `let`) named `m` or `dtemp` is `E0375`; a const `m <= 0.0` is `E0317`.
-**Where**: `crates/piperine-lang/src/types/implicit.rs`
-**Depends on**: T93
-**Reuses**: `BuiltinKind::ImplicitParam`
-**Requirement**: GN-24 (AC 1), GN-25 (AC 2, AC 3)
-**Executor**: Sonnet
-
-**Done when**:
-
-- [ ] `m_and_dtemp_are_bound_and_read_as_f64`, `an_item_named_m_or_dtemp_is_e0375` and `m_at_most_zero_is_e0317` pass under `**Run typesimplicit**`
-- [ ] Gate check passes: Quick
-
-**Tests**: integration
-**Gate**: quick
-
-**Commit**: `feat(types): bind and read m and dtemp`
-
----
-
-### T95: Effective `m` and `dtemp` down the path
-
-**What**: `elab/implicit.rs` binds a child's implicit params as `ChildValue::Expr`: multiplicity `parent.M × child.m`, offset `parent.dtemp + child.dtemp` (§8.5.3, §8.5.5), a top's `1.0` and `0.0`; a non-const `m` that is `<= 0.0` at elaboration is `E0317`; the name `m` reads `M` and `dtemp` the effective offset.
-**Where**: `crates/piperine-lang/src/elab/implicit.rs`
+**What**: `Env::TemperatureGiven` (a `bool`), `Env::Multiplicity` (an `f64`) and `Env::MultiplicityGiven` (a `bool`) are appended to `Env`, all constant during an analysis; `Env::Temperature` keeps its meaning (the run's temperature, the solver's 300.15 K when the run sets none), so `temperature()` lowers to the `Option` pair `(TemperatureGiven, Temperature)` and `multiplicity()` to `(MultiplicityGiven, Multiplicity)`; `Ir::check` types them, the IR printer shows them, the interpreter refuses the three by name (R1).
+**Where**: `crates/piperine-ir/src/model.rs`
 **Depends on**: T94
-**Reuses**: derived params (`ChildValue::Expr`, MD-69)
-**Requirement**: GN-24 (AC 1, AC 2), GN-25 (AC 1, AC 2)
+**Reuses**: `Env`, `Typing`, the `Option` pair of explicit-unknowns
+**Requirement**: GN-24 (AC 1), GN-25 (AC 1), GN-29 (AC 1)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `effective_m_is_the_product_and_dtemp_the_sum_along_the_path` passes under `**Run elabimplicit**`
+- [ ] `run_setting_reads_are_built_checked_and_printed` passes under `**Run irgen**`
+- [ ] `each_generics_form_is_refused_by_name` covers the three reads under `**Run interp**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(elab): effective m and dtemp along the path`
+**Commit**: `feat(ir): reads of whether the run set its temperature and multiplicity`
 
 ---
 
-### T96: The IR scales flows by `M` and shifts the temperature
+### T96: The device reads the run's settings
 
-**What**: `ImplicitScaling` multiplies each flow contribution by the body's `M` and divides each flow probe by `M`, leaves potential contributions, potential probes, discrete carriers, events and reactions unchanged (§8.5.4), and lowers `temperature()` in the body as the analysis temperature plus the offset (§8.5.5); the transpile goldens move once (DD1 (a)), the twins and parity suites do not.
-**Where**: `crates/piperine-lang/src/elab/implicit.rs`
+**What**: The device ABI's environment gives the three values (appended in place at `MINOR` 0, MD-78 item 4; `abi.md` amended in the same task); the solver fills them from the run's options (`temp` given or not, `multiplicity` given or not); the transpiler prints the three reads (`rt` environment accessors). A body that reads none prints as before.
+**Where**: `crates/piperine-abi/src/raw.rs`
 **Depends on**: T95
-**Reuses**: `elab/contribute.rs`, `elab/analog.rs`
-**Requirement**: GN-24 (AC 3), GN-25 (AC 1)
+**Reuses**: the environment record of `piperine-abi`, `piperine-analog-solver/src/tolerances.rs`, `piperine-transpile/src/rt/`
+**Requirement**: GN-24 (AC 1), GN-25 (AC 1)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `flows_scale_by_m_and_potentials_and_discretes_do_not` and `temperature_reads_the_analysis_value_plus_the_offset` pass under `**Run elabimplicit**`
+- [ ] `a_device_reads_whether_the_run_set_its_temperature_and_multiplicity` passes under `**Run tgen**`
+- [ ] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(abi): the environment says whether the run set its temperature and multiplicity`
+
+---
+
+### T97: The checker and the elaborator: two options, every caller migrated
+
+**What**: `temperature()` and `multiplicity()` are typed `Option<f64>` (`CORE_ROWS`), environment class "constant during an analysis" (allowed in `analog`, reactions, body `let`s and value inputs; a const context stays `E0188`), lowered per T95; the POM's `BuiltinKind::ImplicitParam` rows `m` and `dtemp` leave, so the names are ordinary and binding `m` at a placement is `E0320` like any unknown param. `std/constants.msl` gains `pub const AMBIENT_TEMPERATURE: f64 = 300.15;` with its doc comment (27 °C, ngspice's default, the recommended fallback of `temperature()`), and every in-tree caller of `temperature()` outside the Book and `docs/spec` (`std/analog.msl`'s `vt()` and models, the spice-faithful models under `std/`, `tests/e2e/twins/temp_res.msl`, examples, the `piperine-lang`, `piperine-api` and `piperine-parity` test sources) reads `temperature().unwrap_or(AMBIENT_TEMPERATURE)`; every twin prints the same bytes and every parity target passes with `ToleranceContract` unedited.
+**Where**: `crates/piperine-lang/src/types/catalogue.rs`
+**Depends on**: T96
+**Reuses**: `CoreSig`, `elab/analog.rs`
+**Requirement**: GN-24 (AC 1, AC 2), GN-25 (AC 1, AC 2, AC 3)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `temperature_and_multiplicity_are_options_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
+- [ ] `the_calls_lower_to_the_run_reads_and_nothing_is_scaled` passes under `**Run elabimplicit**`
 - [ ] `every_twin_prints_the_bytes_it_printed_before_the_move` passes under `**Run twins**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat(elab): flows scale by m and temperature shifts by dtemp`
+**Commit**: `feat(lang): temperature() and multiplicity() are options; callers fall back to the ambient temperature`
 
 ---
 
-### T97: The host lists and sets `m` and `dtemp`
+### T98: The Book and the spec examples use the fallback
 
-**What**: `piperine-api` lists `m` and `dtemp` among each instance's params (with the effective value) and treats a `set` of either as a param change, the descendants' effective values re-derived (X9, MD-69).
-**Where**: `crates/piperine-api/src/params.rs`
-**Depends on**: T96
-**Reuses**: the derive plan, `Session::set`
-**Requirement**: GN-26 (AC 1, AC 2)
-**Executor**: Sonnet
-
-**Done when**:
-
-- [ ] `an_instance_lists_m_and_dtemp` passes under `**Run apisession**`
-- [ ] `setting_m_rederives_the_descendants` passes under `**Run apiderived**`
-- [ ] Gate check passes: Quick
-
-**Tests**: integration
-**Gate**: quick
-
-**Commit**: `feat(api): list and set m and dtemp`
-
----
-
-### T98: `m` and `dtemp` run end to end
-
-**What**: Source tests: a resistor with `m: 4.0` gives the solution of four in parallel (GN-24 AC 5); `m: 2.0` on a parent and `m: 3.0` on its child scale the child's current by 6; a flow probe reads the per-device current; a potential source with `m` is unchanged; `m` on a module with no flow contribution changes nothing; a diode with `dtemp: 25.0` equals the same diode at the analysis temperature plus 25 K (GN-25 AC 1); expected values computed in Rust in the test.
-**Where**: `crates/piperine-parity/tests/source_implicit.rs`
+**What**: Every Book listing (`docs/book/content.html`) and `docs/spec` example that reads `temperature()` writes `temperature().unwrap_or(AMBIENT_TEMPERATURE)` (or uses the `Option` as its model chooses); the Book's environment section says what `temperature()` and `multiplicity()` return and recommends the ambient fallback, ngspice's 27 °C; the Book tests of those listings (`tests/book/analog.rs`, `tests/book/solver.rs`, …) and `inventory.tsv` fingerprints follow; every row that ran still runs.
+**Where**: `docs/book/content.html`
 **Depends on**: T97
-**Reuses**: `crates/piperine-parity/tests/implicit/*.msl`
-**Requirement**: GN-24 (AC 2, AC 3, AC 5), GN-25 (AC 1)
+**Reuses**: `Chapter`
+**Requirement**: GN-25 (AC 1, AC 2)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `a_resistor_with_m_four_is_four_in_parallel`, `m_multiplies_down_the_path_and_spares_potentials`, `m_without_a_flow_changes_nothing` and `a_diode_with_dtemp_runs_at_the_shifted_temperature` pass under `**Run srcimplicit**`
-- [ ] Gate check passes: Quick
-
-**Tests**: integration
-**Gate**: quick
-
-**Commit**: `test(parity): m and dtemp`
-
----
-
-### T99: The Book's `m` and `dtemp` row
-
-**What**: Flip modules~1faf8c12: `Resistor(a, b) { r: 1k, m: 4.0 }` runs as four resistors in parallel and the `dtemp` example as a shifted temperature; `binding_m_and_dtemp_is_refused_as_an_unknown_param` becomes `binding_m_and_dtemp_runs_as_the_book_says`; `inventory.tsv` takes `holds`, and the row leaves `GAPS.md` §11 (GN-26 AC 3).
-**Where**: `tests/book/modules.rs`
-**Depends on**: T98
-**Reuses**: `Parts`, `Faulty`
-**Requirement**: GN-26 (AC 3)
-**Executor**: Sonnet
-
-**Done when**:
-
-- [ ] `binding_m_and_dtemp_runs_as_the_book_says` passes under `**Run bookmodules**`
+- [ ] `the_temperature_listings_run_with_the_ambient_fallback` passes under `**Run bookanalog**`
 - [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `test(book): m and dtemp run as the Book says`
+**Commit**: `docs(book): temperature() is an option with the ambient fallback`
 
 ---
 
-### T100: Phase D bookkeeping
+### T99: The run sets its temperature and its multiplicity
 
-**What**: `GAPS.md` drops L29 and L32, updates §9 (III §8.4–§8.5) and the §10 code list (`E0360`, `E0362`, `E0375` leave `code_owners.tsv`); `spec.md`'s traceability marks GN-21 to GN-26 phase D; `.specs/STATE.md` MD-81 gains item 7 (design-d.md "Tech Decisions"); `ROADMAP.md`'s `generics` D row says delivered.
-**Where**: `GAPS.md`
+**What**: The run request's `temp` (degrees Celsius, as today) makes `temperature()` `Some(temp + 273.15)`; a new `multiplicity` key (`Request::multiplicity`, `[run.<name>] multiplicity`, `--multiplicity <v>`) makes `multiplicity()` `Some(v)`; neither is given at a placement and neither changes during a run (no `set`, GN-26 AC 2); a multiplicity that is not `> 0.0` is `E0802` naming the key; DQ1 to DQ3 answers adjust this text before the task starts.
+**Where**: `crates/piperine-api/src/request.rs`
+**Depends on**: T98
+**Reuses**: `Request`, the `temp` path of `piperine-cli`
+**Requirement**: GN-26 (AC 1, AC 2), GN-24 (AC 3)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `a_run_sets_its_temperature_and_multiplicity` and `a_multiplicity_that_is_not_positive_is_e0802` pass under `**Run apisession**`
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(api): the run's multiplicity beside its temperature`
+
+---
+
+### T100: Temperature and multiplicity run end to end
+
+**What**: Source tests: a resistor whose model contributes `multiplicity().unwrap_or(1.0) * v(a, b) / r`, run with `multiplicity: 4.0`, gives the solution of four in parallel, and with nothing set gives one resistor; three models, one using the run's temperature all along, one using it as the initial temperature of a thermal state, one ignoring it, each give the value Rust computes in the test, with `temp` set and with it unset (then `None`, and the fallback model runs at 300.15 K).
+**Where**: `crates/piperine-parity/tests/source_implicit.rs`
 **Depends on**: T99
+**Reuses**: `crates/piperine-parity/tests/implicit/*.msl`
+**Requirement**: GN-24 (AC 1, AC 4), GN-25 (AC 1, AC 2), GN-26 (AC 1)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `a_model_scaled_by_its_multiplicity_is_four_in_parallel`, `nothing_set_reads_none` and `a_model_chooses_how_to_use_its_temperature` pass under `**Run srcimplicit**`
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(parity): temperature() and multiplicity() as the model uses them`
+
+---
+
+### T101: The Book's multiplicity row, rewritten
+
+**What**: Rewrite the modules chapter's "`m` and `dtemp`" item to the new form (a model reads `multiplicity()` and `temperature()`, the run sets them, nothing is implicit), with a listing (a resistor scaled by its multiplicity, run with `--multiplicity 4`) and its "Run it" output; re-own claim modules~1faf8c12 to that text (`holds`, test `the_multiplicity_listing_runs_as_four_in_parallel`), and its row leaves `GAPS.md` §11 (GN-26 AC 3).
+**Where**: `tests/book/modules.rs`
+**Depends on**: T100
+**Reuses**: `Chapter`, `Commands`
+**Requirement**: GN-26 (AC 3)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `the_multiplicity_listing_runs_as_four_in_parallel` passes under `**Run bookmodules**`
+- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `docs(book): multiplicity as the model reads it`
+
+---
+
+### T102: Phase D bookkeeping
+
+**What**: `GAPS.md` drops L29 (closed by the run settings of the user's decision) and L32, updates §9 (III §8.4–§8.5) and the §10 code list (`E0360`, `E0362` leave `code_owners.tsv`; `E0375` leaves with its spec row); `spec.md`'s traceability marks GN-21 to GN-26 phase D; `.specs/STATE.md` MD-81 gains item 7 (design-d.md "Tech Decisions"); `ROADMAP.md`'s `generics` D row says delivered.
+**Where**: `GAPS.md`
+**Depends on**: T101
 **Reuses**: `docs.rs`
 **Requirement**: GN-31 (AC 1)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `gaps_drops_what_generics_phase_d_closed` and `state_records_templates_and_implicit_params` pass under `**Run docs**`
+- [ ] `gaps_drops_what_generics_phase_d_closed` and `state_records_templates_and_run_settings` pass under `**Run docs**`
 - [ ] Gate check passes: Full (last task of batch B16)
 
 **Tests**: integration
@@ -515,43 +538,43 @@ T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
 
 ## Checks
 
-**C86** - `Name { params }` and `Name::<G> { params }` as a `const`, a param value or a function result give a value of the module's type. (GN-21, AC 1; T83, T84)
+**C87** - `Name { params }` and `Name::<G> { params }` as a `const`, a param value or a function result give a value of the module's type. (GN-21, AC 1; T84, T85)
 Proof: run typestempl | test a_template_is_a_value_of_its_modules_type ... ok
 Proof: run elabtempl | test templates_fold_from_consts_functions_and_two_levels_of_params ... ok
 
-**C87** - A template leaving a required param unbound is `E0319`. (GN-21, AC 2; T83)
+**C88** - A template leaving a required param unbound is `E0319`. (GN-21, AC 2; T84)
 Proof: run typestempl | test a_template_leaving_a_required_param_is_e0319 ... ok
 
-**C88** - A template-valued expression that is not const is `E0362`. (GN-21, AC 3; T83)
+**C89** - A template-valued expression that is not const is `E0362`. (GN-21, AC 3; T84)
 Proof: run typestempl | test a_template_that_is_not_const_is_e0362 ... ok
 
-**C89** - A template is never carried: `E0112`. (GN-21, AC 4; T83)
+**C90** - A template is never carried: `E0112`. (GN-21, AC 4; T84)
 Proof: run typestempl | test a_template_is_never_carried_e0112 ... ok
 
-**C90** - A placement through a template value or a function result places an instance identical to the written placement. (GN-22, AC 1; T85, T86, T92)
+**C91** - A placement through a template value or a function result places an instance identical to the written placement. (GN-22, AC 1; T86, T87, T93)
 Proof: run typestempl | test a_placement_through_a_template_or_a_function_types_as_its_module ... ok
 Proof: run elabtempl | test a_template_placement_is_identical_to_the_written_placement ... ok
 Proof: run bookmodules | test a_function_that_returns_a_template_places_its_result ... ok
 
-**C91** - A param block on a placement through a template value is `E0361`. (GN-22, AC 2; T85)
+**C92** - A param block on a placement through a template value is `E0361`. (GN-22, AC 2; T86)
 Proof: run typestempl | test a_param_block_on_a_template_placement_is_e0361 ... ok
 
-**C92** - A binning function places the module and params its arguments choose. (GN-22, AC 3; T86, T91)
+**C93** - A binning function places the module and params its arguments choose. (GN-22, AC 3; T87, T92)
 Proof: run elabtempl | test a_binning_function_places_the_module_it_chooses ... ok
 Proof: run srctempl | test binning_places_the_chosen_model ... ok
 
-**C93** - A module whose port types and directions match `P` fits `C: Fn(P)`, names not counting. (GN-23, AC 1; T87, T91)
+**C94** - A module whose port types and directions match `P` fits `C: Fn(P)`, names not counting. (GN-23, AC 1; T88, T92)
 Proof: run typestempl | test a_module_whose_ports_match_fits_fn_p_names_not_counting ... ok
 Proof: run srctempl | test a_memory_bank_places_its_cell_template ... ok
 
-**C94** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T87)
+**C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok
 
-**C95** - `inst.name` through a template-typed param resolves against the concrete module, `E0343` for a missing or private item. (GN-23, AC 3; T90)
+**C96** - `inst.name` through a template-typed param resolves against the concrete module, `E0343` for a missing or private item. (GN-23, AC 3; T91)
 Proof: run elabtempl | test inst_name_through_a_template_param_reads_the_concrete_module ... ok
 Proof: run elabtempl | test a_missing_item_through_a_template_param_is_e0343 ... ok
 
-**C96** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T82, T88, T89, T91)
+**C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92)
 Proof: run spectext | test a_module_type_takes_trait_and_inherent_impls_in_the_spec ... ok
 Proof: run spectext | test a_bound_combines_a_trait_and_fn_p_in_the_spec ... ok
 Proof: run typestraits | test an_impl_on_a_module_type_is_accepted ... ok
@@ -559,59 +582,51 @@ Proof: run typestraits | test a_module_impl_function_that_reads_the_solve_is_e01
 Proof: run elabtempl | test a_module_impl_function_runs_on_a_template_at_elaboration ... ok
 Proof: run srctempl | test the_swappable_mosfet_runs_each_model ... ok
 
-**C97** - `m` may be bound at a placement or a template, and `m <= 0.0` is `E0317`. (GN-24, AC 1; T94)
-Proof: run typesimplicit | test m_and_dtemp_are_bound_and_read_as_f64 ... ok
-Proof: run typesimplicit | test m_at_most_zero_is_e0317 ... ok
+**C98** - `multiplicity()` returns `Some` of the run's multiplicity and `None` when the run sets none; nothing is scaled by the system. (GN-24, AC 1, AC 2; amended 2026-11-23; T97, T100)
+Proof: run typesimplicit | test temperature_and_multiplicity_are_options_of_the_run ... ok
+Proof: run elabimplicit | test the_calls_lower_to_the_run_reads_and_nothing_is_scaled ... ok
+Proof: run srcimplicit | test nothing_set_reads_none ... ok
 
-**C98** - The effective multiplicity is the product of `m` along the path and the name `m` reads it. (GN-24, AC 2; T95, T98)
-Proof: run elabimplicit | test effective_m_is_the_product_and_dtemp_the_sum_along_the_path ... ok
-Proof: run srcimplicit | test m_multiplies_down_the_path_and_spares_potentials ... ok
+**C99** - A multiplicity that is not `> 0.0` is `E0802`. (GN-24, AC 3; T99)
+Proof: run apisession | test a_multiplicity_that_is_not_positive_is_e0802 ... ok
 
-**C99** - Flow contributions scale by `M`, flow probes divide by it, potentials, discrete carriers, events and reactions are unchanged. (GN-24, AC 3; T96, T98)
-Proof: run elabimplicit | test flows_scale_by_m_and_potentials_and_discretes_do_not ... ok
+**C100** - A resistor model scaled by `multiplicity()`, run with multiplicity 4, gives four in parallel. (GN-24, AC 4; T100)
+Proof: run srcimplicit | test a_model_scaled_by_its_multiplicity_is_four_in_parallel ... ok
 
-**C100** - A resistor with `m: 4.0` gives the solution of four in parallel. (GN-24, AC 5; T98)
-Proof: run srcimplicit | test a_resistor_with_m_four_is_four_in_parallel ... ok
+**C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100)
+Proof: run srcimplicit | test a_model_chooses_how_to_use_its_temperature ... ok
+Proof: run spectext | test the_recommended_fallback_is_the_ambient_temperature_in_the_spec ... ok
+Proof: run bookanalog | test the_temperature_listings_run_with_the_ambient_fallback ... ok
 
-**C101** - The effective offset is the sum of `dtemp` along the path and `temperature()` returns the analysis temperature plus it. (GN-25, AC 1; T95, T96, T98)
-Proof: run elabimplicit | test temperature_reads_the_analysis_value_plus_the_offset ... ok
-Proof: run srcimplicit | test a_diode_with_dtemp_runs_at_the_shifted_temperature ... ok
+**C102** - `m` and `dtemp` are ordinary names: no implicit param exists. (GN-25, AC 3; T94, T97)
+Proof: run typesimplicit | test m_and_dtemp_are_ordinary_names ... ok
+Proof: run spectext | test instances_have_no_implicit_params_in_the_spec ... ok
+Proof: run spectext | test temperature_and_multiplicity_are_run_settings_in_the_spec ... ok
 
-**C102** - A module reads the name `dtemp` as its effective offset. (GN-25, AC 2; T94, T95)
-Proof: run elabimplicit | test effective_m_is_the_product_and_dtemp_the_sum_along_the_path ... ok
+**C103** - The run sets its temperature and multiplicity before it starts, and they hold for the whole run. (GN-26, AC 1, AC 2; T99)
+Proof: run apisession | test a_run_sets_its_temperature_and_multiplicity ... ok
 
-**C103** - A module item named `m` or `dtemp` is `E0375`. (GN-25, AC 3; T94)
-Proof: run typesimplicit | test an_item_named_m_or_dtemp_is_e0375 ... ok
+**C104** - The Book's multiplicity listing runs as four in parallel and its row leaves `GAPS.md` §11. (GN-26, AC 3; T101)
+Proof: run bookmodules | test the_multiplicity_listing_runs_as_four_in_parallel ... ok
 
-**C104** - A host `set` of `m` or `dtemp` is a param change and the descendants follow. (GN-26, AC 1; T97)
-Proof: run apiderived | test setting_m_rederives_the_descendants ... ok
-
-**C105** - A host lists `m` and `dtemp` among an instance's params. (GN-26, AC 2; T97)
-Proof: run apisession | test an_instance_lists_m_and_dtemp ... ok
-
-**C106** - The Book's `m` and `dtemp` sentence runs and its row leaves `GAPS.md` §11. (GN-26, AC 3; T99)
-Proof: run bookmodules | test binding_m_and_dtemp_runs_as_the_book_says ... ok
-
-**C107** - The interpreter refuses `m` other than 1 and `dtemp` other than 0 by name; a template leaves no IR form. (GN-29, AC 1; T93, T86)
+**C105** - The interpreter refuses the run-setting reads by name; a template leaves no IR form; the device reads what the run set. (GN-29, AC 1; T95, T96, T87)
 Proof: run interp | test each_generics_form_is_refused_by_name ... ok
-Proof: run irgen | test implicit_params_are_built_checked_and_printed ... ok
+Proof: run irgen | test run_setting_reads_are_built_checked_and_printed ... ok
+Proof: run tgen | test a_device_reads_whether_the_run_set_its_temperature_and_multiplicity ... ok
 
-**C108** - `m` on a module with no flow contribution changes nothing. (Edge case; T98)
-Proof: run srcimplicit | test m_without_a_flow_changes_nothing ... ok
-
-**C109** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T100)
+**C106** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T102)
 Proof: run docs | test gaps_drops_what_generics_phase_d_closed ... ok
 
-**C110** - The template Book rows flip or narrow to the bundle they still need, and the swappable MOSFET listing runs. (GN-31, AC 2; T92)
+**C107** - The template Book rows flip or narrow to the bundle they still need, and the swappable MOSFET listing runs. (GN-31, AC 2; T93)
 Proof: run bookmodules | test the_swappable_mosfet_listing_runs ... ok
 Proof: run bookmodules | test the_memory_bank_is_refused_only_for_its_bundle ... ok
 Proof: run bookcheatsheet | test the_template_card_is_refused_only_for_its_bundle ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
-**C111** - The 7 ngspice twins print the bytes they printed before, with every body carrying `m` and `dtemp`. (GN-30, AC 1; T96, every batch)
+**C108** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; T97, every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-**C112** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
+**C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
 ---
@@ -620,7 +635,7 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 
 The phase's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6; open questions DD1 to DD3 take their recommended default until the user answers.
+**Settled mid-build:** none yet. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6. User, 2026-11-23: DD2 (a) and DD3 (a) approved; DD1 rejected — "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; then "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the old one, docs recommend the ambient fallback (ngspice's 27 °C); `multiplicity() -> Option<f64>`. DQ1 to DQ3 are open.
 **Dispatched:** none yet.
 **Walked:** none yet.
 
@@ -631,13 +646,13 @@ The phase's live state, written as it happens - a compaction gives no warning.
 ```
 Phase 18 → Phase 19 → Phase 20
 
-Phase 18:  T82 → T83 → T84 → T85 → T86 → T87
-Phase 19:  T88 → T89 → T90 → T91 → T92
-Phase 20:  T93 → T94 → T95 → T96 → T97 → T98 → T99 → T100
+Phase 18:  T83 → T84 → T85 → T86 → T87 → T88
+Phase 19:  T89 → T90 → T91 → T92 → T93
+Phase 20:  T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 ```
 
 | Batch | Phases | Tasks | Notes |
 | ----- | ------ | ----- | ----- |
-| B14 | 18 | T82 to T87 | after phase C closes (T81) |
-| B15 | 19 | T88 to T92 | the swappable MOSFET; modules#10 and cheatsheet#8 handed to `resolved-nets-bundles` (DD2) |
-| B16 | 20 | T93 to T100 | `m` and `dtemp`; T96 moves the transpile goldens once (DD1); closes L29 and L32 |
+| B14 | 18 | T83 to T88 | after phase C closes (T82) |
+| B15 | 19 | T89 to T93 | the swappable MOSFET; modules#10 and cheatsheet#8 handed to `resolved-nets-bundles` (DD2) |
+| B16 | 20 | T94 to T102 | `temperature()` and `multiplicity()` as run settings (user decision 2026-11-23); closes L29 and L32 |
