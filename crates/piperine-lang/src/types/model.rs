@@ -40,6 +40,10 @@ impl<'d> ModelCheck<'d> {
     /// enum is not, until their own tasks).
     fn is_seed(&self, decl: DeclId) -> bool {
         let data = self.design.decl_data(decl);
+        // an `impl` is held to the declaration rules of §3.1 whatever its generics
+        if matches!(data.kind, DeclKind::Impl(_)) {
+            return !Decl::new(self.design, decl).krate().is_std();
+        }
         let is_item = matches!(data.kind, DeclKind::Module(_) | DeclKind::Fn(_) | DeclKind::Const(_));
         is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_function(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
     }

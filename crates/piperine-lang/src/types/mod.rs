@@ -19,6 +19,7 @@ mod check;
 mod class;
 mod bounds;
 mod closures;
+mod coherence;
 mod compound;
 mod continuity;
 mod control;

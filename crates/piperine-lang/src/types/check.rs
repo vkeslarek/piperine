@@ -297,6 +297,7 @@ impl<'d> Checker<'d> {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
             DeclKind::Const(_) => self.constant(decl),
+            DeclKind::Impl(_) => self.coherence(decl),
             other => self.unsupported_decl(decl, Unsupported::item(other)),
         }
         self.report_uncalled_closures();

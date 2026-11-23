@@ -143,3 +143,45 @@ fn self_outside_an_impl_or_not_first_is_e0187() {
     assert!(found[0].diagnostic.message.contains("neither"), "{:?}", found[0]);
     assert!(found[1].diagnostic.message.contains("must be the first parameter"), "{:?}", found[1]);
 }
+
+/// The diagnostic codes of the model check of `src` over the embedded standard library.
+fn standard_codes(src: &str) -> Vec<String> {
+    let design = Design::builder().source("top.msl", format!("{HEAD}{src}")).build();
+    match piperine_lang::types::Types::check_model(&design) {
+        Ok(()) => Vec::new(),
+        Err(found) => found.iter().map(|d| d.diagnostic.code.to_string()).collect(),
+    }
+}
+
+#[test]
+fn an_impl_on_a_module_is_e0130() {
+    // §3.1.4: there is no `impl` on a module; the POM classifier raises it, so the model check gives it back
+    assert_eq!(standard_codes("module M() { }\nimpl M { fn f(self) -> f64 { 1.0 } }\n"), ["E0130"]);
+}
+
+#[test]
+fn a_method_named_like_a_carrier_method_is_e0131() {
+    // §3.1.3: `changed`, `prev`, `others` and `inflow` are the methods of every carrier
+    let codes = standard_codes("struct S { a: f64 }\nimpl S { fn changed(self) -> bool { true } fn prev(self) -> f64 { 1.0 } fn others(self) -> f64 { 1.0 } fn inflow(self) -> f64 { 1.0 } fn fine(self) -> f64 { 1.0 } }\n");
+    assert_eq!(codes, ["E0131", "E0131", "E0131", "E0131"]);
+}
+
+#[test]
+fn a_non_function_item_in_an_impl_on_a_nature_is_e0132() {
+    // §3.1 Resolution: an `impl` on a nature or a bundle holds functions only; a value type may hold constants
+    assert_eq!(standard_codes("impl E { const K: u32 = 1; fn f(self) -> f64 { 1.0 } }\n"), ["E0132"]);
+    assert_eq!(standard_codes("struct Bn { out a: Bit }\nimpl Bn { const K: u32 = 1; }\n"), ["E0132"]);
+    assert_eq!(standard_codes("struct S { a: f64 }\nimpl S { const K: u32 = 1; }\n"), Vec::<String>::new());
+}
+
+#[test]
+fn impl_trait_for_a_bundle_is_e0134() {
+    // §3.1.9: a trait is not implemented for a bundle
+    assert_eq!(standard_codes("trait Tr { fn f(self) -> f64; }\nstruct Bn { out a: Bit }\nimpl Tr for Bn { fn f(self) -> f64 { 1.0 } }\n"), ["E0134"]);
+}
+
+#[test]
+fn impl_trait_for_a_nature_is_accepted() {
+    // §3.1.9, MD-78: a nature takes trait impls, its `self` a handle; a trait that a nature implements is a capability
+    assert_eq!(standard_codes("trait Cap { fn cap(self) -> f64; }\nimpl Cap for E { fn cap(self) -> f64 { 1.0 } }\n"), Vec::<String>::new());
+}
