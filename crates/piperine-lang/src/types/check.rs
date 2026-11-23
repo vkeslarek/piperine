@@ -110,6 +110,8 @@ pub(super) struct Checker<'d> {
     pub(super) poisoned: BTreeSet<DeclId>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
+    /// How many definitions the check is inside: their values are not read from the solve (`classes.rs`).
+    pub(super) in_definition: u32,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
     pub(super) fn_where: bool,
     /// Which names are places and which locals the body assigns (§1.5.12).
@@ -185,6 +187,7 @@ impl<'d> Checker<'d> {
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
             handles: BTreeSet::new(),
+            in_definition: 0,
             fn_where: false,
             places: Places::default(),
             open_literals: BTreeMap::new(),

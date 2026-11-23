@@ -16,7 +16,7 @@ mod call;
 mod carrier;
 mod catalogue;
 mod check;
-mod class;
+mod class; mod classes;
 mod bounds;
 mod closures;
 mod coherence;

@@ -13,8 +13,9 @@ use super::check::Checker;
 use super::class::FunctionClass;
 use super::Ty;
 
-/// The core primitives that read the environment of the solve (§14.4).
-const SOLVE_READING: &[&str] = &["temperature", "gmin", "source_scale", "now", "freq", "analysis"];
+/// The core primitives that read the environment of the solve (§3 table, §14.4): `temperature()` is constant during an
+/// analysis, so a function that reads only it is pure.
+const SOLVE_READING: &[&str] = &["gmin", "source_scale", "now", "freq", "analysis"];
 
 /// What the checker knows of one closure beyond its type.
 #[derive(Debug, Clone)]
@@ -129,6 +130,8 @@ impl Checker<'_> {
         for e in exprs {
             match &self.design.expr_node(*e).kind {
                 ExprKind::Emit { .. } => class.emitting = true,
+                // a probe reads the solve: through a handle a function may write one (§3 rule 7, GN-12)
+                ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => class.solve_reading = true,
                 ExprKind::Call { callee, .. } => match self.callee_resolution(*callee) {
                     Some(Resolution::Builtin(id)) if SOLVE_READING.contains(&id.info().name) => class.solve_reading = true,
                     Some(Resolution::Decl(decl)) => match self.design.decl_data(decl).kind {

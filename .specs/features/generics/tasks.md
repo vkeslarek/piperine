@@ -1154,8 +1154,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `solve_reading_functions_are_accepted_where_the_table_allows` and `a_solve_reading_call_in_a_const_context_is_e0122` pass under `**Run typeshandles**`
-- [ ] Gate check passes: Quick
+- [x] `solve_reading_functions_are_accepted_where_the_table_allows` and `a_solve_reading_call_in_a_const_context_is_e0122` pass under `**Run typeshandles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

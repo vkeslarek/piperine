@@ -90,6 +90,7 @@ impl Checker<'_> {
         }
         self.reach(function);
         self.emitting_call(expr, function);
+        self.check_call_class(expr, function);
         if self.is_trait_function(function) {
             return self.trait_path_call(expr, function, args);
         }

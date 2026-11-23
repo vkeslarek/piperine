@@ -102,3 +102,36 @@ fn a_carrier_method_call_follows_the_lookup_order() {
     let own = "impl Bit { fn prev(self) -> bool { true } }\nmodule Top() { signal c: Bit = false; }\n";
     assert!(generic_sources::GenericSources::standard_codes(own).iter().any(|code| code == "E0131"), "{:?}", generic_sources::GenericSources::standard_codes(own));
 }
+
+#[test]
+fn solve_reading_functions_are_accepted_where_the_table_allows() {
+    // GN-12 AC 1, D13: a function that probes a handle or reads the environment of the solve is solve-reading, and its
+    // calls are accepted in `analog`, a reaction body, a body `let` and a value input
+    let level = "fn level(a: Electrical) -> f64 { v(a) }\nfn clock() -> f64 { now() }\nfn through(a: Electrical) -> f64 { level(a) + clock() }\n";
+    let in_analog = format!("{level}module Top() {{ signal o: Electrical; }}\nanalog for Top {{ v(o) +> through(o); }}\n");
+    assert_eq!(HandleSources::found(&in_analog), []);
+    let in_let = format!("{level}module Top() {{ signal o: Electrical; let t = clock(); }}\nanalog for Top {{ v(o) +> t; }}\n");
+    assert_eq!(HandleSources::found(&in_let), []);
+    let in_reaction = format!("{level}module Top() {{ signal c: Bit = false; signal d: Bit<f64> = 0.0; }}\ndigital for Top {{ on c.rise() {{ d <- clock(); }} }}\n");
+    assert_eq!(HandleSources::found(&in_reaction), []);
+    let in_input = format!("{level}module Leaf(x: f64) {{ }}\nmodule Top() {{ let l = Leaf(clock()); }}\n");
+    assert_eq!(HandleSources::found(&in_input), []);
+}
+
+#[test]
+fn a_solve_reading_call_in_a_const_context_is_e0122() {
+    // GN-12 AC 2, D13: a const and a param default refuse a solve-reading call with `E0122` naming the function and the
+    // position; a definition that reads the solve keeps `E0336` (§8.2.5)
+    let level = "fn level(a: Electrical) -> f64 { v(a) }\nfn clock() -> f64 { now() }\nfn viaclock() -> f64 { clock() }\n";
+    for (item, position) in [
+        ("const T0: f64 = clock();\nmodule Top() { let x = T0; }\n", "a const context"),
+        ("const T0: f64 = viaclock();\nmodule Top() { let x = T0; }\n", "a const context"),
+        ("module Top() { p: f64 = clock(); }\n", "a const context"),
+    ] {
+        let found = HandleSources::found(&format!("{level}{item}"));
+        assert!(found.iter().any(|(code, message)| code == "E0122" && message.contains("solve-reading") && message.contains(position) && (message.contains("`clock`") || message.contains("`viaclock`"))), "{item}: {found:?}");
+    }
+    // a function that reads nothing of the solve is pure, and a const may call it
+    let pure = "fn double(x: f64) -> f64 { x * 2.0 }\nconst T0: f64 = double(1.0);\nmodule Top() { let x = T0; }\n";
+    assert_eq!(HandleSources::found(pure), []);
+}

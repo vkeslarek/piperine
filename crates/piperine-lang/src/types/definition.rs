@@ -95,6 +95,13 @@ impl Checker<'_> {
 
     /// `place = value [after delay];`
     pub(super) fn definition(&mut self, data: &DefinitionData) {
+        self.in_definition += 1;
+        self.definition_parts(data);
+        self.in_definition -= 1;
+    }
+
+    /// The parts of a definition, checked with the position recorded (`definition`).
+    fn definition_parts(&mut self, data: &DefinitionData) {
         let place_span = self.design.expr_node(data.place).span;
         let file = self.file_of_expr(data.place);
         let target = self.drive_target(data.place, "definition");
