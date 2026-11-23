@@ -65,6 +65,21 @@ fn logic_and_matches_bits_give_the_table_values() {
     RUN.assert_commits("patterns.msl", &["t0", "t1", "t2", "t3", "t4"], &[vec![1], vec![1], vec![0], vec![0], vec![1]]);
 }
 
+#[test]
+fn a_logic_bit_rises_into_one_and_falls_into_zero() {
+    // §22.1.5 (EU-20 AC 3, D9): `l.rise()` is a change that ends at 1 and `l.fall()` a change that ends at 0, wherever it
+    // started. `l` steps through 1, 0, Z, 1, X, 0, 1, Z, 0 from X: it rises at steps 1 (from X), 4 (from Z) and 7 (from
+    // 0) and falls at steps 2 (from 1), 6 (from X) and 9 (from Z); 0 to Z, 1 to X and 1 to Z are changes that are no edge
+    let records = RUN.records_of("edges.msl", "Bench");
+    let edges: Vec<(String, Vec<Field>)> = records
+        .into_iter()
+        .map(|record| (record.stream.to_string(), record.fields.iter().map(|(_, field)| field.clone()).collect()))
+        .collect();
+    let step = |kind: &str, at: i128| (kind.to_string(), vec![Field::Int(at)]);
+    let wanted = [step("rise", 1), step("fall", 2), step("rise", 4), step("fall", 6), step("rise", 7), step("fall", 9)];
+    assert_eq!(edges, wanted);
+}
+
 /// A `Logic<N>` as its pin holds it (abi.md §3.1): the plane `binary` then the plane `value`, each `N` bits in the
 /// smallest of one, two, four or eight bytes, little endian.
 struct Pin;

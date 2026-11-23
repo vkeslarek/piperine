@@ -236,7 +236,7 @@ impl Checker<'_> {
     }
 
     /// The number of levels of a `Logic<N>` type, `None` for any other type.
-    fn logic_width(&self, ty: &Ty) -> Option<u64> {
+    pub(super) fn logic_width(&self, ty: &Ty) -> Option<u64> {
         let Ty::Struct(nominal) = ty else { return None };
         if Some(nominal.decl) != self.library_logic() {
             return None;

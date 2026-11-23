@@ -227,8 +227,7 @@ fn live_sources(part_vii: &str) -> Vec<(String, String)> {
 /// `Resolve` is a capability of a nature (`resolved-nets`, after `generics`). The binary part of Part VII is `std`'s
 /// text since T23. A fence leaves this list in the task that makes its text a text of its file;
 /// `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
-const AHEAD_OF_STD: [&str; 9] = [
-    "impl Bit<Logic> {",
+const AHEAD_OF_STD: [&str; 8] = [
     "/// What a module drives into a net that resolves by strength: a level and how hard it is held.",
     "impl Driven {",
     "pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {",
