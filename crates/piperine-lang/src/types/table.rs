@@ -179,6 +179,12 @@ pub enum Callee {
     Module(DeclId),
     /// A method of the project called on a value, by the function it resolves to (§3.7.8).
     Method(DeclId),
+    /// A method a type parameter's bound gives, by the trait's function: the instance a call reaches is
+    /// the implementation for the concrete type, found where the function is instantiated.
+    Bound {
+        /// The trait's function.
+        item: DeclId,
+    },
     /// A function of §22.1 typed by its contract at the concrete type (`merge`, `same`, `cast`,
     /// `logic`, `matches_bits`), until `generics` lets it compile from its stdlib source.
     Intrinsic(Intrinsic),

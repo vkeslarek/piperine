@@ -40,13 +40,22 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Nature),
                 other => matches!(other, Ty::Node(_)),
             },
-            Bound::Trait(trait_decl) => {
+            Bound::Trait { decl, arguments } => {
                 if matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)) {
                     return true;
                 }
+                let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+                let Some(wanted) = wanted else { return false };
                 let table = std::rc::Rc::clone(&self.checker.impls);
                 let checker = &mut *self.checker;
-                table.implements(ty, *trait_decl, &mut |candidate, wanted| BoundCheck::new(&mut *checker).satisfies(candidate, wanted))
+                let entries = table.implementing(ty, *decl, &mut |candidate, bound| BoundCheck::new(&mut *checker).satisfies(candidate, bound));
+                // a bound with no arguments asks for the trait whatever it is written with
+                entries.iter().any(|entry| {
+                    wanted.is_empty() || {
+                        let given: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| checker.lower_type(*argument)).collect();
+                        given.is_some_and(|given| given == wanted)
+                    }
+                })
             }
             Bound::Callable { inputs, output } => {
                 let wanted = self.checker.callable_type(inputs, *output);
@@ -198,7 +207,7 @@ impl Checker<'_> {
     /// bounds it (supertraits included), or, when `param` is a trait's own `Self`, of that trait.
     fn trait_method_of(&self, param: DeclId, name: &str) -> Option<DeclId> {
         let own = matches!(self.design.decl_data(param).kind, DeclKind::Trait(_)).then_some(param);
-        let bounded = self.bounds_of(param).into_iter().filter_map(|bound| if let Bound::Trait(tr) = bound { Some(tr) } else { None });
+        let bounded = self.bounds_of(param).into_iter().filter_map(|bound| if let Bound::Trait { decl, .. } = bound { Some(decl) } else { None });
         let mut pending: Vec<DeclId> = own.into_iter().chain(bounded).collect();
         while let Some(tr) = pending.pop() {
             if let Some(item) = self.impls.item(tr, name).filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Fn(_))) {
@@ -224,7 +233,7 @@ impl Checker<'_> {
     /// The bound as it is written, for messages.
     pub(super) fn bound_name(&self, bound: &Bound) -> String {
         match bound {
-            Bound::Trait(decl) => self.design.decl_data(*decl).name.as_ref().map_or_else(|| "a trait".to_string(), |n| n.text.clone()),
+            Bound::Trait { decl, .. } => self.design.decl_data(*decl).name.as_ref().map_or_else(|| "a trait".to_string(), |n| n.text.clone()),
             Bound::Library(name) => (*name).to_string(),
             Bound::Repr => "Repr".to_string(),
             Bound::Nature => "Nature".to_string(),

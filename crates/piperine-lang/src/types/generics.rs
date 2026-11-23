@@ -5,7 +5,7 @@
 //! (§3.8.7, `E0187`).
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, Design, ExprId, FileId, GenericArgsNode, GenericParamData, PathId, Resolution, TypeId, TypeKind};
+use crate::pom::{DeclId, DeclKind, Design, ExprId, FileId, GenericArgNode, GenericArgsNode, GenericParamData, PathId, Resolution, TypeId, TypeKind};
 
 use super::check::Checker;
 
@@ -32,8 +32,13 @@ pub enum ConstType {
 /// One bound of a type parameter (§3.8.6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Bound {
-    /// A trait of the design.
-    Trait(DeclId),
+    /// A trait of the design, with the arguments it is written with (`Resolve<Driven>`), as written.
+    Trait {
+        /// The trait.
+        decl: DeclId,
+        /// The generic arguments written after its name.
+        arguments: Vec<TypeId>,
+    },
     /// A trait of Appendix H.8, by its spelling (`PartialEq`, `Default`).
     Library(&'static str),
     /// `Repr` (§2).
@@ -134,7 +139,13 @@ impl GenericSignature {
                 },
                 name => LIBRARY_TRAITS.iter().find(|library| **library == name).map(|library| Bound::Library(library)),
             },
-            Resolution::Decl(decl) if matches!(design.decl_data(decl).kind, DeclKind::Trait(_)) => Some(Bound::Trait(decl)),
+            Resolution::Decl(decl) if matches!(design.decl_data(decl).kind, DeclKind::Trait(_)) => {
+                let arguments = match &segment.args {
+                    Some(GenericArgsNode::Angle { args, .. }) => args.iter().filter_map(|arg| if let GenericArgNode::Type(ty) = arg { Some(*ty) } else { None }).collect(),
+                    _ => Vec::new(),
+                };
+                Some(Bound::Trait { decl, arguments })
+            }
             _ => None,
         }
     }

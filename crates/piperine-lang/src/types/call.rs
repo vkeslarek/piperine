@@ -90,6 +90,9 @@ impl Checker<'_> {
         }
         self.reach(function);
         self.emitting_call(expr, function);
+        if self.is_trait_function(function) {
+            return self.trait_path_call(expr, function, args);
+        }
         if self.design.decl_data(function).generics_span.is_some() {
             return self.generic_call(expr, callee, function, args);
         }

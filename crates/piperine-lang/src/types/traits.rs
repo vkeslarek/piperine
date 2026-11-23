@@ -119,7 +119,13 @@ impl<'d> ImplTable<'d> {
 
     /// Whether `ty` implements the trait `trait_decl`, through an `impl` for it or a blanket one.
     pub fn implements(&self, ty: &Ty, trait_decl: DeclId, oracle: BoundOracle<'_>) -> bool {
-        self.impls.iter().any(|entry| entry.trait_decl == Some(trait_decl) && self.applies(entry, ty, oracle))
+        !self.implementing(ty, trait_decl, oracle).is_empty()
+    }
+
+    /// The `impl`s of the trait `trait_decl` that apply to `ty`, in declaration order: one for each
+    /// list of trait arguments the type implements it with (`Resolve<A>` and `Resolve<B>`).
+    pub fn implementing(&self, ty: &Ty, trait_decl: DeclId, oracle: BoundOracle<'_>) -> Vec<&ImplEntry> {
+        self.impls.iter().filter(|entry| entry.trait_decl == Some(trait_decl) && self.applies(entry, ty, oracle)).collect()
     }
 
     /// The traits `trait_decl` requires, as written after its name (§3.7.3).

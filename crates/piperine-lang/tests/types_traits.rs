@@ -4,6 +4,14 @@
 
 #[path = "support/pom.rs"]
 mod support;
+#[allow(dead_code)]
+#[path = "support/generic_sources.rs"]
+mod generic_sources;
+
+use generic_sources::GenericSources;
+
+/// The natures every source places in the open.
+const HEAD: &str = GenericSources::HEAD;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design};
 use piperine_lang::types::{ImplTable, Ty};
@@ -95,25 +103,6 @@ fn the_impl_table_answers_inherent_visible_and_implementation() {
     assert!(table.defines_method("area", |_| false) && !table.defines_method("nothing", |_| false));
 }
 
-/// The natures every source below places in the open.
-const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
-
-/// The type names of the bindings of `Top`'s `analog` block after `items`, as `name = type`, or the codes and messages of the check.
-fn analog_types(items: &str, body: &str, names: &[&str]) -> Result<Vec<String>, Vec<(String, String)>> {
-    let design = support::build(&format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}"));
-    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", support::codes(&design));
-    match piperine_lang::types::Types::check(&design, "Top") {
-        Ok(types) => Ok(names
-            .iter()
-            .map(|name| {
-                let decl = (0..design.decl_count()).map(|i| DeclId(i as u32)).find(|d| matches!(design.decl_data(*d).kind, DeclKind::Binding(_)) && design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == *name)).unwrap_or_else(|| panic!("no binding `{name}`"));
-                format!("{name} = {}", types.local(decl).map_or_else(|| "?".to_string(), |ty| ty.name(&design)))
-            })
-            .collect()),
-        Err(found) => Err(found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()),
-    }
-}
-
 #[test]
 fn methods_associated_functions_and_constants_type_check() {
     // §3.1, §3.7: a method resolves through the inherent `impl` and then through a trait (its own item or
@@ -124,12 +113,12 @@ fn methods_associated_functions_and_constants_type_check() {
                  trait Shape { fn perimeter(self) -> f64; fn double(self) -> f64 { 2.0 } }\n\
                  impl Shape for Sq { fn perimeter(self) -> f64 { 4.0 * self.a } }\n";
     let body = "let s = Sq::make(2.0); let a = s.area(); let t = s.scaled(2.0); let n = Sq::SIDES; let p = s.perimeter(); let d = s.double();";
-    let found = analog_types(items, body, &["s", "a", "t", "n", "p", "d"]).unwrap_or_else(|errors| panic!("{errors:?}"));
+    let found = GenericSources::analog_types(items, body, &["s", "a", "t", "n", "p", "d"]).unwrap_or_else(|errors| panic!("{errors:?}"));
     assert_eq!(found, ["s = struct `Sq`", "a = f64", "t = struct `Sq`", "n = u32", "p = f64", "d = f64"]);
     // an argument of another type, and a call of an associated function as a method, are refused
-    let wrong = analog_types(items, "let s = Sq::make(2.0); let t = s.scaled(true);", &["t"]).expect_err("a bool for an f64");
+    let wrong = GenericSources::analog_types(items, "let s = Sq::make(2.0); let t = s.scaled(true);", &["t"]).expect_err("a bool for an f64");
     assert_eq!(wrong[0].0, "E0180", "{wrong:?}");
-    let no_self = analog_types(items, "let s = Sq::make(2.0); let t = s.make(1.0);", &["t"]).expect_err("`make` has no `self`");
+    let no_self = GenericSources::analog_types(items, "let s = Sq::make(2.0); let t = s.make(1.0);", &["t"]).expect_err("`make` has no `self`");
     assert!(no_self[0].0 == "E0161" && no_self[0].1.contains("associated function with no `self`"), "{no_self:?}");
 }
 
@@ -144,87 +133,66 @@ fn self_outside_an_impl_or_not_first_is_e0187() {
     assert!(found[1].diagnostic.message.contains("must be the first parameter"), "{:?}", found[1]);
 }
 
-/// The diagnostic codes of the model check of `src` over the embedded standard library.
-fn standard_codes(src: &str) -> Vec<String> {
-    let design = Design::builder().source("top.msl", format!("{HEAD}{src}")).build();
-    match piperine_lang::types::Types::check_model(&design) {
-        Ok(()) => Vec::new(),
-        Err(found) => found.iter().map(|d| d.diagnostic.code.to_string()).collect(),
-    }
-}
-
 #[test]
 fn an_impl_on_a_module_is_e0130() {
     // §3.1.4: there is no `impl` on a module; the POM classifier raises it, so the model check gives it back
-    assert_eq!(standard_codes("module M() { }\nimpl M { fn f(self) -> f64 { 1.0 } }\n"), ["E0130"]);
+    assert_eq!(GenericSources::standard_codes("module M() { }\nimpl M { fn f(self) -> f64 { 1.0 } }\n"), ["E0130"]);
 }
 
 #[test]
 fn a_method_named_like_a_carrier_method_is_e0131() {
     // §3.1.3: `changed`, `prev`, `others` and `inflow` are the methods of every carrier
-    let codes = standard_codes("struct S { a: f64 }\nimpl S { fn changed(self) -> bool { true } fn prev(self) -> f64 { 1.0 } fn others(self) -> f64 { 1.0 } fn inflow(self) -> f64 { 1.0 } fn fine(self) -> f64 { 1.0 } }\n");
+    let codes = GenericSources::standard_codes("struct S { a: f64 }\nimpl S { fn changed(self) -> bool { true } fn prev(self) -> f64 { 1.0 } fn others(self) -> f64 { 1.0 } fn inflow(self) -> f64 { 1.0 } fn fine(self) -> f64 { 1.0 } }\n");
     assert_eq!(codes, ["E0131", "E0131", "E0131", "E0131"]);
 }
 
 #[test]
 fn a_non_function_item_in_an_impl_on_a_nature_is_e0132() {
     // §3.1 Resolution: an `impl` on a nature or a bundle holds functions only; a value type may hold constants
-    assert_eq!(standard_codes("impl E { const K: u32 = 1; fn f(self) -> f64 { 1.0 } }\n"), ["E0132"]);
-    assert_eq!(standard_codes("struct Bn { out a: Bit }\nimpl Bn { const K: u32 = 1; }\n"), ["E0132"]);
-    assert_eq!(standard_codes("struct S { a: f64 }\nimpl S { const K: u32 = 1; }\n"), Vec::<String>::new());
+    assert_eq!(GenericSources::standard_codes("impl E { const K: u32 = 1; fn f(self) -> f64 { 1.0 } }\n"), ["E0132"]);
+    assert_eq!(GenericSources::standard_codes("struct Bn { out a: Bit }\nimpl Bn { const K: u32 = 1; }\n"), ["E0132"]);
+    assert_eq!(GenericSources::standard_codes("struct S { a: f64 }\nimpl S { const K: u32 = 1; }\n"), Vec::<String>::new());
 }
 
 #[test]
 fn impl_trait_for_a_bundle_is_e0134() {
     // §3.1.9: a trait is not implemented for a bundle
-    assert_eq!(standard_codes("trait Tr { fn f(self) -> f64; }\nstruct Bn { out a: Bit }\nimpl Tr for Bn { fn f(self) -> f64 { 1.0 } }\n"), ["E0134"]);
+    assert_eq!(GenericSources::standard_codes("trait Tr { fn f(self) -> f64; }\nstruct Bn { out a: Bit }\nimpl Tr for Bn { fn f(self) -> f64 { 1.0 } }\n"), ["E0134"]);
 }
 
 #[test]
 fn impl_trait_for_a_nature_is_accepted() {
     // §3.1.9, MD-78: a nature takes trait impls, its `self` a handle; a trait that a nature implements is a capability
-    assert_eq!(standard_codes("trait Cap { fn cap(self) -> f64; }\nimpl Cap for E { fn cap(self) -> f64 { 1.0 } }\n"), Vec::<String>::new());
-}
-
-/// The `E0187` messages of the model check of `src`, in order, and nothing else (every other code fails the test).
-fn e0187_messages(src: &str) -> Vec<String> {
-    let design = Design::builder().source("top.msl", format!("{HEAD}{src}")).build();
-    match piperine_lang::types::Types::check_model(&design) {
-        Ok(()) => Vec::new(),
-        Err(found) => {
-            assert!(found.iter().all(|d| d.diagnostic.code == "E0187"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
-            found.iter().map(|d| d.diagnostic.message.clone()).collect()
-        }
-    }
+    assert_eq!(GenericSources::standard_codes("trait Cap { fn cap(self) -> f64; }\nimpl Cap for E { fn cap(self) -> f64 { 1.0 } }\n"), Vec::<String>::new());
 }
 
 #[test]
 fn a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type() {
     // §3.7.4: every item of the trait without a default is defined; the one with a default may be left out
-    let found = e0187_messages("trait Shape { fn area(self) -> f64; fn sides(self) -> u32 { 3 } }\nstruct Sq { a: f64 }\nimpl Shape for Sq { }\n");
+    let found = GenericSources::e0187_messages("trait Shape { fn area(self) -> f64; fn sides(self) -> u32 { 3 } }\nstruct Sq { a: f64 }\nimpl Shape for Sq { }\n");
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].contains("`impl Shape for Sq` leaves out `area`"), "{}", found[0]);
-    assert!(e0187_messages("trait Shape { fn sides(self) -> u32 { 3 } }\nstruct Sq { a: f64 }\nimpl Shape for Sq { }\n").is_empty());
+    assert!(GenericSources::e0187_messages("trait Shape { fn sides(self) -> u32 { 3 } }\nstruct Sq { a: f64 }\nimpl Shape for Sq { }\n").is_empty());
 }
 
 #[test]
 fn extra_items_signatures_supertraits_crate_and_pub_are_e0187() {
     let shape = "trait Shape { fn area(self) -> f64; }\nstruct Sq { a: f64 }\n";
     // §3.7.4: an item the trait lacks, and an item of another signature
-    let extra = e0187_messages(&format!("{shape}impl Shape for Sq {{ fn area(self) -> f64 {{ 1.0 }} fn extra(self) -> f64 {{ 1.0 }} }}\n"));
+    let extra = GenericSources::e0187_messages(&format!("{shape}impl Shape for Sq {{ fn area(self) -> f64 {{ 1.0 }} fn extra(self) -> f64 {{ 1.0 }} }}\n"));
     assert!(extra.len() == 1 && extra[0].contains("`impl Shape for Sq` defines `extra`, which the trait does not have"), "{extra:?}");
-    let signature = e0187_messages(&format!("{shape}impl Shape for Sq {{ fn area(self) -> bool {{ true }} }}\n"));
+    let signature = GenericSources::e0187_messages(&format!("{shape}impl Shape for Sq {{ fn area(self) -> bool {{ true }} }}\n"));
     assert!(signature.len() == 1 && signature[0].contains("`area` has the type `fn(struct `Sq`) -> bool`, the trait gives it `fn(struct `Sq`) -> f64`"), "{signature:?}");
     // §3.7.3: a supertrait the type does not implement
-    let supertrait = e0187_messages(&format!("{shape}trait Solid: Shape {{ fn volume(self) -> f64; }}\nimpl Solid for Sq {{ fn volume(self) -> f64 {{ 1.0 }} }}\n"));
+    let supertrait = GenericSources::e0187_messages(&format!("{shape}trait Solid: Shape {{ fn volume(self) -> f64; }}\nimpl Solid for Sq {{ fn volume(self) -> f64 {{ 1.0 }} }}\n"));
     assert!(supertrait.len() == 1 && supertrait[0].contains("does not implement the supertrait `Shape`"), "{supertrait:?}");
     // §3.7.11: no `pub` on an item of a trait impl
-    let public = e0187_messages(&format!("{shape}impl Shape for Sq {{ pub fn area(self) -> f64 {{ 1.0 }} }}\n"));
+    let public = GenericSources::e0187_messages(&format!("{shape}impl Shape for Sq {{ pub fn area(self) -> f64 {{ 1.0 }} }}\n"));
     assert!(public.len() == 1 && public[0].contains("written `pub`"), "{public:?}");
     // §3.7.8, MD-78: the arguments a trait takes are named by the `impl`, and each item is checked under them
     let generic = "trait Conv<X, Y = X> { fn conv(self, x: X) -> Y; }\nstruct S { a: f64 }\n";
-    assert!(e0187_messages(&format!("{generic}impl Conv<f64> for S {{ fn conv(self, x: f64) -> f64 {{ x }} }}\n")).is_empty(), "the default Y = X is f64");
-    let under = e0187_messages(&format!("{generic}impl Conv<f64, u8> for S {{ fn conv(self, x: f64) -> f64 {{ x }} }}\n"));
+    assert!(GenericSources::e0187_messages(&format!("{generic}impl Conv<f64> for S {{ fn conv(self, x: f64) -> f64 {{ x }} }}\n")).is_empty(), "the default Y = X is f64");
+    let under = GenericSources::e0187_messages(&format!("{generic}impl Conv<f64, u8> for S {{ fn conv(self, x: f64) -> f64 {{ x }} }}\n"));
     assert!(under.len() == 1 && under[0].contains("`conv`"), "{under:?}");
 }
 
@@ -246,4 +214,41 @@ fn an_impl_is_written_in_the_crate_of_the_trait_or_of_the_type() {
         assert_eq!(found.len(), expected, "{src}: {found:?}");
         assert!(found.iter().all(|d| d.diagnostic.message.contains("declares neither the trait nor the type")), "{found:?}");
     }
+}
+
+#[test]
+fn trait_methods_resolve_on_values_through_bounds_and_by_path() {
+    // §3.7.8: a trait's method on a value is the impl's item or the trait's default (`Callee::Method`), through a
+    // bound it is the trait's function (`Callee::Bound`), and `Tr::f(x)` and `T::f(x)` call a trait item by path
+    let items = "trait Shape { fn area(self) -> f64; fn doubled(self) -> f64 { 2.0 * self.area() } }\n\
+                 struct Sq { a: f64 }\n\
+                 impl Shape for Sq { fn area(self) -> f64 { self.a } }\n\
+                 fn through<T: Shape>(x: T) -> f64 { x.area() + T::area(x) + Shape::area(x) + x.doubled() }\n";
+    let body = "let s = Sq { a: 2.0 }; let a = s.area(); let b = s.doubled(); let c = Shape::area(s); let d = through(s);";
+    let found = GenericSources::analog_types(items, body, &["a", "b", "c", "d"]).unwrap_or_else(|errors| panic!("{errors:?}"));
+    assert_eq!(found, ["a = f64", "b = f64", "c = f64", "d = f64"]);
+    let design = support::build(&format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}"));
+    let types = piperine_lang::types::Types::check(&design, "Top").expect("the source checks");
+    let table = Items { design: &design };
+    let (area, doubled) = (table.trait_fn("Shape", "area"), table.trait_fn("Shape", "doubled"));
+    let callees: Vec<_> = (0..design.expr_count()).filter_map(|i| types.callee(piperine_lang::pom::ExprId(i as u32))).collect();
+    let bound = callees.iter().filter(|callee| matches!(callee, piperine_lang::types::Callee::Bound { item } if *item == area || *item == doubled)).count();
+    assert_eq!(bound, 5, "x.area(), T::area(x), Shape::area(x) and x.doubled() inside `through`, and self.area() in the default: {callees:?}");
+    assert!(callees.iter().any(|callee| matches!(callee, piperine_lang::types::Callee::Method(item) if *item == doubled)), "s.doubled() is the trait's default");
+    let own = callees.iter().filter(|callee| matches!(callee, piperine_lang::types::Callee::Method(item) if *item != doubled)).count();
+    assert_eq!(own, 2, "s.area() and Shape::area(s) are the impl's own item: {callees:?}");
+    let missing = GenericSources::analog_types(items, "let s = 1.0; let c = Shape::area(s);", &["c"]).expect_err("f64 does not implement Shape");
+    assert_eq!(missing[0].0, "E0187", "{missing:?}");
+}
+
+#[test]
+fn a_bound_with_trait_arguments_is_met_by_the_impl_naming_them() {
+    // MD-78: `T: Conv<u8>` is satisfied by `impl Conv<u8> for S` and not by an impl for other arguments
+    let items = "trait Conv<X> { fn conv(self, x: X) -> X; }\nstruct S { a: f64 }\n\
+                 impl Conv<u8> for S { fn conv(self, x: u8) -> u8 { x } }\n\
+                 fn takes_u8<T: Conv<u8>>(t: T) -> u8 { 1 }\nfn takes_bool<T: Conv<bool>>(t: T) -> u8 { 1 }\n";
+    let met = GenericSources::analog_types(items, "let s = S { a: 1.0 }; let r = takes_u8(s);", &["r"]);
+    assert_eq!(met, Ok(vec!["r = u8".to_string()]));
+    let unmet = GenericSources::analog_types(items, "let s = S { a: 1.0 }; let r = takes_bool(s);", &["r"]).expect_err("an impl for u8 is not one for bool");
+    assert!(unmet[0].0 == "E0187" && unmet[0].1.contains("does not satisfy the bound `Conv`"), "{unmet:?}");
 }

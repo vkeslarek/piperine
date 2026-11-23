@@ -432,7 +432,7 @@ impl Elaboration<'_, '_> {
                 None
             }
             // A method of the project is typed (generics T25) and lowered by its own task (T35).
-            (_, Some(Callee::Method(_))) => {
+            (_, Some(Callee::Method(_) | Callee::Bound { .. })) => {
                 self.unsupported(scope.file, span, "a method call");
                 None
             }

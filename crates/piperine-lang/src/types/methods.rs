@@ -46,6 +46,38 @@ impl Checker<'_> {
         }
     }
 
+    /// Whether `function` is declared in a trait.
+    pub(super) fn is_trait_function(&self, function: DeclId) -> bool {
+        self.design.decl_data(function).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)))
+    }
+
+    /// `Tr::f(x, ..)` and `T::f(x, ..)`: a trait's function called by its path (§3.7.8). The first
+    /// argument is the `self`; the implementation is the one of its type, or, for a value of a type
+    /// parameter, the trait's own function. `E0187` when the type does not implement the trait.
+    pub(super) fn trait_path_call(&mut self, expr: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let Some((first, rest)) = args.split_first() else {
+            self.unsupported(file, span, "a call of a trait's function with no `self`");
+            return None;
+        };
+        let recv_ty = self.infer(first.value)?;
+        if matches!(recv_ty, Ty::Param(_)) {
+            return self.method_call_of(expr, first.value, &recv_ty, function, rest);
+        }
+        let table = std::rc::Rc::clone(&self.impls);
+        let item = table.implementation(function, &recv_ty, &mut |ty, bound| BoundCheck::new(self).satisfies(ty, bound));
+        let Some(item) = item else {
+            let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            self.coded(file, "E0187", span, format!("`{}` does not implement the trait that gives `{name}` (§3.7.8)", recv_ty.name(self.design)), "a type that does not implement the trait");
+            for arg in rest {
+                self.infer(arg.value);
+            }
+            return None;
+        };
+        self.method_call_of(expr, first.value, &recv_ty, item, rest)
+    }
+
     /// Whether `function` is a function written in an `impl` or a trait: a method of the project.
     pub(super) fn is_project_method(&self, function: DeclId) -> bool {
         matches!(self.design.decl_data(function).kind, DeclKind::Fn(_))
@@ -93,7 +125,8 @@ impl Checker<'_> {
         } else if !recv_ty.fits(own) {
             self.mismatch(file, self.design.expr_node(recv).span, own, recv_ty);
         }
-        self.callees.insert(expr, Callee::Method(function));
+        let callee = if matches!(recv_ty, Ty::Param(_)) { Callee::Bound { item: function } } else { Callee::Method(function) };
+        self.callees.insert(expr, callee);
         let rest: Vec<Ty> = rest.iter().map(|param| substitution.apply(param)).collect();
         self.apply(expr, &rest, args)?;
         Some(substitution.apply(&ret))
