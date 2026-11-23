@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{Context, NodeIdentifier};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -34,6 +34,22 @@ impl Delayed {
     /// The node `<top>.<name>`.
     fn node(ir: &piperine_ir::Ir, top: &str, name: &str) -> NodeIdentifier {
         NodeIdentifier::Anonymous(ir.node_at(&format!("{top}.{name}")).expect("a node").id().index())
+    }
+
+    /// `(frequency, v(o))` of the AC sweep of `top` over `frequencies` (a point each, in hertz), as `(re, im)`.
+    fn sweep(top: &str, frequencies: &[f64]) -> Vec<(f64, (f64, f64))> {
+        let mut running = Self::project().compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let o = Self::node(&running.ir, top, "o");
+        let mut ac = running.circuit.ac(Context::default()).expect("ac");
+        let mut rows = Vec::new();
+        for frequency in frequencies {
+            let options = AcSweepAnalysisOptions { start_frequency: *frequency, stop_frequency: *frequency, steps: 1, logarithmic: true };
+            let solved = ac.solve_sweep(options).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+            let step = solved.iter().next().expect("a point");
+            let value = step.get_node(&o).expect("v(o)");
+            rows.push((*frequency, (value.re, value.im)));
+        }
+        rows
     }
 
     /// `(time, v(o))` of every accepted point of the transient of `top` to `stop`, steps of at most `step`.
@@ -108,5 +124,18 @@ fn a_negative_td_or_a_non_positive_max_fails_with_e0453() {
         };
         assert!(error.contains("E0453"), "{top}: {error}");
         assert!(error.contains(top), "{top} names the instance: {error}");
+    }
+}
+
+#[test]
+fn a_delayed_stimulus_is_the_phasor_turned_by_the_delay() {
+    // AO-02 AC 1 (§14.3.1, §11.1.5): `delay(ac_stim(2, 0.5), 1 us)` is `2 exp(j (0.5 - 2 pi f td))` in the sweep,
+    // closed form at each frequency; a stimulus the delay dropped would give 0, one it did not turn the phasor of
+    // `2 exp(0.5 j)` at every frequency.
+    for (frequency, (re, im)) in Delayed::sweep("DelayedStimulusBench", &[1e3, 1e5, 1e6]) {
+        let phase = 0.5 - std::f64::consts::TAU * frequency * 1e-6;
+        let at = |quantity: &'static str| Point::new("delayed ac_stim", quantity, Coordinate::Frequency(frequency));
+        ToleranceContract::AC_MAGNITUDE.assert(&at("re v(o)"), 2.0 * phase.cos(), re);
+        ToleranceContract::AC_MAGNITUDE.assert(&at("im v(o)"), 2.0 * phase.sin(), im);
     }
 }

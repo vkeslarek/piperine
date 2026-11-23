@@ -117,3 +117,39 @@ fn an_ac_sweep_takes_ddx_at_the_operating_point() {
         ToleranceContract::AC_MAGNITUDE.assert(&Point::new("ddx ac", "|v(o)|", Coordinate::Frequency(step.frequency)), g * 1e3, step.get_node(&o).expect("v(o)").norm());
     }
 }
+
+#[test]
+fn an_ac_stim_read_by_a_ddx_is_a_constant_of_the_derivative() {
+    // §14.3.1, §14.2.3: `ddx(ac_stim(2) * x + 3 x, x)` is `ac_stim(2) + 3`: the stimulus is no function of the probe, so its
+    // derivative is 0 and the product rule leaves `ac_stim`. The operating point reads 3 (the stimulus is 0 there),
+    // the sweep reads the stimulus 2 at the output, at every frequency.
+    assert!(Partial::within(3.0, Partial::output("StimulusDdxBench"), 1e-12));
+    let mut running = Partial::project().compile("StimulusDdxBench").unwrap_or_else(|r| panic!("{r}"));
+    let o = NodeIdentifier::Anonymous(running.ir.node_at("StimulusDdxBench.o").expect("node o").id().index());
+    let mut ac = running.circuit.ac(Context::default()).expect("ac");
+    let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 1e5, steps: 3, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+    for step in sweep.iter() {
+        ToleranceContract::AC_MAGNITUDE.assert(&Point::new("ddx ac_stim", "|v(o)|", Coordinate::Frequency(step.frequency)), 2.0, step.get_node(&o).expect("v(o)").norm());
+    }
+}
+
+#[test]
+fn ddx_of_an_ac_stim_alone_is_zero_and_the_site_still_runs() {
+    // §14.2.3: the derivative of the stimulus against a probe is 0 (it reads no probe), at the operating
+    // point and in the sweep, where the stimulus site is still evaluated without a statement that reads it.
+    assert!(Partial::output("StimulusAloneDdxBench").abs() <= 1e-12);
+    let mut running = Partial::project().compile("StimulusAloneDdxBench").unwrap_or_else(|r| panic!("{r}"));
+    let o = NodeIdentifier::Anonymous(running.ir.node_at("StimulusAloneDdxBench.o").expect("node o").id().index());
+    let mut ac = running.circuit.ac(Context::default()).expect("ac");
+    let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 1e3, steps: 1, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+    for step in sweep.iter() {
+        ToleranceContract::AC_MAGNITUDE.assert(&Point::new("ddx of ac_stim", "|v(o)|", Coordinate::Frequency(step.frequency)), 0.0, step.get_node(&o).expect("v(o)").norm());
+    }
+}
+
+#[test]
+fn an_ac_stim_read_by_a_ddt_state_compiles_and_reads_zero_at_the_operating_point() {
+    // §14.3.1: a derivative site's state is a value input that only `analog` reads: `ddt(ac_stim(2) + v(a))` runs, and
+    // is 0 at the operating point (the stimulus is 0 there and `v(a)` is held).
+    assert!(Partial::output("StimulusStateBench").abs() <= 1e-12);
+}

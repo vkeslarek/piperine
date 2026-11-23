@@ -185,8 +185,9 @@ fn analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run() {
     // output density is `r * sqrt(1e-18)`, not the 1e-16 of the other. It is true in the operating point
     // too: the source of `OperatingPointBench` is 2 V there (1 V elsewhere), and the density reads it, so
     // the output is `r * sqrt(1e-18 * 2^2)`. `ac_stim` is 0 in the sweep: the density of a bench that
-    // drives a stimulus of 1 A into the node stays `r * sqrt(1e-18)`, while its AC run reads the 1 kV the
-    // stimulus gives (so the stimulus is real, and the sweep leaves it out).
+    // drives a stimulus of 1 A into the node stays `r * sqrt(1e-18)` although the density itself reads an
+    // `ac_stim` of 3 (`1e-18 * (1 + ac_stim(3))`, so a sweep that kept the stimulus would give 4e-18), while
+    // its AC run reads the 1 kV the stimulus gives (so the stimulus is real, and the sweep leaves it out).
     Hiss::assert_densities("analysis(Noise)", &Hiss::density("AnalysisBench", "o"), |_| 1e3 * (1e-18_f64).sqrt(), 1e-9);
     Hiss::assert_densities("operating point", &Hiss::density("OperatingPointBench", "o"), |_| 1e3 * (4e-18_f64).sqrt(), 1e-9);
     Hiss::assert_densities("ac_stim", &Hiss::density("StimulusBench", "o"), |_| 1e3 * (1e-18_f64).sqrt(), 1e-9);

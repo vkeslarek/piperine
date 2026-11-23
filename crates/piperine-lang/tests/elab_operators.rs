@@ -64,6 +64,25 @@ fn ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_litera
 }
 
 #[test]
+fn an_ac_stim_read_by_a_noise_density_a_delay_input_or_a_ddx_value_is_a_site_of_the_body() {
+    // §14.3.1: `ac_stim` is allowed where `ddx` is, a value input among them. Each form elaborates to a
+    // well-formed body (no `P0004`) whose `ac_stim` site is numbered in the body, whatever primitive reads it.
+    let forms = [
+        "v(o, gnd) +> noise(ac_stim(1.0) + 1e-18, \"n\");",
+        "v(o, gnd) +> delay(ac_stim(1.0) + v(a, gnd), 1n);",
+        "v(o, gnd) +> ddx(ac_stim(1.0) * v(a, gnd), v(a, gnd));",
+        "v(o, gnd) +> ddx(ac_stim(1.0), v(a, gnd));",
+        "v(o, gnd) +> k * ddt(ac_stim(1.0) + v(a, gnd)) * v(a, gnd);",
+        "if ac_stim(1.0) > 0.5 { v(o, gnd) +> 1.0; } else { v(o, gnd) +> 2.0; }",
+    ];
+    for form in forms {
+        let ir = Elab::ir(&Sources::design(form), "Top");
+        let body = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+        assert_eq!(body.stims().len(), 1, "{form}");
+    }
+}
+
+#[test]
 fn a_delay_without_max_whose_td_varies_is_e0452() {
     // AO-02 AC 5 (§14.6.2): without `max`, `td` is constant during an analysis: params, constants,
     // `temperature()`. A `td` that reads a probe or `now()` is `E0452` naming the placement (the

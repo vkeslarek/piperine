@@ -170,3 +170,36 @@ module FlowOfAFlowBranchBench() {
     let f = FlowOfAFlowBranch(a, o);
 }
 analog for FlowOfAFlowBranchBench { v(a, gnd) +> 0.4; }
+
+/// `ac_stim` read by the value of a `ddx` (§14.3.1): `ddx(ac_stim(2) * x + 3 x, x)` is `ac_stim(2) + 3` (the stimulus
+/// is no function of the probe, so its own derivative is 0): 3 at the operating point, and the stimulus `2` in a sweep.
+module StimulusDdxBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+}
+analog for StimulusDdxBench {
+    v(a, gnd) +> 0.4;
+    v(o, gnd) +> ddx(ac_stim(2.0) * v(a, gnd) + 3.0 * v(a, gnd), v(a, gnd));
+}
+
+/// `ddx(ac_stim(2), x)` is 0: the stimulus is no function of the probe, so the derivative reads no stimulus and the
+/// site is still a site of the body (§14.3.1, §14.2.3).
+module StimulusAloneDdxBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+}
+analog for StimulusAloneDdxBench {
+    v(a, gnd) +> 0.4;
+    v(o, gnd) +> ddx(ac_stim(2.0), v(a, gnd));
+}
+
+/// `ac_stim` read by the state of a `ddt` that is no whole addend (a derivative site): a value input like the
+/// others (§14.3.1), whose derivative is 0 at the operating point.
+module StimulusStateBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+}
+analog for StimulusStateBench {
+    v(a, gnd) +> 0.4;
+    v(o, gnd) +> ddt(ac_stim(2.0) + v(a, gnd)) * v(a, gnd);
+}

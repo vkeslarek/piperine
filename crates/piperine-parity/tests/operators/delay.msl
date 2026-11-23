@@ -64,3 +64,13 @@ analog for LimitedDelayBench {
     let seen = limit(v(src, gnd), |new, old| new, 1.0);
     v(o, gnd) +> delay(seen, 1m);
 }
+
+/// `delay` of a stimulus (§14.3.1, §11.1.5): in a sweep the response is `exp(-j w td)` times the phasor of the
+/// stimulus, `2 exp(0.5 j)`, so `v(o)` at a frequency `f` is `2 exp(j (0.5 - 2 pi f td))`; at the operating point
+/// the stimulus is 0.
+module DelayedStimulusBench() {
+    signal o: Electrical;
+}
+analog for DelayedStimulusBench {
+    v(o, gnd) +> delay(ac_stim(2.0, 0.5), 1u);
+}

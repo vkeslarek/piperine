@@ -64,6 +64,10 @@ pub(super) struct Scope {
     /// Code a core primitive evaluates at a converged solution (a `noise` density, a `delay` input): a `limit` there is
     /// its argument, since limiting changes no iterate that has stopped moving (§14.7.4).
     pub(super) at_solution: bool,
+    /// Code a primitive evaluates on its own, outside every statement of the `analog` block (a `noise` density, a
+    /// `delay` input, a `ddt` state): an `ac_stim` read there is also a statement of the block, which is where the
+    /// stimulus site is written (`analog.rs`).
+    pub(super) value_input: bool,
     /// Code that is differentiated symbolically (a `ddx` value): a `fn` called there is expanded where it stands
     /// (`expansion.rs`), not called.
     pub(super) expands_functions: bool,
@@ -112,8 +116,17 @@ pub(super) struct Scope {
 }
 
 impl Scope {
+    /// Takes over the `ac_stim` sites, and the statements that write them, a standalone scope made from a copy of this
+    /// one's (`standalone_scope`): so a stimulus read inside a value a primitive evaluates on its own (a `noise`
+    /// density, a `delay` input, a `ddt` state, a `ddx` value) is a site of the body. The `limit` sites it made stay
+    /// its own: a `limit` there is read at a solution (`at_solution`) or differentiated through, never evaluated.
+    pub(super) fn adopt_stimuli(&mut self, standalone: &mut Scope) {
+        self.stims = standalone.stims.clone();
+        self.hoisted_steps.append(&mut standalone.hoisted_steps);
+    }
+
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, expands_functions: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, expands_functions: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 

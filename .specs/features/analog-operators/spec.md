@@ -88,6 +88,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 9. WHEN an AC sweep linearizes a contribution `i(o, gnd) +> ddx(id, v(a, k)) * v(in);` THEN the system SHALL use the value of `ddx` at the operating point: the gain `|v(o)/v(in)|` equals that value times the load of `o`, within `AC_MAGNITUDE`.
 10. WHEN `e` calls a `fn` (`ddx(shockley(v(a, k), is, nvt), v(a, k))`, the `fn` having `let`s and a value) THEN the system SHALL differentiate its body with the parameters read as the arguments, so the result equals the derivative of the same expression written in place; a `fn` whose body is more than `let`s and a value SHALL be `P0001` naming the statement. (Added in the closing round, finding 26: a `fn` call was refused.)
 11. WHEN the second argument is the flow of a branch the module gives no potential contribution THEN the system SHALL give 0: that flow is no unknown and any other branch is held constant (§14.2.3). (Added in the closing round, finding 26.)
+12. WHEN the value of a `ddx` reads `ac_stim` (`ddx(ac_stim(2.0) * v(a, gnd) + 3.0 * v(a, gnd), v(a, gnd))`) THEN the system SHALL run it: the stimulus is no function of the probe, so its derivative is 0 and the result is `ac_stim(2.0) + 3.0`: 3 at the operating point and the stimulus 2 in an AC sweep (§14.3.1, §14.2.3). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Independent Test**: transpile tests against the closed forms; elaboration tests for `E0450` and `E0451`.
 
@@ -108,6 +109,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 5. IF `delay` has no `max` and its `td` is not constant during an analysis after value inputs are substituted THEN the system SHALL report `E0452` at elaboration naming the instance.
 6. IF `td` is negative, or `max` is not positive, during a run THEN the system SHALL fail the run with `E0453` naming the instance.
 7. WHEN `delay_tline` is swept in AC THEN the system SHALL give `0.5 · exp(−jω · 1.05 µs)` (the twin's `td`, AC 1) and agree with ngspice under `AC_MAGNITUDE` and `AC_PHASE`.
+8. WHEN a `delay` input reads `ac_stim` (`delay(ac_stim(2.0, 0.5), 1u)`) THEN the system SHALL give, in an AC sweep, the phasor of the stimulus turned by the delay, `2 · exp(j (0.5 − ω · td))`, and 0 at the operating point (§14.3.1, §11.1.5). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Independent Test**: `cargo test -p piperine-parity --test parity_tran --test parity_ac` for `delay_tline`; elaboration tests for `E0452`.
 
@@ -130,6 +132,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 7. WHEN a reaction or an event argument reads a `noise` result THEN the system SHALL give 0.
 8. WHEN two sources share a `name` THEN the system SHALL keep them independent: the name groups, it does not correlate.
 9. WHEN a `noise` density or a `delay` input reads a `let` bound to a `limit` THEN the system SHALL read it as the `limit`'s argument: both are evaluated at a solution, where the limited iterate is the unlimited one (§14.7.4). (Added in the closing round, finding 26: the form was refused as "a `let` inside a `noise`".)
+10. WHEN a `noise` density reads `ac_stim` THEN the system SHALL give 0 for it in a noise sweep and its operating point: the stimulus is the small-signal drive of an AC sweep, which a noise run does not carry (§14.3.1, §16.2). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Acceptance Criteria** (AO-04, the stdlib noise modules):
 

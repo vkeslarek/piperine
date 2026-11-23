@@ -254,7 +254,9 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let site = scope.stims.len() as u32;
-        scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone(), enabled: None });
+        // the first site is the analysis `ac`; a later one is numbered, since the backends print a site by its name
+        let name = if site == 0 { "ac".to_string() } else { format!("ac{site}") };
+        scope.stims.push(Site { name, origin: origin.clone(), enabled: None });
         let guarded = !scope.guards.is_empty();
         let mut standalone = Self::standalone_scope(scope);
         let mut lowered = Vec::new();
@@ -262,13 +264,22 @@ impl Elaboration<'_, '_> {
             let value = if guarded { self.lower_expr(&mut standalone, *arg) } else { self.lower_expr(scope, *arg) };
             lowered.push(value);
         }
+        if guarded {
+            scope.adopt_stimuli(&mut standalone);
+        }
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a guarded `ac_stim` whose input binds a local");
             return None;
         }
         let mut lowered = lowered.into_iter();
         let (mag, phase) = (lowered.next()??, lowered.next().flatten());
-        Some(self.emit(Expr::Stim { site, mag, phase }, ty, origin))
+        let stimulus = self.emit(Expr::Stim { site, mag, phase }, ty, origin);
+        if scope.value_input {
+            // the site function is found in a statement of the block: the value input reads the site, this writes it
+            let write = self.stmt(piperine_ir::Stmt::Expr(stimulus));
+            scope.hoisted_steps.push(write);
+        }
+        Some(stimulus)
     }
 
     /// Whether a `limit` or `ac_stim` may stand where `scope` is: not inside an `Option` method

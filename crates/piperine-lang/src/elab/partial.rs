@@ -24,9 +24,11 @@ impl Elaboration<'_, '_> {
         let unknown = self.ddx_variable(scope, *probe)?;
         let mut standalone = Self::standalone_scope(scope);
         standalone.expands_functions = true;
+        standalone.value_input = true;
         // a local the derivative would read is refused by the pass, naming it; the locals of the
         // closure a `limit` takes are never read, `limit` being transparent
         let expr = self.lower_expr(&mut standalone, *value)?;
+        scope.adopt_stimuli(&mut standalone);
         if self.reads_a_function(expr) {
             self.unsupported(scope.file, span, "a call inside a `ddx` that is no `fn` it can expand (a method, a generic `fn`)");
             return None;

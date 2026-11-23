@@ -1275,7 +1275,7 @@ Proof: run apinoise | test an_output_or_input_that_names_nothing_is_e0801 ... ok
 **C33** - A noise run that gives `stop` or `sweep` is `P0010`. (AO-05, AC 6; T11)
 Proof: run apinoise | test a_key_of_another_analysis_is_p0010_in_a_noise_run ... ok
 
-**C34** - `analysis(Noise)` is true in a noise run's operating point (a source of 2 V there sets the density) and sweep, and `ac_stim` is 0 in the sweep (a stimulus driven into the node leaves the density the noise alone, while the AC run reads it). (AO-05, AC 7; T34)
+**C34** - `analysis(Noise)` is true in a noise run's operating point (a source of 2 V there sets the density) and sweep, and `ac_stim` is 0 in the sweep (a density that reads `ac_stim(3.0)` itself stays its `1e-18`, and a stimulus driven into the node leaves the density the noise alone, while the AC run reads it). (AO-05, AC 7; T34; the density reads `ac_stim`, round 2 finding 34)
 Proof: run snoise | test analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run ... ok
 
 **C35** - `piperine-api` returns the rows, the totals and each group's density. (AO-05, AC 8; T13)
@@ -1408,6 +1408,14 @@ Proof: run elabops | test a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a
 **C74** - `ddx(e, i(a, gnd))` of a branch with no potential contribution is 0. (AO-01, AC 11; closing round)
 Proof: run spartial | test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_zero ... ok
 Proof: run elabops | test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_literal_zero ... ok
+
+**C78** - `ac_stim` read by the value of a `ddx`, a `delay` input or a `noise` density runs, and elaborates for a `ddt` state and an unread derivative too: the `ddx` result is the stimulus plus the derivative (3 at the operating point, 2 in the sweep), a delayed stimulus is the phasor turned by `exp(-j w td)`, a density that reads it is 0 in a noise run, and no form is the internal error `P0004`. (AO-01, AC 12; AO-02, AC 8; AO-03, AC 10; closing round, round 2 finding 33)
+Proof: run elabops | test an_ac_stim_read_by_a_noise_density_a_delay_input_or_a_ddx_value_is_a_site_of_the_body ... ok
+Proof: run spartial | test an_ac_stim_read_by_a_ddx_is_a_constant_of_the_derivative ... ok
+Proof: run spartial | test ddx_of_an_ac_stim_alone_is_zero_and_the_site_still_runs ... ok
+Proof: run spartial | test an_ac_stim_read_by_a_ddt_state_compiles_and_reads_zero_at_the_operating_point ... ok
+Proof: run sdelay | test a_delayed_stimulus_is_the_phasor_turned_by_the_delay ... ok
+Proof: run snoise | test analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run ... ok
 
 **C75** - A `noise` density and a `delay` input that read a `let` bound to a `limit` read the `limit`'s argument. (AO-03, AC 9; closing round)
 Proof: run snoise | test a_let_reading_a_limit_is_a_density_input ... ok

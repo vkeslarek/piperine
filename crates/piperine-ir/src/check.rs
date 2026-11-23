@@ -104,6 +104,9 @@ struct Owner {
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
     analog: bool,
+    /// A value a primitive evaluates on its own (a derivative state, a delay input, a noise density): it may read an
+    /// `ac_stim` site, which a statement of the `analog` block writes.
+    value_input: bool,
 }
 
 /// The state of one walk: one owner's code, every root of it sharing the memo.
@@ -1253,6 +1256,7 @@ impl<'a> Checker<'a> {
                 event: None,
                 in_body: true,
                 analog,
+                value_input: false,
             };
             for param in &body.params {
                 let Some(check) = param.check else { continue };
@@ -1318,7 +1322,7 @@ impl<'a> Checker<'a> {
                 self.walk(&mut w, Task::Expr(enabled, Ctx::top()));
             }
             for (k, site) in body.derivatives.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} derivative {k}", body.name)), 0);
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} derivative {k}", body.name)) }, 0);
                 self.expect(&w, site.state, &ValueType::F64);
                 self.walk(&mut w, Task::Expr(site.state, Ctx::top()));
                 if let Some(abstol) = site.abstol {
@@ -1327,14 +1331,14 @@ impl<'a> Checker<'a> {
                 }
             }
             for (k, site) in body.delays.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} delay {k}", body.name)), 0);
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} delay {k}", body.name)) }, 0);
                 for id in [site.input, site.time].into_iter().chain(site.maximum) {
                     self.expect(&w, id, &ValueType::F64);
                     self.walk(&mut w, Task::Expr(id, Ctx::top()));
                 }
             }
             for (k, source) in body.noise_sources.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} noise source {k}", body.name)), 0);
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} noise source {k}", body.name)) }, 0);
                 self.expect(&w, source.density, &ValueType::F64);
                 self.walk(&mut w, Task::Expr(source.density, Ctx::top()));
             }
@@ -1377,6 +1381,7 @@ impl<'a> Checker<'a> {
                 event: None,
                 in_body: false,
                 analog: false,
+                value_input: false,
             };
             let mut w = Walk::new(owner, function.params.len());
             self.expect(&w, function.body, &function.ret);
@@ -2181,7 +2186,7 @@ impl<'a> Checker<'a> {
     /// context, range, and the distinct expressions that use it.
     fn site(&mut self, w: &mut Walk, user: ExprId, origin: &Origin, kind: &str, site: u32, ctx: Ctx) {
         let count = if kind == "limit" { w.owner.limits } else { w.owner.stims };
-        if !w.owner.analog {
+        if !w.owner.analog && !(kind == "ac_stim" && w.owner.value_input) {
             self.wrong(w, origin.clone(), format!("{kind} outside the analog block of a body"));
         } else if ctx.closure {
             self.wrong(w, origin.clone(), format!("{kind} inside a closure"));

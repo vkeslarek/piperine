@@ -27,10 +27,12 @@ impl Elaboration<'_, '_> {
         let [input, time, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
         standalone.at_solution = true;
+        standalone.value_input = true;
         let input = self.lower_expr(&mut standalone, *input)?;
         let time_span = self.design.expr_node(*time).span;
         let time = self.lower_expr(&mut standalone, *time)?;
         let maximum = self.optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
+        scope.adopt_stimuli(&mut standalone);
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `delay` input");
             return None;

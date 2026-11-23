@@ -123,11 +123,13 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(call).span;
         let [state, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
+        standalone.value_input = true;
         let state = self.lower_expr(&mut standalone, *state)?;
         let abstol = match rest {
             [tolerance] => Some(self.lower_expr(&mut standalone, *tolerance)?),
             _ => None,
         };
+        scope.adopt_stimuli(&mut standalone);
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `ddt` state");
             return None;
@@ -145,9 +147,12 @@ impl Elaboration<'_, '_> {
         standalone.no_locals = true;
         standalone.analog = scope.analog;
         standalone.at_solution = scope.at_solution;
+        standalone.value_input = scope.value_input;
         standalone.expands_functions = scope.expands_functions;
         standalone.keys = scope.keys.clone();
         standalone.let_sources = scope.let_sources.clone();
+        // the stimulus sites of the enclosing scope stay numbered as they are: one the code adds is the next
+        standalone.stims = scope.stims.clone();
         standalone
     }
 }
