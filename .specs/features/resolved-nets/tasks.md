@@ -1164,3 +1164,5 @@ Phase 9:  T34 → T35 → T36
 ```
 
 Execution is strictly sequential.
+
+- **From `explicit-unknowns` phase B (2026-11-23).** `Logic<N>` runs from `std/logic.msl` (operator traits, `From`, `logic`, `matches_bits`, the host cell `10xz`). Its spec is to be revised for `Resolve<X, V>` before B3; T27 starts from `Driven`. The earlier strength struct of `nets` is called `Drive` in `std` (its fields `v: bool`, `s: Strength`) until `Driven` replaces it; the Book's refusals of `Driven` and `Resolve` (E0161) stand.
