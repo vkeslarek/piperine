@@ -252,3 +252,33 @@ fn a_bound_with_trait_arguments_is_met_by_the_impl_naming_them() {
     let unmet = GenericSources::analog_types(items, "let s = S { a: 1.0 }; let r = takes_bool(s);", &["r"]).expect_err("an impl for u8 is not one for bool");
     assert!(unmet[0].0 == "E0187" && unmet[0].1.contains("does not satisfy the bound `Conv`"), "{unmet:?}");
 }
+
+#[test]
+fn a_blanket_impl_applies_to_every_type_its_bound_admits() {
+    // §3.7.5: `impl<T: Repr> Known for T` gives `known()` to every type with a layout and to none without one
+    let items = "trait Known { fn known(self) -> bool { true } }\nimpl<T: Repr> Known for T {}\n#[derive(PartialEq, Repr)] enum Mode { A, B }\nstruct Plain { a: f64 }\n";
+    let met = GenericSources::analog_types(items, "let x = 3u8; let y = true; let z = 1.5; let m = Mode::A; let a = x.known(); let b = y.known(); let d = z.known(); let c = m.known();", &["a", "b", "d", "c"]);
+    assert_eq!(met, Ok(["a = bool", "b = bool", "d = bool", "c = bool"].map(String::from).to_vec()));
+    // a struct with no layout is not admitted
+    let refused = GenericSources::analog_types(items, "let p = Plain { a: 1.0 }; let e = p.known();", &["e"]).expect_err("a struct without Repr");
+    assert_eq!(refused[0].0, "E0161", "{refused:?}");
+    let design = support::build(&format!("{HEAD}{items}"));
+    let table = piperine_lang::types::ImplTable::new(&design);
+    let known = Items { design: &design }.trait_("Known");
+    let all = &mut |_: &Ty, _: &piperine_lang::types::Bound| true;
+    assert!(table.implements(&Ty::F64, known, all));
+}
+
+#[test]
+fn overlapping_impls_are_e0187() {
+    // §3.7.6: two `impl`s of one trait that apply to one type are refused used or not; arguments tell
+    // impls of one generic trait apart
+    let found = GenericSources::e0187_messages("trait Tr { fn f(self) -> f64 { 1.0 } }\nstruct S { a: f64 }\nimpl Tr for S {}\nimpl Tr for S {}\n");
+    assert!(found.len() == 1 && found[0].contains("two `impl`s of `Tr` apply to `S`"), "{found:?}");
+    let blanket = GenericSources::e0187_messages("trait Tr { fn f(self) -> f64 { 1.0 } }\nstruct S { a: f64 }\nimpl<T: Repr> Tr for T {}\nimpl Tr for u8 {}\n");
+    assert!(blanket.len() == 1 && blanket[0].contains("two `impl`s of `Tr` apply to `u8`"), "{blanket:?}");
+    let disjoint = "trait Tr { fn f(self) -> f64 { 1.0 } }\nstruct S { a: f64 }\nimpl<T: Repr> Tr for T {}\nimpl Tr for S {}\n";
+    assert!(GenericSources::e0187_messages(disjoint).is_empty(), "S has no Repr, so the blanket impl does not apply to it");
+    let args = "trait Cv<X> { fn c(self, x: X) -> X { x } }\nstruct S { a: f64 }\nimpl Cv<u8> for S {}\nimpl Cv<bool> for S {}\n";
+    assert!(GenericSources::e0187_messages(args).is_empty(), "the trait's arguments tell the impls apart");
+}

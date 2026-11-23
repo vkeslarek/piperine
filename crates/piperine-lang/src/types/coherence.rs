@@ -51,6 +51,37 @@ impl Checker<'_> {
             self.coded(file, "E0134", span, "`impl Trait for` a bundle is refused: a trait is a capability of a nature or a value type (§3.1.9)".to_string(), "a bundle");
         } else if !inherent {
             self.trait_impl_rules(decl);
+            self.overlap_rule(decl);
+        }
+    }
+
+    /// §3.7.6: for one trait and one type at most one `impl` applies, used or not. Two `impl`s of a
+    /// trait that have a type in common, and write the trait with the same arguments, are `E0187`
+    /// at the later one, naming the trait and the type.
+    fn overlap_rule(&mut self, decl: DeclId) {
+        let table = std::rc::Rc::clone(&self.impls);
+        let Some(position) = table.impls().iter().position(|entry| entry.decl == decl) else { return };
+        let current = table.impls()[position].clone();
+        let (file, span) = (self.design.decl_data(decl).file, self.design.decl_data(decl).span);
+        for earlier in &table.impls()[..position] {
+            if earlier.trait_decl != current.trait_decl || !table.overlap(earlier, &current, &mut |ty, bound| super::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
+                continue;
+            }
+            let (given, before): (Option<Vec<Ty>>, Option<Vec<Ty>>) = (
+                current.trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect(),
+                earlier.trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect(),
+            );
+            if given != before {
+                continue;
+            }
+            let name = current.trait_decl.and_then(|tr| self.design.decl_data(tr).name.as_ref().map(|n| n.text.clone())).unwrap_or_default();
+            let target = match &current.target {
+                super::ImplTarget::Declared(decl) => self.design.decl_data(*decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+                super::ImplTarget::Primitive(ty) => ty.name(self.design),
+                _ => "a type its bound admits".to_string(),
+            };
+            self.coded(file, "E0187", span, format!("two `impl`s of `{name}` apply to `{target}`: at most one may (§3.7.6)"), "an impl that overlaps an earlier one");
+            return;
         }
     }
 

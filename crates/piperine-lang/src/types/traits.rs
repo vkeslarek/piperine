@@ -140,6 +140,32 @@ impl<'d> ImplTable<'d> {
             .collect()
     }
 
+    /// Whether the two `impl`s of one trait are written for types that have a type in common: the
+    /// same declaration or scalar, or a blanket `impl` whose bounds the other's type satisfies (two
+    /// blanket `impl`s always have one, §3.7.6). Their trait arguments are compared by the caller.
+    pub fn overlap(&self, first: &ImplEntry, second: &ImplEntry, oracle: BoundOracle<'_>) -> bool {
+        match (&first.target, &second.target) {
+            (ImplTarget::Blanket(_), ImplTarget::Blanket(_)) => true,
+            (ImplTarget::Blanket(bounds), other) | (other, ImplTarget::Blanket(bounds)) => self.representative(other).is_some_and(|ty| bounds.iter().all(|bound| oracle(&ty, bound))),
+            (ImplTarget::Declared(first), ImplTarget::Declared(second)) => first == second,
+            (ImplTarget::Primitive(first), ImplTarget::Primitive(second)) => first == second,
+            _ => false,
+        }
+    }
+
+    /// A type the target stands for, to ask a blanket `impl`'s bounds of.
+    fn representative(&self, target: &ImplTarget) -> Option<Ty> {
+        match target {
+            ImplTarget::Declared(decl) => Some(match self.design.decl_data(*decl).kind {
+                DeclKind::Enum(_) => Ty::enumeration(*decl),
+                DeclKind::Nature(_) => Ty::Node(*decl),
+                _ => Ty::structure(*decl),
+            }),
+            ImplTarget::Primitive(ty) => Some(ty.clone()),
+            ImplTarget::Blanket(_) | ImplTarget::Other => None,
+        }
+    }
+
     /// Whether the trait item has a body (a function) or a value (a constant) of its own.
     pub fn has_default(&self, item: DeclId) -> bool {
         match &self.design.decl_data(item).kind {
