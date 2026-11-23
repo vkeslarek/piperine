@@ -260,7 +260,7 @@ impl Session {
             None => match read {
                 ParamText::Whole(scalar) => match scalar.exact_real() {
                     Some(value) => Session::set_param(table, derive, circuit, path, value),
-                    None => Session::set_exact_integer(table, derive, circuit, ir, path, scalar),
+                    None => Session::set_exact_integer(table, derive, circuit, path, scalar),
                 },
                 ParamText::Option { .. } => Ok(()),
             },
@@ -281,7 +281,7 @@ impl Session {
 
     /// Writes an integer no `f64` holds exactly to its pin as the pin's own bytes, and recomputes what a placement derives from it from
     /// those bytes (PI-01 AC 4, §8.1.23).
-    fn set_exact_integer(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, _ir: &Ir, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
+    fn set_exact_integer(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
         let ParamScalar::Integer(value) = scalar else { return Ok(()) };
         let changes = table.changes_integer(&path.instance, &path.param, value, derive)?;
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
@@ -311,7 +311,7 @@ impl Session {
     /// `shown` is the value as the host gave it, for the refusals.
     fn write_leaf_change(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
         let label = change.label();
-        let changes = table.changes_composite(&path.instance, &path.param, change.bytes.clone(), derive)?;
+        let changes = table.changes_composite(&path.instance, &path.param, change.bytes.clone(), shown, derive)?;
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
         // the `where` of the param is checked where a device pin holds it; a param no pin holds is not written when others derive from it
         if Session::pinned(circuit, &path.instance, &path.param) {
@@ -330,10 +330,7 @@ impl Session {
             }
             circuit.set(&changed.instance, &changed.param, changed.param_value()).map_err(|error| error.to_string())
         };
-        table.write_changes(&changes, &mut write).map_err(|failure| match failure {
-            Failure::Host { code: "E0802", message } => Failure::Host { code: "E0802", message: message.replacen("refuses the value NaN", &format!("refuses the value {shown}"), 1) },
-            other => other,
-        })
+        table.write_changes(&changes, &mut write)
     }
 
     /// Whether a device pin holds the param `param` of `instance`.

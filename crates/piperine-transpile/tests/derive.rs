@@ -70,7 +70,7 @@ fn the_source_holds_one_derive_function_per_binding() {
     assert_eq!(text.matches("fn derive_").count(), 2, "{text}");
     assert!(text.contains("fn derive_0_(params_: &[u8]) -> Vec<u8> {\n    let t = <f64 as rt::Carried>::from_pin(&params_[0..8]);\n    <f64 as rt::Carried>::pin(t * 3.0)\n}"), "{text}");
     assert!(text.contains("fn derive_1_(params_: &[u8]) -> Vec<u8> {\n    let rr = <f64 as rt::Carried>::from_pin(&params_[0..8]);\n    <f64 as rt::Carried>::pin(rr * 2.0)\n}"), "{text}");
-    assert!(text.contains("pub extern \"C\" fn piperine_derive_2(k: u32, params: List<'_, u8>) -> List<'static, u8>"), "{text}");
+    assert!(text.contains("pub extern \"C\" fn piperine_derive_2(k: u32, params: List<'_, u8>, mut out: BytesMut<'_>) -> u32"), "{text}");
     assert!(text.contains("0 if params.len() == 8 => Some(derive_0_(&params)),") && text.contains("1 if params.len() == 8 => Some(derive_1_(&params)),"), "{text}");
     // a design that derives nothing prints none of it (the sources of every other design are unchanged)
     let plain = source(chain(false));
@@ -87,10 +87,10 @@ fn compiled_derive_evaluates_the_placement_expression() {
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let compiled = Transpiler::new(Arc::new(chain(true))).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
     let bytes = |value: f64| value.to_le_bytes().to_vec();
-    assert_eq!(compiled.derive(0, &bytes(2.0)), Some(bytes(6.0)));
-    assert_eq!(compiled.derive(1, &bytes(6.0)), Some(bytes(12.0)));
-    assert_eq!(compiled.derive(0, &[bytes(1.0), bytes(2.0)].concat()), None, "a parent of another width of params");
-    assert_eq!(compiled.derive(2, &bytes(1.0)), None, "no binding 2");
+    assert_eq!(compiled.derive(0, &bytes(2.0), 8), Some(bytes(6.0)));
+    assert_eq!(compiled.derive(1, &bytes(6.0), 8), Some(bytes(12.0)));
+    assert_eq!(compiled.derive(0, &[bytes(1.0), bytes(2.0)].concat(), 8), None, "a parent of another width of params");
+    assert_eq!(compiled.derive(2, &bytes(1.0), 8), None, "no binding 2");
     let plain = Transpiler::new(Arc::new(chain(false))).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(plain.derive(0, &bytes(2.0)), None);
+    assert_eq!(plain.derive(0, &bytes(2.0), 8), None);
 }

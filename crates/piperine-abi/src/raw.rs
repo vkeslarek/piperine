@@ -37,6 +37,43 @@ pub struct Bytes<'a> {
     pub(crate) life: PhantomData<&'a [u8]>,
 }
 
+/// Bytes the consumer owns and the producer writes: the output buffer of a call. A view built in safe code
+/// (`from_slice`) borrows its memory exclusively for `'a`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct BytesMut<'a> {
+    pub(crate) ptr: *mut u8,
+    pub(crate) len: usize,
+    pub(crate) life: PhantomData<&'a mut [u8]>,
+}
+
+impl<'a> BytesMut<'a> {
+    /// A `BytesMut` borrowing `b` exclusively for `'a`.
+    pub fn from_slice(b: &'a mut [u8]) -> BytesMut<'a> {
+        BytesMut { ptr: b.as_mut_ptr(), len: b.len(), life: PhantomData }
+    }
+
+    /// The length in bytes.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether there are no bytes.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The bytes, to write.
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        if self.len == 0 {
+            return &mut [];
+        }
+        // SAFETY: a `BytesMut` points to `len` writable bytes its consumer lent exclusively for the call
+        // (built by `from_slice`, which borrows them for `'a`).
+        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
 /// A list whose elements lie `stride` bytes apart: the element size as the
 /// producer compiled it. A consumer reads the fields it knows (abi.md §3, §12
 /// "Versioning").

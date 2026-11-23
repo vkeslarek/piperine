@@ -18,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_abi::raw::{self, Library, List, Module};
+use piperine_abi::raw::{self, BytesMut, Library, List, Module};
 
 use crate::print::derive::SYMBOL as DERIVE_SYMBOL;
 
@@ -29,9 +29,9 @@ use crate::error::Error;
 type Export = extern "C" fn() -> *const Library;
 
 /// The type of `piperine_derive_2` (the transpiler's contract with its host, `print/derive.rs`):
-/// the function `k` of the design's derive plan over the bytes of the parent's params, answering a 1
-/// and the bytes of the child's param, or nothing.
-type DeriveExport = for<'a> extern "C" fn(u32, List<'a, u8>) -> List<'static, u8>;
+/// the function `k` of the design's derive plan over the bytes of the parent's params, writing the
+/// bytes of the child's param into the buffer it is lent and answering how many (0: nothing).
+type DeriveExport = for<'a> extern "C" fn(u32, List<'a, u8>, BytesMut<'a>) -> u32;
 
 /// A loaded, checked library. Dropping a `Loaded` unloads nothing: its modules stay valid to the
 /// end of the process.
@@ -120,15 +120,13 @@ impl Loaded {
     }
 
     /// Derive function `k` over `params`, the pin bytes of the parent's params in declaration order;
-    /// the pin bytes of the child's param, or `None` when the library exports no derive function or has
+    /// the `width` pin bytes of the child's param, or `None` when the library exports no derive function or has
     /// none for this `k` and this width of params.
-    pub fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>> {
-        let answer = self.derive.map(|derive| derive(k, List::from_slice(params)))?;
-        let bytes: Vec<u8> = (0..answer.len()).filter_map(|i| answer.get(i).copied()).collect();
-        match bytes.split_first() {
-            Some((1, value)) => Some(value.to_vec()),
-            _ => None,
-        }
+    pub fn derive(&self, k: u32, params: &[u8], width: usize) -> Option<Vec<u8>> {
+        let derive = self.derive?;
+        let mut out = vec![0u8; width];
+        let written = derive(k, List::from_slice(params), BytesMut::from_slice(&mut out)) as usize;
+        (written == width).then_some(out)
     }
 
     /// The names of the library's modules, in order.

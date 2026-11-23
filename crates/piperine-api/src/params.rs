@@ -17,23 +17,24 @@ use piperine_transpile::Compiled;
 use crate::failure::Failure;
 
 /// What recomputes a derived param (§8.1.19, §8.1.23): the compiled device's generated function `k`, over the pin bytes of the
-/// parent's params one after another in declaration order, each as wide as its pin, giving the pin bytes of the child's param. A param
+/// parent's params one after another in declaration order, each as wide as its pin, giving the `width` pin bytes of the child's param. A param
 /// crosses as the typed value it is, never as an `f64`.
 pub trait Derive {
-    /// The pin bytes of derived param `k`, or `None` for a `k` or a width of params the design has no function for.
-    fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>>;
+    /// The pin bytes of derived param `k`, or why there are none.
+    fn derive(&self, k: u32, params: &[u8], width: usize) -> Result<Vec<u8>, String>;
 }
 
 impl Derive for Compiled {
-    fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>> {
-        Compiled::derive(self, k, params)
+    fn derive(&self, k: u32, params: &[u8], width: usize) -> Result<Vec<u8>, String> {
+        Compiled::derive(self, k, params, width).ok_or_else(|| format!("the compiled design has no derive function {k} for {} bytes of params and a {width}-byte param: it does not match its plan", params.len()))
     }
 }
 
 /// A `Derive` that evaluates each placement expression with the reference interpreter's walk, so
 /// a design that no backend has built (`piperine info`) still shows the values a `set` gives its
 /// derived params: no `rustc`, the same expressions the generated functions compile. The walk
-/// holds `f64` and `bool` only, as the interpreter does.
+/// holds `f64` and `bool` params only, as the interpreter does (PI-05 AC 1: another type is the
+/// pin of a compiled body); a binding over any other type is refused naming it and `--backend rust`.
 pub struct Evaluated<'ir> {
     /// The design.
     ir: &'ir Ir,
@@ -49,31 +50,30 @@ impl<'ir> Evaluated<'ir> {
 }
 
 impl Derive for Evaluated<'_> {
-    /// `None` for a `k` the plan has no binding for, a width of params other than the parent's, a param the walk cannot hold, or an
-    /// expression it cannot evaluate: the caller reports it as a plan that does not match.
-    fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>> {
-        let binding = self.bindings.get(k as usize)?;
-        let parent = self.ir.instance_at(&binding.parent)?;
+    fn derive(&self, k: u32, params: &[u8], _width: usize) -> Result<Vec<u8>, String> {
+        let binding = self.bindings.get(k as usize).ok_or_else(|| format!("the plan has no binding {k}"))?;
+        let label = format!("{}.{}", binding.child, binding.param);
+        let refused = |what: &str| format!("`{label}` is derived by an expression over {what}, which the interpreter does not evaluate (it runs `f64` and `bool` params only): use --backend rust");
+        let parent = self.ir.instance_at(&binding.parent).ok_or_else(|| format!("the plan names `{}`, which is no instance", binding.parent))?;
         let mut values = Vec::new();
         let mut at = 0usize;
         for declared in parent.body().params() {
-            let width = PinLayout::in_ir(self.ir, &declared.ty)?.size() as usize;
-            let bytes = params.get(at..at + width)?;
+            let width = PinLayout::in_ir(self.ir, &declared.ty).map(|layout| layout.size() as usize).ok_or_else(|| refused(&format!("the param `{}` of type {}", declared.name, declared.ty)))?;
+            let bytes = params.get(at..at + width).ok_or_else(|| format!("the parent `{}` holds {} bytes of params, fewer than its params need", binding.parent, params.len()))?;
             values.push(match declared.ty {
-                ValueType::F64 => Walked::Real(Dual::constant(f64::from_le_bytes(bytes.try_into().ok()?))),
+                ValueType::F64 => Walked::Real(Dual::constant(f64::from_le_bytes(bytes.try_into().map_err(|_| refused("a malformed real"))?))),
                 ValueType::Bool => Walked::Bool(bytes.first().is_some_and(|byte| *byte != 0)),
-                _ if binding.reads.contains(&declared.name) => return None,
-                _ => Walked::Bool(false),
+                // a param the expression does not read is left unread; one it reads is refused
+                _ if binding.reads.contains(&declared.name) => return Err(refused(&format!("the param `{}` of type {}", declared.name, declared.ty))),
+                _ => Walked::Unread,
             });
             at += width;
         }
-        if at != params.len() {
-            return None;
-        }
         match (Walk::new(self.ir, values, 0).eval(binding.expr), &binding.ty) {
-            (Ok(Walked::Real(real)), ValueType::F64) => Some(real.v.to_le_bytes().to_vec()),
-            (Ok(Walked::Bool(flag)), ValueType::Bool) => Some(vec![u8::from(flag)]),
-            _ => None,
+            (Ok(Walked::Real(real)), ValueType::F64) => Ok(real.v.to_le_bytes().to_vec()),
+            (Ok(Walked::Bool(flag)), ValueType::Bool) => Ok(vec![u8::from(flag)]),
+            (Ok(_), ty) => Err(refused(&format!("an expression giving a value of type {ty}"))),
+            (Err(error), _) => Err(format!("`{label}` could not be evaluated by the interpreter: {error}")),
         }
     }
 }
@@ -127,9 +127,16 @@ pub struct Changed {
     pub bytes: Option<Vec<u8>>,
     /// The bytes it held before.
     pub old_bytes: Option<Vec<u8>>,
+    /// The value as the host wrote it, when `value` cannot show it (an exact integer, a leaf of a composite): what a refusal names.
+    pub text: Option<String>,
 }
 
 impl Changed {
+    /// The value as a refusal names it: the host's own text, else the number.
+    pub fn shown(&self) -> String {
+        self.text.clone().unwrap_or_else(|| self.value.to_string())
+    }
+
     /// `<instance>.<param>`.
     pub fn label(&self) -> String {
         format!("{}.{}", self.instance, self.param)
@@ -429,7 +436,7 @@ impl Params {
         self.refuse_derived(instance, param)?;
         let old = self.get(instance, param).ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{instance}.{param}` names no param of the design") })?;
         let ty = self.type_of(instance, param);
-        self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old, value, derived: false, bytes: None, old_bytes: None }, derive)
+        self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old, value, derived: false, bytes: None, old_bytes: None, text: None }, derive)
     }
 
     /// [`Params::changes`] for an integer, held exactly (PI-01 AC 4): the pin gets its own bytes and what a placement derives from it is
@@ -439,16 +446,16 @@ impl Params {
         let old = self.get(instance, param).ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{instance}.{param}` names no param of the design") })?;
         let ty = self.type_of(instance, param);
         let width = self.width_of(instance, param);
-        let first = Changed { instance: instance.to_string(), param: param.to_string(), ty, old, value: value as f64, derived: false, bytes: Some(value.to_le_bytes()[..width].to_vec()), old_bytes: None };
+        let first = Changed { instance: instance.to_string(), param: param.to_string(), ty, old, value: value as f64, derived: false, bytes: Some(value.to_le_bytes()[..width].to_vec()), old_bytes: None, text: Some(value.to_string()) };
         self.changes_from(first, derive)
     }
 
     /// The changes of writing `bytes` to the composite param `param` of `instance`, and of every value bound from it (§8.1.23).
-    pub fn changes_composite(&self, instance: &str, param: &str, bytes: Vec<u8>, derive: Option<&dyn Derive>) -> Result<Vec<Changed>, Failure> {
+    pub fn changes_composite(&self, instance: &str, param: &str, bytes: Vec<u8>, shown: &str, derive: Option<&dyn Derive>) -> Result<Vec<Changed>, Failure> {
         self.refuse_derived(instance, param)?;
         let old = self.composite_bytes(instance, param).map(<[u8]>::to_vec);
         let ty = self.type_of(instance, param);
-        self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old: f64::NAN, value: f64::NAN, derived: false, bytes: Some(bytes), old_bytes: old }, derive)
+        self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old: f64::NAN, value: f64::NAN, derived: false, bytes: Some(bytes), old_bytes: old, text: Some(shown.to_string()) }, derive)
     }
 
     /// `E0802` for a param a placement gives: a host sets the param it derives from instead.
@@ -482,7 +489,7 @@ impl Params {
                 continue;
             }
             let inputs = working.parent_bytes(&binding.parent)?;
-            let derived = derive.derive(binding.k, &inputs).ok_or_else(|| Failure::Backend(format!("the derive function {} of `{}.{}` gave no value (the compiled design does not match its plan)", binding.k, binding.child, binding.param)))?;
+            let derived = derive.derive(binding.k, &inputs, working.width_of(&binding.child, &binding.param)).map_err(|reason| Failure::Host { code: "E0802", message: format!("`{}.{}` cannot be recomputed after `{}`: {reason}", binding.child, binding.param, changes[0].label()) })?;
             let change = working.derived(binding, derived);
             if change.bytes != change.old_bytes {
                 working.apply(std::slice::from_ref(&change));
@@ -523,7 +530,7 @@ impl Params {
         };
         let value = PinBytes::decode(&binding.ty, &bytes).0;
         let old = self.get(&binding.child, &binding.param).unwrap_or(f64::NAN);
-        Changed { instance: binding.child.clone(), param: binding.param.clone(), ty: binding.ty.clone(), old, value, derived: true, bytes: Some(bytes), old_bytes }
+        Changed { instance: binding.child.clone(), param: binding.param.clone(), ty: binding.ty.clone(), old, value, derived: true, bytes: Some(bytes), old_bytes, text: None }
     }
 
     /// Writes `changes` through `write`, undoing the writes already made when one is refused, then takes them into the table.
@@ -534,7 +541,7 @@ impl Params {
                     let back = Changed { value: undone.old, old: undone.value, bytes: undone.old_bytes.clone(), old_bytes: undone.bytes.clone(), ..undone.clone() };
                     let _ = write(&back);
                 }
-                return Err(Failure::Host { code: "E0802", message: format!("`{}` refuses the value {}: {error}", change.label(), change.value) });
+                return Err(Failure::Host { code: "E0802", message: format!("`{}` refuses the value {}: {error}", change.label(), change.shown()) });
             }
         }
         self.apply(changes);
@@ -631,12 +638,12 @@ mod tests {
     struct Scales;
 
     impl Derive for Scales {
-        fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>> {
-            let first = f64::from_le_bytes(params.get(..8)?.try_into().ok()?);
+        fn derive(&self, k: u32, params: &[u8], _width: usize) -> Result<Vec<u8>, String> {
+            let first = f64::from_le_bytes(params.get(..8).and_then(|head| head.try_into().ok()).ok_or("no params")?);
             match k {
-                0 => Some((first * 3.0).to_le_bytes().to_vec()),
-                1 => Some((first * 2.0).to_le_bytes().to_vec()),
-                _ => None,
+                0 => Ok((first * 3.0).to_le_bytes().to_vec()),
+                1 => Ok((first * 2.0).to_le_bytes().to_vec()),
+                _ => Err("no such k".to_string()),
             }
         }
     }

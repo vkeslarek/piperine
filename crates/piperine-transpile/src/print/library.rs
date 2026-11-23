@@ -84,6 +84,7 @@ impl LibraryPrinter {
         }
         if !derived.is_empty() {
             uses.insert("piperine_abi::raw::List");
+            uses.insert("piperine_abi::raw::BytesMut");
         }
 
         let mut t = Text::new();

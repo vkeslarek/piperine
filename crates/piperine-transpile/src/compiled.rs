@@ -89,10 +89,10 @@ impl Compiled {
 
     /// Derived param `k` of the design's `DerivePlan` (a parent before its children) over the pin
     /// bytes of the params of its parent, one after another in declaration order, each as wide as its
-    /// pin: the pin bytes of the value the placement's expression gives. `None` for a `k` the design
+    /// pin: the pin bytes of the value the placement's expression gives, `width` of them (the child's pin). `None` for a `k` the design
     /// has no binding for, a parent of another width, and a design that derives nothing.
-    pub fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>> {
-        self.loaded.derive(k, params)
+    pub fn derive(&self, k: u32, params: &[u8], width: usize) -> Option<Vec<u8>> {
+        self.loaded.derive(k, params, width)
     }
 
     /// What this build cost.

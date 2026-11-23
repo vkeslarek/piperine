@@ -4,12 +4,12 @@
 //! parent's declaration order, each as wide as its pin (`PinLayout::size`), and giving the pin
 //! bytes of the child's param: every param crosses as the typed value it is (an integer exactly, a
 //! `bool`, an `f64`, an enum's tag, an `Option` or a composite), never as an `f64`. The export
-//! `piperine_derive_2(k, params)` sits next to `piperine_abi_1` and the host reaches it through
-//! `Compiled::derive`; it answers a `List<u8>` whose first byte is 1 and the rest the pin bytes,
-//! or an empty list for a `k` this design has no function for and a parent of another width (the
-//! answer is leaked: a recompute is a rare host `set`). `params` is read through the ABI's safe
-//! accessor, so the source holds no `unsafe` of its own (RS-05 AC 4). A design that derives
-//! nothing prints none of it, so its source is the source it always was.
+//! `piperine_derive_2(k, params, out)` sits next to `piperine_abi_1` and the host reaches it through
+//! `Compiled::derive`: the host lends `out`, as wide as the child's pin, the function writes the pin
+//! bytes into it and answers how many it wrote, 0 for a `k` this design has no function for or a
+//! parent of another width. Nothing is allocated for the host to keep. The buffers are read and
+//! written through the ABI's safe accessors, so the source holds no `unsafe` of its own (RS-05 AC 4).
+//! A design that derives nothing prints none of it, so its source is the source it always was.
 
 use piperine_ir::Ir;
 use piperine_plan::{Binding, DerivePlan, PinLayout};
@@ -41,7 +41,7 @@ impl DerivePrinter {
         }
         t.comment("the derive export: the host recomputes a derived param through it", ir.top().body().origin());
         t.line("#[unsafe(no_mangle)]");
-        t.line(&format!("pub extern \"C\" fn {SYMBOL}(k: u32, params: List<'_, u8>) -> List<'static, u8> {{"));
+        t.line(&format!("pub extern \"C\" fn {SYMBOL}(k: u32, params: List<'_, u8>, mut out: BytesMut<'_>) -> u32 {{"));
         t.indented(|t| {
             t.line("let params: Vec<u8> = (0..params.len()).filter_map(|i| params.get(i).copied()).collect();");
             t.line("// a `k` this design has no function for, or a parent of another width, answers nothing");
@@ -55,14 +55,13 @@ impl DerivePrinter {
             t.line("};");
             t.line("match answer {");
             t.indented(|t| {
-                t.line("Some(bytes) => {");
+                t.line("Some(bytes) if bytes.len() <= out.len() => {");
                 t.indented(|t| {
-                    t.line("let mut whole = vec![1u8];");
-                    t.line("whole.extend(bytes);");
-                    t.line("List::from_slice(Box::leak(whole.into_boxed_slice()))");
+                    t.line("out.as_mut_slice()[..bytes.len()].copy_from_slice(&bytes);");
+                    t.line("bytes.len() as u32");
                 });
                 t.line("}");
-                t.line("None => List::from_slice(&[]),");
+                t.line("_ => 0,");
             });
             t.line("}");
         });

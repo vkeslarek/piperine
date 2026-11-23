@@ -532,6 +532,21 @@ const WRAPPED: &str = "enum Mode { Fast, Slow }\n\
     module Top() { signal a: Electrical; let v1 = Vsource(a); let w = Wrap { rs: 2k }(a); }\n";
 
 #[test]
+fn describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_plan() {
+    // F34: `Session::describe` with a host value for `Top.w.n`, which a placement passes to an integer param of the child, cannot be
+    // evaluated by the interpreter's walk (it holds `f64` and `bool` params only, PI-05): the refusal says so and names `--backend rust`
+    let (_dir, file) = lone(WRAPPED);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string())], ..flags("op", "interp", Some("Top")) };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    match Session::describe(&project, &spec) {
+        Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("--backend rust") && !message.contains("does not match"), "{message}"),
+        Err(other) => panic!("E0802, found {other}"),
+        Ok(_) => panic!("the interpreter cannot recompute an integer the child holds"),
+    }
+}
+
+#[test]
 fn params_passed_through_a_wrappers_placement_run() {
     // §3.2 and §8.4: a placement binds the child's param to the parent's own (`{ n: n }`, `{ md: md }`, `{ rs: rs }`, an `Option` to an
     // `Option`): the child reads the parent's value, and a `set` of the parent's integer or enum reaches the child. The `Option`
