@@ -147,3 +147,33 @@ fn an_endless_instantiation_chain_is_e0341() {
     let found = GenericCall::found(items, "v(o) +> deep(1.0);");
     assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("`deep`")), "{found:?}");
 }
+
+/// The declarations of a design named `name`, with whether each writes a `<..>` list.
+struct Declarations;
+
+impl Declarations {
+    /// The `generics_span.is_some()` of each declaration of `design` called `name`, in declaration order.
+    fn written_generic(design: &piperine_lang::pom::Design, name: &str) -> Vec<bool> {
+        (0..design.decl_count())
+            .map(|index| design.decl_data(piperine_lang::pom::DeclId(index as u32)))
+            .filter(|data| data.name.as_ref().is_some_and(|written| written.text == name))
+            .map(|data| data.generics_span.is_some())
+            .collect()
+    }
+}
+
+#[test]
+fn the_pom_keeps_the_generic_function_as_written() {
+    // GN-02 AC 2, MD-25: elaboration only reads the design: the POM holds `pick<T>` once, with its list, before and after
+    // instantiating it at `f64` and at `u8`, and no declaration is named for an instance (`pick::<f64>`); the instances
+    // are IR functions
+    let src = "fn pick<T>(a: T, b: T) -> T { a }\nmodule Top() { signal o: Electrical; }\nanalog for Top { let x = pick(1.0, 2.0); let y = pick(3u8, 4u8); v(o) +> x; }\n";
+    let design = Elab::design(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+    let before = Declarations::written_generic(&design, "pick");
+    let ir = piperine_lang::elab::Elaborator::new(&design).run("Top").unwrap_or_else(|found| panic!("{found:?}"));
+    assert_eq!(before, [true], "one `pick`, written with its list");
+    assert_eq!(Declarations::written_generic(&design, "pick"), before, "elaboration leaves the POM as it was");
+    assert!(Declarations::written_generic(&design, "pick::<f64>").is_empty() && Declarations::written_generic(&design, "pick::<u8>").is_empty(), "no declaration for an instance");
+    assert_eq!(IrFunctions::names(&ir).len(), 2, "the instances are IR functions");
+}

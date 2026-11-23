@@ -1,0 +1,53 @@
+//! Generic functions at `u8`, `f64` and a struct, with explicit and inferred arguments, and a const generic of zero
+//! (GN-01, GN-02); the expected values are computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+struct Pt { x: f64, y: f64 }
+
+fn pick<T>(flag: bool, a: T, b: T) -> T { if flag { a } else { b } }
+fn count<const N: usize>() -> u8 {
+    let n = 0u8;
+    for k in 0..N { n += k as u8 + 1; }
+    n
+}
+fn table_total<const N: usize>(xs: [f64; N]) -> f64 {
+    let s = 0.0;
+    for x in xs { s += x; }
+    s
+}
+
+fn real_inferred() -> f64 { pick(true, 1.5, 2.5) }
+fn real_explicit() -> f64 { pick::<f64>(false, 1.5, 2.5) }
+fn byte_inferred() -> u8 { pick(false, 3u8, 4u8) }
+fn byte_explicit() -> u8 { pick::<u8>(true, 3u8, 4u8) }
+fn point_inferred() -> f64 { pick(false, Pt { x: 1.0, y: 2.0 }, Pt { x: 3.0, y: 4.0 }).y }
+fn point_explicit() -> f64 { pick::<Pt>(true, Pt { x: 1.0, y: 2.0 }, Pt { x: 3.0, y: 4.0 }).x }
+fn none() -> u8 { count::<0>() }
+fn some() -> u8 { count::<3>() }
+fn empty() -> f64 { let e: [f64; 0] = []; table_total(e) + 7.0 }
+fn three() -> f64 { table_total([1.0, 2.0, 4.0]) }
+
+module Rows(in clk: Bit, out r0: Bit<f64> = 9.0, out r1: Bit<f64> = 9.0, out r2: Bit<u8> = 9, out r3: Bit<u8> = 9, out r4: Bit<f64> = 9.0, out r5: Bit<f64> = 9.0, out r6: Bit<u8> = 9, out r7: Bit<u8> = 9, out r8: Bit<f64> = 9.0, out r9: Bit<f64> = 9.0) {}
+digital for Rows {
+    on clk.rise() {
+        r0 <- real_inferred();
+        r1 <- real_explicit();
+        r2 <- byte_inferred();
+        r3 <- byte_explicit();
+        r4 <- point_inferred();
+        r5 <- point_explicit();
+        r6 <- none();
+        r7 <- some();
+        r8 <- empty();
+        r9 <- three();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal r0: Bit<f64>; signal r1: Bit<f64>; signal r2: Bit<u8>; signal r3: Bit<u8>; signal r4: Bit<f64>; signal r5: Bit<f64>; signal r6: Bit<u8>; signal r7: Bit<u8>; signal r8: Bit<f64>; signal r9: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9);
+}

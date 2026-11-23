@@ -301,3 +301,52 @@ fn a_generic_repr_instance_is_laid_out_per_section_2() {
     let pair = Pair { a: 3u8, b: 4u8 };
     RUN.assert_commits("types.msl", &["m8"], &[[CarrierBytes::byte(pair.a), CarrierBytes::byte(pair.b)].concat()]);
 }
+
+/// `struct Pt { x: f64, y: f64 }` of the model `functions.msl`.
+#[derive(Clone, Copy)]
+struct Pt {
+    x: f64,
+    y: f64,
+}
+
+/// `fn pick<T>(flag: bool, a: T, b: T) -> T` of the model.
+fn pick<T>(flag: bool, a: T, b: T) -> T {
+    if flag { a } else { b }
+}
+
+/// `fn count<const N: usize>() -> u8` of the model: the sum of `1..=N`, one loop step for each of `N`.
+fn count<const N: usize>() -> u8 {
+    (0..N).fold(0u8, |n, k| n + k as u8 + 1)
+}
+
+/// `fn table_total<const N: usize>(xs: [f64; N]) -> f64` of the model.
+fn table_total<const N: usize>(xs: [f64; N]) -> f64 {
+    xs.iter().sum()
+}
+
+#[test]
+fn generic_functions_run_with_explicit_and_inferred_arguments() {
+    // GN-01 AC 1, GN-02: `pick` at `f64`, `u8` and a struct, each with the argument inferred and written
+    // (`pick::<f64>`), and `table_total` over a table of three: the Independent Test of phase A
+    let (a, b) = (Pt { x: 1.0, y: 2.0 }, Pt { x: 3.0, y: 4.0 });
+    RUN.assert_commits(
+        "functions.msl",
+        &["r0", "r1", "r2", "r3", "r4", "r5", "r9"],
+        &[
+            CarrierBytes::real(pick(true, 1.5, 2.5)),
+            CarrierBytes::real(pick::<f64>(false, 1.5, 2.5)),
+            CarrierBytes::byte(pick(false, 3u8, 4u8)),
+            CarrierBytes::byte(pick::<u8>(true, 3u8, 4u8)),
+            CarrierBytes::real(pick(false, a, b).y),
+            CarrierBytes::real(pick::<Pt>(true, a, b).x),
+            CarrierBytes::real(table_total([1.0, 2.0, 4.0])),
+        ],
+    );
+}
+
+#[test]
+fn a_const_generic_of_zero_runs_its_loops_zero_times() {
+    // GN-01 edge case: `count::<0>()` takes no step and `table_total` of an empty table is 0.0; `count::<3>()` takes three loop steps (the sum 1 + 2 + 3)
+    let empty: [f64; 0] = [];
+    RUN.assert_commits("functions.msl", &["r6", "r7", "r8"], &[CarrierBytes::byte(count::<0>()), CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total(empty) + 7.0)]);
+}
