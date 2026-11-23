@@ -647,7 +647,7 @@ fn the_interpreter_refuses_each_analog_operator_by_name() {
     };
     held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![Operators::delay_site(b, None)], ..operators::Written::default() }), "delay");
     held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![Operators::noise_site(b, None)], ..operators::Written::default() }), "noise");
-    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, Some(1e-12))], session_parameters: vec![Operators::gmin()], ..operators::Written::default() }), "simparam");
+    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..operators::Written::default() }), "simparam");
     held(Operators::tracing(), "emit! in analog");
     // the record of a `ddx` is a `PartialDerivative`: the body holds it though its value is an expression
     let mut b = IrBuilder::new();
