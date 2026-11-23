@@ -373,5 +373,5 @@ fn e0180_a_logic_read_in_analog_is_a_mismatch() {
     // `bool` is required is E0180. The library struct `Logic` is a type since composite-values CV-09 (it was `P0001`
     // before), so the code is raised and names both types.
     let faulty = Faulty::running("mixed~39ba351d", "module Top(in flags: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if flags { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
-    assert_eq!(faulty.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic``");
+    assert_eq!(faulty.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic<1>``");
 }

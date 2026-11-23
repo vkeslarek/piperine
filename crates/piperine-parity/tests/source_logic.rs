@@ -300,3 +300,22 @@ fn a_logic_of_a_hundred_levels_is_refused_by_name() {
     let refused = project.elaborate("Bench").err().map(|rejection| rejection.to_string()).unwrap_or_default();
     assert!(refused.contains("100"), "the refusal names the width: {refused}");
 }
+
+#[test]
+fn the_plan_lays_a_logic_pin_as_two_planes() {
+    // EU-16 AC 5 (C69): the plan lays the elaborated `Logic<4>` and `Logic<64>` as the struct each is: `binary` at 0 then
+    // `value`, each the leaf of `UInt<N>`; sizes 2 and 16 (the abi's own rule is held by `layouts::a_logic_pin_is_two_planes`)
+    use piperine_abi::raw::leaf;
+    use piperine_ir::ValueType;
+    use piperine_plan::CompositeLayout;
+    let narrow = RUN.project("planes.msl").elaborate("Bench").unwrap_or_else(|rejection| panic!("{rejection}"));
+    let wide = RUN.project("wide.msl").elaborate("Bench").unwrap_or_else(|rejection| panic!("{rejection}"));
+    for (ir, name, levels, plane) in [(&narrow, "Logic<4>", 4u32, leaf::U8), (&wide, "Logic<64>", 64, leaf::U64)] {
+        let index = ir.types().iter().position(|data| data.name == name).unwrap_or_else(|| panic!("the design holds no `{name}`"));
+        let layout = CompositeLayout::of(ir, &ValueType::Struct(piperine_ir::TypeId(index as u32))).expect("a layout");
+        let plane_size = levels.div_ceil(8).next_power_of_two();
+        let leaves: Vec<(String, u32, u32)> = layout.leaves().iter().map(|l| (l.name.clone(), l.leaf, l.offset)).collect();
+        assert_eq!(leaves, [("binary".to_string(), plane, 0), ("value".to_string(), plane, plane_size)], "{name}");
+        assert_eq!(layout.width(), 2 * plane_size, "{name}");
+    }
+}

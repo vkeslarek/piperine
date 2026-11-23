@@ -1199,9 +1199,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `run::a_logic_cell_prints_its_pattern` passes
-- [ ] `layouts::a_logic_pin_is_two_planes` passes
-- [ ] Gate check passes: Full
+- [x] `run::a_logic_cell_prints_its_pattern` passes
+- [x] `layouts::a_logic_pin_is_two_planes` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

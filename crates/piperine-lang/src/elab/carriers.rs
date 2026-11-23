@@ -192,6 +192,8 @@ impl Elaboration<'_, '_> {
                 let one = self.default_constant(element, held)?;
                 (None, vec![one; usize::try_from(*length).ok()?])
             }
+            // a type with a hand-written `impl Default` starts at what its `default` returns (`Logic<N>`: every level X)
+            (Ty::Struct(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(nominal, stored),
             (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
                 let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
                 let held = self.type_arena.field_types(*id).to_vec();
@@ -200,6 +202,29 @@ impl Elaboration<'_, '_> {
             _ => return None,
         };
         Some(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: stored.clone(), variant, parts })))
+    }
+
+    /// The constant a hand-written `impl Default` gives the struct `nominal`, held as `stored`: the tail of its `default`,
+    /// folded for the arguments of the `impl` (`N` of a `Logic<N>`). `None` when the body is no tail expression that folds.
+    fn written_default(&mut self, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
+        let function = *self.impls.builtin_functions("Default", "default", &Ty::Struct(nominal.clone())).first()?;
+        let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return None };
+        let body = data.body.clone()?;
+        let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.design.stmt_node(*stmt).kind.clone()) else { return None };
+        let arguments: Vec<super::instances::ConcreteValue> = nominal
+            .arguments
+            .iter()
+            .map(|argument| match argument {
+                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value)) => Some(super::instances::ConcreteValue::Const(*value)),
+                crate::types::GenericValue::Type(ty) => Some(super::instances::ConcreteValue::Type(ty.clone())),
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let outer = self.consts.set_substitution(self.instance_substitution(function, &arguments));
+        let folded = self.composite_constant(expr, &Bindings::new());
+        self.consts.set_substitution(outer);
+        let value = folded.ok()?;
+        Some(self.ir_constant(value, stored))
     }
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.

@@ -1909,63 +1909,15 @@ module PeekTop(in b: Bit<Logic<4>>) {
 <div class="callout run">
   <p class="callout-label">Run it</p>
 <pre data-lang="sh">piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare</pre>
-<pre data-lang="text" data-cli-output="piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare">run monitor: transient, top PeekTop, backend rust
+@5.000000e-7 PeekTop.peek compare eq=x same=false sure=false
+@1.500000e-6 PeekTop.peek compare eq=x same=false sure=false
+@2.500000e-6 PeekTop.peek compare eq=x same=false sure=false
 
-  × generic arguments on `Logic`, which has no generic parameter is not supported yet
-    ╭─[monitor.msl:57:36]
- 56 │ 
- 57 │ module Peek(in clk: Bit, in a: Bit&lt;Logic&lt;4&gt;&gt;, in b: Bit&lt;Logic&lt;4&gt;&gt;) {}
-    ·                                    ────┬───
-    ·                                        ╰── generic arguments on `Logic`, which has no generic parameter is outside the M1 subset
- 58 │ digital for Peek {
-    ╰────
-
-P0001
-
-  × generic arguments on `Logic`, which has no generic parameter is not supported yet
-    ╭─[monitor.msl:57:57]
- 56 │ 
- 57 │ module Peek(in clk: Bit, in a: Bit&lt;Logic&lt;4&gt;&gt;, in b: Bit&lt;Logic&lt;4&gt;&gt;) {}
-    ·                                                         ────┬───
-    ·                                                             ╰── generic arguments on `Logic`, which has no generic parameter is outside the M1 subset
- 58 │ digital for Peek {
-    ╰────
-
-E0161
-
-  × no method `is_high` on `bool`
-    ╭─[monitor.msl:60:74]
- 59 │     on clk.rise() {
- 60 │         emit!("compare", eq = a == b, same = same(a, b), sure = (a == b).is_high());
-    ·                                                                          ───┬───
-    ·                                                                             ╰── `bool` has no such method (Appendix H)
- 61 │     }
-    ╰────
-
-P0001
-
-  × generic arguments on `Logic`, which has no generic parameter is not supported yet
-    ╭─[monitor.msl:64:26]
- 63 │ 
- 64 │ module PeekTop(in b: Bit&lt;Logic&lt;4&gt;&gt;) {
-    ·                          ────┬───
-    ·                              ╰── generic arguments on `Logic`, which has no generic parameter is outside the M1 subset
- 65 │     signal clk: Bit;
-    ╰────
-
-P0001
-
-  × generic function is not supported yet
-    ╭─[values.msl:16:1]
- 15 │ 
- 16 │ pub extern "intrinsic" fn logic&lt;T: Repr&gt;(pattern: str) -&gt; T;
-    · ──────────────────────────────┬─────────────────────────────
-    ·                               ╰── generic function is outside the M1 subset
- 17 │ 
-    ╰────
-
-error: typeck failed with 5 diagnostic(s)</pre>
-  <p>When it runs, each rising edge writes one record, <code>eq=x same=false sure=false</code>, three in all. Today the library type <code>Logic</code> is refused by name.</p>
+time         PeekTop.b  PeekTop.clk  PeekTop.peek.a
+0.000000e0   xxxx       false        1010
+3.000000e-6  xxxx       false        1010</pre>
+  <p>Each rising edge writes one record, <code>eq=x same=false sure=false</code>, three in all, and the table shows <code>b</code> still at <code>xxxx</code>.</p>
 </div>
 
 <h3>Analog code reads values</h3>

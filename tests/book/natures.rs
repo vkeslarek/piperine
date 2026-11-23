@@ -69,8 +69,7 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
 fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net() {
     // natures#2 (refused, S8): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
     // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
-    // `P0001` (L24), an `Option` is not carried yet (E0112), `Logic` is a library struct the front end does
-    // not take as a type yet (P0001) and `Sda` is the model's own nature, declared further on in the
+    // `P0001` (L24) and `Sda` is the model's own nature, declared further on in the
     // chapter's example, so here it is unknown (E0161); the discrete, node and initial-value lines are
     // accepted. When the block runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
@@ -81,10 +80,11 @@ fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_t
     // has a `Default`, so the line `signal sda: Sda;` stays valid once every carrier starts at its default (phase A)
     let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    for (code, expected) in [("P0001", "an array of `Bit<bool>` is not supported yet"), ("P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet")] {
-        assert!(given.contains(&(code.to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
-    assert_eq!(given.len(), 2, "the array and `Logic<4>` only; `Option<u8>` is a carried type since composite-values: {given:?}");
+    // `Logic<4>` is the library's four-state value since `explicit-unknowns` phase B and `Option<u8>` a carried type
+    // since composite-values: the array of carriers is the one refusal left
+    let expected = ("P0001".to_string(), "an array of `Bit<bool>` is not supported yet".to_string());
+    assert!(given.contains(&expected), "{expected:?}: {given:?}");
+    assert_eq!(given.len(), 1, "the array only: {given:?}");
     Refusal::expect(chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "an array of `Bit<bool>` is not supported yet");
 }
 

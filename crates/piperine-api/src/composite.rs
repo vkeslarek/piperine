@@ -159,7 +159,14 @@ impl CellShape {
     fn read(&self, bytes: &[u8], at: &mut usize) -> Option<CompositeCell> {
         match self {
             CellShape::Scalar(ty) => Some(CompositeCell::Scalar(Self::scalar(ty, bytes, at))),
-            CellShape::Struct { name, form, fields } => Some(CompositeCell::Struct { name: name.clone(), form: *form, fields: Self::read_fields(fields, bytes, at)? }),
+            CellShape::Struct { name, form, fields } => {
+                let read = Self::read_fields(fields, bytes, at)?;
+                // a `Logic<N>` is its pattern of `N` characters (EU-15 AC 4), not the two planes it is made of
+                Some(match LogicCell::pattern(name, &read) {
+                    Some(pattern) => CompositeCell::Scalar(Cell::Text(pattern)),
+                    None => CompositeCell::Struct { name: name.clone(), form: *form, fields: read },
+                })
+            }
             CellShape::Tuple(parts) => parts.iter().map(|part| part.read(bytes, at)).collect::<Option<Vec<_>>>().map(CompositeCell::Tuple),
             CellShape::Array(element, length) => (0..*length).map(|_| element.read(bytes, at)).collect::<Option<Vec<_>>>().map(CompositeCell::Array),
             CellShape::Option(inner) => {
@@ -213,6 +220,28 @@ impl CellShape {
             }
             _ => Cell::Int(i128::from(raw)),
         }
+    }
+}
+
+/// The four-state `Logic<N>` of the standard library as a host prints it: `N` characters of `0`, `1`, `x` and `z`, the
+/// highest level first (§22.1.1, EU-15 AC 4). The planes `binary` and `value` give each level its character.
+struct LogicCell;
+
+impl LogicCell {
+    /// The pattern of the struct `name` holding `fields`, when it is a `Logic<N>`: two integer planes called `binary`
+    /// and `value` of `N` levels. `None` for any other struct.
+    fn pattern(name: &str, fields: &[(String, CompositeCell)]) -> Option<String> {
+        let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
+        let [(first, CompositeCell::Scalar(Cell::Int(binary))), (second, CompositeCell::Scalar(Cell::Int(value)))] = fields else { return None };
+        if first != "binary" || second != "value" || levels == 0 || levels > 64 {
+            return None;
+        }
+        Some((0..levels).rev().map(|level| match ((binary >> level) & 1, (value >> level) & 1) {
+            (1, 0) => '0',
+            (1, 1) => '1',
+            (0, 0) => 'x',
+            _ => 'z',
+        }).collect())
     }
 }
 

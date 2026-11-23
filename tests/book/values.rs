@@ -268,9 +268,8 @@ fn the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic() {
     // values#14 (run since `explicit-unknowns` T22): the adder whose `b` is a `Bit<Option<u8>>` that nothing drives,
     // so it starts at `None` and the `match` takes the `None` arm at each of the three rising edges (values~2bbc575e
     // "b starts at None"; the sum stays at 0 because no commit is made). values#18, the peek over `Bit<Logic<4>>`
-    // (refused, GAPS.md S8): `Logic<4>` is the library struct `Logic`, which has no generic parameter until phase B
-    // (P0001). The test fails when it starts to run, and the row then becomes `run`. values~c30bad4d "The undriven b
-    // starts at xxxx ..." is held by that listing's refusal (S8)
+    // (run since `explicit-unknowns` phase B): `Logic<4>` is the library's four-state value and the host prints its cell as
+    // its pattern; values~c30bad4d "The undriven b starts at xxxx ..." is held by that listing
     let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let absent = adder.stream("absent");
     assert_eq!(absent.len(), 3, "one record at each rising edge: {:?}", adder.records);
@@ -280,8 +279,16 @@ fn the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic() {
         assert_eq!((Fields::of(record, "t"), Fields::of(record, "a")), (&Field::Real(record.time), &Field::Int(3)), "t and a");
     }
     assert!((0..adder.table.rows.len()).all(|row| adder.cell(row, "AdderTop.sum") == &Cell::Int(0)), "the sum stays at 0: no commit is made");
-    let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6));
-    Refusal::expect(peek, "values#18", "P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet");
+    let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let compare = peek.stream("compare");
+    assert_eq!(compare.len(), 3, "one record at each rising edge: {:?}", peek.records);
+    for (record, instant) in compare.iter().zip(["5.000000e-7", "1.500000e-6", "2.500000e-6"]) {
+        assert_eq!(record.instance, "PeekTop.peek");
+        Printed::holds(instant, record.time, "the clock edge");
+        // values~c30bad4d: `a == b` of `1010` and the undriven `xxxx` is `x`, `same(a, b)` is false, and `sure` is false
+        assert_eq!((Fields::of(record, "eq"), Fields::of(record, "same"), Fields::of(record, "sure")), (&Field::Variant("x".to_string()), &Field::Bool(false), &Field::Bool(false)), "eq, same, sure");
+    }
+    assert!((0..peek.table.rows.len()).all(|row| peek.cell(row, "PeekTop.b") == &Cell::Text("xxxx".to_string())), "the undriven `b` stays at xxxx");
 }
 
 #[test]
@@ -343,9 +350,9 @@ fn e0180_a_logic_is_no_f64_and_no_bool() {
     // values~13ffaea6 "Using a Logic where an f64 or a bool is required is error E0180": the library struct `Logic` is
     // a type since composite-values CV-09, so a read of one where a real or a `bool` is wanted is a mismatch
     let real = Faulty::running("values~13ffaea6", "module Top(in l: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { let y: f64 = l; v(a) +> y; }\n", Faulty::operating_point_of("Top"));
-    assert_eq!(real.first("E0180").message, "mismatched types: expected `f64`, found `struct `Logic``");
+    assert_eq!(real.first("E0180").message, "mismatched types: expected `f64`, found `struct `Logic<1>``");
     let flag = Faulty::running("values~13ffaea6", "module Top(in l: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if l { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
-    assert_eq!(flag.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic``");
+    assert_eq!(flag.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic<1>``");
 }
 
 #[test]
