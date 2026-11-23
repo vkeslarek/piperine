@@ -825,6 +825,783 @@ T27 → T28 → T29 → T30 → T31
 
 ---
 
+## Checks` cites. No test is removed, weakened or skipped beyond the table above.
+- **Code clarity (user rules, `.specs/features/code-clarity/spec.md`) is part of every task's done-criteria.** Readable at a glance; the module tree says where each thing is; each crate one purpose; no free function (every function has an owner type); one purpose per type; object-oriented names with no abbreviation; no god method and no needless abstraction; the data path evident. Every new or changed struct, enum, method, field and variant carries a `///` doc comment; a non-evident block cites its spec rule. AGENTS.md idiom rules bind (MD-13): no macro, no `unwrap()`/`expect()` on a path user input reaches.
+- **Conventions.** New IR enum variants and plan `Source` variants are appended last (msl-digital convention). The interpreter refuses every new IR form by name (codegen context R1) in the task that adds it. Every new test target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`. Source-level models go in `crates/piperine-parity/tests/events/*.msl` and `tests/limexp/*.msl`.
+- **Cross-lane files** (design.md "Cross-lane touches"): `spec_text.rs` and `docs.rs` are appended to, never edited above; `GAPS.md` keeps its section numbering; `inventory.tsv` rows are edited in place, never reordered.
+- Zero warnings on every crate the `**Build**` line names. In a worktree sharing a target directory, `touch crates/<crate>/src/lib.rs` before a gate.
+- One atomic commit per task, message as given, ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No push, no merge.
+- **`lessons.py` is not run** during this feature (its `list` rewrites `.specs/lessons.json` and `.specs/LESSONS.md`).
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `AGENTS.md` (build and verify, test placement), `CLAUDE.md` ("Where the tests are", MD-28 amended by MD-72), `crates/piperine-lang/tests/suite_hygiene.rs` (the enforcing guard), `.specs/STATE.md` MD-38 (parity is measured), MD-57 (spec edits with `spec_text.rs`), MD-63 (the compiled backend), MD-70 (unknown semantics in generated code), MD-72 (root Book tests).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| IR (`piperine-ir`) | integration | the new source built, checked, printed | `crates/piperine-ir/tests/digital.rs` | `cargo test -p piperine-ir --test digital` |
+| Interpreter refusals | integration | the new source refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
+| Plan (`piperine-plan`) | integration | the `SETTLE` pin and its read; the order of an event function reading another event | `crates/piperine-plan/tests/digital_shape.rs` | `cargo test -p piperine-plan --test digital_shape` |
+| Printer (`piperine-transpile`) | integration | the event function compiles and fires as abi.md §4.1 says | `crates/piperine-transpile/tests/reaction.rs` | `cargo test -p piperine-transpile --test reaction` |
+| Digital solver | integration | every settle-phase rule and every held-commit transition (hold, land, drop, restore) | `crates/piperine-digital-solver/tests/{instant,checkpoint}.rs` | `cargo test -p piperine-digital-solver --test instant` / `--test checkpoint` |
+| Owner protocol (`piperine-solver`) | integration | S1 to S6 on scripted stubs, each a test | `crates/piperine-solver/tests/{protocol_transient,protocol_operating_point}.rs` | `cargo test -p piperine-solver --test protocol_transient` / `--test protocol_operating_point` |
+| Checker (`piperine-lang/src/types`) | integration | every static AC; each code with its span | `crates/piperine-lang/tests/{types_events,types_analog}.rs` | `cargo test -p piperine-lang --test types_events` / `--test types_analog` |
+| Elaborator (`piperine-lang/src/elab`) | integration | the IR each form lowers to | `crates/piperine-lang/tests/elab_digital.rs` | `cargo test -p piperine-lang --test elab_digital` |
+| Source-level runs | integration | one test per run-time AC and edge case, from MSL source on the Rust backend; expected values from the rule | `crates/piperine-parity/tests/{source_events,source_limexp}.rs`, models in `tests/events/`, `tests/limexp/` | `cargo test -p piperine-parity --test source_events` / `--test source_limexp` |
+| ngspice parity | integration | each comparison under an existing contract | `crates/piperine-parity/tests/{parity_tran,source_limexp}.rs`, `tests/e2e/twins/` | `cargo test -p piperine-parity --test parity_tran` / `--test source_limexp` |
+| The Book | integration | each row this feature changes, through the binary and the root package | `tests/book/*.rs`, `tests/book/inventory.tsv`, `crates/piperine-cli/tests/book.rs` | `cargo test -p piperine --test book_<chapter>`, `cargo test -p piperine-cli --test book` |
+| Spec text and repository records | integration | one assertion per amended sentence or removed `GAPS.md` row | `crates/piperine-lang/tests/spec_text.rs`, `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-lang --test spec_text`, `cargo test -p piperine-cli --test docs` |
+| Contract re-check (T24) | none | - (build gate; its findings on the Handoff) | - | build gate only |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | After a task with one integration target | the `Run` line(s) the task's `Done when` names |
+| Full | After a task that changes the printer, the plan, the digital solver, the owner protocol or the lowering of an existing form | Quick, then the buck targets, `cargo test -p piperine-cli --test buck --test twins --test commands`, `cargo test -p piperine-api --test buck_long`, `cargo test -p piperine-transpile`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity` |
+| Build | After each phase, and after a task with `Tests: none` | the `**Build**` line, then `cargo test` at the repository root (the default members; `piperine-lang-server` is not one) |
+
+---
+
+## Execution Plan
+
+Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order.
+
+### Phase 1: `settle` below the language
+
+```
+T1 → T2 → T3 → T4
+```
+
+### Phase 2: `settle` from source
+
+```
+T5 → T6
+```
+
+### Phase 3: Settle commits (§15 S1 to S7)
+
+```
+T7 → T8 → T9 → T10 → T11
+```
+
+### Phase 4: Events read as `bool`
+
+```
+T12 → T13 → T14 → T15 → T16
+```
+
+### Phase 5: `limexp`
+
+```
+T17 → T18 → T19
+```
+
+### Phase 6: The Book's clipper and buck, and the early bookkeeping
+
+```
+T20 → T21 → T22 → T23
+```
+
+### Phase 7: Contract (waits for `composite-values` A–B and `generics` A–B on `main`)
+
+```
+T24
+```
+
+### Phase 8: The phase detector
+
+```
+T25 → T26
+```
+
+### Phase 9: Functions that return `Event`, and closure
+
+```
+T27 → T28 → T29 → T30 → T31
+```
+
+---
+
+## Task Breakdown
+
+### T1: IR `EventSource::Settle`
+
+**What**: `EventSource::Settle` appended last (the event `settle` of a body, §13 rule 17); `Ir::check` accepts it with or without a guard; the structural printer prints `settle`; the interpreter refuses it by name (R1).
+**Where**: `crates/piperine-ir/src/model.rs`
+**Depends on**: None
+**Reuses**: the `Changed` arms of `check.rs`, `print.rs`; the refusal pattern of `piperine-interp/src/walk.rs`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_settle_event_is_built_checked_and_printed` passes under `**Run irdigital**`
+- [x] `a_settle_event_is_refused_by_name` passes under `**Run interp**`
+- [x] Code clarity: the variant and every arm it adds carry `///` docs citing §13 rule 17; no free function
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(ir): the settle event source`
+
+---
+
+### T2: Plan: the `GLOBAL` `SETTLE` pin and its read
+
+**What**: `Digital::settle_pin(s, body)` adds the `GLOBAL` `SETTLE` event pin when a body has a `Settle` event (as `start_pin` does for `at`); `Source::Settle` (appended last) is the `CHANGED` byte of that pin, read by the event function of each `Settle` event with its guard's sources (D5).
+**Where**: `crates/piperine-plan/src/digital.rs`
+**Depends on**: T1
+**Reuses**: `Digital::start_pin`, `ReadSet::target(Query::Guard)`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_settle_event_reads_the_global_settle_pin` and `a_body_without_settle_has_no_settle_pin` pass under `**Run planshape**`
+- [x] Code clarity: `settle_pin` and `Source::Settle` doc-commented; no free function; the data path from event to pin readable in one place
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(plan): the settle pin`
+
+---
+
+### T3: Printer: the event function of `settle`
+
+**What**: `print/digital.rs` prints the event function of a `Settle` event: `fired_ = settle_changed && guard`, the guard printed as for `Changed` (unknown guards under MD-70). Every transpile golden stays byte-identical.
+**Where**: `crates/piperine-transpile/src/print/digital.rs`
+**Depends on**: T2
+**Reuses**: the `EventSource::Changed` arm of the event-function printer
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_settle_event_function_fires_on_the_settle_pin_and_its_guard` passes under `**Run reaction**`
+- [x] `cargo test -p piperine-transpile --test golden` unchanged
+- [x] Code clarity: the new arm is one dispatch arm into a named method with a `///` doc; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): the settle event function`
+
+---
+
+### T4: The settle phase runs as §15 step 4 says
+
+**What**: In `instant.rs`, after firing the `SETTLE` nets the engine runs the discrete functions of their cone (V2), then the reactions whose event pins fired; a reaction that runs in the settle phase is `on_settle` whatever its head names (§13 rule 14, V3, D4; `run.rs` `fired_reactions` stops deciding it by pin); the phase's records are stamped `(t, n)`, `n` the last microstep run (§19 Resolution, V1, D3).
+**Where**: `crates/piperine-digital-solver/src/instant.rs`
+**Depends on**: T3
+**Reuses**: `run_functions`, `run_reactions`, `fire_net`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_guarded_settle_event_fires_in_the_settle_phase`, `a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head` and `settle_records_carry_the_last_microstep_index` pass under `**Run instant**`
+- [x] Code clarity: the settle phase is its own method of the engine (no growth of `microsteps` past one screen), doc-commented with §15 step 4; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix(digital-solver): the settle phase runs its functions and stamps its last microstep`
+
+---
+
+### T5: `settle` typed and lowered
+
+**What**: The checker types `settle` as `Event` in every event position (a new `settle_event` method of `types/event.rs`, reached from the `Resolution::Builtin` arm of `types/expr.rs`), `E0441` elsewhere; `elab/events.rs` lowers it to `EventSource::Settle`, alone, guarded (`settle && g`) and in a disjunction (`settle || ev`, §13 rule 14). The Book targets that pin the `settle` refusal go red here and are restored by T6 in the same phase.
+**Where**: `crates/piperine-lang/src/elab/events.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `Disjunct`, `Checker::infer_event_position`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `settle_is_an_event_in_every_event_position` and `settle_outside_an_event_position_is_e0441` pass under `**Run typesevents**`
+- [x] `settle_lowers_to_the_settle_event_source` passes under `**Run elabdigital**`
+- [x] Code clarity: the checker and elaborator additions are methods with `///` docs citing §13 rules 10, 14, 17; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(lang): settle is an event`
+
+---
+
+### T6: The Book rows of `settle`
+
+**What**: Every Book listing whose output `settle` changes is the binary's output again: the buck's `piperine run buck.msl ..` listing (mixed#10) is the run, the clipper's refusal listing (analog#3) keeps only the two `limexp` diagnostics; `inventory.tsv` rows follow (the guard prints them); the pins of design "may move" for T6 move: `welcome~a17f566a`'s `on settle` line asserts it runs, cheatsheet#5 runs (cheatsheet#7 keeps its L49 half), mixed#10 and mixed~a6b3f8ed run, the clipper's tests assert the `limexp` refusal alone. Prose is left for T21 and T22.
+**Where**: `docs/book/content.html`
+**Depends on**: T5
+**Reuses**: `Refusal`, `Chapter`, `Commands`
+**Requirement**: UE-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_buck_block_is_what_the_binary_prints` pass under `**Run clibook**`
+- [x] `cargo test -p piperine --test book_welcome --test book_cheatsheet --test book_analog --test book_mixed` passes
+- [x] `every_block_of_the_book_has_one_row` and `refused_rows_and_gaps_section_11_agree` pass under `**Run bookinventory**`
+- [x] Code clarity: test helpers stay methods of the support types; each moved assertion cites its Book row
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(book): the settle rows run`
+
+---
+
+### T7: `SettleCommits`: a settle commit is held
+
+**What**: New `settle.rs` (`SettleCommits`): a commit with no advancing delay made in the settle phase is held instead of refused (`run.rs`'s "settle commit" refusal leaves); `Outcome::settle_boundary` gives the analog-read nets and the bytes the held commits will give them; `Digital::land_settle_commits(tick)` makes them due at `(tick, 0)`, where `changed()` fires (S1); `Digital::drop_settle_commits()`; `Digital::holds_settle_commits()`; a commit with an advancing delay is an ordinary delayed commit (S7). Replaces `a_settle_commit_with_no_delay_is_refused` (design "may move").
+**Where**: `crates/piperine-digital-solver/src/settle.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `Planned`, `Queue`, `Resolution::due`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_settle_commit_is_held_until_it_is_landed`, `a_landed_settle_commit_fires_changed_at_microstep_0`, `a_dropped_settle_commit_never_applies` and `a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit` pass under `**Run instant**`
+- [x] Code clarity: `SettleCommits` has one purpose and `///` docs on the type, its field and each method, citing §15 S1, S6, S7; no free function
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(digital-solver): settle commits are held for the next time point`
+
+---
+
+### T8: A restore brings back the held settle commits
+
+**What**: `Checkpoint` carries `SettleCommits`, so a rejected step that restores the checkpoint keeps the commit for the retried time point (S5) and a step that landed them and is rejected takes the landing back.
+**Where**: `crates/piperine-digital-solver/src/engine.rs`
+**Depends on**: T7
+**Reuses**: `Checkpoint`, `Digital::restore`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_restore_brings_back_the_held_settle_commits` and `a_restore_takes_back_a_landing` pass under `**Run checkpoint**`
+- [x] Code clarity: the new field documented; no free function
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(digital-solver): a checkpoint holds the settle commits`
+
+---
+
+### T9: The transient owner lands settle commits
+
+**What**: In `protocol/transient.rs`: after an instant whose outcome has a `settle_boundary`, deliver it to the analog side with `Restart::Integrator` and attempt the next step exempt from the truncation test (S2, S3); when a step is accepted and its instant is a time point, call `land_settle_commits(tick_c)` before running it (S1; a forced landing that is not a time point does not land, abi.md R6); the discrete instants in between run on the old value (S4); a rejected step restores the checkpoint (S5); at the stop time held commits are dropped (S6). `DiscreteSide` gains `land_settle_commits`/`drop_settle_commits`, its adapter in `analyses/adapters.rs`.
+**Where**: `crates/piperine-solver/src/protocol/transient.rs`
+**Depends on**: T8
+**Reuses**: `Restart`, `Attempt`, `Advance::Landing { time_point }`
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_exempt_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
+- [x] Code clarity: the landing is a named method of the protocol (the step loop gains one call, not a block), `///` docs citing S1 to S6; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(solver): the transient lands settle commits at the next time point`
+
+---
+
+### T10: The operating point and `Dc` points land settle commits
+
+**What**: In `protocol/operating_point.rs`: held settle commits from the previous sweep point land at microstep 0 of the next point's first instant (S6); those of the operating point before a transient land at its first time point (O4, through T9's path); after the last point of a sweep they are dropped.
+**Where**: `crates/piperine-solver/src/protocol/operating_point.rs`
+**Depends on**: T9
+**Reuses**: T9's `DiscreteSide` methods
+**Requirement**: UE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_settle_commit_of_a_dc_point_lands_at_the_next_point` and `a_settle_commit_of_the_last_point_is_dropped` pass under `**Run protoop**`
+- [x] Code clarity: one named method per rule, doc-commented with §15 S6 and §16 O4; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(solver): sweep points land settle commits`
+
+---
+
+### T11: The Independent Test of `on settle`
+
+**What**: New `crates/piperine-parity/tests/source_events.rs` (with its `//!` header) and models in `tests/events/`: an RC transient with `on settle { emit!(..) }` compared with the run's accepted steps; a settle commit read by a `changed()` reaction at the next time point; a `dc` sweep and an operating point; records ordered after every microstep; `settle || ev`; a design with nothing analog; a probing settle reaction; a jump.
+**Where**: `crates/piperine-parity/tests/source_events.rs`
+**Depends on**: T10
+**Reuses**: `piperine_parity::project::Project`, the `source_unknowns.rs` harness shape
+**Requirement**: UE-03, UE-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `settle_runs_once_per_accepted_time_point`, `settle_does_not_run_at_an_event_time_that_is_not_a_time_point`, `settle_runs_at_the_operating_point_each_dc_point_and_the_last_instant`, `settle_records_follow_every_microstep_of_their_time_point`, `settle_combined_with_an_event_fires_by_rule_1`, `a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record`, `settle_runs_once_per_time_point_across_a_jump`, `a_probing_settle_reaction_reads_the_time_point_solution` and `settle_in_a_design_with_nothing_analog_runs_at_the_operating_point_and_the_stop` pass under `**Run sourceevents**`
+- [x] `a_settle_commit_is_read_at_the_next_time_point`, `an_event_after_the_landing_reads_the_settle_commit`, `a_delayed_settle_commit_is_ordinary` and `a_settle_commit_at_the_stop_time_is_dropped_from_source` pass under `**Run sourceevents**`
+- [x] `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` passes under `**Run sourceevents**` (needs events read as `bool`: moved to T14, Settled B2 (9); added with T14)
+- [x] Code clarity: test fixtures are methods of a named scenario type; no free test helper
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): settle and settle commits from source`
+
+---
+
+### T12: Checker: an event read as a `bool` in a reaction body
+
+**What**: In `types/event.rs`: in a reaction body an `Event` where a `bool` is expected types as `bool` and is recorded as an event read (`Types::event_read(expr)`), a commit's value onto a `bool` carrier included (D2); an `Event` where another type is expected is `E0441`. `docs/spec/part_iv_behavior.md` §13 gains the Resolution of D2, with its `spec_text` guard.
+**Where**: `crates/piperine-lang/src/types/event.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `event_out_of_place`, `Checker::committing`
+**Requirement**: UE-01, UE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_event_reads_as_a_bool_in_a_reaction_body`, `an_event_committed_onto_a_bool_carrier_reads_as_a_bool` and `an_event_where_another_type_is_expected_is_e0441` pass under `**Run typesevents**`
+- [x] `the_commit_of_an_event_read_as_a_bool_is_stated` passes under `**Run spectext**`
+- [x] Code clarity: `event_out_of_place` is split, not grown: one method per outcome, each doc-commented with its rule
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): an event reads as a bool in a reaction body`
+
+---
+
+### T13: Checker: guards read events
+
+**What**: In `types/event.rs`: inside a guard an `Event` subexpression and `!ev` read as `bool` (§13 rule 9), recorded as event reads; `!` on an `Event` outside a guard or a reaction body, and `bool && Event` in an event position, stay `E0440`.
+**Where**: `crates/piperine-lang/src/types/event.rs`
+**Depends on**: T12
+**Reuses**: `negated_event`, `logical`
+**Requirement**: UE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_guard_reads_an_event_as_a_bool`, `negating_an_event_outside_a_guard_or_body_is_e0440` and `a_bool_and_an_event_in_an_event_position_is_e0440` pass under `**Run typesevents**`
+- [x] Code clarity: no method grows past one screen; `///` docs cite §13 rules 1 and 9
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): guards read events`
+
+---
+
+### T14: Elaborator: an event read lowers to `fired(k)`
+
+**What**: An event read in a reaction body lowers to `Expr::Fired(k)`, `k` the equal event of the body (the head's first) or a new event appended to the body's events and to no reaction's `on` (D7), in `elab/events.rs` or a new `elab/event_reads.rs` (`EventReads`) when `events.rs` would pass 600 lines. Replaces `a_head_the_ir_cannot_hold_is_p0001` (design "may move").
+**Where**: `crates/piperine-lang/src/elab/events.rs`
+**Depends on**: T13
+**Reuses**: `Expr::Fired`, `Disjunct`
+**Requirement**: UE-01, UE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_event_read_as_a_bool_in_a_body_lowers_to_fired` passes under `**Run elabdigital**`
+- [x] `an_event_read_as_a_bool_says_whether_it_fired`, `two_events_in_one_microstep_run_the_reaction_once_both_true`, `an_event_not_in_the_head_reads_whether_it_fired` and `a_committed_event_read_commits_whether_it_fired` pass under `**Run sourceevents**`
+- [x] Code clarity: the lookup-or-append is one named type or method with a `///` doc citing §13 rule 2; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): an event read as a bool is fired`
+
+---
+
+### T15: Elaborator and plan: a guard reads events
+
+**What**: The event subexpressions of a guard lower to `fired(j)` of a body event; the plan orders event `j`'s function before the function of the event whose guard reads it (D8) where its dependency set does not already.
+**Where**: `crates/piperine-lang/src/elab/events.rs`
+**Depends on**: T14
+**Reuses**: T14's lookup, `ReadSet`
+**Requirement**: UE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_guard_reading_events_fires_only_when_d_changed_with_en_high_and_still` and `a_guard_reads_what_the_reaction_would_read` pass under `**Run sourceevents**`
+- [x] `an_event_function_reading_another_event_runs_after_it` passes under `**Run planshape**`
+- [x] Code clarity: `///` docs cite §13 rule 9; no free function
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): guards read events`
+
+---
+
+### T16: The Book rows of events read as `bool`
+
+**What**: mixed#6 (`Comparator`, `on up || dn { q <- up; }`) and mixed#15 run or, where another gap still refuses them, are re-pointed to it (D15); digital#6 (`Pfd3`) is now refused for `let mut` alone and is re-pointed to L5 until T26; their `inventory.tsv` rows and `tests/book/{mixed,digital}.rs` follow (design "may move").
+**Where**: `tests/book/mixed.rs`
+**Depends on**: T15
+**Reuses**: `Refusal`, `Chapter`
+**Requirement**: UE-01, UE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_comparator_without_hysteresis_reads_its_event_as_a_bool` passes under `**Run bookmixed**`
+- [x] `**Run bookdigital**`, `**Run bookinventory**` and `**Run clibook**` pass
+- [x] Code clarity: each moved assertion cites its Book row and rule
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(book): the rows of events read as bools`
+
+---
+
+### T17: Checker: closure bindings in a module
+
+**What**: The module item walk of `types/check.rs` skips `DeclKind::Binding` children (closure parameters), typed with their closure (D9); the "binding inside a module" refusal leaves for them.
+**Where**: `crates/piperine-lang/src/types/check.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: the `GenericParam` skip arm
+**Requirement**: UE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `limexp_checks_with_its_closure_bindings` passes under `**Run typesanalog**`
+- [x] Code clarity: the arm carries a comment citing §22.2.4 and D9
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `fix(types): a closure's bindings are not module items`
+
+---
+
+### T18: `limexp` runs from source, against `pnjlim` and ngspice
+
+**What**: New `crates/piperine-parity/tests/source_limexp.rs` (with its `//!` header) and models in `tests/limexp/`: `limexp` elaborates from the stdlib; a diode written with `limexp(v / nvt)` and one with `exp` under `pnjlim` agree at the operating point under `DC_VOLTAGE`; the `diode_series` twin with its diodes written with `limexp` agrees with ngspice's `diode_series.cir` under `DC_VOLTAGE` (D11).
+**Where**: `crates/piperine-parity/tests/source_limexp.rs`
+**Depends on**: T17
+**Reuses**: `parity_op.rs`'s `OperatingPoint` compare, `Ngspice`, `Project`
+**Requirement**: UE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `limexp_elaborates_from_the_stdlib_with_its_closure`, `limexp_and_pnjlim_diodes_agree_at_the_operating_point` and `the_limexp_diode_series_twin_agrees_with_ngspice` pass under `**Run sourcelimexp**`
+- [x] No `ToleranceContract` edited
+- [x] Code clarity: the comparison is a method of a named fixture type; no free test helper
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): limexp runs and agrees with ngspice`
+
+---
+
+### T19: `limexp` limits and differentiates as §22.2.4 says
+
+**What**: Through the compiled diode's ABI call (D10): with `old = 0` the argument after `limit` for `new = 30` is 1.0 (rule 3); at a converged point the partial of the current is `is · limexp(x) / nvt` (rule 5).
+**Where**: `crates/piperine-parity/tests/source_limexp.rs`
+**Depends on**: T18
+**Reuses**: the ABI caller of `crates/piperine-abi/tests/caller.rs`
+**Requirement**: UE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `limexp_moves_its_argument_at_most_one_per_iteration` and `the_derivative_of_limexp_is_limexp` pass under `**Run sourcelimexp**`
+- [x] Code clarity: expected values computed by Rust in the test from §22.2.4
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(parity): limexp limits its argument and differentiates through limit`
+
+---
+
+### T20: The clipper's transient twin
+
+**What**: `tests/e2e/twins/tran_clipper.cir` (2 V, 1 kHz sine, 1 kΩ, two antiparallel `D` diodes, `.tran` to 2 ms) and `tran_clipper.msl` (the Book's analog part with `limexp` diodes), no `.command` (D11); `parity_tran.rs` gains `tran_clipper`, `v(vout)` under `TRAN_VOLTAGE` on the compiled backends.
+**Where**: `crates/piperine-parity/tests/parity_tran.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `TranRun`, `compare_with`
+**Requirement**: UE-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `tran_clipper` passes under `**Run paritytran**`
+- [x] `cargo test -p piperine-cli --test twins` still counts sixteen twins
+- [x] Code clarity: the new test reuses `TranRun`; no free helper added
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): the clipper agrees with ngspice`
+
+---
+
+### T21: The Book's clipper runs
+
+**What**: The clipper's "Run it" listing (analog#3) is the binary's output: two `clip` records, one per period, `vin` within 50 mV of 0.72 V; the sentence "That is, once `settle` and `limexp` are compiled .. runs nothing" is rewritten to what runs (UE-07 AC 2); analog#2 and analog#3 rows and their tests follow (design "may move", D15 for what L49 still refuses); `the_clipper_refusal_no_longer_names_sin` becomes `the_clipper_runs_as_the_book_prints`.
+**Where**: `tests/book/analog.rs`
+**Depends on**: T20
+**Reuses**: `Chapter`, `Commands::clipper`
+**Requirement**: UE-06, UE-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_clipper_prints_one_clip_record_per_period_near_0_72_volts` passes under `**Run bookanalog**`
+- [x] `the_clipper_runs_as_the_book_prints` and `every_cli_listing_of_the_book_is_what_the_binary_prints` pass under `**Run clibook**`
+- [x] `**Run bookinventory**` passes
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(book): the clipper runs`
+
+---
+
+### T22: The Book's chapter-8 buck check runs
+
+**What**: `the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28` asserts every `regulated` check record after 10 ms is `pass = true` (UE-06 AC 2; if one is not, D16: the row becomes `diverges` with the measured margin and the task reports it); the Book's sentences that say `settle` is not compiled (the buck's "Run it", the chapter status paragraph, the introduction's list of refusals) are rewritten to what runs (UE-07 AC 2).
+**Where**: `tests/book/mixed.rs`
+**Depends on**: T21
+**Reuses**: `Commands::buck`
+**Requirement**: UE-06, UE-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28` passes under `**Run bookmixed**`
+- [x] `the_book_no_longer_says_settle_is_not_compiled` passes under `**Run docs**`
+- [x] `**Run clibook**` and `**Run bookinventory**` pass
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(book): the buck's check runs`
+
+---
+
+### T23: Early bookkeeping
+
+**What**: `GAPS.md` drops L52 and `limexp` from L58, §1's "stdlib that runs" names `settle` and `limexp`, §11 rows follow T6/T16/T21/T22, §9 Coverage updates IV §13 and V §15; `docs.rs` asserts the rows gone and left; `.specs/STATE.md` gains the next free `MD-` entry (design "Tech Decisions", D17); the ROADMAP row says B1–B4 delivered and B5 waits.
+**Where**: `GAPS.md`
+**Depends on**: T22
+**Reuses**: `docs.rs` row helpers
+**Requirement**: UE-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `gaps_no_longer_lists_settle_or_limexp` passes under `**Run docs**`
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs: settle and limexp run`
+
+---
+
+### T24: Rebase and re-read the anchors
+
+**What**: Once `composite-values` A–B and `generics` A–B (L8, its T52) are on `main` (if not, stop and report), rebase `feature/unknown-semantics-events` onto it and re-read every anchor B5 uses: `let mut`/assignment in a reaction, `types/handles.rs`, `elab/handles.rs` (`HandleBinding`, `Scope::handles`), `Types::handle`, the function-class inference, `elab/events.rs` after B1–B4, the next free `MD-` number. Write each difference and how T25 to T31 map onto it on the Handoff's `**Settled mid-build:**` line. No code change.
+**Where**: `.specs/features/unknown-semantics-events/tasks.md`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: design.md "What the code does today"
+**Requirement**: UE-01, UE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Rebased, every B1–B4 check still passes under its `Run` line
+- [x] The Handoff names each moved anchor
+- [x] Gate check passes: Build
+
+**Tests**: none
+**Gate**: build
+
+**Commit**: `docs(specs): unknown-semantics-events B5 anchors after the rebase`
+
+---
+
+### T25: `Pfd3` runs
+
+**What**: The `Pfd3` of §13, verbatim, in `tests/events/pfd3.msl`, driven by timed commits that rise apart and together; `up`/`dn` printed; rising together leaves `state` unchanged (UE-01 AC 3).
+**Where**: `crates/piperine-parity/tests/source_events.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: T11's scenario type
+**Requirement**: UE-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `pfd3_rising_together_leaves_state_unchanged` and `pfd3_rising_apart_steps_up_then_down` pass under `**Run sourceevents**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): the three-state phase detector`
+
+---
+
+### T26: The Book's `Pfd3` row
+
+**What**: digital#6 runs; its row, test and `inventory.tsv` entry follow. (Amended at T24: `composite-values` T11 already made the row `run` under `the_phase_detector_runs_assignment_and_events_read_as_bools`; this task verifies it, and the Book text is the `Pfd3` T25 runs from source verbatim.)
+**Where**: `tests/book/digital.rs`
+**Depends on**: T25
+**Reuses**: `Chapter`
+**Requirement**: UE-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_phase_detector_runs_assignment_and_events_read_as_bools` passes under `**Run bookdigital**`
+- [x] `**Run bookinventory**` passes
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(book): the phase detector runs`
+
+---
+
+### T27: Checker: functions that return `Event`
+
+**What**: In `types/event.rs`: a `fn` whose result is `Event` has its result in an event position; its call is an `Event` in an event position, a guard and a reaction body (read as `bool` there, T12/T13); elsewhere `E0441`; the "method `rise` on this receiver" refusal leaves for a handle receiver (generics' handles).
+**Where**: `crates/piperine-lang/src/types/event.rs`
+**Depends on**: None (its phase follows the previous one)
+**Amended (T27)**: the checker already accepts and types every form: the handle receiver of `req.rise()` (generics A-B: `carrier_named`/`declared_port` of a handle parameter) and the `Event` result of a function needed no change, so this task is the tests that pin it (anchor note 2b of Settled B5 is moot for the checker); the refusal lives in the elaborator (T28).
+**Reuses**: `Types::handle`, `infer_event_position`
+**Requirement**: UE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_function_returning_event_is_accepted_in_every_event_position` and `a_function_returning_event_outside_an_event_position_is_e0441` pass under `**Run typesevents**`
+- [x] Code clarity: `///` docs cite §13 rule 7; no free function
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): functions that return Event`
+
+---
+
+### T28: Elaborator: an `Event` function is inlined where it stands
+
+**What**: A call of a `fn -> Event` is inlined through `HandleBinding` (D14), its result lowered by `elab/events.rs` into the caller's head, body `let`, guard or body read; a nested `Event` function nests the inlining.
+**Where**: `crates/piperine-lang/src/elab/event_functions.rs` (new, called from the `Call` arm of `disjuncts` in `elab/events.rs`; no `HandleBinding`, see Settled B5 (2b): the parameters bind in `Scope::handles`/`texts`/`values` under `Environment`)
+**Depends on**: T27
+**Reuses**: `HandleBinding`, `Scope::handles`
+**Requirement**: UE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_event_function_call_lowers_to_its_body_event` passes under `**Run elabdigital**`
+- [x] Code clarity: `///` docs; no free function; no god method
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): event functions are inlined`
+
+---
+
+### T29: The Independent Test of `Event` functions
+
+**What**: `tests/events/handshake.msl`: `handshake` in a head, a body `let`, a guard and a body read, driven by timed commits; a function calling another.
+**Where**: `crates/piperine-parity/tests/source_events.rs`
+**Depends on**: T28
+**Reuses**: T11's scenario type
+**Requirement**: UE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `handshake_fires_when_req_rises_with_ack_high`, `an_event_function_in_every_event_position`, `an_event_function_read_as_a_bool_says_whether_it_fired` and `an_event_function_calling_another_fires_under_the_outer_guard` pass under `**Run sourceevents**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): event functions from source`
+
+---
+
+### T30: The Book's `handshake` rows
+
+**What**: values#8 (the row the task named values#2) and values~c389077a run; their rows, tests and `inventory.tsv` entries follow.
+**Where**: `tests/book/values.rs`
+**Depends on**: T29
+**Reuses**: `Chapter`
+**Requirement**: UE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_function_has_the_class_its_body_gives` passes under `**Run bookvalues**`
+- [x] `**Run bookinventory**` passes
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(book): event functions run`
+
+---
+
 ### T31: Closing bookkeeping
 
 **What**: `GAPS.md` drops L51 and L53, §9 and §11 follow; `docs.rs` asserts it; the `MD-` entry of T23 is completed with event functions; the ROADMAP row says delivered.
