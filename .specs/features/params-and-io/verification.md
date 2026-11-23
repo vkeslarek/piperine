@@ -1,27 +1,34 @@
 # Params and I/O verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at c4a883a2 (the round 8 fix, 114 pass, 0 fail; re-run by the round 9 verifier after its own commit); round 8 at 59ae2602, round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Verdict**: PASS
+**Proofs**: `proofs.md` at 196ab872 (the round 9 fix, 114 pass, 0 fail; re-run by the round 10 verifier after its own commit); round 9 at c4a883a2, round 8 at 59ae2602, round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: round 9 judges the fix of F36 and F37 (cc2b6f98: `Session::describe(project, spec, settings)` compiles a Rust request that sets a param some placement derives from and derives through it; `piperine_derive_3`; abi.md lists `BytesMut`; `git diff 99a13f80..c4a883a2`, 12 files), every caller of the changed `describe`, and that `piperine info` with no host value needs no `rustc`. Rounds 8 to 1 are kept below. F15 is out of scope (owned by `generics`).
+**Scope**: round 10 judges the fix of F38 (e5a515a8: one write path for a run and a description, the `Pins` trait over `CircuitInstance` and an `Unbound` sink for `Session::describe`, whose own arms are deleted; `git diff 582a2c01..196ab872`, 5 files), that the refactor leaves a run's behaviour unchanged, and the new trait against the cleanliness rules. Rounds 9 to 1 are kept below. F15 is out of scope (owned by `generics`).
 
 **Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
 
 **Tests run (gate policy: targeted only, foreground).** Lane D env: `cargo test -p piperine-api -p piperine-transpile --no-fail-fast`
-(48 results, all green: every `piperine-api` target and the transpiler's); `cargo build -p piperine-cli`; `check_proofs.py
-params-and-io` after this commit (`proofs.md`; `clicommands`, `docs` hold `info` and MD-69's `piperine_derive_3`). No workspace run.
+(48 results, every target green, the two new `describe` tests among them); `cargo build -p piperine-cli`; `check_proofs.py
+params-and-io` after this commit (`proofs.md`: `source_params`, `source_tables`, `clicommands` with `info`, `docs`). No workspace run.
 
-**The `describe` API change.** Callers: `piperine-cli` `commands/info.rs` (a lazy `Settings::from_environment`), and the
-`piperine-api` tests `session.rs` (four) and `derived.rs`; no other host surface calls it (no Python crate in this tree; `grep` of
-`describe(`). `piperine info pt.msl` under `env -i PATH=/usr/bin:/bin`, where no `rustc` is on the path, lists every param (exit 0):
-with no host value `sets_a_param` is false and the closure is never called. Holds.
+**F38.** `a_description_shows_the_values_a_run_reads_for_every_param_kind` opens the same request twice, `describe` and `open`, and
+asserts the child of each passed-down param (`n`, `md`, `rs`, `cfg`, `r` = `rt * 2.0`, `big` above 2^53) reads the same in both and is
+the written value (`Some(3000)`, `g` 2.5, 5000, `9007199254740993`); `a_described_option_and_leaf_reach_the_child` covers the numeric
+leaf form. They are the two cases my round 9 probe showed stale. Closed.
 
-**Own examples (a throwaway `piperine-api` test, deleted, not committed).** `Wrap { rs: Option<f64>; cfg: Cfg; n: u8; let i =
-Inner { rs: rs, cfg: cfg, n: n }(p); }`, `describe` of a `rust` request:
-- `Top.w.n=3` shows `Top.w.i.n` = `Int(3)`: the compiled derive is used (F36 holds). With no text, `Int(1)`, no compile.
-- `Top.w.rs=3000` shows `Top.w.i.rs` = `None`; a run of the same text gives the child `Some(3000)` (round 6, `params_passed_through_a_wrappers_placement_run`).
-- `Top.w.cfg.g=2.5` shows `Top.w.i.cfg` with `g` = 1.0; a run gives 2.5.
-Both stale values are shown with no refusal (F38).
+**A run is unchanged.** The run's functions only change their circuit parameter from `&mut CircuitInstance` to `&mut dyn Pins`;
+`Pins for CircuitInstance` forwards `holds`/`check`/`write` to the calls the code made before (`bound().names.params`, `check_set`,
+`set`). HEAD binary, the earlier examples: `w.big=9007199254740993` 1/7 V, `r: match md` after `w.md=Slow` 0.75 V, `rs: rt * 2.0`
+after `w.rt=500` 0.5 V, `w.rs=None` 0.5 V and `w.rs=500` 1/3 V on the pinless wrapper, `l.cfg.n=0x3` 0.25 V, a structural
+`m.md=Open` 1 V, and the pinless unread `w.gain=2` still `E0802` "no PARAM pin". `piperine info pt.msl` with no `rustc` on the
+path exits 0.
+
+**Cleanliness.** `pins.rs` has a module doc, the trait and each method are documented, `Unbound` is a documented unit struct, names
+are whole words, `pub(crate)` only, one purpose (where a written param lands); no free function, no god method. Holds.
+
+**Note for the user (not a finding).** A description writes nowhere, so it accepts two values a run refuses: a value that breaks a
+pinned param's `where`, and a param no pin holds that nothing derives from (the run's "no PARAM pin"). Both were accepted by
+`describe` before this round as well; the values a run *does* use now match.
 
 ## Checks
 
@@ -181,7 +188,31 @@ Both stale values are shown with no refusal (F38).
 | F35. (Minor, cleanliness) A dead parameter and a message patched by text replacement | `Session::set_exact_integer(.., _ir: &Ir, ..)` keeps an unused parameter; `Session::write_leaf_change` rewrites a refusal with `message.replacen("refuses the value NaN", ..)`, a composite change that carries `NaN` as its value so the message the write builds is wrong first | drop `_ir`; give `Changed` the text to show (or build the composite refusal with it) instead of patching the message | b7c1fd4b; `_ir` dropped from `set_exact_integer`; `Changed::text`/`shown()` carries the host's text, the `replacen` patch is gone |
 | F36. (Minor) `Session::describe` of a Rust-backend request refuses a value bound from an integer, enum or composite param and tells the host to "use --backend rust" | `session.rs:947` builds `Evaluated` for every request; `Evaluated::derive` refuses such a binding ("which the interpreter does not evaluate ...: use --backend rust"); PI-05 AC 1 governs a run on the interpreter backend only, and HII-10 says the description shows "the values a run uses"; the F34 test describes an `interp` request only | evaluate those bindings for the description (the elaborator's const evaluator folds every param type), or refuse naming the real limit of the description (and a `GAPS.md` row with an owner); test a `rust` request | cc2b6f98; `describe` of a Rust request compiles and derives through `Compiled` (own probe: `Top.w.n=3` shows the child `Int(3)`); `apisession` describe tests; `info` with no host value calls no `rustc` (own run with no `rustc` on the path). The composite and `Option` paths of `describe` are F38 |
 | F37. (Minor, records) The new ABI view and the changed derive contract are not written down | `BytesMut<'a>` joins `piperine-abi` `raw.rs` but `.specs/features/device-abi/abi.md` (§933 lists `Str`, `Bytes`, `List`, `Module` as the views with private fields) does not name it; the export kept the symbol `piperine_derive_2` across a signature change although `print/derive.rs` says "the suffix is the version of this contract" (no build is affected: the cache key changes, and the branch is unmerged) | add `BytesMut` to abi.md beside `Bytes`; record the derive contract's current signature where MD-69 names it, or bump the suffix | cc2b6f98; abi.md §933 lists `BytesMut`; the export is `piperine_derive_3`, recorded in MD-69 (`docs` `state_records_the_derived_param_decision`) |
-| F38. (Major, silent) `Session::describe` shows a stale child after a host value for an `Option` or a leaf of a composite param that a placement passes down | own probe (`describe`, `rust` request): `Top.w.rs=3000` shows `Top.w.i.rs` `None`, `Top.w.cfg.g=2.5` shows `Top.w.i.cfg.g` 1.0, where a run gives `Some(3000)` and 2.5; `describe` writes both through `Params::leaf_change` + `apply_leaf` (`session.rs` the `option_leaves` arm and the leaf arms of both loops), never through `Params::changes_composite`, which the run's `write_leaf_change` uses; HII-10: the description shows "the values a run uses" | route `describe`'s leaf and `Option` writes through `changes_composite` with the same `derive`, and test both cases in `describe` | |
+| F38. (Major, silent) `Session::describe` shows a stale child after a host value for an `Option` or a leaf of a composite param that a placement passes down | own probe (`describe`, `rust` request): `Top.w.rs=3000` shows `Top.w.i.rs` `None`, `Top.w.cfg.g=2.5` shows `Top.w.i.cfg.g` 1.0, where a run gives `Some(3000)` and 2.5; `describe` writes both through `Params::leaf_change` + `apply_leaf` (`session.rs` the `option_leaves` arm and the leaf arms of both loops), never through `Params::changes_composite`, which the run's `write_leaf_change` uses; HII-10: the description shows "the values a run uses" | route `describe`'s leaf and `Option` writes through `changes_composite` with the same `derive`, and test both cases in `describe` | e5a515a8; `apisession` `a_description_shows_the_values_a_run_reads_for_every_param_kind` and `a_described_option_and_leaf_reach_the_child` (description equals the run for `n`, `md`, `rs`, `cfg`, `r`, `big`) |
+
+## Round 9 record (fix of F36, F37)
+
+**Round 9 verdict**: FAIL
+**Round 9 proofs**: `proofs.md` at c4a883a2 (the round 8 fix, 114 pass, 0 fail; re-run by the round 9 verifier after its own commit); round 8 at 59ae2602, round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Round 9 scope**: round 9 judges the fix of F36 and F37 (cc2b6f98: `Session::describe(project, spec, settings)` compiles a Rust request that sets a param some placement derives from and derives through it; `piperine_derive_3`; abi.md lists `BytesMut`; `git diff 99a13f80..c4a883a2`, 12 files), every caller of the changed `describe`, and that `piperine info` with no host value needs no `rustc`. Rounds 8 to 1 are kept below. F15 is out of scope (owned by `generics`).
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
+
+**Tests run (gate policy: targeted only, foreground).** Lane D env: `cargo test -p piperine-api -p piperine-transpile --no-fail-fast`
+(48 results, all green: every `piperine-api` target and the transpiler's); `cargo build -p piperine-cli`; `check_proofs.py
+params-and-io` after this commit (`proofs.md`; `clicommands`, `docs` hold `info` and MD-69's `piperine_derive_3`). No workspace run.
+
+**The `describe` API change.** Callers: `piperine-cli` `commands/info.rs` (a lazy `Settings::from_environment`), and the
+`piperine-api` tests `session.rs` (four) and `derived.rs`; no other host surface calls it (no Python crate in this tree; `grep` of
+`describe(`). `piperine info pt.msl` under `env -i PATH=/usr/bin:/bin`, where no `rustc` is on the path, lists every param (exit 0):
+with no host value `sets_a_param` is false and the closure is never called. Holds.
+
+**Own examples (a throwaway `piperine-api` test, deleted, not committed).** `Wrap { rs: Option<f64>; cfg: Cfg; n: u8; let i =
+Inner { rs: rs, cfg: cfg, n: n }(p); }`, `describe` of a `rust` request:
+- `Top.w.n=3` shows `Top.w.i.n` = `Int(3)`: the compiled derive is used (F36 holds). With no text, `Int(1)`, no compile.
+- `Top.w.rs=3000` shows `Top.w.i.rs` = `None`; a run of the same text gives the child `Some(3000)` (round 6, `params_passed_through_a_wrappers_placement_run`).
+- `Top.w.cfg.g=2.5` shows `Top.w.i.cfg` with `g` = 1.0; a run gives 2.5.
+Both stale values are shown with no refusal (F38).
 
 ## Round 8 record (fix of F33 to F35)
 
@@ -536,3 +567,5 @@ Round 7: F30 to F32 are closed by the typed derive; F33 to F35 are minor and nee
 Round 8: F33 to F35 are closed; F36 and F37 are minor and need an implementer.
 
 Round 9: F36 and F37 are closed; F38 needs an implementer.
+
+Round 10: every finding F1 to F38 is closed; PASS. F15's owner `generics` still has no task for GN-26 AC 3 (round 3 note).
