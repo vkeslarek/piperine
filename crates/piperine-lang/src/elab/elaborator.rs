@@ -172,7 +172,9 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.lower_pending_bodies();
         self.pad_child_nodes();
         let top_instance = self.place_top(top);
+        let reprs = self.lower_hand_written_reprs();
         self.add_functions();
+        self.set_hand_written_reprs(reprs);
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);

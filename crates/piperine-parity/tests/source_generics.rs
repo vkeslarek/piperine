@@ -223,6 +223,77 @@ fn generic_structs_and_enums_instantiate_per_argument_list() {
     );
 }
 
+/// `enum Phase { A, B, C, D }` of the model `repr.msl`: one level per variant, written by hand.
+#[derive(Clone, Copy, PartialEq)]
+enum Phase {
+    A,
+    B,
+    C,
+    D,
+}
+
+impl Phase {
+    /// The levels `encode` of the model gives: the variant's own level is high.
+    fn encode(self) -> [bool; 4] {
+        [self == Phase::A, self == Phase::B, self == Phase::C, self == Phase::D]
+    }
+
+    /// `decode` of the model: the lowest high level names the variant; none high is no variant.
+    fn decode(levels: [bool; 4]) -> Option<Phase> {
+        [Phase::A, Phase::B, Phase::C, Phase::D].into_iter().zip(levels).find(|(_, high)| *high).map(|(phase, _)| phase)
+    }
+}
+
+/// `struct Count { n: u8 }` of the model `repr.msl`: a two-level Gray code.
+#[derive(Clone, Copy)]
+struct Count {
+    n: u8,
+}
+
+impl Count {
+    /// The levels `encode` of the model gives: the Gray code of `n`, level `k` being bit `k`.
+    fn encode(self) -> [bool; 2] {
+        let gray = self.n ^ (self.n >> 1);
+        [gray & 1 == 1, gray & 2 == 2]
+    }
+}
+
+/// The byte of a carrier of a hand-written layout: level `k` is bit `k` (the narrowest unsigned integer of the levels).
+struct LevelByte;
+
+impl LevelByte {
+    /// The byte whose bit `k` is `levels[k]`.
+    fn of(levels: &[bool]) -> Vec<u8> {
+        CarrierBytes::byte(levels.iter().enumerate().fold(0u8, |byte, (k, high)| byte | (u8::from(*high) << k)))
+    }
+}
+
+#[test]
+fn a_hand_written_repr_carries_its_own_layout() {
+    // GN-05 AC 1: a one-hot `Bit<Phase>` commits the 4 levels its `encode` gives and a Gray-coded `Bit<Count>` the
+    // 2 levels of its code, each as the byte whose bit `k` is level `k`
+    RUN.assert_commits(
+        "repr.msl",
+        &["p0", "p1", "p2", "g0", "g1", "g2"],
+        &[
+            LevelByte::of(&Phase::B.encode()),
+            LevelByte::of(&Phase::C.encode()),
+            LevelByte::of(&Phase::D.encode()),
+            LevelByte::of(&Count { n: 1 }.encode()),
+            LevelByte::of(&Count { n: 2 }.encode()),
+            LevelByte::of(&Count { n: 3 }.encode()),
+        ],
+    );
+}
+
+#[test]
+fn a_decode_returning_none_is_returned_to_the_caller() {
+    // GN-05 AC 2 (§2 rule 9 as MD-78 amends it): `decode` of no high level is `None`, of the third level `Some(C)`
+    let none = Phase::decode([false; 4]).map_or(0, |phase| if phase == Phase::A { 2 } else { 1 });
+    let some = Phase::decode([false, false, true, false]).map_or(0, |phase| u8::from(phase == Phase::C));
+    RUN.assert_commits("repr.msl", &["d0", "d1"], &[CarrierBytes::byte(none), CarrierBytes::byte(some)]);
+}
+
 #[test]
 fn a_generic_repr_instance_is_laid_out_per_section_2() {
     // GN-06 AC 2 (§2 rule 3): `Pair<u8>` derives `Repr` through its argument, so a `Bit<Pair<u8>>` carries the leaves of

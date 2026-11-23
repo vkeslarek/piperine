@@ -88,7 +88,10 @@ impl Checker<'_> {
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if self.repr_levels(v).is_some() => Some(value),
+            v if self.repr_levels(v).is_some() => {
+                self.reach_hand_written_repr(v);
+                Some(value)
+            }
             other => {
                 let name = other.name(self.design);
                 self.no_repr(file, node.span, &name);

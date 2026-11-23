@@ -251,9 +251,13 @@ impl ConstantBytes<'_> {
     /// Writes `value` held as `ty` at `*at` and moves `*at` past its bytes; `None` when `value`
     /// is not a value of `ty`.
     fn write(&mut self, ty: &ValueType, value: Constant, at: &mut usize) -> Option<()> {
-        // a hand-written `Repr` encodes through the author's function, which a constant cannot run
-        if HandWritten::width(self.ir, ty).is_some() {
-            return None;
+        // a hand-written `Repr` is a constant only as its levels word, which the elaborator computed by running `encode`
+        if let Some(width) = HandWritten::width(self.ir, ty) {
+            let Constant::Int(levels) = value else { return None };
+            if width > 64 || levels < 0 || levels >= 1i128 << width {
+                return None;
+            }
+            return self.put(&levels.to_le_bytes()[..TagWidth::bytes_of_bits(width) as usize], at);
         }
         match (ty, value) {
             (ValueType::Bool, Constant::Bool(b)) => self.put(&[u8::from(b)], at),

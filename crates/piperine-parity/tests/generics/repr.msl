@@ -1,0 +1,56 @@
+//! A hand-written `Repr` carried end to end (GN-05): a one-hot enum and a Gray-coded struct each carry their own
+//! layout, and a `decode` that gives `None` is returned to the caller; the expected values are computed by Rust in
+//! `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(PartialEq)]
+enum Phase { A, B, C, D }
+impl Repr for Phase {
+    const WIDTH: u32 = 4;
+    fn encode(self) -> [bool; 4] { [self == Phase::A, self == Phase::B, self == Phase::C, self == Phase::D] }
+    fn decode(levels: [bool; 4]) -> Option<Phase> {
+        if levels[0] { Some(Phase::A) } else if levels[1] { Some(Phase::B) } else if levels[2] { Some(Phase::C) } else if levels[3] { Some(Phase::D) } else { None }
+    }
+}
+
+#[derive(PartialEq)]
+struct Count { n: u8 }
+impl Repr for Count {
+    const WIDTH: u32 = 2;
+    fn encode(self) -> [bool; 2] {
+        let g = self.n ^ (self.n >> 1);
+        [(g & 1) == 1, (g & 2) == 2]
+    }
+    fn decode(levels: [bool; 2]) -> Option<Count> {
+        let g: u8 = (if levels[0] { 1 } else { 0 }) + (if levels[1] { 2 } else { 0 });
+        Some(Count { n: g ^ (g >> 1) })
+    }
+}
+
+fn none_is_returned() -> u8 { match Phase::decode([false, false, false, false]) { Some(p) => if p == Phase::A { 2 } else { 1 }, None => 0 } }
+fn some_is_returned() -> u8 { match Phase::decode([false, false, true, false]) { Some(p) => if p == Phase::C { 1 } else { 0 }, None => 0 } }
+
+module Rows(in clk: Bit, out p0: Bit<Phase> = Phase::A, out p1: Bit<Phase> = Phase::A, out p2: Bit<Phase> = Phase::A, out g0: Bit<Count> = Count { n: 0 }, out g1: Bit<Count> = Count { n: 0 }, out g2: Bit<Count> = Count { n: 0 }, out d0: Bit<u8> = 9, out d1: Bit<u8> = 9) {}
+digital for Rows {
+    on clk.rise() {
+        p0 <- Phase::B;
+        p1 <- Phase::C;
+        p2 <- Phase::D;
+        g0 <- Count { n: 1 };
+        g1 <- Count { n: 2 };
+        g2 <- Count { n: 3 };
+        d0 <- none_is_returned();
+        d1 <- some_is_returned();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal p0: Bit<Phase>; signal p1: Bit<Phase>; signal p2: Bit<Phase>;
+    signal g0: Bit<Count>; signal g1: Bit<Count>; signal g2: Bit<Count>;
+    signal d0: Bit<u8>; signal d1: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, p0, p1, p2, g0, g1, g2, d0, d1);
+}

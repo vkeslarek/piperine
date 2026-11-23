@@ -971,7 +971,8 @@ impl ValueType {
 pub enum Constant {
     Real(Real),
     Bool(bool),
-    /// An integer; its width and sign are the type of the param or carrier it initializes.
+    /// An integer; its width and sign are the type of the param or carrier it initializes. For a type with a
+    /// hand-written `Repr` it is the levels word: level `k` is bit `k`.
     Int(i128),
     /// A composite value (a tuple, an array, a struct, an enum variant, an `Option`): an entry of
     /// the arena of composite constants. The handle keeps `Constant` `Copy`.

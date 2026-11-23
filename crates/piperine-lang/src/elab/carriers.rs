@@ -134,10 +134,13 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => {
-                let value = self.carrier_init(expr, frame)?;
-                Some(self.ir_constant(value, &ty))
-            }
+            Some(expr) => match self.hand_written_encode(decl) {
+                Some(encode) => Some(self.encoded_init(expr, encode, frame)?),
+                None => {
+                    let value = self.carrier_init(expr, frame)?;
+                    Some(self.ir_constant(value, &ty))
+                }
+            },
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
         };

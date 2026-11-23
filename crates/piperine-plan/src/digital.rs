@@ -234,7 +234,7 @@ impl CarrierLayout {
     pub fn bytes_in(ir: &Ir, ty: &ValueType, value: Constant) -> Option<Vec<u8>> {
         match ir.discriminant(ty, value) {
             Some(tag) => Self::bytes(&ir.carried(ty), Constant::Int(tag)),
-            None => Self::bytes(ty, value),
+            None => Self::bytes(&ir.carried(ty), value),
         }
     }
 

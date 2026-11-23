@@ -95,6 +95,20 @@ impl ConstEval<'_, '_> {
         }
     }
 
+    /// The levels word the function `encode` of a hand-written `Repr` gives for the value `init` folds to: level `k`
+    /// is bit `k` (GN-05). The word is what a carrier of such a type is initialized with.
+    pub(in crate::elab) fn encoded_word(&mut self, init: ExprId, encode: DeclId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(init, bindings)?;
+        let levels = self.apply_function(init, encode, vec![Argument { value: Some(value), function: None }])?;
+        let (_, parts) = self.parts_of(init, levels, "the levels of an `encode`")?;
+        let mut word: i128 = 0;
+        for (level, part) in parts.iter().enumerate() {
+            let Constant::Bool(high) = part else { return Err(ConstFault::Unsupported { expr: init, what: "an `encode` that gives a level that is not a `bool`".to_string() }) };
+            word |= i128::from(*high) << level;
+        }
+        Ok(Constant::Int(word))
+    }
+
     /// The composite `value` names and its parts copied out, or a fault naming `expr`.
     fn parts_of(&self, expr: ExprId, value: Constant, what: &str) -> Result<(CompositeKind, Vec<Constant>), ConstFault> {
         match self.composite_of(value) {

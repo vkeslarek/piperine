@@ -984,8 +984,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_carries_its_own_layout` and `a_decode_returning_none_is_returned_to_the_caller` pass under `**Run srcgen**`
-- [ ] Gate check passes: Full
+- [x] `a_hand_written_repr_carries_its_own_layout` and `a_decode_returning_none_is_returned_to_the_caller` pass under `**Run srcgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

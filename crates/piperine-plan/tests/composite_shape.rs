@@ -238,7 +238,9 @@ fn a_hand_written_repr_is_one_leaf_of_its_width() {
     assert_eq!(Leaves::of(&wide, &ValueType::Enum(wide_type)), (Leaves::named(&[("", leaf::U16, 0)]), 2), "12 levels: a u16 leaf");
     let (huge, huge_type, _) = Written::design(65);
     assert!(CompositeLayout::of(&huge, &ValueType::Enum(huge_type)).is_none(), "the ABI's leaves end at 64 bits");
-    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(one_hot), Constant::Int(1)), None, "a constant needs the author's encode");
+    // a constant of such a type is its levels word (the elaborator ran `encode`): bit `k` is level `k`
+    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(one_hot), Constant::Int(0b0100)), Some(vec![4]), "the levels word is the value");
+    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(one_hot), Constant::Int(16)), None, "a word over the 4 levels is no value");
     let ty = ValueType::Enum(one_hot);
     let (a, b) = (PinLayout::in_ir(&ir, &ty).expect("a layout"), PinLayout::in_ir(&ir, &ty).expect("a layout"));
     let (fa, fb) = (a.fields(), b.fields());

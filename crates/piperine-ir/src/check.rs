@@ -168,6 +168,11 @@ impl<'a> Checker<'a> {
         match (ty, value) {
             (_, Constant::Aggregate(id)) => self.ir.aggregates.get(id.index()).is_some_and(|data| data.ty == *ty),
             (ValueType::Bool, Constant::Bool(_)) | (ValueType::F64, Constant::Real(_)) => true,
+            // a type with a hand-written `Repr` is initialized by its levels, the word `encode` gives (GN-05)
+            (ValueType::Struct(id) | ValueType::Enum(id), Constant::Int(levels)) => match self.ir.types.get(id.index()).map(|data| data.repr) {
+                Some(ReprForm::HandWritten { width, .. }) => width < 128 && (0..1i128 << width).contains(&levels),
+                _ => false,
+            },
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
             }

@@ -18,6 +18,18 @@ impl Checker<'_> {
         u32::try_from(self.fold_integer(data.value?, u8::MAX)?).ok()
     }
 
+    /// Puts the `impl Repr` of `ty`, with its `WIDTH`, `encode` and `decode`, on the worklist: a carrier of the type
+    /// commits by `encode` and reads by `decode` (§2 rule 4), so the elaborator lowers both, and a type the run
+    /// never carries leaves them unreached. A type with a derived layout has none.
+    pub(super) fn reach_hand_written_repr(&mut self, ty: &Ty) {
+        let Some(owner) = self.impls.hand_written_repr(ty).map(|entry| entry.decl) else { return };
+        self.reach(owner);
+        let items: Vec<DeclId> = ["WIDTH", "encode", "decode"].iter().filter_map(|name| self.impls.item(owner, name)).collect();
+        for item in items {
+            self.reach(item);
+        }
+    }
+
     /// Holds the `impl Repr for T` `decl` to §2: it defines `WIDTH`, `encode` and `decode` and no other
     /// item, `WIDTH` is a `u32`, `encode` takes `Self` and returns `[bool; WIDTH]`, `decode` takes
     /// `[bool; WIDTH]` and returns `Option<Self>`. Each is `E0187` naming `Repr` and the type.

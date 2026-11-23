@@ -80,6 +80,18 @@ impl Variants {
         self.continuous.get(id.index()).copied().unwrap_or(false)
     }
 
+    /// Adds `spec`, a function no source `fn` stands for (the packing of a decode's two halves, GN-05), after the
+    /// variants requested so far; it takes the next id.
+    pub(super) fn add_synthetic(&mut self, spec: FunctionSpec) -> FunctionId {
+        let id = FunctionId(self.results.len() as u32);
+        self.generic.push(None);
+        self.results.push(Some(spec.ret.clone()));
+        self.assumed.push(spec.ret.clone());
+        self.continuous.push(false);
+        self.specs.push(Some(spec));
+        id
+    }
+
     /// The lowered functions in id order; `None` for one that failed (its diagnostics are out).
     pub(super) fn take(&mut self) -> Vec<Option<FunctionSpec>> {
         std::mem::take(&mut self.specs)
