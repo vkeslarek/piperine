@@ -196,6 +196,7 @@ impl<'a> AnalogPrinter<'a> {
             Target::Etol(k) => format!("etol:{k}"),
             Target::DerivativeAbstol(k) => format!("d{k}.abstol"),
             Target::NoiseDensity(k) => format!("noise:{k}.PSD"),
+            Target::Trace(k) => format!("trace:{k}"),
             Target::DelayTime(k) => format!("delay{k}.history.TIME"),
             Target::DelayMaximum(k) => format!("delay{k}.max"),
         }

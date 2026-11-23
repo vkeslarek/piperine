@@ -483,6 +483,38 @@ impl Digital {
             .collect()
     }
 
+    /// Adds one `TRACE` watch per trace site of the `analog` block, `trace:<k>`, after the `CAP`
+    /// watches: its layout is a `BOOL` presence byte (0 for "not written in this evaluation", abi.md
+    /// A5) followed by the record layout of the site's stream, whose fields the site leaves out
+    /// stay zero. Returns each site's watch.
+    pub(crate) fn trace_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.traces()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let Some(stream) = body.streams().get(site.stream as usize) else {
+                    panic!("body {}: trace site {k} names stream {}, out of range; check() refuses it", body.name(), site.stream)
+                };
+                let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
+                    panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
+                };
+                let start = 1u32.next_multiple_of(record.align);
+                let mut fields = vec![Field { name: Str::from_str("present"), leaf: leaf::BOOL, offset: 0, count: 1 }];
+                fields.extend(record.abi_fields().into_iter().map(|f| Field { offset: f.offset + start, ..f }));
+                let layout = Layout { size: (start + record.size).next_multiple_of(record.align), align: record.align, fields: List::from_slice(&fields) };
+                s.watch(WatchSpec {
+                    name: &format!("trace:{k}"),
+                    origin: &Self::at(&site.origin),
+                    kind: watch::TRACE,
+                    layout: &layout,
+                    event: DEFAULT,
+                    ttol: DEFAULT,
+                    etol: DEFAULT,
+                })
+            })
+            .collect()
+    }
+
     /// Adds one `CAP` watch per `bound_step` site of the `analog` block, `cap:<site>`; returns
     /// `(site, watch)`.
     pub(crate) fn cap_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<(u32, u32)> {

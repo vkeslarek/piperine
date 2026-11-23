@@ -757,8 +757,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_trace_site_is_a_trace_watch_written_by_terms` passes
-- [ ] Gate check passes: `Run planops`, `Run tgolden`
+- [x] `a_trace_site_is_a_trace_watch_written_by_terms` passes
+- [x] Gate check passes: `Run planops`, `Run tgolden`
 
 **Tests**: integration
 **Gate**: quick

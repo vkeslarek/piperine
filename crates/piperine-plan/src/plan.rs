@@ -208,6 +208,8 @@ pub enum Target {
     DerivativeAbstol(u32),
     /// The `PSD` of noise source `k`'s input.
     NoiseDensity(u32),
+    /// The `TRACE` watch of trace site `k` (a write of `terms`).
+    Trace(u32),
     /// The `TIME` of the `DELAY` term of delay site `k` (a write of `terms`).
     DelayTime(u32),
     /// The `max` pin of delay site `k`.
@@ -346,6 +348,8 @@ pub struct Pins {
     /// The `GLOBAL` `SETTLE` pin, after the delay `max` pins, when the body has a `settle`
     /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
     pub settle: Option<u32>,
+    /// The `TRACE` watch of each trace site, after the `CAP` watches.
+    pub traces: Vec<u32>,
     /// The `GLOBAL NAMED` pin of each session parameter the body reads, named the parameter,
     /// after every other pin.
     pub session_parameters: Vec<u32>,
@@ -395,6 +399,11 @@ impl Pins {
     /// The rate pin of derivative site `k`; `GROUND` for a site the body does not have.
     pub fn derivative(&self, k: u32) -> u32 {
         self.derivatives.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The `TRACE` watch of trace site `k`; `GROUND` for a site the body does not have.
+    pub fn trace(&self, k: u32) -> u32 {
+        self.traces.get(k as usize).copied().unwrap_or(GROUND)
     }
 
     /// The pin of session parameter `k`; `GROUND` for a parameter the body does not have.
@@ -611,6 +620,7 @@ impl BodyPlan {
         let session_parameters = Self::session_parameter_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
+        let traces = Digital::trace_watches(&mut s, body);
         let pins = Pins {
             nodes,
             branches,
@@ -633,6 +643,7 @@ impl BodyPlan {
             derivative_abstols,
             delay_maxima,
             settle,
+            traces,
             session_parameters,
         };
 
@@ -734,7 +745,7 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, &format!("noise:{k}"), &origin(&source.origin), &plan);
             functions.push(plan);
         }
-        if !terms.is_empty() {
+        if !terms.is_empty() || !body.traces().is_empty() {
             let sets: Vec<ReadSet> = terms.iter().map(|t| Self::term_set(body, *t)).collect();
             let mut all = ReadSet::default();
             for set in &sets {
@@ -745,8 +756,14 @@ impl BodyPlan {
             for set in &times {
                 all.union(set);
             }
+            // and the record of each trace site, which reads what its fields read
+            let traced: Vec<ReadSet> = (0..body.traces().len() as u32).map(|k| ReadSet::target(body, Query::Trace(k))).collect();
+            for set in &traced {
+                all.union(set);
+            }
             let mut writes: Vec<(Target, Option<&ReadSet>)> = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
             writes.extend((0..times.len() as u32).map(|k| (Target::DelayTime(k), None)));
+            writes.extend((0..traced.len() as u32).map(|k| (Target::Trace(k), None)));
             let mut plan = Self::function(Mode::Terms, &all, writes);
             plan.affine = terms
                 .iter()
@@ -757,7 +774,7 @@ impl BodyPlan {
                     Term::Current(_) | Term::DerivativeRate(_) | Term::DelayOutput(_) => true,
                     Term::Charge(_) | Term::DerivativeState(_) | Term::DelayHistory(_) => false,
                 })
-                .chain(std::iter::repeat_n(false, times.len()))
+                .chain(std::iter::repeat_n(false, times.len() + traced.len()))
                 .collect();
             Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
             functions.push(plan);
@@ -894,6 +911,7 @@ impl BodyPlan {
                 Target::Ttol(k) => value(cell::PIN, pins.ttol(k)),
                 Target::Etol(k) => value(cell::PIN, pins.etol(k)),
                 Target::DerivativeAbstol(k) => value(cell::PIN, pins.derivative_abstol(k)),
+                Target::Trace(k) => value(cell::WATCH, pins.trace(k)),
                 Target::NoiseDensity(k) => at(cell::INPUT, limits + stims + k, part::PSD),
                 Target::DelayTime(k) => at(cell::TERM, terms.iter().position(|x| *x == Term::DelayHistory(k)).unwrap_or(usize::MAX) as u32, part::TIME),
                 Target::DelayMaximum(k) => value(cell::PIN, pins.delay_maximum(k)),
@@ -1041,6 +1059,7 @@ impl BodyPlan {
             .chain(Self::bound_steps(body).into_iter().map(Query::BoundStep))
             .chain(n(body.derivatives().len()).flat_map(|k| [Query::Derivative(k), Query::DerivativeAbstol(k)]))
             .chain(n(body.noise_sources().len()).map(Query::NoiseDensity))
+            .chain(n(body.traces().len()).map(Query::Trace))
             .chain(n(body.delays().len()).flat_map(|k| [Query::DelayInput(k), Query::DelayTime(k), Query::DelayMaximum(k)]))
             .collect()
     }

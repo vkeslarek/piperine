@@ -222,3 +222,25 @@ fn the_netlist_hands_its_session_parameters_to_the_builder() {
     assert!(netlist.circuit(&Nothing).is_ok());
     assert!(Netlist::new(&ir).session_parameters().is_empty());
 }
+
+#[test]
+fn a_trace_site_is_a_trace_watch_written_by_terms() {
+    // abi.md A5: one `TRACE` watch `trace:<k>` per site, its layout a `BOOL` presence byte then the
+    // stream's record layout (`x: f64`), written by `terms` where the statement executes.
+    let ir = Operators::tracing();
+    let plan = Find::plan(&ir);
+    let shape = plan.shape().shape();
+    assert_eq!(shape.watches.len(), 1);
+    let watch = shape.watches.get(0).expect("the watch");
+    assert_eq!((watch.name.as_str(), watch.kind), ("trace:0", piperine_abi::raw::watch::TRACE));
+    let fields: Vec<(&str, u32)> = watch.layout.fields.iter().map(|f| (f.name.as_str(), f.offset)).collect();
+    assert_eq!(fields, [("present", 0), ("x", 8)]);
+    assert_eq!((watch.layout.size, watch.layout.align), (16, 8));
+    // `terms` has no term, reads the node the field reads, and writes the watch
+    let function = Find::terms_plan(&plan);
+    assert_eq!(function.reads, [Source::Node(0)]);
+    assert_eq!(function.writes, [Target::Trace(0)]);
+    let f = shape.functions.iter().find(|f| f.name.as_str() == "terms").expect("terms");
+    assert_eq!(f.writes.iter().copied().collect::<Vec<_>>(), [Cell { kind: cell::WATCH, index: 0, part: part::VALUE }]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
