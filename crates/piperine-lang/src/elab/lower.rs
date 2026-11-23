@@ -714,6 +714,9 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Path(path) = &node.kind else { return None };
         let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+        if let Some(levels) = self.consts.parameter_levels(expr) {
+            return Some(self.constant_expr(Constant::Int(i128::from(levels)), ty, origin));
+        }
         let Resolution::Decl(decl) = res else {
             self.unsupported(scope.file, node.span, "a built-in name used as a value");
             return None;

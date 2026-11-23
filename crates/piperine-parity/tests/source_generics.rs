@@ -27,6 +27,9 @@ mod run;
 use bytes::CarrierBytes;
 use run::SourceRun;
 
+/// Rust's own value of each model function: the expected bytes of a run are computed here, never copied from the run.
+struct RustOracle;
+
 /// The model files of `tests/generics/`.
 const RUN: SourceRun = SourceRun::in_directory("tests/generics");
 
@@ -117,8 +120,10 @@ impl Area for Rect {
 }
 
 /// `fn total<S: Shape>(shape: S) -> f64` of the model.
-fn total<S: Area + Copy>(shape: S) -> f64 {
-    shape.area() + shape.doubled()
+impl RustOracle {
+    fn total<S: Area + Copy>(shape: S) -> f64 {
+        shape.area() + shape.doubled()
+    }
 }
 
 #[test]
@@ -133,21 +138,25 @@ fn trait_methods_dispatch_statically_to_their_impl_default_or_blanket() {
             CarrierBytes::real(Area::area(square)),
             CarrierBytes::real(Area::doubled(square)),
             CarrierBytes::real(rectangle.doubled()),
-            CarrierBytes::real(total(square)),
-            CarrierBytes::real(total(rectangle)),
+            CarrierBytes::real(RustOracle::total(square)),
+            CarrierBytes::real(RustOracle::total(rectangle)),
             CarrierBytes::byte(7 + 1),
         ],
     );
 }
 
 /// `fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64` of the model `callables.msl`.
-fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 {
-    f(f(x))
+impl RustOracle {
+    fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 {
+        f(f(x))
+    }
 }
 
 /// `fn halve(x: f64) -> f64` of the model.
-fn halve(x: f64) -> f64 {
-    0.5 * x
+impl RustOracle {
+    fn halve(x: f64) -> f64 {
+        0.5 * x
+    }
 }
 
 #[test]
@@ -158,7 +167,7 @@ fn a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound(
     RUN.assert_commits(
         "callables.msl",
         &["m0", "m1", "m2"],
-        &[CarrierBytes::real(twice(|v| v + 1.0, 3.0)), CarrierBytes::real(twice(|v| v * gain, 2.0)), CarrierBytes::real(twice(halve, 10.0))],
+        &[CarrierBytes::real(RustOracle::twice(|v| v + 1.0, 3.0)), CarrierBytes::real(RustOracle::twice(|v| v * gain, 2.0)), CarrierBytes::real(RustOracle::twice(RustOracle::halve, 10.0))],
     );
 }
 
@@ -182,10 +191,12 @@ enum Slot<T> {
 }
 
 /// `fn load(s: Slot<f64>) -> f64` of the model.
-fn load(slot: Slot<f64>) -> f64 {
-    match slot {
-        Slot::Empty => -1.0,
-        Slot::Full(value) => value,
+impl RustOracle {
+    fn load(slot: Slot<f64>) -> f64 {
+        match slot {
+            Slot::Empty => -1.0,
+            Slot::Full(value) => value,
+        }
     }
 }
 
@@ -214,8 +225,8 @@ fn generic_structs_and_enums_instantiate_per_argument_list() {
             CarrierBytes::real(Pair { a: 1.0, b: 2.0 }.swapped().a),
             CarrierBytes::byte(Pair { a: 3u8, b: 4u8 }.swapped().b),
             CarrierBytes::real(1.5 + 2.5),
-            CarrierBytes::real(load(Slot::Full(2.5))),
-            CarrierBytes::real(load(Slot::<f64>::Empty)),
+            CarrierBytes::real(RustOracle::load(Slot::Full(2.5))),
+            CarrierBytes::real(RustOracle::load(Slot::<f64>::Empty)),
             CarrierBytes::real(nested.b.a),
             CarrierBytes::byte(in_window(3.3)),
             CarrierBytes::byte(in_window(4.0)),
@@ -310,18 +321,29 @@ struct Pt {
 }
 
 /// `fn pick<T>(flag: bool, a: T, b: T) -> T` of the model.
-fn pick<T>(flag: bool, a: T, b: T) -> T {
-    if flag { a } else { b }
+impl RustOracle {
+    /// `fn larger<T: PartialOrd>(a: T, b: T) -> T` of the model.
+    fn larger<T: PartialOrd>(a: T, b: T) -> T {
+        if a < b { b } else { a }
+    }
+
+    fn pick<T>(flag: bool, a: T, b: T) -> T {
+        if flag { a } else { b }
+    }
 }
 
 /// `fn count<const N: usize>() -> u8` of the model: one step for each of `N`, with the loop variable unread.
-fn count<const N: usize>() -> u8 {
-    (0..N).fold(0u8, |n, _| n + 1)
+impl RustOracle {
+    fn count<const N: usize>() -> u8 {
+        (0..N).fold(0u8, |n, _| n + 1)
+    }
 }
 
 /// `fn table_total<const N: usize>(xs: [f64; N]) -> f64` of the model.
-fn table_total<const N: usize>(xs: [f64; N]) -> f64 {
-    xs.iter().sum()
+impl RustOracle {
+    fn table_total<const N: usize>(xs: [f64; N]) -> f64 {
+        xs.iter().sum()
+    }
 }
 
 #[test]
@@ -333,13 +355,30 @@ fn generic_functions_run_with_explicit_and_inferred_arguments() {
         "functions.msl",
         &["r0", "r1", "r2", "r3", "r4", "r5", "r9"],
         &[
-            CarrierBytes::real(pick(true, 1.5, 2.5)),
-            CarrierBytes::real(pick::<f64>(false, 1.5, 2.5)),
-            CarrierBytes::byte(pick(false, 3u8, 4u8)),
-            CarrierBytes::byte(pick::<u8>(true, 3u8, 4u8)),
-            CarrierBytes::real(pick(false, a, b).y),
-            CarrierBytes::real(pick::<Pt>(true, a, b).x),
-            CarrierBytes::real(table_total([1.0, 2.0, 4.0])),
+            CarrierBytes::real(RustOracle::pick(true, 1.5, 2.5)),
+            CarrierBytes::real(RustOracle::pick::<f64>(false, 1.5, 2.5)),
+            CarrierBytes::byte(RustOracle::pick(false, 3u8, 4u8)),
+            CarrierBytes::byte(RustOracle::pick::<u8>(true, 3u8, 4u8)),
+            CarrierBytes::real(RustOracle::pick(false, a, b).y),
+            CarrierBytes::real(RustOracle::pick::<Pt>(true, a, b).x),
+            CarrierBytes::real(RustOracle::table_total([1.0, 2.0, 4.0])),
+        ],
+    );
+}
+
+#[test]
+fn a_function_bounded_by_an_h8_trait_or_repr_runs_per_instance() {
+    // GN-01 AC 1: `larger<T: PartialOrd>` at `u8` and `f64` (the `<` of each type), `width<T: Repr>()` reads `T::WIDTH` at
+    // `u8`, `bool` and `f64` (`x.encode()` on a value of `T` is not lowered yet: GAPS L70)
+    RUN.assert_commits(
+        "functions.msl",
+        &["r12", "r13", "r14", "r15", "r16"],
+        &[
+            CarrierBytes::byte(RustOracle::larger(3u8, 200u8)),
+            CarrierBytes::real(RustOracle::larger(1.5, -0.5)),
+            CarrierBytes::byte(u8::BITS as u8),
+            CarrierBytes::byte(1),
+            CarrierBytes::byte(u64::BITS as u8),
         ],
     );
 }
@@ -348,14 +387,14 @@ fn generic_functions_run_with_explicit_and_inferred_arguments() {
 fn a_const_generic_of_zero_runs_its_loops_zero_times() {
     // GN-01 edge case: `count::<0>()` takes no step and `table_total` of an empty table is 0.0; `count::<3>()` takes three
     let empty: [f64; 0] = [];
-    RUN.assert_commits("functions.msl", &["r6", "r7", "r8"], &[CarrierBytes::byte(count::<0>()), CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total(empty) + 7.0)]);
+    RUN.assert_commits("functions.msl", &["r6", "r7", "r8"], &[CarrierBytes::byte(RustOracle::count::<0>()), CarrierBytes::byte(RustOracle::count::<3>()), CarrierBytes::real(RustOracle::table_total(empty) + 7.0)]);
 }
 
 #[test]
 fn a_const_context_reads_the_const_generic_arguments() {
     // GN-14 (the const evaluator): a `const` that calls a generic function with a const argument runs its loops and its
     // array repeats `[x; N]` for that argument: `count::<3>()` is 3 and `filled::<4>()`, four elements of 1.5, sums to 6.0
-    RUN.assert_commits("functions.msl", &["r10", "r11"], &[CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total([1.5; 4]))]);
+    RUN.assert_commits("functions.msl", &["r10", "r11"], &[CarrierBytes::byte(RustOracle::count::<3>()), CarrierBytes::real(RustOracle::table_total([1.5; 4]))]);
 }
 
 /// `struct Cell` and its two `Convert` impls of the model `trait_args.msl`.

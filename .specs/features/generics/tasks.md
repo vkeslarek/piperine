@@ -1274,6 +1274,7 @@ T49 → T50 → T51 → T52
 
 **C1** - A generic function with trait, `Repr`, project-trait, `Fn` and const parameters runs with explicit and inferred arguments as Rust gives. (GN-01, AC 1; T40)
 Proof: run srcgen | test generic_functions_run_with_explicit_and_inferred_arguments ... ok
+Proof: run srcgen | test a_function_bounded_by_an_h8_trait_or_repr_runs_per_instance ... ok
 
 **C2** - A capturing closure, a plain closure and a function name each pass for an `F: Fn(f64) -> f64` parameter and are called positionally. (GN-01, AC 2; T37)
 Proof: run srcgen | test a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound ... ok
