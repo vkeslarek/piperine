@@ -1038,7 +1038,7 @@ T44
 
 ### T38: `parse_hex`
 
-**What**: `HexText`: a `$readmemh` text (`_` inside a word, `//` and `/* */`, `@address`) into `[T; N]`, a digit `x` or `z` making its four levels unknown; an address the text does not write `E0614`; a word that is not hexadecimal `E0706`.
+**What**: `HexText`: a `$readmemh` text (`_` inside a word, `//` and `/* */`, `@address`) into `[T; N]`, a digit `x` or `z` is `E0706` (spec §22.6.4 resolution and explicit-unknowns MD-78: integers hold no unknown level; amended B6); an address the text does not write `E0614`; a word that is not hexadecimal `E0706`.
 **Where**: `crates/piperine-lang/src/elab/tables.rs`
 **Depends on**: T37
 **Reuses**: `TableText`'s row reading
@@ -1047,9 +1047,9 @@ T44
 
 **Done when**:
 
-- [ ] `parse_hex_reads_words_at_their_addresses`, `x_and_z_digits_are_unknown_levels`, `an_address_the_text_does_not_write_is_e0614`, `a_word_that_is_not_hex_is_e0706` pass under `**Run elabfiles**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `parse_hex_reads_words_at_their_addresses`, `x_and_z_digits_are_e0706_integers_hold_no_unknown`, `an_address_the_text_does_not_write_is_e0614`, `a_word_that_is_not_hex_is_e0706` pass under `**Run elabfiles**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1504,8 +1504,8 @@ Proof: run bookcorestd | test the_watchdog_builds_with_its_u16_param ... ok
 **C102** - Every Book block keeps one inventory row after the L28 rows change. (PI-01, AC 6; T35)
 Proof: run bookinventory | test every_block_of_the_book_has_one_row ... ok
 
-**C103** - `x` and `z` hex digits make their four levels unknown. (PI-09, AC 2; T38)
-Proof: run elabfiles | test x_and_z_digits_are_unknown_levels ... ok
+**C103** - `x` and `z` hex digits are `E0706` (integers hold no unknown level). (PI-09, AC 2; T38)
+Proof: run elabfiles | test x_and_z_digits_are_e0706_integers_hold_no_unknown ... ok
 
 **C104** - An address the hex text does not write is `E0614`. (PI-09, AC 3; T38)
 Proof: run elabfiles | test an_address_the_text_does_not_write_is_e0614 ... ok

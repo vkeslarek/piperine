@@ -235,3 +235,63 @@ fn an_infinite_row_value_is_e0706() {
     assert_eq!(found[0].0, "E0706", "{found:?}");
     assert!(found[0].1.contains("row 2") && found[0].1.contains("1e999") && found[0].1.contains("infinite"), "{}", found[0].1);
 }
+
+fn int(value: i128) -> ConstTree {
+    ConstTree::Scalar(Constant::Int(value))
+}
+
+#[test]
+fn parse_hex_reads_words_at_their_addresses() {
+    // PI-09 AC 2, §22.6.4 resolution: the `$readmemh` format: words in order from address 0, `_` inside a word, `//` and
+    // `/* */` comments, and `@address` records that move where the next word goes.
+    let scratch = Scratch::new("hex");
+    // `@0` then 8 words, comments of both forms and a `_` inside a word
+    scratch.write("full.hex", "// boot image\n@0 DE_AD /* between words */ BEEF 7 9 00ff 01 /* two\nlines */ 02 03\n");
+    let root_full = scratch.write("full.msl", &parsed_source("ROM", "[u32; 8]", "parse_hex", "full.hex"));
+    let ConstTree::Composite { kind: CompositeKind::Array, parts } = folded(&root_full, "ROM").expect("the image folds") else { panic!("an array") };
+    assert_eq!(parts, [int(0xDEAD), int(0xBEEF), int(7), int(9), int(0xFF), int(1), int(2), int(3)]);
+    // the addresses move the next word: `@4` then `@2`
+    scratch.write("moved.hex", "@4 0a 0b\n@0 01 02\n@2 03 04\n");
+    let root_moved = scratch.write("moved.msl", &parsed_source("ROM", "[u8; 6]", "parse_hex", "moved.hex"));
+    let ConstTree::Composite { parts, .. } = folded(&root_moved, "ROM").expect("folds") else { panic!("an array") };
+    assert_eq!(parts, [int(1), int(2), int(3), int(4), int(0xa), int(0xb)]);
+}
+
+#[test]
+fn x_and_z_digits_are_e0706_integers_hold_no_unknown() {
+    // PI-09 AC 2 and the §22.6.4 resolution (explicit-unknowns, MD-78: no integer holds an unknown level): a digit `x` or `z` is
+    // `E0706` naming the file, the row and the word.
+    let scratch = Scratch::new("hexunknown");
+    for word in ["0x", "zz", "1X"] {
+        scratch.write("u.hex", &format!("00\n{word}\n"));
+        let found = refused(&scratch, &parsed_source("ROM", "[u8; 2]", "parse_hex", "u.hex"));
+        assert_eq!(found[0].0, "E0706", "{word}: {found:?}");
+        assert!(found[0].1.contains("u.hex") && found[0].1.contains("row 2") && found[0].1.contains(&format!("`{word}`")) && found[0].1.contains("unknown"), "{}", found[0].1);
+    }
+}
+
+#[test]
+fn an_address_the_text_does_not_write_is_e0614() {
+    // PI-09 AC 3 (§22.6.4 resolution): an index the text never writes, and an address past the array, are `E0614`.
+    let scratch = Scratch::new("hexaddress");
+    scratch.write("gap.hex", "01 02 @3 04\n");
+    let found = refused(&scratch, &parsed_source("ROM", "[u8; 4]", "parse_hex", "gap.hex"));
+    assert_eq!(found[0].0, "E0614", "{found:?}");
+    assert!(found[0].1.contains("gap.hex") && found[0].1.contains("address 2"), "{}", found[0].1);
+    scratch.write("past.hex", "01 02 03\n");
+    let found = refused(&scratch, &parsed_source("ROM", "[u8; 2]", "parse_hex", "past.hex"));
+    assert_eq!(found[0].0, "E0614", "{found:?}");
+    assert!(found[0].1.contains("past.hex") && found[0].1.contains("address 2") && found[0].1.contains("row 1"), "{}", found[0].1);
+}
+
+#[test]
+fn a_word_that_is_not_hex_is_e0706() {
+    // PI-09 AC 4: `g1` is no hexadecimal word, and `1ff` does not fit `u8`: each is `E0706` naming file, row and word.
+    let scratch = Scratch::new("hexword");
+    for (word, why) in [("g1", "not a hexadecimal word"), ("1ff", "does not fit 8 bits")] {
+        scratch.write("w.hex", &format!("00\n{word}\n"));
+        let found = refused(&scratch, &parsed_source("ROM", "[u8; 2]", "parse_hex", "w.hex"));
+        assert_eq!(found[0].0, "E0706", "{word}: {found:?}");
+        assert!(found[0].1.contains("w.hex") && found[0].1.contains("row 2") && found[0].1.contains(&format!("`{word}`")) && found[0].1.contains(why), "{}", found[0].1);
+    }
+}
