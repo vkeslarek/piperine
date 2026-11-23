@@ -41,7 +41,7 @@ mod loops;
 mod model;
 mod methods;
 mod module;
-mod obligations;
+mod obligations; mod operators;
 mod patterns;
 mod plain;
 mod nature_rules;

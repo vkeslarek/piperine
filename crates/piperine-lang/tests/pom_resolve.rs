@@ -80,6 +80,8 @@ fn the_core_rows_are_unchanged() {
         ("ddt", Module, "§14.5"), ("delay", Module, "§14.6"), ("limit", Module, "§14.7"), ("noise", Module, "§14.8"),
         ("cross", Module, "§14.9"), ("at", Module, "§14.9"), ("settle", Event, "§14.9"), ("bound_step", Statement, "§14.10"),
         ("changed", Method, "§14.9"), ("prev", Method, "§14.12"), ("others", Method, "§14.12"), ("inflow", Method, "§14.1"),
+        ("From", Trait, "App. H"), ("BitAnd", Trait, "App. H"), ("BitOr", Trait, "App. H"), ("BitXor", Trait, "App. H"),
+        ("Not", Trait, "App. H"), ("Shl", Trait, "App. H"), ("Shr", Trait, "App. H"),
     ];
     let table: Vec<(&str, BuiltinKind, &str)> = BUILTINS.iter().map(|r| (r.name, r.kind, r.section)).collect();
     assert_eq!(table, rows.to_vec());
@@ -806,8 +808,8 @@ fn embedded_std_declares_no_core_name() {
 
 // ---- the catalogue of Appendix H (POL-02) ------------------------------------------------------
 
-/// Traits of Appendix H.8 that the built-in table does not hold yet (explicit-unknowns T42).
-const SPEC_TRAITS_AHEAD_OF_THE_TABLE: [&str; 1] = ["From"];
+/// The operator traits of Appendix H.10: built-in rows whose first table cell is prose, not the trait's name.
+const OPERATOR_TRAITS: [&str; 6] = ["BitAnd", "BitOr", "BitXor", "Not", "Shl", "Shr"];
 
 /// The first cell of every row of the table under the heading starting `heading` in Appendix H,
 /// without its backticks and generic arguments (`UInt<N>` gives `UInt`).
@@ -856,8 +858,6 @@ fn catalogue_traits_and_types_resolve() {
         assert_eq!(found, vec![("E0161".to_string(), at)], "derive({name})");
     }
     let mut src = String::new();
-    // `From` is in Appendix H.8 ahead of the built-in table (explicit-unknowns; its task T42 adds it)
-    let traits: Vec<String> = traits.into_iter().filter(|t| !SPEC_TRAITS_AHEAD_OF_THE_TABLE.contains(&t.as_str())).collect();
     for (i, t) in traits.iter().enumerate() {
         src.push_str(&format!("fn t{i}<T: {t}>(a: T) {{}}\n"));
     }
@@ -887,12 +887,7 @@ fn builtin_table_matches_appendix_h() {
     // Traits: Appendix H's list, plus the language's own `Repr`, `Nature` and `Fn`.
     let mut traits: BTreeSet<String> = appendix_h_names("## H.8").into_iter().collect();
     traits.extend(own(&["Repr", "Nature", "Fn"]));
-    // `From` joined H.8 with explicit-unknowns (D3) ahead of the table; its task T42 adds the row and
-    // empties `SPEC_TRAITS_AHEAD_OF_THE_TABLE`. A stale entry fails here.
-    for ahead in SPEC_TRAITS_AHEAD_OF_THE_TABLE {
-        assert!(traits.remove(ahead), "{ahead} is no longer in Appendix H.8: drop it from the list");
-        assert!(!rows(BuiltinKind::Trait).contains(ahead), "{ahead} is now a built-in row: drop it from SPEC_TRAITS_AHEAD_OF_THE_TABLE");
-    }
+    traits.extend(own(&OPERATOR_TRAITS));
     assert_eq!(rows(BuiltinKind::Trait), traits);
     // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.
     let types = rows(BuiltinKind::Type);

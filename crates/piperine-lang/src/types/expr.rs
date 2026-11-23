@@ -10,6 +10,7 @@ use crate::stack::Stack;
 use super::check::{Checker, Context};
 use super::derives::DerivedTrait;
 use super::flow::Assigned;
+use super::operators::OperatorTrait;
 use super::unsupported::Unsupported;
 use super::{Nominal, Ty};
 
@@ -211,6 +212,8 @@ impl Checker<'_> {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
                     Some(Ty::Event) => self.negated_event(expr, *operand),
+                    // a struct or an enum takes `!` from the `impl` of `Not` (Appendix H.10)
+                    Some(t) if Self::takes_operator_traits(&t) => self.operator_call(expr, OperatorTrait::Not, *operand, &t, None),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::Bool, &other);
@@ -283,7 +286,15 @@ impl Checker<'_> {
             BinOp::And | BinOp::Or => self.logical(whole, op == BinOp::And, lhs, rhs),
             BinOp::Eq | BinOp::Ne => {
                 let (first, second) = self.literal_last(lhs, rhs);
-                match self.infer(first) {
+                let first_ty = self.infer(first);
+                // a struct or an enum with an `impl` of `PartialEq` takes `==` from it, whatever its `Out` (Appendix H.10)
+                if let (Some(ty), Some(operator), true) = (&first_ty, OperatorTrait::of_binary(op), first == lhs)
+                    && Self::takes_operator_traits(ty)
+                    && self.has_operator_impl(operator, ty)
+                {
+                    return self.operator_call(whole, operator, lhs, ty, Some(rhs));
+                }
+                match first_ty {
                     Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
                     // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
                     // when it implements `PartialEq`.
@@ -304,7 +315,16 @@ impl Checker<'_> {
             }
             BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr => {
                 let bitwise = op != BinOp::Rem;
-                match self.operands(lhs, rhs, false, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
+                let (first, _) = self.literal_last(lhs, rhs);
+                let first_ty = self.infer(first);
+                // a struct or an enum takes the operator from the `impl` of its trait; a built-in type does when the
+                // project writes an `impl` of the trait for it and the right operand is no bare literal (Appendix H.10)
+                if let (Some(ty), Some(operator), true) = (&first_ty, OperatorTrait::of_binary(op), first == lhs)
+                    && (Self::takes_operator_traits(ty) || (self.has_operator_impl(operator, ty) && self.integer_literal_text(rhs).is_none()))
+                {
+                    return self.operator_call(whole, operator, lhs, ty, Some(rhs));
+                }
+                match self.operands_of(first_ty, lhs, rhs, false, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
                     Some(t) => Some(t),
                     None => {
                         self.unsupported(file, span, Unsupported::binary(op));
@@ -317,6 +337,7 @@ impl Checker<'_> {
                     self.shift_amount(rhs);
                     Some(t)
                 }
+                Some(t) if Self::takes_operator_traits(&t) => OperatorTrait::of_binary(op).and_then(|operator| self.operator_call(whole, operator, lhs, &t, Some(rhs))),
                 _ => {
                     self.unsupported(file, span, Unsupported::binary(op));
                     None
@@ -332,8 +353,15 @@ impl Checker<'_> {
     /// `>`, `>=`) also takes an enum that derives `PartialOrd` (§2 rule 5), compared in
     /// declaration order; the result is then that enum.
     fn operands(&mut self, lhs: ExprId, rhs: ExprId, ordering: bool, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
+        let (first, _) = self.literal_last(lhs, rhs);
+        let first_ty = self.infer(first);
+        self.operands_of(first_ty, lhs, rhs, ordering, accepts)
+    }
+
+    /// [`Checker::operands`] with the type of the first operand already inferred.
+    fn operands_of(&mut self, first_ty: Option<Ty>, lhs: ExprId, rhs: ExprId, ordering: bool, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
         let (first, second) = self.literal_last(lhs, rhs);
-        match self.infer(first) {
+        match first_ty {
             Some(t) if accepts(&t) => {
                 self.check(second, &t);
                 Some(t)

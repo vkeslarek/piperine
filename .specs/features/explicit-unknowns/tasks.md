@@ -1089,9 +1089,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_operators::control_refuses_a_logic_and_an_option`, `analog_refuses_a_bare_logic`, `arithmetic_and_ordering_refuse_a_logic`, `deriving_partial_eq_over_a_logic_is_e0187` pass (against a test-local four-state struct until T44)
-- [ ] `cargo test -p piperine-lang` passes
-- [ ] Gate check passes: Full
+- [x] `types_operators::control_refuses_a_logic_and_an_option`, `analog_refuses_a_bare_logic`, `arithmetic_and_ordering_refuse_a_logic`, `deriving_partial_eq_over_a_logic_is_e0187` pass (against a test-local four-state struct until T44)
+- [x] `cargo test -p piperine-lang` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
