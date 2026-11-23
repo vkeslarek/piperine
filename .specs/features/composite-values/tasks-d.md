@@ -468,8 +468,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `circular_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `sin.tsv`, `cos.tsv`, `tan.tsv`, the largest finite argument and the arguments nearest multiples of π/2 among them)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `circular_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `sin.tsv`, `cos.tsv`, `tan.tsv`, the largest finite argument and the arguments nearest multiples of π/2 among them)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T106: sin/cos/tan reduce with ArgumentReduction::quarter_turns at precision + 48 guard bits and read the quadrant; tan is sin/cos or -cos/sin of the remainder. Every row of sin, cos and tan.tsv (the largest finite argument, 300 odd multiples of pi/2 rounded to f128 and subnormal arguments among them) matched at the first attempt.
 - T105: ExactPower (src/power.rs, not in the design table) decides every x^y that is rational: x = m*2^a with m odd and y = p/2^j with p odd is a power only when m is a perfect 2^j-th power (j exact integer square roots), then the result t^p is computed exactly with limbs when p*bits(t) <= 230 (else it is neither representable nor a midpoint, so the Ziv loop ends) and a power of two is exact for any exponent; powi(n) is powf of that integer (the same values as IEEE pown). exp() now clamps both bounds into [-13000, 13000] and pins a positive result's lower bound at zero: a bound dragged below zero by the tail rounded to -0 and disagreed with +0 (an infinite Ziv loop that the vector test exposed).
 - T104: ElementaryFunctions (src/elementary.rs, a file the design table did not list) holds the interval-level exp, ln, sin/cos and atan (Taylor series with a proven tail bound, stopping 2^-(precision+8) below the leading term so tiny arguments stay relatively accurate); transcendental.rs is the thin Float128 layer (special values, exact cases, Ziv). exp returns +inf from x >= 11357 and +0 from x <= -11434 without evaluating; the logarithms of 2^k and 10^k (k 0..=48) are exact. Result: every row of exp, ln, log2, log10 and exact.tsv matches bit for bit at the first attempt. D2 (T99 to T104) closed; per the gate policy no workspace suite was run.
 - T103: ZivRounding::round takes the exact case as an Option<Float128> and a closure from the precision to an Interval (None meaning outside the domain); it starts at 160 bits and doubles to 2^20 (thirteen evaluations); the cap returns None.

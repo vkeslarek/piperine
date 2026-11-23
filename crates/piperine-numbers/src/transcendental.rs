@@ -10,6 +10,7 @@ use super::limbs::{Limbs, ToLimbs};
 use super::power::ExactPower;
 use super::precision::{Interval, MultiPrecision};
 use super::quad::Float128;
+use super::reduction::ArgumentReduction;
 use super::ziv::ZivRounding;
 
 /// Shared plumbing of the transcendental methods.
@@ -35,6 +36,13 @@ impl Evaluation {
     /// The integer `value` as a binary128.
     fn integer(negative: bool, value: u64) -> Float128 {
         Float128::from_bits(super::format::BinaryFormat::QUAD.round(negative, &value.to_limbs(), 0, false))
+    }
+
+    /// `(sin, cos)` of the remainder of `x` modulo pi/2 and the quadrant, as intervals at `precision` plus the guard bits.
+    fn circle(x: Float128, precision: u32) -> Option<(u8, Interval, Interval)> {
+        let reduced = ArgumentReduction::quarter_turns(x, precision + Self::GUARD_BITS)?;
+        let (sine, cosine) = ElementaryFunctions::sin_cos(&reduced.remainder)?;
+        Some((reduced.quadrant, sine, cosine))
     }
 
     /// `log_base(x)` as `ln x / ln base` for a finite positive `x`, with the exact case supplied.
@@ -194,5 +202,59 @@ impl Float128 {
     /// `self` raised to an `i32`, correctly rounded; the same values as `powf` of that integer.
     pub fn powi(self, exponent: i32) -> Float128 {
         self.powf(Evaluation::integer(exponent < 0, u64::from(exponent.unsigned_abs())))
+    }
+}
+
+impl Float128 {
+    /// The sine, correctly rounded (NaN for an infinity).
+    pub fn sin(self) -> Float128 {
+        if self.is_nan() || self.is_infinite() {
+            return Float128::NAN;
+        }
+        if self.is_zero() {
+            return self;
+        }
+        Evaluation::rounded(None, |precision| {
+            let (quadrant, sine, cosine) = Evaluation::circle(self, precision)?;
+            Some(match quadrant {
+                0 => sine,
+                1 => cosine,
+                2 => sine.negated(),
+                _ => cosine.negated(),
+            })
+        })
+    }
+
+    /// The cosine, correctly rounded (NaN for an infinity).
+    pub fn cos(self) -> Float128 {
+        if self.is_nan() || self.is_infinite() {
+            return Float128::NAN;
+        }
+        if self.is_zero() {
+            return Float128::ONE;
+        }
+        Evaluation::rounded(None, |precision| {
+            let (quadrant, sine, cosine) = Evaluation::circle(self, precision)?;
+            Some(match quadrant {
+                0 => cosine,
+                1 => sine.negated(),
+                2 => cosine.negated(),
+                _ => sine,
+            })
+        })
+    }
+
+    /// The tangent, correctly rounded (NaN for an infinity).
+    pub fn tan(self) -> Float128 {
+        if self.is_nan() || self.is_infinite() {
+            return Float128::NAN;
+        }
+        if self.is_zero() {
+            return self;
+        }
+        Evaluation::rounded(None, |precision| {
+            let (quadrant, sine, cosine) = Evaluation::circle(self, precision)?;
+            if quadrant % 2 == 0 { sine.divide(&cosine) } else { Some(cosine.divide(&sine)?.negated()) }
+        })
     }
 }

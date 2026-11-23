@@ -200,3 +200,11 @@ impl VectorComparison {
 fn powers_match_the_reference_vectors_bit_for_bit() {
     VectorComparison::committed().check_power();
 }
+
+#[test]
+fn circular_functions_match_the_reference_vectors_bit_for_bit() {
+    let comparison = VectorComparison::committed();
+    comparison.check_unary("sin", Float128::sin);
+    comparison.check_unary("cos", Float128::cos);
+    comparison.check_unary("tan", Float128::tan);
+}
