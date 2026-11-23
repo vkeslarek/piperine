@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/generics/spec.md` (GN-21 to GN-26; the user's decision of 2026-11-22, "a module type takes trait
 impls"; GN-24 to GN-26 as amended by the user's decision of 2026-11-23; GN-29 to GN-31 carried)
-**Status**: Draft (planned 2026-11-23; revised the same day with the user's answers to DD1 to DD3; DQ1 to DQ3 open)
+**Status**: Draft (planned 2026-11-23; revised the same day with the user's answers to DD1 to DD3 and DQ1 to DQ3)
 **Base**: `main` with `generics` phase C (`tasks-c.md`, T53 to T82) merged. `params-and-io` (module-typed params, MD-75
 item 3) and `host-ii` (derived params re-derived on a `set`, MD-69; `E0803`) are on `main`. There is no implicit param
 and no automatic scaling (user decision 2026-11-23), so nothing of this phase waits on `analog-operators`.
@@ -85,6 +85,12 @@ meio que um param do run (session)".
   otherwise. `multiplicity() -> Option<f64>` is `Some(m)` when the run set it. Both are environment reads, constant during
   an analysis, allowed where `temperature()` is today (`analog`, reactions, body `let`s, value inputs; a const context
   stays `E0188`).
+- **One per run; the instance decides with its own param** (DQ1). The run sets one multiplicity; there is no
+  per-instance setting. A module that wants its own multiplicity declares an ordinary param, `m: Option<f64>` (the name
+  is free now), and combines it in its body: `let count = m.or(multiplicity()).unwrap_or(1.0);`. The combination lives
+  in a body `let`, not in the param's default, because a default is a const context and `multiplicity()` there is
+  `E0188`. An `Option` param no placement binds is `None` (MD-75 item 6), and `Option::or` is an Appendix H method
+  (`types/catalogue.rs:212`), so the combination needs no new form.
 - **Why `f64` for the multiplicity.** ngspice's `m` and VAMS `$mfactor` are real; a fractional multiplicity scales a
   device below one unit (`m = 0.5`); a model that counts devices rounds it itself.
 - **The fallback.** `std/constants.msl` gains `AMBIENT_TEMPERATURE: f64 = 300.15` (27 °C, ngspice's default); the spec,
@@ -239,13 +245,13 @@ and the model decides how to use them (user decision 2026-11-23)."
 | DD2 | modules#10 and cheatsheet#8 need the `Cell` bundle | (a): `resolved-nets-bundles` owns them |
 | DD3 | What is left of `E0130`? | (a): `E0130` leaves the spec; a module-impl function that reads the solve is `E0122`; GN-03 AC 2 and C8 amended |
 
-## Open questions (user)
+## Questions answered (user, 2026-11-23, second round)
 
-| # | Question | Recommended default |
-| - | -------- | ------------------- |
-| DQ1 | Is the multiplicity one value for the whole run (every instance's `multiplicity()` reads the same), as "um param do run" reads, or may the run set it per instance path (`[run.op.instances."Top.r1"] multiplicity = 4`)? A per-run value makes "four resistors in parallel" a property of the whole circuit | **one value per run**, as the user's words say; per-instance settings wait for a user request |
-| DQ2 | The same for the temperature: does the run's `temp` reach every instance alike (today's behaviour), or may a run set one instance's temperature? | **every instance alike**, as today |
-| DQ3 | `tnom` (the request's nominal temperature, used by the spice-faithful models' parameters) stays an `f64` read through `simparam`/`analog-operators`, untouched by this decision? | **untouched**: the decision names `temperature()` and `multiplicity()` only |
+| # | Question | Answer |
+| - | -------- | ------ |
+| DQ1 | One multiplicity per run, or per instance path? | "Um por run e a instância decide no seu próprio parâmetro": one per run; an instance that wants its own declares an ordinary param (`m: Option<f64>`) and combines it in its body (`m.or(multiplicity()).unwrap_or(1.0)`) |
+| DQ2 | Temperature per instance? | the same for every instance (the default) |
+| DQ3 | `tnom`? | untouched (the default) |
 
 ---
 

@@ -274,18 +274,19 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 2. IF the bound module's ports do not match `P` THEN the system SHALL refuse it with `E0360` naming the first port that differs.
 3. WHEN `inst.name` reads an item of an instance placed through a template-typed param THEN the system SHALL resolve it against the concrete module (§8.4.8), with `E0343` for a missing or private item.
 
-**Amended (user decision 2026-11-23).** The approved GN-24 to GN-26 (implicit params `m` and `dtemp` bound at a placement, effective values down the path, automatic scaling of flows, probes and noise, a host `set` of them) are withdrawn. The user, 2026-11-23: "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the existing `f64` one, and the docs recommend falling back to the ambient temperature, ngspice's default 27 °C; `multiplicity() -> Option<f64>`, real as ngspice `m` and VAMS `$mfactor`. Open points: design-d.md DQ1 to DQ3.
+**Amended (user decision 2026-11-23).** The approved GN-24 to GN-26 (implicit params `m` and `dtemp` bound at a placement, effective values down the path, automatic scaling of flows, probes and noise, a host `set` of them) are withdrawn. The user, 2026-11-23: "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the existing `f64` one, and the docs recommend falling back to the ambient temperature, ngspice's default 27 °C; `multiplicity() -> Option<f64>`, real as ngspice `m` and VAMS `$mfactor`. Answered the same day (design-d.md DQ1 to DQ3): one multiplicity per run, and an instance that wants its own declares an ordinary param and combines it in its body ("Um por run e a instância decide no seu próprio parâmetro"); one temperature for every instance; `tnom` untouched.
 
 **Acceptance Criteria** (GN-24, `multiplicity()`; user decision 2026-11-23):
 
 1. WHEN a module calls `multiplicity()` THEN the system SHALL return `Some(m)`, `m` the multiplicity the run set, and `None` when the run set none.
 2. The system SHALL NOT scale any contribution, probe, noise, carrier or event by a multiplicity: the model decides how to use the value.
 3. IF the run sets a multiplicity that is not `> 0.0` THEN the system SHALL refuse the request with `E0802` naming it.
-4. WHEN a resistor whose model contributes `multiplicity().unwrap_or(1.0) * v(a, b) / r` runs with multiplicity 4.0 THEN the system SHALL give the solution of four such resistors in parallel.
+4. WHEN a resistor declares its own param `m: Option<f64>`, combines it in its body (`let count = m.or(multiplicity()).unwrap_or(1.0);`, a body `let`, since a param default is a const context that cannot read `multiplicity()`) and contributes `count * v(a, b) / r` THEN placed with `m: Some(4.0)` it SHALL give the solution of four such resistors in parallel, and with no `m` it SHALL follow the run's multiplicity.
+5. The run SHALL set one multiplicity for the whole run; the system SHALL offer no per-instance multiplicity setting (user, 2026-11-23: "Um por run e a instância decide no seu próprio parâmetro").
 
 **Acceptance Criteria** (GN-25, `temperature()`; user decision 2026-11-23):
 
-1. WHEN a module calls `temperature()` THEN the system SHALL return `Some(t)`, `t` the temperature the run set in kelvin, and `None` when the run set none.
+1. WHEN a module calls `temperature()` THEN the system SHALL return `Some(t)`, `t` the temperature the run set in kelvin, the same for every instance, and `None` when the run set none.
 2. The system SHALL NOT offset or apply a temperature on its own: the model uses the value as its temperature all along, as an initial temperature, or ignores it.
 3. The system SHALL give no instance an implicit param: `m` and `dtemp` are ordinary names, and `E0375` leaves the spec.
 4. The spec, the Book and the stdlib SHALL recommend `temperature().unwrap_or(AMBIENT_TEMPERATURE)`, `AMBIENT_TEMPERATURE = 300.15` K (27 °C, ngspice's default), and every in-tree caller SHALL use it, so the ngspice twins keep their numbers.
@@ -294,9 +295,9 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 1. WHEN a run request sets its temperature (`temp`) or its multiplicity (`multiplicity`) THEN the system SHALL give those values to `temperature()` and `multiplicity()` for the whole run.
 2. The system SHALL offer no way to set either at a placement or to change either during a run.
-3. WHEN the Book's multiplicity listing (rewritten to this form) runs with multiplicity 4 THEN it SHALL give four resistors in parallel, the Book row `modules~1faf8c12` SHALL move from refused to `holds` in `tests/book/inventory.tsv`, and its row SHALL leave `GAPS.md` section 11.
+3. WHEN the Book's multiplicity listing (rewritten to this form: the resistor's own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`) runs THEN it SHALL give four resistors in parallel, the Book row `modules~1faf8c12` SHALL move from refused to `holds` in `tests/book/inventory.tsv`, and its row SHALL leave `GAPS.md` section 11.
 
-**Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor model scaled by `multiplicity()` run with multiplicity 4 against four in parallel; models that use the run's temperature all along, as an initial value, or ignore it, with the temperature set and unset.
+**Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`, against four in parallel, and with no `m` following the run's multiplicity; models that use the run's temperature all along, as an initial value, or ignore it, with the temperature set and unset.
 
 ---
 

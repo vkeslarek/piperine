@@ -36,7 +36,7 @@ Executors: **every task is Sonnet**. Opus verifies the feature.
 
 **Base and order.** Phase 18 starts after `tasks-c.md` T82 (phase C closed). The user answered DD1 to DD3 on
 2026-11-23 (design-d.md "Questions answered"): phase 20 implements `temperature()` and `multiplicity()` as run settings the
-model reads; T99 starts only after the user answers DQ1 to DQ3 (design-d.md) and follows those answers.
+model reads; DQ1 to DQ3 answered the same day (one multiplicity per run, the instance decides with its own param).
 
 Rules every task follows (the user's rules, repeated so a worker needs no other file):
 
@@ -344,7 +344,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T94: The spec: `temperature()` and `multiplicity()` are run settings the model reads
 
-**What**: Amend `docs/spec` to the user's decision of 2026-11-23 (spec.md GN-24 to GN-26 as amended): §8.5.1 to §8.5.6 are replaced by "an instance has no implicit params; `temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature and `None` otherwise; `multiplicity() -> Option<f64>` is `Some(m)` when the run sets a multiplicity and `None` otherwise; nothing scales or offsets a model: the model decides whether to use the value as its temperature all along, as an initial temperature, or to ignore it"; §14.4's `temperature()` row and a new `multiplicity()` row (environment, constant during an analysis); §22's constants gain `AMBIENT_TEMPERATURE = 300.15` (27 °C, ngspice's default), with the sentence that `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the recommended fallback, and `vt()`'s entry says it uses that fallback; §23's run request gains the `multiplicity` key beside `temp`; §8.4.2's sentence on `m` and `dtemp` in a template, the `E0375` row and §8.5's `E0317` row for `m` leave; §8.5.12 and the `"osdi"` contract row give the descriptor the run's values when set and its defaults otherwise; Appendix G.54 is marked superseded. One `spec_text` assertion per sentence.
+**What**: Amend `docs/spec` to the user's decision of 2026-11-23 (spec.md GN-24 to GN-26 as amended): §8.5.1 to §8.5.6 are replaced by "an instance has no implicit params; `temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature and `None` otherwise; `multiplicity() -> Option<f64>` is `Some(m)` when the run sets a multiplicity and `None` otherwise; nothing scales or offsets a model: the model decides whether to use the value as its temperature all along, as an initial temperature, or to ignore it"; §14.4's `temperature()` row and a new `multiplicity()` row (environment, constant during an analysis); §22's constants gain `AMBIENT_TEMPERATURE = 300.15` (27 °C, ngspice's default), with the sentence that `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the recommended fallback, and `vt()`'s entry says it uses that fallback; §23's run request gains the `multiplicity` key beside `temp`, one per run (no per-instance setting), and §8.5 shows the instance pattern: an ordinary param `m: Option<f64>` combined in a body `let` as `m.or(multiplicity()).unwrap_or(1.0)` (not in the param's default, a const context); §8.4.2's sentence on `m` and `dtemp` in a template, the `E0375` row and §8.5's `E0317` row for `m` leave; §8.5.12 and the `"osdi"` contract row give the descriptor the run's values when set and its defaults otherwise; Appendix G.54 is marked superseded. One `spec_text` assertion per sentence.
 **Where**: `docs/spec/part_iii_structure.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `spec_text.rs`
@@ -453,7 +453,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T99: The run sets its temperature and its multiplicity
 
-**What**: The run request's `temp` (degrees Celsius, as today) makes `temperature()` `Some(temp + 273.15)`; a new `multiplicity` key (`Request::multiplicity`, `[run.<name>] multiplicity`, `--multiplicity <v>`) makes `multiplicity()` `Some(v)`; neither is given at a placement and neither changes during a run (no `set`, GN-26 AC 2); a multiplicity that is not `> 0.0` is `E0802` naming the key; DQ1 to DQ3 answers adjust this text before the task starts.
+**What**: The run request's `temp` (degrees Celsius, as today) makes `temperature()` `Some(temp + 273.15)`; a new `multiplicity` key (`Request::multiplicity`, `[run.<name>] multiplicity`, `--multiplicity <v>`) makes `multiplicity()` `Some(v)`; neither is given at a placement and neither changes during a run (no `set`, GN-26 AC 2); a multiplicity that is not `> 0.0` is `E0802` naming the key; there is one multiplicity per run and one temperature for every instance, with no per-instance setting (DQ1, DQ2); `tnom` is untouched (DQ3).
 **Where**: `crates/piperine-api/src/request.rs`
 **Depends on**: T98
 **Reuses**: `Request`, the `temp` path of `piperine-cli`
@@ -474,7 +474,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T100: Temperature and multiplicity run end to end
 
-**What**: Source tests: a resistor whose model contributes `multiplicity().unwrap_or(1.0) * v(a, b) / r`, run with `multiplicity: 4.0`, gives the solution of four in parallel, and with nothing set gives one resistor; three models, one using the run's temperature all along, one using it as the initial temperature of a thermal state, one ignoring it, each give the value Rust computes in the test, with `temp` set and with it unset (then `None`, and the fallback model runs at 300.15 K).
+**What**: Source tests: a resistor that declares its own `m: Option<f64>` and contributes `count * v(a, b) / r` with `let count = m.or(multiplicity()).unwrap_or(1.0);` in its body (DQ1: a body `let`, since its default is a const context where `multiplicity()` is `E0188`, which the test also asserts) gives four in parallel placed with `m: Some(4.0)`, follows the run's `multiplicity: 3.0` with no `m`, prefers its own `m` over the run's, and with nothing set gives one resistor; a second resistor in the same run with no `m` reads the same run multiplicity; three models, one using the run's temperature all along, one using it as the initial temperature of a thermal state, one ignoring it, each give the value Rust computes in the test, with `temp` set and with it unset (then `None`, and the fallback model runs at 300.15 K).
 **Where**: `crates/piperine-parity/tests/source_implicit.rs`
 **Depends on**: T99
 **Reuses**: `crates/piperine-parity/tests/implicit/*.msl`
@@ -483,7 +483,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_model_scaled_by_its_multiplicity_is_four_in_parallel`, `nothing_set_reads_none` and `a_model_chooses_how_to_use_its_temperature` pass under `**Run srcimplicit**`
+- [ ] `an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel`, `multiplicity_in_a_param_default_is_e0188`, `nothing_set_reads_none` and `a_model_chooses_how_to_use_its_temperature` pass under `**Run srcimplicit**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
@@ -495,7 +495,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T101: The Book's multiplicity row, rewritten
 
-**What**: Rewrite the modules chapter's "`m` and `dtemp`" item to the new form (a model reads `multiplicity()` and `temperature()`, the run sets them, nothing is implicit), with a listing (a resistor scaled by its multiplicity, run with `--multiplicity 4`) and its "Run it" output; re-own claim modules~1faf8c12 to that text (`holds`, test `the_multiplicity_listing_runs_as_four_in_parallel`), and its row leaves `GAPS.md` §11 (GN-26 AC 3).
+**What**: Rewrite the modules chapter's "`m` and `dtemp`" item to the new form (a model reads `multiplicity()` and `temperature()`, the run sets them, nothing is implicit), with a listing (a resistor with its own `m: Option<f64>` combined in its body as `m.or(multiplicity()).unwrap_or(1.0)`, placed as `Resistor(a, b) { r: 1k, m: Some(4.0) }`, and a sentence that a run's `--multiplicity` reaches every instance that leaves `m` unset) and its "Run it" output; re-own claim modules~1faf8c12 to that text (`holds`, test `the_multiplicity_listing_runs_as_four_in_parallel`), and its row leaves `GAPS.md` §11 (GN-26 AC 3).
 **Where**: `tests/book/modules.rs`
 **Depends on**: T100
 **Reuses**: `Chapter`, `Commands`
@@ -590,8 +590,9 @@ Proof: run srcimplicit | test nothing_set_reads_none ... ok
 **C99** - A multiplicity that is not `> 0.0` is `E0802`. (GN-24, AC 3; T99)
 Proof: run apisession | test a_multiplicity_that_is_not_positive_is_e0802 ... ok
 
-**C100** - A resistor model scaled by `multiplicity()`, run with multiplicity 4, gives four in parallel. (GN-24, AC 4; T100)
-Proof: run srcimplicit | test a_model_scaled_by_its_multiplicity_is_four_in_parallel ... ok
+**C100** - A resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body is four in parallel placed with `m: Some(4.0)` and follows the run's one multiplicity without it; reading `multiplicity()` in a param default is `E0188`. (GN-24, AC 4, AC 5; T100)
+Proof: run srcimplicit | test an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel ... ok
+Proof: run srcimplicit | test multiplicity_in_a_param_default_is_e0188 ... ok
 
 **C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100)
 Proof: run srcimplicit | test a_model_chooses_how_to_use_its_temperature ... ok
@@ -635,7 +636,7 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 
 The phase's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6. User, 2026-11-23: DD2 (a) and DD3 (a) approved; DD1 rejected — "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; then "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the old one, docs recommend the ambient fallback (ngspice's 27 °C); `multiplicity() -> Option<f64>`. DQ1 to DQ3 are open.
+**Settled mid-build:** none yet. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6. User, 2026-11-23: DD2 (a) and DD3 (a) approved; DD1 rejected — "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; then "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the old one, docs recommend the ambient fallback (ngspice's 27 °C); `multiplicity() -> Option<f64>`. DQ1 to DQ3 answered the same day: "Um por run e a instância decide no seu próprio parâmetro"; one temperature for every instance; `tnom` untouched.
 **Dispatched:** none yet.
 **Walked:** none yet.
 
