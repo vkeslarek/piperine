@@ -138,8 +138,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `encode_and_decode_of_every_layout_lower_through_the_level_cast` passes under `**Run elabgen**` (one case per layout: the IR holds a `LevelCast` of the right `to` and `Ir::check` accepts it)
-- [ ] Gate check passes: Quick
+- [x] `encode_and_decode_of_every_layout_lower_through_the_level_cast` passes under `**Run elabgen**` (one case per layout: the IR holds a `LevelCast` of the right `to` and `Ir::check` accepts it)
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

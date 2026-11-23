@@ -261,12 +261,44 @@ fn a_logic_call_in_a_function_tail_lowers() {
     }
 }
 
+/// One value of each layout `encode` and `decode` lower through the level cast, with its level count.
+struct LayoutCases;
+
+impl LayoutCases {
+    /// The `(name, value written in a call, level count)` of each layout of part I §2 rule 2 to 6 that is no `bool`,
+    /// unsigned integer or hand-written type.
+    const ALL: [(&'static str, &'static str, u32); 6] = [
+        ("f64", "1.5", 64),
+        ("i8", "-3i8", 8),
+        ("struct", "Trio { a: 1u8, b: true, c: 2u8 }", 17),
+        ("enum", "Mode::Y", 2),
+        ("tuple", "(1u8, true)", 9),
+        ("array", "[1u8, 2u8]", 16),
+    ];
+
+    /// A source whose reaction calls `function` on `value`, over the declarations every case uses.
+    fn source(function: &str, value: &str) -> String {
+        format!(
+            "#[derive(Repr)]\nstruct Trio {{ a: u8, b: bool, c: u8 }}\n#[derive(Repr, PartialEq)]\nenum Mode {{ X, Y, Z }}\n\
+             fn first<T: Repr>(x: T) -> bool {{ x.encode()[0] }}\n\
+             fn back<T: Repr>(x: T) -> bool {{ match T::decode(x.encode()) {{ Some(_) => true, None => false }} }}\n\
+             module Top(in clk: Bit, out d: Bit = false) {{ }}\n\
+             digital for Top {{ on clk.rise() {{ d <- {function}({value}); }} }}\n"
+        )
+    }
+}
+
 #[test]
-fn encode_and_decode_of_a_derived_layout_are_refused_naming_the_call() {
-    // fix round 2, finding 14: under `T: Repr`, `x.encode()` and `T::decode(levels)` run at `bool`, integers and hand-written
-    // types; a layout the IR cannot pack (`f64`, a derived struct) is `P0001` naming the call, never dropped
-    let encode = ExternCalls::found("fn low<T: Repr>(x: T) -> bool { x.encode()[0] }\nmodule Top(in clk: Bit, out d: Bit = false) { }\ndigital for Top { on clk.rise() { d <- low(1.5); } }\n");
-    assert!(encode.iter().any(|(code, message)| code == "P0001" && message.contains("`encode`")), "{encode:?}");
-    let decode = ExternCalls::found("fn back<T: Repr>(x: T) -> T { T::decode(x.encode()).unwrap() }\nmodule Top(in clk: Bit, out d: Bit<f64> = 0.0) { }\ndigital for Top { on clk.rise() { d <- back(1.5); } }\n");
-    assert!(decode.iter().any(|(code, message)| code == "P0001" && message.contains("`encode`") || message.contains("`decode`")), "{decode:?}");
+fn encode_and_decode_of_every_layout_lower_through_the_level_cast() {
+    // GN-01 AC 1 residual (GAPS L70), §2 rules 2 to 6 and 9: `x.encode()` of `f64`, a signed integer, a derived struct,
+    // enum, tuple and array is a `LevelCast` of `x` to `[bool; WIDTH]`, and `T::decode(levels)` into them a `LevelCast`
+    // of the levels to `T`; the IR checks, and no `P0001` names either call
+    for (name, value, levels) in LayoutCases::ALL {
+        for function in ["first", "back"] {
+            let ir = Elab::ir(&LayoutCases::source(function, value), "Top");
+            let text = ir.to_string();
+            assert!(text.contains("level_cast"), "{name} through `{function}` holds a level cast:\n{text}");
+            assert!(text.contains(&format!("[bool; {levels}]")), "{name} through `{function}` names `[bool; {levels}]`:\n{text}");
+        }
+    }
 }
