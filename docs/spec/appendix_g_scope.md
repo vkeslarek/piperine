@@ -89,7 +89,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.69 | Implementation-defined float results: the bits of a NaN, the last place of the elementary functions | Resolved provisionally |
 | G.70 | The rules of the value language that were formerly taken from Rust | Resolved provisionally |
 | G.71 | Value semantics: no reference, no move, no `mut` | Closed |
-| G.72 | Explicit unknowns: no value carries a flag; `Logic`, `Option` and `Default` say what a type may hold; the implementation meets it but for the `Resolve` trait | Implementation |
+| G.72 | Explicit unknowns: no value carries a flag; `Logic`, `Option` and `Default` say what a type may hold; the implementation meets it but for the `Resolve` trait and the library nets, which `resolved-nets` brings (`GAPS.md` L21) | Implementation |
 
 ## Open items
 

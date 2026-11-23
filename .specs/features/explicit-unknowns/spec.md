@@ -52,11 +52,11 @@ The user's decision removes the idea instead of finishing it. What a type can ho
 
 ## Goals
 
-- [ ] The specification and the Book state the explicit model, and no rule of either mentions a known flag, `Unknown`, `level`, `known_or`, `maybe` or a merge under unknown control.
-- [ ] A model whose carriers all have initial values and binary types runs with the results it gave before; the 7 ngspice twins print the same bytes.
-- [ ] The IR, the plan, the ABI, the generated code and the engines hold no flag, no merge and no `commit_with`.
-- [ ] `Logic<N>` runs from the standard library's own source with the four-state tables of EU-08.
-- [ ] `GAPS.md` S6 and G6 are closed, `unknown-semantics-per-level` is recorded as dropped, and MD-70 is recorded as superseded.
+- [x] The specification and the Book state the explicit model, and no rule of either mentions a known flag, `Unknown`, `level`, `known_or`, `maybe` or a merge under unknown control.
+- [x] A model whose carriers all have initial values and binary types runs with the results it gave before; the 7 ngspice twins print the same bytes.
+- [x] The IR, the plan, the ABI, the generated code and the engines hold no flag, no merge and no `commit_with`.
+- [x] `Logic<N>` runs from the standard library's own source with the four-state tables of EU-08.
+- [x] `GAPS.md` S6 and G6 are closed, `unknown-semantics-per-level` is recorded as dropped, and MD-70 is recorded as superseded.
 
 ## Out of Scope
 
@@ -476,27 +476,27 @@ S6 and G6 (closed by redesign); the stdlib line of §1 (`known`, `known_or`, `is
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| EU-01 | P1: a value is what its type says | Tasks | Pending |
-| EU-02 | P1: a value is what its type says | Tasks | Pending |
-| EU-03 | P1: a value is what its type says | Tasks | Pending |
-| EU-04 | P1: a carrier starts with a value, or its type has a default | Tasks | Pending |
-| EU-05 | P1: a carrier starts with a value, or its type has a default | Tasks | Pending |
-| EU-06 | P1: a carrier starts with a value, or its type has a default | Tasks | Pending |
-| EU-07 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-08 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-09 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-10 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-11 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-12 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-13 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-14 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-15 | P1: records, the host and the device contract | Tasks | Pending |
-| EU-16 | P1: records, the host and the device contract | Tasks | Pending |
-| EU-17 | P1: the specification and the Book say it first | Tasks | Pending |
-| EU-18 | P1: the specification and the Book say it first | Tasks | Pending |
-| EU-19 | P1: the specification and the Book say it first | Tasks | Pending |
-| EU-20 | P1: the tree is written in the explicit model | Tasks | Pending |
-| EU-21 | P1: the tree is written in the explicit model | Tasks | Pending |
+| EU-01 | P1: a value is what its type says | Tasks | Done |
+| EU-02 | P1: a value is what its type says | Tasks | Done |
+| EU-03 | P1: a value is what its type says | Tasks | Done |
+| EU-04 | P1: a carrier starts with a value, or its type has a default | Tasks | Done |
+| EU-05 | P1: a carrier starts with a value, or its type has a default | Tasks | Done |
+| EU-06 | P1: a carrier starts with a value, or its type has a default | Tasks | Done |
+| EU-07 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-08 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-09 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-10 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-11 | P1: resolved nets, history and events | Tasks | Specified here; the run is `resolved-nets` (`Resolve`, the library nets: `GAPS.md` L21) |
+| EU-12 | P1: resolved nets, history and events | Tasks | Specified here; the run is `resolved-nets` (`Resolve`, the library nets: `GAPS.md` L21) |
+| EU-13 | P1: resolved nets, history and events | Tasks | Done |
+| EU-14 | P1: resolved nets, history and events | Tasks | Done |
+| EU-15 | P1: records, the host and the device contract | Tasks | Done; a host write of a pattern is `resolved-nets` (`GAPS.md` L71) |
+| EU-16 | P1: records, the host and the device contract | Tasks | Done |
+| EU-17 | P1: the specification and the Book say it first | Tasks | Done |
+| EU-18 | P1: the specification and the Book say it first | Tasks | Done |
+| EU-19 | P1: the specification and the Book say it first | Tasks | Done; the removal of `Intrinsic::{Cast, Same}` is `generics` phase C batch B9 (`GAPS.md` L58, L70) |
+| EU-20 | P1: the tree is written in the explicit model | Tasks | Done |
+| EU-21 | P1: the tree is written in the explicit model | Tasks | Done |
 
 **Coverage:** 21 total, 21 mapped to tasks (tasks.md), 0 unmapped.
 
