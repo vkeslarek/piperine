@@ -81,7 +81,8 @@ pub(super) struct Checker<'d> {
     pub(super) instantiations: BTreeMap<ExprId, super::Instantiation>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
     /// defines: a receiver the POM could not type might mean any of them.
-    pub(super) project_methods: BTreeSet<String>,
+    /// The traits and `impl`s of the design (§3.7), built once.
+    pub(super) impls: std::rc::Rc<super::ImplTable<'d>>,
     pub(super) continuity: Continuity,
     /// What the module being checked drives, by definition and by commit.
     pub(super) book: DriveBook,
@@ -169,7 +170,7 @@ impl<'d> Checker<'d> {
             generic_item: None,
             obligations: BTreeMap::new(),
             instantiations: BTreeMap::new(),
-            project_methods: Self::project_methods(design),
+            impls: std::rc::Rc::new(super::ImplTable::new(design)),
             continuity: Continuity::new(design),
             book: DriveBook::default(),
             records: Records::default(),
@@ -204,13 +205,9 @@ impl<'d> Checker<'d> {
         }
     }
 
-    /// The names of the methods the project itself defines, in an `impl` or a `trait`.
-    fn project_methods(design: &'d Design) -> BTreeSet<String> {
-        (0..design.decl_count())
-            .map(|i| DeclId(i as u32))
-            .filter(|d| matches!(design.decl_data(*d).kind, DeclKind::Fn(_)) && design.decl_data(*d).parent.is_some_and(|p| matches!(design.decl_data(p).kind, DeclKind::Impl(_) | DeclKind::Trait(_))) && !Decl::new(design, *d).krate().is_std())
-            .filter_map(|d| design.decl_data(d).name.as_ref().map(|n| n.text.clone()))
-            .collect()
+    /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
+    pub(super) fn project_defines(&self, name: &str) -> bool {
+        self.impls.defines_method(name, |decl| self.is_std(decl))
     }
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.

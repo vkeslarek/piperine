@@ -317,8 +317,8 @@ impl Checker<'_> {
             miss => {
                 let type_name = recv_ty.name(self.design);
                 // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
-                let copy_method = name == "clone" && !self.project_methods.contains(name);
-                if copy_method || (matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name)) {
+                let copy_method = name == "clone" && !self.project_defines(name);
+                if copy_method || (matches!(miss, Lookup::Absent) && !self.project_defines(name) && !CARRIER_METHODS.contains(&name)) {
                     let message = format!("no method `{name}` on `{type_name}`");
                     let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
                     let help = if copy_method {

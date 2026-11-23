@@ -1,0 +1,96 @@
+//! Scope: the checker's traits and `impl`s (generics GN-03, GN-04, GN-10, part I §3.1, §3.7): the
+//! table that answers the inherent item, the trait item visible on a type, the implementation of a
+//! trait item and whether a type implements a trait.
+
+#[path = "support/pom.rs"]
+mod support;
+
+use piperine_lang::pom::{DeclId, DeclKind, Design};
+use piperine_lang::types::{ImplTable, Ty};
+
+/// The declarations of a source, looked up by their owner and name.
+struct Items<'d> {
+    design: &'d Design,
+}
+
+impl Items<'_> {
+    /// The declaration of kind `kind` named `name` whose parent is named `parent` (`None`: any parent).
+    fn find(&self, parent: Option<&str>, name: &str, kind: fn(&DeclKind) -> bool) -> DeclId {
+        (0..self.design.decl_count())
+            .map(|i| DeclId(i as u32))
+            .find(|decl| {
+                let data = self.design.decl_data(*decl);
+                let parent_ok = parent.is_none_or(|wanted| data.parent.is_some_and(|p| self.design.decl_data(p).name.as_ref().is_some_and(|n| n.text == wanted)));
+                kind(&data.kind) && parent_ok && data.name.as_ref().is_some_and(|n| n.text == name)
+            })
+            .unwrap_or_else(|| panic!("no `{name}`"))
+    }
+
+    /// The trait `name`.
+    fn trait_(&self, name: &str) -> DeclId {
+        self.find(None, name, |k| matches!(k, DeclKind::Trait(_)))
+    }
+
+    /// The function `name` declared in the trait `owner`.
+    fn trait_fn(&self, owner: &str, name: &str) -> DeclId {
+        self.find(Some(owner), name, |k| matches!(k, DeclKind::Fn(_)))
+    }
+
+    /// The struct `name`, as a type.
+    fn structure(&self, name: &str) -> Ty {
+        Ty::structure(self.find(None, name, |k| matches!(k, DeclKind::Struct(_))))
+    }
+}
+
+const SOURCE: &str = "trait Shape { fn area(self) -> f64; fn sides(self) -> u32 { 3 } }\n\
+trait Solid: Shape { fn volume(self) -> f64; }\n\
+struct Sq { a: f64 }\n\
+impl Sq { fn make() -> Sq { Sq { a: 1.0 } } const KIND: u32 = 4; }\n\
+impl Shape for Sq { fn area(self) -> f64 { self.a } }\n\
+trait Known { fn known(self) -> bool { true } }\n\
+impl<T: Repr> Known for T {}\n\
+trait Describe { fn describe(self) -> f64; }\n\
+impl Describe for f64 { fn describe(self) -> f64 { self } }\n";
+
+#[test]
+fn the_impl_table_answers_inherent_visible_and_implementation() {
+    // §3.1.7, §3.7.4, §3.7.5, §3.7.8: the inherent item of a type, the trait item visible on it (the
+    // `impl`'s own, else the trait's default), the implementation of a trait item for a type, and
+    // whether a type implements a trait, a blanket `impl` included where its bound holds
+    let design = support::build(SOURCE);
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let items = Items { design: &design };
+    let table = ImplTable::new(&design);
+    let sq = items.structure("Sq");
+    let admits = &mut |_: &Ty, _: &piperine_lang::types::Bound| true;
+    let refuses = &mut |_: &Ty, _: &piperine_lang::types::Bound| false;
+
+    // inherent: the `impl Sq` items, a constant included; a trait item is not inherent
+    assert!(table.inherent(&sq, "make").is_some() && table.inherent(&sq, "KIND").is_some());
+    assert_eq!(table.inherent(&sq, "area"), None);
+    assert_eq!(table.inherent(&Ty::F64, "make"), None);
+
+    // visible: the `impl`'s own item, the trait's default, and a blanket `impl` only where its bound holds
+    let own = table.visible(&sq, "area", admits);
+    assert_eq!(own.len(), 1);
+    assert_ne!(own[0], items.trait_fn("Shape", "area"), "the impl's own `area`, not the declaration");
+    assert_eq!(table.visible(&sq, "sides", admits), [items.trait_fn("Shape", "sides")], "no override: the trait's default");
+    assert_eq!(table.visible(&sq, "known", admits), [items.trait_fn("Known", "known")], "the blanket impl");
+    assert_eq!(table.visible(&sq, "known", refuses), Vec::<DeclId>::new(), "a bound that fails leaves the blanket impl out");
+    assert_eq!(table.visible(&Ty::F64, "describe", refuses).len(), 1, "an impl for a scalar needs no bound");
+
+    // implementation: the `impl`'s item, else the default; nothing for a type that does not implement the trait
+    assert_eq!(table.implementation(items.trait_fn("Shape", "area"), &sq, admits), Some(own[0]));
+    assert_eq!(table.implementation(items.trait_fn("Shape", "sides"), &sq, admits), Some(items.trait_fn("Shape", "sides")));
+    assert_eq!(table.implementation(items.trait_fn("Shape", "area"), &Ty::Bool, admits), None);
+    assert_eq!(table.implementation(items.trait_fn("Solid", "volume"), &sq, admits), None);
+
+    // implements, and the supertraits a trait requires
+    assert!(table.implements(&sq, items.trait_("Shape"), admits) && !table.implements(&Ty::F64, items.trait_("Shape"), admits));
+    assert!(table.implements(&Ty::F64, items.trait_("Describe"), admits) && !table.implements(&Ty::Bool, items.trait_("Describe"), admits));
+    assert!(table.implements(&Ty::Bool, items.trait_("Known"), admits) && !table.implements(&Ty::Bool, items.trait_("Known"), refuses));
+    assert_eq!(table.supertraits(items.trait_("Solid")), [items.trait_("Shape")]);
+    assert!(table.supertraits(items.trait_("Shape")).is_empty());
+    assert_eq!(table.traits().len(), 4);
+    assert!(table.defines_method("area", |_| false) && !table.defines_method("nothing", |_| false));
+}
