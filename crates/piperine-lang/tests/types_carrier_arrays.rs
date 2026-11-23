@@ -129,3 +129,49 @@ fn a_carrier_method_on_a_whole_array_is_e0211() {
     }
     Source::assert_pom_refusal("module Top() { signal l: [Bit; 4]; }\ndigital for Top { on l.rise() { } }", "E0211");
 }
+
+/// The module `Top` of the commit and definition tests: arrays of carriers, a struct-valued carrier and a carrier of
+/// a value array.
+const TARGETS: &str = "#[derive(Repr)] struct S { n: u8, ok: bool }\n\
+    module Top(in clk: Bit, in at: Bit<u2>, out q: Bit<u8> = 0) {\n\
+    signal bits: [Bit; 4];\n\
+    signal word: Bit<[bool; 8]> = [false; 8];\n\
+    signal st: Bit<S> = S { n: 0, ok: false };\n\
+    signal mem: [Bit<S>; 4] = [S { n: 0, ok: false }; 4];\n}\n";
+
+#[test]
+fn element_and_field_targets_type_their_levels() {
+    // CV-25 AC 1, AC 2, §12.1.9: the value committed has the type of the levels the target names: an element
+    // (`bits[3]`, constant or at run time), a field (`st.n`), an element of a value array (`word[2]`) and a field of
+    // an element (`mem[at].n`)
+    let reaction = |commits: &str| format!("{TARGETS}digital for Top {{ on clk.rise() {{ {commits} }} }}");
+    Source::assert_clean(&reaction("bits[3] <- true; bits[at] <- false; word[2] <- true; st.n <- 3; mem[at].n <- 5; mem[1].ok <- true; q <- 1;"));
+    // a value of another type than the named levels is E0432, field or element
+    Source::assert_one(&reaction("st.n <- true;"), "E0432", "");
+    Source::assert_one(&reaction("bits[1] <- 3;"), "E0432", "");
+    Source::assert_one(&reaction("word[2] <- 7;"), "E0432", "");
+    // §8.2.10: an `in` port is never a target, and a whole array of carriers is no target (name an element)
+    Source::assert_one("module Top(in l: [Bit; 2]) { }\ndigital for Top { on l[0].rise() { l[1] <- true; } }", "E0222", "in");
+    Source::assert_one(&reaction("bits <- [true; 4];"), "P0001", "name an element");
+    // an element of a scalar carrier is no place: indexing a `bool` is the ordinary mismatch
+    Source::assert_one("module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", "E0180", "an array");
+    // a definition of an element has the element's type (E0337)
+    Source::assert_clean(&format!("{TARGETS}"));
+    Source::assert_one("module Top(in a: Bit, out b: [Bit; 2]) { b[0] = a; b[1] = 3; }", "E0337", "");
+    Source::assert_clean("module Top(in a: Bit, out b: [Bit; 2]) { b[0] = a; b[1] = !a; }");
+}
+
+#[test]
+fn a_definition_and_commits_of_one_element_are_e0221() {
+    // CV-25 AC 3, §5.2.4: one element has one drive. A definition of `bits[0]` and a commit of `bits[0]` are E0221; a
+    // commit of `bits[1]` beside it is accepted; two commits of one element are accepted (the later statement wins)
+    let module = |body: &str, reaction: &str| format!("module Top(in clk: Bit) {{ signal bits: [Bit; 4]; {body} }}\ndigital for Top {{ on clk.rise() {{ {reaction} }} }}");
+    Source::assert_one(&module("bits[0] = true;", "bits[0] <- false;"), "E0221", "one element");
+    Source::assert_clean(&module("bits[0] = true;", "bits[1] <- false;"));
+    Source::assert_clean(&module("", "bits[0] <- true; bits[0] <- false;"));
+    // a commit at a run-time index may reach any element, so it shares one with a definition
+    Source::assert_one("module Top(in clk: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[0] = true; }\ndigital for Top { on clk.rise() { bits[at] <- true; } }", "E0221", "");
+    // two definitions of one element share a level (E0335); of two elements they do not
+    Source::assert_one("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[0] = !a; }", "E0335", "");
+    Source::assert_clean("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[1] = !a; }");
+}

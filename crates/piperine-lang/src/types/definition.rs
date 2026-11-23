@@ -1,6 +1,6 @@
 //! Definitions (DIG-04, part III §8.2): `place = expr [after d];` makes this module's drive of a
 //! discrete carrier a function of what the expression reads. The target is one the module may
-//! drive (`E0222`), the expression has the carrier's value type (`E0337`) and is discrete
+//! drive (`E0222`; an element or a field of one: `element_target.rs`), the expression has the carrier's value type (`E0337`) and is discrete
 //! (`E0336`), a delay is an `f64` (`E0433`), a carrier is defined once (`E0335`), an undelayed
 //! definition leaves an initial value no room (`E0338`) and a loop of undelayed definitions is
 //! `E0339`. The same targets, under the same rules, are those of a commit (`reaction.rs`).
@@ -11,6 +11,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, DefinitionData, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
+use super::element_target::{DriveKind, DriveTarget, Element};
 use super::Ty;
 
 /// What one module drives, so far: by carrier, where.
@@ -26,6 +27,8 @@ pub(super) struct DriveBook {
     /// The undelayed definitions in source order: the target, where, and the carriers its value
     /// reads (directly or through a `let`).
     loops: Vec<(DeclId, Span, BTreeSet<DeclId>)>,
+    /// The drives of elements of arrays of carriers, and of parts of values: by carrier, element, how and where.
+    pub(super) elements: Vec<(DeclId, Element, DriveKind, Span)>,
     /// The carriers an undelayed definition drives: the definition gives the carrier its value from `(0, 0)`.
     pub(super) undelayed: BTreeSet<DeclId>,
 }
@@ -34,14 +37,15 @@ impl Checker<'_> {
     /// The carrier `place` names and the value type it holds, when this module may drive it;
     /// else `E0222` naming `what` and `None`. A form of place the subset does not have (an
     /// element, a field) is `P0001`.
-    pub(super) fn drive_target(&mut self, place: ExprId, what: &str) -> Option<(DeclId, Ty)> {
+    pub(super) fn drive_target(&mut self, place: ExprId, what: &str) -> Option<DriveTarget> {
         let node = self.design.expr_node(place).clone();
         let file = self.file_of_expr(place);
         match &node.kind {
             ExprKind::Paren(inner) => self.drive_target(*inner, what),
             ExprKind::Index { .. } | ExprKind::Field { res: Resolution::Deferred(_) | Resolution::Unresolved, .. } => {
-                self.unsupported(file, node.span, &format!("an element or field {what}"));
-                None
+                let target = self.projected_target(place, what)?;
+                self.exprs[place.index()] = Some(target.held.clone());
+                Some(target)
             }
             ExprKind::Field { res: Resolution::Decl(item), .. } => {
                 let text = match self.design.decl_data(*item).kind {
@@ -74,7 +78,11 @@ impl Checker<'_> {
                             return self.not_drivable(file, node.span, what, "an `in` port: a module never writes its own input (§5.2.5)");
                         }
                         self.exprs[place.index()] = Some((*value).clone());
-                        Some((decl, *value))
+                        Some(DriveTarget { carrier: decl, held: *value, element: Element::Whole })
+                    }
+                    array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
+                        self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+                        None
                     }
                     _ => self.not_drivable(file, node.span, what, "a node, not a discrete carrier"),
                 }
@@ -87,7 +95,7 @@ impl Checker<'_> {
         }
     }
 
-    fn not_drivable(&mut self, file: crate::pom::FileId, span: Span, what: &str, why: &str) -> Option<(DeclId, Ty)> {
+    fn not_drivable(&mut self, file: crate::pom::FileId, span: Span, what: &str, why: &str) -> Option<DriveTarget> {
         let why = if why.starts_with("a ") || why.starts_with("an ") || why.starts_with("not ") { why.to_string() } else { format!("a {why}") };
         self.coded(file, "E0222", span, format!("the target of a {what} is {why}, which this module may not drive (§8.2.10)"), "this module may not drive it");
         None
@@ -106,7 +114,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(data.place);
         let target = self.drive_target(data.place, "definition");
         match &target {
-            Some((_, value)) => self.check_as(data.value, value, "E0337"),
+            Some(target) => self.check_as(data.value, &target.held, "E0337"),
             None => {
                 self.infer(data.value);
             }
@@ -122,7 +130,10 @@ impl Checker<'_> {
                 self.coded(file, "E0336", span, message, "a continuous expression");
             }
         }
-        let Some((carrier, _)) = target else { return };
+        let Some(DriveTarget { carrier, element, .. }) = target else { return };
+        if element != Element::Whole {
+            return self.define_element(file, carrier, element, place_span, data.after.is_none());
+        }
         if self.book.defined.insert(carrier, place_span).is_some() {
             let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             self.coded(file, "E0335", place_span, format!("two definitions of `{name}` share a level (§8.2.20)"), "defined twice");
@@ -138,6 +149,23 @@ impl Checker<'_> {
             self.book.loops.push((carrier, place_span, reads));
             self.book.undelayed.insert(carrier);
         }
+    }
+
+    /// A definition of one element of an array of carriers (`bits[0] = a`): `E0335` when another definition shares the
+    /// element, `E0221` when a commit does (§5.2.4); a carrier with a definition of a part and an initial value
+    /// is `E0338` when the definition is undelayed.
+    fn define_element(&mut self, file: crate::pom::FileId, carrier: DeclId, element: Element, span: Span, undelayed: bool) {
+        let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let shared = |kind: DriveKind, book: &DriveBook| book.elements.iter().any(|(c, e, k, _)| *c == carrier && *k == kind && e.overlaps(element));
+        if shared(DriveKind::Definition, &self.book) {
+            self.coded(file, "E0335", span, format!("two definitions of `{name}` share an element (§8.2.20)"), "defined twice");
+        } else if shared(DriveKind::Commit, &self.book) || self.book.committed.contains_key(&carrier) {
+            self.coded(file, "E0221", span, format!("`{name}` has a definition and a commit of one element in one module: an element is driven by one or the other (§5.2, §8.2.20)"), "definition and commit");
+        }
+        if undelayed && self.has_initial(carrier) {
+            self.coded(file, "E0338", span, format!("`{name}` has an initial value and an undelayed definition of an element: the definition would replace it in the microstep that commits it (§8.2.21)"), "initial value under an undelayed definition");
+        }
+        self.book.elements.push((carrier, element, DriveKind::Definition, span));
     }
 
     /// A continuous argument for the value input `input` of `module`, which a definition of `module`

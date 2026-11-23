@@ -412,8 +412,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `element_and_field_targets_type_their_levels` and `a_definition_and_commits_of_one_element_are_e0221` pass under `**Run typesarr**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `element_and_field_targets_type_their_levels` and `a_definition_and_commits_of_one_element_are_e0221` pass under `**Run typesarr**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -846,6 +846,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T73 notes:** `Source::Whole(carrier)` has no part (one `ArrayView` serves VALUE/PREVIOUS/CHANGED of every element). `print/carrier_array.rs`: `ElementNames`, `CarrierFacts` (a `facts` field of `ValuePrinter`), `element_piece`, `whole_piece`, `commit_statement`/`commit_call`; a field commit or an element commit goes through the statement range `StatementPlan::commit_through` declares (relative offset 0), so `rt::Commits::commit_range` is unused by the printer. `print/shape.rs` prints `count` and `elements`; `shape_check.rs` compares both. `piperine-solver` `bind.rs`: a private array pin (no shared net) now gets its own array net (`NetSpec::array`). The hand-built `Ram` (tests/carrier_arrays.rs) proves a run-time-index commit, a constant-element read, a `WHOLE`-view read at the snapshot and an element event end to end.
 **T74 notes (amendment to design-c.md "Data Models"):** no new `Ty` variant: an array of carriers or of nodes is `Ty::Array(Carrier | Node | nested, Length)` (`Ty::is_carrier_element`, `innermost`, `read_value`), so `fits`, substitution and length folding are the value array's; `is_value` stays false for it. A whole read of a carrier array types as `[value; K]`, so `x[i]` types as the value through the ordinary array index. `types_buck.rs` lost its `an array type` P0001 row (moved to `types_carrier_arrays`), recorded with the `types_aggregates` row. Until T89 the Book test `signals_of_every_family_are_refused_for_the_arrays_...` (tests/book/natures.rs) is red (`[Bit; 8]` runs).
 **T75 notes:** `declared_port` walks `x[i]` to the carrier the element is (`Ty::Carrier`/`Node`), so `prev`/`changed`/`rise`/`fall` and `f(x[k])` (handle) resolve per element through the existing builtin paths; E0211 for a whole-array method stays the POM's (the checker adds no `P0001`); a constant element past the end is `E0104` at elaboration (T79), not in the checker.
+**T76 notes:** `types/element_target.rs` (not `definition.rs`): `DriveTarget { carrier, held, element }`, `Element::{Whole, At, Any}` (a run-time index may reach any element), `DriveBook.elements`. A definition's non-folding index is NOT refused by the checker (generation loops fold at elaboration): T81 raises `P0002` there. A whole array or a part of one as a target is `P0001` "name an element". Moved pins (design-c "may move": the element-or-field P0001 rows): `types_buck.rs` (2 rows), `elab_unlowered.rs` (1 row; `a_diagnostic_means_no_ir` now uses two `Wire` ports), `types_subset.rs` (1 row), `elab_entry.rs` (its P0001 case now a module template). The elaborator's `drive_target` still refuses an element target by name until T81.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
