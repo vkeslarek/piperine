@@ -299,8 +299,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `decimal_text_reads_to_the_nearest_value_and_prints_the_shortest` passes under `**Run formats**` (for `SINGLE` and `DOUBLE`, 20 000 random texts against Rust's `str::parse` and `Display`; for `HALF` and `QUAD`, the same texts against `ExactRational`, with midpoint texts of 40 digits and every power of ten in range; shortest text read back gives the same bits for every `f16` and 20 000 random `f128`)
-- [ ] Gate check passes: Task (`piperine-numbers`), then the Batch gate
+- [x] `decimal_text_reads_to_the_nearest_value_and_prints_the_shortest` passes under `**Run formats**` (for `SINGLE` and `DOUBLE`, 20 000 random texts against Rust's `str::parse` and `Display`; for `HALF` and `QUAD`, the same texts against `ExactRational`, with midpoint texts of 40 digits and every power of ten in range; shortest text read back gives the same bits for every `f16` and 20 000 random `f128`)
+- [x] Gate check passes: Task (`piperine-numbers`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T98: DecimalText also reads inf, -inf, NaN (any case) so the host's text reads back; shortest() is plain notation for decimal exponents -5..=16 and d.ddde<x> outside it, shortest_scientific() is always Rust's {:e} form (the tests compare it with Rust's own f32/f64 output); a tie between two equally close shortest candidates goes up, as Rust does. The shortest search is exact (one big division, then 36-digit integers, binary search over the digit count). D1 (T91 to T98) closed; per the gate policy no workspace suite was run, only the Build line and cargo test -p piperine-numbers.
 - T97: float to integer maps a float whose magnitude passes the target to the range edge and truncates the rest exactly; the double-rounding case is 1 + 2^-11 + 2^-40 (f64 to f16 once gives 0x3C01, through f32 gives 0x3C00).
 - T96: the f128 operand generator mixes random bits with exponents near the anchor, sparse significands (ties), subnormals and values near overflow; hypot and rem_euclid are checked on one random pair in four (1 000 pairs) plus every special pair and the largest finite value. All exact operations are IeeeArithmetic, tested against ExactOracle (independent code).
 - Root Cargo.toml gains [profile.dev.package.{piperine-numbers,num-bigint,num-integer,num-traits}] opt-level = 3 so the numeric tests (all 65 536 f16 inputs, 2^22 operand pairs against big-integer arithmetic) run in a dev build in about a minute, not hours; no result depends on it. T95: rem_euclid and hypot are checked on one random pair in eight (2^19 pairs), the other operations on all 2^22. Hypot, like rem_euclid, is the exact IeeeArithmetic (not f64), so it is correctly rounded by construction. IeeeArithmetic (src/arithmetic.rs, exact operations of any BinaryFormat) is a file the design table did not list: Float16 and Float128 delegate their exact methods to it. Decisions the spec left open, followed by code and oracle alike: min(-0,+0) = -0 and max = +0; rem_euclid with an infinite divisor leaves a non-negative x and gives +inf for a negative x (Rust's), and an exact zero remainder keeps the sign of x; fract(x) = x - trunc(x) in IEEE terms (+0 for an integer, NaN for an infinity).

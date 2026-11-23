@@ -11,6 +11,7 @@
 
 pub mod arithmetic;
 pub mod convert;
+pub mod decimal;
 pub mod format;
 pub mod half;
 pub mod limbs;
