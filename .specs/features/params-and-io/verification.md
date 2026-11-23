@@ -1,41 +1,38 @@
 # Params and I/O verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at dcbbea67 (the round 3 fix, 114 pass, 0 fail; re-run by the round 4 verifier after its own commit); round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Proofs**: `proofs.md` at b3045722 (the round 4 fix, 114 pass, 0 fail; re-run by the round 5 verifier after its own commit); round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: round 4 judges the fix of F19 to F24 and two transpiler fixes (141fd5da, 61608529, a67784ad, b2e4efd9; `git diff f351f6c1..dcbbea67`, 19 files) and the regressions they could introduce; rounds 3, 2 and 1 are kept below as they were judged. F15 is out of scope (owned by `generics`).
-
-**Rulings applied (binding).** Round 3's, and: a leaf of a composite param reads its text by the leaf's type with the language's literal syntax (A12).
+**Scope**: round 5 judges the fix of F25, F26 and the cosmetic refusal text (bf92fd5a, 087b0df5, f1df7e30; `git diff 320c3b53..b3045722`, 11 files), the regressions they could introduce (`print/derive.rs`), and two questions from the coordinator: (a) a `set` of a wrapper's `Option` param passed through is `E0802`; (b) a derived enum expression beyond pass-through is refused with no `GAPS.md` row. Rounds 4 to 1 are kept below. F15 is out of scope (owned by `generics`).
 
 **Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
 
-**Tests run (gate policy: targeted only).** Lane D env: `cargo build -p piperine-cli`; `check_proofs.py params-and-io` after this commit
-(`proofs.md`, which runs `apisession`, `elabparams`, `sourceparams` holding the new tests). No workspace run.
+**Tests run (gate policy: targeted only, foreground only).** Lane D env: `cargo build -p piperine-cli`; `check_proofs.py params-and-io`
+after this commit (`proofs.md`; `apisession`, `sourceparams` hold the new tests). No workspace run.
 
-**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).**
-- F19/F20, structural params selecting the contribution, 1 V behind 1 kOhm: `m.md=Open` and `m.md=Mode::Open` give 1 V, `Short`
-  0.25 V; `o.vs=0.5` and `o.vs=Some(0.5)` give 0.5 V, `o.vs=None` 1 V; `k.k=0`/`0x0` select the open branch; `m.md=1`, `m.md=Bogus`,
-  `o.vs=x`, `k.k=1.5` are `E0802` at elaboration naming param and value. Hold.
-- F21: `Mid { rt: f64 = 3k; let l = Load(p) { rs: rt }; }` gives 0.75 V, and `Mid2 { rs: Some(rt * 1.0) }` with `rt: 1k` 0.5 V on rust;
-  the interpreter refuses the `Option` param by name. Hold.
-- A12, leaves: `l.cfg.n=0x3` runs 0.25 V; `3e0`, `3.5` (`u8` leaf) and `en=1` (`bool` leaf) are `E0802`; `en=false`, `g=2e-3` run. Hold.
-- b2e4efd9: a struct `Cfg { g: f64, n: u8 }` with no derive as a param read by `analog`, bound at the placement and set by leaf: 1/3,
-  1/7 (`md=Slow`) and 1/2 V by hand (holds). **A unit enum with no derive as a param** (`enum Mode { Fast, Slow }`, `md: Mode`, read by
-  `match`) is a rustc refusal "the trait bound `Mode: Carried` is not satisfied (a transpiler defect)" (F26).
-- **A module with no `analog` block** (the coordinator's question): (a) a param read by a `digital` block (the Book's `Watchdog`,
-  `limit: u16`) is written: `w.limit=3` fires `stuck` at 3.5 us with 3 edges, `w.limit=0x5` at 5.5 us, `w.limit=70000` is `E0802`;
-  (b) a wrapper's `f64` param read by a placement is derived and written (`m.rr=3000` 0.75 V, round 3); (c) a param nothing reads, on an
-  instance with no pin (`Plain { gain, n, md, rs, cfg }` holding only a child): every `--param` of it is refused loud, `E0802` "no
-  PARAM pin `gain`; the instance declares no writable parameters" (the same for `n`, `md`, `rs`, the leaves of `cfg`, and `Top.tg`).
-  Never silent. The refusal of a param that has no effect is stricter than needed, and its message shows the tag (`refuses the value
-  1` for `md=Open`) and `rs.value`/`None` for an `Option`: cosmetic, left to the user.
-- Pass-through of the new param types from a wrapper (`Wrap { md: Mode; n: u8; rs: Option<f64>; let l = Load(p) { md: md, n: n, rs: rs }; }`):
-  `{ n: n }` and `{ md: md }` are refused "`a derived param that reads the integer param ..` has no Rust lowering yet" (transpiler,
-  already on main), `{ rs: rs }` is `P0001` "an expression the type checker gave no value type", and a structural pass-through
-  (`WrapSw { md } -> Sw { md: md }` with `match md` selecting a contribution) is `P0001` "a composite param in a const expression in the
-  value of a param that fixes structure". All loud; none is a `GAPS.md` row (F25).
+**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).** 1 V behind 1 kOhm into the load.
+- F25 pass-through `Wrap { md, n, rs } -> Load { md: md, n: n, rs: rs }`: default 0.5 V, `w.md=Slow` 0.25 V, `w.n=3` 0.25 V (by hand,
+  hold); `w.l.rs=500` 0.333 V (holds); `w.n=256` `E0802`. A structural enum handed down selects its variant (the new test, holds).
+- `derive.rs` integer reads (`from_f64`): `{ n: k + 1 }` gives 1/3 V at `k = 1` and 1/6 V after `--param w.k=4`; `{ n: k + 1 }` at
+  `k = 255` wraps to 0 (1 V) and `w.k=254` gives 255 (3.906 mV). Hold.
+- **An integer above 2^53 set on a parent whose param a placement reads** (`Wrap { big: u64; let l = Load(p) { big: big }; }`, both
+  with an `analog` block, 1 mS or 3 mS by `big > 2^53`): `--param w.big=9007199254740993` gives 0.2 V, the wrapper at 3 mS and the
+  child still at 1 mS; wanted 1/7 V. `--param w.l.big=9007199254740993`, a derived param, is accepted (0.2 V) where `w.l.big=5` is
+  `E0802` "derived from `big` of `Top.w` by its placement" (F28, silent).
+- F26: `GearLoad` (derive-less unit enum) runs both variants (the new parity row); my `nr3.msl` example compiles too.
+- Cosmetic: the pinless refusals now name the text given: `Top.w.md` `Open`, `Top.w.rs` `5` and `None`. Closed.
+- (b) `{ md: if slow { Mode::Slow } else { Mode::Fast } }` and `{ md: match k { 0 => Mode::Fast, _ => Mode::Slow } }` are refused
+  "`a derived param of type t0` has no Rust lowering yet" (`print/derive.rs`): loud, by an arena name (`t0`) instead of `Mode`, and no
+  `GAPS.md` row (F29).
 
-**Findings of round 3.** F19 to F24 are closed by the commits in the table.
+**(a) The `Option` pass-through.** Part III §8.1.23: "When a host `set` changes a param, every value bound from it (§8.1.19) is
+recomputed"; PI-03 AC 4: a host value of `T` on an `Option<T>` param is read as `Some` of it. A `set` of `Top.w.rs` passed on as
+`{ rs: rs }` is refused, so the spec's rule does not hold for an `Option` (nor for any composite: `params.rs:407`, from
+composite-values ec6cad47, "keeps the value it elaborated to"). It is loud, but it is a departure from §8.1.23 that no
+`GAPS.md` row, amendment or owner records; through `--param` on a wrapper with no pin it is also the generic "no PARAM pin `rs`"
+refusal, not the placement message. Not consistent with the spec as written (F27).
+
+**Findings of round 4.** F25 and F26 are closed by bf92fd5a, 087b0df5 and f1df7e30; the refusals still unrecorded after them are F27 and F29.
 
 ## Checks
 
@@ -182,8 +179,49 @@
 | F22. (Minor, cleanliness) `Params::changes` lost its doc comment: its text now heads `refuse_unfit`'s | `crates/piperine-api/src/params.rs:328-333`: the `changes` paragraph ("The params a `set` ... what a timed `set` schedules") is the first half of `refuse_unfit`'s doc, and `changes` at `:347` has none | move the paragraph back above `changes` | 61608529; `Params::changes` has its doc again, `refuse_unfit` its own |
 | F23. (Minor) `Session::describe` of a param text above 2^53 shows 0 | `session.rs` describe loop: `scalar.exact_real().unwrap_or(f64::NAN)` is written to the table and `keep_exact` is not called, so `Metadata::of` shows `Cell::Int(NaN as i128)` = 0 (by reading; `piperine info` takes no `--param`, the API path does) | keep the exact integer in `describe` as `set_exact_integer` does, and extend `an_integer_above_2_pow_53_is_set_exactly` to `describe` | 61608529; `apisession` `an_integer_above_2_pow_53_is_set_exactly` extended to `Session::describe` |
 | F24. (Minor, records) C70's test does not hold its claim; a stale `Run` line; A10 and A11 marks | C70 (`E0906` is retired) proves through `every_spec_code_is_raised_or_owned`, which no longer sees `E0906`; `suite_hygiene` `retired_unknown_codes_are_raised_nowhere` is the test that fails if a source raises it. `tasks.md:20` `**Run typesunknowns**` names the deleted target (`validate_tasks.py` warns). A10 changes PI-02 AC 1 ("of a unit enum"), which carries no mark; A11 is dated "B5" but is the fix round | point C70 at `suite_hygiene` (a `Run` line for it), drop `Run typesunknowns`, mark PI-02 AC 1 with A10, date A11 to the fix round | a67784ad; C70 proves through `hygiene` `retired_unknown_codes_are_raised_nowhere`, `Run typesunknowns` replaced by `Run hygiene`, PI-02 AC 1 marked A10, A11 dated to the fix rounds (A8's own text still names the old C70 proof: F25) |
-| F25. (Minor, records) Loud refusals of the new param types through a wrapper's placement are not `GAPS.md` rows; A8 names the old C70 proof | own examples: `{ n: n }` and `{ md: md }` (`u8`, unit enum) are "a derived param that reads the integer param .. has no Rust lowering yet" (`print/derive.rs:79`); `{ rs: rs }` (`Option<f64>` to `Option<f64>`) is `P0001` "an expression the type checker gave no value type"; a structural enum pass-through is `P0001` "a composite param in a const expression in the value of a param that fixes structure"; `grep` of `GAPS.md` finds none. `spec.md` A8 still says C70 is `speccodes::every_spec_code_is_raised_or_owned` | a `GAPS.md` row per refusal with an owner (or implement them), and A8's text to `hygiene` `retired_unknown_codes_are_raised_nowhere` | |
-| F26. (Major) A unit enum with no `#[derive(..)]` as a param is a rustc refusal of the generated source, "a transpiler defect": b2e4efd9's rule (a param's type needs no `Repr`, §8.1.15) covers the aggregates a param holds, not a unit enum (PI-02 AC 1, A10) | own example `nr3.msl`: `enum Mode { Fast, Slow }`, `module Load(p) { md: Mode = Mode::Fast; }`, `analog` `match md`: `error[E0277]: the trait bound Mode: Carried is not satisfied` at `<Mode as rt::Carried>::from_pin`; with `#[derive(Repr, PartialEq)]` it runs. `TypeItems::pinned` is `lifted` (`collect_aggregates`), which a unit enum is not | give every type a param pin holds its `Carried` form (unit enums included), and a parity row with a derive-less unit enum param read by `match` next to `HeldRatingBench` | |
+| F25. (Minor, records) Loud refusals of the new param types through a wrapper's placement are not `GAPS.md` rows; A8 names the old C70 proof | own examples: `{ n: n }` and `{ md: md }` (`u8`, unit enum) are "a derived param that reads the integer param .. has no Rust lowering yet" (`print/derive.rs:79`); `{ rs: rs }` (`Option<f64>` to `Option<f64>`) is `P0001` "an expression the type checker gave no value type"; a structural enum pass-through is `P0001` "a composite param in a const expression in the value of a param that fixes structure"; `grep` of `GAPS.md` finds none. `spec.md` A8 still says C70 is `speccodes::every_spec_code_is_raised_or_owned` | a `GAPS.md` row per refusal with an owner (or implement them), and A8's text to `hygiene` `retired_unknown_codes_are_raised_nowhere` | bf92fd5a, 087b0df5, f1df7e30; `apisession` `params_passed_through_a_wrappers_placement_run` and `a_structural_enum_passed_through_a_wrapper_selects_the_variant`; own examples hold; A8 names the `hygiene` proof. What stays refused is F27 and F29 |
+| F26. (Major) A unit enum with no `#[derive(..)]` as a param is a rustc refusal of the generated source, "a transpiler defect": b2e4efd9's rule (a param's type needs no `Repr`, §8.1.15) covers the aggregates a param holds, not a unit enum (PI-02 AC 1, A10) | own example `nr3.msl`: `enum Mode { Fast, Slow }`, `module Load(p) { md: Mode = Mode::Fast; }`, `analog` `match md`: `error[E0277]: the trait bound Mode: Carried is not satisfied` at `<Mode as rt::Carried>::from_pin`; with `#[derive(Repr, PartialEq)]` it runs. `TypeItems::pinned` is `lifted` (`collect_aggregates`), which a unit enum is not | give every type a param pin holds its `Carried` form (unit enums included), and a parity row with a derive-less unit enum param read by `match` next to `HeldRatingBench` | bf92fd5a; `sourceparams` `a_unit_enum_with_no_derive_is_a_param` (`GearLoad`, 0.5 and 0.25 V) |
+| F27. (Major, records) A `set` of a param that a placement binds into a composite or `Option` param of a child is refused, against §8.1.23 ("every value bound from it is recomputed") and PI-03 AC 4, and nothing records the departure | `Wrap { rs: Option<f64>; let l = Load(p) { rs: rs }; }`: `--param w.rs=500` / `None` is `E0802`; `params.rs:407` "is read by the placement of the composite param .., which keeps the value it elaborated to"; `params_passed_through_a_wrappers_placement_run` asserts the refusal; no `GAPS.md` row, amendment or owner. On a wrapper with no pin the `--param` refusal is the generic "no PARAM pin `rs`" | recompute the bound composite (its bytes from the parent's value) or record the departure: a `GAPS.md` row with a real owner and an amendment of PI-03 AC 4's scope, and give the `--param` path the placement message | |
+| F28. (Blocker, silent) An integer above 2^53 set by a host skips the derive plan: what a placement binds from it keeps its old value, and a derived param takes the write that its plan refuses | own example `bg.msl` (`Wrap { big: u64; let l = Load(p) { big: big }; }`, both reading `big > 2^53`): `--param w.big=9007199254740993` runs the wrapper at 3 mS and the child at 1 mS (0.2 V, wanted 1/7 V); `--param w.l.big=9007199254740993` is accepted while `w.l.big=5` is `E0802` "derived ... set that param instead". `Session::set_exact_integer` (`session.rs`) writes the pin and `table.apply` with `derived: false`, never `Params::changes`; reachable since bf92fd5a lowers derives that read an integer | route the exact write through `Params::changes` (its refusals and readers), and either carry the exact integer to the derive function or refuse a value above 2^53 on a param others derive from; a test with a wrapper passing a `u64` down | |
+| F29. (Minor, records) A derived enum value beyond pass-through is refused with no `GAPS.md` row, by an arena name | `{ md: if slow { Mode::Slow } else { Mode::Fast } }` and `{ md: match k { .. } }` in a placement: "`a derived param of type t0` has no Rust lowering yet" (`print/derive.rs`, `binding.ty` printed raw); §8.1.19 allows any expression over params as a bound value | a `GAPS.md` row with a real owner (or lower it: the tail can return the variant's tag), and print the type by its name (`Mode`) | |
+
+## Round 4 record (fix of F19 to F24)
+
+**Round 4 verdict**: FAIL
+**Round 4 proofs**: `proofs.md` at dcbbea67 (the round 3 fix, 114 pass, 0 fail; re-run by the round 4 verifier after its own commit); round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Round 4 scope**: round 4 judges the fix of F19 to F24 and two transpiler fixes (141fd5da, 61608529, a67784ad, b2e4efd9; `git diff f351f6c1..dcbbea67`, 19 files) and the regressions they could introduce; rounds 3, 2 and 1 are kept below as they were judged. F15 is out of scope (owned by `generics`).
+
+**Rulings applied (binding).** Round 3's, and: a leaf of a composite param reads its text by the leaf's type with the language's literal syntax (A12).
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
+
+**Tests run (gate policy: targeted only).** Lane D env: `cargo build -p piperine-cli`; `check_proofs.py params-and-io` after this commit
+(`proofs.md`, which runs `apisession`, `elabparams`, `sourceparams` holding the new tests). No workspace run.
+
+**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).**
+- F19/F20, structural params selecting the contribution, 1 V behind 1 kOhm: `m.md=Open` and `m.md=Mode::Open` give 1 V, `Short`
+  0.25 V; `o.vs=0.5` and `o.vs=Some(0.5)` give 0.5 V, `o.vs=None` 1 V; `k.k=0`/`0x0` select the open branch; `m.md=1`, `m.md=Bogus`,
+  `o.vs=x`, `k.k=1.5` are `E0802` at elaboration naming param and value. Hold.
+- F21: `Mid { rt: f64 = 3k; let l = Load(p) { rs: rt }; }` gives 0.75 V, and `Mid2 { rs: Some(rt * 1.0) }` with `rt: 1k` 0.5 V on rust;
+  the interpreter refuses the `Option` param by name. Hold.
+- A12, leaves: `l.cfg.n=0x3` runs 0.25 V; `3e0`, `3.5` (`u8` leaf) and `en=1` (`bool` leaf) are `E0802`; `en=false`, `g=2e-3` run. Hold.
+- b2e4efd9: a struct `Cfg { g: f64, n: u8 }` with no derive as a param read by `analog`, bound at the placement and set by leaf: 1/3,
+  1/7 (`md=Slow`) and 1/2 V by hand (holds). **A unit enum with no derive as a param** (`enum Mode { Fast, Slow }`, `md: Mode`, read by
+  `match`) is a rustc refusal "the trait bound `Mode: Carried` is not satisfied (a transpiler defect)" (F26).
+- **A module with no `analog` block** (the coordinator's question): (a) a param read by a `digital` block (the Book's `Watchdog`,
+  `limit: u16`) is written: `w.limit=3` fires `stuck` at 3.5 us with 3 edges, `w.limit=0x5` at 5.5 us, `w.limit=70000` is `E0802`;
+  (b) a wrapper's `f64` param read by a placement is derived and written (`m.rr=3000` 0.75 V, round 3); (c) a param nothing reads, on an
+  instance with no pin (`Plain { gain, n, md, rs, cfg }` holding only a child): every `--param` of it is refused loud, `E0802` "no
+  PARAM pin `gain`; the instance declares no writable parameters" (the same for `n`, `md`, `rs`, the leaves of `cfg`, and `Top.tg`).
+  Never silent. The refusal of a param that has no effect is stricter than needed, and its message shows the tag (`refuses the value
+  1` for `md=Open`) and `rs.value`/`None` for an `Option`: cosmetic, left to the user.
+- Pass-through of the new param types from a wrapper (`Wrap { md: Mode; n: u8; rs: Option<f64>; let l = Load(p) { md: md, n: n, rs: rs }; }`):
+  `{ n: n }` and `{ md: md }` are refused "`a derived param that reads the integer param ..` has no Rust lowering yet" (transpiler,
+  already on main), `{ rs: rs }` is `P0001` "an expression the type checker gave no value type", and a structural pass-through
+  (`WrapSw { md } -> Sw { md: md }` with `match md` selecting a contribution) is `P0001` "a composite param in a const expression in the
+  value of a param that fixes structure". All loud; none is a `GAPS.md` row (F25).
+
+**Findings of round 3.** F19 to F24 are closed by the commits in the table.
 
 ## Round 3 record (fix round of F7 to F18)
 
@@ -344,3 +382,5 @@ Round 2: F11 needs a ruling (does §3.2.3's implicit `Some` apply to a param bin
 Round 3: F19 and F20 need an implementer (the `--param` of a structural param of enum or `Option` type); F15's owner `generics` has no task for GN-26 AC 3 yet (phase D is untasked, its T42 pins `m`/`dtemp` as `P0001`), and GN-26 AC 3 was added to the approved `generics` spec from this branch. A leaf of a composite param still takes any number (`l.cfg.n=0x3` is `E0802`, `l.cfg.en=1` is `true`): the leaf path is composite-values' D13, not this feature's type reading; left for the user to rule on.
 
 Round 4: F25 and F26 need an implementer. A `--param` of a param nothing reads on an instance with no pin is refused loud (`E0802` "no PARAM pin"): not silent, but stricter than needed, with a message that shows an enum's tag and an `Option`'s `value` leaf; left for the user to rule on.
+
+Round 5: F27, F28 and F29 need an implementer; F27 also needs a ruling if the departure from §8.1.23 is to stand (an amendment with an owner) rather than be implemented.
