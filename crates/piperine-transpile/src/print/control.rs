@@ -87,7 +87,8 @@ impl<'a> ValuePrinter<'a> {
         let dots = if inclusive { "..=" } else { ".." };
         let range = if reverse { format!("({low}.get(){dots}{high}.get()).rev()") } else { format!("{low}.get(){dots}{high}.get()") };
         let lines = self.loop_body(body)?;
-        let bound = format!("let {name} = {path}::new({raw});");
+        // the loop variable of `for k in 0..N` may be unread: the loop then counts trips only
+        let bound = format!("#[allow(unused_variables)] let {name} = {path}::new({raw});");
         Ok(self.counted(e, "for", &format!("for {raw} in {range} {}", Self::braced(&format!("trips_.tick();\n{bound}{}", Self::after(&lines))))))
     }
 

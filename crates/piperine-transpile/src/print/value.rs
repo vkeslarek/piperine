@@ -998,7 +998,14 @@ impl<'a> ValuePrinter<'a> {
                 };
                 let init = self.expr(*init)?;
                 // a deferred `let x;` starts at a placeholder its first assignment overwrites
-                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments, unused_variables)] let mut" } else { "let" };
+                // a temporary the elaborator makes for a `match` (`match$0.val`) is unread when its arm binds nothing (`Some(_)`)
+                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) {
+                    "#[allow(unused_assignments, unused_variables)] let mut"
+                } else if name.starts_with("match_s") {
+                    "#[allow(unused_variables)] let"
+                } else {
+                    "let"
+                };
                 // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
                 let annotation = match self.local_types.get(*local as usize) {
                     Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),

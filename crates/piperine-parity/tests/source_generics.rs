@@ -289,7 +289,7 @@ fn a_hand_written_repr_carries_its_own_layout() {
 #[test]
 fn a_decode_returning_none_is_returned_to_the_caller() {
     // GN-05 AC 2 (§2 rule 9 as MD-78 amends it): `decode` of no high level is `None`, of the third level `Some(C)`
-    let none = Phase::decode([false; 4]).map_or(0, |phase| if phase == Phase::A { 2 } else { 1 });
+    let none = Phase::decode([false; 4]).map_or(0, |_| 1);
     let some = Phase::decode([false, false, true, false]).map_or(0, |phase| u8::from(phase == Phase::C));
     RUN.assert_commits("repr.msl", &["d0", "d1"], &[CarrierBytes::byte(none), CarrierBytes::byte(some)]);
 }
@@ -314,9 +314,9 @@ fn pick<T>(flag: bool, a: T, b: T) -> T {
     if flag { a } else { b }
 }
 
-/// `fn count<const N: usize>() -> u8` of the model: the sum of `1..=N`, one loop step for each of `N`.
+/// `fn count<const N: usize>() -> u8` of the model: one step for each of `N`, with the loop variable unread.
 fn count<const N: usize>() -> u8 {
-    (0..N).fold(0u8, |n, k| n + k as u8 + 1)
+    (0..N).fold(0u8, |n, _| n + 1)
 }
 
 /// `fn table_total<const N: usize>(xs: [f64; N]) -> f64` of the model.
@@ -346,7 +346,7 @@ fn generic_functions_run_with_explicit_and_inferred_arguments() {
 
 #[test]
 fn a_const_generic_of_zero_runs_its_loops_zero_times() {
-    // GN-01 edge case: `count::<0>()` takes no step and `table_total` of an empty table is 0.0; `count::<3>()` takes three loop steps (the sum 1 + 2 + 3)
+    // GN-01 edge case: `count::<0>()` takes no step and `table_total` of an empty table is 0.0; `count::<3>()` takes three
     let empty: [f64; 0] = [];
     RUN.assert_commits("functions.msl", &["r6", "r7", "r8"], &[CarrierBytes::byte(count::<0>()), CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total(empty) + 7.0)]);
 }
@@ -354,6 +354,6 @@ fn a_const_generic_of_zero_runs_its_loops_zero_times() {
 #[test]
 fn a_const_context_reads_the_const_generic_arguments() {
     // GN-14 (the const evaluator): a `const` that calls a generic function with a const argument runs its loops and its
-    // array repeats `[x; N]` for that argument: `count::<3>()` is 6 and `filled::<4>()`, four elements of 1.5, sums to 6.0
+    // array repeats `[x; N]` for that argument: `count::<3>()` is 3 and `filled::<4>()`, four elements of 1.5, sums to 6.0
     RUN.assert_commits("functions.msl", &["r10", "r11"], &[CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total([1.5; 4]))]);
 }

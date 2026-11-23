@@ -29,7 +29,7 @@ impl Repr for Count {
     }
 }
 
-fn none_is_returned() -> u8 { match Phase::decode([false, false, false, false]) { Some(p) => if p == Phase::A { 2 } else { 1 }, None => 0 } }
+fn none_is_returned() -> u8 { match Phase::decode([false, false, false, false]) { Some(_) => 1, None => 0 } }
 fn some_is_returned() -> u8 { match Phase::decode([false, false, true, false]) { Some(p) => if p == Phase::C { 1 } else { 0 }, None => 0 } }
 
 module Rows(in clk: Bit, out p0: Bit<Phase> = Phase::A, out p1: Bit<Phase> = Phase::A, out p2: Bit<Phase> = Phase::A, out g0: Bit<Count> = Count { n: 0 }, out g1: Bit<Count> = Count { n: 0 }, out g2: Bit<Count> = Count { n: 0 }, out d0: Bit<u8> = 9, out d1: Bit<u8> = 9) {}

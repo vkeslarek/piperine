@@ -9,7 +9,7 @@ struct Pt { x: f64, y: f64 }
 fn pick<T>(flag: bool, a: T, b: T) -> T { if flag { a } else { b } }
 fn count<const N: usize>() -> u8 {
     let n = 0u8;
-    for k in 0..N { n += k as u8 + 1; }
+    for k in 0..N { n += 1; }
     n
 }
 fn table_total<const N: usize>(xs: [f64; N]) -> f64 {
