@@ -89,6 +89,20 @@ impl Checker<'_> {
         self.callable_of(param).map(|_| decl)
     }
 
+    /// A call of a value of a type parameter bounded by `Fn(A) -> R`: its arguments are positional
+    /// only (§3.2.11, `E0140` for a named one) and checked against the bound's inputs.
+    pub(super) fn call_through_bound(&mut self, expr: ExprId, parameter: DeclId, args: &[Arg]) -> Option<Ty> {
+        if let Some(named) = args.iter().find(|arg| arg.name.is_some()) {
+            let file = self.file_of_expr(expr);
+            self.coded(file, "E0140", named.span, "a call through an `Fn` bound takes its arguments by position (§3.2.11)".to_string(), "positional only");
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return None;
+        }
+        self.local_call(expr, parameter, args)
+    }
+
     /// The function type a type parameter's `Fn(A) -> R` bound gives its values, `None` without one.
     pub(super) fn callable_of(&mut self, param: DeclId) -> Option<Ty> {
         let (inputs, output) = self.bounds_of(param).into_iter().find_map(|bound| match bound {

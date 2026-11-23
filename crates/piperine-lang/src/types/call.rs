@@ -50,7 +50,7 @@ impl Checker<'_> {
             CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
             // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
             // reads the call as a placement because a module parameter has the same bound
-            CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.local_call(expr, parameter, args),
+            CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.call_through_bound(expr, parameter, args),
             CallClass::Instance { module: None, .. } => {
                 self.unsupported(file, node.span, "placement through a template value or a function");
                 return None;
@@ -94,13 +94,14 @@ impl Checker<'_> {
             return self.generic_call(expr, callee, function, args);
         }
         let (params, ret) = self.signature(function)?;
-        self.finish_call(expr, callee, function, params, ret, args)
+        self.finish_call(expr, callee, function, params, ret, args, true)
     }
 
     /// The typing of a call of `function` once its parameter types and result are known (a generic
     /// function's are the substituted ones): the callee recorded, the arguments bound to the
-    /// parameters, the result the call's type.
-    pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg]) -> Option<Ty> {
+    /// parameters, the result the call's type. `pointers` holds a closure that captures out of a
+    /// parameter of function type, which is a function pointer; a parameter bounded by `Fn` is not one.
+    pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg], pointers: bool) -> Option<Ty> {
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -118,7 +119,7 @@ impl Checker<'_> {
         // a parameter of function type is a function pointer: a closure that captures is refused
         let slots = self.bindings.get(&expr).cloned().unwrap_or_default();
         for (slot, param) in slots.iter().zip(&params) {
-            if let (Some(arg), Ty::Fn(..)) = (slot, param) {
+            if let (true, Some(arg), Ty::Fn(..)) = (pointers, slot, param) {
                 self.refuse_capturing_pointer(*arg);
             }
         }

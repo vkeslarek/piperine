@@ -364,3 +364,36 @@ fn each_generic_call_records_its_instantiation() {
     assert_eq!(calls[0].1.arguments, [GenericValue::Type(Ty::F64), GenericValue::Type(Ty::UInt(8))]);
     assert_eq!(calls[1].1.arguments, [GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::F64)]);
 }
+
+#[test]
+fn fn_bounds_take_closures_and_function_names() {
+    // §3.8.6, GN-01 AC 2: a closure (capturing or not, its parameters typed by the bound) and a `fn` name
+    // pass for `F: Fn(f64) -> f64`; the instantiation records the closure or the function (D9)
+    let items = "fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 { f(f(x)) }\n\
+                 fn halve(v: f64) -> f64 { v * 0.5 }\n\
+                 fn apply<T, U, F: Fn(T) -> U>(f: F, x: T) -> U { f(x) }\n";
+    let src = format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ let k = 3.0; let a = twice(|v| v * 2.0, 1.0); let b = twice(|v| v + k, 1.0); let c = twice(halve, 4.0); let d = apply(|n: u8| n > 1, 3u8); }}");
+    let design = support::build(&format!("{HEAD}{src}"));
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let declarations = Declarations { design: &design };
+    assert_eq!(types.local(declarations.binding("a")), Some(&Ty::F64));
+    assert_eq!(types.local(declarations.binding("d")), Some(&Ty::Bool), "U is found from the closure's result");
+    let calls: Vec<_> = (0..design.expr_count()).filter_map(|i| types.instantiation(piperine_lang::pom::ExprId(i as u32)).cloned()).collect();
+    assert_eq!(calls.len(), 4, "{calls:?}");
+    assert!(matches!(calls[0].arguments[0], GenericValue::Closure(_)), "a plain closure: {:?}", calls[0].arguments);
+    assert!(matches!(calls[1].arguments[0], GenericValue::Closure(_)), "a capturing closure: {:?}", calls[1].arguments);
+    assert_eq!(calls[2].arguments, [GenericValue::Function(declarations.item("halve"))], "a function name");
+    assert_eq!(calls[3].arguments[..2], [GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::Bool)]);
+    // an argument whose signature is not the bound's is refused
+    let errors = analog_types(items, "let a = twice(|v: bool| v, 1.0);", &["a"]).expect_err("a closure over bool is no Fn(f64) -> f64");
+    assert!(errors.iter().any(|(code, _)| code == "E0187" || code == "E0180"), "{errors:?}");
+}
+
+#[test]
+fn a_call_through_an_fn_bound_is_positional_only() {
+    // §3.2.11: the arguments of `f(x)` through `F: Fn(f64) -> f64` are positional; a named one is E0140
+    let found = model_errors("fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 { f(v: x) }\n");
+    assert_eq!(codes_of(&found), ["E0140"], "{found:?}");
+    assert!(found[0].diagnostic.message.contains("by position"), "{:?}", found[0]);
+}

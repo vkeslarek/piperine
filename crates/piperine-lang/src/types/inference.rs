@@ -5,10 +5,10 @@
 //! naming it. The call is then typed by the signature with the arguments substituted.
 
 use crate::msl::Span;
-use crate::pom::{Arg, DeclId, ExprId, ExprKind, FileId, GenericArgsNode};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgsNode, Resolution};
 
 use super::check::Checker;
-use super::generics::{GenericParameter, GenericSignature, ParameterKind};
+use super::generics::{Bound, GenericParameter, GenericSignature, ParameterKind};
 use super::{ConstTerm, GenericValue, Instantiation, Length, Substitution, Ty};
 
 /// What a call of a generic function has learnt about its parameters so far.
@@ -110,17 +110,39 @@ impl Checker<'_> {
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, callee, function, file, span)?;
         self.argument_types(&mut inference, &params, args);
+        self.callable_arguments(&mut inference, &params, args);
         if let Some(expected) = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&ret, &expected);
         }
         let substitution = self.complete_arguments(&mut inference, &signature, function, file, span)?;
-        let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
+        let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| self.recorded_argument(parameter, &params, args, &substitution)).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, function, file, span)?;
         self.instantiations.insert(expr, Instantiation { item: function, arguments });
         let params: Vec<Ty> = params.iter().map(|param| substitution.apply(param)).collect();
         let ret = substitution.apply(&ret);
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
-        self.finish_call(expr, callee, function, params, ret, args)
+        self.finish_call(expr, callee, function, params, ret, args, false)
+    }
+
+    /// The argument the instantiation records for `parameter`: the closure or the function a call
+    /// passes for a parameter bound by `Fn(A) -> R` (D9, §3.8.6), else what the substitution gives.
+    fn recorded_argument(&self, parameter: &GenericParameter, declared: &[Ty], args: &[Arg], substitution: &Substitution) -> Option<GenericValue> {
+        let callable = parameter.bounds.iter().any(|bound| matches!(bound, Bound::Callable { .. }));
+        let passed = declared.iter().position(|ty| *ty == Ty::Param(parameter.decl)).and_then(|index| args.get(index));
+        if let (true, Some(arg)) = (callable, passed) {
+            if let Some(closure) = self.closure_expr(arg.value) {
+                return Some(GenericValue::Closure(closure));
+            }
+            if let Some(Resolution::Decl(decl)) = self.callee_resolution(arg.value) {
+                if matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) {
+                    return Some(GenericValue::Function(decl));
+                }
+                if let Some(closure) = self.closure_locals.get(&decl) {
+                    return Some(GenericValue::Closure(*closure));
+                }
+            }
+        }
+        substitution.get(parameter.decl).cloned()
     }
 
     /// The arguments written with `::<..>` after the function's name, in the order of its
@@ -150,7 +172,7 @@ impl Checker<'_> {
     fn argument_types(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
         for open_literals in [false, true] {
             for (arg, declared) in args.iter().zip(params) {
-                if self.integer_literal_text(arg.value).is_some() != open_literals {
+                if self.integer_literal_text(arg.value).is_some() != open_literals || self.callable_bound_of(declared).is_some() {
                     continue;
                 }
                 if open_literals && !self.mentions_open_parameter(declared, inference) {
@@ -163,12 +185,40 @@ impl Checker<'_> {
         }
     }
 
+    /// Types the arguments passed for parameters bounded by `Fn(A) -> R` last, against the function
+    /// type the bound writes with what is known substituted (§3.8.6): a closure with parameters of
+    /// no written type takes them from it, a `fn` name or a typed closure gives its own, and what
+    /// it gives is learnt in turn (`F: Fn(T) -> U` finds `U` from the closure's result).
+    fn callable_arguments(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
+        for (arg, declared) in args.iter().zip(params) {
+            let Some(wanted) = self.callable_bound_of(declared) else { continue };
+            let expected = inference.found().apply(&wanted);
+            let ty = if self.is_function_value(arg.value) && !self.mentions_open_parameter(&expected, inference) {
+                self.check(arg.value, &expected);
+                self.exprs[arg.value.index()].clone()
+            } else {
+                self.infer(arg.value)
+            };
+            if let Some(ty) = ty {
+                inference.unify(declared, &ty);
+                inference.unify(&wanted, &ty);
+            }
+        }
+    }
+
+    /// The function type `declared` is bound to when it is a type parameter bounded by `Fn(A) -> R`.
+    fn callable_bound_of(&mut self, declared: &Ty) -> Option<Ty> {
+        let Ty::Param(parameter) = declared else { return None };
+        self.callable_of(*parameter)
+    }
+
     /// Whether `declared` is, or holds, a parameter the inference has not found yet.
     fn mentions_open_parameter(&self, declared: &Ty, inference: &Inference<'_>) -> bool {
         match declared {
             Ty::Param(parameter) => inference.open().iter().any(|open| open.decl == *parameter),
             Ty::Array(element, _) | Ty::Option(element) => self.mentions_open_parameter(element, inference),
             Ty::Tuple(items) => items.iter().any(|item| self.mentions_open_parameter(item, inference)),
+            Ty::Fn(params, result) => params.iter().any(|param| self.mentions_open_parameter(param, inference)) || self.mentions_open_parameter(result, inference),
             _ => false,
         }
     }
