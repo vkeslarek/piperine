@@ -1111,8 +1111,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_handle_returned_stored_or_written_is_e0133` passes under `**Run typeshandles**`
-- [ ] Gate check passes: Quick
+- [x] `a_handle_returned_stored_or_written_is_e0133` passes under `**Run typeshandles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

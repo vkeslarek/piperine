@@ -640,6 +640,9 @@ impl<'d> Checker<'d> {
                 }
             }
         }
+        // before the body: a handle kept is `E0133`, not the mismatch the same span would also report
+        self.check_handle_result(decl, parts.ret.as_ref());
+        self.check_handle_uses(decl);
         self.context = Context::Function;
         self.flow.exit = Some(ExitFrame::new(parts.ret.clone(), false));
         match (&f.body, parts.ret) {

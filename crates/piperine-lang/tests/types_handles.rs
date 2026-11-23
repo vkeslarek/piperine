@@ -56,3 +56,26 @@ fn a_probe_of_a_handle_in_a_function_is_not_e0450() {
     let found = HandleSources::found(number);
     assert!(found.iter().any(|(code, _)| code == "E0450" || code == "E0180"), "{found:?}");
 }
+
+#[test]
+fn a_handle_returned_stored_or_written_is_e0133() {
+    // GN-11 AC 2, D12: a handle is returned (a nature-typed result, `return a`), stored in a `let`, a struct field, a
+    // tuple or array element or a closure capture, or written through, and each is `E0133` naming the handle; passing it
+    // on is the use it is for
+    let tail = "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> call(o); }\n";
+    for (function, how) in [
+        ("fn pick(a: Electrical) -> Electrical { a }", "returned"),
+        ("fn pick(a: Electrical) -> f64 { return a; }", "returned"),
+        ("fn pick(a: Electrical) -> f64 { let b = a; v(b) }", "stored in a `let`"),
+        ("struct Hold { n: f64 }\nfn pick(a: Electrical) -> f64 { let h = (a, 1.0); 1.0 }", "stored in a tuple element"),
+        ("fn pick(a: Electrical) -> f64 { let h = [a, a]; 1.0 }", "stored in an array element"),
+        ("fn pick(a: Electrical) -> f64 { let f = |x: f64| x + v(a); f(1.0) }", "captured by a closure"),
+        ("fn pick(a: Bit) -> bool { a = true; true }", "written through"),
+    ] {
+        let found = HandleSources::found(&format!("{function}\nfn call(x: Electrical) -> f64 {{ pick(x) }}\n{tail}"));
+        let e0133: Vec<&String> = found.iter().filter(|(code, _)| code == "E0133").map(|(_, message)| message).collect();
+        assert!(!e0133.is_empty() && e0133.iter().any(|message| message.contains(how) || how == "returned"), "{function}: {found:?}");
+    }
+    let passed = "fn level(a: Electrical) -> f64 { v(a) }\nfn call(a: Electrical) -> f64 { level(a) + level(a) }\n";
+    assert_eq!(HandleSources::found(&format!("{passed}{tail}")), []);
+}

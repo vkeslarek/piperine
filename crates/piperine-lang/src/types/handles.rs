@@ -1,12 +1,13 @@
 //! Handles (generics GN-11, GN-12, part I §3.1.5): a function parameter of a nature type, and `self` of an
 //! `impl` on a nature, stands for the carrier the caller passes. A handle is read (a discrete one gives its
 //! value), probed (`v(a)`, `temp(self)`), passed on to another function and has carrier methods called on it
-//! (`a.prev()`); it is never returned or stored (`E0133`, T45).
+//! (`a.prev()`); it is never returned or stored (`E0133`, `handles` rules below).
 //!
 //! The type of a handle is the type of the carrier: `Ty::Node` for a continuous nature, `Ty::Carrier` for a
 //! discrete one. [`Types::handle`](super::Types::handle) says which parameters are handles.
 
-use crate::pom::{DeclId, ExprId, ExprKind, Resolution};
+use crate::msl::Span;
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
 use super::check::Checker;
 use super::Ty;
@@ -77,5 +78,63 @@ impl Checker<'_> {
             Some((_, ty)) => Some(ty),
             None => self.handle_named(expr).and_then(|decl| self.handle_type(decl)),
         }
+    }
+
+    /// `E0133` for every use of a handle in `function` that keeps it past a call (§3.1.5, D12): the result type of
+    /// the function is a handle, a `return` names one, a `let`, a struct field, a tuple or array element or a closure
+    /// holds one, or an assignment or a commit writes through one. Passing it as an argument is the use it is for.
+    pub(super) fn check_handle_uses(&mut self, function: DeclId) {
+        if self.handles.is_empty() {
+            return;
+        }
+        let file = self.design.decl_data(function).file;
+        let mut found: Vec<(Span, ExprId, &'static str)> = Vec::new();
+        for index in 0..self.design.expr_count() as u32 {
+            let expr = ExprId(index);
+            let node = self.design.expr_node(expr);
+            if node.owner != function {
+                continue;
+            }
+            match &node.kind {
+                ExprKind::Struct { fields, .. } => found.extend(fields.iter().filter(|field| self.handle_named(field.value).is_some()).map(|field| (field.span, field.value, "stored in a struct field"))),
+                ExprKind::Tuple(items) => found.extend(items.iter().filter(|item| self.handle_named(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in a tuple element"))),
+                ExprKind::Array(items) => found.extend(items.iter().filter(|item| self.handle_named(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in an array element"))),
+                ExprKind::ArrayRepeat { elem, .. } if self.handle_named(*elem).is_some() => found.push((self.design.expr_node(*elem).span, *elem, "stored in an array element")),
+                ExprKind::Return(Some(value)) if self.handle_named(*value).is_some() => found.push((self.design.expr_node(*value).span, *value, "returned")),
+                ExprKind::Assign { lhs, .. } if self.handle_named(*lhs).is_some() => found.push((self.design.expr_node(*lhs).span, *lhs, "written through")),
+                ExprKind::Closure { body, .. } => {
+                    let mut inside = Vec::new();
+                    crate::pom::preorder(self.design, *body, &mut inside);
+                    found.extend(inside.into_iter().filter(|inner| self.handle_named(*inner).is_some()).map(|inner| (self.design.expr_node(inner).span, inner, "captured by a closure")));
+                }
+                _ => {}
+            }
+        }
+        for index in 0..self.design.stmt_count() as u32 {
+            let node = self.design.stmt_node(crate::pom::StmtId(index));
+            if node.owner != function {
+                continue;
+            }
+            match &node.kind {
+                StmtKind::Let { init: Some(init), .. } if self.handle_named(*init).is_some() => found.push((self.design.expr_node(*init).span, *init, "stored in a `let`")),
+                StmtKind::Commit { place, .. } if self.handle_named(*place).is_some() => found.push((self.design.expr_node(*place).span, *place, "written through")),
+                _ => {}
+            }
+        }
+        for (span, expr, how) in found {
+            let name = self.handle_named(expr).and_then(|decl| self.design.decl_data(decl).name.as_ref().map(|name| name.text.clone())).unwrap_or_default();
+            let message = format!("the handle `{name}` is {how}: a handle is read, probed, passed on and has carrier methods called on it, nothing else (§3.1.5)");
+            self.coded(file, "E0133", span, message, "a handle kept past its call");
+        }
+    }
+
+    /// `E0133` for a function whose result type is a handle (a node or a carrier of a nature).
+    pub(super) fn check_handle_result(&mut self, function: DeclId, ret: Option<&Ty>) {
+        let Some(ret) = ret.filter(|ty| Self::is_handle_type(ty)) else { return };
+        let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return };
+        let span = data.ret.map_or(self.design.decl_data(function).span, |ty| self.design.type_node(ty).span);
+        let file = self.design.decl_data(function).file;
+        let message = format!("a function returns `{}`, a handle: a handle is never returned (§3.1.5)", ret.name(self.design));
+        self.coded(file, "E0133", span, message, "a handle returned");
     }
 }
