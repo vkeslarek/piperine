@@ -39,7 +39,7 @@ Five sub-features, each designed and tasked on its own (`design-<phase>.md`, `ta
 | ----- | ---- | --- | ------------ | ---- |
 | A | Generic items and the whole-model check | L7, L4 (generic enums), S3, X6 | GN-01 to GN-09 | L, about 35 tasks |
 | B | Handles | L8 | GN-10 to GN-12 | M, about 12 tasks |
-| C | Generic modules and generation | L30, L31 | GN-13 to GN-20 | L, about 32 tasks |
+| C | Generic modules and generation | L30, L31, L69 | GN-13 to GN-20, GN-32 | L, about 32 tasks |
 | D | Templates and implicit params | L32, L29 | GN-21 to GN-26 | M, about 20 tasks |
 | E | The stdlib built on generics | L58 (generics group) | GN-27 to GN-28 | M, about 15 tasks |
 | all | Cross-cutting | — | GN-29 to GN-31 | carried by each phase |
@@ -135,8 +135,6 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 1. WHEN a project writes `impl Repr for T` with `WIDTH`, `encode` and `decode` (a one-hot or Gray encoding) THEN the system SHALL carry `Bit<T>` with that layout.
 2. WHEN a hand-written `decode` returns `None` THEN the system SHALL return the `None` to the caller (§2 rule 9 as MD-78 amends it).
-3. WHEN a project writes `impl<T: Repr> Repr for Pair<T>` for a generic type THEN the system SHALL carry each instance with the layout of that `impl` (phase C; until then each such use is `P0001` naming the form, GAPS L69).
-4. WHEN a carrier of a hand-written type has a `Default` and no initial value THEN the system SHALL start it at the levels `encode` gives for that default (phase C; until then `P0001` naming the form, GAPS L69).
 
 **Acceptance Criteria** (GN-06, generic value types):
 
@@ -353,6 +351,11 @@ The forms each item is expected to need beyond this feature, from its source in 
 1. WHEN a phase closes a `GAPS.md` id THEN the same commit SHALL remove it, update `§9 Coverage`, and move each L58 item it unblocks to the id of what still blocks it.
 2. WHEN a phase lets a gallery fence (Appendices D to F) or a Book example check that was refused before THEN the system SHALL hold it to the checker in the existing gallery or Book test.
 
+**Acceptance Criteria** (GN-32, hand-written `Repr` on generic types and initial values; phase C; added by implementer 2026-11-23, AFK default, pending user review; moved out of GN-05, whose approved text is AC 1 and AC 2):
+
+1. WHEN a project writes `impl<T: Repr> Repr for Pair<T>` for a generic type THEN the system SHALL carry each instance with the layout of that `impl` (until phase C each such use is `P0001` naming the form, GAPS L69).
+2. WHEN a carrier of a hand-written type has a `Default` and no initial value THEN the system SHALL start it at the levels `encode` gives for that default (until phase C `P0001` naming the form, GAPS L69).
+
 **Independent Test**: `cargo test` with the twins' goldens; the interpreter's refusal test; `GAPS.md` in each closing commit.
 
 ---
@@ -421,8 +424,9 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-29 | P1: every phase keeps the rest intact | - | Pending |
 | GN-30 | P1: every phase keeps the rest intact | - | Pending |
 | GN-31 | P1: every phase keeps the rest intact | - | Pending |
+| GN-32 | P1: generic functions, methods and traits (C) | - | Pending |
 
-**Coverage:** 31 total, 0 mapped to tasks (spec only).
+**Coverage:** 32 total, 0 mapped to tasks (spec only).
 
 ---
 

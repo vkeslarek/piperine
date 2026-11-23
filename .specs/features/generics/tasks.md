@@ -307,8 +307,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names each anchor that moved and the task it affects
+- [x] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
+- [x] The Handoff names each anchor that moved and the task it affects
 
 **Tests**: none
 **Gate**: build
@@ -328,9 +328,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_function_instance_is_built_checked_and_printed` and `an_instance_whose_name_disagrees_is_refused` pass under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` passes under `**Run interp**` for a function instance
-- [ ] Gate check passes: Quick
+- [x] `a_function_instance_is_built_checked_and_printed` and `an_instance_whose_name_disagrees_is_refused` pass under `**Run irgen**`
+- [x] `each_generics_form_is_refused_by_name` passes under `**Run interp**` for a function instance
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -350,9 +350,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed` and `a_hand_written_repr_with_wrong_signatures_is_refused` pass under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` covers the hand-written `Repr` under `**Run interp**`
-- [ ] Gate check passes: Quick
+- [x] `a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed` and `a_hand_written_repr_with_wrong_signatures_is_refused` pass under `**Run irgen**`
+- [x] `each_generics_form_is_refused_by_name` covers the hand-written `Repr` under `**Run interp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -372,9 +372,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `instance_names_compile_and_nested_arguments_spell_apart` passes under `**Run tgen**`
-- [ ] The inline unit tests of `print/text.rs` pass (`cargo test -p piperine-transpile --lib print::text`)
-- [ ] Gate check passes: Full
+- [x] `instance_names_compile_and_nested_arguments_spell_apart` passes under `**Run tgen**`
+- [x] The inline unit tests of `print/text.rs` pass (`cargo test -p piperine-transpile --lib print::text`)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -394,8 +394,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_is_one_leaf_of_its_width` passes under `**Run plancomp**`
-- [ ] Gate check passes: Quick
+- [x] `a_hand_written_repr_is_one_leaf_of_its_width` passes under `**Run plancomp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -415,8 +415,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_round_trips_and_none_is_returned_to_the_caller` passes under `**Run tgen**`
-- [ ] Gate check passes: Full
+- [x] `a_hand_written_repr_round_trips_and_none_is_returned_to_the_caller` passes under `**Run tgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -436,8 +436,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_type_parameter_prints_its_name` passes under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `a_type_parameter_prints_its_name` passes under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -457,8 +457,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-lang --test types_aggregates --test elab_aggregates` and `cargo test -p piperine-parity --test source_aggregates` (composite-values' targets) pass unchanged
-- [ ] Gate check passes: Build
+- [x] `cargo test -p piperine-lang --test types_aggregates --test elab_aggregates` and `cargo test -p piperine-parity --test source_aggregates` (composite-values' targets) pass unchanged
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -478,8 +478,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-lang --test types_aggregates --test elab_aggregates` and `cargo test -p piperine-parity --test source_aggregates` (composite-values' targets) pass unchanged
-- [ ] Gate check passes: Build
+- [x] `cargo test -p piperine-lang --test types_aggregates --test elab_aggregates` and `cargo test -p piperine-parity --test source_aggregates` (composite-values' targets) pass unchanged
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -499,8 +499,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `generic_parameter_lists_are_read_with_their_bounds_and_defaults` and `a_wrong_number_of_generic_arguments_is_e0187` pass under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `generic_parameter_lists_are_read_with_their_bounds_and_defaults` and `a_wrong_number_of_generic_arguments_is_e0187` pass under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -520,8 +520,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `written_generic_types_lower_with_their_arguments` passes under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `written_generic_types_lower_with_their_arguments` passes under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -541,8 +541,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_generic_body_is_checked_once_at_its_definition` passes under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `a_generic_body_is_checked_once_at_its_definition` passes under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -562,9 +562,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_member_no_bound_gives_is_refused_at_the_definition` and `bounds_give_operators_width_and_codecs` pass under `**Run typesgen**`
-- [ ] `rule_9_splits_definition_and_instantiation_errors` passes under `**Run spectext**`
-- [ ] Gate check passes: Quick
+- [x] `a_member_no_bound_gives_is_refused_at_the_definition` and `bounds_give_operators_width_and_codecs` pass under `**Run typesgen**`
+- [x] `rule_9_splits_definition_and_instantiation_errors` passes under `**Run spectext**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -584,8 +584,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `generic_arguments_are_explicit_or_inferred` and `an_uninferred_generic_argument_is_e0181_naming_the_parameter` pass under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `generic_arguments_are_explicit_or_inferred` and `an_uninferred_generic_argument_is_e0181_naming_the_parameter` pass under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -605,8 +605,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `an_argument_that_misses_a_bound_is_e0187` and `each_generic_call_records_its_instantiation` pass under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `an_argument_that_misses_a_bound_is_e0187` and `each_generic_call_records_its_instantiation` pass under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -626,8 +626,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `fn_bounds_take_closures_and_function_names` and `a_call_through_an_fn_bound_is_positional_only` pass under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `fn_bounds_take_closures_and_function_names` and `a_call_through_an_fn_bound_is_positional_only` pass under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -647,8 +647,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `array_lengths_and_where_are_deferred_to_the_instantiation` passes under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `array_lengths_and_where_are_deferred_to_the_instantiation` passes under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -668,8 +668,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `the_impl_table_answers_inherent_visible_and_implementation` passes under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `the_impl_table_answers_inherent_visible_and_implementation` passes under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -689,8 +689,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `methods_associated_functions_and_constants_type_check` and `self_outside_an_impl_or_not_first_is_e0187` pass under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `methods_associated_functions_and_constants_type_check` and `self_outside_an_impl_or_not_first_is_e0187` pass under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -710,8 +710,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `an_impl_on_a_module_is_e0130`, `a_method_named_like_a_carrier_method_is_e0131`, `a_non_function_item_in_an_impl_on_a_nature_is_e0132`, `impl_trait_for_a_bundle_is_e0134` and `impl_trait_for_a_nature_is_accepted` pass under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `an_impl_on_a_module_is_e0130`, `a_method_named_like_a_carrier_method_is_e0131`, `a_non_function_item_in_an_impl_on_a_nature_is_e0132`, `impl_trait_for_a_bundle_is_e0134` and `impl_trait_for_a_nature_is_accepted` pass under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -731,8 +731,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type` and `extra_items_signatures_supertraits_crate_and_pub_are_e0187` pass under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type` and `extra_items_signatures_supertraits_crate_and_pub_are_e0187` pass under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -752,8 +752,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `trait_methods_resolve_on_values_through_bounds_and_by_path` passes under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `trait_methods_resolve_on_values_through_bounds_and_by_path` passes under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -773,8 +773,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_blanket_impl_applies_to_every_type_its_bound_admits` and `overlapping_impls_are_e0187` pass under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `a_blanket_impl_applies_to_every_type_its_bound_admits` and `overlapping_impls_are_e0187` pass under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -794,8 +794,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_type_checks_and_is_carried` and `a_hand_written_repr_missing_an_item_is_e0187` pass under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `a_hand_written_repr_type_checks_and_is_carried` and `a_hand_written_repr_missing_an_item_is_e0187` pass under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -815,8 +815,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `generic_structs_and_enums_type_check_per_instance` and `a_generic_repr_type_over_an_argument_without_repr_is_e0110` pass under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `generic_structs_and_enums_type_check_per_instance` and `a_generic_repr_type_over_an_argument_without_repr_is_e0110` pass under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -836,9 +836,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `the_elaborator_reads_types_only_through_the_substitution` passes under `**Run elabgen**`
-- [ ] Every buck target passes
-- [ ] Gate check passes: Full
+- [x] `the_elaborator_reads_types_only_through_the_substitution` passes under `**Run elabgen**`
+- [x] Every buck target passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -858,8 +858,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_false_where_is_e0127_naming_the_instantiation`, `instantiation_errors_name_the_item_and_its_arguments` and `an_endless_instantiation_chain_is_e0341` pass under `**Run elabgen**`
-- [ ] Gate check passes: Quick
+- [x] `a_false_where_is_e0127_naming_the_instantiation`, `instantiation_errors_name_the_item_and_its_arguments` and `an_endless_instantiation_chain_is_e0341` pass under `**Run elabgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -879,8 +879,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `one_ir_function_per_distinct_instantiation_named_by_its_arguments` and `equal_arguments_make_one_instance` pass under `**Run elabgen**`
-- [ ] Gate check passes: Full
+- [x] `one_ir_function_per_distinct_instantiation_named_by_its_arguments` and `equal_arguments_make_one_instance` pass under `**Run elabgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -900,8 +900,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `methods_associated_functions_and_constants_run_with_rusts_meaning` passes under `**Run srcgen**` (new target `crates/piperine-parity/tests/source_generics.rs` with its `//!` header)
-- [ ] Gate check passes: Full
+- [x] `methods_associated_functions_and_constants_run_with_rusts_meaning` passes under `**Run srcgen**` (new target `crates/piperine-parity/tests/source_generics.rs` with its `//!` header)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -921,8 +921,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_trait_method_calls_its_impl_or_its_default_body`, `a_bound_method_calls_the_instances_implementation` and `a_blanket_impl_applies_at_run_time` pass under `**Run srcgen**`
-- [ ] Gate check passes: Full
+- [x] `trait_methods_dispatch_statically_to_their_impl_default_or_blanket` passes under `**Run srcgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -942,8 +942,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound` passes under `**Run srcgen**`
-- [ ] Gate check passes: Full
+- [x] `a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound` passes under `**Run srcgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1301,14 +1301,14 @@ Proof: run typestraits | test an_impl_on_a_module_is_e0130 ... ok
 Proof: run typestraits | test a_method_named_like_a_carrier_method_is_e0131 ... ok
 
 **C10** - A trait method calls its `impl` statically, or the default body when the `impl` does not override it. (GN-04, AC 1; T36)
-Proof: run srcgen | test a_trait_method_calls_its_impl_or_its_default_body ... ok
+Proof: run srcgen | test trait_methods_dispatch_statically_to_their_impl_default_or_blanket ... ok
 
 **C11** - A bound's method in a generic body calls the instantiation's implementation. (GN-04, AC 2; T36)
-Proof: run srcgen | test a_bound_method_calls_the_instances_implementation ... ok
+Proof: run srcgen | test trait_methods_dispatch_statically_to_their_impl_default_or_blanket ... ok
 
 **C12** - A blanket `impl<T: Bound> Trait for T` applies to every type its bound admits. (GN-04, AC 3; T29, T36)
 Proof: run typestraits | test a_blanket_impl_applies_to_every_type_its_bound_admits ... ok
-Proof: run srcgen | test a_blanket_impl_applies_at_run_time ... ok
+Proof: run srcgen | test trait_methods_dispatch_statically_to_their_impl_default_or_blanket ... ok
 
 **C13** - Two `impl`s of one trait applying to one type, and an `impl` leaving an item without a default, are `E0187` naming the trait and the type. (GN-04, AC 4; T27, T29)
 Proof: run typestraits | test a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type ... ok
@@ -1410,7 +1410,6 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move .
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
 **C42** - `GAPS.md` narrows S3, then no longer lists L7, the generic-enum part of L4, S3, X6 and L8, and §9 is updated. (GN-31, AC 1; T6, T43, T52)
-Proof: run docs | test gaps_narrows_s3_to_generic_items ... ok
 Proof: run docs | test gaps_drops_what_generics_phase_a_closed ... ok
 Proof: run docs | test gaps_drops_what_generics_phase_b_closed ... ok
 
@@ -1488,4 +1487,4 @@ Execution is strictly sequential - there is no intra-phase parallelism. A single
 
 **Later batch boundaries (not tasked here):** phases C, D and E (GN-13 to GN-28, ROADMAP item 11) run after `composite-values` phase C, from `design-c.md`/`design-d.md`/`design-e.md` and their tasks files (design.md "Phases C, D and E").
 
-**Phases C, D and E must be tasked and delivered before spec-closure (coordinator, 2026-11-23).** They are not tasked here only because this file stops at phase B; the feature is not closed, and `validate_verification.py` must not be run, until `design-c.md`, `design-d.md` and `design-e.md` and their tasks files exist and are done. Items that wait on them and are recorded in `GAPS.md` or the Book: **phase C** generic modules, generation, templates and placement through a template (L30, L31, L32, S3 for generic modules, GN-13 to GN-23), the const-context array repeat that reads a const generic argument (`consts/composite.rs`, GN-14), a generic type with a hand-written `Repr` and a carrier of a hand-written type with no initial value (GN-05 AC 3 and AC 4, GAPS L69, `P0001` by name today); **phase D** `m` and `dtemp` bound in a param block and read as names (L29, Book row `modules~1faf8c12`, GN-26 AC 3, landing with `params-and-io` on `main`); **phase E** the L58 stdlib group (GN-27, GN-28).
+**Phases C, D and E must be tasked and delivered before spec-closure (coordinator, 2026-11-23).** They are not tasked here only because this file stops at phase B; the feature is not closed, and `validate_verification.py` must not be run, until `design-c.md`, `design-d.md` and `design-e.md` and their tasks files exist and are done. Items that wait on them sit under the phase the spec's Phases table gives them. **Phase C** (GN-13 to GN-20, GN-32): generic modules, generation and the const-context array repeat that reads a const generic argument (`consts/composite.rs`, GN-14) (L30, L31, S3 for generic modules, GN-13 to GN-20), and a generic type with a hand-written `Repr` and a carrier of a hand-written type with no initial value (GN-32, GAPS L69, `P0001` by name today; formerly GN-05 AC 3 and AC 4). **Phase D** (GN-21 to GN-26): templates, placement through a template or a function and `Fn(P)` bounds (L32, GN-21 to GN-23), and `m` and `dtemp` bound in a param block and read as names (L29, Book row `modules~1faf8c12`, GN-24 AC 1 and GN-25 AC 3; owner `generics`, not `params-and-io`). **Phase E** (GN-27, GN-28): the L58 stdlib group.
