@@ -25,7 +25,8 @@ module Memory(in clk: Bit) {\n    signal n: Bit<u8> = 0;\n    signal mem: [Bit<u
 digital for Memory { on clk.rise() { n <- n + 1; if n < 4 { mem[n] <- 100 + n; } } }\n\
 module Ladder() { signal bl: [Electrical; 3]; }\n\
 analog for Ladder { v(bl[0], gnd) +> 3.0; for k in 0..2 { i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0; } i(bl[2], gnd) +> v(bl[2], gnd) / 1000.0; }\n\
-module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); }\n";
+module Wide() { n: u32 = 4; signal lanes: [Bit; n]; }\n\
+module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); }\n";
 
 /// The last row of the transient of `DESIGN` over the probes `print`.
 struct Run;
@@ -33,6 +34,11 @@ struct Run;
 impl Run {
     /// The table of the transient, 20 ns long, over `print`; an entry that names nothing is the failure.
     fn table(print: &[&str]) -> Result<Table, Failure> {
+        Run::session(print)?.run(Rc::new(RefCell::new(Ignore)))
+    }
+
+    /// The session of the transient, 20 ns long, over `print`, opened and not run.
+    fn session(print: &[&str]) -> Result<Session, Failure> {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
         let directory = tempfile::tempdir().expect("tmp");
@@ -49,8 +55,7 @@ impl Run {
             ..Overrides::default()
         };
         let spec = project.request(None, &overrides)?;
-        let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() })?;
-        session.run(Rc::new(RefCell::new(Ignore)))
+        Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() })
     }
 
     /// The last row of `table`.
@@ -74,7 +79,7 @@ fn array_probes_read_an_element_and_the_whole_array() {
     assert_eq!(leaves, [100, 101, 102, 103, 9, 9].map(Cell::Int), "every element, in order");
     // the ladder is a chain of 1 kOhm resistors from 3 V: node 2 sits at 1 V (a divider of the end shunt)
     match row[4] {
-        Cell::Real(volts) => assert!(volts > 0.0 && volts < 3.0, "`bl[2]` is a node of the ladder: {volts} V"),
+        Cell::Real(volts) => assert!((volts - 1.0).abs() < 1e-9, "`bl[2]` is 3 V * 1 kOhm / 3 kOhm = 1 V: {volts} V"),
         ref other => panic!("a node is a real: {other:?}"),
     }
 }
@@ -98,4 +103,16 @@ fn a_node_array_prints_one_column_per_node() {
     assert_eq!(table.columns[1..], ["Bench.ladder.bl[0]", "Bench.ladder.bl[1]", "Bench.ladder.bl[2]"].map(String::from));
     let row = Run::last(&table);
     assert!(matches!(row[1], Cell::Real(volts) if (volts - 3.0).abs() < 1e-9), "bl[0] is held at 3 V: {:?}", row[1]);
+}
+
+#[test]
+fn a_set_of_a_param_an_array_length_reads_is_e0803() {
+    // CV-36 AC 1 (§8.1.2, §23.1 rule 7): `Wide.n` is the length of `lanes`, so it is structural and a host `set` of it is
+    // refused naming it, at any time; a param no length reads (`Osc.f`) is accepted
+    let mut session = Run::session(&[]).unwrap_or_else(|f| panic!("{f}"));
+    match session.set_at("wide.n", 8.0, 5e-9) {
+        Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("wide.n"), "{message}"),
+        other => panic!("E0803, found {other:?}"),
+    }
+    session.set_at("osc.f", 2e9, 5e-9).expect("a param no array length reads is not structural");
 }

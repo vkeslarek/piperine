@@ -3,7 +3,7 @@
 //! and the definitions `bits[0] = a`. The commit is `Stmt::Commit { target: Some(CommitTarget { element, path }) }`:
 //! `element` the flat element of the array carrier (any integer expression), `path` the fields and constant elements
 //! below it. A definition names a constant element (`Drive.element`), so a generation or an unrolled loop gives each
-//! element its own drive; one that does not fold is `E0180` naming it (QC4, amended).
+//! element its own drive; one that does not fold is `E0188` naming it (QC4).
 
 use piperine_ir::{CommitTarget, ExprId as LoweredExpr, Projection, ValueType};
 
@@ -51,7 +51,7 @@ impl Elaboration<'_, '_> {
         let (mut element, mut constant) = (None, None);
         if let Some(count) = carried.count {
             let Some(decl) = self.root_decl(root) else { return None };
-            let shape = self.carrier_array_shape(decl)?.0;
+            let shape = self.carrier_array_shape(decl, scope.frame)?.0;
             let span = self.design.expr_node(place).span;
             let mut indexes = Vec::new();
             for _ in 0..shape.dims.len() {

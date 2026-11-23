@@ -3,7 +3,7 @@
 //! read as a `bool` its change (`Expr::ElementChanged`), and `on lines[k].rise()` is an event of that element only
 //! (`EventSource::ElementChanged`, `k` folded). A nested array `g[r][c]` is one element of one carrier, row-major:
 //! `r * C + c`. A constant index at or past the count is `E0104` naming it (§1 rule 11); an index in an event head that
-//! does not fold is the mismatch `E0180` naming it (QC4, amended: PI-06 forbids spelling `P0002`).
+//! does not fold is `E0188` naming it (QC4: the user chose the const-expression code).
 
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
@@ -67,7 +67,7 @@ impl Elaboration<'_, '_> {
         let Some(array) = self.types.carrier_array(decl).cloned() else { return Lookup::No };
         let Some(carrier) = self.frame_carrier(scope.frame, decl) else { return Lookup::No };
         let span = self.design.expr_node(expr).span;
-        let Some(shape) = ArrayShape::of(&array) else {
+        let Some(shape) = self.shape_in(&array, scope.frame) else {
             self.unsupported(scope.file, span, "an element of an array whose length is not a constant yet");
             return Lookup::Failed;
         };
@@ -148,7 +148,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The element of an event head's receiver, folded: the mismatch of a constant expected naming the index when it
-    /// does not fold (QC4; `P0002` is no code any source spells, PI-06, so it is `E0180` as a non-constant array length is).
+    /// does not fold (QC4, `E0188`, the code of a non-constant where a constant is required).
     pub(super) fn folded_element(&mut self, scope: &Scope, recv: ExprId, element: ElementRef) -> Option<u64> {
         if element.constant.is_none() {
             let span = self.design.expr_node(recv).span;
@@ -159,19 +159,19 @@ impl Elaboration<'_, '_> {
 }
 
 impl Elaboration<'_, '_> {
-    /// The mismatch `E0180` of a constant expected where `what` (the source text at `span`) does not fold at
+    /// `E0188` for a constant expected where `what` (the source text at `span`) does not fold at
     /// elaboration: it names the expression written.
     pub(super) fn not_folded(&mut self, scope: &Scope, span: crate::msl::Span, what: &str) {
         let text = self.design.file_data(scope.file).text.get(span.start..span.end).unwrap_or("").to_string();
-        let message = format!("mismatched types: expected a constant that folds at elaboration for {what}, found `{text}`");
-        self.report(scope.file, Diagnostic::new("E0180", message, span, "does not fold"));
+        let message = format!("not a const expression: {what} must fold at elaboration, and `{text}` does not");
+        self.report(scope.file, Diagnostic::new("E0188", message, span, "not a const expression"));
     }
 }
 
 impl Elaboration<'_, '_> {
     /// The nodes the argument `arg` names in an array of nodes: the run of consecutive nodes `(first, length)` of the whole
     /// array, of a sub-array `g[r]` of a nested one, or of one element (`length` 1, `whole` false). `Some(None)` when `arg`
-    /// names no array of nodes; `None` after a diagnostic: an index that does not fold after unrolling (QC4, `E0180`
+    /// names no array of nodes; `None` after a diagnostic: an index that does not fold after unrolling (QC4, `E0188`
     /// naming it), or a constant past the end (`E0104`).
     fn node_run(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, u64, bool)>> {
         let mut at = self.peel_parens(arg);
@@ -241,7 +241,7 @@ impl Elaboration<'_, '_> {
 impl Elaboration<'_, '_> {
     /// The array carrier an argument at a carrier port names through `x[k]` or a sub-array `g[r]`, and the window of it
     /// the child's port is given: one element (`length` `None`) or the run of a sub-array. The outer `None` when `arg`
-    /// is no part of an array of carriers; `Some(None)` after a diagnostic (an index that does not fold is `E0180`
+    /// is no part of an array of carriers; `Some(None)` after a diagnostic (an index that does not fold is `E0188`
     /// naming it, a constant past the end `E0104`).
     pub(super) fn carrier_window(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, Option<piperine_ir::CarrierWindow>)>> {
         let mut at = self.peel_parens(arg);
@@ -256,7 +256,7 @@ impl Elaboration<'_, '_> {
         let array = self.types.carrier_array(decl).cloned()?;
         let carrier = self.frame_carrier(scope.frame, decl)?;
         let span = self.design.expr_node(arg).span;
-        let shape = ArrayShape::of(&array)?;
+        let shape = self.shape_in(&array, scope.frame)?;
         if indexes.len() > shape.dims.len() {
             self.unsupported(scope.file, span, "an index of an array of carriers past its levels");
             return Some(None);

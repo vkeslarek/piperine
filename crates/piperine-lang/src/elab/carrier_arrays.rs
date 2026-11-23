@@ -20,18 +20,6 @@ pub(super) struct ArrayShape {
 }
 
 impl ArrayShape {
-    /// The shape of the array type `ty`, `None` when a length is not folded yet (a generic length).
-    pub(super) fn of(ty: &Ty) -> Option<ArrayShape> {
-        let mut dims = Vec::new();
-        let mut at = ty;
-        while let Ty::Array(element, length) = at {
-            let Length::Fixed(length) = length else { return None };
-            dims.push(*length);
-            at = element;
-        }
-        Some(ArrayShape { dims })
-    }
-
     /// The number of elements: the product of the lengths.
     pub(super) fn count(&self) -> u64 {
         self.dims.iter().product()
@@ -51,12 +39,32 @@ impl ArrayShape {
 }
 
 impl Elaboration<'_, '_> {
+    /// The shape of the array type `ty` of a declaration of `frame`: a length that reads a param is folded over the
+    /// frame's params (§8.1.2, QC2). `None` when a length does not fold.
+    pub(super) fn shape_in(&mut self, ty: &Ty, frame: usize) -> Option<ArrayShape> {
+        let bindings = self.frame_bindings(frame);
+        let mut dims = Vec::new();
+        let mut at = ty;
+        while let Ty::Array(element, length) = at {
+            dims.push(match length {
+                Length::Fixed(length) => *length,
+                Length::Generic(crate::types::ConstTerm::Expr(expr)) => match self.consts.value(*expr, &bindings) {
+                    Ok(piperine_ir::Constant::Int(count)) => u64::try_from(count).ok()?,
+                    _ => return None,
+                },
+                Length::Generic(_) => return None,
+            });
+            at = element;
+        }
+        Some(ArrayShape { dims })
+    }
+
     /// The shape and the innermost value type of the array of carriers `decl` declares; `None` after a diagnostic.
-    pub(super) fn carrier_array_shape(&mut self, decl: DeclId) -> Option<(ArrayShape, ValueType)> {
+    pub(super) fn carrier_array_shape(&mut self, decl: DeclId, frame: usize) -> Option<(ArrayShape, ValueType)> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let Some(array) = self.types.carrier_array(decl).cloned() else { return None };
-        let Some(shape) = ArrayShape::of(&array) else {
+        let Some(shape) = self.shape_in(&array, frame) else {
             self.unsupported(file, span, "an array of carriers whose length is not a constant yet");
             return None;
         };
@@ -101,7 +109,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn add_node_array(&mut self, decl: DeclId, role: piperine_ir::NodeRole, prefix: &str, frame: usize) -> Option<(crate::elab::carrier_arrays::ArrayShape, piperine_ir::Terminal)> {
         let data = self.design.decl_data(decl).clone();
         let array = self.types.node_array(decl).cloned()?;
-        let Some(shape) = ArrayShape::of(&array) else {
+        let Some(shape) = self.shape_in(&array, frame) else {
             self.unsupported(data.file, data.span, "an array of nodes whose length is not a constant yet");
             return None;
         };

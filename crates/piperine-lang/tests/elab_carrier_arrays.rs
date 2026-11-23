@@ -8,6 +8,7 @@
 mod support;
 
 use piperine_ir::{Constant, Ir, ValueType};
+use piperine_lang::pom::{DeclKind, Reflect};
 use support::Elab;
 
 /// What a test reads of an elaborated body.
@@ -62,6 +63,21 @@ fn arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes() {
 }
 
 #[test]
+fn an_array_of_nodes_is_one_node_per_element() {
+    // CV-23 AC 1 (UNBREAKABLE RULE, the POM mirrors the source): `signal bl: [Electrical; 4]` is four nodes `bl[0]` to
+    // `bl[3]` in the IR, while the POM keeps the one declaration `bl` as written
+    let src = "module Top() { signal bl: [Electrical; 4]; }";
+    let design = Elab::design(src);
+    let declared: Vec<_> = design.decls().into_iter().filter(|d| d.name() == Some("bl")).collect();
+    assert_eq!(declared.len(), 1, "one declaration in the POM, not one per element");
+    assert!(declared.iter().all(|d| matches!(d.kind(), DeclKind::Signal(_))));
+    let ir = Elab::ir(src, "Top");
+    let (nodes, arrays) = Read { ir: &ir }.nodes("Top");
+    assert_eq!(nodes, ["bl[0]", "bl[1]", "bl[2]", "bl[3]"], "four nodes in the IR");
+    assert_eq!(arrays, [("bl".to_string(), 0, 4)]);
+}
+
+#[test]
 fn element_reads_and_events_lower_per_element() {
     // CV-24: `x[i]` is one element read (constant or run-time index), the whole `x` an array of the values,
     // `x[k].prev()` the element's previous value, `x[i].changed()` the element's change as a `bool`, and
@@ -88,11 +104,31 @@ fn element_reads_and_events_lower_per_element() {
     assert!(events.contains(&piperine_ir::EventSource::ElementChanged { carrier: mem, element: 3 }), "{events:?}");
     let rise = body.events().iter().find(|e| e.source == piperine_ir::EventSource::ElementChanged { carrier: lines, element: 2 }).expect("the rise event");
     assert!(rise.guard.is_some(), "a rise carries its edge guard (!prev && now)");
-    // §1 rule 11: a constant element past the end is E0104 naming it; an event head that does not fold is the E0180 mismatch naming it
+    // §1 rule 11: a constant element past the end is E0104 naming it; an event head that does not fold is E0188 naming it
     let past = Elab::run("module Top() { signal m: [Bit<u8>; 4] = [0; 4]; }\ndigital for Top { on m[0].changed() { let a = m[4]; } }", "Top").expect_err("past the end");
     assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", support::Elab::codes(&past));
     let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
-    assert!(folding.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("`l[at]`")), "{:?}", support::Elab::codes(&folding));
+    assert!(folding.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`l[at]`")), "{:?}", support::Elab::codes(&folding));
+}
+
+#[test]
+fn an_array_length_read_from_a_param_makes_it_structural() {
+    // CV-36 AC 1 (§8.1.2, QC2): `[Bit; n]` and `[Electrical; n]` read the param `n`, so each body variant folds the
+    // length of its own `n`, and `n` is structural (a host `set` of it during a run is `E0803`)
+    let src = "module Wide(in d: [Bit; 2]) { n: u32 = 3; signal s: [Bit<u8>; n]; signal bl: [Electrical; n + 1]; }\n\
+               module Top() { signal d: [Bit; 2]; let w = Wide { n: 5 }(d); }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    let variant = ir.bodies().find(|b| b.name().starts_with("Wide~n=")).expect("a body of the variant");
+    assert!(variant.params().iter().find(|p| p.name == "n").expect("param n").structural, "`n` is structural");
+    let carriers = read.carriers(variant.name());
+    assert_eq!(carriers.iter().find(|c| c.0 == "s").expect("s").1, Some(5), "the array is as long as the param says");
+    assert_eq!(variant.node_arrays().iter().map(|a| (a.name.as_str(), a.count)).collect::<Vec<_>>(), [("bl", 6)], "`n + 1` nodes");
+    // the default is another variant: its own length
+    let ir = Elab::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n]; }\nmodule Top() { let w = Wide(); }", "Top");
+    let read = Read { ir: &ir };
+    let name = ir.bodies().find(|b| b.name().starts_with("Wide")).expect("Wide").name().to_string();
+    assert_eq!(read.carriers(&name).iter().find(|c| c.0 == "s").expect("s").1, Some(3));
 }
 
 #[test]
@@ -126,7 +162,7 @@ fn an_analog_node_index_that_does_not_fold_is_refused_naming_it() {
     // CV-26 AC 2, QC4: an index of a node array in `analog` that does not fold after unrolling is refused naming it; a
     // constant past the end is E0104
     let found = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let k = 2; let x = v(bl[k]); }", "Top").expect_err("no fold");
-    assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("`k`")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`k`")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
     let past = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let x = v(bl[4]); }", "Top").expect_err("past the end");
     assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", Elab::codes(&past));
 }
@@ -182,11 +218,11 @@ fn element_and_field_commits_lower_to_their_targets() {
 #[test]
 fn an_element_definition_is_one_drive() {
     // CV-25 AC 3: `bits[0] = a;` is the drive of element 0 only, so element 1 may be driven apart; a definition's
-    // element folds, else E0180 names it
+    // element folds, else E0188 names it
     let writes = Writes::of("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[1] = !a; }");
     assert_eq!(writes.drives, vec![(1, Some(0), vec![]), (1, Some(1), vec![])], "one drive per element, of carrier 1 (`a` is carrier 0)");
     let found = Elab::run("module Top(in a: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[at] = a; }", "Top").expect_err("no fold");
-    assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("bits[at]")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("bits[at]")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
 
 #[test]

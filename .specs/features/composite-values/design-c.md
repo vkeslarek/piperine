@@ -248,7 +248,7 @@ Nested arrays (`[[Bit; 4]; 2]`, allowed by `sigtype`) are one array net, row-maj
 | An array signal with an initial value whose element goes to a child's `out` port | `E0223` (initial value given twice, §5.2.6) | elaboration fails |
 | A constant element index out of range (a connection, an event, a definition, an analog index) | `E0104` naming the index (§1 rule 11, as CV-13 at elaboration) | elaboration fails |
 | A run-time element index out of range | `rt::Panic` naming the carrier and the index; the owner adds the instance and the instant (CV-25 AC 5) | the analysis fails |
-| A node-array index in `analog`, an event head's element index or a definition's element index that does not fold | `P0002` naming the index (QC4; the spec names no code, as composite-values D6) | elaboration fails |
+| A node-array index in `analog`, an event head's element index or a definition's element index that does not fold | `E0188` naming the index (QC4, user 2026-11-23) | elaboration fails |
 | An array of carriers as a function parameter or a `let` type | `P0001` naming the form (QC3: the spec is silent) | elaboration fails |
 | A new IR form on the interpreter backend | refused by the form's name (R1, CV-34) | `Interp` refuses to build |
 | An `init` of an array pin of another length than one element or `count` elements | `validate.rs` refuses the shape | a foreign library fails to load |
@@ -325,6 +325,6 @@ of it; an array of nodes is one node per element. The ABI's array pin (`Pin.coun
 | QC1 | Q3 (a) said the sparse array is an ABI change of minor version; MD-78 later made the unreleased ABI "edited in place, `MINOR` 0" | in place, `MINOR` stays 0; `abi.md` amended in the same task |
 | QC2 | An array length that reads a param (`signal s: [Bit; n];`) | accepted; the param is marked structural (§8.1.2), so a host `set` of it during a run is refused (`E0803`); `generics` GN-20 extends the same flag to generation and templates |
 | QC3 | An array of carriers as a function parameter (`fn f(a: [Bit; 8])`): §3 rule 7 makes a nature or bundle parameter a handle and says nothing of an array of them | refused by name (`P0001` "an array of carriers as a function parameter"); `GAPS.md` §5 gets a spec-hole row for the user; an element `f(lines[k])` binds a handle as one carrier (generics B) |
-| QC4 | An index that must fold but does not (a node-array index in `analog`, an event head's element, a definition's element): CV-26 AC 2 says "naming the index" and no code | `P0002` naming the index (composite-values D6) |
+| QC4 | An index that must fold but does not (a node-array index in `analog`, an event head's element, a definition's element): CV-26 AC 2 says "naming the index" and no code | `E0188` "not a const expression" naming the index, the code the spec gives a non-constant where a constant is required. The first default (`P0002`) cannot be met, no source spells it (PI-06); the user chose `E0188` over `E0180` on 2026-11-23 |
 | QC5 | A whole read or a whole print of a very long array (`Top.mem` of `1 << 32` elements) | allowed as the spec writes it, every element (CV-28 AC 1); the cost is what the author asked for |
 | QC6 | The ladder's ngspice comparison | closed form plus the written-out circuit, no new twin (DC3) |

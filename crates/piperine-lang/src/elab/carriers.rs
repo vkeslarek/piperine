@@ -146,7 +146,7 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let array = match self.types.carrier_array(decl).is_some() {
-            true => Some(self.carrier_array_shape(decl)?.0),
+            true => Some(self.carrier_array_shape(decl, frame)?.0),
             false => None,
         };
         let init = match init {
