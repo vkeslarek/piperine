@@ -28,6 +28,6 @@ pub use model::{
     Addend, AggregateData, AnalysisKind, Derives, FieldsForm, ReprForm, TypeData, TypeKind, VariantData, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, TraceSite, PartialDerivative, EmitField, Env, Event, EventSource, Expr,
     ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Merge, Reach, ReachedItem, Ir, LevelPart, Local, MathFn, Method, NatureData, NetData, NodeAlias, NodeData, NodeRef,
     NodeRole, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
-    ValueType, Extrapolation, TableControl, TableDegree,
+    ValueType, Extrapolation, TableControl, TableDegree, CarrierWindow, CommitTarget, EmptyArray, NodeArray,
 };
 pub use real::Real;

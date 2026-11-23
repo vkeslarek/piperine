@@ -26,7 +26,7 @@ use piperine_abi::layout::{BIT, F64};
 
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use crate::pin::PinLayout;
-use piperine_abi::raw::{Cell, DEFAULT, Field, GROUND, Layout, List, Partial, Str, ambient, cell, global, input, leaf, op, part, pin_flag, role};
+use piperine_abi::raw::{Cell, DEFAULT, Field, GROUND, Layout, List, Partial, Str, WHOLE, ambient, cell, global, input, leaf, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{AnalysisKind, Body, Branch, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
 
@@ -169,9 +169,26 @@ pub enum Source {
     /// The `VALUE` of the `GLOBAL NAMED` pin of session parameter `k`: an `Option<f64>`, known
     /// when the host gave the parameter. Discrete, constant during an analysis (§14.4.1).
     SessionParameter(u32),
+    /// An array carrier read whole, or at a run-time element, whatever the part (`x`, `x[i]`, `x[i].prev()`,
+    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read
+    /// only (abi.md §3: a function never takes a `WHOLE` read); the cell names the pin with `element` `WHOLE`.
+    Whole(u32),
+    /// One constant element of an array carrier: `(carrier, element, part)`, a cell naming the
+    /// element (`Function.elements`, `Reaction.elements`).
+    Element(u32, u64, u32),
 }
 
 impl Source {
+    /// The element a cell of this read names: `WHOLE` for a whole array read, the element for a
+    /// constant element read, 0 for every other read (abi.md §3).
+    pub fn element(self) -> u64 {
+        match self {
+            Source::Whole(..) => WHOLE,
+            Source::Element(_, element, _) => element,
+            _ => 0,
+        }
+    }
+
     /// A continuous pin: read as 0 by the affine rule (INT-12).
     pub fn is_pin(self) -> bool {
         matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_))
@@ -199,6 +216,8 @@ pub enum Target {
     EventPin(u32),
     /// Drive `k`'s undelayed pin.
     Delayed(u32),
+    /// The pin drive `k` of one element of an array carrier writes (`Pins::element_drives`).
+    ElementDrive(u32),
     /// The event pin of the `changed` event of drive `k`'s undelayed pin.
     DelayedEventPin(u32),
     /// The `CROSS` watch of event `k`.
@@ -282,9 +301,16 @@ impl ReadSet {
     /// differentiable read) and the carriers whose previous value it reads (`c.prev()`, A7).
     pub(crate) fn target(body: Body<'_>, target: Query) -> ReadSet {
         let mut set = ReadSet::of(&body.dependencies(target));
-        set.0.extend(body.carrier_reads(target).into_iter().map(Source::Carrier));
+        let carrier = |c: u32, plain: Source| {
+            if body.carriers().get(c as usize).is_some_and(|x| x.count.is_some()) { Source::Whole(c) } else { plain }
+        };
+        set.0.extend(body.carrier_reads(target).into_iter().map(|c| carrier(c, Source::Carrier(c))));
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
-        set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
+        set.0.extend(body.previous_reads(target).into_iter().map(|c| carrier(c, Source::CarrierPrevious(c))));
+        set.0.extend(body.whole_changed_reads(target).into_iter().map(Source::Whole));
+        set.0.extend(body.element_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::VALUE)));
+        set.0.extend(body.element_previous_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::PREVIOUS)));
+        set.0.extend(body.element_changed_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::CHANGED)));
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
         set.0.extend(body.delay_reads(target).into_iter().map(Source::Delay));
@@ -361,6 +387,10 @@ pub struct Pins {
     /// The `GLOBAL` `SETTLE` pin, after the delay `max` pins, when the body has a `settle`
     /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
     pub settle: Option<u32>,
+    /// The `PORT` pin `drive:<carrier>[<element>]` of each drive of one element of an array carrier, after the `SETTLE`
+    /// pin; `None` for any other drive. It is bound to that element of the array net by a window (abi.md §3: a
+    /// function writes one element through a scalar pin).
+    pub element_drives: Vec<Option<u32>>,
     /// The `TRACE` watch of each trace site, after the `CAP` watches.
     pub traces: Vec<u32>,
     /// The `GLOBAL NAMED` pin of each session parameter the body reads, named the parameter,
@@ -432,6 +462,11 @@ impl Pins {
     /// The `max` pin of delay site `k`; `DEFAULT` for a site the body does not have.
     pub fn delay_maximum(&self, k: u32) -> u32 {
         self.delay_maxima.get(k as usize).copied().unwrap_or(DEFAULT)
+    }
+
+    /// The pin drive `k` of one element writes; `GROUND` for a drive of a whole carrier.
+    pub fn element_drive(&self, k: u32) -> u32 {
+        self.element_drives.get(k as usize).copied().flatten().unwrap_or(GROUND)
     }
 
     /// The `abstol` pin of derivative site `k`; `DEFAULT` when it has none.
@@ -621,6 +656,7 @@ impl BodyPlan {
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let delay_maxima = Digital::delay_maximum_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
+        let element_drives = Digital::element_drive_pins(&mut s, body);
         let session_parameters = Self::session_parameter_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
@@ -647,6 +683,7 @@ impl BodyPlan {
             derivative_abstols,
             delay_maxima,
             settle,
+            element_drives,
             traces,
             session_parameters,
         };
@@ -945,7 +982,14 @@ impl BodyPlan {
         let stims = body.stims().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
+        if let Some(Source::Whole(carrier)) = plan.reads.iter().find(|r| matches!(r, Source::Whole(..))) {
+            panic!(
+                "body {}: function {name} reads array carrier {carrier} whole or at a run-time element, which only a reaction can (abi.md §3); the elaborator refuses it",
+                body.name()
+            )
+        }
         let reads = plan.reads.iter().map(|r| Self::read(pins, limits, stims, *r)).collect();
+        let elements = Self::elements(&plan.reads);
         let writes = plan
             .writes
             .iter()
@@ -960,6 +1004,7 @@ impl BodyPlan {
                 // abi.md §4.1: an event pin is written through its `CHANGED` byte (nonzero fires it).
                 Target::EventPin(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
                 Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
+                Target::ElementDrive(k) => value(cell::PIN, pins.element_drive(k)),
                 Target::DelayedEventPin(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event), part::CHANGED),
                 Target::Watch(k) => value(cell::WATCH, pins.watches.get(k as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
@@ -977,7 +1022,12 @@ impl BodyPlan {
             .collect();
         let partials =
             plan.partials.iter().map(|(w, slot)| Partial { write: *w as u32, to: 0, read: *slot as u32, at: 0 }).collect();
-        s.function(FunctionSpec { name, origin, reads, writes, partials, ..FunctionSpec::default() });
+        s.function(FunctionSpec { name, origin, reads, writes, partials, elements, ..FunctionSpec::default() });
+    }
+
+    /// The `elements` list of `reads` (abi.md §3): one element per read, or empty when no read names one.
+    pub(crate) fn elements(reads: &[Source]) -> Vec<u64> {
+        if reads.iter().all(|r| r.element() == 0) { Vec::new() } else { reads.iter().map(|r| r.element()).collect() }
     }
 
     /// The cell a read names; `limits` is the body's count of `limit` sites (the `STIM` inputs
@@ -1015,6 +1065,8 @@ impl BodyPlan {
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
             Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
             Source::SessionParameter(k) => value(cell::PIN, pins.session_parameter(k)),
+            Source::Whole(c) => value(cell::PIN, pins.carrier(c)),
+            Source::Element(c, _, part) => at(cell::PIN, pins.carrier(c), part),
         }
     }
 

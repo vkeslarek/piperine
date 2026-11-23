@@ -149,8 +149,8 @@ fn a_reaction_reads_noise_as_zero() {
         };
         let (read, half) = (b.expr(Expr::Noise(0), ValueType::F64, Operators::at()), Operators::ex(b).real(0.5));
         let above = b.expr(Expr::Binary { op: BinaryOp::Gt, lhs: read, rhs: half }, ValueType::Bool, Operators::at());
-        let commit = b.stmt(Stmt::Commit { carrier: 1, value: above, after: None });
-        let carrier = |name: &str, role| Carrier { name: name.into(), ty: ValueType::Bool, role, init: Some(Constant::Bool(false)), origin: Operators::at() };
+        let commit = b.stmt(Stmt::Commit { carrier: 1, value: above, after: None, target: None });
+        let carrier = |name: &str, role| Carrier { name: name.into(), ty: ValueType::Bool, role, init: Some(Constant::Bool(false)), origin: Operators::at(), count: None };
         Written {
             analog: vec![Operators::contribute_the_noise(b, 0)],
             noise_sources: vec![source],

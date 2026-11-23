@@ -1734,7 +1734,7 @@ const_item     ::= 'const' IDENT ':' type ( '=' expr )? ';'
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0188` | the initializer of a `const`, an array length, a bound of a range index ([§1.5.9](#15-expressions)) or a const argument that is not a const expression (§3.9.2, §3.9.3); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
+| `E0188` | the initializer of a `const`, an array length, a bound of a range index ([§1.5.9](#15-expressions)) or a const argument that is not a const expression (§3.9.2, §3.9.3); an element index of an array of carriers or nodes that must fold at elaboration and does not (a definition, an event head, a connection, a node in `analog`); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
 | [§1](#1-value-types) | a panic while a const expression is evaluated (`E0104`) | elaboration |
 
 **Examples**

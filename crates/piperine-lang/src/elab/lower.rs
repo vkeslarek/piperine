@@ -838,6 +838,8 @@ impl Elaboration<'_, '_> {
                     self.unsupported(scope.file, node.span, "a value input left out, read as a value");
                     None
                 }
+                // an array of carriers of length 0 read whole is the empty array (§1.2.3)
+                (None, None) if self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) => Some(self.emit(Expr::Array(Vec::new()), ty, origin)),
                 (None, None) => {
                     self.unsupported(scope.file, node.span, "a node or a port read as a value");
                     None

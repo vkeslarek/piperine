@@ -23,6 +23,12 @@ pub(super) struct Structure {
     /// The nodes of the body in the order the IR numbers them: its own ports, then its own signals,
     /// then the signals of the hoisted frames (`hoist.rs`), each with the plan placement reads.
     pub(super) nodes: Vec<(BodyNode, NodePlan)>,
+    /// The windows of arrays of carriers each child binds: (child index, one entry per carrier port).
+    pub(super) child_windows: Vec<(u32, Vec<Option<piperine_ir::CarrierWindow>>)>,
+    /// The arrays of nodes of the body, in declaration order (`carrier_arrays.rs`).
+    pub(super) node_arrays: Vec<piperine_ir::NodeArray>,
+    /// The arrays of no element the body declares (`carrier_arrays.rs`).
+    pub(super) empty_arrays: Vec<piperine_ir::EmptyArray>,
     /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
     pub(super) hoisted: Vec<Hoisted>,
     pub(super) carriers: Vec<Carrier>,
@@ -71,6 +77,11 @@ pub(super) struct Frame {
     /// 0's are the body's own nodes; a hoisted frame's node port is the caller's terminal for its
     /// argument, and its node `signal` a node the body gained (`hoist.rs`).
     pub(super) nodes: BTreeMap<DeclId, Terminal>,
+    /// The shape of each array of nodes of `nodes`: its first terminal is element 0 (`carrier_arrays.rs`).
+    pub(super) node_shapes: BTreeMap<DeclId, super::carrier_arrays::ArrayShape>,
+    /// The arrays of carriers declared with length 0 (§1.2.3): no carrier of the body, since no element exists to hold
+    /// (`carrier_arrays.rs`). Every element of one is out of range, and read whole it is the empty array.
+    pub(super) empty_arrays: BTreeSet<DeclId>,
     /// A hoisted module's params, bound to constants by the placement or their defaults.
     pub(super) params: BTreeMap<DeclId, Constant>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
@@ -96,7 +107,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new() }
     }
 }
 
@@ -105,10 +116,14 @@ impl Elaboration<'_, '_> {
     /// `frame`: each added to the structure and named in the frame.
     pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
         let children = self.design.decl_data(module).children.clone();
-        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && self.types.carrier(*c).is_some());
-        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && self.types.carrier(*c).is_some());
+        let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
+        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
+        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
         for decl in ports.chain(signals).collect::<Vec<_>>() {
-            if let Some(carrier) = self.lower_carrier(frame, decl) {
+            if self.is_empty_array(frame, decl) {
+                self.frames[frame].empty_arrays.insert(decl);
+                self.record_empty_array(frame, decl);
+            } else if let Some(carrier) = self.lower_carrier(frame, decl) {
                 let index = self.add_carrier(carrier);
                 self.frames[frame].carriers.insert(decl, index);
             }
@@ -127,6 +142,11 @@ impl Elaboration<'_, '_> {
         let (file, span) = (data.file, data.span);
         let carried = match self.types.carrier(decl) {
             Some(Ty::Carrier { value, .. }) => self.stored_type(value),
+            // an array of carriers holds its elements' value type (`carrier_arrays.rs`)
+            Some(array @ Ty::Array(..)) => match array.innermost() {
+                Ty::Carrier { value, .. } => self.stored_type(value),
+                _ => None,
+            },
             _ => None,
         };
         if carried.is_none() {
@@ -147,7 +167,15 @@ impl Elaboration<'_, '_> {
             _ => return None,
         };
         let ty = self.carried_type(decl)?;
+        let array = match self.types.carrier_array(decl).is_some() {
+            true => Some(self.carrier_array_shape(decl, frame)?.0),
+            false => None,
+        };
         let init = match init {
+            Some(expr) if array.is_some() => {
+                let shape = array.clone()?;
+                Some(self.array_init(decl, expr, &shape, &ty, frame)?)
+            }
             Some(expr) => match self.hand_written_encode(decl) {
                 Some(encode) => Some(self.encoded_init(expr, encode, frame)?),
                 None => {
@@ -168,13 +196,13 @@ impl Elaboration<'_, '_> {
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
-        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl) })
+        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl), count: array.map(|shape| shape.count()) })
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the
     /// params of its frame (§5.2.3, §5.1.5): a param it reads is a key param of the body, so each
     /// variant folds its own value (`structural.rs`). `None` is a diagnostic.
-    fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
+    pub(super) fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
         let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
@@ -250,6 +278,12 @@ impl Elaboration<'_, '_> {
         for carrier in structure.carriers {
             self.ir.carrier(body, carrier);
         }
+        for array in structure.node_arrays {
+            self.ir.node_array(body, array);
+        }
+        for array in structure.empty_arrays {
+            self.ir.empty_array(body, array);
+        }
         for drive in structure.drives {
             self.ir.drive(body, drive);
         }
@@ -282,6 +316,9 @@ impl Elaboration<'_, '_> {
         }
         for (child, carriers) in structure.child_carriers {
             self.ir.bind_child_carriers(body, child, carriers);
+        }
+        for (child, windows) in structure.child_windows {
+            self.ir.bind_child_windows(body, child, windows);
         }
         for (child, param, value) in structure.child_params {
             self.ir.child_param(body, child, param, value);

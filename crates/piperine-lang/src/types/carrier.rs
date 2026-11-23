@@ -127,6 +127,8 @@ impl Checker<'_> {
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
+            // an array of carriers, or of conservative nodes (CV-23)
+            array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
             value @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
@@ -145,6 +147,11 @@ impl Checker<'_> {
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
             }
+            // an array of carriers reads as the array of their values; an array of nodes is the array itself
+            array @ Ty::Array(..) if array.is_carrier_element() => {
+                self.carriers.insert(decl, array.clone());
+                Some(array.read_value())
+            }
             node => Some(node),
         }
     }
@@ -153,6 +160,11 @@ impl Checker<'_> {
     pub(super) fn declared_port(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.declared_port(*inner),
+            // one element of an array of carriers or of nodes (CV-24): the carrier the element is, of the array's declaration
+            ExprKind::Index { expr: base, .. } => match self.declared_port(*base)? {
+                (decl, Ty::Array(element, _)) if element.is_carrier_element() => Some((decl, *element)),
+                _ => None,
+            },
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
                 let ty = match &self.design.decl_data(decl).kind {

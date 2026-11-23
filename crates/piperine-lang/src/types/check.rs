@@ -655,6 +655,12 @@ impl<'d> Checker<'d> {
         }
         for (param, ty) in parts.params {
             match ty {
+                // QC3: §3 rule 7 makes a nature parameter a handle and says nothing of an array of them
+                Some(array @ Ty::Array(..)) if array.is_carrier_element() => {
+                    let (file, span) = (self.design.decl_data(param).file, self.design.decl_data(param).span);
+                    self.unsupported(file, span, "an array of carriers as a function parameter");
+                    self.poisoned.insert(param);
+                }
                 Some(ty) => {
                     self.note_handle(param, &ty);
                     self.locals.insert(param, ty);

@@ -1819,10 +1819,11 @@ It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD
    param is set by the path of one leaf before the run (`Top.f.num[2]=0.5`); its `where` is checked on the whole
    value after the write (`E0317`).
 5. **Defaults taken while the user was away** (D1 to D20 of `design.md`, plus B1 to B10 of `tasks.md`'s Handoff).
+6. **Phase C (arrays of carriers, 2026-11-23).** An array of discrete carriers is one sparse array net; a child binds a window of it; an array of nodes is one node per element. The ABI's array pin (`Pin.count`, `Cell.element` as `Function.elements`/`Reaction.elements`, `ArrayView`, `Host.commit_element`, `Host` 24 bytes) was added in place at `MINOR` 0 (MD-78; QC1, approved by the user 2026-11-23, supersedes EU-16 AC 2). An array of carriers is `Ty::Array` over a `Carrier`/`Node`; a definition of one element writes a window-bound scalar pin; an index that must fold and does not is `E0180` (`P0002` is no code a source may spell).
 
 **Scope:** `crates/piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-lang`, `piperine-api`,
 `piperine-cli`, `piperine-parity`, `docs/spec`, the Book, `GAPS.md`.
-**Status:** phases A and B delivered (2026-11-21); phases C and D (arrays of carriers, `f16`/`f128`) follow.
+**Status:** phases A, B (2026-11-21) and C (arrays of carriers, 2026-11-23) delivered; phase D (`f16`/`f128`) follows.
 
 ### MD-80: the solver lands by the observable rule; every step is tested; time is a tick epoch
 

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
-use crate::core::bind::{bind, BindInput, DeviceSpec, ParamValue, Port};
+use crate::core::bind::{bind, ArrayDecl, BindInput, DeviceSpec, ParamValue, Port};
 use crate::core::circuit::CircuitInstance;
 use crate::core::result::Result;
 use piperine_digital_solver::landing::TimePointRule;
@@ -37,6 +37,7 @@ pub struct CircuitBuilder {
     nodes: HashMap<String, AnalogReference>,
     /// The device instances, bound in [`build`](Self::build).
     devices: Vec<DeviceSpec>,
+    arrays: Vec<ArrayDecl>,
     shared_params: Vec<(String, ParamValue)>,
     session_params: Vec<(String, ParamValue)>,
     resolution: f64,
@@ -61,6 +62,7 @@ impl CircuitBuilder {
             netlist: Netlist::new(),
             nodes: HashMap::new(),
             devices: Vec::new(),
+            arrays: Vec::new(),
             shared_params: Vec::new(),
             session_params: Vec::new(),
             resolution: piperine_digital_solver::tick::Resolution::default().seconds_per_tick,
@@ -117,6 +119,14 @@ impl CircuitBuilder {
         self
     }
 
+    /// An array net `name` of `count` elements (composite-values CV-23): a pin binds to one element or a run of its
+    /// elements with [`Port::Window`], an array pin of `count` elements to the whole net with [`Port::Net`]. `init` is
+    /// one element's bytes (every element starts there), every element's bytes, or empty for all zero.
+    pub fn array_net(&mut self, name: &str, count: u64, init: &[u8]) -> &mut Self {
+        self.arrays.push(ArrayDecl { name: name.to_string(), count, init: init.to_vec() });
+        self
+    }
+
     /// A shared param net (a model card, abi.md P5): every instance whose
     /// `PARAM` is given `ParamValue::Shared(name)` is bound to it.
     pub fn param_net(&mut self, name: &str, seed: ParamValue) -> &mut Self {
@@ -155,6 +165,7 @@ impl CircuitBuilder {
         let temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
         let recipe = crate::core::bind::Recipe {
             specs: std::mem::take(&mut self.devices),
+            arrays: std::mem::take(&mut self.arrays),
             shared: std::mem::take(&mut self.shared_params),
             session: std::mem::take(&mut self.session_params),
             resolution: self.resolution,
@@ -164,6 +175,7 @@ impl CircuitBuilder {
         };
         let bound = bind(BindInput {
             specs: recipe.specs.clone(),
+            arrays: recipe.arrays.clone(),
             shared: recipe.shared.clone(),
             session: recipe.session.clone(),
             netlist: &mut self.netlist,

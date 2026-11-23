@@ -3,6 +3,7 @@
 //! as text to be written into every cache entry as `rt.rs` (and, for a design with digital
 //! forms, the files beside it).
 
+pub mod array;
 pub mod commits;
 pub mod control;
 pub mod pin;
@@ -14,6 +15,8 @@ pub mod table;
 pub const REAL: &str = include_str!("rt/real.rs");
 /// The text of `rt/int.rs`, as generated code compiles it.
 pub const INT: &str = include_str!("rt/int.rs");
+/// The text of `rt/array.rs`, as generated code compiles it.
+pub const ARRAY: &str = include_str!("rt/array.rs");
 /// The text of `rt/commits.rs`, as generated code compiles it.
 pub const COMMITS: &str = include_str!("rt/commits.rs");
 /// The text of `rt/control.rs`, as generated code compiles it.
@@ -32,6 +35,7 @@ const ROOT: &str = "\
 //! bounds of a model's own values (control.rs), the commits of a reaction (commits.rs) and the
 //! interpolant of a `table_model` (table.rs).
 
+pub mod array;
 pub mod commits;
 pub mod control;
 pub mod pin;
@@ -39,6 +43,7 @@ pub mod int;
 pub mod real;
 pub mod table;
 
+pub use array::{CarrierArray, ElementIndex};
 pub use commits::Commits;
 pub use control::{Depth, Index, Panic, Trips};
 pub use pin::{Carried, LevelWords};
@@ -57,7 +62,7 @@ impl Runtime {
     /// key are what an analog-only build has always had.
     pub fn files(digital: bool) -> Vec<(&'static str, &'static str)> {
         if digital {
-            vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS), ("rt/table.rs", TABLE)]
+            vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS), ("rt/array.rs", ARRAY), ("rt/table.rs", TABLE)]
         } else {
             vec![("rt.rs", REAL)]
         }

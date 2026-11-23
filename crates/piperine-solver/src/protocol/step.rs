@@ -18,6 +18,8 @@ pub trait StepObserver {
 /// A reader of discrete nets by id, over a `DiscreteSide`.
 pub(super) trait NetRead {
     fn net(&self, id: u32) -> Option<&[u8]>;
+    /// The net's bytes as printed (`DiscreteSide::net_bytes`).
+    fn net_bytes(&self, id: u32) -> Option<std::borrow::Cow<'_, [u8]>>;
 }
 
 pub(super) struct Nets<'a, D: DiscreteSide>(pub(super) &'a D);
@@ -25,6 +27,10 @@ pub(super) struct Nets<'a, D: DiscreteSide>(pub(super) &'a D);
 impl<D: DiscreteSide> NetRead for Nets<'_, D> {
     fn net(&self, id: u32) -> Option<&[u8]> {
         self.0.net(id)
+    }
+
+    fn net_bytes(&self, id: u32) -> Option<std::borrow::Cow<'_, [u8]>> {
+        self.0.net_bytes(id)
     }
 }
 
@@ -54,6 +60,12 @@ impl<'a> StepView<'a> {
     /// A discrete net's bytes after the step's instant; `None` for a net the side does not know.
     pub fn net(&self, id: u32) -> Option<&[u8]> {
         self.nets.net(id)
+    }
+
+    /// A discrete net's bytes as a host prints them: [`net`](StepView::net), and for an array net the bytes of every
+    /// element one after another (composite-values CV-28), built per call.
+    pub fn net_bytes(&self, id: u32) -> Option<std::borrow::Cow<'_, [u8]>> {
+        self.nets.net_bytes(id)
     }
 }
 

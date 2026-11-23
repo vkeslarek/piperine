@@ -386,6 +386,18 @@ impl<'d> Types<'d> {
         self.carriers.get(&decl)
     }
 
+    /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an
+    /// array whose innermost element is a `Ty::Carrier` (CV-23).
+    pub fn carrier_array(&self, decl: DeclId) -> Option<&Ty> {
+        self.carriers.get(&decl).filter(|ty| matches!(ty, Ty::Array(..)) && matches!(ty.innermost(), Ty::Carrier { .. }))
+    }
+
+    /// The type of a port or signal declared as an array of nodes (`[Electrical; 4]`): an array whose innermost
+    /// element is a `Ty::Node` (CV-23).
+    pub fn node_array(&self, decl: DeclId) -> Option<&Ty> {
+        self.carriers.get(&decl).filter(|ty| matches!(ty, Ty::Array(..)) && matches!(ty.innermost(), Ty::Node(_)))
+    }
+
     /// What a call or a placement refers to.
     pub fn callee(&self, expr: ExprId) -> Option<Callee> {
         self.callees.get(&expr).copied()

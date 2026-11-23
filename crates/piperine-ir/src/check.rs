@@ -27,12 +27,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, Projection, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
     FunctionData, ReprForm, TypeData, TypeKind, ValueType,
 };
 use crate::typing::Typing;
 
 mod aggregates;
+mod carrier_array;
 mod traits;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
@@ -81,6 +82,8 @@ struct Owner {
     stims: usize,
     /// The carried types of the body's carriers.
     carriers: Vec<ValueType>,
+    /// The element count of each carrier that is an array of carriers, parallel to `carriers`.
+    counts: Vec<Option<u64>>,
     /// The field types of each of the body's streams.
     streams: Vec<Vec<ValueType>>,
     /// The number of the body's events.
@@ -107,6 +110,27 @@ struct Owner {
     /// A value a primitive evaluates on its own (a derivative state, a delay input, a noise density): it may read an
     /// `ac_stim` site, which a statement of the `analog` block writes.
     value_input: bool,
+}
+
+/// Which element of its carrier a write names, as far as the IR says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementWritten {
+    /// The whole carrier (or its only value).
+    Whole,
+    /// One element, known.
+    Constant(u64),
+    /// An element chosen at run time: any of them.
+    Dynamic,
+}
+
+impl ElementWritten {
+    /// Whether two writes of one carrier can reach one element.
+    fn overlaps(self, other: ElementWritten) -> bool {
+        match (self, other) {
+            (ElementWritten::Constant(a), ElementWritten::Constant(b)) => a == b,
+            _ => true,
+        }
+    }
 }
 
 /// The state of one walk: one owner's code, every root of it sharing the memo.
@@ -309,6 +333,7 @@ impl<'a> Checker<'a> {
                     self.expr_id(&item, &site.origin, enabled);
                 }
             }
+            self.carrier_arrays(&item, body);
             for drive in &body.drives {
                 if drive.carrier as usize >= body.carriers.len() {
                     self.report(item.clone(), drive.origin.clone(), format!("drive of carrier {}, out of range ({} carriers)", drive.carrier, body.carriers.len()));
@@ -396,10 +421,13 @@ impl<'a> Checker<'a> {
                         self.expr_id(&item, &origin, a.value);
                     }
                 }
-                Stmt::Commit { value, after, .. } => {
+                Stmt::Commit { value, after, target, .. } => {
                     self.expr_id(&item, &origin, *value);
                     if let Some(after) = after {
                         self.expr_id(&item, &origin, *after);
+                    }
+                    for index in target.iter().flat_map(crate::model::CommitTarget::index_operands) {
+                        self.expr_id(&item, &origin, index);
                     }
                 }
                 Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => {
@@ -505,6 +533,7 @@ impl<'a> Checker<'a> {
     fn child_carrier_ids(&mut self, body: &BodyData) {
         let ir = self.ir;
         let item = format!("body {}", body.name);
+        self.child_windows(&item, body);
         for (ci, bound) in body.child_carriers.iter().enumerate() {
             if bound.is_empty() {
                 continue;
@@ -564,7 +593,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -830,6 +859,8 @@ impl<'a> Checker<'a> {
                     );
                 } else if let Some(init) = c.init
                     && !self.holds(&c.ty, init)
+                    // an array carrier's initial value is one element (`[x; K]`) or every element (`[a, b, c]`)
+                    && !c.count.is_some_and(|count| self.holds(&ValueType::Array(Box::new(c.ty.clone()), count), init))
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),
@@ -953,7 +984,7 @@ impl<'a> Checker<'a> {
                     Stmt::Expr(e) => stack_e.push(*e),
                     Stmt::Assign { value, .. } => stack_e.push(*value),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
-                    Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
+                    Stmt::Commit { value, after, target, .. } => stack_e.extend([*value].into_iter().chain(*after).chain(target.iter().flat_map(crate::model::CommitTarget::index_operands))),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
                     Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),
@@ -984,7 +1015,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -1033,7 +1064,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -1160,7 +1191,7 @@ impl<'a> Checker<'a> {
                 let cross = match e.source {
                     EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
                     EventSource::At(x) => [Some(x), None, None],
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => [None; 3],
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => [None; 3],
                 };
                 cross.into_iter().flatten().chain(e.guard)
             }));
@@ -1201,11 +1232,11 @@ impl<'a> Checker<'a> {
                 self.report(format!("{item} drive {}", c.name), drive.origin.clone(), format!("drives the reached carrier {}: a child's carrier is read only", c.name));
             }
         }
-        let mut committed: BTreeSet<u32> = BTreeSet::new();
+        let mut committed: Vec<(u32, ElementWritten)> = Vec::new();
         for (k, reaction) in body.reactions.iter().enumerate() {
             let (_, stmts) = self.reach(&reaction.stmts, &[]);
             for (s, carrier) in self.commits(&stmts) {
-                committed.insert(carrier);
+                committed.push((carrier, self.element_written(&self.ir.stmts[s.index()])));
                 if let Some(c) = input(carrier) {
                     let origin = self.stmt_origin(&self.ir.stmts[s.index()]);
                     self.report(format!("{item} reaction {k}"), origin, format!("commits to the `in` port {}: an input is written outside the body", c.name));
@@ -1216,11 +1247,31 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        let driven: BTreeSet<u32> = body.drives.iter().map(|d| d.carrier).collect();
-        for c in driven.intersection(&committed) {
-            if let Some(carrier) = body.carriers.get(*c as usize) {
+        // a definition and a commit of one carrier, or of one element of an array carrier (CV-25 AC 3: two elements
+        // are two carriers), never both; a commit whose element is not constant may reach any element
+        let mut clashing: BTreeSet<u32> = BTreeSet::new();
+        for drive in &body.drives {
+            let written = drive.element.map_or(ElementWritten::Whole, ElementWritten::Constant);
+            if committed.iter().any(|(carrier, other)| *carrier == drive.carrier && written.overlaps(*other)) {
+                clashing.insert(drive.carrier);
+            }
+        }
+        for c in clashing {
+            if let Some(carrier) = body.carriers.get(c as usize) {
                 self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} has both a drive and a commit", carrier.name));
             }
+        }
+    }
+
+    /// The element of its carrier a commit writes.
+    fn element_written(&self, stmt: &Stmt) -> ElementWritten {
+        let Stmt::Commit { target, .. } = stmt else { return ElementWritten::Whole };
+        match target.as_ref().and_then(|t| t.element) {
+            None => ElementWritten::Whole,
+            Some(index) => match self.ir.exprs.get(index.index()).map(|d| &d.kind) {
+                Some(Expr::Int(n)) if *n >= 0 => ElementWritten::Constant(*n as u64),
+                _ => ElementWritten::Dynamic,
+            },
         }
     }
 
@@ -1245,6 +1296,7 @@ impl<'a> Checker<'a> {
                 limit_guards: body.limits.iter().map(|s| s.enabled.is_some()).collect(),
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
+                counts: body.carriers.iter().map(|c| c.count).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
@@ -1289,7 +1341,14 @@ impl<'a> Checker<'a> {
                 let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
                 let mut w = Walk::new(owner(false, format!("body {} drive {name}", body.name)), 0);
                 if let Some(c) = body.carriers.get(drive.carrier as usize) {
-                    self.carried(&w, drive.value, &c.ty, "the value of a drive");
+                    if let Some(written) = self.drive_type(&w, &drive.origin, drive.carrier, &c.ty, drive.element, &drive.path) {
+                        self.carried(&w, drive.value, &written, "the value of a drive");
+                    }
+                }
+                for step in &drive.path {
+                    if let Projection::Index(index) = step {
+                        self.walk(&mut w, Task::Expr(*index, Ctx::top()));
+                    }
                 }
                 self.walk(&mut w, Task::Expr(drive.value, Ctx::top()));
                 if let Some(after) = drive.after {
@@ -1308,6 +1367,9 @@ impl<'a> Checker<'a> {
                         }
                     }
                     EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
+                    EventSource::ElementChanged { carrier, element } => {
+                        self.element_event(&format!("body {} event {k}", body.name), &event.origin, body, carrier, element)
+                    }
                     EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
                 if let Some(guard) = event.guard {
@@ -1370,6 +1432,7 @@ impl<'a> Checker<'a> {
                 limit_guards: Vec::new(),
                 stims: 0,
                 carriers: Vec::new(),
+                counts: Vec::new(),
                 streams: Vec::new(),
                 events: 0,
                 derivatives: 0,
@@ -1522,12 +1585,19 @@ impl<'a> Checker<'a> {
                     next.push(Task::Expr(a.value, ctx));
                 }
             }
-            Stmt::Commit { carrier, value, after } => {
+            Stmt::Commit { carrier, value, after, target } => {
                 match w.owner.carriers.get(*carrier as usize).cloned() {
-                    Some(ty) => self.carried(w, *value, &ty, "the value of a commit"),
+                    Some(ty) => {
+                        if let Some(written) = self.commit_type(w, &origin, *carrier, &ty, target.as_ref()) {
+                            self.carried(w, *value, &written, "the value of a commit");
+                        }
+                    }
                     None => self.report(w.owner.item.clone(), origin.clone(), format!("commit to carrier {carrier}, out of range ({} carriers)", w.owner.carriers.len())),
                 }
                 next.push(Task::Expr(*value, ctx));
+                if let Some(target) = target {
+                    next.extend(target.index_operands().map(|index| Task::Expr(index, ctx)));
+                }
                 if let Some(after) = after {
                     self.carried(w, *after, &ValueType::F64, "the delay of a commit");
                     next.push(Task::Expr(*after, ctx));
@@ -2011,7 +2081,11 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "carrier read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
+                            // an array of carriers read whole is the array of its elements' values (CV-24)
+                            Some(c) => match w.owner.counts.get(*i as usize).copied().flatten() {
+                                Some(count) => self.own(w, &origin, ty, &ValueType::Array(Box::new(c.clone()), count)),
+                                None => self.own(w, &origin, ty, &Typing::read_of(c)),
+                            },
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -2023,11 +2097,32 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a previous-value read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
+                            Some(_) if w.owner.counts.get(*i as usize).copied().flatten().is_some() => {
+                                self.wrong(w, origin, format!("previous value of carrier {i}, an array of carriers: read one element's"));
+                            }
                             Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
                             None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
                 }
+            }
+            Expr::CarrierElement { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element read", *carrier, *index, ty, false);
+                }
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::ElementPrevious { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element's previous value", *carrier, *index, ty, false);
+                }
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::ElementChanged { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element's `changed()`", *carrier, *index, ty, true);
+                }
+                next.push(Task::Expr(*index, ctx));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.looping(w, id, first, ctx, next),
             Expr::Break(value) => {

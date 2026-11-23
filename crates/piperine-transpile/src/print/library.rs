@@ -361,7 +361,7 @@ impl LibraryPrinter {
                 exprs.extend(e.guard);
                 match e.source {
                     EventSource::Cross { e: x, .. } | EventSource::At(x) => exprs.push(x),
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => {}
                 }
             }
             for r in body.reactions() {

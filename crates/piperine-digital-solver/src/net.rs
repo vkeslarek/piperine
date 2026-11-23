@@ -35,8 +35,11 @@ pub struct NetSpec {
     /// A param's pin: what it holds when an analysis starts is its value, not a change, so `CHANGED`
     /// is false and `PREVIOUS` is the value until the first `set` during the run (§5.3.1).
     pub param: bool,
-    /// The first commit at (0, 0); empty for none.
+    /// The first commit at (0, 0); empty for none. An array net holds one element's bytes (every element starts
+    /// there) or every element's bytes.
     pub init: Vec<u8>,
+    /// 0: one carrier. `>= 1`: an array net of this many elements of `size` bytes (abi.md §3.1 P4a).
+    pub count: u64,
 }
 
 impl NetSpec {
@@ -55,7 +58,13 @@ impl NetSpec {
             structural: false,
             param: false,
             init: Vec::new(),
+            count: 0,
         }
+    }
+
+    /// An array net of `count` elements of `size` bytes each, aligned to `align`.
+    pub fn array(name: &str, size: u32, align: u32, count: u64) -> NetSpec {
+        NetSpec { count, ..NetSpec::discrete(name, size, align) }
     }
 
     /// An event net.

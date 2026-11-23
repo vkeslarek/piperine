@@ -98,7 +98,9 @@ impl Metadata {
         }
         for carrier in body.carriers().iter().filter(|c| c.role != CarrierRole::Signal) {
             let direction = if carrier.role == CarrierRole::In { "in" } else { "out" };
-            declared.push((&carrier.origin, PortInfo { name: carrier.name.clone(), direction, ty: carrier.ty.to_string() }));
+            // a port of an array of carriers shows its length: `[bool; 4]`
+            let ty = carrier.count.map_or_else(|| carrier.ty.to_string(), |count| format!("[{}; {count}]", carrier.ty));
+            declared.push((&carrier.origin, PortInfo { name: carrier.name.clone(), direction, ty }));
         }
         declared.sort_by_key(|(origin, _)| (origin.file.clone(), origin.line, origin.col));
         let ports = declared.into_iter().map(|(_, port)| port).collect();

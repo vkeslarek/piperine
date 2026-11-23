@@ -38,9 +38,9 @@ impl ShapeCheck {
                 each(shape.pins.len(), &|i| {
                     shape.pins.get(i).map(|p| {
                         format!(
-                            "`{}` @ {} kind {} role {} global {} flags {} layout {} unit `{}` init {:?} check {} abstol {:?}",
+                            "`{}` @ {} kind {} role {} global {} flags {} layout {} unit `{}` init {:?} check {} abstol {:?} count {}",
                             p.name.as_str(), p.origin.as_str(), p.kind, p.role, p.global, p.flags,
-                            Self::layout(&p.layout), p.unit.as_str(), Self::bytes(&p.init), p.check, p.abstol
+                            Self::layout(&p.layout), p.unit.as_str(), Self::bytes(&p.init), p.check, p.abstol, p.count
                         )
                     })
                 }),
@@ -78,9 +78,9 @@ impl ShapeCheck {
                 each(shape.functions.len(), &|i| {
                     shape.functions.get(i).map(|f| {
                         format!(
-                            "`{}` @ {} flags {} reads {:?} writes {:?} partials {:?}",
+                            "`{}` @ {} flags {} reads {:?} writes {:?} partials {:?} elements {:?}",
                             f.name.as_str(), f.origin.as_str(), f.flags,
-                            Self::list(&f.reads), Self::list(&f.writes), Self::list(&f.partials)
+                            Self::list(&f.reads), Self::list(&f.writes), Self::list(&f.partials), Self::list(&f.elements)
                         )
                     })
                 }),
@@ -90,9 +90,9 @@ impl ShapeCheck {
                 each(shape.reactions.len(), &|i| {
                     shape.reactions.get(i).map(|r| {
                         format!(
-                            "`{}` @ {} flags {} on {:?} reads {:?} writes {:?}",
+                            "`{}` @ {} flags {} on {:?} reads {:?} writes {:?} elements {:?}",
                             r.name.as_str(), r.origin.as_str(), r.flags,
-                            Self::list(&r.on), Self::list(&r.reads), Self::list(&r.writes)
+                            Self::list(&r.on), Self::list(&r.reads), Self::list(&r.writes), Self::list(&r.elements)
                         )
                     })
                 }),
@@ -141,6 +141,7 @@ mod tests {
             reads: vec![Cell { kind: cell::PIN, index: read, part: part::VALUE }],
             writes: vec![],
             partials: vec![],
+            elements: vec![],
         });
         b
     }

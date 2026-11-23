@@ -30,6 +30,9 @@ pub enum Probe {
     /// The one flow contribution `term` of the instance `instance`, which has no potential
     /// branch: its value at each solution.
     Term { instance: String, term: String },
+    /// An array declared with no element (`signal none: [Bit<u8>; 0]`): no net holds it, and it reads `[]` at every
+    /// row (composite-values CV-28).
+    Empty { path: String },
 }
 
 /// Where a probe's value sits in a run, found before the run starts.
@@ -42,10 +45,15 @@ pub enum Column {
     /// A discrete net holding a composite or an enum, by its id in the digital plan and its path (the
     /// net's own, whatever leaf the column shows), and how to read it.
     Shaped { id: u32, path: String, shape: CellShape, leaf: Option<String> },
+    /// A net of an array of carriers, by its id in the digital plan: read at every step as the bytes of its elements one after
+    /// another, since a change of one element names no element to a recorder (composite-values CV-28).
+    Array { id: u32, shape: CellShape, leaf: Option<String> },
     /// A param, by the id of its net in the digital plan, with its type: the value only.
     Param { id: u32, ty: ValueType },
     /// A param no net holds, read from the host's table over the run.
     Held { held: Held },
+    /// The array of no element: the same empty array at every step.
+    Empty,
 }
 
 impl Probe {
@@ -76,10 +84,15 @@ impl Probe {
                 return Ok(Probe::Node { id: NodeIdentifier::Anonymous(node.id().index()), path });
             }
             if let Some(net) = ir.net_at(&path) {
-                return Ok(Probe::of_net(ir, net.ty(), path, None));
+                return Ok(Probe::of_net(ir, &Probe::net_type(&net), path, None));
             }
             if let Some((net, leaf)) = Probe::leaf_of(ir, &path) {
-                return Ok(Probe::of_net(ir, net.ty(), net.path().to_string(), Some(leaf)));
+                let ty = Probe::net_type(&net);
+                // an element past the end of the array, a field the value has not: no net, node or param has that path
+                if CellShape::of(ir, &ty).is_some_and(|shape| !shape.can_hold_leaf(&leaf)) {
+                    return Err(Probe::nothing(entry, &format!("the value of `{}` has no leaf `{leaf}`", net.path())));
+                }
+                return Ok(Probe::of_net(ir, &ty, net.path().to_string(), Some(leaf)));
             }
             if ir.is_ground_alias(&path) {
                 let why = "a fixed zero-potential branch joins it to ground, so it has no unknown of its own: its potential is 0";
@@ -95,6 +108,37 @@ impl Probe {
             }
         }
         Err(Probe::nothing(entry, "no node, net, param or `i(<instance>)` of that path"))
+    }
+
+    /// The probes `entry` names: one, or for the name of an array of nodes (`Top.bl`) one per node, `Top.bl[0]` to
+    /// `Top.bl[K-1]`, each its own column (composite-values CV-28).
+    pub fn resolve_all(ir: &Ir, top: &str, entry: &str) -> Result<Vec<Probe>, Failure> {
+        for path in [entry.to_string(), format!("{top}.{entry}")] {
+            // the name may hold dots of its own (a hoisted placement's array is `p.none` in the body of `Top`), so every
+            // split of the path into an instance and a name is tried, the longest instance first
+            for (dot, _) in path.rmatch_indices('.') {
+                let (instance, name) = (&path[..dot], &path[dot + 1..]);
+                let Some(found) = ir.instance_at(instance) else { continue };
+                if found.body().empty_arrays().iter().any(|a| a.name == name) {
+                    return Ok(vec![Probe::Empty { path }]);
+                }
+                if let Some(array) = found.body().node_arrays().iter().find(|a| a.name == name) {
+                    return (0..array.count).map(|k| Probe::resolve(ir, top, &format!("{path}[{k}]"))).collect();
+                }
+            }
+        }
+        Probe::resolve(ir, top, entry).map(|probe| vec![probe])
+    }
+
+    /// The type a net holds as a host reads it: its carrier's type, and for the net of an array of carriers the array of
+    /// them, every element in order (composite-values CV-28: `Top.lines` is `[false, true, ..]`, `Top.lines[3]` its leaf).
+    fn net_type(net: &piperine_ir::Net<'_>) -> ValueType {
+        let declared = net.declared_by();
+        let count = declared.body().carriers().iter().enumerate().find(|(c, _)| declared.net(*c).is_some_and(|n| n.path() == net.path())).and_then(|(_, carrier)| carrier.count);
+        match count {
+            Some(count) => ValueType::Array(Box::new(net.ty().clone()), count),
+            None => net.ty().clone(),
+        }
     }
 
     /// The probe of the discrete net `path` of type `ty`: a plain one for a scalar, a shaped one for an
@@ -130,6 +174,11 @@ impl Probe {
         None
     }
 
+    /// The cell of an array of no element: `[]` at every row.
+    pub(crate) fn empty_array() -> Cell {
+        Cell::Composite(Box::new(crate::composite::CompositeCell::Array(Vec::new())))
+    }
+
     /// The value a shaped probe shows from the bytes of its net: the whole value, or the one leaf.
     pub(crate) fn shown(shape: &CellShape, leaf: Option<&str>, bytes: &[u8]) -> Result<Cell, Failure> {
         let value = shape.decode(bytes)?;
@@ -159,7 +208,7 @@ impl Probe {
     /// The column's name: the full path, `i(<full instance path>)` for a flow.
     pub fn label(&self) -> String {
         match self {
-            Probe::Node { path, .. } | Probe::Net { path, .. } | Probe::Param { path, .. } => path.clone(),
+            Probe::Node { path, .. } | Probe::Net { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => path.clone(),
             Probe::Shaped { path, leaf: None, .. } => path.clone(),
             Probe::Shaped { path, leaf: Some(leaf), .. } => if leaf.starts_with('[') { format!("{path}{leaf}") } else { format!("{path}.{leaf}") },
             Probe::Term { instance, .. } => format!("i({instance})"),
@@ -179,9 +228,13 @@ impl Probe {
                 code: "E0801",
                 message: format!("`i({instance})` is a flow term: only an `op` or a `dc` run prints it, at each solution; a step of a transient does not carry it"),
             }),
+            Probe::Empty { .. } => Ok(Column::Empty),
             Probe::Shaped { path, shape, leaf } => {
                 let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
+                if bound.digital.plan().nets[at as usize].count > 0 {
+                    return Ok(Column::Array { id: at, shape: shape.clone(), leaf: leaf.clone() });
+                }
                 Ok(Column::Shaped { id: at, path: path.clone(), shape: shape.clone(), leaf: leaf.clone() })
             }
             Probe::Net { path, ty } | Probe::Param { path, ty } => {

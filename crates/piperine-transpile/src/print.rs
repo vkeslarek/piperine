@@ -4,6 +4,7 @@
 
 pub mod aggregate;
 pub mod analog;
+pub mod carrier_array;
 pub mod contribution;
 pub mod control;
 pub mod cross;

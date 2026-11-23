@@ -18,6 +18,7 @@ fn by(instance: u32, reaction: u32) -> Writer {
 fn commit(statement: u32, offset: u32, v: u8, made: i64, due: i64) -> Pending {
     Pending {
         net: N,
+        element: None,
         offset,
         bytes: vec![v],
         writer: by(0, 0),

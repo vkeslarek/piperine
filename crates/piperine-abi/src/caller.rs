@@ -50,6 +50,8 @@ impl CallError {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Commit<'a> {
     pub statement: u32,
+    /// The element of an array pin the commit names (`Host.commit_element`); `None` for one carrier.
+    pub element: Option<u64>,
     pub offset: u32,
     pub bytes: &'a [u8],
     pub after: f64,
@@ -57,6 +59,47 @@ pub struct Commit<'a> {
 
 fn empty_note() -> Note {
     Note { code: 0, len: 0, text: [0; NOTE_TEXT] }
+}
+
+/// What a host serves an [`ArrayView`](raw::ArrayView) from: the elements of one array pin at the call's snapshot.
+pub trait ElementSource {
+    /// The number of elements.
+    fn count(&self) -> u64;
+    /// The bytes of one element.
+    fn size(&self) -> u32;
+    /// The bytes of `element` for `part` (`VALUE`, `PREVIOUS` or `CHANGED`, one byte): valid until the call ends.
+    fn element(&self, element: u64, part: u32) -> &[u8];
+}
+
+/// An [`ElementSource`] made into the view a `WHOLE` read cell holds. The view points into this handle, so the
+/// handle stays where it is (boxed) until the `react` call that reads the view returns.
+pub struct ViewHandle<'a> {
+    source: &'a dyn ElementSource,
+}
+
+impl<'a> ViewHandle<'a> {
+    /// A handle serving `source`.
+    pub fn new(source: &'a dyn ElementSource) -> ViewHandle<'a> {
+        ViewHandle { source }
+    }
+
+    /// The view of the source: its `count` and `size`, reading through `source`.
+    pub fn view(&self) -> raw::ArrayView {
+        raw::ArrayView {
+            context: (&self.source as *const &dyn ElementSource).cast::<c_void>(),
+            count: self.source.count(),
+            size: self.source.size(),
+            read: Self::read,
+        }
+    }
+
+    /// `ArrayView.read`: the bytes of one element, from the source `context` points at.
+    unsafe extern "C" fn read(context: *const c_void, element: u64, part: u32) -> *const u8 {
+        // SAFETY: `context` is the `source` field of a live `ViewHandle` (`view` above), kept in place until the
+        // `react` call that reads the view returns (abi.md §3.1).
+        let source = unsafe { *context.cast::<&dyn ElementSource>() };
+        source.element(element, part).as_ptr()
+    }
 }
 
 /// One live instance of a module.
@@ -95,7 +138,7 @@ struct FunctionFrame {
 impl FunctionFrame {
     /// The frame of function `f` of `shape`.
     fn of(shape: &Shape<'_>, f: &raw::Function<'_>) -> Self {
-        let reads = cell_lens(shape, &f.reads, Access::FunctionRead);
+        let reads = shape.cell_lens_of(&f.reads, &f.elements, Access::FunctionRead);
         let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
         Self { cells: reads.zip(writes).map(|(reads, writes)| (reads.into(), writes.into())) }
     }
@@ -130,7 +173,15 @@ impl Trampoline<'_> {
     /// # Safety
     ///
     /// `data` is the `Trampoline` of the live `react` call and `bytes` holds `len` bytes.
-    unsafe fn deliver(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64) -> u32 {
+    unsafe fn deliver(
+        data: *mut c_void,
+        statement: u32,
+        element: Option<u64>,
+        offset: u32,
+        len: u32,
+        bytes: *const u8,
+        after: f64,
+    ) -> u32 {
         // SAFETY: abi.md §3 React: `host_data` is what `Handle::react` passed, a
         // live `Trampoline` for this call.
         let t = unsafe { &mut *data.cast::<Trampoline<'_>>() };
@@ -144,7 +195,7 @@ impl Trampoline<'_> {
             unsafe { core::slice::from_raw_parts(bytes, len as usize) }
         };
         let commit = &mut t.commit;
-        match catch_unwind(AssertUnwindSafe(|| commit(Commit { statement, offset, bytes, after }))) {
+        match catch_unwind(AssertUnwindSafe(|| commit(Commit { statement, element, offset, bytes, after }))) {
             Ok(s) => s,
             Err(payload) => {
                 t.panic = Some(payload);
@@ -157,7 +208,21 @@ impl Trampoline<'_> {
 /// `Host.commit`.
 unsafe extern "C" fn trampoline(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64) -> u32 {
     // SAFETY: as `deliver` requires; the device passes what `react` handed it (abi.md §2 entry 6).
-    unsafe { Trampoline::deliver(data, statement, offset, len, bytes, after) }
+    unsafe { Trampoline::deliver(data, statement, None, offset, len, bytes, after) }
+}
+
+/// `Host.commit_element`.
+unsafe extern "C" fn element_trampoline(
+    data: *mut c_void,
+    statement: u32,
+    element: u64,
+    offset: u32,
+    len: u32,
+    bytes: *const u8,
+    after: f64,
+) -> u32 {
+    // SAFETY: as for `trampoline`.
+    unsafe { Trampoline::deliver(data, statement, Some(element), offset, len, bytes, after) }
 }
 
 impl Handle {
@@ -311,12 +376,12 @@ impl Handle {
         let Some(r) = shape.reactions.get(k as usize) else {
             return Err(CallError::frame(format!("reaction {k} does not exist")));
         };
-        let Some(reads) = cell_lens(shape, &r.reads, Access::ReactionRead) else {
+        let Some(reads) = shape.cell_lens_of(&r.reads, &r.elements, Access::ReactionRead) else {
             return Err(CallError::frame(format!("reaction {k} names a cell its shape does not have")));
         };
         check_cells("read", input.iter().map(|b| b.len()), &reads)?;
         let input: Vec<*const u8> = input.iter().map(|b| b.as_ptr()).collect();
-        let host = Host { size: size_of::<Host>() as u32, commit: trampoline };
+        let host = Host { size: size_of::<Host>() as u32, commit: trampoline, commit_element: element_trampoline };
         let mut data = Trampoline { commit, panic: None };
         let mut note = empty_note();
         let frame = raw::React {

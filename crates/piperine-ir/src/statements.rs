@@ -7,7 +7,7 @@
 //! `Ir::check` names it.
 
 use crate::ids::{ExprId, StmtId};
-use crate::model::{EmitField, Expr, Ir, Stmt};
+use crate::model::{CommitTarget, EmitField, Expr, Ir, Stmt};
 
 /// One step of the walk.
 enum Step {
@@ -32,8 +32,8 @@ impl Statements {
                     Some(Stmt::Let { init, .. } | Stmt::Assign { value: init, .. }) => next.push(Step::Expr(*init)),
                     Some(Stmt::Expr(e) | Stmt::BoundStep { value: e, .. }) => next.push(Step::Expr(*e)),
                     Some(Stmt::Contribute { addends, .. }) => next.extend(addends.iter().map(|a| Step::Expr(a.value))),
-                    Some(Stmt::Commit { value, after, .. }) => {
-                        next.extend([*value].into_iter().chain(*after).map(Step::Expr));
+                    Some(Stmt::Commit { value, after, target, .. }) => {
+                        next.extend([*value].into_iter().chain(*after).chain(target.iter().flat_map(CommitTarget::index_operands)).map(Step::Expr));
                         next.push(Step::Count(id));
                     }
                     Some(Stmt::Emit { fields, .. }) => {
@@ -68,7 +68,7 @@ impl Statements {
                         Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|a| Step::Expr(*a))),
                         Expr::Closure { body, .. } => next.push(Step::Expr(*body)),
                         // A loop body is walked once: a commit in a loop is one statement (§12.1.14).
-                        Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+                        Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                             next.extend(data.kind.operands().into_iter().map(Step::Expr));
                             next.extend(data.kind.statements().iter().map(|s| Step::Stmt(*s)));
                         }

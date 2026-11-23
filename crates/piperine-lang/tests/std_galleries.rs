@@ -355,11 +355,11 @@ fn every_gallery_lists_a_std_item() {
 
 /// The gallery fences that write a form `composite-values` lifted, with the text of each form: a `for` in
 /// a reaction (E.3, phase A), a guarded arm of a `match` and the variants of an enum with a payload (E.4,
-/// phases A and B).
-const LIFTED_FENCES: [(&str, &[&str]); 2] = [("E.3", &["for k in 1..N"]), ("E.4", &["_ if !baud_tick", "Tx::Data { n }"])];
+/// phases A and B) and the memory `Ram` of E.5 (phase C).
+const LIFTED_FENCES: [(&str, &[&str]); 3] = [("E.3", &["for k in 1..N"]), ("E.4", &["_ if !baud_tick", "Tx::Data { n }"]), ("E.5", &["[Bit<u32>; 256]", "mem[addr] <- wdata"])];
 
 /// How the type checker named the forms phases A and B lifted, before CV-01 to CV-22 (`types/unsupported.rs`).
-const LIFTED_FORMS: [&str; 14] = [
+const LIFTED_FORMS: [&str; 16] = [
     "assignment",
     "`while` loop",
     "`loop`",
@@ -374,6 +374,8 @@ const LIFTED_FORMS: [&str; 14] = [
     "index expression",
     "a variant with a payload",
     "`#[repr]`",
+    "an array of `Bit",
+    "an element or field commit",
 ];
 
 /// The modules a source text declares.
@@ -414,7 +416,7 @@ fn the_fences_composite_values_lifted_are_checked() {
         }
         held.push(g.section);
     }
-    assert_eq!(held, ["E.3", "E.4"], "both fences are held");
+    assert_eq!(held, ["E.3", "E.4", "E.5"], "the three fences are held (E.5 is phase C: the array of carriers `Ram`; §8.2 and §22.1.3 are not gallery fences)");
 }
 
 /// The sections of the gallery fences that write a form of `generics` phase A: none of the 16 does today (their

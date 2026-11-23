@@ -85,6 +85,16 @@ pub struct BodyData {
     /// The discrete carriers (`in`/`out` ports of a `Bit` type, `signal`s): ports first.
     #[serde(default)]
     pub(crate) carriers: Vec<Carrier>,
+    /// The arrays of nodes: each names `count` consecutive entries of `nodes`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) node_arrays: Vec<NodeArray>,
+    /// The arrays declared with no element, each by its name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) empty_arrays: Vec<EmptyArray>,
+    /// The window of an array of carriers each child's port is given, parallel to `child_carriers`: `None` for a port
+    /// bound whole or to a scalar carrier.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) child_windows: Vec<Vec<Option<CarrierWindow>>>,
     /// The definitions `c = value;` and `c = value after d;`, in source order.
     #[serde(default)]
     pub(crate) drives: Vec<Drive>,
@@ -217,6 +227,50 @@ pub struct Carrier {
     pub role: CarrierRole,
     pub init: Option<Constant>,
     pub origin: Origin,
+    /// `Some(k)`: an array of `k` carriers of type `ty`, one array net stored sparsely (CV-23, §5.1.8); `None`: one
+    /// carrier. An element form (`Expr::CarrierElement` and the rest) names an array carrier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+}
+
+/// An array of nodes (`signal bl: [Electrical; 4]`): `count` consecutive `BodyNode`s from `first` named `bl[0]`,
+/// `bl[1]`, ..., kept as one name for the host and the printer (CV-23, CV-26).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeArray {
+    pub name: String,
+    /// The body index of element 0.
+    pub first: u32,
+    pub count: u32,
+    pub origin: Origin,
+}
+
+/// An array declared with no element (`signal none: [Bit<u8>; 0]`, §1.2.3): it holds no carrier and no node, so this
+/// record is all the body keeps of it, for a host that names it (`--print` shows `[]`, CV-28).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmptyArray {
+    /// The array's name as the host addresses it: the frame's prefix, then the declared name (`p.none` for one of a hoisted
+    /// placement `p`).
+    pub name: String,
+    /// Where the array is declared in the source.
+    pub origin: Origin,
+}
+
+/// The part of an array of carriers a child's port is given (CV-23): a run of `length` elements from `first`, or one
+/// element as a scalar when `length` is `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CarrierWindow {
+    pub first: u64,
+    pub length: Option<u64>,
+}
+
+/// What a commit or a definition names inside its carrier (CV-25): an element of an array of carriers, then
+/// projections into the element's value (a field, an element of a value array). Empty is the whole carrier.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CommitTarget {
+    /// The element of an array carrier, an integer expression.
+    pub element: Option<ExprId>,
+    /// The steps into the value, outermost first.
+    pub path: Vec<Projection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -236,6 +290,13 @@ pub struct Drive {
     pub value: ExprId,
     pub after: Option<ExprId>,
     pub origin: Origin,
+    /// The element of an array carrier the definition names (`bits[0] = a;`, CV-25); `None` for the whole carrier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<u64>,
+    /// The steps into the value (a field, an element of a value array) the definition names inside the carrier or
+    /// its element; empty for all of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<Projection>,
 }
 
 /// An event of a body (§13): what fires it, and a `bool` read at the microstep that must hold
@@ -265,6 +326,9 @@ pub enum EventSource {
     /// `settle` (§13 rule 17): fires once per time point, in the settle phase that closes the
     /// instant (§15 step 4), when its guard, if any, holds.
     Settle,
+    /// `x[k].changed()`, `.rise()`, `.fall()` of element `element` of the array carrier `carrier` (CV-24): the
+    /// element took a new value; a constant element, so the plan gives it its own private event pin.
+    ElementChanged { carrier: u32, element: u64 },
 }
 
 /// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,
@@ -637,6 +701,13 @@ pub enum Expr {
     /// The derivative of the `Table` with the same `table` and `control` with respect to `x`: the slope of
     /// its interpolant at `x` (§22.2.15 rule 5). An `f64`.
     TableSlope { x: ExprId, table: Vec<(Real, Real)>, control: TableControl },
+    /// `x[index]`: the value of one element of the array carrier `carrier`, `index` an integer expression (any
+    /// integer; a run-time index past the end is a fault of the run, CV-25 AC 5). Typed as the carrier's `ty`.
+    CarrierElement { carrier: u32, index: ExprId },
+    /// `x[index].prev()`: the value an element had before its last change; typed as the carrier's `ty`.
+    ElementPrevious { carrier: u32, index: ExprId },
+    /// `x[index].changed()` read as a value in a reaction (§13 rule 9): a `bool`.
+    ElementChanged { carrier: u32, index: ExprId },
 }
 
 /// The control string of a `table_model` as the elaborator parsed it (§22.2.15 rules 2 to 4): the
@@ -724,6 +795,7 @@ impl Expr {
             Expr::Default(_) => Vec::new(),
             Expr::Table { x, .. } | Expr::TableSlope { x, .. } => vec![*x],
             Expr::Index { expr, index } => vec![*expr, *index],
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => vec![*index],
         }
     }
 
@@ -751,7 +823,7 @@ pub enum Stmt {
     Expr(ExprId),
     Contribute { branch: u32, quantity: QuantityRole, addends: Vec<Addend> },
     /// `carrier <- value;` or `carrier <- value after delay;`, in a reaction.
-    Commit { carrier: u32, value: ExprId, after: Option<ExprId> },
+    Commit { carrier: u32, value: ExprId, after: Option<ExprId>, #[serde(default, skip_serializing_if = "Option::is_none")] target: Option<CommitTarget> },
     /// `emit!("stream", f = value, …)`, in a reaction: one record of stream `stream` (its index
     /// in the body's streams). Counted with the commits in the reaction's statement numbering.
     Emit { stream: u32, fields: Vec<EmitField> },
@@ -797,6 +869,16 @@ impl Place {
     }
 }
 
+impl CommitTarget {
+    /// The index expressions the target holds: the element, then the projections' indices, outermost first.
+    pub fn index_operands(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.element.into_iter().chain(self.path.iter().filter_map(|step| match step {
+            Projection::Index(index) => Some(*index),
+            Projection::Field(_) => None,
+        }))
+    }
+}
+
 impl Stmt {
     /// The expressions the statement evaluates directly, in evaluation order: a commit's value
     /// before its delay, an emit's values in field order.
@@ -806,7 +888,9 @@ impl Stmt {
             Stmt::Expr(e) => vec![*e],
             Stmt::Assign { place, value, .. } => [*value].into_iter().chain(place.index_operands()).collect(),
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
-            Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
+            Stmt::Commit { value, after, target, .. } => {
+                [*value].into_iter().chain(*after).chain(target.iter().flat_map(CommitTarget::index_operands)).collect()
+            }
             Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),
             Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => fields
                 .iter()

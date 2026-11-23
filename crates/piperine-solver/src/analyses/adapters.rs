@@ -281,6 +281,19 @@ impl DiscreteSide for DigitalSide {
         ((id as usize) < self.digital.plan().nets.len()).then(|| self.digital.read(NetId(id)))
     }
 
+    fn net_bytes(&self, id: u32) -> Option<std::borrow::Cow<'_, [u8]>> {
+        let spec = self.digital.plan().nets.get(id as usize)?;
+        if spec.count == 0 {
+            return self.net(id).map(std::borrow::Cow::Borrowed);
+        }
+        // an array net: every element, an element never committed at its initial value
+        let mut bytes = Vec::with_capacity(spec.count as usize * spec.size as usize);
+        for element in 0..spec.count {
+            bytes.extend_from_slice(self.digital.read_element(NetId(id), element));
+        }
+        Some(std::borrow::Cow::Owned(bytes))
+    }
+
     fn net_name(&self, slot: u32) -> String {
         self.digital.net_name(self.slot_nets[slot as usize])
     }

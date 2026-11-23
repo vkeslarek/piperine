@@ -24,6 +24,7 @@ use piperine_ir::{Body, BranchKind, Env, Expr, ExprId, Ir, Operator, QuantityRol
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 
 use crate::Error;
+use crate::print::carrier_array::ElementNames;
 use crate::print::value::Reads;
 use crate::print::delay::DelayStates;
 use crate::print::derivative::States;
@@ -126,7 +127,14 @@ impl<'a> AnalogPrinter<'a> {
             Source::Settle => Text::generated("settle_changed"),
             Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
             Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
+            Source::Whole(c) => ElementNames::whole(&self.carrier_ident(c)),
+            Source::Element(c, element, part) => ElementNames::element(&self.carrier_ident(c), element, part),
         }
+    }
+
+    /// The printed name of carrier `c` of the body.
+    fn carrier_ident(&self, c: u32) -> String {
+        self.body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| Text::ident(&x.name))
     }
 
     /// The variable of a part of carrier `c`'s pin: `clk_changed_`, `clk_previous_`.
@@ -189,6 +197,7 @@ impl<'a> AnalogPrinter<'a> {
                 let part = if matches!(t, Target::Delayed(_)) { "now" } else { "changed" };
                 format!("drive:{name}.{part}")
             }
+            Target::ElementDrive(k) => format!("drive:{k}[element]"),
             Target::Watch(k) => format!("cross:{k}"),
             Target::Timer(k) => format!("at:{k}"),
             Target::Rearm { event, carrier } => {
@@ -325,6 +334,14 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Noise(k) => {
                     sources.insert(Source::NoiseValue(*k));
+                }
+                Expr::CarrierElement { carrier, index } | Expr::ElementChanged { carrier, index } => {
+                    sources.insert(Source::Carrier(*carrier));
+                    stack.push(*index);
+                }
+                Expr::ElementPrevious { carrier, index } => {
+                    sources.insert(Source::CarrierPrevious(*carrier));
+                    stack.push(*index);
                 }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) => {}
                 Expr::Derivative(k) => {

@@ -161,6 +161,7 @@ impl ShapePrinter {
                 self.cells(t, shape, "writes", &writes);
                 let partials: Vec<Partial> = f.partials.iter().copied().collect();
                 self.partials(t, shape, &reads, &writes, &partials);
+                Self::elements(t, &f.elements.iter().copied().collect::<Vec<u64>>());
                 t.line("..FunctionSpec::default()");
             });
             t.line("});");
@@ -181,6 +182,7 @@ impl ShapePrinter {
                 self.cells(t, shape, "reads", &reads);
                 let statements: Vec<Statement> = r.writes.iter().copied().collect();
                 self.statements(t, shape, &statements);
+                Self::elements(t, &r.elements.iter().copied().collect::<Vec<u64>>());
                 t.line("..ReactionSpec::default()");
             });
             t.line("});");
@@ -189,6 +191,16 @@ impl ShapePrinter {
         let mut text = t.finish();
         text.pop();
         text
+    }
+
+    /// The `elements:` field of a function or reaction: one element per read (`u64::MAX` is a `WHOLE` read), omitted
+    /// when no read names an element.
+    fn elements(t: &mut Text, elements: &[u64]) {
+        if elements.is_empty() {
+            return;
+        }
+        let each: Vec<String> = elements.iter().map(|e| if *e == u64::MAX { "piperine_abi::raw::WHOLE".to_string() } else { e.to_string() }).collect();
+        t.line(&format!("elements: vec![{}],", each.join(", ")));
     }
 
     /// The arguments of `s.pin(…)`: the base constructor of the pin's kind, with every field
@@ -228,6 +240,9 @@ impl ShapePrinter {
         }
         if p.check != 0 {
             fields.push(format!("check: {}", p.check));
+        }
+        if p.count != 0 {
+            fields.push(format!("count: {}", p.count));
         }
         if p.abstol.iter().any(|a| a.to_bits() != 0) {
             fields.push(format!("abstol: [{}, {}]", Text::real(p.abstol[0]), Text::real(p.abstol[1])));

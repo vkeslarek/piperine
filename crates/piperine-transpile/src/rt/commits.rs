@@ -7,6 +7,7 @@
 
 use piperine_abi::device::{Fault, Flow, React};
 
+use super::array::ElementIndex;
 use super::pin::Carried;
 
 /// One commit of a reaction.
@@ -14,6 +15,10 @@ use super::pin::Carried;
 struct Entry {
     /// The statement it goes through.
     statement: u32,
+    /// The element of an array pin it commits to.
+    element: Option<u64>,
+    /// Where in the statement's declared range the bytes go.
+    offset: u32,
     /// The bytes it commits: a pin, a record's layout, or none for an arming.
     bytes: Vec<u8>,
     /// The delay, in seconds.
@@ -36,13 +41,26 @@ impl Commits {
 
     /// `carrier <- value after delay` through statement `statement`.
     pub fn commit<T: Carried>(&mut self, statement: u32, value: T, after: f64) {
-        self.entries.push(Entry { statement, bytes: value.pin(), after });
+        self.entries.push(Entry { statement, element: None, offset: 0, bytes: value.pin(), after });
+    }
+
+    /// `array[index] <- value after delay` through statement `statement`, `index` checked against the `count` elements
+    /// of `carrier`: an element outside them is a panic naming both (composite-values CV-25 AC 5).
+    pub fn commit_element<T: Carried>(&mut self, statement: u32, index: i128, count: u64, carrier: &str, value: T, after: f64) {
+        let element = Some(ElementIndex::of(index, count, carrier));
+        self.entries.push(Entry { statement, element, offset: 0, bytes: value.pin(), after });
+    }
+
+    /// `st.n <- value`, `word[i] <- value`: the value's bytes at `offset` inside the range statement `statement`
+    /// declares, the levels of a field or of one element of a value array.
+    pub fn commit_range<T: Carried>(&mut self, statement: u32, offset: u32, value: T, after: f64) {
+        self.entries.push(Entry { statement, element: None, offset, bytes: value.pin(), after });
     }
 
     /// A record through statement `statement`: `bytes`, the whole layout of its stream's `RECORD`
     /// pin, due at the next microstep (abi.md C5: a record is a commit to that pin).
     pub fn record(&mut self, statement: u32, bytes: &[u8]) {
-        self.entries.push(Entry { statement, bytes: bytes.to_vec(), after: 0.0 });
+        self.entries.push(Entry { statement, element: None, offset: 0, bytes: bytes.to_vec(), after: 0.0 });
     }
 
     /// Arms a timer through statement `statement`, a `REPLACE` statement on an event pin (abi.md
@@ -56,7 +74,7 @@ impl Commits {
             at if at == now => 0.0,
             _ => f64::INFINITY,
         };
-        self.entries.push(Entry { statement, bytes: Vec::new(), after });
+        self.entries.push(Entry { statement, element: None, offset: 0, bytes: Vec::new(), after });
     }
 
     /// `finish(value)` (§19 Resolution): the analysis ends when `value` is true.
@@ -74,7 +92,10 @@ impl Commits {
     /// Hands every commit to `cx`, in order; the first refusal is the fault.
     pub fn flush(self, cx: &mut React<'_>) -> Result<(), Fault> {
         for entry in &self.entries {
-            cx.commit(entry.statement, &entry.bytes, entry.after)?;
+            match entry.element {
+                Some(element) => cx.commit_element_at(entry.statement, element, entry.offset, &entry.bytes, entry.after)?,
+                None => cx.commit_at(entry.statement, entry.offset, &entry.bytes, entry.after)?,
+            }
         }
         Ok(())
     }
@@ -94,7 +115,7 @@ pub(crate) mod tests {
     pub(crate) fn react_with(f: impl FnOnce(&mut React<'_>)) -> Vec<(u32, Vec<u8>, f64)> {
         let mut made = Vec::new();
         {
-            let mut sink = |statement: u32, bytes: &[u8], after: f64| {
+            let mut sink = |statement: u32, _offset: u32, bytes: &[u8], after: f64| {
                 made.push((statement, bytes.to_vec(), after));
                 status::OK
             };
@@ -102,6 +123,31 @@ pub(crate) mod tests {
             f(&mut cx);
         }
         made
+    }
+
+    /// Commits flushed to a host that records element commits: `(statement, element, offset, bytes, after)`.
+    pub(crate) struct ElementsMade;
+
+    impl ElementsMade {
+        /// What `f` made, as the host saw it, element commits and plain ones alike.
+        pub(crate) fn flushed(f: impl FnOnce(&mut Commits)) -> Vec<(u32, Option<u64>, u32, Vec<u8>, f64)> {
+            let made = std::cell::RefCell::new(Vec::new());
+            {
+                let mut plain = |statement: u32, offset: u32, bytes: &[u8], after: f64| {
+                    made.borrow_mut().push((statement, None, offset, bytes.to_vec(), after));
+                    status::OK
+                };
+                let mut element = |statement: u32, element: u64, offset: u32, bytes: &[u8], after: f64| {
+                    made.borrow_mut().push((statement, Some(element), offset, bytes.to_vec(), after));
+                    status::OK
+                };
+                let mut cx = React::with_elements(vec![], &mut plain, &mut element);
+                let mut commits = Commits::new();
+                f(&mut commits);
+                commits.flush(&mut cx).expect("every commit accepted");
+            }
+            made.into_inner()
+        }
     }
 
     #[test]

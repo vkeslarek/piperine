@@ -74,11 +74,12 @@
 
 use piperine_abi::layout::{BIT, BYTE, F64, leaf_size};
 use piperine_abi::raw::{
-    DEFAULT, Field, GROUND, Layout, List, Statement, Str, global, leaf, pin_flag, role, statement_flag, watch,
+    DEFAULT, Field, GROUND, Layout, List, Statement, Str, global, leaf, part, pin_flag, role, statement_flag, watch,
 };
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
-use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, Stream, Target as Query, ValueType};
+use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Projection, Stmt, Stream, Target as Query, ValueType};
 
+use crate::array::ArrayPin;
 use crate::pin::PinLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
@@ -115,18 +116,29 @@ pub struct StatementPlan {
     pub min_after: Option<f64>,
     /// The statement is `REPLACE` (abi.md C3): a commit through it removes every pending one.
     pub replace: bool,
+    /// The byte range `(offset, len)` the statement commits inside the pin, or inside one element of an array pin
+    /// (`ArrayPin::range`); `None`: the whole pin, or the whole element.
+    pub range: Option<(u32, u32)>,
 }
 
 impl StatementPlan {
     /// The statement of a commit to `carrier` delayed by `after`.
     pub fn commit(ir: &Ir, carrier: u32, after: Option<ExprId>) -> StatementPlan {
-        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false }
+        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false, range: None }
+    }
+
+    /// The statement of a commit to `carrier` (an element of type `ty`, an array of `count` of them when `Some`) delayed
+    /// by `after`, through the steps `path` into its value: over the whole element, or over the byte range of the field
+    /// or value-array element the path names (abi.md §3).
+    pub fn commit_through(ir: &Ir, carrier: u32, ty: &ValueType, count: Option<u64>, after: Option<ExprId>, path: &[Projection]) -> StatementPlan {
+        let range = if count.is_some() || !path.is_empty() { ArrayPin::range(ir, ty, path) } else { None };
+        StatementPlan { range, ..Self::commit(ir, carrier, after) }
     }
 
     /// The statement of an emit site of stream `s`: the whole of its `RECORD` pin, due at the
     /// next microstep.
     pub fn record(s: u32) -> StatementPlan {
-        StatementPlan { target: Target::Record(s), min_after: None, replace: false }
+        StatementPlan { target: Target::Record(s), min_after: None, replace: false, range: None }
     }
 
     /// The statements of reaction `k` of `body`, one per commit and per emit site, in ABI order.
@@ -135,7 +147,11 @@ impl StatementPlan {
         body.reaction_statements(k)
             .into_iter()
             .filter_map(|id| match ir.stmt(id) {
-                Stmt::Commit { carrier, after, .. } => Some(StatementPlan::commit(ir, *carrier, *after)),
+                Stmt::Commit { carrier, after, target, .. } => {
+                    let held = body.carriers().get(*carrier as usize)?;
+                    let path = target.as_ref().map_or(&[][..], |t| t.path.as_slice());
+                    Some(StatementPlan::commit_through(ir, *carrier, &held.ty, held.count, *after, path))
+                }
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
                 Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } | Stmt::Trace { .. } => None,
             })
@@ -146,7 +162,7 @@ impl StatementPlan {
     /// timer fires.
     pub fn arm(body: Body<'_>, k: u32) -> StatementPlan {
         let guarded = body.events().get(k as usize).is_some_and(|e| e.guard.is_some());
-        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true }
+        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true, range: None }
     }
 
     /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
@@ -368,7 +384,7 @@ impl Digital {
                 panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
             };
             let init = match c.init {
-                Some(value) => PinLayout::bytes_in(body.ir(), &c.ty, value).unwrap_or_else(|| {
+                Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
                 None => Vec::new(),
@@ -377,7 +393,7 @@ impl Digital {
             let flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             let fields = layout.fields();
             let abi = layout.layout(&fields);
-            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, &abi) });
+            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, count: c.count.unwrap_or(0), ..PinSpec::discrete(&c.name, pin_role, &abi) });
             debug_assert_eq!(pin, first + i as u32);
         }
         first
@@ -586,6 +602,23 @@ impl Digital {
         })
     }
 
+    /// Adds the `PORT` pin of each drive of one element of an array carrier, `drive:<carrier>[<element>]`, in the element's
+    /// layout; `None` for every other drive. The netlist binds it to that element of the array net (`Port::Window`).
+    pub(crate) fn element_drive_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<u32>> {
+        body.drives()
+            .iter()
+            .map(|d| {
+                let element = d.element.filter(|_| d.after.is_none())?;
+                let carrier = body.carriers().get(d.carrier as usize)?;
+                let layout = PinLayout::in_ir(body.ir(), &carrier.ty)?;
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                let name = format!("drive:{}[{element}]", carrier.name);
+                Some(s.pin(PinSpec { origin: &Self::at(&d.origin), ..PinSpec::discrete(&name, role::PORT, &abi) }))
+            })
+            .collect()
+    }
+
     /// Adds the `GLOBAL` `SETTLE` pin when `body` has a `settle` event (§13 rule 17): the pin the
     /// engine fires in the settle phase (§15 step 4), read by the event function of each
     /// `settle` event (`Source::Settle`).
@@ -659,8 +692,12 @@ impl Digital {
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Drive(k));
-            let write = if d.after.is_some() { Target::Delayed(k) } else { Target::Carrier(d.carrier) };
-            let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
+            let write = match (d.after.is_some(), d.element.is_some()) {
+                (true, _) => Target::Delayed(k),
+                (false, true) => Target::ElementDrive(k),
+                (false, false) => Target::Carrier(d.carrier),
+            };
+            let name = Self::drive_name(body, k);
             add(s, name, &d.origin, BodyPlan::function(Mode::Drive(k), &set, vec![(write, None)]));
         }
         for (k, e) in body.events().iter().enumerate() {
@@ -684,6 +721,10 @@ impl Digital {
                 EventSource::Settle => {
                     set.0.insert(Source::Settle);
                 }
+                // `lines[k].changed()` (§13 rule 9): the element's value and `CHANGED` byte, gated by the guard
+                EventSource::ElementChanged { carrier, element } => {
+                    set.0.extend([Source::Element(carrier, element, part::VALUE), Source::Element(carrier, element, part::CHANGED)]);
+                }
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }
@@ -706,6 +747,15 @@ impl Digital {
             }
         }
         functions
+    }
+
+    /// The name of drive `k`'s function: `drive:<carrier>`, `drive:<carrier>[<element>]` for one element.
+    pub fn drive_name(body: Body<'_>, k: u32) -> String {
+        let Some(drive) = body.drives().get(k as usize) else { return format!("drive:{k}") };
+        match drive.element {
+            Some(element) => format!("drive:{}[{element}]", Self::carrier_name(body, drive.carrier)),
+            None => format!("drive:{}", Self::carrier_name(body, drive.carrier)),
+        }
     }
 
     /// What reaction `k` of `body` reads: its own dependency set.
@@ -790,7 +840,8 @@ impl Digital {
                 if st.replace {
                     flags |= statement_flag::REPLACE;
                 }
-                Statement { pin, offset: 0, len, flags, min_after }
+                let (offset, len) = st.range.unwrap_or((0, len));
+                Statement { pin, offset, len, flags, min_after }
             })
             .collect();
         s.reaction(ReactionSpec {
@@ -799,6 +850,7 @@ impl Digital {
             on: plan.on.clone(),
             reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, stims, *r)).collect(),
             writes,
+            elements: BodyPlan::elements(&plan.reads),
             ..ReactionSpec::default()
         });
     }
