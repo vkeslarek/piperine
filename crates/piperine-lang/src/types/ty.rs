@@ -73,6 +73,15 @@ pub struct Nominal {
 }
 
 impl Nominal {
+    /// The generic arguments as written, `<f64, 4>`, or nothing for a type that has none.
+    pub fn arguments_name(&self, design: &Design) -> String {
+        if self.arguments.is_empty() {
+            return String::new();
+        }
+        let names: Vec<String> = self.arguments.iter().map(|argument| argument.name(design)).collect();
+        format!("<{}>", names.join(", "))
+    }
+
     /// The type `decl` names with no generic argument.
     pub fn plain(decl: DeclId) -> Nominal {
         Nominal { decl, arguments: Vec::new() }
@@ -143,6 +152,18 @@ pub enum GenericValue {
     Function(DeclId),
     /// A closure written for an `Fn` bound, by its expression; every closure is its own type.
     Closure(ExprId),
+}
+
+impl GenericValue {
+    /// The argument as a model author writes it, for messages.
+    pub fn name(&self, design: &Design) -> String {
+        match self {
+            GenericValue::Type(ty) => ty.source_name(design),
+            GenericValue::Const(term) => Length::Generic(term.clone()).name(design),
+            GenericValue::Function(function) => design.decl_data(*function).name.as_ref().map_or_else(|| "fn".to_string(), |n| n.text.clone()),
+            GenericValue::Closure(_) => "closure".to_string(),
+        }
+    }
 }
 
 /// A const generic argument as the checker knows it: folded where it can be, else a name or an
@@ -216,6 +237,18 @@ impl Ty {
         }
     }
 
+    /// The type as a path is written where it is an argument: a struct or an enum bare, with its
+    /// own arguments (`Pair<f64>`); any other type as [`Ty::name`] gives it.
+    pub fn source_name(&self, design: &Design) -> String {
+        match self {
+            Ty::Struct(nominal) | Ty::Enum(nominal) => match &design.decl_data(nominal.decl).name {
+                Some(n) => format!("{}{}", n.text, nominal.arguments_name(design)),
+                None => self.name(design),
+            },
+            other => other.name(design),
+        }
+    }
+
     /// The type as a model author writes it, for messages.
     pub fn name(&self, design: &Design) -> String {
         match self {
@@ -233,10 +266,7 @@ impl Ty {
             }
             Ty::UInt(n) => format!("u{n}"),
             Ty::Int(n) => format!("i{n}"),
-            Ty::Enum(Nominal { decl: e, .. }) => match &design.decl_data(*e).name {
-                Some(n) => n.text.clone(),
-                None => "enum".to_string(),
-            },
+            Ty::Enum(_) => self.source_name(design),
             Ty::Option(inner) => format!("Option<{}>", inner.name(design)),
             Ty::Tuple(items) => {
                 let names: Vec<String> = items.iter().map(|t| t.name(design)).collect();
@@ -254,8 +284,8 @@ impl Ty {
             Ty::Event => "Event".to_string(),
             Ty::Str => "str".to_string(),
             Ty::Never => "!".to_string(),
-            Ty::Struct(Nominal { decl, .. }) => match &design.decl_data(*decl).name {
-                Some(n) => format!("struct `{}`", n.text),
+            Ty::Struct(nominal) => match &design.decl_data(nominal.decl).name {
+                Some(_) => format!("struct `{}`", self.source_name(design)),
                 None => "struct".to_string(),
             },
             Ty::Array(element, length) => format!("[{}; {}]", element.name(design), length.name(design)),

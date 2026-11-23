@@ -10,7 +10,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
 
 use super::check::Checker;
-use super::{Nominal, Ty};
+use super::{ConstTerm, Length, Nominal, Ty};
 
 /// One typed field of a struct or of an enum variant, in declaration order.
 #[derive(Debug, Clone, PartialEq)]
@@ -135,11 +135,7 @@ impl Checker<'_> {
     /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`.
     pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
-        let Some(length) = self.fold_length(len) else {
-            if self.names_generic_parameter(len) {
-                self.unsupported(file, span, "an array whose length is a generic parameter");
-                return None;
-            }
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)) else {
             let what = self.expression_name(len);
             self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
             return None;
@@ -149,7 +145,17 @@ impl Checker<'_> {
             self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
             return None;
         }
-        Some(Ty::array(element, length))
+        Some(Ty::Array(Box::new(element), length))
+    }
+
+    /// The length `[T; N]` or `[T; N + 1]` writes when it names const parameters (§3.8.3, D14): a
+    /// generic length, folded when the item is instantiated; `None` for any other expression.
+    fn generic_length(&self, len: ExprId) -> Option<Length> {
+        match self.generic_parameter_of(len) {
+            Some(parameter) => Some(Length::Generic(ConstTerm::Param(parameter))),
+            None if self.mentions_generic_parameter(len) => Some(Length::Generic(ConstTerm::Expr(len))),
+            None => None,
+        }
     }
 
     /// The file and span of a type node.
@@ -416,16 +422,6 @@ impl Checker<'_> {
                 self.mismatch_text(file, span, "an integer type", &other.name(self.design));
             }
             None => {}
-        }
-    }
-
-    /// Whether the const expression `expr` is the name of a generic parameter: `[T; N]` waits on
-    /// `generics`, it is not a length the checker fails to fold.
-    fn names_generic_parameter(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(_))),
-            ExprKind::Paren(inner) => self.names_generic_parameter(*inner),
-            _ => false,
         }
     }
 

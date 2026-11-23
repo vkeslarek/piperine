@@ -356,20 +356,10 @@ impl<'d> Checker<'d> {
 
     /// Whether the path of a struct or enum type writes no generic argument where the declaration `decl`
     /// has no generic parameter: `Pair<4>` over a plain `struct Pair` is `P0001` (it would be read as `Pair`,
-    /// silently ignoring `4`). A declaration that is generic is refused by its own type check.
+    /// silently ignoring `4`). A generic declaration is read by `generic_nominal`.
     fn writes_no_arguments_to_a_plain_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> bool {
         let written = self.design.path_node(path).segments.last().is_some_and(|segment| segment.args.is_some());
-        if self.design.decl_data(decl).generics_span.is_some() {
-            // a generic declaration: its list is held to §3.8 and the use to the list's length
-            // (`E0187`); the declaration itself is refused by its own type check until T17
-            self.generic_signature(decl);
-            let count = match self.design.path_node(path).segments.last().and_then(|segment| segment.args.clone()) {
-                Some(GenericArgsNode::Angle { args, .. }) => args.len(),
-                _ => 0,
-            };
-            return self.generic_argument_count(decl, count, file, span);
-        }
-        if !written {
+        if !written || self.design.decl_data(decl).generics_span.is_some() {
             return true;
         }
         let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -402,7 +392,11 @@ impl<'d> Checker<'d> {
                 },
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values && NatureRules::of(self.design, d).one_driver => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
+                // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_nominal(*path, d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && !self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span) => None,
+                // §3.8.2: a type or nature parameter is a type of the generic body, opaque
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
                 // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.

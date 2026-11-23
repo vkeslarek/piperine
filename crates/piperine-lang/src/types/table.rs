@@ -7,7 +7,17 @@ use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, 
 
 use super::check;
 use super::model::ModelCheck;
-use super::{Intrinsic, Ty};
+use super::{GenericValue, Intrinsic, Nominal, Ty};
+
+/// One instantiation of a generic item: the item and the arguments it is given, in the order of its
+/// parameters (§3.8.10: two uses with equal arguments are one instance).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Instantiation {
+    /// The generic struct, enum or function.
+    pub item: DeclId,
+    /// The argument for each parameter, defaults filled in.
+    pub arguments: Vec<GenericValue>,
+}
 
 /// What a `Deferred` method call of the reachable set resolves to: a row of the Appendix H
 /// catalogue.
@@ -350,6 +360,15 @@ impl<'d> Types<'d> {
     /// to it, or `None` for an optional parameter left out (§3.2).
     pub fn binding(&self, expr: ExprId) -> Option<&[Option<ExprId>]> {
         self.bindings.get(&expr).map(Vec::as_slice)
+    }
+
+    /// The instantiation a type node of the reachable set writes when it is a use of a generic
+    /// struct or enum (`Pair<f64>`); `None` for any other type.
+    pub fn written_instantiation(&self, ty: TypeId) -> Option<Instantiation> {
+        match self.written.get(&ty)? {
+            Ty::Struct(Nominal { decl, arguments }) | Ty::Enum(Nominal { decl, arguments }) if !arguments.is_empty() => Some(Instantiation { item: *decl, arguments: arguments.clone() }),
+            _ => None,
+        }
     }
 
     /// The type a type node of the reachable set writes (a signature, an annotation, a cast).

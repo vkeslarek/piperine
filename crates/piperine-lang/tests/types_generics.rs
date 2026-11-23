@@ -5,8 +5,8 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic};
-use piperine_lang::types::{Bound, ConstTerm, ConstType, GenericSignature, GenericValue, Length, ParameterDefault, ParameterKind, Ty, Types};
+use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, TypeId};
+use piperine_lang::types::{Bound, ConstTerm, ConstType, GenericSignature, GenericValue, Length, Instantiation, Nominal, ParameterDefault, ParameterKind, Substitution, Ty, Types};
 
 /// The natures every source below places in the open.
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
@@ -115,8 +115,8 @@ fn a_wrong_number_of_generic_arguments_is_e0187() {
     assert_eq!(codes_of(&found), ["E0187", "E0187"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("`Pair` takes 1 to 2 generic arguments, found 3"), "{:?}", found[0]);
     assert!(found[1].diagnostic.message.contains("found 0"), "{:?}", found[1]);
-    let right = model_errors("struct Pair<T, U = T> { a: T, b: U }\nfn ok(p: Pair<f64>) -> f64 { 1.0 }\nfn also(p: Pair<f64, u8>) -> f64 { 1.0 }\n");
-    assert!(!codes_of(&right).contains(&"E0187".to_string()), "a default may be left out: {right:?}");
+    let right = support::build(&format!("{HEAD}struct Pair<T, U = T> {{ a: T, b: U }}\nfn ok(p: Pair<f64>) -> f64 {{ 1.0 }}\nfn also(p: Pair<f64, u8>) -> f64 {{ 1.0 }}\n"));
+    assert_eq!(Types::check_model(&right), Ok(()), "a default may be left out");
 }
 
 #[test]
@@ -131,4 +131,70 @@ fn a_parameter_list_that_breaks_the_rules_of_3_8_is_refused() {
     assert!(constant[0].diagnostic.message.contains("neither an integer nor `bool`"), "{:?}", constant[0]);
     let bound = model_errors("struct Plain { a: f64 }\nstruct Bounded<T: Plain> { a: T }\nfn use_bounded(p: Bounded<f64>) -> f64 { 1.0 }\n");
     assert_eq!(codes_of(&bound)[0], "E0161", "{bound:?}");
+}
+
+#[test]
+fn written_generic_types_lower_with_their_arguments() {
+    // §3.8.5 to §3.8.7: a type argument, a const argument, a default filled from an earlier parameter
+    // (`U = T`) and a use nested in another are the types the message names; a wrong kind of argument
+    // is `E0187`
+    let items = "struct Pair<T, U = T> { a: T, b: U }\nenum Maybe<T> { No, Yes(T) }\nstruct Delay<T, const N: usize> { v: T }\n";
+    let named = |signature: &str| {
+        let found = model_errors(&format!("{items}fn f({signature}) -> f64 {{ p }}\n"));
+        assert_eq!(codes_of(&found), ["E0180"], "{signature}: {found:?}");
+        found[0].diagnostic.message.clone()
+    };
+    assert!(named("p: Pair<f64>").contains("Pair<f64, f64>"), "the default U = T is f64");
+    assert!(named("p: Pair<u8, bool>").contains("Pair<u8, bool>"));
+    assert!(named("p: Maybe<Pair<f64>>").contains("Maybe<Pair<f64, f64>>"), "a use nested in another");
+    assert!(named("p: Delay<u8, 4>").contains("Delay<u8, 4>"), "a const argument");
+    assert!(named("p: Delay<bool, { 2 + 2 }>").contains("Delay<bool, 4>"), "a constant expression is folded");
+    let kinds = model_errors(&format!("{items}fn g(a: Delay<u8, bool>, b: Pair<4, f64>) -> f64 {{ 1.0 }}\n"));
+    assert!(codes_of(&kinds).iter().all(|code| code == "E0187"), "{kinds:?}");
+    assert!(kinds[0].diagnostic.message.contains("takes a constant here"), "{:?}", kinds[0]);
+}
+
+#[test]
+fn a_substitution_replaces_parameters_through_every_part_of_a_type() {
+    // §3.8.9: a parameter is replaced in an argument, a tuple, an option, a function type and an
+    // array length; composing applies the second substitution to what the first gave
+    let design = support::build("struct Pair<T, U = T> { a: T, b: U }\nfn f<T, U, const N: usize>(x: T) -> T { x }\n");
+    let declarations = Declarations { design: &design };
+    let (t, u, n) = (declarations.parameter("T"), declarations.parameter("U"), declarations.parameter("N"));
+    let pair = declarations.item("Pair");
+    let generic = Ty::Struct(Nominal { decl: pair, arguments: vec![GenericValue::Type(Ty::Param(t)), GenericValue::Type(Ty::Option(Box::new(Ty::Param(u))))] });
+    let array = Ty::Array(Box::new(generic.clone()), Length::Generic(ConstTerm::Param(n)));
+    let mut inner = Substitution::new();
+    inner.bind(t, GenericValue::Type(Ty::UInt(8)));
+    inner.bind(n, GenericValue::Const(ConstTerm::Value(4)));
+    let once = inner.apply(&array);
+    let expected_pair = Ty::Struct(Nominal { decl: pair, arguments: vec![GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::Option(Box::new(Ty::Param(u))))] });
+    assert_eq!(once, Ty::Array(Box::new(expected_pair), Length::Fixed(4)), "a generic length that becomes a number is fixed");
+    let mut outer = Substitution::new();
+    outer.bind(u, GenericValue::Type(Ty::Bool));
+    let both = inner.compose(&outer);
+    assert_eq!(both.apply(&array).name(&design), "[struct `Pair<u8, Option<bool>>`; 4]");
+    assert_eq!(outer.apply(&Ty::Fn(vec![Ty::Param(u), Ty::Tuple(vec![Ty::Param(t)])], Box::new(Ty::Param(u)))), Ty::Fn(vec![Ty::Bool, Ty::Tuple(vec![Ty::Param(t)])], Box::new(Ty::Bool)));
+    assert!(Substitution::new().is_empty() && !both.is_empty());
+    let signature = GenericSignature::of(&design, pair);
+    let given = Substitution::of(&signature, &[GenericValue::Type(Ty::F64)]);
+    assert_eq!(given.get(t), Some(&GenericValue::Type(Ty::F64)));
+    assert_eq!(given.get(u), None, "a parameter with no argument stays unbound");
+}
+
+#[test]
+fn a_written_use_is_recorded_as_an_instantiation() {
+    // GN-06: `Types::written_instantiation` gives the generic item and its arguments for a type node
+    // that writes a use of it, and nothing for any other
+    let src = "struct Pair<T, U = T> { a: T, b: U }\nmodule Top() { }\nanalog for Top { let p: Pair<u8>; let q: f64; }";
+    let design = support::build(src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    let declared: Vec<_> = (0..design.decl_count()).map(|i| DeclId(i as u32)).filter(|d| matches!(design.decl_data(*d).kind, DeclKind::Binding(_))).collect();
+    assert_eq!(declared.len(), 2, "two bindings");
+    let pair = (0..design.decl_count()).map(|i| DeclId(i as u32)).find(|d| matches!(design.decl_data(*d).kind, DeclKind::Struct(_))).expect("Pair");
+    let ty = types.local(declared[0]).expect("p has a type");
+    assert_eq!(*ty, Ty::Struct(Nominal { decl: pair, arguments: vec![GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::UInt(8))] }));
+    assert_eq!(types.local(declared[1]), Some(&Ty::F64));
+    let uses: Vec<Instantiation> = (0..design.type_count()).filter_map(|i| types.written_instantiation(TypeId(i as u32))).collect();
+    assert_eq!(uses, [Instantiation { item: pair, arguments: vec![GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::UInt(8))] }], "the one use of a generic type, defaults filled");
 }

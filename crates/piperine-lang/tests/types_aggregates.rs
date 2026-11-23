@@ -12,7 +12,7 @@ mod checked;
 
 use checked::CheckedSource;
 
-use piperine_lang::types::{Ty, Types};
+use piperine_lang::types::{GenericValue, Nominal, Ty, Types};
 
 #[test]
 fn every_struct_form_is_a_value_type() {
@@ -34,8 +34,11 @@ fn every_struct_form_is_a_value_type() {
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "v"), Ty::array(Ty::UInt(8), 3));
     // §1.4.8: tuples and arrays are equal by their parts, structs by their declaration
     CheckedSource::assert_clean(&CheckedSource::source("fn same(a: (f64, [u8; 2])) -> (f64, [u8; 2]) { a }", "let h = same;"));
-    // a generic struct stays outside the subset (`generics`)
-    CheckedSource::assert_refused(&CheckedSource::source("struct G<T> { t: f64 }\nfn f(g: G<f64>) {}", "let h = f;"), "P0001", "generic struct `G`");
+    // §3.8: a generic struct is written with its arguments, and the type holds them (generics T17, which
+    // replaces the `P0001` this line pinned)
+    let src = CheckedSource::source("struct G<T> { t: f64 }\nfn f(g: G<f64>) {}", "let h = f;");
+    let generic = Ty::Struct(Nominal { decl: CheckedSource::type_decl(&src, "G"), arguments: vec![GenericValue::Type(Ty::F64)] });
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "g"), generic);
     // §1.2.5: the length of an array type is a constant
     CheckedSource::assert_refused(&CheckedSource::source("const F: f64 = 1.0;\nfn f(v: [u8; F]) {}", "let h = f;"), "E0188", "constant");
 }
