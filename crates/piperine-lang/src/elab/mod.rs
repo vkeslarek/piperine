@@ -26,7 +26,7 @@ mod event_reads;
 mod events;
 mod exits;
 mod files;
-mod table_model; mod tables;
+mod override_text; mod table_model; mod tables;
 mod elaborator;
 mod analog;
 mod functions;
@@ -57,4 +57,4 @@ pub use consts::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree, Exit
 pub use {files::{FileFault, IncludedFiles}, tables::{HexText, TableFault, TableText}};
 pub use elaborator::Elaborator;
 pub use host_sources::HostSourceParam;
-pub use structural::Overrides;
+pub use {override_text::LiteralText, structural::Overrides};

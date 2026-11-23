@@ -314,3 +314,19 @@ fn option_param_methods_read_the_bound_case() {
     assert!(halves >= 2, "the `Option` param is read as its two halves, the presence and the payload: {halves}");
     assert!(ir.expressions().any(|e| matches!(e, Expr::Param(0))), "through the param pin");
 }
+
+#[test]
+fn an_option_param_bound_over_the_parents_param_reads_some_of_it() {
+    // PI-03 AC 2 (§3.2.3), F21: a placement binds an `Option<f64>` param to an expression over the parent's params, plain (`Some` of it
+    // by §3.2.3) or written as `Some(expr)`: each instance reads `Some` of the parent's value.
+    for binding in ["{ rs: rt }", "{ rs: Some(rt) }", "{ rs: rt * 2.0 }"] {
+        let src = format!(
+            "module Load(p: Electrical) {{ rs: Option<f64>; }}\nanalog for Load {{ i(p, gnd) +> v(p) / rs.unwrap_or(1.0); }}\n\
+             module Mid(p: Electrical) {{ rt: f64 = 3.0; let l = Load(p) {binding}; }}\nmodule Top() {{ signal n: Electrical; let m = Mid(n); }}"
+        );
+        let ir = Elab::ir(&src, "Top");
+        let params: Vec<Constant> = ir.instance_at("Top.m.l").expect("the child").params().iter().copied().collect();
+        let wanted = if binding.contains("2.0") { 6.0 } else { 3.0 };
+        assert_eq!(Placed::aggregate(&ir, &params[0]), (None, vec![Constant::Real(Real::new(wanted))]), "{binding}");
+    }
+}

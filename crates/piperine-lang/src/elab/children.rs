@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal};
+use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
@@ -296,13 +296,9 @@ impl Elaboration<'_, '_> {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child
                 // shows the expression, the instance table the constant of each instance.
-                Err(ConstFault::UnboundParam { .. }) if self.types.implicit_some(field.value) => {
-                    self.unsupported(file, self.design.expr_node(field.value).span, "a value over the parent's params bound to an `Option` param without `Some`: write `Some(..)`");
-                    ok = false;
-                }
                 Err(ConstFault::UnboundParam { .. }) => {
                     let mut sub = Self::sub_scope(scope);
-                    match self.lower_expr(&mut sub, field.value) {
+                    match self.lower_param_expression(&mut sub, field.value) {
                         Some(value) if sub.locals.is_empty() => {
                             self.structure.child_params.push((child, index as u32, ChildValue::Expr(value)));
                             out.push((index as u32, None, field.value));
@@ -321,5 +317,26 @@ impl Elaboration<'_, '_> {
             }
         }
         ok.then_some(out)
+    }
+
+    /// The value `expr` gives a param of the child when it reads the parent's params (§3.2.3): the expression itself, and for an
+    /// `Option` param a value of `T`, or `Some(value)` written out, as `Some` of it (`OptionPack`). `None` after a diagnostic.
+    fn lower_param_expression(&mut self, scope: &mut Scope, expr: ExprId) -> Option<piperine_ir::ExprId> {
+        let payload = if self.types.implicit_some(expr) {
+            Some(expr)
+        } else if self.is_some_call(expr) {
+            match &self.design.expr_node(expr).kind {
+                ExprKind::Call { args, .. } => args.first().map(|arg| arg.value),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let Some(payload) = payload else { return self.lower_expr(scope, expr) };
+        let value = self.lower_expr(scope, payload)?;
+        let origin = self.expr_origin(expr);
+        let is = self.emit(piperine_ir::Expr::Bool(true), ValueType::Bool, origin.clone());
+        let held = self.type_of(value);
+        Some(self.emit(piperine_ir::Expr::OptionPack { is, value }, ValueType::Option(Box::new(held)), origin))
     }
 }
