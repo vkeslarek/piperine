@@ -14,6 +14,9 @@ These block design. Each has options and a recommendation; none is decided.
 | Q4 | `f16`, `f128` and integers wider than 64 bits. `ir-rust` RS-Q6 refused them by name under the R4 delegation: the ABI's leaves end at 64 bits and stable Rust has no `f16` or `f128`. §1 rule 5 allows `UInt<N>` for any const `N >= 1` | Integers: (a) any width, as `u64` limbs in the runtime `rt`, carried as a `U64` array field (no new leaf) plus metadata that the host reads it as one integer; (b) up to 128 bits through Rust's `u128`/`i128`, refused by name above. `f16`: (a) exact, stored as its bits, every operation computed in `f32` and rounded to `f16` (exact for `+ - * /` and `sqrt`); (b) refused by name. `f128`: (a) a software float in `rt` for every operation and every H.2 method, correctly rounded; (b) a software float for arithmetic, comparisons, `as` conversions, `sqrt`, `abs`, `mul_add`, `min`, `max`, `clamp`, the classification methods; the transcendental H.2 methods on `f128` (`sin`, `exp`, `ln`, `powf` and the rest) stay refused by name; (c) refused by name, and §1 drops `f128` (a spec departure) | Integers (a); `f16` (a); `f128` (b). The transcendental `f128` methods are a large numeric library that generated code may not link (MD-63 item 1: `piperine-abi` and `rt` only). Choose `f128` (a) to leave no residue; it is then its own phase of about 15 tasks |
 | Q5 | A loop that never ends, or a recursion that never ends, inside a reaction or a function. Rust has no bound: the loop hangs the run, the recursion overflows the stack and kills the process | (a) **As Rust.** No bound. (b) **A bound, as a panic.** More than 16 777 216 (2^24) iterations of one loop in one evaluation, or a call depth over 1 024, is a panic (§1 rule 11): the analysis fails naming the construct, the instance and the instant. A spec sentence is added to §1 rule 11 | (b). A simulator must not hang or abort on a model's bug. Both bounds are far above any model in the corpus; the numbers are the planner's and the user may change them |
 
+
+**Q4 resolved (user, 2026-11-23, answered directly; supersedes the blanket acceptance of its recommendation above):** integers option (a), any width as `u64` limbs in `rt`, carried as a `U64` array field plus metadata so the host reads one integer; `f16` option (a), exact, stored as bits, operations in `f32` rounded to `f16`; `f128` option (a) COMPLETE, a correctly rounded software float in `rt` for every operation and every H.2 method (transcendentals included), no residue in `GAPS.md`. MD-63 item 1 holds: the library is embedded as runtime source, generated code links no other crate (`design-d.md`, QD2).
+
 ## Problem Statement
 
 MSL's value world is Rust's (§0.4), but the type checker accepts only `bool`, `UInt<N>`/`Int<N>` up to 64 bits, `f64`, unit enums and `Option` (`GAPS.md` §1). Structs, tuples beyond `let (a, b) = (x, y);`, arrays, slices, enums with a payload, `let mut`, loops, `return`, most patterns, closures, function values, recursion, `f32` and the other float widths are refused with `P0001` (`GAPS.md` L1 to L6, L9, L10, L13, L16, L24). A model that keeps a table, a shift register, a state with data, or a loop over coefficients cannot be written, and the stdlib's own filters (`zi_*`, `laplace_*`), `normal` and the monitors are refused because of it (L58). The user asked for every gap closed, the ones that limit the language's expressiveness first.
@@ -36,7 +39,7 @@ The feature is four sub-features, each designed and tasked on its own (`design-<
 | A | Control and functions | L5, L6, L9, L10 | CV-01 to CV-08 | M, about 22 tasks |
 | B | Aggregates | L1, L2, L3, L4 (all but generic enums), L16 (H.5 to H.7, `normal`) | CV-09 to CV-22 | L, about 38 tasks |
 | C | Arrays of carriers | L24 | CV-23 to CV-28 | M, about 20 tasks |
-| D | Number widths | L13 | CV-29 to CV-33 | M, about 15 tasks (30 with `f128` option (a)) |
+| D | Number widths | L13 | CV-29 to CV-33 | L, 36 tasks with `f128` option (a), chosen (`design-d.md`, `tasks-d.md`: T91 to T126) |
 | all | Cross-cutting | — | CV-34 to CV-37 | carried by each phase |
 
 Total: L, about 95 tasks (110 with `f128` (a)).
@@ -76,7 +79,7 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | Representation in the IR and on the ABI | open: Q1 | The central question of the feature | n - user |
 | Host view of composites | open: Q2 | User-facing | n - user |
 | Sparse carrier arrays | open: Q3 | §5.1.8 or a departure | n - user |
-| `f16`, `f128`, wide integers | open: Q4 | Supersedes or keeps RS-Q6 | n - user |
+| `f16`, `f128`, wide integers | Q4 resolved 2026-11-23: integers (a), `f16` (a), `f128` (a) complete | Supersedes RS-Q6 | y - user |
 | Runaway loops and recursion | open: Q5 | A departure from Rust if bounded | n - user |
 | What "as Rust" means for a test | a test's expected value is the same expression evaluated by Rust in the test itself, or the spec's own value where the spec gives one | The interpreter is frozen (R1), so it is no oracle for these forms (R2) | n - planner |
 | Backend | the Rust backend only; the interpreter refuses by name | R1, R2 | y - R1 |
@@ -390,7 +393,7 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | L6 | match guards, range patterns, bindings in or-patterns, `if let` beyond `Some(p)` | CV-04 |
 | L9 | closures beyond `limit`'s argument; a function name as a value | CV-05, CV-06; a capturing closure passed to a user function needs a `Fn` bound: `generics` GN-01 |
 | L10 | recursion | CV-07 |
-| L13 | `f16`, `f32`, `f128`, integers over 64 bits | CV-29 to CV-33. Residue only if the user picks a refusing option of Q4 (`f128` (b): the transcendental methods on `f128` stay refused by name; (c): `f128` refused and §1 amended) |
+| L13 | `f16`, `f32`, `f128`, integers over 64 bits | CV-29 to CV-33, no residue (Q4 (a) for every type, 2026-11-23) |
 | L16 | the rows of H.5, H.6, H.7 | CV-15 |
 | L16 | `normal` | CV-16 |
 | L24 | arrays of carriers; element and field commits and definitions | CV-23 to CV-28 |
@@ -430,11 +433,11 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | CV-26 | P1: arrays of carriers (C) | - | Pending |
 | CV-27 | P1: arrays of carriers (C) | - | Pending |
 | CV-28 | P1: arrays of carriers (C) | - | Pending |
-| CV-29 | P2: number widths (D) | - | Pending |
-| CV-30 | P2: number widths (D) | - | Pending |
-| CV-31 | P2: number widths (D) | - | Pending |
-| CV-32 | P2: number widths (D) | - | Pending |
-| CV-33 | P2: number widths (D) | - | Pending |
+| CV-29 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
+| CV-30 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
+| CV-31 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
+| CV-32 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
+| CV-33 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
 | CV-34 | P1: every phase keeps the rest intact | - | Pending |
 | CV-35 | P1: every phase keeps the rest intact | - | Pending |
 | CV-36 | P1: every phase keeps the rest intact | - | Pending |

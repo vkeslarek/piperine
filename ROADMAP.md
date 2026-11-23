@@ -46,7 +46,8 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | 7 | `resolved-nets` | B3 and later, re-planned for `Resolve<X, V>` as a capability of a nature: `Strength` (five levels), `Driven`, `strongest`, `Pullup`, `Pulldown`, `Keeper`, `Tribuf`, `Tgate`, `Bidir`; `E0220`, `E0225`, `E0511` (L21, L58) | generics, explicit-unknowns B |
 | 8 | `resolved-nets-bundles` | B2 and later: connecting and resolving bundles (L25) | resolved-nets |
 | 9 | `code-clarity` | Readability and structure refactor under the seven cleanliness rules, CC-11 included (no language special cases: builtins declared in the MSL prelude), and the split of the three oversized `pom/{resolve,reflect,lower}/mod.rs`; a Fable inventory first | items 1–8 |
-| 10 | `spec-closure` (**item 13**) | Fable closure of spec ↔ implementation; G1, G2, G4, G5, X1, X2, H13 and the discrepancies logged during the run | code-clarity, and **no Book listing still refused by a feature** (below) |
+| 10 | `composite-values` phase D | Number widths (L13, CV-29 to CV-33): `f32` as Rust's, `f16` and `f128` correctly rounded in every operation and H.2 method (user Q4 (a), 2026-11-23), integers of any width; the leaf crate `piperine-numbers` embedded as runtime source. Planned: `design-d.md`, `tasks-d.md` (T91 to T126, batches D1 to D6); D1 to D3 may run now, D4 waits for phase C on `main` | composite-values phase C (D4 to D6 only) |
+| 11 | `spec-closure` (**item 13**) | Fable closure of spec ↔ implementation; G1, G2, G4, G5, X1, X2, H13 and the discrepancies logged during the run | code-clarity, composite-values phase D, and **no Book listing still refused by a feature** (below) |
 
 `unknown-semantics-per-level` is **dropped**: explicit unknowns replace per-level flags (user, 2026-11-21).
 
