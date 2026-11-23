@@ -1897,4 +1897,4 @@ Execution is strictly sequential - there is no intra-phase parallelism. A single
 | B9 | 13 | T52 to T55 | |
 | B10 | 14, 15 | T56 to T63 | closes phase B; `generics` A starts on the merged tree |
 
-**Later batch boundary (not tasked here):** phase C (CV-23 to CV-28, ROADMAP item 11) runs after `generics` A–B, from `design-c.md`/`tasks-c.md` (design.md "Phase C").
+**Later batch boundary (not tasked here):** phase C (CV-23 to CV-28, ROADMAP item 11) runs after `generics` A–B, from `design-c.md`/`tasks-c.md` (design.md "Phase C"). Planned 2026-11-23: `tasks-c.md`, T64 to T90 in batches C1 to C4, checks C111 to C145.
