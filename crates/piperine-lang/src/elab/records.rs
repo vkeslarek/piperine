@@ -23,6 +23,12 @@ impl Elaboration<'_, '_> {
         let expr = self.peel_parens(expr);
         let node = self.design.expr_node(expr).clone();
         match &node.kind {
+            // SPEC_DEVIATION: an `emit!` in `analog` is refused until T37 lowers it to a trace site.
+            // Reason: the checker accepts it from T23 on (AO-09); a refusal here keeps the IR free of an emit outside a reaction.
+            ExprKind::Emit { .. } if scope.analog => {
+                self.unsupported(scope.file, node.span, "an `emit!` in an `analog` block");
+                Some(false)
+            }
             ExprKind::Emit { stream, fields } => Some(self.lower_emit(scope, out, stream, fields)),
             ExprKind::Call { args, .. } => match self.types.callee(expr) {
                 Some(Callee::Function(function)) if self.is_inlined(function) => {

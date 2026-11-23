@@ -673,8 +673,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `delay_noise_and_simparam_type_and_wait_for_lowering` and `a_site_reached_from_analog_writing_sim_or_checks_is_e0603` pass
-- [ ] Gate check passes: `Run typeops`, `Run subset`
+- [x] `delay_noise_and_simparam_type_and_wait_for_lowering` and `a_site_reached_from_analog_writing_sim_or_checks_is_e0603` pass
+- [x] Gate check passes: `Run typeops`, `Run subset`
 
 **Tests**: integration
 **Gate**: quick
