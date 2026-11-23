@@ -9,3 +9,11 @@ pub(crate) fn deep<R>(f: impl FnOnce() -> R) -> R {
     const SEGMENT: usize = 2 * 1024 * 1024;
     stacker::maybe_grow(RED_ZONE, SEGMENT, f)
 }
+
+/// [`deep`] for a walk whose steps are heavy, one lowering of a function body inside another: a
+/// larger red zone, so a step never outgrows what is left, and larger segments.
+pub(crate) fn wide<R>(f: impl FnOnce() -> R) -> R {
+    const RED_ZONE: usize = 4 * 1024 * 1024;
+    const SEGMENT: usize = 32 * 1024 * 1024;
+    stacker::maybe_grow(RED_ZONE, SEGMENT, f)
+}

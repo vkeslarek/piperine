@@ -5,6 +5,7 @@ use piperine_ir::{FunctionSpec, Local, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::instances::{ConcreteValue, Instance};
 use super::variants::{Half, Variants};
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 use crate::types::Ty;
@@ -12,10 +13,12 @@ use crate::types::Ty;
 impl Elaboration<'_, '_> {
     /// The variant of `function` for `half`: the result is the type of the body. `None` after a
     /// diagnostic.
-    pub(super) fn lower_function(&mut self, function: DeclId, half: Half) -> Option<FunctionSpec> {
+    pub(super) fn lower_function(&mut self, function: DeclId, arguments: &[ConcreteValue], half: Half) -> Option<FunctionSpec> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let written = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        // an instance of a generic function is named from the function and its arguments (D8)
+        let name = if arguments.is_empty() { written } else { Instance { item: function, arguments: arguments.to_vec() }.name(self) };
         let mut scope = Scope::new(data.file);
         // `freq()` in a function is the caller's `freq_`: the sweep's in an analog caller, 0 in a reaction.
         scope.analog = true;

@@ -426,10 +426,11 @@ impl Elaboration<'_, '_> {
         if let Some(Callee::Function(function)) = self.types.callee(expr)
             && self.design.decl_data(function).generics_span.is_some()
         {
-            // the instance is folded and checked now (`instances.rs`); lowering its body is T34's
-            self.concrete_instance(expr)?;
-            self.unsupported(scope.file, span, "generic function");
-            return None;
+            // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
+            let instance = self.concrete_instance(expr)?;
+            let lowered = self.lower_arguments(scope, expr, instance.item)?;
+            let (id, ret) = self.request_instance(instance.item, instance.arguments, Half::Whole)?;
+            return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
         }
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),

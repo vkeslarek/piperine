@@ -80,9 +80,8 @@ fn a_false_where_is_e0127_naming_the_instantiation() {
     let found = GenericCall::found(items, "v(o) +> clamp::<1>(1.0);");
     assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0127"], "{found:?}");
     assert!(found[0].1.contains("the `where` of `clamp::<1>` is false"), "{}", found[0].1);
-    // a true `where` passes the instantiation; lowering the body waits for T34
-    let held = GenericCall::found(items, "v(o) +> clamp::<3>(1.0);");
-    assert_eq!(held.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["P0001"], "{held:?}");
+    // a true `where` passes the instantiation, which is then lowered
+    assert_eq!(GenericCall::found(items, "v(o) +> clamp::<3>(1.0);"), Vec::<(String, String)>::new());
 }
 
 #[test]
@@ -94,4 +93,57 @@ fn instantiation_errors_name_the_item_and_its_arguments() {
     assert!(lengths.iter().any(|(code, message)| code == "E0180" && message.contains("`grown::<2>`") && message.contains("an array of 3 elements is expected, found one of 2")), "{lengths:?}");
     let constant = GenericCall::found(items, "let e: [f64; 0] = []; let r = shrunk(e);");
     assert!(constant.iter().any(|(code, message)| code == "E0104" && message.contains("`shrunk::<0>`")), "{constant:?}");
+}
+
+/// The IR functions of a design: their names and the instances they record.
+struct IrFunctions;
+
+impl IrFunctions {
+    /// The elaborated `Top` of `src`, which must pass `Ir::check`.
+    fn of(items: &str, statements: &str) -> piperine_ir::Ir {
+        Elab::ir(&format!("{items}\nmodule Top() {{ signal o: Electrical; }}\nanalog for Top {{ {statements} }}\n"), "Top")
+    }
+
+    /// The names of the functions, in id order.
+    fn names(ir: &piperine_ir::Ir) -> Vec<String> {
+        ir.functions().map(|function| function.name().to_string()).collect()
+    }
+}
+
+#[test]
+fn one_ir_function_per_distinct_instantiation_named_by_its_arguments() {
+    // GN-02 AC 1, §3.8.10: a generic function is one IR function for each list of arguments, named from the function and
+    // them, and each records the instance it is; a function as written records none
+    let items = "fn pick<T>(a: T, b: T) -> T { a }\nfn plain(x: f64) -> f64 { x }";
+    let ir = IrFunctions::of(items, "let x = pick(1.0, 2.0); let y = pick(true, false); let z = pick(3u8, 4u8); let w = plain(1.0); v(o) +> x + w;");
+    let mut names = IrFunctions::names(&ir);
+    names.sort();
+    assert_eq!(names, ["pick::<bool>", "pick::<f64>", "pick::<u8>", "plain"]);
+    for function in ir.functions() {
+        match function.name() {
+            "plain" => assert!(function.instance().is_none()),
+            name => {
+                let instance = function.instance().unwrap_or_else(|| panic!("`{name}` records its instance"));
+                assert_eq!(instance.item, "pick");
+                assert_eq!(instance.name(), name);
+            }
+        }
+    }
+}
+
+#[test]
+fn equal_arguments_make_one_instance() {
+    // §3.8.10: two calls with equal arguments are one instance, whatever the values they pass
+    let items = "fn pick<T>(a: T, b: T) -> T { a }";
+    let ir = IrFunctions::of(items, "let x = pick(1.0, 2.0); let y = pick(3.0, 4.0); let z = pick::<f64>(5.0, 6.0); v(o) +> x + y + z;");
+    assert_eq!(IrFunctions::names(&ir), ["pick::<f64>"]);
+}
+
+#[test]
+fn an_endless_instantiation_chain_is_e0341() {
+    // D7: `deep::<(f64,)>`, `deep::<((f64,),)>`, ... never ends: past 1 024 open instantiations it is
+    // E0341 naming the function
+    let items = "fn deep<T>(x: T) -> f64 { deep((x,)) }";
+    let found = GenericCall::found(items, "v(o) +> deep(1.0);");
+    assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("`deep`")), "{found:?}");
 }

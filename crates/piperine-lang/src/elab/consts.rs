@@ -181,6 +181,11 @@ impl<'d, 't> ConstEval<'d, 't> {
         &self.substitution
     }
 
+    /// Reads the generic parameters as `substitution` replaces them from here on; the previous one comes back.
+    pub(super) fn set_substitution(&mut self, substitution: crate::types::Substitution) -> crate::types::Substitution {
+        std::mem::replace(&mut self.substitution, substitution)
+    }
+
     /// The type the checker gave `expr` under the substitution of the instance being lowered.
     pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
         self.types.ty(expr).map(|ty| self.substitution.apply(ty))

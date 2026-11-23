@@ -12,7 +12,7 @@ use piperine_ir::Constant;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData};
-use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Obligation, Ty};
+use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Obligation, Substitution, Ty};
 use crate::msl::{Diagnostic, Span};
 
 /// One argument of an instance, with nothing left to fold.
@@ -45,8 +45,13 @@ impl Instance {
     pub(super) fn name(&self, elaboration: &Elaboration<'_, '_>) -> String {
         let design = elaboration.design;
         let item = design.decl_data(self.item).name.as_ref().map_or("fn", |n| n.text.as_str());
-        let arguments: Vec<String> = self
-            .arguments
+        format!("{item}::<{}>", self.argument_names(elaboration).join(", "))
+    }
+
+    /// Each argument as the source spells it: a type as written, a number, a function's name, `closure$k`.
+    pub(super) fn argument_names(&self, elaboration: &Elaboration<'_, '_>) -> Vec<String> {
+        let design = elaboration.design;
+        self.arguments
             .iter()
             .map(|argument| match argument {
                 ConcreteValue::Type(ty) => ty.source_name(design),
@@ -55,12 +60,27 @@ impl Instance {
                 ConcreteValue::Function(function) => design.decl_data(*function).name.as_ref().map_or_else(|| "fn".to_string(), |n| n.text.clone()),
                 ConcreteValue::Closure(closure) => format!("closure${}", elaboration.closure_ordinal(*closure)),
             })
-            .collect();
-        format!("{item}::<{}>", arguments.join(", "))
+            .collect()
     }
 }
 
 impl Elaboration<'_, '_> {
+    /// What the generic parameters of `function` are replaced by in the body of the instance with `arguments`: a
+    /// type for a type parameter and a value for a const one; a closure or a function has no type to give yet (T37).
+    pub(super) fn instance_substitution(&self, function: DeclId, arguments: &[ConcreteValue]) -> Substitution {
+        let mut substitution = Substitution::new();
+        let signature = GenericSignature::of(self.design, function);
+        for (parameter, argument) in signature.parameters().iter().zip(arguments) {
+            match argument {
+                ConcreteValue::Type(ty) => substitution.bind(parameter.decl, GenericValue::Type(ty.clone())),
+                ConcreteValue::Const(value) => substitution.bind(parameter.decl, GenericValue::Const(ConstTerm::Value(*value))),
+                ConcreteValue::Bool(flag) => substitution.bind(parameter.decl, GenericValue::Const(ConstTerm::Bool(*flag))),
+                ConcreteValue::Function(_) | ConcreteValue::Closure(_) => {}
+            }
+        }
+        substitution
+    }
+
     /// The instance the call `call` makes, from the instantiation the checker recorded folded under the
     /// substitution of the instance being lowered, with its obligations discharged. `None` after a diagnostic.
     pub(super) fn concrete_instance(&mut self, call: ExprId) -> Option<Instance> {
