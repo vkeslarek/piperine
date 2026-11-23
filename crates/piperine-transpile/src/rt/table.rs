@@ -117,9 +117,9 @@ impl TableModel {
         diagonal[0] += h[0] * (1.0 + h[0] / h[1]);
         upper[0] -= h[0] * h[0] / h[1];
         let last = unknowns - 1;
-        let (hl, hp) = (h[n - 2], h[n - 3]);
-        diagonal[last] += hl * (1.0 + hl / hp);
-        lower[last] -= hl * hl / hp;
+        let (last_width, before_width) = (h[n - 2], h[n - 3]);
+        diagonal[last] += last_width * (1.0 + last_width / before_width);
+        lower[last] -= last_width * last_width / before_width;
         // Thomas elimination
         for k in 1..unknowns {
             let factor = lower[k] / diagonal[k - 1];
@@ -134,7 +134,7 @@ impl TableModel {
         let mut m = vec![0.0; n];
         m[1..n - 1].copy_from_slice(&inner);
         m[0] = m[1] * (1.0 + h[0] / h[1]) - m[2] * h[0] / h[1];
-        m[n - 1] = m[n - 2] * (1.0 + hl / hp) - m[n - 3] * hl / hp;
+        m[n - 1] = m[n - 2] * (1.0 + last_width / before_width) - m[n - 3] * last_width / before_width;
         (0..n - 1).map(|i| [ys[i], delta[i] - h[i] * (2.0 * m[i] + m[i + 1]) / 6.0, m[i] / 2.0, (m[i + 1] - m[i]) / (6.0 * h[i])]).collect()
     }
 

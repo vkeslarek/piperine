@@ -121,3 +121,30 @@ analog for RatedLoad {
 
 module RatedDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = RatedLoad(o); }
 module RatedResistanceBench() { signal o: Electrical; let supply = Supply(o); let load = RatedLoad { rating: Rating::Resistance(250.0) }(o); }
+
+// -- params-and-io PI-03 AC 3: every way to read an `Option` param gives the value of the bound case
+
+/// A resistor of `rs` ohms read by `match`; 1 kOhm when `rs` is `None`.
+module MatchLoad(p: Electrical) { rs: Option<f64>; }
+analog for MatchLoad { i(p, gnd) +> match rs { Some(r) => v(p) / r, None => v(p) / 1k }; }
+
+/// The same read by `is_some` and `unwrap`.
+module IsSomeLoad(p: Electrical) { rs: Option<f64>; }
+analog for IsSomeLoad { i(p, gnd) +> if rs.is_some() { v(p) / rs.unwrap() } else { v(p) / 1k }; }
+
+/// The same read by `if let`.
+module IfLetLoad(p: Electrical) { rs: Option<f64>; }
+analog for IfLetLoad {
+    if let Some(r) = rs {
+        i(p, gnd) +> v(p) / r;
+    } else {
+        i(p, gnd) +> v(p) / 1k;
+    }
+}
+
+module MatchSomeBench() { signal o: Electrical; let supply = Supply(o); let load = MatchLoad { rs: 3k }(o); }
+module MatchNoneBench() { signal o: Electrical; let supply = Supply(o); let load = MatchLoad(o); }
+module IsSomeSomeBench() { signal o: Electrical; let supply = Supply(o); let load = IsSomeLoad { rs: 3k }(o); }
+module IsSomeNoneBench() { signal o: Electrical; let supply = Supply(o); let load = IsSomeLoad(o); }
+module IfLetSomeBench() { signal o: Electrical; let supply = Supply(o); let load = IfLetLoad { rs: 3k }(o); }
+module IfLetNoneBench() { signal o: Electrical; let supply = Supply(o); let load = IfLetLoad(o); }

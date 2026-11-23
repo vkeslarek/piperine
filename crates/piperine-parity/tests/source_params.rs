@@ -123,3 +123,14 @@ fn a_payload_enum_param_runs_its_variant() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("payload default", "v(o)", Coordinate::OperatingPoint), 1.0 / 3.0, operating_point("RatedDefaultBench"));
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("payload bound", "v(o)", Coordinate::OperatingPoint), 0.2, operating_point("RatedResistanceBench"));
 }
+
+#[test]
+fn every_read_of_an_option_param_gives_the_bound_case() {
+    // PI-03 AC 3 (§3.2): `match`, `is_some` with `unwrap`, and `if let Some(r)` read the bound case of `rs` behind 1 kOhm from 1 V:
+    // bound to 3k (a plain value, `Some` of it by §3.2.3) the load is 3 kOhm and v(o) = 3 / 4; left out it is `None`, the
+    // 1 kOhm of the other arm, and v(o) = 1 / 2.
+    for form in ["Match", "IsSome", "IfLet"] {
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new(form, "v(o) bound", Coordinate::OperatingPoint), 0.75, operating_point(&format!("{form}SomeBench")));
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new(form, "v(o) none", Coordinate::OperatingPoint), 0.5, operating_point(&format!("{form}NoneBench")));
+    }
+}

@@ -402,6 +402,12 @@ pub struct BodyPlan {
 }
 
 impl BodyPlan {
+    /// The bytes of an `f64` the pin holds: a NaN is always the library's own, `f64::NAN` (`0x7ff8..`), so the plan and the
+    /// generated library agree on the bits of a param that folded to NaN (`0.0 / 0.0` folds to `0xfff8..`).
+    fn real_bytes(value: f64) -> Vec<u8> {
+        if value.is_nan() { f64::NAN.to_le_bytes().to_vec() } else { value.to_le_bytes().to_vec() }
+    }
+
     /// Plans `body`. The body comes from an `Ir` that passes `check()`.
     pub fn new(body: Body<'_>) -> BodyPlan {
         let ir = body.ir();
@@ -414,7 +420,7 @@ impl BodyPlan {
             .params()
             .iter()
             .map(|p| match p.default {
-                Some(Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
+                Some(Constant::Real(r)) => Self::real_bytes(r.get()),
                 Some(Constant::Bool(b)) => vec![u8::from(b)],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
@@ -465,7 +471,7 @@ impl BodyPlan {
         // Body nodes, ports and signals alike, with their nature's tolerances.
         let nodes = body.params().len() as u32;
         let inits: Vec<Vec<u8>> =
-            body.nodes().iter().map(|n| n.init.map_or_else(Vec::new, |r| r.get().to_le_bytes().to_vec())).collect();
+            body.nodes().iter().map(|n| n.init.map_or_else(Vec::new, |r| Self::real_bytes(r.get()))).collect();
         for (n, init) in body.nodes().iter().zip(&inits) {
             let nature = ir.nature(n.nature);
             let abstol = [nature.potential().abstol.get(), nature.flow().map_or(0.0, |q| q.abstol.get())];
