@@ -95,6 +95,7 @@ impl Changed {
     pub fn scheduled(&self) -> Value {
         match (&self.ty, self.derived) {
             (ValueType::Bool, true) => Value::Boolean(self.value != 0.0),
+            (ty, _) if Changed::holds_integer(ty) => Value::Integer(self.value as i64),
             _ => Value::Real(self.value),
         }
     }
@@ -102,8 +103,14 @@ impl Changed {
     fn encoded(&self, v: f64) -> ParamValue {
         match (&self.ty, self.derived) {
             (ValueType::Bool, true) => ParamValue::Bool(v != 0.0),
+            (ty, _) if Changed::holds_integer(ty) => ParamValue::Int(v as i64),
             _ => ParamValue::Real(v),
         }
+    }
+
+    /// Whether a param of `ty` is an integer pin: an integer, or a unit enum held as its tag (PI-01, PI-02).
+    fn holds_integer(ty: &ValueType) -> bool {
+        ty.is_integer() || matches!(ty, ValueType::Enum(_))
     }
 }
 
@@ -219,9 +226,10 @@ impl Params {
                             Constant::Real(r) => r.get(),
                             Constant::Bool(b) => f64::from(u8::from(*b)),
                             Constant::Int(v) => *v as f64,
-                            // The scalar table holds no leaf of a composite: its place is kept so the
-                            // declaration order the derive functions read stays, and `get` reads none.
-                            Constant::Aggregate(_) => f64::NAN,
+                            // A unit enum is its tag (PI-02). The scalar table holds no leaf of a composite:
+                            // its place is kept so the declaration order the derive functions read stays,
+                            // and `get` reads none.
+                            Constant::Aggregate(_) => ir.discriminant(&param.ty, *given).map_or(f64::NAN, |tag| tag as f64),
                         };
                         (param.name.clone(), param.ty.clone(), value)
                     })

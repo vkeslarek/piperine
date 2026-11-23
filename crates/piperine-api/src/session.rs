@@ -29,7 +29,8 @@ use crate::noise::{NoiseOutput, NoiseProbe, NoiseReport};
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
-use crate::params::{Changed, Derive, Evaluated, Params};
+use crate::param_text::ParamText;
+use crate::params::{Changed, Derive, Evaluated, LeafChange, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
@@ -55,7 +56,7 @@ pub enum Built {
 /// circuit, which holds the loaded library's modules, before the library.
 pub struct Session {
     pub(crate) circuit: Option<CircuitInstance>,
-    ir: Arc<Ir>,
+    pub(crate) ir: Arc<Ir>,
     pub(crate) compiled: Option<Compiled>,
     top: String,
     backend: Backend,
@@ -216,17 +217,47 @@ impl Session {
     /// is checked against the param's `where` (`E0317`) before anything is changed, then written.
     pub(crate) fn set_leaf(table: &mut Params, circuit: &mut CircuitInstance, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
         let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
+        Session::write_leaf_change(table, circuit, path, &change, &value.to_string())
+    }
+
+    /// Writes `text` to the param `path` names as its type reads it (PI-01 to PI-03, D24): an integer
+    /// literal, a variant name, `None` or a value of `T`. A refusal changes nothing (`E0802`).
+    pub(crate) fn set_text_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
+        let read = ParamText::read(ir, path, text)?;
+        match read.option_leaves() {
+            None => match read {
+                ParamText::Number(value) => Session::set_param(table, derive, circuit, path, value),
+                ParamText::Option { .. } => Ok(()),
+            },
+            Some(leaves) => {
+                // both leaves are written on a copy of the table, so the param changes once, whole
+                let mut working = table.clone();
+                let mut first: Option<LeafChange> = None;
+                for (leaf, value) in leaves {
+                    let change = working.leaf_change(&path.instance, &path.param, leaf, value)?;
+                    working.apply_leaf(&change);
+                    first = Some(LeafChange { old: first.map_or_else(|| change.old.clone(), |earlier| earlier.old), ..change });
+                }
+                let whole = first.ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{}` has no leaf to write", path.label()) })?;
+                Session::write_leaf_change(table, circuit, path, &whole, text)
+            }
+        }
+    }
+
+    /// Checks `change` against the param's `where` (`E0317`), writes it to `circuit` and takes it into `table`;
+    /// `shown` is the value as the host gave it, for the refusals.
+    fn write_leaf_change(table: &mut Params, circuit: &mut CircuitInstance, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
         let label = change.label();
         circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
             let text = error.to_string();
             if text.contains("is refused, check") {
-                Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {} written at `{label}`", path.instance, path.param, value) }
+                Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {shown} written at `{label}`", path.instance, path.param) }
             } else {
-                Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {text}") }
+                Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {text}") }
             }
         })?;
-        circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {error}") })?;
-        table.apply_leaf(&change);
+        circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {error}") })?;
+        table.apply_leaf(change);
         Ok(())
     }
 }
@@ -267,6 +298,7 @@ impl Session {
             _ => None,
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
+        let texts = spec.param_texts.iter().map(|(entry, text)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, text.as_str()))).collect::<Result<Vec<_>, Failure>>()?;
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamTarget::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
@@ -310,6 +342,11 @@ impl Session {
                 Some(leaf) => Session::set_leaf(&mut table, &mut circuit, &path.param, leaf, *value)?,
                 None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
             }
+        }
+        for (path, text) in &texts {
+            // a structural param is an elaboration input: a text read after the body is built would run its old variant
+            path.refuse_structural(&ir)?;
+            Session::set_text_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &ir, path, text)?;
         }
         Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table, statistics: None })
     }
@@ -839,6 +876,20 @@ impl Session {
                 }
                 None => {
                     table.set(&target.param.instance, &target.param.param, *value, Some(&derive), &mut |_| Ok(()))?;
+                }
+            }
+        }
+        for (entry, text) in &spec.param_texts {
+            let path = ParamPath::resolve(&ir, ir.top().path(), entry)?;
+            match ParamText::read(&ir, &path, text)? {
+                ParamText::Number(value) => {
+                    table.set(&path.instance, &path.param, value, Some(&derive), &mut |_| Ok(()))?;
+                }
+                option @ ParamText::Option { .. } => {
+                    for (leaf, value) in option.option_leaves().into_iter().flatten() {
+                        let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
+                        table.apply_leaf(&change);
+                    }
                 }
             }
         }

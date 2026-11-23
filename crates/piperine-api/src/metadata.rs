@@ -3,7 +3,7 @@
 //! structural; the top's ports with their direction and type; every record stream with its
 //! fields. The value of a param is the one the run uses (a `set` of the request is applied).
 
-use piperine_ir::{CarrierRole, Constant, Ir, NodeRole};
+use piperine_ir::{CarrierRole, Constant, Ir, NodeRole, ValueType};
 
 use crate::composite::CellShape;
 use crate::params::Params;
@@ -63,6 +63,12 @@ impl Metadata {
                 let current = held.get(instance.path(), &param.name);
                 let composite = if param.ty.is_composite() {
                     CellShape::of(ir, &param.ty).zip(held.composite_bytes(instance.path(), &param.name)).and_then(|(shape, bytes)| shape.decode(bytes).ok())
+                } else if let (ValueType::Enum(_), Some(tag)) = (&param.ty, current) {
+                    // a unit enum param is its tag (PI-02), shown as the variant's name
+                    CellShape::of(ir, &param.ty).and_then(|shape| match &shape {
+                        CellShape::Enum { tag_width, .. } => shape.decode(&(tag as i128).to_le_bytes()[..*tag_width]).ok(),
+                        _ => None,
+                    })
                 } else {
                     None
                 };

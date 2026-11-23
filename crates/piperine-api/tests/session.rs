@@ -276,3 +276,98 @@ fn a_session_returns_the_statistics_of_its_last_transient() {
     assert_eq!(statistics.steps().accepted() as usize, table.rows.len() - 1, "one row per accepted step after the first");
     assert_eq!(statistics.steps().accepted() as usize, statistics.analog().steps_accepted);
 }
+
+/// A leaf with an integer, an enum and an `Option` param, on a source across a resistor, as
+/// PI-01 to PI-03 write them.
+const TYPED_PARAMS: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Fast, Slow }\n\
+    pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\
+    module Leaf(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; }\n\
+    analog for Leaf { i(p, gnd) +> (n as f64) * v(p) / 1k + match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / rs.unwrap_or(1k); }\n\
+    module Top() { signal a: Electrical; let v1 = Vsource(a, gnd) { dc: 1.0 }; let l = Leaf(a); }\n";
+
+/// A Rust-backend session of `TYPED_PARAMS` in a cache of its own.
+fn typed_session() -> (Session, tempfile::TempDir) {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let session = open(TYPED_PARAMS, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    (session, cache)
+}
+
+/// The value the session shows for `Top.l.<param>`.
+fn shown(session: &Session, param: &str) -> piperine_api::Cell {
+    session.metadata().params.into_iter().find(|p| p.path == format!("Top.l.{param}")).unwrap_or_else(|| panic!("no param `{param}`")).value
+}
+
+/// The language's literal of the composite value `cell` shows (`Some(2500)`, `None`).
+fn literal(cell: piperine_api::Cell) -> String {
+    match cell {
+        piperine_api::Cell::Composite(value) => value.literal(&|leaf| match leaf {
+            piperine_api::Cell::Real(v) => v.to_string(),
+            other => format!("{other:?}"),
+        }),
+        other => panic!("a composite value, found {other:?}"),
+    }
+}
+
+#[test]
+fn an_integer_param_set_by_text_in_range() {
+    // PI-01 AC 4 (D24): a decimal, `0x`, `0b` literal with `_` in the range of `u8` is the value.
+    let (mut session, _cache) = typed_session();
+    for (text, wanted) in [("6", 6), ("0x1F", 31), ("0b101", 5), ("2_0", 20), ("255", 255)] {
+        session.set_text("Top.l.n", text).unwrap_or_else(|f| panic!("`{text}`: {f}"));
+        assert_eq!(shown(&session, "n"), piperine_api::Cell::Int(wanted), "`{text}`");
+    }
+}
+
+#[test]
+fn an_integer_out_of_range_is_e0802() {
+    // PI-01 AC 4: 256 does not fit `u8`, `-1` is no `u8`, and `1.5` is no integer literal: each is E0802 naming
+    // the param and the value, and the param keeps its value.
+    let (mut session, _cache) = typed_session();
+    for text in ["256", "-1", "1.5", "six"] {
+        match session.set_text("Top.l.n", text) {
+            Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("Top.l.n") && message.contains(text), "{message}"),
+            other => panic!("`{text}`: E0802, found {other:?}"),
+        }
+    }
+    assert_eq!(shown(&session, "n"), piperine_api::Cell::Int(4), "a refused set changes nothing");
+}
+
+#[test]
+fn an_enum_param_set_by_variant_name() {
+    // PI-02 AC 3: `Slow` is the variant, bare or as `Mode::Slow`.
+    let (mut session, _cache) = typed_session();
+    assert_eq!(shown(&session, "md"), piperine_api::Cell::Text("Fast".into()), "the default");
+    session.set_text("Top.l.md", "Slow").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(shown(&session, "md"), piperine_api::Cell::Text("Slow".into()));
+    session.set_text("Top.l.md", "Mode::Fast").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(shown(&session, "md"), piperine_api::Cell::Text("Fast".into()));
+}
+
+#[test]
+fn an_unknown_variant_is_e0802_listing_the_variants() {
+    // PI-02 AC 4: a name `Mode` does not declare is E0802 naming the param and listing the variants.
+    let (mut session, _cache) = typed_session();
+    match session.set_text("Top.l.md", "Medium") {
+        Err(Failure::Host { code: "E0802", message }) => {
+            assert!(message.contains("Top.l.md") && message.contains("`Medium`"), "{message}");
+            assert!(message.contains("`Fast`") && message.contains("`Slow`"), "the variants are listed: {message}");
+        }
+        other => panic!("E0802, found {other:?}"),
+    }
+}
+
+#[test]
+fn an_option_param_set_to_a_value_or_none() {
+    // PI-03 AC 4: a value of `f64` is `Some` of it, bare or as `Some(..)`, and `None` is `None`.
+    let (mut session, _cache) = typed_session();
+    assert_eq!(literal(shown(&session, "rs")), "None", "left out: `None`");
+    session.set_text("Top.l.rs", "2500").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(literal(shown(&session, "rs")), "Some(2500)");
+    session.set_text("Top.l.rs", "None").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(literal(shown(&session, "rs")), "None");
+    session.set_text("Top.l.rs", "Some(10)").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(literal(shown(&session, "rs")), "Some(10)");
+    assert!(matches!(session.set_text("Top.l.rs", "lots"), Err(Failure::Host { code: "E0802", .. })));
+}

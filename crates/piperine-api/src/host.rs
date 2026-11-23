@@ -117,6 +117,21 @@ impl Session {
         Session::set_param(&mut self.params, derive, circuit, &param, value)
     }
 
+    /// Sets the param `path` to `text`, read as its type reads it (PI-01 to PI-03, D24), before the run: an
+    /// integer literal of the type and range, the name of a variant of a unit enum, `None` or a value of
+    /// `T` for an `Option<T>`. `E0801` for a path that names no param, `E0803` for a structural param,
+    /// `E0802` for a text that is no value of its type, naming the param and listing an enum's variants.
+    pub fn set_text(&mut self, path: &str, text: &str) -> Result<(), Failure> {
+        let action = format!("the set of `{path}`");
+        let param = ParamPath::resolve(self.ir(), self.ir().top().path(), path)?;
+        param.refuse_structural(self.ir())?;
+        self.ready_for(0.0, &action)?;
+        let ir = self.ir.clone();
+        let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
+        let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
+        Session::set_text_param(&mut self.params, derive, circuit, &ir, &param, text)
+    }
+
     /// What every timed `set` of `sets` changes, in time order (the order given between equal
     /// times): each is derived against `table` as it is at its time, the sets due before it
     /// applied, and each changed param is checked against the param's `where` on `circuit`
