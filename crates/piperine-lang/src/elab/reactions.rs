@@ -13,8 +13,8 @@ impl Elaboration<'_, '_> {
     /// `place <- value [after delay];`, appended to `out`; `false` after a diagnostic. The
     /// checker allows a commit in a reaction body only.
     pub(super) fn lower_commit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, place: ExprId, value: ExprId, after: Option<ExprId>) -> bool {
-        let carrier = self.drive_target(scope, place);
-        let wanted = carrier.and_then(|c| self.structure.carriers.get(c as usize)).map(|c| c.ty.clone());
+        let target = self.place_target(scope, place);
+        let wanted = target.as_ref().map(|t| t.ty.clone());
         let value = match &wanted {
             Some(ty) => self.lower_stored(scope, value, ty),
             None => self.lower_expr(scope, value),
@@ -23,9 +23,9 @@ impl Elaboration<'_, '_> {
             Some(after) => self.lower_expr(scope, after).map(Some),
             None => Some(None),
         };
-        match (carrier, value, after) {
-            (Some(carrier), Some(value), Some(after)) => {
-                out.push(self.stmt(Stmt::Commit { carrier, value, after, target: None }));
+        match (target, value, after) {
+            (Some(target), Some(value), Some(after)) => {
+                out.push(self.stmt(Stmt::Commit { carrier: target.carrier, value, after, target: target.commit_target() }));
                 true
             }
             _ => false,

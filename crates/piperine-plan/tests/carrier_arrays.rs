@@ -14,6 +14,11 @@ use piperine_plan::BodyPlan;
 struct Fixture;
 
 impl Fixture {
+    /// A pin of `shape` by name.
+    fn pin<'a, 's>(shape: &'a Shape<'s>, name: &str) -> &'a Pin<'s> {
+        shape.pins.iter().find(|p| p.name.as_str() == name).unwrap_or_else(|| panic!("no pin `{name}`"))
+    }
+
     const FILE: &'static str = "ram.msl";
 
     fn origin(line: u32) -> Origin {
@@ -111,11 +116,6 @@ impl Fixture {
     }
 }
 
-/// A pin of `shape` by name.
-fn pin<'a, 's>(shape: &'a Shape<'s>, name: &str) -> &'a Pin<'s> {
-    shape.pins.iter().find(|p| p.name.as_str() == name).unwrap_or_else(|| panic!("no pin `{name}`"))
-}
-
 #[test]
 fn an_array_of_carriers_is_one_array_pin() {
     // CV-23, CV-27 AC 1, abi.md §3: one DISCRETE pin per array, `count` elements of one element's layout, never one
@@ -124,15 +124,15 @@ fn an_array_of_carriers_is_one_array_pin() {
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
     assert_eq!(shape.pins.iter().filter(|p| p.kind == kind::DISCRETE && p.name.as_str() != "en").count(), 2, "two arrays, two pins");
-    let mem = pin(shape, "mem");
+    let mem = Fixture::pin(shape, "mem");
     assert_eq!((mem.kind, mem.count, mem.layout.size), (kind::DISCRETE, 8, 1), "`[Bit<u8>; 8]`: eight elements of one byte");
     // §3.1: `[x; K]` gives one element's bytes
     assert_eq!(mem.init.as_slice(), [0x5a], "the repeat form holds one element");
-    let bits = pin(shape, "bits");
+    let bits = Fixture::pin(shape, "bits");
     assert_eq!((bits.count, bits.layout.size), (3, 1));
     // §3.1: `[a, b, c]` gives every element's bytes
     assert_eq!(bits.init.as_slice(), [1, 0, 1], "the each form holds every element");
-    assert_eq!(pin(shape, "en").count, 0, "a scalar carrier keeps count 0");
+    assert_eq!(Fixture::pin(shape, "en").count, 0, "a scalar carrier keeps count 0");
 
     // abi.md §3: the reaction reads `mem[2]`, `mem[1].prev()` as element cells and `bits` through a WHOLE cell
     let reaction = shape.reactions.iter().find(|r| r.name.as_str() == "reaction:0").expect("the reaction");
@@ -164,7 +164,7 @@ fn a_field_commit_is_a_statement_over_its_levels() {
     let shape = plan.shape().shape();
     let words = shape.pins.iter().position(|p| p.name.as_str() == "words").unwrap() as u32;
     let pair = shape.pins.iter().position(|p| p.name.as_str() == "pair").unwrap() as u32;
-    assert_eq!((pin(shape, "words").count, pin(shape, "words").layout.size), (4, 3));
+    assert_eq!((Fixture::pin(shape, "words").count, Fixture::pin(shape, "words").layout.size), (4, 3));
     let reaction = shape.reactions.iter().find(|r| r.name.as_str() == "reaction:0").expect("the reaction");
     let writes: Vec<(u32, u32, u32)> = reaction.writes.iter().map(|w| (w.pin, w.offset, w.len)).collect();
     assert_eq!(writes, vec![(words, 1, 2), (pair, 3, 1), (words, 0, 3)], "the byte range of each commit");

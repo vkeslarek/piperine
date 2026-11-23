@@ -16,6 +16,11 @@ struct Read<'a> {
 }
 
 impl Read<'_> {
+    /// The structural text of body `Top` of `src`, which elaborates and checks.
+    fn structure_of(src: &str) -> String {
+        Elab::ir(src, "Top").print_structural()
+    }
+
     /// The `(name, count, element type, initial value)` of each carrier of body `name`.
     fn carriers(&self, name: &str) -> Vec<(String, Option<u64>, ValueType, Option<Constant>)> {
         let body = self.ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body `{name}`:\n{}", self.ir.print_structural()));
@@ -56,11 +61,6 @@ fn arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes() {
     assert_eq!(arrays, [("bl".to_string(), 0, 4)], "one name for the array");
 }
 
-/// The structural text of body `Top` of `src`, which elaborates and checks.
-fn structure_of(src: &str) -> String {
-    Elab::ir(src, "Top").print_structural()
-}
-
 #[test]
 fn element_reads_and_events_lower_per_element() {
     // CV-24: `x[i]` is one element read (constant or run-time index), the whole `x` an array of the values,
@@ -74,7 +74,7 @@ fn element_reads_and_events_lower_per_element() {
                on clk.rise() { let a = mem[1]; let b = mem[at]; let p = mem[2].prev(); let c = lines[at].changed(); let g = grid[2][1]; q <- a + b + p; }\n\
                on lines[2].rise() { }\n\
                on mem[3].changed() { }\n}";
-    let text = structure_of(src);
+    let text = Read::structure_of(src);
     for needle in ["mem[", ".prev", "lines["] {
         assert!(text.contains(needle), "the structure names `{needle}`:\n{text}");
     }
@@ -102,7 +102,7 @@ fn an_element_binds_a_handle_parameter() {
     let src = "fn was(a: Bit) -> bool { a.prev() }\n\
                module Top(in clk: Bit, out q: Bit = false) { signal lines: [Bit; 4]; }\n\
                digital for Top { on clk.rise() { q <- was(lines[2]); } }";
-    let text = structure_of(src);
+    let text = Read::structure_of(src);
     assert!(text.contains("lines") && text.contains(".prev"), "the handle reads the element's previous value:\n{text}");
 }
 
@@ -129,4 +129,62 @@ fn an_analog_node_index_that_does_not_fold_is_refused_naming_it() {
     assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("`k`")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
     let past = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let x = v(bl[4]); }", "Top").expect_err("past the end");
     assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", Elab::codes(&past));
+}
+
+/// The carriers, the commits and the drives of body `Top`, as the targets they name.
+struct Writes {
+    commits: Vec<(u32, bool, Vec<piperine_ir::Projection>)>,
+    drives: Vec<(u32, Option<u64>, Vec<piperine_ir::Projection>)>,
+}
+
+impl Writes {
+    /// What the reactions and drives of `Top` in `src` write.
+    fn of(src: &str) -> Writes {
+        let ir = Elab::ir(src, "Top");
+        let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+        let mut commits = Vec::new();
+        for index in 0..body.reactions().len() as u32 {
+            for statement in body.reaction_statements(index) {
+                if let piperine_ir::Stmt::Commit { carrier, target, .. } = ir.stmt(statement) {
+                    commits.push((*carrier, target.as_ref().is_some_and(|t| t.element.is_some()), target.as_ref().map_or_else(Vec::new, |t| t.path.clone())));
+                }
+            }
+        }
+        let drives = body.drives().iter().map(|d| (d.carrier, d.element, d.path.clone())).collect();
+        Writes { commits, drives }
+    }
+}
+
+#[test]
+fn element_and_field_commits_lower_to_their_targets() {
+    // CV-25: `bits[3] <- x` and `bits[at] <- y` commit one element (constant or run time), `st.n <- 3` a field,
+    // `word[2] <- true` an element of a value array, `mem[at].n <- 5` a field of an element
+    let src = "#[derive(Repr)] struct S { n: u8, ok: bool }\n\
+               module Top(in clk: Bit, in at: Bit<u2>) {\n\
+               signal bits: [Bit; 4];\n\
+               signal word: Bit<[bool; 8]> = [false; 8];\n\
+               signal st: Bit<S> = S { n: 0, ok: false };\n\
+               signal mem: [Bit<S>; 4] = [S { n: 0, ok: false }; 4];\n}\n\
+               digital for Top { on clk.rise() { bits[3] <- true; bits[at] <- false; word[2] <- true; st.n <- 3; mem[at].n <- 5; } }";
+    let writes = Writes::of(src);
+    let ir = Elab::ir(src, "Top");
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    let at = |name: &str| body.carriers().iter().position(|c| c.name == name).expect(name) as u32;
+    assert_eq!(writes.commits.len(), 5, "{:?}", writes.commits);
+    // an element of an array carrier names its element and no field; a value-array element or a field names the path
+    assert_eq!(writes.commits[0], (at("bits"), true, vec![]));
+    assert_eq!(writes.commits[1], (at("bits"), true, vec![]));
+    assert_eq!((writes.commits[2].0, writes.commits[2].1, writes.commits[2].2.len()), (at("word"), false, 1), "`word[2]` is one step into the value");
+    assert_eq!(writes.commits[3], (at("st"), false, vec![piperine_ir::Projection::Field(0)]));
+    assert_eq!((writes.commits[4].0, writes.commits[4].1, writes.commits[4].2.clone()), (at("mem"), true, vec![piperine_ir::Projection::Field(0)]));
+}
+
+#[test]
+fn an_element_definition_is_one_drive() {
+    // CV-25 AC 3: `bits[0] = a;` is the drive of element 0 only, so element 1 may be driven apart; a definition's
+    // element folds, else E0180 names it
+    let writes = Writes::of("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[1] = !a; }");
+    assert_eq!(writes.drives, vec![(1, Some(0), vec![]), (1, Some(1), vec![])], "one drive per element, of carrier 1 (`a` is carrier 0)");
+    let found = Elab::run("module Top(in a: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[at] = a; }", "Top").expect_err("no fold");
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("bits[at]")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }

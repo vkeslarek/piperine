@@ -83,7 +83,7 @@ impl Elaboration<'_, '_> {
 
     /// The flat element of the array carrier `carrier` named by `indexes`, one per level: the index expression and the
     /// element when every index folds. `None` after a diagnostic (`E0104` for a constant past the end).
-    fn flat_element(&mut self, scope: &mut Scope, carrier: u32, shape: &ArrayShape, indexes: &[ExprId], span: crate::msl::Span) -> Option<ElementRef> {
+    pub(super) fn flat_element(&mut self, scope: &mut Scope, carrier: u32, shape: &ArrayShape, indexes: &[ExprId], span: crate::msl::Span) -> Option<ElementRef> {
         let origin = self.locator.origin(scope.file, span);
         let mut lowered = Vec::with_capacity(indexes.len());
         for index in indexes {
