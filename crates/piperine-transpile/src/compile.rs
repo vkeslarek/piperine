@@ -10,7 +10,7 @@ use crate::cache::{Cache, Entry, Key};
 use crate::compiled::{Compiled, Report};
 use crate::error::Error;
 use crate::load::Loaded;
-use crate::rt::Runtime;
+use crate::rt::{Runtime, RuntimeForms};
 use crate::rustc::Rustc;
 use crate::settings::Settings;
 use crate::Transpiler;
@@ -38,7 +38,8 @@ impl Transpiler {
 
         let rustc = Rustc::locate(settings)?;
         let cache = Cache::at(&settings.cache)?;
-        let runtime = Runtime::files(self.digital() || self.loops() || self.carried_params() || self.tables() || self.derives());
+        let numbers = self.number_widths();
+        let runtime = Runtime::files_for(RuntimeForms { digital: numbers || self.digital() || self.loops() || self.carried_params() || self.tables() || self.derives(), numbers });
         let (key, abi_key) = Self::cache_keys(&source, &runtime, rustc.version_text(), AbiSource::FILES);
 
         // RS-04 AC 5: an entry that is incomplete or fails to open is not what it recorded; it

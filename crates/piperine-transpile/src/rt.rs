@@ -9,7 +9,9 @@ pub mod control;
 pub mod pin;
 pub mod int;
 pub mod real;
+pub mod numbers;
 pub mod table;
+pub mod widths;
 
 /// The text of `rt/real.rs`, as generated code compiles it.
 pub const REAL: &str = include_str!("rt/real.rs");
@@ -25,6 +27,28 @@ pub const CONTROL: &str = include_str!("rt/control.rs");
 pub const PIN: &str = include_str!("rt/pin.rs");
 /// The text of `rt/table.rs`, as generated code compiles it.
 pub const TABLE: &str = include_str!("rt/table.rs");
+
+/// The files of `piperine-numbers`, as `rt/numbers/<file>.rs`: embedded verbatim, so a design's runtime holds the
+/// one implementation of every operation that elaboration, the host and the generated code share.
+pub const NUMBER_FILES: [(&str, &str); 15] = [
+    ("rt/numbers/arithmetic.rs", include_str!("../../piperine-numbers/src/arithmetic.rs")),
+    ("rt/numbers/constants.rs", include_str!("../../piperine-numbers/src/constants.rs")),
+    ("rt/numbers/convert.rs", include_str!("../../piperine-numbers/src/convert.rs")),
+    ("rt/numbers/decimal.rs", include_str!("../../piperine-numbers/src/decimal.rs")),
+    ("rt/numbers/elementary.rs", include_str!("../../piperine-numbers/src/elementary.rs")),
+    ("rt/numbers/format.rs", include_str!("../../piperine-numbers/src/format.rs")),
+    ("rt/numbers/half.rs", include_str!("../../piperine-numbers/src/half.rs")),
+    ("rt/numbers/limbs.rs", include_str!("../../piperine-numbers/src/limbs.rs")),
+    ("rt/numbers/power.rs", include_str!("../../piperine-numbers/src/power.rs")),
+    ("rt/numbers/precision.rs", include_str!("../../piperine-numbers/src/precision.rs")),
+    ("rt/numbers/quad.rs", include_str!("../../piperine-numbers/src/quad.rs")),
+    ("rt/numbers/reduction.rs", include_str!("../../piperine-numbers/src/reduction.rs")),
+    ("rt/numbers/transcendental.rs", include_str!("../../piperine-numbers/src/transcendental.rs")),
+    ("rt/numbers/wide.rs", include_str!("../../piperine-numbers/src/wide.rs")),
+    ("rt/numbers/ziv.rs", include_str!("../../piperine-numbers/src/ziv.rs")),
+];
+/// The text of `rt/widths.rs`, as generated code compiles it.
+pub const WIDTHS: &str = include_str!("rt/widths.rs");
 
 /// The `rt.rs` of a design with digital forms: the files as its modules, their names
 /// re-exported, so generated code spells `rt::Real`, `rt::UInt`, `rt::Carried` whatever file
@@ -52,6 +76,47 @@ pub use real::{Dual, Real};
 pub use table::TableModel;
 ";
 
+/// The lines the root `rt.rs` gains when the design uses a number width.
+const NUMBERS_FORMS: &str = "\
+pub mod numbers;
+pub mod widths;
+
+pub use numbers::half::Float16;
+pub use numbers::quad::Float128;
+pub use numbers::wide::{WideInt, WideUInt};
+pub use widths::{Convert, FloatRepr, IntegerRepr};
+";
+
+/// The generated `rt/numbers.rs`: the library's files as its modules.
+const NUMBERS_ROOT: &str = "\
+//! The numeric library (`piperine-numbers`), embedded verbatim: integers of any width, `f16` and `f128`.
+
+pub mod arithmetic;
+pub mod constants;
+pub mod convert;
+pub mod decimal;
+pub mod elementary;
+pub mod format;
+pub mod half;
+pub mod limbs;
+pub mod power;
+pub mod precision;
+pub mod quad;
+pub mod reduction;
+pub mod transcendental;
+pub mod wide;
+pub mod ziv;
+";
+
+/// The forms of a design that decide which runtime files it gets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeForms {
+    /// A digital form, a loop, a carried param, a table or a derive: the files of `rt` and not `real.rs` alone.
+    pub digital: bool,
+    /// A number width (`f32` excepted: it is Rust's own): `rt/numbers/*.rs` and `rt/widths.rs` are added.
+    pub numbers: bool,
+}
+
 /// The files a design's cache entry holds as its runtime.
 #[derive(Debug)]
 pub struct Runtime;
@@ -61,7 +126,27 @@ impl Runtime {
     /// design with no digital form gets `real.rs` alone as `rt.rs`, so its entry and its cache
     /// key are what an analog-only build has always had.
     pub fn files(digital: bool) -> Vec<(&'static str, &'static str)> {
-        if digital {
+        Self::files_for(RuntimeForms { digital, numbers: false })
+    }
+
+    /// The root `rt.rs` of a design with a number width: the digital root and the lines of `NUMBERS_FORMS`.
+    fn root_with_numbers() -> &'static str {
+        static TEXT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        TEXT.get_or_init(|| format!("{ROOT}\n{NUMBERS_FORMS}"))
+    }
+
+    /// The runtime files of a design with the forms `forms`. A design with a number width gets the
+    /// files of a digital design plus `rt/numbers.rs`, `rt/numbers/*.rs` and `rt/widths.rs`, and a root that
+    /// re-exports them; every other design gets exactly the files it had before.
+    pub fn files_for(forms: RuntimeForms) -> Vec<(&'static str, &'static str)> {
+        if forms.numbers {
+            let mut files = vec![("rt.rs", Self::root_with_numbers())];
+            files.extend(Self::files(true).into_iter().skip(1));
+            files.push(("rt/numbers.rs", NUMBERS_ROOT));
+            files.extend(NUMBER_FILES);
+            files.push(("rt/widths.rs", WIDTHS));
+            files
+        } else if forms.digital {
             vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS), ("rt/array.rs", ARRAY), ("rt/table.rs", TABLE)]
         } else {
             vec![("rt.rs", REAL)]
