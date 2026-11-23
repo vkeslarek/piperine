@@ -426,3 +426,46 @@ fn a_generic_repr_type_over_an_argument_without_repr_is_e0110() {
     let design = support::build(&format!("{HEAD}{items}fn g(c: Cell<u8>) -> f64 {{ 1.0 }}\nfn h(c: Cell<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
     assert_eq!(Types::check_model(&design), Ok(()), "u8 and a tuple of a float and a bool have layouts");
 }
+
+/// The forms of generics phases C, D and E, each on the smallest model that writes it.
+struct LaterPhases;
+
+impl LaterPhases {
+    /// The `(code, message)` pairs of the design and of the check of `Top` of `src`, over the standard library.
+    fn found(src: &str) -> Vec<(String, String)> {
+        let design = Design::builder().source("top.msl", src).build();
+        let mut found: Vec<(String, String)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect();
+        if let Err(refused) = Types::check(&design, "Top") {
+            found.extend(refused.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())));
+        }
+        found
+    }
+
+    /// Whether the check of `src` holds `P0001` with a message that contains `form`.
+    fn refuses(src: &str, form: &str) -> bool {
+        Self::found(src).iter().any(|(code, message)| code == "P0001" && message.contains(form))
+    }
+}
+
+#[test]
+fn phase_c_d_and_e_forms_stay_p0001_by_name() {
+    // GN-29 AC 2: a form that a later phase delivers stays `P0001` naming the form, never run by another rule: a generic
+    // module and generation (phase C), a template value and a placement through one (phase C, GN-21 to GN-23)
+    let generic_module = "module Hold<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; let h = Hold::<u8>(d); }\n";
+    assert!(LaterPhases::refuses(generic_module, "generic module"), "{:?}", LaterPhases::found(generic_module));
+    let generation = "module Top() { signal o: Electrical; for k in 0..2 { let r = 1; } }\n";
+    assert!(LaterPhases::refuses(generation, "generation `for`/`if` in a module body"), "{:?}", LaterPhases::found(generation));
+    let template = "module Cell(a: Electrical) {}\nmodule Top() { signal a: Electrical; let c = Cell { }; }\n";
+    assert!(LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
+    let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
+    assert!(LaterPhases::refuses(through, "placement through a template value or a function"), "{:?}", LaterPhases::found(through));
+}
+
+#[test]
+fn m_and_dtemp_bound_in_a_param_block_stay_refused_until_phase_d() {
+    // GN-26 (phase D, with `params-and-io`): binding `m` or `dtemp` is `E0320` today, `no param`, the one refusal that
+    // names the form; it must not run as anything else until `m` and `dtemp` are implicit params
+    let src = "module Resistor(a: Electrical, b: Electrical) { r: f64 = 1k; }\nmodule Top() { signal a: Electrical; let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 }; }\n";
+    let found = LaterPhases::found(src);
+    assert!(found.iter().any(|(code, message)| code == "E0320" && message == "no param `m` in `Resistor`"), "{found:?}");
+}

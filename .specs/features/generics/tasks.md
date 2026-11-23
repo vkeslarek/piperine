@@ -1048,8 +1048,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `phase_c_d_and_e_forms_stay_p0001_by_name` passes under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `phase_c_d_and_e_forms_stay_p0001_by_name` passes under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
