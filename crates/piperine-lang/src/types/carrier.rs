@@ -127,6 +127,8 @@ impl Checker<'_> {
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
+            // an array of carriers, or of conservative nodes (CV-23)
+            array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
             value @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
@@ -144,6 +146,11 @@ impl Checker<'_> {
                 self.carriers.insert(decl, carrier.clone());
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
+            }
+            // an array of carriers reads as the array of their values; an array of nodes is the array itself
+            array @ Ty::Array(..) if array.is_carrier_element() => {
+                self.carriers.insert(decl, array.clone());
+                Some(array.read_value())
             }
             node => Some(node),
         }

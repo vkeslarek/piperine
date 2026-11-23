@@ -683,7 +683,13 @@ impl Checker<'_> {
             return;
         }
         let annotated = match ty {
-            Some(t) => match self.lower_type(t) {
+            Some(t) => match self.lower_type(t).filter(|ty| {
+                let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
+                if carriers {
+                    self.unsupported(file, self.design.type_node(t).span, "an array of carriers as a `let` type");
+                }
+                !carriers
+            }) {
                 Some(t) => Some(t),
                 None => {
                     if let Some(init) = init {

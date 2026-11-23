@@ -370,8 +370,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `arrays_of_carriers_type_as_signals_and_ports`, `an_array_initial_value_of_another_type_is_e0210` and `an_array_of_carriers_as_a_function_parameter_is_refused_by_name` pass under `**Run typesarr**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `arrays_of_carriers_type_as_signals_and_ports`, `an_array_initial_value_of_another_type_is_e0210` and `an_array_of_carriers_as_a_function_parameter_is_refused_by_name` pass under `**Run typesarr**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -844,6 +844,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **QC1 amendment (supersedes EU-16 AC 2):** the Host grows to 24 bytes with `commit_element`; the explicit-unknowns records (EU-16 AC 2, "Host is 16 bytes, one commit") and design-c.md's may-move table are superseded by it (approved by the user 2026-11-23).
 **T72 notes:** `Source::Whole(carrier, part)` (a reaction's WHOLE read, a run-time index) and `Source::Element(carrier, element, part)` (a constant element, a cell naming it through `Function.elements`/`Reaction.elements`) are new; `ir::deps` gained `element_reads`/`element_previous_reads`/`element_changed_reads`/`whole_changed_reads`. A function never takes `Whole` (plan panics naming it: the elaborator must refuse a run-time-index element read in a drive or guard, T79). `Ir::check` now also refuses a whole-array commit or definition and a run-time index into a value inside a commit path (the ABI statement range is fixed), and accepts an array carrier init that is one element or `[T; count]` (the each form). `StatementPlan.range` carries `(offset, len)`; `ArrayPin` (plan/array.rs) gives init bytes and ranges; `Netlist` declares `array_net` per array carrier and binds `Port::Window` for a `CarrierWindow`. The transpile printer returns `Unsupported` for a `Whole`/`Element` read (T73 replaces) and `print/shape.rs` does not yet print `Pin.count`/`elements` (T73 must).
 **T73 notes:** `Source::Whole(carrier)` has no part (one `ArrayView` serves VALUE/PREVIOUS/CHANGED of every element). `print/carrier_array.rs`: `ElementNames`, `CarrierFacts` (a `facts` field of `ValuePrinter`), `element_piece`, `whole_piece`, `commit_statement`/`commit_call`; a field commit or an element commit goes through the statement range `StatementPlan::commit_through` declares (relative offset 0), so `rt::Commits::commit_range` is unused by the printer. `print/shape.rs` prints `count` and `elements`; `shape_check.rs` compares both. `piperine-solver` `bind.rs`: a private array pin (no shared net) now gets its own array net (`NetSpec::array`). The hand-built `Ram` (tests/carrier_arrays.rs) proves a run-time-index commit, a constant-element read, a `WHOLE`-view read at the snapshot and an element event end to end.
+**T74 notes (amendment to design-c.md "Data Models"):** no new `Ty` variant: an array of carriers or of nodes is `Ty::Array(Carrier | Node | nested, Length)` (`Ty::is_carrier_element`, `innermost`, `read_value`), so `fits`, substitution and length folding are the value array's; `is_value` stays false for it. A whole read of a carrier array types as `[value; K]`, so `x[i]` types as the value through the ordinary array index. `types_buck.rs` lost its `an array type` P0001 row (moved to `types_carrier_arrays`), recorded with the `types_aggregates` row. Until T89 the Book test `signals_of_every_family_are_refused_for_the_arrays_...` (tests/book/natures.rs) is red (`[Bit; 8]` runs).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

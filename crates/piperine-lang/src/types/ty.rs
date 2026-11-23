@@ -278,6 +278,35 @@ pub enum ConstTerm {
 }
 
 impl Ty {
+    /// Whether this is a carrier, a node, or an array of them: what an array of carriers is made of (CV-23).
+    pub fn is_carrier_element(&self) -> bool {
+        match self {
+            Ty::Carrier { .. } | Ty::Node(_) => true,
+            Ty::Array(element, _) => element.is_carrier_element(),
+            _ => false,
+        }
+    }
+
+    /// The type an array of arrays of `T` is made of: `T`; any other type is itself.
+    pub fn innermost(&self) -> &Ty {
+        match self {
+            Ty::Array(element, _) => element.innermost(),
+            other => other,
+        }
+    }
+
+    /// The value type a read of this carrier type gives: a carrier's value, an array of carriers' array of values, a node
+    /// array's itself; any other type is its own read.
+    pub fn read_value(&self) -> Ty {
+        match self {
+            Ty::Carrier { value, .. } => (**value).clone(),
+            Ty::Array(element, length) if matches!(**element, Ty::Carrier { .. }) || matches!(**element, Ty::Array(..)) && element.is_carrier_element() => {
+                Ty::Array(Box::new(element.read_value()), length.clone())
+            }
+            other => other.clone(),
+        }
+    }
+
     /// Whether this is `UInt<N>` or `Int<N>`.
     pub fn is_integer(&self) -> bool {
         matches!(self, Ty::UInt(_) | Ty::Int(_))

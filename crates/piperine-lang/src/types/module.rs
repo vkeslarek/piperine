@@ -21,11 +21,13 @@ impl Checker<'_> {
     /// outside the subset.
     pub(super) fn port(&mut self, decl: DeclId, port: &PortData, file: FileId) {
         let ty = self.port_type(port.ty);
-        if let Some(carrier @ Ty::Carrier { .. }) = &ty {
+        if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             self.carriers.insert(decl, carrier.clone());
         }
         let span = self.design.type_node(port.ty).span;
-        match (&ty, port.dir) {
+        // an array of carriers is directed as its element is (CV-23): the direction is the array's
+        let kind = ty.as_ref().map(|t| t.innermost().clone());
+        match (&kind, port.dir) {
             (Some(Ty::Carrier { .. }), None) => {
                 self.coded(file, "E0310", span, "a port of a discrete nature takes `in` or `out` (§8.1.5)".to_string(), "no direction");
             }
@@ -39,6 +41,12 @@ impl Checker<'_> {
         }
         let Some(default) = port.default else { return };
         match (&ty, port.dir) {
+            // an array of carriers takes an array of values: `[x; K]` or `[a, b, c]` (§5.1.8)
+            (Some(array @ Ty::Array(..)), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { .. }) => {
+                self.initial_reads(default);
+                let value = array.read_value();
+                self.within(Context::Const, |this| this.check_as(default, &value, "E0210"));
+            }
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
                 let span = self.design.expr_node(default).span;
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
@@ -105,13 +113,16 @@ impl Checker<'_> {
     /// value reads a carrier or a probe (§5.1.5).
     pub(super) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
         let ty = self.port_type(signal.ty);
-        if let Some(carrier @ Ty::Carrier { .. }) = &ty {
+        if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             self.carriers.insert(decl, carrier.clone());
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
         self.initial_reads(init);
         let value = match &ty {
             Ty::Carrier { value, .. } => (**value).clone(),
+            // an array of carriers: the array of their values (`[0; 8]`); an array of nodes: an array of `f64`
+            array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => array.read_value(),
+            Ty::Array(_, length) => Ty::Array(Box::new(Ty::F64), length.clone()),
             _ => Ty::F64,
         };
         self.within(Context::Const, |this| this.check_as(init, &value, "E0210"));

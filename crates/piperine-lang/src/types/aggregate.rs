@@ -136,6 +136,10 @@ impl Checker<'_> {
             return None;
         };
         let element = element?;
+        // an array of carriers or of nodes (CV-23): `Ty::Array` over a `Carrier` or a `Node` element, which no value is
+        if element.is_carrier_element() {
+            return Some(Ty::Array(Box::new(element), length));
+        }
         if !element.is_value() {
             self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
             return None;
