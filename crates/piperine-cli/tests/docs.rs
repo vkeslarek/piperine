@@ -296,7 +296,8 @@ fn gaps_drops_what_msl_fixes_closed() {
     // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
     // (`### S6.` was kept here until `explicit-unknowns` closed it by the redesign and `### S8.` until its phase A closed that:
     // `gaps_closes_s6_and_tracks_the_flag`)
-    for kept in ["### S3.", "### B3.", "### B4."] {
+    // (`### S3.` was kept here until `generics` phase C closed it: `gaps_drops_s3`)
+    for kept in ["### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
@@ -305,9 +306,9 @@ fn gaps_drops_what_msl_fixes_closed() {
     // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
     // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29, L65 (a flag read on an `Option`) to 30; L66 (a `match` whose value is an `Option`) was found and closed by `composite-values` itself;
     // `explicit-unknowns` replaced S6 by S8 (still 2 silent), and its phase A closed S8 and L64 and L65: 1 silent, 28 loud; the split of L68 from L58 (explicit-unknowns phase B owns it) makes 29; `params-and-io` B5 closed L28 (integer, enum and `Option` params) and B6 L57 (files and tables): 27
-    assert!(gaps.contains("1 silent, 2 broken, 22 loud"), "the counts of §9 follow (25 loud since L71, the host write of a `Logic`, was recorded by `explicit-unknowns`)");
+    assert!(gaps.contains("0 silent, 2 broken, 22 loud"), "the counts of §9 follow (25 loud since L71, the host write of a `Logic`, was recorded by `explicit-unknowns`)");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
-    assert_eq!(rows("## 3. Silent", "## 4."), 1, "one silent entry");
+    assert_eq!(rows("## 3. Silent", "## 4."), 0, "no silent entry (S3 closed by `generics` phase C)");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
     assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 22, "twenty-two loud rows (L24 closed by `composite-values` phase C; L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70; L70 closed by T54 and L69 by T58)");
@@ -319,9 +320,9 @@ fn gaps_drops_the_value_semantics_gap() {
     // `value-semantics` as a plan, and no longer says `E0331` is raised
     let gaps = read("GAPS.md");
     assert!(!gaps.contains("### S7."), "S7 is closed");
-    assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && !gaps.contains("| S3, S8 ") && gaps.contains("| S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |"), "the section table lists S3 for generic modules (S6 and S8 closed by `explicit-unknowns`)");
+    assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && !gaps.contains("| S3, S8 ") && gaps.contains("| none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |"), "the section table lists no silent entry");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
-    assert!(gaps.contains("1 silent, 2 broken, 22 loud"), "the counts follow (27 loud after `params-and-io` closed L28 and L57; 28 since composite-values phase B closed L1 to L3 and L16; L64 and L65 came and were closed by `explicit-unknowns`, L66 by `composite-values` itself; S8 closed by `explicit-unknowns`)");
+    assert!(gaps.contains("0 silent, 2 broken, 22 loud"), "the counts follow (27 loud after `params-and-io` closed L28 and L57; 28 since composite-values phase B closed L1 to L3 and L16; L64 and L65 came and were closed by `explicit-unknowns`, L66 by `composite-values` itself; S8 closed by `explicit-unknowns`)");
 }
 
 #[test]
@@ -493,18 +494,14 @@ fn state_records_analog_structure() {
 #[test]
 fn gaps_drops_what_generics_phase_a_closed() {
     // generics GN-31 (T43): phase A closed L4 (generic enums), L7 (generic functions, `self`, `impl`, traits), L9 (a
-    // capturing closure for an `Fn` bound) and X6 (a generic body is checked once, Q1 (c)); S3 keeps only the generic
-    // module, which phase C checks (GN-13); §9 Coverage names the generic module as the hole of I §3.4 to §3.6
+    // capturing closure for an `Fn` bound) and X6 (a generic body is checked once, Q1 (c)); S3 (the generic module) closed in phase C
     let gaps = read("GAPS.md");
     for gone in ["| L4 |", "| L7 |", "| L9 |", "- **X6"] {
         assert!(!gaps.contains(gone), "GAPS.md still holds `{gone}`");
     }
-    let start = gaps.find("### S3.").expect("GAPS.md keeps S3");
-    let entry = &gaps[start..start + gaps[start..].find("\n---").expect("S3 closes its section")];
-    assert!(entry.starts_with("### S3. The type checker does not check a generic module's body"), "{entry}");
-    assert!(entry.contains("GN-13") && !entry.contains("A library package with no run"), "{entry}");
+    // S3 itself closed in phase C (T60): `gaps_drops_s3`
     let row = gaps.lines().find(|l| l.starts_with("| I §3.4–§3.6 files, crates, packages |")).expect("the Coverage row");
-    assert!(row.contains("unreached generic module (S3)"), "{row}");
+    assert!(row.contains("unreached generic module is checked"), "{row}");
     let roadmap = read("ROADMAP.md");
     assert!(roadmap.contains("phases A and B delivered"), "the ROADMAP lane row says phases A and B are delivered (phase A alone, until T52)");
 }
@@ -859,4 +856,14 @@ fn gaps_drops_what_composite_values_phase_c_closed() {
     // H9: E0803 is reachable by a param an array length reads, the thing QC2 delivered
     let h9 = gaps.lines().find(|line| line.starts_with("| H9 |")).expect("the row H9");
     assert!(h9.contains("reachable by a param an array length reads") && h9.contains("QC2"), "H9 states what QC2 delivered: {h9}");
+}
+
+#[test]
+fn gaps_drops_s3() {
+    // generics GN-13 (T60): a generic module is checked once at its definition, so the silent entry S3 leaves `GAPS.md`
+    // with the section table, the counts and the Coverage hole it named
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("### S3."), "GAPS.md still has the entry S3");
+    assert!(!gaps.contains("reaching it is `P0001`, so `module Hold<T: Repr>"), "the S3 refusal text is gone");
+    assert!(gaps.contains("0 silent, 2 broken"), "the counts follow");
 }

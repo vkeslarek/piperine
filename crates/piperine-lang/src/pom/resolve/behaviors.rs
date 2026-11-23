@@ -61,7 +61,9 @@ impl Ctx<'_> {
             }
             if !self.names_match(block, target) {
                 let head = Span::new(data.span.start, node.span.end);
-                let message = format!("the generic names of this block are not those of module `{text}`");
+                let block_names = block.names.iter().map(|n| n.text.as_str()).collect::<Vec<_>>().join(", ");
+                let module_names = self.generic_names(target).join(", ");
+                let message = format!("the generic names of this block (`<{block_names}>`) are not those of module `{text}` (`<{module_names}>`)");
                 report(Diagnostic::new("E0403", message, head, "generic names differ"));
             }
             links.insert(id, target);
@@ -73,14 +75,7 @@ impl Ctx<'_> {
     /// the generic parameters of `module`, in order?
     pub(super) fn names_match(&self, block: &BehaviorData, module: DeclId) -> bool {
         let design = self.design;
-        let generics: Vec<&str> = design
-            .decl_data(module)
-            .children
-            .iter()
-            .map(|c| design.decl_data(*c))
-            .filter(|d| matches!(d.kind, DeclKind::GenericParam(_)))
-            .filter_map(|d| d.name.as_ref().map(|n| n.text.as_str()))
-            .collect();
+        let generics = self.generic_names(module);
         let names: Vec<&str> = block.names.iter().map(|n| n.text.as_str()).collect();
         if names != generics {
             return false;
@@ -104,5 +99,18 @@ impl Ctx<'_> {
             Some(GenericArgsNode::Paren { .. }) => None,
         };
         written.is_some_and(|w| w == generics)
+    }
+
+    /// The names of the generic parameters of `module`, in the order they are written.
+    fn generic_names(&self, module: DeclId) -> Vec<&str> {
+        let design = self.design;
+        design
+            .decl_data(module)
+            .children
+            .iter()
+            .map(|c| design.decl_data(*c))
+            .filter(|d| matches!(d.kind, DeclKind::GenericParam(_)))
+            .filter_map(|d| d.name.as_ref().map(|n| n.text.as_str()))
+            .collect()
     }
 }

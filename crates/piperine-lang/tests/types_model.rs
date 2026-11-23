@@ -6,6 +6,11 @@
 #[path = "support/pom.rs"]
 mod support;
 
+#[allow(dead_code)]
+#[path = "support/generic_sources.rs"]
+mod generic_sources;
+
+use generic_sources::GenericSources;
 use piperine_lang::pom::{CrateGraph, Design, DesignDiagnostic};
 use piperine_lang::types::Types;
 
@@ -105,4 +110,14 @@ fn the_standard_library_is_left_to_its_own_check() {
     assert!(Types::check_model(&design).is_ok());
     let (_, found) = ModelSources::errors(&format!("{std_error}module Top() {{ }}"));
     assert_eq!(ModelSources::codes(&found), ["E0180"]);
+}
+
+#[test]
+fn an_unreached_generic_module_with_an_error_fails_the_model_check() {
+    // GN-13 AC 1, S3: a generic module nothing places is typed once at its definition, so an error in its body is
+    // reported where it is written, with the code it has when reached, never as `P0001`
+    let broken = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nanalog<T> for Hold<T> { let flag: bool = 1.0; }\nmodule Top() { }\n";
+    assert_eq!(GenericSources::standard_codes(broken), ["E0180"], "{:?}", GenericSources::standard_found(broken));
+    let clean = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nmodule Top() { }\n";
+    assert!(GenericSources::standard_codes(clean).is_empty(), "a clean generic module passes the model check");
 }

@@ -207,18 +207,22 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if self.design.decl_data(module).generics_span.is_some() {
+        if self.refuse_generic_placements && self.design.decl_data(module).generics_span.is_some() {
             self.unsupported(file, node.span, "generic module");
             return None;
         }
+        let substitution = if self.design.decl_data(module).generics_span.is_some() { Some(self.generic_placement(expr, *callee, module, args)?) } else { None };
         self.reach(module);
         self.callees.insert(expr, Callee::Module(module));
         self.exprs[callee.index()] = Some(Ty::Module(module));
         self.placing.push(Some(module));
+        let outer = std::mem::replace(&mut self.placement_substitution, substitution.clone());
         self.connections(expr, module, args, file);
+        self.placement_substitution = outer;
         self.placing.pop();
         self.param_block(&fields);
-        self.placement_type(module)
+        let placed = self.placement_type(module)?;
+        Some(substitution.map_or(placed.clone(), |substitution| substitution.apply(&placed)))
     }
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
@@ -261,7 +265,7 @@ impl Checker<'_> {
                 self.unsupported(file, arg.span, "named connection");
             }
         }
-        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type(*ty)).collect();
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type_under_placement(*ty)).collect();
         let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
