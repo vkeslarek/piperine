@@ -27,15 +27,10 @@ impl Checker<'_> {
     // ---- types as written ------------------------------------------------------------------
 
     /// The type of the struct `decl` named at `span` of `file`: [`Ty::Struct`] once its fields are
-    /// typed, else a diagnostic and `None` (a generic struct or a bundle is outside the subset, a
-    /// duplicate field or a self-containing type is `E0186`).
+    /// typed, else a diagnostic and `None` (a bundle is outside the subset, a duplicate field or a
+    /// self-containing type is `E0186`). A generic struct is typed over its own parameters; its uses
+    /// carry the arguments (`generic_nominal`).
     pub(super) fn struct_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        let data = self.design.decl_data(decl).clone();
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        if data.generics_span.is_some() {
-            self.unsupported(file, span, &format!("generic struct `{name}`"));
-            return None;
-        }
         if self.broken.contains(&decl) {
             return None;
         }
@@ -179,13 +174,14 @@ impl Checker<'_> {
             self.unsupported(file, node.span, "struct expression of a name that is no struct");
             return None;
         };
-        let (ty, owner) = self.constructed_type(target, file, node.span)?;
-        let layout = self.fields_of(owner)?;
+        let (open, owner) = self.constructed_type(target, file, node.span)?;
+        let declared = self.fields_of(owner)?;
         let mut seen: Vec<&str> = Vec::new();
+        let mut values: Vec<(usize, ExprId)> = Vec::new();
         for init in fields {
             let name = init.name.text.as_str();
-            let Some(field) = layout.iter().find(|f| f.name.as_deref() == Some(name)) else {
-                let of = ty.name(self.design);
+            let Some(position) = declared.iter().position(|f| f.name.as_deref() == Some(name)) else {
+                let of = open.name(self.design);
                 self.coded(file, "E0186", init.span, format!("{of} has no field `{name}` (§1.3.3)"), "no such field");
                 self.infer(init.value);
                 continue;
@@ -196,7 +192,11 @@ impl Checker<'_> {
                 continue;
             }
             seen.push(name);
-            self.check(init.value, &field.ty);
+            values.push((position, init.value));
+        }
+        let (ty, layout) = self.close_constructor(expr, open, declared, &values, file, node.span)?;
+        for (position, value) in &values {
+            self.check(*value, &layout[*position].ty);
         }
         let left_out: Vec<String> = layout.iter().filter_map(|f| f.name.as_deref()).filter(|n| !seen.contains(n)).map(|n| format!("`{n}`")).collect();
         if !left_out.is_empty() {
@@ -210,10 +210,10 @@ impl Checker<'_> {
     /// its fields.
     pub(super) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
         match &self.design.decl_data(target).kind {
-            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|ty| (ty, target)),
+            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|_| (self.open_type(target), target)),
             DeclKind::Variant(_) => {
                 let parent = self.design.decl_data(target).parent?;
-                self.enum_type(parent, file, span).map(|ty| (ty, target))
+                self.enum_type(parent, file, span).map(|_| (self.open_type(parent), target))
             }
             other => {
                 self.unsupported(file, span, &format!("{} as a struct expression", super::unsupported::Unsupported::item(other)));
@@ -227,12 +227,14 @@ impl Checker<'_> {
     pub(super) fn constructor_call(&mut self, expr: ExprId, target: DeclId, args: &[Arg]) -> Option<Ty> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let (ty, owner) = self.constructed_type(target, file, node.span)?;
-        let layout = self.fields_of(owner)?;
-        if layout.iter().any(|f| f.name.is_some()) {
+        let (open, owner) = self.constructed_type(target, file, node.span)?;
+        let declared = self.fields_of(owner)?;
+        if declared.iter().any(|f| f.name.is_some()) {
             self.unsupported(file, node.span, "a call of a struct or variant with named fields: write a struct expression `Name { .. }`");
             return None;
         }
+        let positional: Vec<(usize, ExprId)> = args.iter().enumerate().filter(|(_, arg)| arg.name.is_none()).map(|(position, arg)| (position, arg.value)).collect();
+        let (ty, layout) = if declared.len() == args.len() { self.close_constructor(expr, open, declared, &positional, file, node.span)? } else { (open, declared) };
         if layout.len() != args.len() {
             let message = format!("{} takes {} argument{}, found {}", ty.name(self.design), layout.len(), if layout.len() == 1 { "" } else { "s" }, args.len());
             self.mismatch_text(file, node.span, &format!("{} fields", layout.len()), &format!("{} arguments ({message})", args.len()));
@@ -253,9 +255,10 @@ impl Checker<'_> {
 
     /// A struct or a variant named as a value: a unit one is its value, any other is a
     /// constructor that only a call or a struct expression uses.
-    pub(super) fn constructor_value(&mut self, target: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        let (ty, owner) = self.constructed_type(target, file, span)?;
-        let layout = self.fields_of(owner)?;
+    pub(super) fn constructor_value(&mut self, expr: ExprId, target: DeclId, file: FileId, span: Span) -> Option<Ty> {
+        let (open, owner) = self.constructed_type(target, file, span)?;
+        let declared = self.fields_of(owner)?;
+        let (ty, layout) = self.close_constructor(expr, open, declared, &[], file, span)?;
         if !layout.is_empty() {
             let name = ty.name(self.design);
             self.unsupported(file, span, &format!("the name of {name}, which has fields, used as a value: build it with a call or a struct expression"));
@@ -274,7 +277,7 @@ impl Checker<'_> {
         let found = self.infer(receiver)?;
         match &found {
             Ty::Struct(Nominal { decl, .. }) => {
-                let layout = self.fields_of(*decl)?;
+                let layout = self.instance_layout(*decl, &found)?;
                 let named = match name.text.parse::<usize>() {
                     Ok(position) => layout.get(position).filter(|f| f.name.is_none()),
                     Err(_) => layout.iter().find(|f| f.name.as_deref() == Some(name.text.as_str())),

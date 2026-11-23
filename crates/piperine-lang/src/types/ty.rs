@@ -128,6 +128,23 @@ impl Ty {
         }
     }
 
+    /// Whether a type parameter is mentioned anywhere in the type, an argument and a length included.
+    pub fn has_param(&self) -> bool {
+        match self {
+            Ty::Param(_) => true,
+            Ty::Fn(params, ret) => params.iter().any(Ty::has_param) || ret.has_param(),
+            Ty::Option(inner) | Ty::Range { element: inner, .. } | Ty::Iterator { element: inner, .. } | Ty::Carrier { value: inner, .. } => inner.has_param(),
+            Ty::Tuple(items) => items.iter().any(Ty::has_param),
+            Ty::Array(element, length) => element.has_param() || matches!(length, Length::Generic(_)),
+            Ty::Struct(nominal) | Ty::Enum(nominal) => nominal.arguments.iter().any(|argument| match argument {
+                GenericValue::Type(ty) => ty.has_param(),
+                GenericValue::Const(ConstTerm::Param(_) | ConstTerm::Width(_) | ConstTerm::Expr(_)) => true,
+                _ => false,
+            }),
+            _ => false,
+        }
+    }
+
     /// The struct `decl`, not generic.
     pub fn structure(decl: DeclId) -> Ty {
         Ty::Struct(Nominal::plain(decl))

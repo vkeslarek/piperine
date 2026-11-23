@@ -232,7 +232,7 @@ impl Checker<'_> {
 
     /// The substitution for every parameter: what was found, else the default, else `E0181` naming
     /// the first parameter left open.
-    fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
+    pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
         let mut substitution = Substitution::new();
         for parameter in signature.parameters() {
             let value = match inference.found().get(parameter.decl) {

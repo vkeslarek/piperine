@@ -120,7 +120,8 @@ impl Checker<'_> {
                     self.check_as(*operand, expected, code);
                     Some(expected.clone())
                 }
-                ExprKind::Call { .. } => {
+                // a call, a struct expression and a constructor name may take the arguments of a generic type from the type expected
+                ExprKind::Call { .. } | ExprKind::Struct { .. } | ExprKind::Path(_) => {
                     self.call_expected = Some((expr, expected.clone()));
                     self.infer(expr)
                 }
@@ -580,7 +581,7 @@ impl Checker<'_> {
                         }
                         local
                     }
-                    DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(decl, file, node.span),
+                    DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
                     other => {

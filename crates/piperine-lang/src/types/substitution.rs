@@ -156,6 +156,10 @@ impl Checker<'_> {
             arguments.push(value);
         }
         self.arguments_satisfy_bounds(&signature, &arguments, decl, file, span)?;
+        // the declaration is typed over its own parameters once, for every use (fields, derives, E0186)
+        let declared = if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
+        declared?;
+        self.arguments_have_repr(decl, &arguments, file, span)?;
         let nominal = Nominal { decl, arguments };
         Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
     }
@@ -176,6 +180,24 @@ impl Checker<'_> {
             }
         }
         satisfied.then_some(())
+    }
+
+    /// H.8 rule 6, §2 rule 3: `#[derive(Repr)]` on a generic type holds for the instance whose every type
+    /// argument has a `Repr`; one that has none is `E0110` naming the argument. `None` after a refusal.
+    fn arguments_have_repr(&mut self, decl: DeclId, arguments: &[GenericValue], file: FileId, span: Span) -> Option<()> {
+        if !self.derives(decl, "Repr") {
+            return Some(());
+        }
+        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let mut holds = true;
+        for argument in arguments {
+            let GenericValue::Type(ty) = argument else { continue };
+            if !ty.has_param() && self.repr_levels(ty).is_none() {
+                self.coded(file, "E0110", span, format!("`{name}` derives `Repr`, and its argument `{}` has no `Repr` (§2 rule 3)", ty.source_name(self.design)), "an argument without `Repr`");
+                holds = false;
+            }
+        }
+        holds.then_some(())
     }
 
     /// The argument `node` for `parameter`: a type for a type or nature parameter, a const for a

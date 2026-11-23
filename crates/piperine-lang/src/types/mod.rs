@@ -31,7 +31,7 @@ mod event;
 mod exits;
 mod expr;
 mod flow;
-mod generics;
+mod generic_values; mod generics;
 mod intrinsic;
 mod inference;
 mod iterators;

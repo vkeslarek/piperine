@@ -393,3 +393,36 @@ fn array_lengths_and_where_are_deferred_to_the_instantiation() {
     assert_eq!(found[0].0, "E0180");
     assert!(found[0].1.contains("expected `[f64; 3]`, found `[f64; 4]`"), "{}", found[0].1);
 }
+
+#[test]
+fn generic_structs_and_enums_type_check_per_instance() {
+    // §3.8, §1.3: a constructor finds its arguments from its fields or the expected type, a field read and a
+    // pattern see the field types substituted, a derive holds for the arguments that implement it, and a
+    // generic body builds and reads values of its own parameters
+    let items = "struct Pair<T> { a: T, b: T }\nenum Maybe<T> { No, Yes(T) }\n#[derive(PartialEq)] struct Wrap<T> { v: T }\n\
+                 fn swap<T>(p: Pair<T>) -> Pair<T> { Pair { a: p.b, b: p.a } }\n\
+                 fn first_or<T>(m: Maybe<T>, d: T) -> T { match m { Maybe::Yes(v) => v, Maybe::No => d } }\n";
+    let body = "let p = Pair { a: 1.0, b: 2.0 }; let x = p.a; let q = swap(p); let m = Maybe::Yes(3u8); let n: Maybe<bool> = Maybe::No; let r = first_or(m, 0); \
+                let e = Wrap { v: 1.0 } == Wrap { v: 2.0 }; let w = Wrap { v: Maybe::Yes(true) };";
+    let found = GenericSources::analog_types(items, body, &["p", "x", "q", "m", "n", "r", "e", "w"]).unwrap_or_else(|errors| panic!("{errors:?}"));
+    assert_eq!(found, ["p = struct `Pair<f64>`", "x = f64", "q = struct `Pair<f64>`", "m = Maybe<u8>", "n = Maybe<bool>", "r = u8", "e = bool", "w = struct `Wrap<Maybe<bool>>`"]);
+    // a field of the wrong type for the argument the others gave, and a name nothing gives
+    let wrong = GenericSources::analog_types(items, "let p = Pair { a: 1.0, b: true };", &["p"]).expect_err("T is f64 and b is bool");
+    assert_eq!(wrong[0].0, "E0180", "{wrong:?}");
+    let open = GenericSources::analog_types(items, "let n = Maybe::No;", &["n"]).expect_err("nothing gives T");
+    assert_eq!(open[0].0, "E0181", "{open:?}");
+    // an instance compares only if its arguments do: `f64` has `PartialEq`, a derive over `Maybe` (which derives nothing) does not
+    let unordered = GenericSources::analog_types(items, "let e = Wrap { v: Maybe::Yes(true) } == Wrap { v: Maybe::Yes(false) };", &["e"]).expect_err("Maybe has no PartialEq");
+    assert_eq!(unordered[0].0, "E0180", "{unordered:?}");
+}
+
+#[test]
+fn a_generic_repr_type_over_an_argument_without_repr_is_e0110() {
+    // §2 rule 3, H.8 rule 6: `#[derive(Repr)]` on a generic type holds for the arguments that have a `Repr`
+    let items = "#[derive(PartialEq, Repr)] struct Cell<T> { v: T }\n";
+    let found = GenericSources::model_errors(&format!("{items}fn f(c: Cell<str>) -> f64 {{ 1.0 }}\n"));
+    assert_eq!(GenericSources::codes_of(&found), ["E0110"], "{found:?}");
+    assert!(found[0].diagnostic.message.contains("`Cell` derives `Repr`, and its argument `str` has no `Repr`"), "{:?}", found[0]);
+    let design = support::build(&format!("{HEAD}{items}fn g(c: Cell<u8>) -> f64 {{ 1.0 }}\nfn h(c: Cell<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
+    assert_eq!(Types::check_model(&design), Ok(()), "u8 and a tuple of a float and a bool have layouts");
+}

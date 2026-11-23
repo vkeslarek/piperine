@@ -11,7 +11,7 @@ use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, E
 
 use super::aggregate::FieldType;
 use super::check::Checker;
-use super::{Length, Nominal, Ty};
+use super::{GenericValue, Length, Nominal, Ty};
 
 /// One trait of the table of H.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,7 +102,14 @@ impl Checker<'_> {
             Ty::Option(_) if which == DerivedTrait::Default => true,
             Ty::Option(inner) | Ty::Array(inner, _) => self.implements(inner, which),
             Ty::Tuple(items) => items.iter().all(|item| self.implements(item, which)),
-            Ty::Struct(Nominal { decl, .. }) | Ty::Enum(Nominal { decl, .. }) => self.derives(*decl, which.name()),
+            // H.8 rule 6: a generic type implements a trait when it derives it and its arguments do
+            Ty::Struct(nominal) | Ty::Enum(nominal) => {
+                self.derives(nominal.decl, which.name())
+                    && nominal.arguments.iter().all(|argument| match argument {
+                        GenericValue::Type(ty) => self.implements(ty, which),
+                        _ => true,
+                    })
+            }
             Ty::Fn(..) => which == DerivedTrait::Debug,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
             // what a parameter implements is what its bounds give (§3 rule 9)
@@ -129,7 +136,7 @@ impl Checker<'_> {
                 self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name} needs `#[derive({})]` too (H.8 rules 2 and 3)", missing.name()));
                 clean = false;
             }
-            if let Some(field) = fields.iter().find(|field| !self.implements(&field.ty, which)) {
+            if let Some(field) = fields.iter().find(|field| !field.ty.has_param() && !self.implements(&field.ty, which)) {
                 let type_name = field.ty.name(self.design);
                 if which == DerivedTrait::Default {
                     let field_name = field.name.as_deref().unwrap_or("a positional field");
@@ -214,11 +221,12 @@ impl Checker<'_> {
             Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
             Ty::Struct(_) | Ty::Enum(_) if self.hand_written_levels(ty).is_some() => self.hand_written_levels(ty),
-            Ty::Struct(Nominal { decl, .. }) if self.derives(*decl, "Repr") => {
-                let fields: Vec<Ty> = self.fields_of(*decl)?.into_iter().map(|f| f.ty).collect();
+            Ty::Struct(nominal) if self.derives(nominal.decl, "Repr") => {
+                let substitution = self.nominal_substitution(nominal);
+                let fields: Vec<Ty> = self.fields_of(nominal.decl)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
                 self.repr_sum(&fields)
             }
-            Ty::Enum(Nominal { decl, .. }) => self.enum_levels(*decl),
+            Ty::Enum(nominal) => self.enum_levels(nominal),
             _ => None,
         }
     }
@@ -229,10 +237,12 @@ impl Checker<'_> {
     }
 
     /// The levels of a derived enum: the tag, then the widest payload (§2 rules 2, 5 and 6).
-    fn enum_levels(&mut self, decl: DeclId) -> Option<u32> {
+    fn enum_levels(&mut self, nominal: &Nominal) -> Option<u32> {
+        let decl = nominal.decl;
         if !self.derives(decl, "Repr") {
             return None;
         }
+        let substitution = self.nominal_substitution(nominal);
         let variants = self.variants_of(decl);
         let tag = match self.repr_width(decl) {
             None => usize::BITS - variants.len().saturating_sub(1).leading_zeros(),
@@ -241,7 +251,7 @@ impl Checker<'_> {
         };
         let mut widest = 0u32;
         for variant in variants {
-            let fields: Vec<Ty> = self.fields_of(variant)?.into_iter().map(|f| f.ty).collect();
+            let fields: Vec<Ty> = self.fields_of(variant)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
             widest = widest.max(self.repr_sum(&fields)?);
         }
         tag.checked_add(widest)
@@ -255,7 +265,8 @@ impl Checker<'_> {
         }
         let mut clean = true;
         for (position, field) in fields.iter().enumerate() {
-            if self.repr_levels(&field.ty).is_some() {
+            // a field of a type parameter has a `Repr` where the instance has: each use checks its arguments
+            if field.ty.has_param() || self.repr_levels(&field.ty).is_some() {
                 continue;
             }
             let span = self.design.decl_data(field.decl).span;

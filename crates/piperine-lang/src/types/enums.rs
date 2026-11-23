@@ -28,12 +28,6 @@ impl Checker<'_> {
     /// carrier needs `#[derive(Repr)]`, checked where a carrier takes it; a duplicate variant or field and a self-containing
     /// type are `E0186`; a discriminant that does not fit or repeats is `E0111`).
     pub(super) fn enum_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        let data = self.design.decl_data(decl).clone();
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        if data.generics_span.is_some() {
-            self.unsupported(file, span, &format!("generic enum `{name}`"));
-            return None;
-        }
         if self.broken.contains(&decl) {
             return None;
         }

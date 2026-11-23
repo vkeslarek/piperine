@@ -48,7 +48,7 @@ impl Checker<'_> {
     /// `P(a, b)` and `Tx::Data(a)` (§1.6.5): a tuple struct or a variant with positional fields.
     pub(super) fn constructor_pattern(&mut self, file: FileId, span: Span, path: PathId, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
         let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
-        let layout = self.fields_of(owner)?;
+        let layout = self.instance_layout(owner, scrut)?;
         if layout.iter().any(|f| f.name.is_some()) {
             self.mismatch_text(file, span, "a pattern with the fields' names", "a positional pattern");
             return None;
@@ -63,7 +63,7 @@ impl Checker<'_> {
     /// needs `..`, else `E0184`.
     pub(super) fn struct_pattern(&mut self, file: FileId, span: Span, path: PathId, fields: &[FieldPatNode], rest: bool, scrut: &Ty) -> Option<Matched> {
         let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
-        let layout = self.fields_of(owner)?;
+        let layout = self.instance_layout(owner, scrut)?;
         let mut columns: Vec<Option<&FieldPatNode>> = vec![None; layout.len()];
         for field in fields {
             let at = match field.res {
@@ -245,7 +245,12 @@ impl Checker<'_> {
             return None;
         };
         let (ty, owner) = self.constructed_type(target, file, span)?;
-        if ty != *scrut {
+        // a generic type's pattern is of its declaration, whatever arguments the scrutinee has
+        let same_type = match (&ty, scrut) {
+            (Ty::Struct(open), Ty::Struct(given)) | (Ty::Enum(open), Ty::Enum(given)) => open.decl == given.decl,
+            _ => ty == *scrut,
+        };
+        if !same_type {
             self.mismatch(file, span, scrut, &ty);
             return None;
         }

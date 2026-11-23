@@ -284,7 +284,9 @@ impl Checker<'_> {
                 DeclKind::Variant(_) => {
                     let parent = self.design.decl_data(d).parent?;
                     let found = self.enum_type(parent, file, span)?;
-                    if found != *scrut {
+                    // a generic enum's variant is of its declaration, whatever arguments the scrutinee has
+                    let same = matches!((&found, scrut), (Ty::Enum(open), Ty::Enum(given)) if open.decl == given.decl) || found == *scrut;
+                    if !same {
                         self.mismatch(file, span, scrut, &found);
                         return None;
                     }
