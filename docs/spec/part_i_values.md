@@ -904,6 +904,11 @@ of the functions it calls. A function may belong to several classes; the restric
 | event | returns `Event` ([§13](part_iv_behavior.md#13-events)) | event positions; as `bool` inside a reaction |
 | emitting | calls `emit!` ([§19](part_vi_io.md#19-streams-and-checks)) | reactions, `analog` |
 
+- **§3 rule 0.** *(Amendment, generics fix round, 2026-11-23, AFK default, pending user review.)* The
+  `Callable in` column is a list of the positions of a behavior. A definition (`f = clock();`) is not
+  a behavior position: a call of a solve-reading function there is `E0336`, the code that names
+  definitions ([§8.2.5](part_iii_structure.md)), not `E0122`; `E0122` is for the const contexts
+  (a `where`, a param default, a `const`).
 - **§3 rule 1.** Inside `analog`, calls are differentiated through
   ([§11](part_iv_behavior.md#11-analog) rule 5).
 - **§3 rule 2.** `extern "C" fn` and `extern "intrinsic" fn` are implemented outside the language

@@ -1393,6 +1393,7 @@ Proof: run typeshandles | test solve_reading_functions_are_accepted_where_the_ta
 
 **C36** - A solve-reading call where that class is not allowed is `E0122`. (GN-12, AC 2; T47)
 Proof: run typeshandles | test a_solve_reading_call_in_a_const_context_is_e0122 ... ok
+Proof: run spectext | test a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes ... ok
 
 **C37** - A probe of a handle in a function body is not `E0450`. (GN-12, AC 3; T44)
 Proof: run typeshandles | test a_probe_of_a_handle_in_a_function_is_not_e0450 ... ok

@@ -2514,3 +2514,14 @@ fn part_v_the_event_time_steps_are_the_ones_that_exist() {
     assert!(s.contains("steps 2, 3.1, 3.2, 3.3 and 3.4 run, in the same order. Steps 1 and 4 do not"), "the event-time steps");
     assert!(!s.contains("3.5"), "Part V names a step 3.5, which the procedure does not have");
 }
+
+#[test]
+fn a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes() {
+    // GN-12 AC 2, D13 as amended: the §3 class table lists behavior positions only, and the amendment says a definition
+    // is `E0336` (the code §8.2.5 gives it) while `E0122` is the const contexts'
+    let text = flat(&spec("part_i_values.md"));
+    let rule = &text[text.find("- **§3 rule 0.**").expect("rule 0")..text.find("- **§3 rule 1.**").expect("rule 1")];
+    for fact in ["A definition (`f = clock();`) is not a behavior position", "a call of a solve-reading function there is `E0336`", "`E0122` is for the const contexts"] {
+        assert!(rule.contains(fact), "§3 rule 0 lacks \"{fact}\": {rule}");
+    }
+}
