@@ -11,6 +11,7 @@ use super::elaborator::Elaboration;
 use super::structural::BodyKey;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId};
+use crate::types::Ty;
 
 /// A param of a module, as placement needs it.
 #[derive(Clone)]
@@ -193,11 +194,16 @@ impl Elaboration<'_, '_> {
     /// (`carriers.rs`).
     fn lower_nodes(&mut self, module: DeclId) {
         let children = self.design.decl_data(module).children.clone();
-        let node = |c: &DeclId| self.types.carrier(*c).is_none();
+        let node = |c: &DeclId| self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
-            if let Some(terminal) = self.add_node(decl, role, "", 0) {
+            if self.types.node_array(decl).is_some() {
+                if let Some((shape, first)) = self.add_node_array(decl, role, "", 0) {
+                    self.frames[0].nodes.insert(decl, first);
+                    self.frames[0].node_shapes.insert(decl, shape);
+                }
+            } else if let Some(terminal) = self.add_node(decl, role, "", 0) {
                 self.frames[0].nodes.insert(decl, terminal);
             }
         }
@@ -214,12 +220,26 @@ impl Elaboration<'_, '_> {
     fn lower_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
         let data = self.design.decl_data(decl).clone();
         let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
+        self.lower_node_named(decl, role, &name, frame)
+    }
+
+    /// The node `decl` named `name` in the body: one node, or one element of an array of nodes (`carrier_arrays.rs`).
+    pub(super) fn lower_node_named(&mut self, decl: DeclId, role: NodeRole, name: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
+        let data = self.design.decl_data(decl).clone();
+        let name = name.to_string();
         let (ty, init) = match &data.kind {
             DeclKind::Port(p) => (p.ty, None),
             DeclKind::Signal(s) => (s.ty, s.init),
             _ => return None,
         };
-        let nature = self.design.nature_of(ty).and_then(|n| self.nature(n))?;
+        let nature = match self.types.node_array(decl).map(|t| t.innermost().clone()) {
+            Some(Ty::Node(nature)) => self.nature(nature)?,
+            _ => self.design.nature_of(ty).and_then(|n| self.nature(n))?,
+        };
+        let init = match (init, self.types.node_array(decl).is_some()) {
+            (_, true) => None,
+            (init, false) => init,
+        };
         let init = match init {
             Some(expr) => match self.consts.value(expr, &self.frame_bindings(frame)) {
                 Ok(Constant::Real(value)) => Some(value),

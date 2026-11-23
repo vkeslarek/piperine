@@ -454,8 +454,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `an_array_of_nodes_is_one_node_per_element`, `a_nested_array_of_carriers_is_row_major` and `an_array_length_read_from_a_param_makes_it_structural` pass under `**Run elabarr**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `an_array_of_nodes_is_one_node_per_element`, `a_nested_array_of_carriers_is_row_major` and `an_array_length_read_from_a_param_makes_it_structural` pass under `**Run elabarr**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -849,6 +849,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T76 notes:** `types/element_target.rs` (not `definition.rs`): `DriveTarget { carrier, held, element }`, `Element::{Whole, At, Any}` (a run-time index may reach any element), `DriveBook.elements`. A definition's non-folding index is NOT refused by the checker (generation loops fold at elaboration): T81 raises `P0002` there. A whole array or a part of one as a target is `P0001` "name an element". Moved pins (design-c "may move": the element-or-field P0001 rows): `types_buck.rs` (2 rows), `elab_unlowered.rs` (1 row; `a_diagnostic_means_no_ir` now uses two `Wire` ports), `types_subset.rs` (1 row), `elab_entry.rs` (its P0001 case now a module template). The elaborator's `drive_target` still refuses an element target by name until T81.
 **T77 notes:** connections live in `types/module.rs` (`connect_array`, `shape_mismatch`, `hand_over` with an `Element`, `handed` is now `(carrier, element, span, file)`); `Element::Run` names a sub-array; `E0313` left `code_owners.tsv`. A constant index past the end of a connected array is `E0104` at elaboration (T82), not here.
 **C2 batch gate (T70 to T77), 2026-11-23:** `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: the only red targets are `book_modules::the_memory_bank_is_refused_for_its_struct_arrays_and_generics` and `book_natures::signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net` (both T89's: the arrays now run), the known `piperine-cli --test book every_cli_listing_of_the_book_is_what_the_binary_prints` (monitor.msl `Bit<Logic<4>>`, explicit-unknowns B, still red here, not this phase's), and two `piperine-cli --test docs` GAPS.md section 10 tests, fixed in this commit (the `E0313` row left `GAPS.md` section 10 and `code_owners.tsv` since T77 raises it). `cargo test -p piperine-parity -- --nocapture` exit 0; the seven buck targets exit 0; `buck_scenarios` exit 0; `twins` exit 0.
+**T78 notes:** `elab/carrier_arrays.rs`: `ArrayShape` (dims, row-major `subscripts`), `carrier_array_shape`, `array_init` (`[x; K]` one element's constant, else an array constant; a nested array only takes `[x; K]`), `add_node_array` (K nodes `name[0]`.. plus `NodeArray`). `Types::carrier_array`/`node_array` split the arrays out of `carrier`. A whole read of a nested array of carriers stays a refusal until a task needs it.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
