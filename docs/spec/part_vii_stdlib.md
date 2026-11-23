@@ -1,6 +1,6 @@
 # Part VII. Standard library
 
-**Terms defined here:** standard library, strength, high impedance, converter, monitor, inertial delay.
+**Terms defined here:** standard library, strength, high impedance, four-state logic, converter, monitor, inertial delay.
 
 ## 22. Standard library
 
@@ -8,7 +8,7 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 
 1. The prelude (§3.4.2) re-exports every `pub` item of the namespaces of `std`. No `use` is needed.
 2. A standard-library item has no semantics beyond its definition. Its behavior in each analysis follows from §16.2 applied to that definition.
-3. A project **MAY** replace any item of this section by declaring an item of the same name in scope. The replacement is an ordinary item, with no privilege of the item it replaces (§3.3.7). The core names of §14 are not replaceable (§14 rule 1).
+3. A project **MAY** replace any item of this section by declaring an item of the same name in scope. The replacement is an ordinary item, with no privilege of the item it replaces. The core names of §14 are not replaceable (§14 rule 1).
 4. Where this part gives a definition, the definition is normative. Where it gives only a signature and a contract, the item is declared `extern "intrinsic"` (§3 rule 10) and the contract is normative.
 5. The per-analysis tables in this part are derived from the definitions. If a table and a definition disagree, the definition governs.
 
@@ -35,6 +35,8 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 | `parse_table` | §22.6.4 | reads the characters of a `str` |
 | `parse_hex` | §22.6.4 | reads the characters of a `str` |
 
+> **Resolution.** The explicit model of unknowns (Appendix G.72) is stated here before the `std` files hold it: the fences of §22.1 (`Logic`, the operators, `cast`, `same`, `impl Bit`), of §22.3, and of the items that read a carrier directly are ahead of their files, and `std_excerpts` lists each until the file is brought to the text. Where the two differ, this part is the specification and the file is the defect.
+
 > **Resolution.** An implementation **MAY** implement an item natively when the result is observably equal to the definition: same values, same events, same time points, same records.
 
 > **Resolution.** The natures `Bit` (§4), `Electrical`, `Thermal` and `VSignal` (§4) and the module `Short` (§11) are prelude items. Their defining text is in the sections cited; they are not repeated here.
@@ -43,11 +45,11 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 
 | Item | Kind | Entry | Built on |
 | --- | --- | --- | --- |
-| `Known` (`known`, `known_or`, `is_known`) | trait | §22.1.1 | `level` |
-| `merge` | `fn` | §22.1.2 | `Unknown`, §3.3.3 |
+| `Logic`, `LogicState` | value types | §22.1.1 | `Repr` |
+| the operators of `Logic` | operator-trait `impl`s | §22.1.2 | Appendix H.10 |
 | `cast` | `fn` | §22.1.3 | `Repr` |
-| `same`, `matches_bits`, `logic` | `fn` | §22.1.4 | `level`, `merge` |
-| `Bit::rise`, `Bit::fall`, `Bit::high` | `fn` on a nature | §22.1.5 | `changed`, `prev`, `level` |
+| `same`, `matches_bits`, `logic` | `fn` | §22.1.4 | `encode`, `Logic` |
+| `Bit::rise`, `Bit::fall` | `fn` on a nature | §22.1.5 | `changed`, `prev` |
 | `init` | module, result `Event` | §22.1.6 | `changed` |
 | `every` | module, result `Event` | §22.1.7 | `at` |
 | `since` | module, result `f64` | §22.1.8 | `changed`, `now` |
@@ -68,12 +70,11 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 | `table_model` | `fn` | §22.2.15 | — |
 | `db10`, `db20` | `fn` | §22.2.16 | — |
 | `normal` | `fn` | §22.2.17 | — |
-| `Strength`, `Logic` | value types | §22.3.1 | `Repr` |
-| `Logic::wired`, `Wire` | `fn`, nature | §22.3.2 | `merge`, `resolve` |
-| `tri`, `Tri` | `fn`, nature | §22.3.3 | `resolve` |
-| `sum`, `SumNet` | `fn`, nature | §22.3.4 | `resolve` |
+| `Strength`, `Driven` | value types | §22.3.1 | `Logic` |
+| `Driven::strongest` | `fn` | §22.3.2 | `same` |
+| `sum` | `fn` | §22.3.4 | — |
 | `Tribuf`, `Pullup`, `Pulldown` | module | §22.3.5 | definitions |
-| `Keeper` | module | §22.3.6 | `changed` |
+| `Keeper` | module | §22.3.6 | `changed`, `others` |
 | `Tran` | module | §22.3.7 | `others` |
 | `Tgate` | module | §22.3.8 | `Tran` |
 | `D2A` | module | §22.4.1 | `transition` |
@@ -100,7 +101,7 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0701` | `cast::<A, B>` with `A::WIDTH != B::WIDTH` | elaboration |
-| `E0702` | pattern of `logic` or `matches_bits`: a character outside `0 1 x`, or a length other than the type's `WIDTH` | elaboration |
+| `E0702` | pattern of `logic` or `matches_bits`: a character outside `0 1 x z`, or a length other than `N` | elaboration |
 | `E0703` | `table_model` control string not of the form in §22.2.15 | elaboration |
 | `E0704` | `table_model` table: abscissae not strictly increasing, or fewer points than the interpolation degree needs | elaboration |
 | `E0705` | `table_model` input outside the table under extrapolation `E`: a panic (§1 rule 11) with its own code | run |
@@ -110,113 +111,282 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 
 ### 22.1 Values and `Bit`
 
-#### 22.1.1 `Known`
+#### 22.1.1 `Logic` and `LogicState`
 
-Reads the known flag (§3.3.4) of a whole `Repr` value.
+`Logic<N>` is four-state logic on `N` levels: each level is 0, 1, X (not determined) or Z (not driven). It is an ordinary library struct; no rule of the language names it (§3.3.2). `Logic` alone is `Logic<1>`.
 
 ```rust
-pub trait Known: Repr {
-    /// The value when every level is known.
-    fn known(self) -> Option<Self> { for k in 0..Self::WIDTH { self.level(k)?; } Some(self) }
-    fn known_or(self, d: Self) -> Self { self.known().unwrap_or(d) }
-    fn is_known(self) -> bool { self.known().is_some() }
+/// Four-state logic on N levels: 0, 1, X (not determined) and Z (not driven).
+#[derive(Repr)]
+pub struct Logic<const N: usize = 1> {
+    pub binary: UInt<N>, // 1 where the level is 0 or 1
+    pub value: UInt<N>,  // the level where binary; where not, 0 is X and 1 is Z
 }
-impl<T: Repr> Known for T {}
+
+#[derive(Repr, PartialEq)]
+pub enum LogicState {
+    X,
+    L,
+    H,
+    Z,
+}
+
+impl<const N: usize> Default for Logic<N> {
+    fn default() -> Logic<N> {
+        Logic::X
+    }
+}
+
+impl<const N: usize> Logic<N> {
+    pub const X: Logic<N> = Logic { binary: 0, value: 0 };
+    pub const Z: Logic<N> = Logic { binary: 0, value: !0 };
+    fn ones(self) -> UInt<N> {
+        self.binary & self.value
+    }
+    fn zeros(self) -> UInt<N> {
+        self.binary & !self.value
+    }
+    pub fn is_high(self) -> bool {
+        self.ones() == !0
+    }
+    pub fn is_low(self) -> bool {
+        self.zeros() == !0
+    }
+    pub fn is_x(self) -> bool {
+        self.binary == 0 && self.value == 0
+    }
+    pub fn is_z(self) -> bool {
+        self.binary == 0 && self.value == !0
+    }
+    pub fn to_bits(self) -> Option<UInt<N>> {
+        if self.binary == !0 { Some(self.value) } else { None }
+    }
+    pub fn at(self, k: usize) -> LogicState {
+        let b = (self.binary >> k) & 1;
+        let v = (self.value >> k) & 1;
+        if b == 1 {
+            if v == 1 { LogicState::H } else { LogicState::L }
+        } else if v == 1 {
+            LogicState::Z
+        } else {
+            LogicState::X
+        }
+    }
+}
 ```
 
-| Method | Result | Flag of the result |
+| `binary` | `value` | Level |
 | --- | --- | --- |
-| `x.known()` | `Some(x)` when every level of `x` is known, else `None` | known |
-| `x.known_or(d)` | `x` when every level is known, else `d` | the flags of `d` when `d` is returned |
-| `x.is_known()` | `true` when every level is known | known |
+| 1 | 0 | 0 |
+| 1 | 1 | 1 |
+| 0 | 0 | X |
+| 0 | 1 | Z |
 
-1. `known` is all-or-nothing: one unknown level gives `None`.
-2. The `Option` returned by `known` and the `bool` returned by `is_known` are known values. They never propagate unknown into control flow.
-3. `known()` and `known_or(d)` satisfy §3.3.5: `analog` **MAY** read a discrete carrier through them.
-4. `known_or(d)` with an unknown `d` returns an unknown value. It then does not satisfy §3.3.5.
-
-> **Resolution.** Rule 4 follows from the definition. An `analog` read through `known_or(d)` requires `d` itself to be known under §3.3.1 or §3.3.5.
-
-#### 22.1.2 `merge`
+1. Level `k` of a `Logic<N>` is the pair of bit `k` of `binary` and of `value`, read by the table above. `Logic<N>` has the `Repr` width `2 * N`: levels `0..N` are the plane `binary`, levels `N..2 * N` the plane `value` (§2).
+2. An all-zero value is X on every level, so the bytes of `Logic::X` are all zero and `Logic<N>` implements `Default` with that value (Appendix H.8). A carrier of type `Bit<Logic<4>>` with no initial value starts at `xxxx` (§3.3.4).
+3. `x.at(k)` gives the `LogicState` of level `k`, which a `match` covers with four arms. An out-of-range `k` is a panic (§1 rule 11).
+4. `x.is_high()`, `x.is_low()`, `x.is_z()` and `x.is_x()` are true exactly when every level is 1, 0, Z or X respectively. They return a `bool`, so they decide control (§3.3.5).
+5. `x.to_bits()` gives `Some` of the `UInt<N>` when every level is 0 or 1, and `None` when any level is X or Z. On a `Logic<1>`, `x.to_bit()` gives the `Option<bool>` by the same rule, and `x.to_volts(vdd)` gives `vdd` for 1, `0.0` for 0 and `vdd / 2.0` for X and for Z: a function that returns an `f64`, so `analog` accepts it as a read of the carrier (§3.3.6).
+6. `Logic::from(b)` is total. A `UInt<N>` or a `bool` gives the `Logic` whose every level is the 0 or 1 of `b` (Appendix H.8 rule 8).
+7. A `Logic` has no arithmetic and no ordering: `+`, `-` and `<` on one are `E0180`. A `Logic` is converted first (`to_bits()`), which gives an `Option`.
+8. A `Logic` is a four-state value, not an IEEE 1164 nine-state one: a drive's strength is a field of the type driven (`Driven`, §22.3), not a state of the logic.
 
 ```rust
-/// Level by level: equal known levels kept, the rest unknown.
-pub fn merge<T: Repr>(a: T, b: T) -> T { let c: bool = Unknown; if c { a } else { b } }
+impl Logic {
+    pub const L: Logic = Logic { binary: 1, value: 0 };
+    pub const H: Logic = Logic { binary: 1, value: 1 };
+    pub fn to_bit(self) -> Option<bool> {
+        self.to_bits().map(|b| b == 1)
+    }
+    pub fn to_volts(self, vdd: f64) -> f64 {
+        match self.to_bit() {
+            Some(true) => vdd,
+            Some(false) => 0.0,
+            None => vdd / 2.0,
+        }
+    }
+}
 ```
 
-1. Level `k` of `merge(a, b)` is known exactly when level `k` of `a` and of `b` are known and equal. It then has that value.
-2. `merge` is commutative and associative. `merge(a, a)` has the levels and flags of `a`.
-3. `merge` is §3.3.3 used as a function. It adds no rule.
+> **Resolution.** Two integer planes keep `Logic<N>` an ordinary struct: its `Repr` layout, its ABI layout and its copy follow from the rules every struct has, at two bits per level. `[Logic; N]` of an enum would cost one byte per level and need an element loop in every operator.
+
+#### 22.1.2 Operators on `Logic`
+
+Each operator is the function of an operator-trait `impl` (Appendix H.10), written in the library with ordinary bit operations on the two planes.
+
+```rust
+impl<const N: usize> BitAnd for Logic<N> {
+    fn bitand(self, r: Logic<N>) -> Logic<N> {
+        let one = self.ones() & r.ones();
+        Logic { binary: one | self.zeros() | r.zeros(), value: one }
+    }
+}
+
+impl<const N: usize> BitOr for Logic<N> {
+    fn bitor(self, r: Logic<N>) -> Logic<N> {
+        let one = self.ones() | r.ones();
+        Logic { binary: one | (self.zeros() & r.zeros()), value: one }
+    }
+}
+
+impl<const N: usize> BitXor for Logic<N> {
+    fn bitxor(self, r: Logic<N>) -> Logic<N> {
+        let both = self.binary & r.binary;
+        Logic { binary: both, value: (self.value ^ r.value) & both }
+    }
+}
+
+impl<const N: usize> Not for Logic<N> {
+    fn not(self) -> Logic<N> {
+        Logic { binary: self.binary, value: !self.value & self.binary }
+    }
+}
+
+impl<const N: usize> PartialEq<Logic<N>, Logic> for Logic<N> {
+    fn eq(self, r: Logic<N>) -> Logic {
+        if self.binary != !0 || r.binary != !0 { Logic::X } else { Logic::from(self.value == r.value) }
+    }
+    fn ne(self, r: Logic<N>) -> Logic {
+        !self.eq(r)
+    }
+}
+
+impl<const N: usize> From<UInt<N>> for Logic<N> {
+    fn from(b: UInt<N>) -> Logic<N> {
+        Logic { binary: !0, value: b }
+    }
+}
+
+impl From<bool> for Logic {
+    fn from(b: bool) -> Logic {
+        Logic { binary: 1, value: b as u1 }
+    }
+}
+```
+
+The four-state tables, per level. In the operand columns and rows, X stands for X or Z; a result is never Z.
+
+| `&` | 0 | 1 | X |
+| --- | --- | --- | --- |
+| **0** | 0 | 0 | 0 |
+| **1** | 0 | 1 | X |
+| **X** | 0 | X | X |
+
+| `\|` | 0 | 1 | X |
+| --- | --- | --- | --- |
+| **0** | 0 | 1 | X |
+| **1** | 1 | 1 | 1 |
+| **X** | X | 1 | X |
+
+| `^` | 0 | 1 | X |
+| --- | --- | --- | --- |
+| **0** | 0 | 1 | X |
+| **1** | 1 | 0 | X |
+| **X** | X | X | X |
+
+| `!` | Result |
+| --- | --- |
+| 0 | 1 |
+| 1 | 0 |
+| X, Z | X |
+
+1. `a & b` is 0 on a level where either operand is 0, 1 where both are 1, and X otherwise. `a | b` is 1 where either is 1, 0 where both are 0, and X otherwise. `a ^ b` is the exclusive or where both levels are 0 or 1, and X otherwise. `!a` is 1 for 0, 0 for 1, and X for X and for Z. A Z level in one operand and a 0 in the other gives 0 under `&`; with a 1 it gives X.
+2. `a << k` and `a >> k` move the levels by `k` with their states, and the levels shifted in are 0: `Shl` and `Shr` shift both planes and set the shifted-in levels of `binary` to 1.
+3. `&`, `|` and `^` with a `Logic<N>` on one side and a `UInt<N>` on the other, or a `Logic<1>` and a `bool`, in either order, give the `Logic<N>` of the same table with the binary operand converted by `From`. Each is one more `impl` of one line, `impl<const N: usize> BitAnd<UInt<N>, Logic<N>> for Logic<N>`, `impl<const N: usize> BitAnd<Logic<N>, Logic<N>> for UInt<N>`, and the `bool` pair for `Logic<1>`; likewise for `BitOr` and `BitXor`.
+4. `a == b` on two `Logic<N>` is a `Logic<1>`: X when any level of either operand is X or Z, otherwise 1 when every level is equal and 0 when not. `a != b` is its `!`. Operands of different widths (`Logic<4> & Logic<8>`) are `E0180`.
+5. `#[derive(PartialEq)]` on a struct with a `Logic` field is `E0187` naming the field: the derived `==` would have to return a `bool` and a `Logic` does not give one.
+6. A model decides on a `Logic` with `same(a, b)`, `x.is_high()`, a `match` on `x.at(k)` or `x.to_bit()` (§3.3.5).
+
+```rust,fragment
+signal bus: Bit<Logic<4>>;                       // starts xxxx
+on clk.rise() {
+    bus <- logic("10xz") & Logic::from(0b1111u4); // 10xx
+    let eq = bus == bus;                         // x
+    let s = same(bus, bus);                      // true
+}
+```
 
 #### 22.1.3 `cast`
 
 ```rust
-/// The same levels under another type of the same width.
-pub fn cast<A: Repr, B: Repr>(a: A) -> B where A::WIDTH == B::WIDTH {
-    B::decode(a.encode()).unwrap_or(Unknown)
+/// The same levels under another type of the same width, or `None` when `B` rejects them.
+pub fn cast<A: Repr, B: Repr>(a: A) -> Option<B> where A::WIDTH == B::WIDTH {
+    B::decode(a.encode())
 }
 ```
 
-1. Level `k` of the result is level `k` of `a`, with its flag (§3.3.2).
-2. When `B::decode` returns `None`, the result is `Unknown`: every level unknown.
-3. A width mismatch is `E0701`.
-4. A definition between carriers of equal width and different types is written with `cast` (§8.2.6).
+1. The result is what `B::decode` returns for the levels of `a`. A `decode` that fails gives `None`; the caller receives it and no carrier is changed by it (§2 rule 9).
+2. A width mismatch is `E0701`.
+3. A definition between carriers of equal width and different types is written with `cast` and the `Option` unwrapped where the types cannot fail (§8.2.6).
 
 ```rust,fragment
 signal sh: [Bit; 8];
-byte = cast(sh);            // byte: Bit<u8>; sh[0] is the least significant level
+byte = cast(sh).unwrap();   // byte: Bit<u8>; sh[0] is the least significant level
 ```
 
 #### 22.1.4 `same`, `matches_bits`, `logic`
 
 ```rust
-pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
-pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
-pub extern "intrinsic" fn logic<T: Repr>(pattern: &str) -> T;
+/// Equal level by level: on a `Logic`, the four states are compared literally.
+pub fn same<T: Repr>(a: T, b: T) -> bool {
+    a.encode() == b.encode()
+}
+
+pub extern "intrinsic" fn matches_bits<const N: usize>(s: Logic<N>, pattern: str) -> bool;
+
+pub extern "intrinsic" fn logic<const N: usize>(pattern: str) -> Logic<N>;
 ```
 
 | Function | Result |
 | --- | --- |
-| `same(a, b)` | `true` when every level of `a` and `b` has the same flag and, where known, the same value. Always known. |
-| `matches_bits(s, p)` | `true` when every level of `s` matches the corresponding character of `p`. Always known. |
-| `logic(p)` | the value whose level is `true` for `1`, `false` for `0`, unknown for `x` |
+| `same(a, b)` | `true` when every level of `a` and `b` holds the same one of its states. On a `Logic`, X equals X and Z equals Z but X is not Z. |
+| `matches_bits(s, p)` | `true` when every level of `s` is the state the corresponding character of `p` names |
+| `logic(p)` | the `Logic<N>` whose levels are the states the characters of `p` name |
 
-1. `same` differs from `==`: `==` is all-or-nothing (§3.3.2); `same` compares flags and is never unknown.
-2. `matches_bits` is a loop over `level`. `logic(p)` is the `merge` of the two values that read each `x` as 0 and as 1.
-3. A pattern has one character per level, each of `0`, `1`, `x`. Any other pattern is `E0702`.
+1. `same` differs from `==` on a `Logic` (§22.1.2 rule 4): `==` is a `Logic` and X when a compared level is X or Z; `same` is a `bool` and is true for two Z levels.
+2. A pattern has one character per level, highest level first, each of `0`, `1`, `x`, `z`. Any other character, or a length other than `N`, is `E0702`.
+3. `logic("10xz")` is the `Logic<4>` with levels 3 to 0 equal to 1, 0, X, Z.
 
-> **Resolution.** `same` is its definition. `matches_bits` and `logic` read the characters of a `str`, which no definition in the language can do: they are `extern "intrinsic"` and the contract of rules 2 and 3 is normative. The leftmost pattern character is the highest level (`WIDTH − 1`), as in a Verilog literal: `logic("10xx")` for a `u4` has levels 3 and 2 known.
-
-> **Resolution.** In `matches_bits`, `x` matches any level, known or unknown. `0` and `1` match only a known level of that value; an unknown level does not match them.
+> **Resolution.** `same` is its definition. `matches_bits` and `logic` read the characters of a `str`, which no definition in the language can do: they are `extern "intrinsic"` and the contract of rules 2 and 3 is normative. The leftmost pattern character is the highest level (`N − 1`), as in a Verilog literal.
 
 #### 22.1.5 `impl Bit`
 
 ```rust
 impl Bit {
-    /// IEEE 1364 posedge: L → H, L → unknown, unknown → H. A change never goes from unknown to unknown.
-    pub fn rise(self) -> Event { self.changed() && self.prev().level(0) != Some(true)  && self.level(0) != Some(false) }
-    /// IEEE 1364 negedge: H → L, H → unknown, unknown → L.
-    pub fn fall(self) -> Event { self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true) }
-    /// Known and true. In analog code an unknown control then acts as low; say so where that is wrong.
-    pub fn high(self) -> bool { self.known_or(false) }
+    /// A change that ends at true: false to true.
+    pub fn rise(self) -> Event {
+        self.changed() && !self.prev() && self
+    }
+    /// A change that ends at false: true to false.
+    pub fn fall(self) -> Event {
+        self.changed() && self.prev() && !self
+    }
+}
+
+impl Bit<Logic> {
+    /// A change that ends at 1 from 0, X or Z.
+    pub fn rise(self) -> Event {
+        self.changed() && self.is_high() && !self.prev().is_high()
+    }
+    /// A change that ends at 0 from 1, X or Z.
+    pub fn fall(self) -> Event {
+        self.changed() && self.is_low() && !self.prev().is_low()
+    }
 }
 ```
 
 | Previous → current | `rise()` | `fall()` |
 | --- | --- | --- |
-| L → H | fires | — |
-| H → L | — | fires |
-| L → unknown | fires | — |
-| H → unknown | — | fires |
-| unknown → H | fires | — |
-| unknown → L | — | fires |
+| false → true | fires | — |
+| true → false | — | fires |
+
+On a `Bit<Logic>`: a rise is a change that ends at 1 from 0, X or Z; a fall is a change that ends at 0 from 1, X or Z.
 
 1. `rise` and `fall` are functions returning `Event` (§3). They keep no state; `self` is a handle (§3.1).
-2. Their guards compare `level` results, so the guards are always known.
-3. The first commit is a change (§13 rule 6). A `Bit` that starts high has risen at `(0, 0)`; one that starts low has fallen there.
-4. Inside a reaction, `clk.rise()` used as a `bool` says whether it fired in this microstep (§13 rule 2).
-5. `high()` is a known `bool`. It satisfies §3.3.5.
-6. These methods are defined on `Bit`, that is `Bit<bool>`. They do not exist on `Bit<T>` for other `T`.
+2. A `Bit` that starts high has not risen at `(0, 0)`: the initial value is committed there and is a change (§13 rule 6), but `prev()` equals the initial value (§5.3.8), so `!prev()` is false. A model that wants an action at the start writes `init()` (§22.1.6).
+3. Inside a reaction, `clk.rise()` used as a `bool` says whether it fired in this microstep (§13 rule 2).
+4. A `Bit` is read in `analog` and as a condition directly, as the `bool` it holds (§3.3.6).
+5. These methods are defined on `Bit<bool>` and on `Bit<Logic>`. They do not exist on `Bit<T>` for other `T`.
 
 | At instants | Where time does not advance | Transient | Small-signal sweep |
 | --- | --- | --- | --- |
@@ -254,7 +424,12 @@ pub module every(t0: f64, period: f64) -> Event {
     let tick = at(t0 + k as f64 * period);
     tick
 }
-digital for every { on tick { k <- k + 1; } }
+
+digital for every {
+    on tick {
+        k <- k + 1;
+    }
+}
 ```
 
 1. The `n`-th firing is at `t0 + n · period`, rounded to a tick (§15), for `n = 0, 1, …`.
@@ -271,7 +446,6 @@ Consequences of §13 rule 4, stated for reference:
 | `t0 < 0` | the first time is past; the instance never fires |
 | `period < 0` | fires once at `t0`, then never |
 | `period == 0` | re-arms at the current time each microstep; the instant never goes quiet, which is the error of §15 |
-| `t0` or `period` unknown | does not fire while unknown |
 
 | At instants | Where time does not advance | Transient | Small-signal sweep |
 | --- | --- | --- | --- |
@@ -284,9 +458,14 @@ Time since a carrier last changed.
 ```rust
 pub module since<T: Repr>(in s: Bit<T>) -> f64 {
     signal t: Bit<f64> = -inf;
-    now() - t.known_or(-inf)                 // a known real, so analog may read it (§3.3.5)
+    now() - t // a plain real, so analog may read it (§3.3.6)
 }
-digital<T> for since<T> { on s.changed() { t <- now(); } }
+
+digital<T> for since<T> {
+    on s.changed() {
+        t <- now();
+    }
+}
 ```
 
 1. The result is `inf` while `s` has never changed, and `now()` minus the time of the last change after.
@@ -294,7 +473,7 @@ digital<T> for since<T> { on s.changed() { t <- now(); } }
 3. At `(0, 0)` the result is `inf`: the first commit of `s` is not yet recorded.
 4. `s` is an `in` port of a one-driver nature. `since` does not take a resolved carrier or a node.
 5. The result reads `now()`. It **MUST NOT** be read in a definition (§8.2.5).
-6. The result is a known real. `analog` **MAY** read it.
+6. The result is a plain real. `analog` **MAY** read it.
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -312,8 +491,8 @@ A unitless nature for states of order one.
 
 ```rust
 pub nature State {
-    potential: Value { access: pos,  abstol: 1u },
-    flow:      Rate  { access: rate, abstol: 1n },
+    potential: Value { access: pos, abstol: 1u },
+    flow: Rate { access: rate, abstol: 1n },
 }
 ```
 
@@ -325,7 +504,9 @@ pub nature State {
 #### 22.2.2 `vt`
 
 ```rust
-pub fn vt() -> f64 { K_B * temperature() / Q }
+pub fn vt() -> f64 {
+    K_B * temperature() / Q
+}
 ```
 
 1. `vt()` is the thermal voltage at the instance's temperature, `dtemp` included (§8.5).
@@ -334,11 +515,17 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 #### 22.2.3 `white_noise`, `flicker_noise`, `noise_table`
 
 ```rust
-pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
-pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
-pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
+pub module white_noise(psd: f64, name: Option<str>) -> f64 {
+    noise(psd, name)
+}
+
+pub module flicker_noise(k: f64, exp: f64, name: Option<str>) -> f64 {
+    noise(k / freq().powf(exp), name)
+}
+
+pub module noise_table<const N: usize>(name: Option<str>) -> f64 {
     table: [(f64, f64); N];
-    noise(table_model(freq(), &table, "1C"), name)
+    noise(table_model(freq(), table, "1C"), name)
 }
 ```
 
@@ -353,7 +540,7 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
 3. `psd` is read only where the source is a source (§16.2). `flicker_noise` is never evaluated at `freq() == 0`.
 4. The implicit param `m` multiplies noise power (§8.5).
 
-> **Resolution.** `table` is a param, since `&` is a function-parameter form (§1 rule 2). The definition is `noise(table_model(freq(), &table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
+> **Resolution.** `table` is a param, an array passed to `table_model` by value (§1.4.6). The definition is `noise(table_model(freq(), table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -362,18 +549,36 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
 #### 22.2.4 `limexp` and the limiting functions
 
 ```rust
-pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
+pub module limexp(x: f64) -> f64 {
+    limit(x, |new, old| deltalim(new, old, 1.0)).exp()
+}
 
 pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
     if new > vcrit && (new - old).abs() > 2.0 * nvt {
         if old > 0.0 {
             let arg = (new - old) / nvt;
-            if arg > 0.0 { old + nvt * (2.0 + (arg - 2.0).ln()) } else { old - nvt * (2.0 + (2.0 - arg).ln()) }
-        } else { nvt * (new / nvt).ln() }
+            if arg > 0.0 {
+                old + nvt * (2.0 + (arg - 2.0).ln())
+            } else {
+                old - nvt * (2.0 + (2.0 - arg).ln())
+            }
+        } else {
+            nvt * (new / nvt).ln()
+        }
     } else if new < 0.0 {
-        let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
-        if new < arg { arg } else { new }
-    } else { new }
+        let arg = if old > 0.0 {
+            -old - 1.0
+        } else {
+            2.0 * old - 1.0
+        };
+        if new < arg {
+            arg
+        } else {
+            new
+        }
+    } else {
+        new
+    }
 }
 
 pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
@@ -384,26 +589,83 @@ pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
     if old >= vth {
         if old >= vtox {
             if delv <= 0.0 {
-                if new >= vtox { if -delv > lo { old - lo } else { new } }
-                else if new > vth + 2.0 { new } else { vth + 2.0 }
-            } else if delv >= hi { old + hi } else { new }
-        } else if delv <= 0.0 { if new > vth - 0.5 { new } else { vth - 0.5 } }
-        else if new < vth + 4.0 { new } else { vth + 4.0 }
-    } else if delv <= 0.0 { if -delv > hi { old - hi } else { new } }
-    else if new <= vth + 0.5 { if delv > lo { old + lo } else { new } }
-    else { vth + 0.5 }
+                if new >= vtox {
+                    if -delv > lo {
+                        old - lo
+                    } else {
+                        new
+                    }
+                } else if new > vth + 2.0 {
+                    new
+                } else {
+                    vth + 2.0
+                }
+            } else if delv >= hi {
+                old + hi
+            } else {
+                new
+            }
+        } else if delv <= 0.0 {
+            if new > vth - 0.5 {
+                new
+            } else {
+                vth - 0.5
+            }
+        } else if new < vth + 4.0 {
+            new
+        } else {
+            vth + 4.0
+        }
+    } else if delv <= 0.0 {
+        if -delv > hi {
+            old - hi
+        } else {
+            new
+        }
+    } else if new <= vth + 0.5 {
+        if delv > lo {
+            old + lo
+        } else {
+            new
+        }
+    } else {
+        vth + 0.5
+    }
 }
 
 pub fn limvds(new: f64, old: f64) -> f64 {
     if old >= 3.5 {
-        if new > old { if new < 3.0 * old + 2.0 { new } else { 3.0 * old + 2.0 } }
-        else if new < 3.5 { if new > 2.0 { new } else { 2.0 } }
-        else { new }
-    } else if new > old { if new < 4.0 { new } else { 4.0 } }
-    else if new > -0.5 { new } else { -0.5 }
+        if new > old {
+            if new < 3.0 * old + 2.0 {
+                new
+            } else {
+                3.0 * old + 2.0
+            }
+        } else if new < 3.5 {
+            if new > 2.0 {
+                new
+            } else {
+                2.0
+            }
+        } else {
+            new
+        }
+    } else if new > old {
+        if new < 4.0 {
+            new
+        } else {
+            4.0
+        }
+    } else if new > -0.5 {
+        new
+    } else {
+        -0.5
+    }
 }
 
-pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 { new.clamp(old - delta, old + delta) }
+pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 {
+    new.clamp(old - delta, old + delta)
+}
 ```
 
 | Function | Bounds |
@@ -440,7 +702,6 @@ pub module above(e: f64, ttol: Option<f64>, etol: Option<f64>) -> Event {
 3. `ttol` and `etol` are those of `cross` (§17.3). Left out, they are `None`.
 4. A falling crossing is `above(-e)`.
 5. Each use is one instance, holding one `cross` and one `init`.
-6. An unknown `e` does not fire the `cross` (§17.3). At `(0, 0)` an unknown `e` makes the guard unknown (§13 rule 1).
 
 | At instants | Where time does not advance | Transient | Small-signal sweep |
 | --- | --- | --- | --- |
@@ -456,7 +717,12 @@ pub module absdelta(e: f64, delta: f64) -> Event {
     let moved = init() || cross(e - last - delta) || cross(last - delta - e);
     moved
 }
-digital for absdelta { on moved { last <- e; } }
+
+digital for absdelta {
+    on moved {
+        last <- e;
+    }
+}
 ```
 
 1. The first firing is `init()`. Its reaction commits `last <- e`, read at the first solution.
@@ -476,9 +742,14 @@ Time of the last rising crossing of `e`; `-1.0` before the first.
 ```rust
 pub module last_crossing(e: f64) -> f64 {
     signal t: Bit<f64> = -1.0;
-    t.known_or(-1.0)                         // a known real, so analog may read it (§3.3.5)
+    t // a plain real, so analog may read it (§3.3.6)
 }
-digital for last_crossing { on cross(e) { t <- now(); } }
+
+digital for last_crossing {
+    on cross(e) {
+        t <- now();
+    }
+}
 ```
 
 1. The result is a discrete value: piecewise constant, changing one microstep after each located crossing.
@@ -498,12 +769,16 @@ The time integral of `x`, on a node whose nature gives the state its tolerance.
 ```rust
 pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
     signal y: S;
-    potential(y)                             // the result
+    potential(y) // the result
 }
 
 analog<S> for idt<S> {
     let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
-    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
+    if hold {
+        potential(y) +> ic.unwrap_or(0.0);
+    } else {
+        flow(y) +> ddt(potential(y)) - x;
+    }
 }
 ```
 
@@ -548,17 +823,26 @@ The integral of `x` wrapped into `[lo, lo + modulus)`, with `lo = offset.unwrap_
 
 ```rust
 pub module idtmod<S: Nature = State>(x: f64, ic: Option<f64>, modulus: f64, offset: Option<f64>) -> f64 {
-    signal base: Bit<f64>;                   // where the integral was last seated
-    signal seat: Bit = false;                // true for the one microstep that seats it
+    signal base: Bit<Option<f64>>; // where the integral was last seated; None before the first wrap
+    signal seat: Bit = false; // true for the one microstep that seats it
     let lo = offset.unwrap_or(0.0);
     let start = lo + (ic.unwrap_or(0.0) - lo).rem_euclid(modulus);
-    let acc = idt::<S>(x, base.known_or(start), reset: seat.known_or(false));
+    let acc = idt::<S>(x, base.unwrap_or(start), reset: seat);
     acc
 }
+
 digital<S> for idtmod<S> {
-    on cross(acc - lo - modulus) { base <- acc - modulus; seat <- true; }    // over the top
-    on cross(lo - acc)           { base <- acc + modulus; seat <- true; }    // under the bottom
-    on seat.rise()               { seat <- false; }
+    on cross(acc - lo - modulus) {
+        base <- Some(acc - modulus);
+        seat <- true;
+    } // over the top
+    on cross(lo - acc) {
+        base <- Some(acc + modulus);
+        seat <- true;
+    } // under the bottom
+    on seat.rise() {
+        seat <- false;
+    }
 }
 ```
 
@@ -590,8 +874,12 @@ let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5);    // phase in [-0.5, 0.5)
 Follows `x` with a bounded rate of change.
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq)]
-enum Slewing { Track, Up, Down }
+#[derive(Repr, PartialEq)]
+enum Slewing {
+    Track,
+    Up,
+    Down,
+}
 
 pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
     signal y: State;
@@ -600,16 +888,28 @@ pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
     let dx = ddt(x);
     pos(y)
 }
+
 analog for slew {
-    match mode.known_or(Slewing::Track) {
-        Slewing::Track => { pos(y) +> x; }
-        Slewing::Up    => { rate(y) +> ddt(pos(y)) - r; }
-        Slewing::Down  => { rate(y) +> ddt(pos(y)) + f; }
+    match mode {
+        Slewing::Track => {
+            pos(y) +> x;
+        },
+        Slewing::Up => {
+            rate(y) +> ddt(pos(y)) - r;
+        },
+        Slewing::Down => {
+            rate(y) +> ddt(pos(y)) + f;
+        },
     }
 }
+
 digital for slew {
-    on above(dx - r)  && mode == Slewing::Track { mode <- Slewing::Up; }      // x runs away upward
-    on above(-dx - f) && mode == Slewing::Track { mode <- Slewing::Down; }
+    on above(dx - r) && mode == Slewing::Track {
+        mode <- Slewing::Up;
+    } // x runs away upward
+    on above(-dx - f) && mode == Slewing::Track {
+        mode <- Slewing::Down;
+    }
     on (cross(pos(y) - x) || cross(x - pos(y))) && mode != Slewing::Track {   // caught up
         mode <- if dx > r { Slewing::Up } else if dx < -f { Slewing::Down } else { Slewing::Track };
     }
@@ -638,26 +938,35 @@ Ramps a piecewise-constant input: a delay `td`, then a straight edge of `tr` (up
 
 ```rust
 pub module transition(in x: Bit<f64>, td: Option<f64>, tr: Option<f64>, tf: Option<f64>) -> f64 {
-    signal xd: Bit<f64>;                     // x after the delay
-    signal y0: Bit<f64>;                     // output where the current edge began
-    signal y1: Bit<f64>;                     // where it ends
-    signal t0: Bit<f64> = 0.0;               // when it began
-    signal dt: Bit<f64> = 0.0;               // its duration; 0.0 at rest
+    signal xd: Bit<f64> = 0.0; // x after the delay
+    signal y0: Bit<f64> = 0.0; // output where the current edge began
+    signal y1: Bit<f64> = 0.0; // where it ends
+    signal t0: Bit<f64> = 0.0; // when it began
+    signal dt: Bit<f64> = 0.0; // its duration; 0.0 at rest
     xd = x after td.unwrap_or(0.0);
-    let (a, b, s, d) = (y0.known_or(0.0), y1.known_or(0.0), t0.known_or(0.0), dt.known_or(0.0));
-    let y = if analysis(Static) { x.known_or(0.0) }
-            else if d > 0.0 { a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0) }
-            else { b };
+    let (a, b, s, d) = (y0, y1, t0, dt);
+    let y = if analysis(Static) {
+        x
+    } else if d > 0.0 {
+        a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0)
+    } else {
+        b
+    };
     y
 }
+
 digital for transition {
-    on at(t0 + dt) && dt > 0.0 { dt <- 0.0; }                 // the far corner
-    on x.changed() && analysis(Static) { y0 <- x; y1 <- x; }  // no delay to wait out, no ramp: at rest on x
+    on at(t0 + dt) && dt > 0.0 {
+        dt <- 0.0;
+    } // the far corner
+    on x.changed() && analysis(Static) {
+        y0 <- x;
+        y1 <- x;
+    } // no delay to wait out, no ramp: at rest on x
     on xd.changed() && !analysis(Static) {                    // written last: wins a tie (§12.1.2)
-        if let Some(to) = xd.known() {
-            y0 <- y; y1 <- to; t0 <- now();
-            dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 };
-        }
+        let to = xd;
+        y0 <- y; y1 <- to; t0 <- now();
+        dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 };
     }
 }
 ```
@@ -672,16 +981,16 @@ digital for transition {
 Static semantics:
 
 1. `x` is bound to an `in` port. The argument is an anonymous definition and **MUST NOT** probe (§8.1). `transition(v(a), …)` is an error at the call.
-2. An expression over carriers passed as `x` needs no `known_or` (Appendix D.4).
+2. An expression over carriers passed as `x` is read directly (Appendix D.4).
 3. The result reads `now()`. It **MUST NOT** be read in a definition (§8.2.5).
 
 Dynamic semantics:
 
 4. A change of `x` reaches `xd` after `td`, by transport delay (§12.1.4).
-5. Each change of `xd` to a known value starts an edge from the current output to the new value.
+5. Each change of `xd` starts an edge from the current output to the new value.
 6. A change that arrives mid-ramp starts from the current output.
-7. An unknown input is ignored: the output holds.
-8. An input that starts unknown gives `0.0`. Its first known value arrives `td` later, with a ramp from `0.0`.
+7. `xd` starts at `0.0`, so the first value of `x` arrives `td` later, with a ramp from `0.0`.
+8. The state carriers `y0`, `y1`, `t0` and `dt` start at `0.0`: the output is at rest at `0.0`.
 9. Both corners of every edge are changes of carriers that `analog` reads. The solver lands on them (§17.2).
 10. In an equilibrium solve the result is the input (VAMS 4.5.8). The first edge leaves from there with no ramp.
 11. The seed tests `analysis(Static)`, not `init()`: an input committed at `(0, 1)` is still followed (§22.2.12).
@@ -689,7 +998,7 @@ Dynamic semantics:
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
-| `transition(x, td, tr, tf)` | `x.known_or(0.0)` | the ramp at `now()`, or the resting value | the value at `now()`; a corner moves nothing | constant: no response (§11.1) |
+| `transition(x, td, tr, tf)` | `x` | the ramp at `now()`, or the resting value | the value at `now()`; a corner moves nothing | constant: no response (§11.1) |
 
 ```rust,fragment
 let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
@@ -702,14 +1011,16 @@ A discrete-time filter sampled every `period`:
 
 ```rust
 pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
-    num: [f64; N]; den: [f64; D];            // den[k] is the coefficient of y[n−1−k]
-    signal xs: [Bit<f64>; N];                // xs[k] = x[n−1−k]
-    signal ys: [Bit<f64>; D];                // ys[k] = y[n−1−k]
-    signal vout: Bit<f64>;                   // the current sample y[n]
+    num: [f64; N];
+    den: [f64; D]; // den[k] is the coefficient of y[n−1−k]
+    signal xs: [Bit<f64>; N] = [0.0; N]; // xs[k] = x[n−1−k]
+    signal ys: [Bit<f64>; D] = [0.0; D]; // ys[k] = y[n−1−k]
+    signal vout: Bit<f64> = 0.0; // the current sample y[n]
     signal y: State;
     let sampled = analysis(Transient) && !analysis(Static);
     pos(y)
 }
+
 digital<N, D> for zi_nd<N, D> {
     on settle && analysis(Static) {          // the history of a steady input, read by the first step (§15)
         vout <- pos(y);
@@ -717,20 +1028,37 @@ digital<N, D> for zi_nd<N, D> {
         for k in 0..D { ys[k] <- pos(y); }
     }
     on every(period, period) {
-        let mut acc = num[0] * x;
-        for k in 1..N { acc += num[k] * xs[k - 1].known_or(0.0); }
-        for k in 0..D { acc -= den[k] * ys[k].known_or(0.0); }
+        let acc = num[0] * x;
+        for k in 1..N {
+            acc += num[k] * xs[k - 1];
+        }
+        for k in 0..D {
+            acc -= den[k] * ys[k];
+        }
         vout <- acc;
-        xs[0] <- x;   for k in 1..N { xs[k] <- xs[k - 1]; }
-        ys[0] <- acc; for k in 1..D { ys[k] <- ys[k - 1]; }
+        xs[0] <- x;
+        for k in 1..N {
+            xs[k] <- xs[k - 1];
+        }
+        ys[0] <- acc;
+        for k in 1..D {
+            ys[k] <- ys[k - 1];
+        }
     }
 }
+
 analog<N, D> for zi_nd<N, D> {
-    if sampled { pos(y) +> vout.known_or(0.0); } else {
-        let mut acc = 0.0;
-        for k in 0..N { acc += num[k] * delay(x, k as f64 * period); }
-        for k in 0..D { acc -= den[k] * delay(pos(y), (k + 1) as f64 * period); }
-        rate(y) +> pos(y) - acc;             // the row of y: y = Σ num·x(t−kT) − Σ den·y(t−(k+1)T)
+    if sampled {
+        pos(y) +> vout;
+    } else {
+        let acc = 0.0;
+        for k in 0..N {
+            acc += num[k] * delay(x, k as f64 * period);
+        }
+        for k in 0..D {
+            acc -= den[k] * delay(pos(y), (k + 1) as f64 * period);
+        }
+        rate(y) +> pos(y) - acc; // the row of y: y = Σ num·x(t−kT) − Σ den·y(t−(k+1)T)
     }
 }
 ```
@@ -763,15 +1091,15 @@ Discrete-time filters given by roots. Each converts its roots to coefficients at
 
 ```rust
 /// True when each complex root has its conjugate as often as itself.
-const fn conjugate_closed<const N: usize>(roots: &[(f64, f64); N]) -> bool {
-    roots.iter().all(|r| r.1 == 0.0
-        || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count()
-        == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count())
+const fn conjugate_closed<const N: usize>(roots: [(f64, f64); N]) -> bool {
+    roots.iter().all(
+        |r| r.1 == 0.0 || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count() == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count(),
+    )
 }
 
 /// Coefficients, ascending in `q = z^−1`, of the product of `1 − ρ·q` over the roots.
-const fn poly_q<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
-    let mut c = [(0.0, 0.0); N + 1];
+const fn poly_q<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
+    let c = [(0.0, 0.0); N + 1];
     c[0] = (1.0, 0.0);
     for n in 0..N {
         let (a, b) = roots[n];
@@ -780,33 +1108,39 @@ const fn poly_q<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
             c[k] = (c[k].0 - (a * pr - b * pi), c[k].1 - (a * pi + b * pr));
         }
     }
-    let mut re = [0.0; N + 1];
-    for k in 0..=N { re[k] = c[k].0; }
+    let re = [0.0; N + 1];
+    for k in 0..=N {
+        re[k] = c[k].0;
+    }
     re
 }
 
 /// The same product without its leading 1: the `den` of `zi_nd` (§22.2.12 rule 1).
-const fn den_q<const D: usize>(poles: &[(f64, f64); D]) -> [f64; D] {
+const fn den_q<const D: usize>(poles: [(f64, f64); D]) -> [f64; D] {
     let c = poly_q(poles);
-    let mut d = [0.0; D];
-    for k in 0..D { d[k] = c[k + 1]; }
+    let d = [0.0; D];
+    for k in 0..D {
+        d[k] = c[k + 1];
+    }
     d
 }
 
 pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    zi_nd(x, period) { num: poly_q(&zeros), den: den_q(&poles) }
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    zi_nd(x, period) { num: poly_q(zeros), den: den_q(poles) }
 }
+
 pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
-    zi_nd(x, period) { num: poly_q(&zeros), den }
+    zi_nd(x, period) { num: poly_q(zeros), den }
 }
+
 pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N];
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    zi_nd(x, period) { num, den: den_q(&poles) }
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    zi_nd(x, period) { num, den: den_q(poles) }
 }
 ```
 
@@ -823,58 +1157,87 @@ Continuous-time filters `H(s)`, with one internal `State` node per pole.
 
 ```rust
 /// Coefficients, ascending in `s`, of the product of `1 − s/ρ`; a root at zero gives the factor `s`.
-const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
-    let mut c = [(0.0, 0.0); N + 1];
+const fn poly_s<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
+    let c = [(0.0, 0.0); N + 1];
     c[0] = (1.0, 0.0);
     for n in 0..N {
         let (a, b) = roots[n];
         let zero = a == 0.0 && b == 0.0;
         let m = a * a + b * b;
-        let (ia, ib) = if zero { (0.0, 0.0) } else { (a / m, -b / m) };        // 1/ρ
+        let (ia, ib) = if zero {
+            (0.0, 0.0)
+        } else {
+            (a / m, -b / m)
+        }; // 1/ρ
         for k in (1..=n + 1).rev() {
             let (pr, pi) = c[k - 1];
-            c[k] = if zero { (pr, pi) } else { (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr)) };
+            c[k] = if zero {
+                (pr, pi)
+            } else {
+                (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr))
+            };
         }
-        if zero { c[0] = (0.0, 0.0); }
+        if zero {
+            c[0] = (0.0, 0.0);
+        }
     }
-    let mut re = [0.0; N + 1];
-    for k in 0..=N { re[k] = c[k].0; }
+    let re = [0.0; N + 1];
+    for k in 0..=N {
+        re[k] = c[k].0;
+    }
     re
 }
 
 pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
     num: [f64; N];
     den: [f64; D] where den[D - 1] != 0.0;
-    signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
-    let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
-    let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
+    signal w: [State; D - 1]; // w[k]: the k-th derivative of W, where den(s)·W = x
+    let top = if D > 1 {
+        ddt(pos(w[D - 2]))
+    } else {
+        x / den[0]
+    };
+    let y = (0..N).map(
+        |k| num[k] * if k + 1 < D {
+            pos(w[k])
+        } else {
+            top
+        },
+    ).sum();
     y
 }
+
 analog<N, D> for laplace_nd<N, D> {
     for k in 0..D - 1 {
-        if k + 2 < D { rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]); }
+        if k + 2 < D {
+            rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]);
+        }
     }
     if D > 1 {
-        let mut acc = den[D - 1] * top - x;
-        for j in 0..D - 1 { acc += den[j] * pos(w[j]); }
-        rate(w[D - 2]) +> acc;               // the row of the last state: den(s)·W = x
+        let acc = den[D - 1] * top - x;
+        for j in 0..D - 1 {
+            acc += den[j] * pos(w[j]);
+        }
+        rate(w[D - 2]) +> acc; // the row of the last state: den(s)·W = x
     }
 }
 
 pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= D {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    laplace_nd(x) { num: poly_s(&zeros), den: poly_s(&poles) }
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    laplace_nd(x) { num: poly_s(zeros), den: poly_s(poles) }
 }
+
 pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
-    laplace_nd(x) { num: poly_s(&zeros), den }
+    laplace_nd(x) { num: poly_s(zeros), den }
 }
+
 pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
     num: [f64; N];
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    laplace_nd(x) { num, den: poly_s(&poles) }
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    laplace_nd(x) { num, den: poly_s(poles) }
 }
 ```
 
@@ -897,7 +1260,7 @@ pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= 
 Interpolates a table of samples.
 
 ```rust
-pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
+pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: [(f64, f64); N], control: str) -> f64;
 ```
 
 1. `table` holds `(abscissa, value)` pairs with strictly increasing abscissae. Otherwise `E0704`.
@@ -916,7 +1279,7 @@ pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64
 3. One extrapolation character applies to both ends. Two apply to the low end, then the high end. None is `L` at both.
 4. Any other control string is `E0703`.
 5. The function is pure. Inside `analog` it is differentiated through (§3 rule 1); its derivative is that of the interpolant.
-6. `E0705` is a panic (§1 rules 11 and 13): under known control it fails the analysis. The diagnostic **MUST** name the instance and the call.
+6. `E0705` is a panic (§1 rule 11): it fails the analysis. The diagnostic **MUST** name the instance and the call.
 7. A table is usually a `const` read from a file (§20, §22.6.4).
 8. The end conditions of the splines `2` and `3` are implementation-defined and **MUST** be documented (G.64).
 
@@ -924,14 +1287,19 @@ pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64
 
 ```rust,fragment
 const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));
-analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside
+analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), IV, "3E"); }   // cubic, error outside
 ```
 
 #### 22.2.16 `db10`, `db20`
 
 ```rust
-pub fn db10(x: f64) -> f64 { 10.0 * x.log10() }            // a power ratio
-pub fn db20(x: f64) -> f64 { 20.0 * x.abs().log10() }      // an amplitude ratio
+pub fn db10(x: f64) -> f64 {
+    10.0 * x.log10()
+} // a power ratio
+
+pub fn db20(x: f64) -> f64 {
+    20.0 * x.abs().log10()
+} // an amplitude ratio
 ```
 
 1. Both are pure functions over values, callable anywhere.
@@ -965,7 +1333,6 @@ pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64) {
 2. The first component is the sample. The second is the next generator state.
 3. With `sigma == 0.0` the sample is `mean`.
 4. The state is kept by the caller, in a signal. A model's random sequence is therefore a function of its seed param.
-5. An unknown `rng` gives an unknown sample and an unknown next state (§3.3.2).
 
 > **Resolution.** The generator is the one written above: SplitMix64 for two uniform draws and Box-Muller for the sample (`1.0 - a` is in `(0, 1]`, so the logarithm is finite). Integer arithmetic wraps (§1 rule 6).
 
@@ -979,111 +1346,143 @@ on clk.changed() {
 
 ---
 
-### 22.3 Resolved nets
+### 22.3 Strengths and ready-made net modules
 
-High impedance, strengths and wired logic are a value type and a `resolve` function (§4, §5.2). None is a language feature.
+High impedance, strengths and resolution by strength are a value type and an `impl Resolve` (§4 rule 8, §5.2). None is a language feature, and the library declares **no net nature**: a model declares the nature of its net and gives it the capability (§3.7.13). This section holds what such a nature needs, a type for what is driven, a resolution function, and the modules that drive.
 
-#### 22.3.1 `Strength`, `Logic`
+#### 22.3.1 `Strength`, `Driven`
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq, PartialOrd)]
-pub enum Strength { HighZ, Weak, Pull, Strong, Supply }
+/// How hard a drive holds its level. Verilog's drive strengths (IEEE 1364), without charge storage.
+#[derive(Repr, PartialEq, PartialOrd)]
+pub enum Strength {
+    HighZ,
+    Weak,
+    Pull,
+    Strong,
+    Supply,
+}
 
-#[derive(Repr, Clone, Copy, PartialEq)]
-pub struct Logic { pub v: bool, pub s: Strength }
+/// What a module drives into a net that resolves by strength: a level and how hard it is held.
+#[derive(Repr)]
+pub struct Driven {
+    pub v: Logic,
+    pub s: Strength,
+}
 
-impl Logic {
-    pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
-    pub fn strong(v: bool) -> Logic { Logic { v, s: Strength::Strong } }
-    pub fn pull(v: bool)   -> Logic { Logic { v, s: Strength::Pull } }
-    pub fn weak(v: bool)   -> Logic { Logic { v, s: Strength::Weak } }
-    pub fn supply(v: bool) -> Logic { Logic { v, s: Strength::Supply } }
+impl Driven {
+    pub const Z: Driven = Driven { v: Logic::Z, s: Strength::HighZ }; // not driving
+    pub fn strong(v: bool) -> Driven {
+        Driven { v: Logic::from(v), s: Strength::Strong }
+    }
+    pub fn pull(v: bool) -> Driven {
+        Driven { v: Logic::from(v), s: Strength::Pull }
+    }
+    pub fn weak(v: bool) -> Driven {
+        Driven { v: Logic::from(v), s: Strength::Weak }
+    }
+    pub fn supply(v: bool) -> Driven {
+        Driven { v: Logic::from(v), s: Strength::Supply }
+    }
+}
+
+impl Default for Driven {
+    fn default() -> Driven {
+        Driven::Z
+    }
 }
 ```
 
 1. A **strength** is a value of `Strength`. The order is `HighZ < Weak < Pull < Strong < Supply`.
-2. **High impedance** is the value `Logic::Z`: strength `HighZ`, level unknown. It is the drive of a module that is not driving.
-3. `Logic` occupies four levels: `v` at level 0, the tag of `s` at levels 1 to 3 (§2).
-4. `Logic` reads as a `bool` through `.v`. On an undriven wire `.v` is unknown.
-5. Undriven, contended and kept are three different values, told apart by `.s` (Appendix F.4).
+2. **High impedance** is the value `Driven::Z`: strength `HighZ`, level Z. It is the drive of a module that is not driving. A drive that is `HighZ` is a drive that is present; a drive that is absent is not received by `resolve` at all (§4 rule 15).
+3. `Driven` reads as a `Logic` through `.v` and as a `Strength` through `.s`. A reader tells *undriven* (`Driven::Z`), *contended* (X at a strength) and *kept* (a `Weak` level) apart by `.v` and `.s` (Appendix F.4).
+4. A strength is a field of the type driven, never a state of the logic and never a second trait: a nature that resolves by strength is `impl Resolve<Driven> for N`, and a nature that resolves any other pair (a level and a delay, a level and a source) declares its own driven type the same way.
 
-#### 22.3.2 `Logic::wired`, `Wire`
+#### 22.3.2 `Driven::strongest`
 
 ```rust
-impl Logic {
-    /// IEEE 1364 net resolution: the strongest drive wins; equal strengths that disagree are unknown.
-    pub fn wired(d: &[Logic]) -> Logic {
-        d.iter().fold(Logic::Z, |a, x|
-            if x.s > a.s { *x } else if x.s < a.s { a } else { Logic { v: merge(a.v, x.v), s: a.s } })
+impl Driven {
+    /// The strongest drive wins; equal strongest drives that disagree give X. A HighZ drive is left out.
+    pub fn strongest<const N: usize>(d: [Driven; N]) -> Driven {
+        d.iter().filter(|x| x.s != Strength::HighZ).fold(Driven::Z, |a, x| {
+            if x.s > a.s {
+                x
+            } else if x.s < a.s {
+                a
+            } else if same(a.v, x.v) {
+                a
+            } else {
+                Driven { v: Logic::X, s: a.s }
+            }
+        })
     }
 }
-
-pub nature Wire { value: Logic, resolve: Logic::wired }
 ```
 
-| Drives | `wired` |
+| Drives | `strongest` |
 | --- | --- |
-| none | `Logic::Z` |
+| none, or all `HighZ` | `Driven::Z` |
 | one strongest drive | that drive |
 | several of the greatest strength, same level | that level, that strength |
-| several of the greatest strength, levels differ | level unknown, that strength |
+| several of the greatest strength, levels differ | X, that strength |
 
-1. The result does not depend on the order of the drives. `wired(&[x, x])` equals `x`.
-2. An unknown strength makes the comparison unknown. The arms are then merged (§3.3.3).
-3. A `Wire` takes any number of drives. Any module that sees it **MAY** hold one (§5.2).
-4. A `Wire` port has no direction (§4). A driver is added by passing the `Wire` to one more port.
-5. `w.others()` is `wired` over every drive but this module's own (§5.2).
+1. The result does not depend on the order of the drives. `strongest([x, x])` equals `x`.
+2. A conflict is a value: two `Strong` drives that disagree give `Driven { v: Logic::X, s: Strength::Strong }` and nothing stops. A loop of drives that never settles is an instability, which is an error (`E0511`, §8.2.3).
+3. A net nature uses it as its `impl`: `impl Resolve<Driven> for Sda { fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) } }`.
+4. `w.others()` of such a nature is `strongest` over every drive but this module's own (§5.2).
 
-#### 22.3.3 `tri`, `Tri`
+#### 22.3.3 Why five strengths
 
-A typed bus with one driver at a time.
+The set of `Strength` is the smallest under which every module of this section keeps its meaning: a pull-up that an open-drain driver overrides, a keeper that a pull-up overrides (`Weak` under `Pull`), and a rail that a gate cannot fight (`Supply`). Because a net is a nature the model declares and `Resolve` is generic over the driven type, the set is only what the shipped `Driven`, `strongest` and modules use; a model that needs more declares its own enum and nature.
+
+The literature, as far as it could be confirmed against its document:
+
+- IEEE 1364-2005 defines eight strength levels, `supply`, `strong`, `pull`, `large`, `weak`, `medium`, `small` and `highz`; the Verilog-AMS LRM 2.4 (§9.22.3, `$driver_strength`, Figure 9-3) maps them to the coding of IEEE 1364-2005 subclauses 7.10 and 7.11, and lets a connect module read the strength of each driver of a signal (§9.22.1 to §9.22.3). `large`, `medium` and `small` are the strengths of charge storage; the five of this section are Verilog's drive strengths without it.
+- IEEE 1800 §6.6.7 declares user-defined net types whose resolution function the user names; that is the closest precedent for a net nature with a user `impl Resolve`.
+- IEEE 1164 (`std_ulogic`) has nine values: three forcing, three weak, `Z`, `U` and `-`, and a resolved subtype whose resolution is an ordinary function. It has one weak level, enough for a pull-up and no more.
+- The ngspice manual (§8.6.1, the XSPICE digital node type) has twelve values, the states 0, 1 and U each at a strength strong, resistive, high impedance or undetermined; its `real` node type (§8.6.2) resolves by summing, as `sum` below does.
+
+Of these, only Verilog passes two real levels, and its extra three exist for charge storage and resistive switches, which no module here models.
+
+#### 22.3.4 `sum`
+
+A real-valued net whose drivers add: the function of the `impl Resolve<f64>` of a summing nature the model declares.
 
 ```rust
-pub fn tri<T: Repr>(d: &[Option<T>]) -> Option<T> {
-    d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
+pub fn sum<const N: usize>(d: [f64; N]) -> f64 {
+    d.iter().sum()
 }
-pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
-```
-
-| Drives | `tri` |
-| --- | --- |
-| none, or all `None` | `None` |
-| exactly one `Some(x)` | `Some(x)` |
-| two or more `Some` | `Some(Unknown)`, whether or not they agree |
-
-1. A module that is not driving holds the drive `None`.
-2. An unknown tag makes the `match` unknown. The arms are then merged (§3.3.3).
-
-#### 22.3.4 `sum`, `SumNet`
-
-A real-valued net whose drivers add.
-
-```rust
-pub fn sum(d: &[f64]) -> f64 { d.iter().sum() }
-pub nature SumNet { value: f64, resolve: sum }
 ```
 
 1. The drives are added in the order of their instance paths (§4 rule 2). The result is a function of the source.
 2. With no drive the value is `0.0`.
-3. One unknown drive makes the sum unknown (§3.3.2).
 
 #### 22.3.5 `Tribuf`, `Pullup`, `Pulldown`
 
+Each module takes a net of any nature that implements `Resolve<Driven>`: `W: Nature + Resolve<Driven>`.
+
 ```rust
-pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
-pub module Pullup(w: Wire)   { w = Logic::pull(true); }
-pub module Pulldown(w: Wire) { w = Logic::pull(false); }
+pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {
+    w = if oe { Driven::strong(d) } else { Driven::Z };
+}
+
+pub module Pullup<W: Nature + Resolve<Driven>>(w: W) {
+    w = Driven::pull(true);
+}
+
+pub module Pulldown<W: Nature + Resolve<Driven>>(w: W) {
+    w = Driven::pull(false);
+}
 ```
 
 | Module | Drive |
 | --- | --- |
-| `Tribuf`, `oe` high | `Logic::strong(d)` |
-| `Tribuf`, `oe` low | `Logic::Z` |
-| `Tribuf`, `oe` unknown | the merge of both: strength unknown, level unknown |
-| `Pullup` | `Logic::pull(true)`, constant |
-| `Pulldown` | `Logic::pull(false)`, constant |
+| `Tribuf`, `oe` high | `Driven::strong(d)` |
+| `Tribuf`, `oe` low | `Driven::Z` |
+| `Pullup` | `Driven::pull(true)`, constant |
+| `Pulldown` | `Driven::pull(false)`, constant |
 
-1. Each module holds one drive of its `Wire`, a definition (§8.2).
+1. Each module holds one drive of its net, a definition (§8.2).
 2. A pull wins only while every stronger drive is released (Appendix E.7).
 
 #### 22.3.6 `Keeper`
@@ -1091,45 +1490,57 @@ pub module Pulldown(w: Wire) { w = Logic::pull(false); }
 A bus keeper (Verilog `trireg`): holds the last driven level, weakly.
 
 ```rust
-pub module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
-digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
+pub module Keeper<W: Nature + Resolve<Driven>>(w: W) {
+    signal last: Bit<Logic> = Logic::X;
+    w = Driven { v: last, s: Strength::Weak };
+}
+
+digital for Keeper {
+    on w.changed() {
+        let seen = w.others().v; // what the others drive, without this keeper
+        if seen.to_bit().is_some() {
+            last <- seen; // remember only a 0 or a 1
+        }
+    }
+}
 ```
 
-1. The keeper records the wire's level whenever the wire is driven above `Weak`.
-2. Its own drive is `Weak`, so it never records itself.
-3. `last` has no initial value. Until a stronger drive has been seen, the keeper drives a weak unknown level.
+1. The keeper records the level the other drives give whenever the net changes and that level is 0 or 1.
+2. Its own drive is `Weak`, and `others()` leaves it out, so it never records itself.
+3. `last` starts at X. Until a 0 or a 1 has been seen the keeper drives a weak X: the model says it has never been driven, which a `bool` could not.
 
 #### 22.3.7 `Tran`
 
 A bidirectional pass gate (Verilog `tranif1`).
 
 ```rust
-pub module Tran(a: Wire, b: Wire, in en: Bit) {
-    a = if en { b.others() } else { Logic::Z };
-    b = if en { a.others() } else { Logic::Z };
+pub module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {
+    a = if en { b.others() } else { Driven::Z };
+    b = if en { a.others() } else { Driven::Z };
 }
 ```
 
 1. While `en` is high, each side is driven with what the rest of the other side drives.
 2. `others()` excludes this gate's own drive. The gate does not latch itself.
-3. An unknown `en` merges the two arms (§3.3.3). A level stays known only where both agree.
-4. Two wires joined by `Tran(a, b, true)` carry one value. They stay two carriers, each with its own `changed()`.
-5. Gates in parallel, in a ring or in a mesh form loops among drives of `Wire`s. They settle by relaxation (§8.2.3).
-6. In such a loop strengths only rise from pass to pass. `Logic::wired` reaches its fixed point within the passes §8.2.3 gives.
+3. Two nets joined by `Tran(a, b, true)` carry one value. They stay two carriers, each with its own `changed()`.
+4. Gates in parallel, in a ring or in a mesh form loops among drives of resolved nets. They settle by relaxation (§8.2.3).
+5. In such a loop strengths only rise from pass to pass. `Driven::strongest` reaches its fixed point within the passes §8.2.3 gives.
 
 #### 22.3.8 `Tgate`
 
 A CMOS transmission gate at switch level: `tranif1` and `tranif0` in parallel.
 
 ```rust
-pub module Tgate(a: Wire, y: Wire, in s: Bit, in sn: Bit) {
+pub module Tgate<W: Nature + Resolve<Driven>>(a: W, y: W, in s: Bit, in sn: Bit) {
     let n = Tran(a, y, s);
     let p = Tran(a, y, !sn);
 }
 ```
 
 1. The gate conducts while `s` is high or `sn` is low.
-2. The two `Tran`s form a loop among drives of `a` and `y`. It settles by relaxation (§22.3.7 rule 5).
+2. The two `Tran`s form a loop among drives of `a` and `y`. It settles by relaxation (§22.3.7 rule 4).
+
+`Bidir` (§22.4.3) and `TribufDelayed` (§22.5.9) are the other modules of this kind.
 
 #### Per-analysis behavior of §22.3
 
@@ -1152,17 +1563,31 @@ Discrete carriers and nodes never connect, and no converter is inserted implicit
 
 ```rust
 pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
-    rout: f64 = 100.0; tr: f64 = 20p;
-    let ramp = transition(match d.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    let ramp = transition(
+        if d {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tr,
+        tr,
+    );
 }
-analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
+
+analog for D2A {
+    i(a) +> (v(a) - ramp * v(vdd)) / rout;
+}
 ```
 
 | `d` | Target potential of `a` |
 | --- | --- |
 | high | `v(vdd)` |
 | low | `0` |
-| unknown | `0.5 · v(vdd)`: mid-rail |
+
+A model whose input is a `Logic` writes its own converter with `to_volts` (§22.1.1 rule 5): X and Z then read as mid-rail.
 
 > **Resolution.** `rout` defaults to `100.0`. The design writes `100`, an integer literal, which is a type error for an `f64` param (Appendix A.2).
 
@@ -1180,10 +1605,18 @@ analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
 Node to `Bit`, with hysteresis; right from the operating point.
 
 ```rust
-pub module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+pub module A2D(a: Electrical, out d: Bit = false) {
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+}
+
 digital for A2D {
-    on above(v(a) - vth - hyst / 2.0) { d <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+    on above(v(a) - vth - hyst / 2.0) {
+        d <- true;
+    }
+    on above(vth - hyst / 2.0 - v(a)) {
+        d <- false;
+    }
 }
 ```
 
@@ -1198,35 +1631,49 @@ digital for A2D {
 
 #### 22.4.3 `Bidir`
 
-A pad: one `Wire`, one node.
+A pad: one resolved net, one node.
 
 ```rust
-pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
-    rout: f64 = 100.0; tr: f64 = 20p; vth: f64 = 0.6; hyst: f64 = 50m;
-    signal seen: Bit = false;                                  // the node, thresholded
-    let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ;   // unknown strength: assume driven
-    d = if driving { Logic::Z } else { Logic::strong(seen) };
-    let ramp = transition(match d.others().v.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+pub module Bidir<W: Nature + Resolve<Driven>>(d: W, a: Electrical, vdd: Electrical) {
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+    signal seen: Bit = false; // the node, thresholded
+    let driving = d.others().s != Strength::HighZ;
+    d = if driving {
+        Driven::Z
+    } else {
+        Driven::strong(seen)
+    };
+    let ramp = transition(d.others().v.to_volts(1.0), 0.0, tr, tr);
 }
+
 analog for Bidir {
-    if driving { i(a) +> (v(a) - ramp * v(vdd)) / rout; }     // released: no contribution, zero flow
+    if driving {
+        i(a) +> (v(a) - ramp * v(vdd)) / rout;
+    } // released: no contribution, zero flow
 }
+
 digital for Bidir {
-    on above(v(a) - vth - hyst / 2.0) { seen <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { seen <- false; }
+    on above(v(a) - vth - hyst / 2.0) {
+        seen <- true;
+    }
+    on above(vth - hyst / 2.0 - v(a)) {
+        seen <- false;
+    }
 }
 ```
 
-| The rest of the wire | Pad drives the node | Pad drives the wire |
+| The rest of the net | Pad drives the node | Pad drives the net |
 | --- | --- | --- |
-| drives (`others().s != HighZ`) | as `D2A`, from `others().v` | `Logic::Z` |
-| has released | no contribution: zero flow (§11 rule 4) | `Logic::strong(seen)` |
-| strength unknown | as if driven | `Logic::Z` |
+| drives (`others().s != HighZ`) | as `D2A`, from `others().v` (X and Z read as mid-rail) | `Driven::Z` |
+| has released | no contribution: zero flow (§11 rule 4) | `Driven::strong(seen)` |
 
-1. `driving` is a known `bool` over a discrete carrier. It is a legal selector of the branch `(a, gnd)` (§11 rule 3).
+1. `driving` is a `bool` over a discrete carrier. It is a legal selector of the branch `(a, gnd)` (§11 rule 3).
 2. A change of `driving` is read by `analog`: a time point and a jump.
-3. A pad faces a driver, not another pad. Two `Bidir`s alone on one wire each drive because the other does not.
-4. That loop has no fixed point. The wire is unknown and the loop is named on `log` (§8.2.3).
+3. A pad faces a driver, not another pad. Two `Bidir`s alone on one net each drive because the other does not.
+4. That loop has no fixed point: the run stops with `E0511`, naming the loop's drives (§8.2.3).
 
 Per-analysis behavior is that of `D2A` while `driving`, and of `A2D` for `seen`.
 
@@ -1240,8 +1687,8 @@ A **monitor** is a module that watches carriers and reports a temporal property 
 
 1. A monitor only reports. It never writes what it watches (§5.2).
 2. Each check is a record on the `checks` stream (§22.6.3), written from a reaction (§19 rule 4).
-3. An unknown condition is recorded as unknown, not as a pass (§19 rule 1).
-4. A model that turns a violation into unknowns reads the monitor's output: `q <- if viol { Unknown } else { d };`. The injection is opt-in and visible in the netlist.
+3. A condition is a `bool`, so a check is a pass or a failure (§19 rule 1).
+4. A model that turns a violation into X reads the monitor's output: `q <- if viol { Logic::X } else { Logic::from(d) };`. The injection is opt-in and visible in the netlist.
 5. No monitor fires at `(0, 0)`. Each reads its history there before the first commit is recorded; `since` is still `inf`.
 6. From then on `Setup` and `MinPulse` measure from that first commit, as IEEE 1364 timing checks do.
 7. Where time does not advance, a monitor runs at the microsteps of `(0, ·)` and of each sweep point. In a small-signal sweep it does not run.
@@ -1260,12 +1707,14 @@ A **monitor** is a module that watches carriers and reports a temporal property 
 ```rust
 pub module AckWithin(in clk: Bit, in req: Bit, in ack: Bit) {
     n: u32 = 4;
-    signal waiting: Bit<u32> = 0;      // cycles since an unanswered req; 0 is idle
+    signal waiting: Bit<u32> = 0; // cycles since an unanswered req; 0 is idle
 }
+
 digital for AckWithin {
     on clk.rise() {
-        if ack { waiting <- 0; }
-        else if waiting > 0 || req {
+        if ack {
+            waiting <- 0;
+        } else if waiting > 0 || req {
             require("ack_within_n", waiting < n);
             waiting <- waiting + 1;
         }
@@ -1280,7 +1729,12 @@ digital for AckWithin {
 
 ```rust
 pub module Never(in clk: Bit, in bad: Bit) {}
-digital for Never { on clk.rise() { require("never", !bad); } }
+
+digital for Never {
+    on clk.rise() {
+        require("never", !bad);
+    }
+}
 ```
 
 1. `bad` is sampled at each rising edge, with the value before the edge's own commits (§12.1.1).
@@ -1289,7 +1743,12 @@ digital for Never { on clk.rise() { require("never", !bad); } }
 
 ```rust
 pub module Stable<T: Repr>(in en: Bit, in d: Bit<T>) {}
-digital<T> for Stable<T> { on d.changed() && en && !en.changed() { require("stable", false); } }
+
+digital<T> for Stable<T> {
+    on d.changed() && en && !en.changed() {
+        require("stable", false);
+    }
+}
 ```
 
 1. A change of `d` while `en` is high is a violation.
@@ -1302,8 +1761,12 @@ pub module Setup<T: Repr>(in clk: Bit, in d: Bit<T>, out viol: Bit = false) {
     ts: f64 where ts > 0.0;
     let age = since(d);
 }
+
 digital<T> for Setup<T> {
-    on clk.rise() { require("setup", age >= ts); viol <- age < ts; }
+    on clk.rise() {
+        require("setup", age >= ts);
+        viol <- age < ts;
+    }
 }
 ```
 
@@ -1316,23 +1779,34 @@ digital<T> for Setup<T> {
 ```rust
 pub module Hold<T: Repr>(in clk: Bit, in d: Bit<T>) {
     th: f64 where th > 0.0;
-    let high_for = since(clk);          // clk high: its last change was a rise
+    let high_for = since(clk); // clk high: its last change was a rise
 }
+
 digital<T> for Hold<T> {
-    on d.changed() && clk && d.prev().is_known() { require("hold", !clk.changed() && high_for >= th); }
+    on d.changed() && clk {
+        require("hold", !clk.changed() && high_for >= th);
+    }
 }
 ```
 
 1. A change of `d` while `clk` is high **MUST** come at least `th` after the rise.
 2. A change in the edge's own microstep is a violation.
 3. `Hold` assumes `th` is shorter than the high phase of `clk`.
-4. The first value `d` ever takes is not a violation.
+4. The initial value of `d` is committed at `(0, 0)`, where `clk` has not yet risen (§22.5.1 rule 5), so it is not a violation.
 
 #### 22.5.7 `MinPulse`
 
 ```rust
-pub module MinPulse(in d: Bit) { w: f64 where w > 0.0; let width = since(d); }
-digital for MinPulse { on d.changed() { require("min_pulse", width >= w); } }
+pub module MinPulse(in d: Bit) {
+    w: f64 where w > 0.0;
+    let width = since(d);
+}
+
+digital for MinPulse {
+    on d.changed() {
+        require("min_pulse", width >= w);
+    }
+}
 ```
 
 1. Each change of `d` **MUST** come at least `w` after the previous one.
@@ -1343,24 +1817,32 @@ digital for MinPulse { on d.changed() { require("min_pulse", width >= w); } }
 An **inertial delay** passes a change of its input only once the input has been stable for the delay.
 
 ```rust
-pub module inertial<T: Repr>(in x: Bit<T>, tpd: f64) -> T {
+pub module inertial<T: Repr + Default>(in x: Bit<T>, tpd: f64) -> T {
     signal y: Bit<T>;
-    signal seen: Bit<f64>;
+    signal seen: Bit<f64> = 0.0;
     y
 }
+
 digital<T> for inertial<T> {
-    on x.changed() { seen <- now(); if analysis(Static) { y <- x; } }
-    on at(seen + tpd) { y <- x; }           // re-armed by every change: only the last one survives
+    on x.changed() {
+        seen <- now();
+        if analysis(Static) {
+            y <- x;
+        }
+    }
+    on at(seen + tpd) {
+        y <- x;
+    } // re-armed by every change: only the last one survives
 }
 ```
 
 1. The result follows `x` once `x` has been stable for `tpd`. A pulse shorter than `tpd` does not pass.
 2. Every change of `x` re-arms the `at` (§13 rule 4). Only the last pending change survives.
 3. `tpd` is a value input. It **MAY** depend on the value being delayed.
-4. The result is generic over `T`. It delays a `Bit` or the drive of a `Wire` alike.
+4. The result is generic over `T`. It delays a `Bit` or the drive of a resolved net alike.
 5. The result reads a discrete carrier only. It **MAY** be read in a definition (§8.2.5).
 6. In an operating point there is no "before" to wait out: the result follows `x` at the next microstep.
-7. The result is unknown until the first commit of `y`.
+7. The result starts at `Default::default()` of `T` (§3.3.4), which is why `T` is bound by `Default`: for `Driven` that is `Driven::Z`.
 
 | At instants | Where time does not advance | Transient | Small-signal sweep |
 | --- | --- | --- | --- |
@@ -1373,9 +1855,21 @@ This is the delay to use for logic that must follow a sweep (Appendix G.32).
 A tristate buffer with Verilog's inertial gate delay, slower to release than to drive.
 
 ```rust
-pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
-    ton: f64 = 100p; toff: f64 = 300p;
-    y = inertial(if oe { Logic::strong(d) } else { Logic::Z }, if oe { ton } else { toff });
+pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {
+    ton: f64 = 100p;
+    toff: f64 = 300p;
+    y = inertial(
+        if oe {
+            Driven::strong(d)
+        } else {
+            Driven::Z
+        },
+        if oe {
+            ton
+        } else {
+            toff
+        },
+    );
 }
 ```
 
@@ -1391,10 +1885,16 @@ Functions over `emit!` (§19) and `include_str!` (§20). None is core, and there
 #### 22.6.1 `Severity`, `log`
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq)]
-pub enum Severity { Info, Warning, Error }
+#[derive(Repr, PartialEq)]
+pub enum Severity {
+    Info,
+    Warning,
+    Error,
+}
 
-pub fn log(severity: Severity, msg: &str) { emit!("log", severity = severity, msg = msg); }
+pub fn log(severity: Severity, msg: str) {
+    emit!("log", severity = severity, msg = msg);
+}
 ```
 
 1. `log` writes a record to the `log` stream of the calling instance (§19 rule 2).
@@ -1406,11 +1906,16 @@ pub fn log(severity: Severity, msg: &str) { emit!("log", severity = severity, ms
 #### 22.6.2 `finish`, `fatal`
 
 ```rust
-pub fn finish()         { emit!("sim", finish = true); }
-pub fn fatal(msg: &str) { emit!("sim", finish = true, failed = true, msg = msg); }
+pub fn finish() {
+    emit!("sim", finish = true);
+}
+
+pub fn fatal(msg: str) {
+    emit!("sim", finish = true, failed = true, msg = msg);
+}
 ```
 
-1. Both write to the reserved global stream `sim`. The analysis ends at the instant of the record (§19 rule 5), unless the record was reached under unknown control: then it is written with `maybe = true` and the run goes on (G.55).
+1. Both write to the reserved global stream `sim`. The analysis ends at the instant of the record (§19 rule 5).
 2. That instant is the last time point (§17.2.2).
 3. `fatal` also marks the run as failed, with a message.
 4. Both are callable from reactions only. A call from `analog` is an elaboration error (§19 rule 4).
@@ -1419,23 +1924,31 @@ pub fn fatal(msg: &str) { emit!("sim", finish = true, failed = true, msg = msg);
 #### 22.6.3 `require`, `cover`, `target`
 
 ```rust
-/// A condition that must hold. Unknown is reported as unknown, not as a pass.
-pub fn require(name: &str, pass: bool)    { emit!("checks", kind = "require", name = name, pass = pass); }
+/// A condition that must hold: a pass or a failure.
+pub fn require(name: str, pass: bool) {
+    emit!("checks", kind = "require", name = name, pass = pass);
+}
+
 /// A condition worth reaching; the host counts the hits.
-pub fn cover(name: &str, hit: bool)       { emit!("checks", kind = "cover", name = name, pass = hit); }
+pub fn cover(name: str, hit: bool) {
+    emit!("checks", kind = "cover", name = name, pass = hit);
+}
+
 /// A number to keep at or above zero: an objective or a constraint of an optimization (§23.2).
-pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", name = name, margin = margin); }
+pub fn target(name: str, margin: f64) {
+    emit!("checks", kind = "target", name = name, margin = margin);
+}
 ```
 
 | Function | `kind` | Fields | Read by the host as |
 | --- | --- | --- | --- |
-| `require(name, pass)` | `"require"` | `name`, `pass` | a pass or a failure; unknown stays unknown |
+| `require(name, pass)` | `"require"` | `name`, `pass` | a pass or a failure |
 | `cover(name, hit)` | `"cover"` | `name`, `pass` | a hit count |
 | `target(name, margin)` | `"target"` | `name`, `margin` | a margin, met at or above zero; the last record of a run is kept |
 
 1. All three write to the reserved global stream `checks`. They are callable from reactions only (§19 rule 4).
 2. A check is an ordinary reaction. It runs when its event fires and reads what that reaction reads (§15).
-3. A field keeps its known flags (§19 rule 1). A record reached under unknown control carries `maybe = true`.
+3. A record is its declared fields (§19 rule 1): a `require` is a pass or a fail, with no third verdict.
 4. A reduction over an analysis is an explicit signal. Its `target` is re-emitted as it goes; the host keeps the last record (§19).
 5. `target` margins are the objectives and constraints of an optimization (§23.2).
 6. In a small-signal sweep no reaction runs, so no check is written (§16.2).
@@ -1443,8 +1956,9 @@ pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", nam
 #### 22.6.4 `parse_table`, `parse_hex`
 
 ```rust
-pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
-pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
+pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: str) -> [Row; N]; // Row: f64 or a tuple of f64
+
+pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: str) -> [T; N]; // T: an integer type
 ```
 
 1. Both are `const fn`s from text to an array. They run at elaboration; a run never reads a file (§20).
@@ -1458,7 +1972,7 @@ pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: &str) -> [T; 
 
 > **Resolution.** In `parse_table`, blank lines are skipped and `#` starts a comment that runs to the end of the line. Numbers are the language's real literals, SI suffixes included.
 
-> **Resolution.** In `parse_hex`, `_` inside a word, `//` and `/* */` comments and `@address` records are accepted as in `$readmemh`. A digit `x` or `z` makes its four levels unknown. An index the text does not write is a misfit under rule 5.
+> **Resolution.** In `parse_hex`, `_` inside a word, `//` and `/* */` comments and `@address` records are accepted as in `$readmemh`. A digit `x` or `z` is `E0706`: the elements are integers, which hold no X or Z. An index the text does not write is a misfit under rule 5.
 
 ```rust,fragment
 const IV:  [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));   // whitespace columns

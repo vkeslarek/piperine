@@ -187,15 +187,14 @@ fn a_reaction_with_no_carrier_runs_and_its_record_arrives() {
     // 1e-3 relative is the parity contract's tolerance
     let expected = R * C * std::f64::consts::LN_2;
     assert!((time - expected).abs() <= 1e-3 * expected, "trip at {time}, expected {expected}");
-    // the record's one field `v`, read through the stream's layout (contract.md D2), is known
-    // and equal to the level it crossed
+    // the record's one field `v`, read through the stream's layout (contract.md D2), is equal to
+    // the level it crossed
     let body = ir.instance_at("Step.mon").expect("the monitor instance").body();
     let layout = RecordLayout::of(&body.streams()[0]).expect("a layout for `trip`");
-    let (offset, carrier) = layout.fields[0];
-    let leaf = carrier.fields.get(0).expect("the value leaf of an `f64`");
-    let (value_at, known_at) = ((offset + leaf.offset) as usize, (offset + leaf.known) as usize);
+    let (offset, carrier) = &layout.fields[0];
+    let leaf = carrier.fields().into_iter().next().expect("the value leaf of an `f64`");
+    let value_at = (offset + leaf.offset) as usize;
     assert_eq!(bytes.len(), layout.size as usize, "the record is the layout's size");
     let value = f64::from_le_bytes(bytes[value_at..value_at + 8].try_into().expect("eight bytes"));
-    assert_eq!(bytes[known_at], 1, "the field is known");
     assert!((value - LEVEL).abs() <= 1e-3 * LEVEL, "v = {value}, expected {LEVEL}");
 }

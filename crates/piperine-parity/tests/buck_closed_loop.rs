@@ -128,7 +128,7 @@ fn outcome() -> &'static Outcome {
     })
 }
 
-/// The value of a net of `bytes` value bytes at the end of the run; it must be known.
+/// The value of a net of `bytes` value bytes at the end of the run.
 fn last(o: &Outcome, path: &str, bytes: usize) -> i32 {
     decode(value_at(o.series(path), ticks(STOP)), bytes, false)
 }

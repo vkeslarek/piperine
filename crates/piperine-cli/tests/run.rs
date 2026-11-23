@@ -313,7 +313,7 @@ fn a_type_error_is_rendered_with_its_stage_and_exits_1() {
     // exit 1. `type_error/src/lib.msl` puts a real where a `bool` is declared, at line 2.
     let out = piperine_in(&fixture("type_error"), shared_cache(), &["run", "main"]);
     let err = failed(&out, 1);
-    assert!(err.contains("P0002"), "the code:\n{err}");
+    assert!(err.contains("E0180"), "the code:\n{err}");
     assert!(err.contains("lib.msl:2:"), "the file and the line:\n{err}");
     assert!(err.contains("flag: bool = 1.5;"), "the excerpt:\n{err}");
     assert!(err.contains("error: typeck failed with 1 diagnostic(s)"), "the stage:\n{err}");
@@ -484,17 +484,137 @@ fn a_fatal_run_prints_its_msg_and_exits_1() {
 }
 
 #[test]
-fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
-    // US-05 AC 1, 2: `d` is never driven, so `if d { emit!(..) }` is reached under unknown
-    // control: its record line ends with `maybe=true`, JSON Lines carry `"maybe":true`; the
-    // `emit!` under known control prints no `maybe` at all
-    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
+fn a_guarded_record_prints_when_its_guard_holds_and_no_record_carries_a_maybe() {
+    // US-05 AC 1, 2 (explicit-unknowns T29): `d` starts false and is never driven, so `if d { emit!(..) }` does
+    // not run and writes no record; the `emit!` outside the guard is a plain record: no line prints `maybe`
+    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("maybe.msl"), design).expect("maybe.msl");
     let args = ["run", "maybe.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
     let out = piperine_in(dir.path(), shared_cache(), &args);
     let stdout = stdout_of(&out);
     let line = |stream: &str| stdout.lines().find(|l| l.contains(&format!(" {stream} "))).unwrap_or_else(|| panic!("no `{stream}` record in:\n{stdout}")).to_string();
-    assert!(line("unsure").ends_with(" n=1 maybe=true"), "{}", line("unsure"));
-    assert!(line("sure").ends_with(" n=1") && !line("sure").contains("maybe"), "{}", line("sure"));
+    assert!(!stdout.contains(" unsure "), "the guard is false, so the record is not written:\n{stdout}");
+    assert!(line("sure").ends_with(" n=1") && !stdout.contains(" maybe="), "{}", line("sure"));
+}
+
+#[test]
+fn run_of_a_top_with_a_node_port_is_e0810() {
+    // PI-07 AC 5, X8, §23.1 rule 1: no manifest key drives a port, so `piperine run` of a top
+    // with a node port has no host source for it: E0810 naming the port, exit 1, and no table on
+    // standard output (the P0001 "continuous port" of the elaborator is gone)
+    let files = written(&[("bench.msl", "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(vin: Electrical) {\n    let r1 = Resistor(vin, gnd) { r: 1k };\n}\n")]);
+    let file = files.path().join("bench.msl");
+    let out = piperine_in(files.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op", "--top", "Top"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("E0810"), "{err}");
+    assert!(err.contains("`vin`"), "the port is named:\n{err}");
+    assert!(!err.contains("P0001"), "{err}");
+    assert_eq!(text(&out.stdout).trim_end(), "run bench: op, top Top, backend rust", "only the header, no table");
+}
+
+/// A design whose carriers hold a unit enum, a struct, an enum with a payload and an array, committed
+/// at each rising edge of a clock, and a record that writes the same values.
+const COMPOSITES: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out mode: Bit<Mode> = Mode::Idle, out pair: Bit<Pair> = Pair { a: 0, b: false }, out tx: Bit<Tx> = Tx::Idle, out v: Bit<[u8; 2]> = [0, 0]) {}\n\
+digital for Logger {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n        v <- [3, 4];\n        emit!(\"sample\", pair = Pair { a: 7, b: true }, tx = Tx::Data { n: 5 }, arr = [1u8, 2]);\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal mode: Bit<Mode>;\n    signal pair: Bit<Pair>;\n    signal tx: Bit<Tx>;\n    signal v: Bit<[u8; 2]>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, mode, pair, tx, v);\n}\n";
+
+/// The files `piperine run` wrote for `COMPOSITES` and what it printed.
+struct CompositeRun {
+    /// Standard output.
+    stdout: String,
+    /// The directory holding the written files.
+    dir: tempfile::TempDir,
+}
+
+impl CompositeRun {
+    /// `piperine run bench.msl` printing `print`; with `files`, writing a CSV, JSON Lines and a plot
+    /// instead of printing the table and the records.
+    fn of(print: &[&str], files: bool) -> CompositeRun {
+        let dir = written(&[("bench.msl", COMPOSITES)]);
+        let mut args: Vec<String> = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9"].iter().map(|s| s.to_string()).collect();
+        for signal in print {
+            args.extend(["--print".to_string(), signal.to_string()]);
+        }
+        if files {
+            args.extend(["--csv", "out.csv", "--records", "out.jsonl", "--plot", "out.svg"].iter().map(|s| s.to_string()));
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        CompositeRun { stdout, dir }
+    }
+
+    /// A file the run wrote.
+    fn file(&self, name: &str) -> String {
+        std::fs::read_to_string(self.dir.path().join(name)).unwrap_or_else(|e| panic!("no {name}: {e}"))
+    }
+}
+
+#[test]
+fn composites_print_in_each_output_format() {
+    // CV-21 AC 1, CV-22 AC 1 (Q2 (c), D13): the text table, the record lines and JSON Lines write a
+    // composite in literal syntax (JSON nested, an enum `{"Variant": {..}}`), and an enum with no
+    // payload as its variant's name; CSV and the plot take one column per dotted leaf
+    let run = CompositeRun::of(&["mode", "pair", "tx", "v"], false);
+    let last = run.stdout.lines().rev().find(|l| l.contains("Regulate")).unwrap_or_else(|| panic!("no final row in\n{}", run.stdout));
+    assert!(last.contains("Pair { a: 7, b: true }") && last.contains("Tx::Data { n: 5 }") && last.contains("[3, 4]"), "the text table: {last}");
+    let record = run.stdout.lines().find(|l| l.contains(" sample ")).unwrap_or_else(|| panic!("no record in\n{}", run.stdout));
+    assert!(record.contains("pair=Pair { a: 7, b: true }") && record.contains("tx=Tx::Data { n: 5 }") && record.contains("arr=[1, 2]"), "the record line: {record}");
+    let run = CompositeRun::of(&["mode", "pair", "tx", "v"], true);
+    let json = run.file("out.jsonl");
+    let line = json.lines().next().unwrap_or_else(|| panic!("no JSON line"));
+    assert!(line.contains("\"pair\":{\"a\":7,\"b\":true}") && line.contains("\"tx\":{\"Data\":{\"n\":5}}") && line.contains("\"arr\":[1,2]"), "the JSON line: {line}");
+    let csv = run.file("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.mode,Top.pair.a,Top.pair.b,Top.tx,Top.tx.Data.n,Top.v[0],Top.v[1]"), "one CSV column per leaf: {csv}");
+    let final_row = rows.last().expect("a CSV row");
+    assert!(final_row.ends_with(",Regulate,7,true,Data,5,3,4"), "the leaves of the last row: {final_row}");
+    let svg = run.file("out.svg");
+    for series in ["Top.pair.a", "Top.tx.Data.n", "Top.v[1]"] {
+        assert!(svg.contains(&format!("data-signal=\"{series}\"")), "the plot has `{series}`: {svg}");
+    }
+}
+
+/// A design whose carrier `o` holds an `Option<u8>` that starts at `None` and takes `Some(7)` at the
+/// first rising edge of a clock.
+const OPTIONS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out o: Bit<Option<u8>>) {}\n\
+digital for Logger {\n    on clk.rise() {\n        emit!(\"seen\", o = o);\n        o <- Some(7);\n        emit!(\"set\", o = Some(7));\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal o: Bit<Option<u8>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, o);\n}\n";
+
+#[test]
+fn an_option_cell_prints_none_or_the_value() {
+    // EU-15 AC 5 (explicit-unknowns T39): an absent `Option` is written `None`, a present one `Some(x)`,
+    // and no format has an unknown cell: the text table and CSV (one column per leaf, `some` and `value`);
+    // the record line and JSON Lines (`None` as `None` and `null`, `Some` as its payload) are held by an `emit!`
+    // field of type `Option` (§19 rule 11): the record before the commit is `None`, after it `Some(7)`
+    let dir = written(&[("bench.msl", OPTIONS)]);
+    let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o"];
+    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
+    assert!(table.get(1).is_some_and(|row| row.ends_with("None")), "the first row holds the initial `None`: {table:?}");
+    assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("Some(7)")), "the last row holds the committed value: {table:?}");
+    assert!(!table.iter().any(|row| row.split_whitespace().any(|cell| cell == "x")), "no unknown cell: {stdout}");
+    assert!(stdout.lines().any(|l| l.contains("Top.logger seen o=None")), "the record of an absent `Option` field: {stdout}");
+    assert!(stdout.lines().any(|l| l.contains("Top.logger set o=Some(7)")), "the record of a present one is `Some`: {stdout}");
+    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o", "--csv", "out.csv"]);
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.o.some,Top.o.value"), "one CSV column per leaf: {csv}");
+    assert_eq!(rows.next().map(|row| row.split(',').skip(1).collect::<Vec<_>>()), Some(vec!["false", ""]), "an absent Option has no `value` leaf: {csv}");
+    assert!(csv.lines().last().is_some_and(|row| row.ends_with(",true,7")), "the last row is `Some(7)`: {csv}");
+}
+
+#[test]
+fn a_leaf_path_prints_that_leaf_alone() {
+    // CV-21 AC 2: a printed path that names a field or an element prints that leaf and nothing else
+    let run = CompositeRun::of(&["Top.pair.a", "Top.tx.Data.n", "Top.v[1]"], false);
+    let header = run.stdout.lines().find(|l| l.starts_with("time")).unwrap_or_else(|| panic!("no table in\n{}", run.stdout));
+    assert_eq!(cells(header), ["time", "Top.pair.a", "Top.tx.Data.n", "Top.v[1]"], "{}", run.stdout);
+    let last = run.stdout.lines().rev().find(|l| !l.is_empty()).expect("a row");
+    assert_eq!(&cells(last)[1..], ["7", "5", "4"], "each leaf alone: {last}");
+    let table = run.stdout.split("\n\n").nth(1).expect("a table after the records");
+    assert!(!table.contains("Pair {") && !table.contains("Tx::"), "no whole value in the table: {table}");
 }

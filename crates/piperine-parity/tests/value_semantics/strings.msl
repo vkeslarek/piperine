@@ -1,0 +1,27 @@
+//! `str` is a value type (VS-07): a parameter, a `const`, a local and `==` and `!=`. The expected
+//! values are computed by Rust in `source_value_semantics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+const NAME: str = "ab";
+fn tag(name: str, pattern: str) -> bool { name == pattern }
+fn is_named(name: str) -> bool { name == NAME }
+
+module Rows(in clk: Bit, out same: Bit = false, out other: Bit = false, out named: Bit = false, out held: Bit = false, out unlike: Bit = false) {}
+digital for Rows {
+    on clk.rise() {
+        same <- tag("a", "a");
+        other <- tag("a", "b");
+        named <- is_named("ab");
+        let local = "held";
+        held <- local == "held";
+        unlike <- "x" != "y";
+    }
+}
+
+module Bench() {
+    signal clk: Bit; signal same: Bit; signal other: Bit; signal named: Bit; signal held: Bit; signal unlike: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, same, other, named, held, unlike);
+}

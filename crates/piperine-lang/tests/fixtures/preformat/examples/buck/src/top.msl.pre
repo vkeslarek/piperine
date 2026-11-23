@@ -1,0 +1,139 @@
+//! The two top levels: `Controller`, everything digital after the converters, and `Buck`, the whole
+//! converter with its supply and load.
+
+use crate::control::{Pid, RefRamp, SetpointReg, target_codes};
+
+use crate::dpwm::{Dpwm, Osc};
+
+use crate::power::{Load, PowerStage, Supply};
+
+use crate::sense::Sensing;
+
+use crate::spec::SETPOINT_RESET;
+
+use crate::supervisor::{Fault, Mode, Supervisor};
+
+/// The digital controller (SPEC §5 to §8). Its inputs are the ADC code and strobe and the three
+/// comparator outputs; its outputs are the two gate commands and the ADC's sample request. It
+/// holds no analog behavior: the mixed-signal boundary is entirely in `Sensing` and in the gates.
+///
+/// Two clocks drive it: the 200 MHz `clk` runs the DPWM, and the ADC's `done` strobe, once per
+/// period, runs the supervisor, the reference ramp and the PID (SPEC §9).
+pub module Controller(
+    in clk: Bit,
+    in en: Bit,
+    in sp_wr: Bit,
+    in sp_data: Bit<u8>,
+    in code: Bit<u10>,
+    in done: Bit,
+    in vin_ok: Bit,
+    in oc: Bit,
+    in sink_oc: Bit,
+    out hs_cmd: Bit,
+    out ls_cmd: Bit,
+    out sample: Bit,
+    out pgood: Bit,
+    out fault: Bit<Fault>,
+    out mode: Bit<Mode>,
+) {
+    pub signal setpoint: Bit<u8>;
+    pub signal reference: Bit<u10>;
+    pub signal duty: Bit<u12>;
+    signal at_target: Bit;
+    signal run: Bit;
+    signal cut: Bit;
+    let reg = SetpointReg(sp_wr, sp_data, setpoint);
+    let ramp = RefRamp(done, run, target_codes(setpoint), reference, at_target);
+    let pid = Pid(done, run, reference, code, duty);
+    let sup = Supervisor(done, en, vin_ok, cut, code, reference, at_target, run, pgood, mode, fault);
+    let pwm = Dpwm(clk, run, duty, oc, sink_oc, hs_cmd, ls_cmd, sample, cut);
+}
+
+/// The digitally controlled buck converter (SPEC §2): supply, power stage, measurement, control and
+/// load. The params are the spec values; a host overrides them per run, and changes the
+/// non-structural ones (`vin`, the load) during a run for the line- and load-step scenarios.
+///
+/// Host-facing ports (SPEC §10):
+///
+/// | Port               | Use                                                          |
+/// | ------------------ | ------------------------------------------------------------ |
+/// | `en`               | enable; low turns both switches off at the next sample       |
+/// | `sp_wr`, `sp_data` | setpoint register write: `sp_data` is taken on a rising `sp_wr` |
+/// | `load_step`        | switches the load step in (S3, S5)                           |
+/// | `inject`           | back-drives the output with `i_inject` (S6)                  |
+/// | `pgood`            | power-good                                                   |
+/// | `fault`, `mode`    | the supervisor's fault code and state                        |
+///
+/// Probe points for the host: `vin`, `vout`, `power.sw`, `power.lx` (nodes), `isense` (0.1 V/A),
+/// `ctl.reference`, `ctl.duty`, `ctl.setpoint`.
+pub module Buck(
+    in en: Bit = false,
+    in sp_wr: Bit = false,
+    in sp_data: Bit<u8> = SETPOINT_RESET,
+    in load_step: Bit = false,
+    in inject: Bit = false,
+    out pgood: Bit,
+    out fault: Bit<Fault>,
+    out mode: Bit<Mode>,
+) {
+    // ---- Source (SPEC §2) ----
+    /// Supply voltage: 12 V nominal, 9 V to 16 V.
+    vin_nom: f64 = 12.0 where vin_nom >= 0.0;
+    rs_in: f64 = 20m where rs_in > 0.0;
+
+    // ---- Power stage (SPEC §2, §3) ----
+    l: f64 = 4.7u where l > 0.0;
+    dcr: f64 = 15m where dcr >= 0.0;
+    cout: f64 = 220u where cout > 0.0;
+    esr: f64 = 3m where esr > 0.0;
+    cin: f64 = 22u where cin > 0.0;
+    ron: f64 = 20m where ron > 0.0;
+    t_driver: f64 = 10n where t_driver > 0.0;
+
+    // ---- Load (SPEC §10) ----
+    r_load: f64 = 6.6 where r_load > 0.0;
+    r_step: f64 = 825m where r_step > 0.0;
+    t_step: f64 = 4u where t_step > 0.0;
+    i_inject: f64 = 5.0;
+
+    // ---- Clock (SPEC §5.1) ----
+    f_clk: f64 = 200M where f_clk > 0.0;
+
+    pub signal vin: Electrical;
+    pub signal vout: Electrical;
+    pub signal isense: Electrical;
+    signal isense_n: Electrical;
+
+    signal clk: Bit;
+    signal hs_cmd: Bit;
+    signal ls_cmd: Bit;
+    signal sample: Bit;
+    signal code: Bit<u10>;
+    signal done: Bit;
+    signal vin_ok: Bit;
+    signal oc: Bit;
+    signal sink_oc: Bit;
+
+    let osc = Osc(clk) { f: f_clk };
+    let supply = Supply(vin) { vin: vin_nom, rs: rs_in };
+    pub let power = PowerStage(vin, vout, isense, isense_n, hs_cmd, ls_cmd) { l, dcr, cout, esr, cin, ron, tpd: t_driver };
+    let load = Load(vout, load_step, inject) { r_base: r_load, r_step, tr: t_step, i_inject };
+    let meas = Sensing(vin, vout, isense, isense_n, sample, code, done, vin_ok, oc, sink_oc);
+    pub let ctl = Controller(
+        clk,
+        en,
+        sp_wr,
+        sp_data,
+        code,
+        done,
+        vin_ok,
+        oc,
+        sink_oc,
+        hs_cmd,
+        ls_cmd,
+        sample,
+        pgood,
+        fault,
+        mode,
+    );
+}

@@ -102,6 +102,8 @@ impl<'a> Contributions<'a> {
                             next.extend(stmts.iter().map(|s| Step::Stmt(*s)));
                             next.extend(value.iter().map(|v| Step::Expr(*v)));
                         }
+                        // A loop's statements are its own (`Ir::check` refuses a contribution
+                        // in one); only its operands are walked here.
                         other => next.extend(Contributions::operands(other).into_iter().map(Step::Expr)),
                     }
                 }
@@ -118,18 +120,18 @@ impl<'a> Contributions<'a> {
     fn operands(kind: &Expr) -> Vec<ExprId> {
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => Vec::new(),
-            Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => Vec::new(),
+            Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => Vec::new(),
             Expr::Closure { .. } | Expr::If { .. } | Expr::Block { .. } => Vec::new(),
             Expr::Unwrap { is, value, .. } => vec![*is, *value],
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => vec![*expr],
             Expr::LevelCast { expr, .. } => vec![*expr],
             Expr::Binary { lhs, rhs, .. } => vec![*lhs, *rhs],
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
-            Expr::KnownOr { value, default } => vec![*value, *default],
+            Expr::Same { a, b } => vec![*a, *b],
             Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
             Expr::Limit { x, f, seed, .. } => [*x, *f].into_iter().chain(*seed).collect(),
             Expr::Stim { mag, phase, .. } => [*mag].into_iter().chain(*phase).collect(),
             Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => kind.operands(),
         }
     }
 }

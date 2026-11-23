@@ -47,7 +47,7 @@ fn a_diagnostic_is_returned_with_its_stage() {
         Err(r) => r,
     };
     assert_eq!(refused.stage, "typeck", "{refused}");
-    assert!(refused.diagnostics.iter().any(|d| d.diagnostic.code == "P0002"), "{refused}");
+    assert!(refused.diagnostics.iter().any(|d| d.diagnostic.code == "E0180"), "{refused}");
 
     // A top that is not a module of the root crate: the type checker names it.
     let refused = match project("bench.msl").elaborate("Resistor") {
@@ -67,6 +67,6 @@ fn the_source_runner_checks_the_whole_model() {
         Err(r) => r,
     };
     assert_eq!(refused.stage, "typeck", "{refused}");
-    assert_eq!(refused.diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["P0002"]);
+    assert_eq!(refused.diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
     assert!(project("bench.msl").elaborate("Divider").is_ok());
 }

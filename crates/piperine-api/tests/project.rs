@@ -205,7 +205,7 @@ fn a_library_package_with_no_run_is_type_checked() {
     let clean = open(&rc).check().unwrap_or_else(|f| panic!("{f:?}"));
     assert_eq!((clean.runs, clean.typed), (0, true), "the package is typed with no run");
     write(&rc.join("src/lib.msl"), &format!("{RESISTOR}fn broken(x: f64) -> bool {{ x + 1.0 }}\n"));
-    assert_eq!(typeck_findings(open(&rc).check()), ["P0002"]);
+    assert_eq!(typeck_findings(open(&rc).check()), ["E0180"]);
 }
 
 #[test]
@@ -214,5 +214,5 @@ fn a_dependency_crate_is_type_checked() {
     let tmp = tempfile::tempdir().expect("tmp");
     let rc = rc_with_parts(tmp.path(), "");
     write(&tmp.path().join("parts/src/lib.msl"), &format!("{CAPACITOR}pub fn broken(x: f64) -> bool {{ x + 1.0 }}\n"));
-    assert_eq!(typeck_findings(open(&rc).check()), ["P0002"]);
+    assert_eq!(typeck_findings(open(&rc).check()), ["E0180"]);
 }

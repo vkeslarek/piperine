@@ -26,8 +26,7 @@ pub enum Ty {
     Enum(DeclId),
     /// `Option<T>`.
     Option(Box<Ty>),
-    /// `(A, B, ..)`: the value of a tuple expression, which the subset allows only as the
-    /// initializer of a tuple `let`.
+    /// `(A, B, ..)` (§1.2.4), and `(A,)` of one field.
     Tuple(Vec<Ty>),
     /// A discrete carrier of the nature `Bit<value>` (a `signal` or a port). Reading one gives
     /// its `value`; the carrier type itself is what a declaration has.
@@ -35,8 +34,24 @@ pub enum Ty {
     /// `Event` (part IV §13): something that fires at instants. It has no `Repr`: it is never
     /// carried, committed or stored.
     Event,
-    /// `&str`, the type of a string literal. It has no `Repr` and no `let`.
+    /// `str` (§1.2.9), the type of a string: a value type with no `Repr`, so it is never carried,
+    /// committed or derived. A string is text known at elaboration, kept on the site that reads it.
     Str,
+    /// The type of an expression that never completes: `return`, `break`, `continue` and a
+    /// `loop` with no `break` (§1.5.16). It fits any required type.
+    Never,
+    /// A `struct` of named, positional or no fields, by its declaration (§1.3.1): a nominal type.
+    Struct(DeclId),
+    /// `[T; N]`: `N` values of one type (§1.2.5).
+    Array(Box<Ty>, u64),
+    /// The value of `a..b`, `a..=b`, `a..`, `..b` or `..=b` over one integer or float type (§1.5.11,
+    /// H.6). It cannot be written. `iterable` is true for an integer range with both bounds: only
+    /// that range is an iterator (H.6 rule 3).
+    Range { element: Box<Ty>, iterable: bool },
+    /// The iterator of `iter()`, a range or an adaptor (H.7). It cannot be written. `reversible`
+    /// is true when `rev` applies (H.7 rule 3): `iter()` of an array, an integer range, and the
+    /// `map`, `enumerate`, `zip` and `rev` of those.
+    Iterator { element: Box<Ty>, reversible: bool },
 }
 
 impl Ty {
@@ -45,9 +60,27 @@ impl Ty {
         matches!(self, Ty::UInt(_) | Ty::Int(_))
     }
 
+    /// Whether this is a type made of parts: a struct, an enum, a tuple, an array or an `Option`.
+    pub fn is_composite(&self) -> bool {
+        matches!(self, Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) | Ty::Option(_))
+    }
+
     /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
     pub fn has_repr(&self) -> bool {
         matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_))
+    }
+
+    /// Whether a value of this type can be bound, stored and passed (§1.2): a type a carrier, a
+    /// node, a module or an event is not.
+    pub fn is_value(&self) -> bool {
+        match self {
+            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
+            Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
+            Ty::Range { element, .. } | Ty::Iterator { element, .. } => element.is_value(),
+            Ty::Tuple(items) => items.iter().all(Ty::is_value),
+            Ty::Fn(..) => true,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never => false,
+        }
     }
 
     /// The largest magnitude an integer literal of this type may have; with `negated`, the
@@ -96,20 +129,33 @@ impl Ty {
             Ty::UInt(n) => format!("u{n}"),
             Ty::Int(n) => format!("i{n}"),
             Ty::Enum(e) => match &design.decl_data(*e).name {
-                Some(n) => format!("enum `{}`", n.text),
+                Some(n) => n.text.clone(),
                 None => "enum".to_string(),
             },
             Ty::Option(inner) => format!("Option<{}>", inner.name(design)),
             Ty::Tuple(items) => {
-                let items: Vec<String> = items.iter().map(|t| t.name(design)).collect();
-                format!("({})", items.join(", "))
+                let names: Vec<String> = items.iter().map(|t| t.name(design)).collect();
+                if items.len() == 1 { format!("({},)", names[0]) } else { format!("({})", names.join(", ")) }
             }
             Ty::Carrier { nature, value } => {
-                let nature = design.decl_data(*nature).name.as_ref().map_or("Bit", |n| n.text.as_str());
-                format!("{nature}<{}>", value.name(design))
+                let data = design.decl_data(*nature);
+                let nature = data.name.as_ref().map_or("Bit", |n| n.text.as_str());
+                // A nature that takes no type argument is written bare, as its author wrote it.
+                match data.generics_span {
+                    Some(_) => format!("{nature}<{}>", value.name(design)),
+                    None => nature.to_string(),
+                }
             }
             Ty::Event => "Event".to_string(),
-            Ty::Str => "&str".to_string(),
+            Ty::Str => "str".to_string(),
+            Ty::Never => "!".to_string(),
+            Ty::Struct(decl) => match &design.decl_data(*decl).name {
+                Some(n) => format!("struct `{}`", n.text),
+                None => "struct".to_string(),
+            },
+            Ty::Array(element, length) => format!("[{}; {length}]", element.name(design)),
+            Ty::Range { element, .. } => format!("Range<{}>", element.name(design)),
+            Ty::Iterator { element, .. } => format!("Iterator<{}>", element.name(design)),
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

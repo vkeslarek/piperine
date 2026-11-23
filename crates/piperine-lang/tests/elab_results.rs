@@ -35,9 +35,8 @@ fn reach(ir: &Ir, root: ExprId) -> Vec<ExprId> {
     while let Some(e) = stack.pop() {
         out.push(e);
         match ir.expr(e) {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack.push(*expr),
             Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
-            Expr::KnownOr { value, default } => stack.extend([*value, *default]),
             Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
             Expr::Method { receiver, args, .. } => stack.extend(std::iter::once(*receiver).chain(args.iter().copied())),
             Expr::Call { args, .. } | Expr::Math { args, .. } => stack.extend(args.iter().copied()),
@@ -68,7 +67,7 @@ fn analog_exprs(ir: &Ir, body: &Body) -> Vec<ExprId> {
 fn power_switch(names: &[&str]) -> String {
     let lets: Vec<String> = names.iter().map(|n| format!("let {n} = PowerSwitch(d, s, g);")).collect();
     format!(
-        "{}\n{}\nmodule Top() {{ signal d: Electrical; signal s: Electrical; signal g: Bit; {} }}",
+        "{}\n{}\nmodule Top() {{ signal d: Electrical; signal s: Electrical; signal g: Bit = false; {} }}",
         buck::item("power.msl", "fn body_diode"),
         buck::module_with_analog("power.msl", "PowerSwitch"),
         lets.join(" ")
@@ -88,7 +87,7 @@ fn a_placement_is_hoisted_under_its_name() {
     assert_eq!(hoisted, ["gate.x", "gate.xd", "gate.y0", "gate.y1", "gate.t0", "gate.dt"]);
     assert!(ps.carriers().iter().filter(|c| c.name.starts_with("gate.")).all(|c| c.role == CarrierRole::Signal && c.ty == ValueType::F64));
     let init = |n: &str| ps.carriers()[index_of(&ps, n) as usize].init;
-    assert_eq!((init("gate.t0"), init("gate.dt"), init("gate.y0")), (Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), None), "`t0` and `dt` start at 0.0 as `transition` writes");
+    assert_eq!((init("gate.t0"), init("gate.dt"), init("gate.y0")), (Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0)))), "`t0`, `dt` and `y0` start at 0.0 as `transition` writes");
     // A placement with no `let` of its own is `<module>$<k>`, `k` counting its placements in
     // source order; one inside a hoisted module nests under it: `A2D`'s two `above` heads and the
     // `init` each places.
@@ -112,7 +111,7 @@ fn value_inputs_are_substituted_at_each_read() {
     let ps = body(&ir, "PowerSwitch");
     let x = index_of(&ps, "gate.x");
     let analog = analog_exprs(&ir, &ps);
-    assert!(analog.iter().any(|e| matches!(ir.expr(*e), Expr::KnownOr { value, .. } if ir.expr(*value) == &Expr::Carrier(x))), "`x.known_or(0.0)` reads `gate.x`");
+    assert!(analog.iter().any(|e| ir.expr(*e) == &Expr::Carrier(x)), "`x` reads `gate.x`");
     assert!(analog.iter().any(|e| ir.expr(*e) == &Expr::Env(Env::Time)) && analog.iter().any(|e| ir.expr(*e) == &Expr::Env(Env::Static)), "the result reads `now()` and `analysis(Static)`");
     let tsw = ps.params().iter().position(|p| p.name == "tsw").expect("tsw") as u32;
     // `dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 }`.
@@ -140,7 +139,7 @@ fn value_inputs_are_substituted_at_each_read() {
 fn an_omitted_option_input_reads_as_none() {
     // DIG-10 AC 3, C92: `transition(x)` leaves `td`, `tr`, `tf` out: `td.unwrap_or(0.0)` is the
     // literal `0.0`, the delay of `xd = x after td.unwrap_or(0.0)`.
-    let src = "module Top(in g: Bit) { let y = transition(if g.high() { 1.0 } else { 0.0 }); }";
+    let src = "module Top(in g: Bit) { let y = transition(if g { 1.0 } else { 0.0 }); }";
     let ir = Elab::ir(src, "Top");
     let top = body(&ir, "Top");
     let xd = index_of(&top, "y.xd");
@@ -148,7 +147,7 @@ fn an_omitted_option_input_reads_as_none() {
     let after = drive.after.expect("`after td.unwrap_or(0.0)`");
     assert_eq!(ir.expr(after), &Expr::Real(piperine_ir::Real::new(0.0)));
     // Given, an `f64` for `Option<f64>` is `Some` of it (§3.2.3): the delay is the value given.
-    let src = "module Top(in g: Bit) { let y = transition(if g.high() { 1.0 } else { 0.0 }, 2n); }";
+    let src = "module Top(in g: Bit) { let y = transition(if g { 1.0 } else { 0.0 }, 2n); }";
     let ir = Elab::ir(src, "Top");
     let top = body(&ir, "Top");
     let xd = index_of(&top, "y.xd");
@@ -159,7 +158,7 @@ fn an_omitted_option_input_reads_as_none() {
 #[test]
 fn two_placements_are_two_sets_of_carriers() {
     // DIG-10 AC 4, C93: `Load` (power.msl) places `transition` twice: `k_step.*` and `k_inject.*`.
-    let src = format!("{}\nmodule Top() {{ signal p: Electrical; signal step: Bit; signal inject: Bit; let l = Load(p, step, inject); }}", buck::module_with_analog("power.msl", "Load"));
+    let src = format!("{}\nmodule Top() {{ signal p: Electrical; signal step: Bit = false; signal inject: Bit = false; let l = Load(p, step, inject); }}", buck::module_with_analog("power.msl", "Load"));
     let ir = Elab::ir(&src, "Top");
     let load = body(&ir, "Load");
     let names = carrier_names(&load);
@@ -189,7 +188,7 @@ fn ps_children_are_empty(ir: &Ir) -> bool {
 
 #[test]
 fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
-    // DIG-10 AC 6, C95: `transition(if g.high() { 1.0 } else { 0.0 }, ..)` is a drive of `gate.x`
+    // DIG-10 AC 6, C95: `transition(if g { 1.0 } else { 0.0 }, ..)` is a drive of `gate.x`
     // by that expression, undelayed.
     let ir = Elab::ir(&power_switch(&["p"]), "Top");
     let ps = body(&ir, "PowerSwitch");
@@ -198,8 +197,7 @@ fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
     assert_eq!(drives.len(), 1);
     assert_eq!(drives[0].after, None);
     let Expr::If { cond, then, otherwise } = ir.expr(drives[0].value) else { panic!("the `if`: {:?}", ir.expr(drives[0].value)) };
-    let Expr::High(read) = ir.expr(*cond) else { panic!("`g.high()`") };
-    assert_eq!(ir.expr(*read), &Expr::Carrier(g));
+    assert_eq!(ir.expr(*cond), &Expr::Carrier(g), "`g` is read directly");
     assert_eq!((ir.expr(*then), ir.expr(*otherwise)), (&Expr::Real(piperine_ir::Real::new(1.0)), &Expr::Real(piperine_ir::Real::new(0.0))));
     // `xd = x after td.unwrap_or(0.0)` is the callee's own definition, with `td` the caller's `0.0`.
     let xd = index_of(&ps, "gate.xd");
@@ -208,26 +206,22 @@ fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
 }
 
 #[test]
-fn the_stdlib_d2a_reads_its_match_scrutinee_at_each_test() {
-    // msl-digital T66: the stdlib `D2A` gives `transition` the value `match d.known() {
-    // Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }` at its discrete input, which is a
-    // drive of `ramp.x` (DIG-10 AC 6). A drive has no local, so the `match` is an `if` chain that
-    // reads `d.known()` again at each test (an IR expression has no effect): `Some(true)` is
-    // "known and true", `Some(false)` "known and false", `None` the final `else`.
+fn the_stdlib_d2a_gives_transition_the_level_of_its_input() {
+    // msl-digital T66, as part VII 22.4.1 writes `D2A` since explicit-unknowns T23 (replaces
+    // `the_stdlib_d2a_reads_its_match_scrutinee_at_each_test`, which held `match d.known() { Some(true) => 1.0,
+    // Some(false) => 0.0, None => 0.5 }`): `transition` gets `if d { 1.0 } else { 0.0 }` at its discrete input, a
+    // drive of `ramp.x` (DIG-10 AC 6). A drive has no local, and `d` is read once, by the `if`.
     let ir = Elab::ir("module Top() { signal d: Bit = false; signal a: Electrical; signal vdd: Electrical; let x = D2A(d, a, vdd); }", "Top");
     let d2a = body(&ir, "D2A");
     let (x, d) = (index_of(&d2a, "ramp.x"), index_of(&d2a, "d"));
     let drive = d2a.drives().iter().find(|v| v.carrier == x).expect("the drive of `ramp.x`");
     let reached = reach(&ir, drive.value);
     assert!(!reached.iter().any(|e| matches!(ir.expr(*e), Expr::Local(_) | Expr::Block { .. })), "no local in a drive");
-    assert_eq!(reached.iter().filter(|e| ir.expr(**e) == &Expr::Carrier(d)).count(), 4, "`d` read twice per tested arm");
+    assert_eq!(reached.iter().filter(|e| ir.expr(**e) == &Expr::Carrier(d)).count(), 1, "`d` is read once");
     let text = ir.print_structural();
-    assert!(
-        text.contains("drive ramp.x = if (d.is_known() && (d.known_or(false) == true)) { 1.0 } else { if (d.is_known() && (d.known_or(false) == false)) { 0.0 } else { 0.5 } }"),
-        "{text}"
-    );
+    assert!(text.contains("drive ramp.x = if d { 1.0 } else { 0.0 }"), "{text}");
     // A binding inside `Some` would need a local: `P0001` by name.
-    let src = "module M(in d: Bit, a: Electrical) { let r = transition(match d.known() { Some(b) => if b { 1.0 } else { 0.0 }, None => 0.5 }, 0.0, 1n, 1n); }\n\
+    let src = "module M(in d: Bit, a: Electrical) { let r = transition(match Some(d) { Some(b) => if b { 1.0 } else { 0.0 }, None => 0.5 }, 0.0, 1n, 1n); }\n\
                analog for M { i(a) +> v(a) * r; }\n\
                module Top() { signal d: Bit = false; signal a: Electrical; let m = M(d, a); }";
     let diagnostics = Elab::run(src, "Top").expect_err("a binding in a drive is refused");
@@ -324,7 +318,7 @@ fn a_function_that_emits_is_inlined() {
     assert_eq!(emits.len(), 1);
     assert_eq!(top.record_site(0, 0).map(|s| s.texts), Some(vec![("kind", "require"), ("name", "never")]));
     // `log` from a reaction of the buck's `Supervisor` shape: the stream `log` with the value
-    // field `severity` (`Severity::Warning` is 1, §2 rule 5) and the text `msg`.
+    // field `severity` (`Severity::Warning`, variant 1 of the IR enum `Severity`) and the text `msg`.
     let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { log(Severity::Warning, \"x\"); } }";
     let ir = Elab::ir(src, "Top");
     assert!(ir.functions().all(|f| f.name() != "log"));
@@ -335,7 +329,7 @@ fn a_function_that_emits_is_inlined() {
     // The argument is held by a local of the reaction, the emit reads it.
     let stmts: Vec<&Stmt> = top.reactions()[0].stmts.iter().map(|s| ir.stmt(*s)).collect();
     let [Stmt::Let { local, init }, Stmt::Emit { fields, .. }] = stmts[..] else { panic!("the argument, then the emit: {stmts:?}") };
-    assert_eq!(ir.expr(*init), &Expr::Int(1), "`Severity::Warning`");
+    assert!(matches!(ir.expr(*init), Expr::VariantOf { variant: 1, fields, .. } if fields.is_empty()), "`Severity::Warning`: {:?}", ir.expr(*init));
     let piperine_ir::EmitField::Value { value, .. } = &fields[0] else { panic!("severity first") };
     assert_eq!(ir.expr(*value), &Expr::Local(*local));
 }
@@ -344,10 +338,10 @@ fn a_function_that_emits_is_inlined() {
 fn a_text_field_that_is_not_a_literal_is_p0001() {
     // DIG-11 AC 3, C103: `log(sev, msg)` with `msg` a function parameter that is no literal at
     // the call: the text cannot stay on the site.
-    let src = "fn note(ok: bool) { log(Severity::Info, if ok { \"up\" } else { \"down\" }); }\nmodule Top(in clk: Bit, in c: Bit) { }\ndigital for Top { on clk.rise() { note(c.known_or(false)); } }";
-    let err = Elab::run(src, "Top").expect_err("a text that is no literal");
+    let src = "fn note(ok: bool) { log(Severity::Info, if ok { \"up\" } else { \"down\" }); }\nmodule Top(in clk: Bit, in c: Bit) { }\ndigital for Top { on clk.rise() { note(c); } }";
+    let err = Elab::run(src, "Top").expect_err("a text that is no text");
     assert_eq!(Elab::codes(&err), ["P0001"]);
-    assert!(err[0].diagnostic.message.contains("not a literal"), "{}", err[0].diagnostic.message);
+    assert!(err[0].diagnostic.message.contains("not a text after inlining"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
     assert_eq!(&src[span.start..span.end], "if ok { \"up\" } else { \"down\" }");
 }

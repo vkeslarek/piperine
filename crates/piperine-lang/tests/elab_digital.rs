@@ -41,12 +41,10 @@ impl<'a> Read<'a> {
     }
 }
 
-/// The declaration of the buck module `name` of `file` with an empty body: its ports as written,
-/// none of its body items. A module whose body holds a definition elaborates whole only from T29.
+/// The declaration of the buck module `name` of `file`: its ports and its body items as written (a port that no
+/// body item drives would need an initial value of its own, §3.3.4).
 fn ports_of(file: &str, name: &str) -> String {
-    let item = buck::item(file, &format!("pub module {name}("));
-    let open = item.find(") {").unwrap_or_else(|| panic!("no body after the ports of {name}"));
-    format!("{} }}", &item[..open + 3])
+    buck::item(file, &format!("pub module {name}("))
 }
 
 #[test]
@@ -85,7 +83,7 @@ fn carriers_follow_ports_then_signals() {
     );
     // A node port among carrier ports stays a node: `Adc(ain: Electrical, in sample: Bit, ..)`
     // has one node and three carriers; a carrier is never a node and a node never a carrier.
-    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", ports_of("sense.msl", "Adc"));
+    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", ports_of("sense.msl", "Adc"));
     let ir = Elab::ir(&src, "Top");
     let read = Read { ir: &ir };
     let adc = read.body("Adc");
@@ -93,11 +91,16 @@ fn carriers_follow_ports_then_signals() {
     assert_eq!(adc.carriers().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["sample", "code", "done"]);
     assert_eq!(read.carriers("Adc")[1].3, Some(Constant::Int(0)), "`out code: Bit<u10> = 0`");
     assert_eq!(read.carriers("Adc")[2].3, Some(Constant::Bool(false)), "`out done: Bit = false`");
-    // An initial value is folded (§5.2.3): over `const`s and operators, an enum variant as its tag.
-    let src = "const K: u8 = 2 + 3;\n#[derive(Repr, Clone, Copy, PartialEq)]\nenum Mode { Off, On, Hold }\nmodule Top() { signal k: Bit<u8> = K * 2; signal m: Bit<Mode> = Mode::Hold; signal x: Bit<f64> = 0.5 * 3.0; }";
+    // An initial value is folded (§5.2.3): over `const`s and operators, an enum variant as a composite
+    // constant of the variant (the enum is an IR enum since composite-values T48, `Mode::Hold` is variant 2).
+    let src = "const K: u8 = 2 + 3;\n#[derive(Repr, PartialEq)]\nenum Mode { Off, On, Hold }\nmodule Top() { signal k: Bit<u8> = K * 2; signal m: Bit<Mode> = Mode::Hold; signal x: Bit<f64> = 0.5 * 3.0; }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
-    assert_eq!(read.carriers("Top").iter().map(|c| (c.2.clone(), c.3)).collect::<Vec<_>>(), [(ValueType::UInt(8), Some(Constant::Int(10))), (ValueType::UInt(2), Some(Constant::Int(2))), (ValueType::F64, Some(Constant::Real(piperine_ir::Real::new(1.5))))]);
+    let carriers = read.carriers("Top");
+    assert_eq!(carriers.iter().map(|c| c.2.clone()).collect::<Vec<_>>(), [ValueType::UInt(8), ValueType::Enum(piperine_ir::TypeId(0)), ValueType::F64]);
+    assert_eq!(carriers[0].3, Some(Constant::Int(10)));
+    assert!(matches!(carriers[1].3, Some(Constant::Aggregate(id)) if ir.aggregate(id).variant == Some(2)), "`Mode::Hold` is the variant 2: {:?}", carriers[1].3);
+    assert_eq!(carriers[2].3, Some(Constant::Real(piperine_ir::Real::new(1.5))));
     // One that reads a param is folded per body variant (AS-15 AC 1; it was `P0001` before `analog-structure`
     // T34): the param is structural and the variant `Top~r=1.0` holds the value of `r`.
     let ir = Elab::ir("module Top() { r: f64 = 1.0; signal x: Bit<f64> = r; }", "Top");
@@ -109,8 +112,8 @@ fn carriers_follow_ports_then_signals() {
 fn every_signal_carrier_is_a_design_net() {
     // DIG-09 AC 4, C78: one net per signal carrier of each instance, named by its path; a carrier
     // port is no net of its own, it is bound to the parent's net it is connected to.
-    let src = "module Leaf(in i: Bit, out o: Bit<u8>) { signal own: Bit = true; }\n\
-               module Top() { signal a: Bit; signal b1: Bit<u8>; signal b2: Bit<u8>; let x = Leaf(a, b1); let y = Leaf(a, b2); }";
+    let src = "module Leaf(in i: Bit, out o: Bit<u8> = 0) { signal own: Bit = true; }\n\
+               module Top() { signal a: Bit = false; signal b1: Bit<u8>; signal b2: Bit<u8>; let x = Leaf(a, b1); let y = Leaf(a, b2); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.net_paths(), ["Top.a", "Top.b1", "Top.b2", "Top.x.own", "Top.y.own"]);
@@ -123,7 +126,7 @@ fn every_signal_carrier_is_a_design_net() {
         assert_eq!(declarer, expected, "a net is declared by the instance whose signal it is: {}", net.path());
     }
     // Two levels: a carrier handed down twice stays one net.
-    let src = "module Leaf(in i: Bit) { }\nmodule Mid(in m: Bit) { let l = Leaf(m); }\nmodule Top() { signal a: Bit; let k = Mid(a); }";
+    let src = "module Leaf(in i: Bit) { }\nmodule Mid(in m: Bit) { let l = Leaf(m); }\nmodule Top() { signal a: Bit = false; let k = Mid(a); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.net_paths(), ["Top.a"]);
@@ -133,39 +136,38 @@ fn every_signal_carrier_is_a_design_net() {
 #[test]
 fn a_top_with_discrete_ports_gets_one_net_per_port() {
     // DIG-09 AC 5, C79: the host drives a top-level port (§5.2.3); each is a net `<Top>.<port>`.
-    let ir = Elab::ir("module Top(in en: Bit, out pgood: Bit) { signal s: Bit; }", "Top");
+    let ir = Elab::ir("module Top(in en: Bit, out pgood: Bit = false) { signal s: Bit = false; }", "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.net_paths(), ["Top.en", "Top.pgood", "Top.s"]);
     assert_eq!(read.nets_of("Top"), ["Top.en", "Top.pgood", "Top.s"]);
     assert!(ir.nets().all(|n| n.declared_by().path() == "Top"));
-    // A continuous port on the top has nothing to connect to: `P0001` at the module's name,
-    // naming the port.
-    let src = "module Top(in en: Bit, p: Electrical) { }";
-    let err = Elab::run(src, "Top").expect_err("a continuous port on the top");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
+    // A value input on the top has no host source: `E0811` at its name (§23.1 rule 1).
+    let src = "module Top(in en: Bit, p: f64) { }";
+    let err = Elab::run(src, "Top").expect_err("a value input on the top");
+    assert_eq!(Elab::codes(&err), ["E0811"]);
     assert!(err[0].diagnostic.message.contains("`p`"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
-    assert_eq!(&src[span.start..span.end], "Top");
+    assert_eq!(&src[span.start..span.end], "p");
 }
 
 #[test]
 fn a_carrier_with_no_value_and_no_drive_is_kept() {
-    // Edge case 2, C164: `signal en: Bit;` with no drive is allowed and unknown (§5.2.8): one
-    // carrier with no initial value, one net with none.
-    let ir = Elab::ir("module Top() { signal en: Bit; }", "Top");
+    // Edge case 2, C164: `signal en: Bit = false;` with no drive is allowed and holds its initial value in every
+    // analysis (§5.2.8): one carrier and one net, both with that value.
+    let ir = Elab::ir("module Top() { signal en: Bit = false; }", "Top");
     let read = Read { ir: &ir };
-    assert_eq!(read.carriers("Top"), vec![("en".to_string(), CarrierRole::Signal, ValueType::Bool, None)]);
+    assert_eq!(read.carriers("Top"), vec![("en".to_string(), CarrierRole::Signal, ValueType::Bool, Some(Constant::Bool(false)))]);
     assert!(read.body("Top").drives().is_empty());
     let net = ir.net_at("Top.en").expect("the net of `en`");
-    assert_eq!(net.init(), None);
+    assert_eq!(net.init(), Some(Constant::Bool(false)));
 }
 
 #[test]
 fn a_placement_records_its_carrier_bindings() {
     // C171: the authored `Child` shows what a placement connects at each carrier port of the
     // child's body, in port order: the parent's carriers (nodes stay terminals).
-    let src = "module Leaf(p: Electrical, in i: Bit, out o: Bit<u8>) { }\nmodule Plain(p: Electrical) { }\n\
-               module Top() { signal n: Electrical; signal a: Bit; signal b: Bit<u8>; let x = Leaf(n, a, b); let q = Plain(n); }";
+    let src = "module Leaf(p: Electrical, in i: Bit, out o: Bit<u8> = 0) { }\nmodule Plain(p: Electrical) { }\n\
+               module Top() { signal n: Electrical; signal a: Bit = false; signal b: Bit<u8>; let x = Leaf(n, a, b); let q = Plain(n); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     let top = read.body("Top");
@@ -179,15 +181,15 @@ fn a_placement_records_its_carrier_bindings() {
 #[test]
 fn a_net_takes_the_init_of_its_declaring_carrier() {
     // C172 (ir-rust F-B2): a net's init is the folded initial value of the carrier that declares
-    // it; with none, none. A child's `out` port with an initial value does not give the parent's
+    // it; a carrier handed to a child's `out` port has none. A child's `out` port with an initial value does not give the parent's
     // net one: the child's own carrier holds it (§5.2.6).
     let src = "module Leaf(out o: Bit = true) { }\n\
-               module Top(out q: Bit<u4> = 3) { signal x: Bit = false; signal y: Bit<u8>; signal s: Bit; let l = Leaf(s); }";
+               module Top(out q: Bit<u4> = 3) { signal x: Bit = false; signal y: Bit<u8> = 0; signal s: Bit; let l = Leaf(s); }";
     let ir = Elab::ir(src, "Top");
     let init = |path: &str| ir.net_at(path).unwrap_or_else(|| panic!("no net `{path}`")).init();
     assert_eq!(init("Top.q"), Some(Constant::Int(3)));
     assert_eq!(init("Top.x"), Some(Constant::Bool(false)));
-    assert_eq!(init("Top.y"), None);
+    assert_eq!(init("Top.y"), Some(Constant::Int(0)));
     assert_eq!(init("Top.s"), None);
     let read = Read { ir: &ir };
     assert_eq!(read.carriers("Leaf")[0].3, Some(Constant::Bool(true)), "the driver's carrier keeps its own initial value");
@@ -221,13 +223,13 @@ fn a_definition_is_a_drive() {
     let text = body_text(&ir, "GateDriver");
     assert!(text.contains("  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd\n  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd\n"), "{text}");
     // An undelayed definition has no `after`: `RefRamp`'s `at_target = reference == target;`, a
-    // comparison of two carrier reads, which may be unknown (§3.3).
+    // comparison of two carrier reads.
     let ir = Elab::ir(&buck::item("control.msl", "pub module RefRamp("), "RefRamp");
     let read = Read { ir: &ir };
     let body = read.body("RefRamp");
     assert_eq!(body.drives().len(), 1);
     assert_eq!(body.drives()[0].after, None);
-    assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Flagged(Box::new(ValueType::Bool)));
+    assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Bool);
     assert!(body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
 }
 
@@ -248,7 +250,7 @@ fn controller() -> String {
 
 #[test]
 fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
-    // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint.known_or(0)), ..)` in
+    // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint), ..)` in
     // `Controller` adds the signal carrier `ramp.target` to `Controller` with its drive, and binds
     // the child's port `target` to it (§8.2.9).
     let ir = Elab::ir(&controller(), "Controller");
@@ -260,7 +262,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
     assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
     assert_eq!(drives[0].after, None);
-    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint.known_or(0u8))\n"), "{}", body_text(&ir, "Controller"));
+    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint)\n"), "{}", body_text(&ir, "Controller"));
     let ramp = body.children().iter().position(|c| c.name == "ramp").expect("the child `ramp`");
     let setpoint = body.carriers().iter().position(|c| c.name == "setpoint").map(|i| i as u32);
     let (done, run, reference, at_target) = ["done", "run", "reference", "at_target"].map(|n| body.carriers().iter().position(|c| c.name == n).map(|i| i as u32)).into();
@@ -274,32 +276,18 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
 }
 
 /// A known or unknown `bool`: `None` is unknown (§3.3).
-type Level = Option<bool>;
-
 /// The value of a lowered event guard over the previous and the present value of the carrier
-/// `c` it reads: the flag-total reads of §3.3.4 as the spec defines them. Any other form is a
-/// failure of the test, never a guess.
-fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: Level, cur: Level) -> Level {
+/// `c` it reads. Any other form is a failure of the test, never a guess.
+fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: bool, cur: bool) -> bool {
     use piperine_ir::{BinaryOp, Expr, UnaryOp};
     let value = |e| guard_value(ir, e, c, prev, cur);
     match ir.expr(e) {
-        Expr::Bool(b) => Some(*b),
+        Expr::Bool(b) => *b,
         Expr::Carrier(k) if *k == c => cur,
         Expr::Previous(k) if *k == c => prev,
-        Expr::IsKnown(x) => Some(value(*x).is_some()),
-        Expr::High(x) => Some(value(*x) == Some(true)),
-        Expr::KnownOr { value: x, default } => value(*x).or(value(*default)),
-        Expr::Unary { op: UnaryOp::Not, expr } => value(*expr).map(|b| !b),
-        Expr::Binary { op: BinaryOp::BitAnd, lhs, rhs } => match (value(*lhs), value(*rhs)) {
-            (Some(false), _) | (_, Some(false)) => Some(false),
-            (Some(true), Some(true)) => Some(true),
-            _ => None,
-        },
-        Expr::Binary { op: BinaryOp::BitOr, lhs, rhs } => match (value(*lhs), value(*rhs)) {
-            (Some(true), _) | (_, Some(true)) => Some(true),
-            (Some(false), Some(false)) => Some(false),
-            _ => None,
-        },
+        Expr::Unary { op: UnaryOp::Not, expr } => !value(*expr),
+        Expr::Binary { op: BinaryOp::And, lhs, rhs } => value(*lhs) && value(*rhs),
+        Expr::Binary { op: BinaryOp::Or, lhs, rhs } => value(*lhs) || value(*rhs),
         other => panic!("a form an edge guard does not hold: {other:?}"),
     }
 }
@@ -307,16 +295,16 @@ fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: Level, cur: Level)
 /// A module `M` with a node, two carriers in and one out, placed by `Top`, and `digital` as its
 /// `digital` block.
 fn edges(digital: &str) -> String {
-    format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit; signal d: Bit<u8>; signal q: Bit; let m = M(n, c, d, q); }}")
+    format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit = false) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit = false; signal d: Bit<u8> = 0; signal q: Bit; let m = M(n, c, d, q); }}")
 }
 
 #[test]
 fn changed_rise_fall_and_cross_lower_to_events() {
     // DIG-09 AC 6, C80. The stdlib's own text (§22.1) is what `rise` and `fall` mean.
     let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
-    assert!(values.contains("self.changed() && self.prev().level(0) != Some(true)  && self.level(0) != Some(false)"), "the stdlib `rise` is the oracle");
-    assert!(values.contains("self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true)"), "the stdlib `fall` is the oracle");
-    let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev().known_or(0) == 3 { q <- d.prev().is_known(); }");
+    assert!(values.contains("self.changed() && !self.prev() && self"), "the stdlib `rise` is the oracle");
+    assert!(values.contains("self.changed() && self.prev() && !self"), "the stdlib `fall` is the oracle");
+    let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev() == 3 { q <- true; }");
     let ir = Elab::ir(&src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
@@ -331,51 +319,44 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     // Term by term, the two conditions of each edge (design "From a source form to IR nodes").
     let rise = events[1].guard.expect("a rise has a guard");
     let fall = events[2].guard.expect("a fall has a guard");
-    assert_eq!(ir.expr_type(rise), &ValueType::Bool, "every part is a flag-total read: the guard is never unknown");
+    assert_eq!(ir.expr_type(rise), &ValueType::Bool, "the guard is never unknown");
     assert_eq!(ir.expr_type(fall), &ValueType::Bool);
     let text = ir.print_structural();
-    assert!(text.contains("guard ((!c.prev().high()) & ((!c.is_known()) | c.known_or(false)))"), "{text}");
-    assert!(text.contains("guard ((!(c.prev().is_known() & (!c.prev().known_or(true)))) & (!c.high()))"), "{text}");
-    // IEEE 1364 posedge and negedge (§22.1): rise on 0→1, 0→x, x→1; fall on 1→0, 1→x, x→0; neither
-    // on any other change.
-    let (lo, hi, x) = (Some(false), Some(true), None);
-    for (prev, cur, rises, falls) in [(lo, hi, true, false), (lo, x, true, false), (x, hi, true, false), (hi, lo, false, true), (hi, x, false, true), (x, lo, false, true)] {
-        assert_eq!(guard_value(&ir, rise, c, prev, cur), Some(rises), "rise on {prev:?} -> {cur:?}");
-        assert_eq!(guard_value(&ir, fall, c, prev, cur), Some(falls), "fall on {prev:?} -> {cur:?}");
+    assert!(text.contains("guard ((!c.prev()) && c)"), "{text}");
+    assert!(text.contains("guard (c.prev() && (!c))"), "{text}");
+    // §22.1 (D9): rise on false to true, fall on true to false; neither on any other change.
+    let (lo, hi) = (false, true);
+    for (prev, cur, rises, falls) in [(lo, hi, true, false), (hi, lo, false, true), (lo, lo, false, false), (hi, hi, false, false)] {
+        assert_eq!(guard_value(&ir, rise, c, prev, cur), rises, "rise on {prev:?} -> {cur:?}");
+        assert_eq!(guard_value(&ir, fall, c, prev, cur), falls, "fall on {prev:?} -> {cur:?}");
     }
     // `cross(e)` watches `e`.
     let EventSource::Cross { e: watched, .. } = events[3].source else { panic!("a cross: {:?}", events[3].source) };
     assert!(matches!(ir.expr(watched), Expr::Binary { .. }) && text.contains("cross (probe(a, gnd) - 0.5)"), "{text}");
     // `c.prev()` in a guard and in a reaction body is the previous-value read.
     assert_eq!(events[4].source, EventSource::Changed(d));
-    assert!(text.contains("guard (d.prev().known_or(0u8) == 3u8)"), "{text}");
-    let reaction = &m.reactions()[4];
-    let piperine_ir::Stmt::Commit { value, .. } = ir.stmt(reaction.stmts[0]) else { panic!("a commit") };
-    let Expr::IsKnown(inner) = ir.expr(*value) else { panic!("`is_known` of the previous value") };
-    assert_eq!(ir.expr(*inner), &Expr::Previous(d));
-    assert_eq!(ir.expr_type(*inner), &ValueType::Flagged(Box::new(ValueType::UInt(8))), "a previous value may be unknown, as a read");
+    assert!(text.contains("guard (d.prev() == 3u8)"), "{text}");
 }
 
 #[test]
 fn a_guard_splits_into_its_discrete_and_continuous_parts() {
-    // DIG-09 AC 7, C81: `on x.changed() && en.high() && analysis(Static)` keeps `en.high()` on
+    // DIG-09 AC 7, C81: `on x.changed() && en && analysis(Static)` keeps `en` on
     // the event and wraps the body in `if static` (abi.md F2: a probing guard is no discrete
     // function).
-    let src = "module M(a: Electrical, in x: Bit, in en: Bit, out q: Bit) { }\n\
+    let src = "module M(a: Electrical, in x: Bit, in en: Bit, out q: Bit = false) { }\n\
                digital for M {\n\
-                 on x.changed() && en.high() && analysis(Static) { q <- true; }\n\
-                 on x.changed() && v(a) > 0.5 && en.high() { q <- false; }\n\
+                 on x.changed() && en && analysis(Static) { q <- true; }\n\
+                 on x.changed() && v(a) > 0.5 && en { q <- false; }\n\
                  on x.changed() && en { q <- true; }\n\
                }\n\
-               module Top() { signal n: Electrical; signal x: Bit; signal en: Bit; signal q: Bit; let m = M(n, x, en, q); }";
+               module Top() { signal n: Electrical; signal x: Bit = false; signal en: Bit = false; signal q: Bit; let m = M(n, x, en, q); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
     let en = m.carriers().iter().position(|k| k.name == "en").expect("en") as u32;
     use piperine_ir::{Env, Expr, Stmt};
     let guard = m.events()[0].guard.expect("the discrete part stays on the event");
-    let Expr::High(read_en) = ir.expr(guard) else { panic!("`en.high()` alone: {:?}", ir.expr(guard)) };
-    assert_eq!(ir.expr(*read_en), &Expr::Carrier(en));
+    assert_eq!(ir.expr(guard), &Expr::Carrier(en), "`en` alone");
     let wrapped = |r: usize| {
         let reaction = &m.reactions()[r];
         assert_eq!(reaction.stmts.len(), 1, "the body is one `if`");
@@ -390,24 +371,23 @@ fn a_guard_splits_into_its_discrete_and_continuous_parts() {
     // event in their order.
     let probe = wrapped(1);
     assert!(matches!(ir.expr(probe), Expr::Binary { .. }) && ir.print_structural().contains("if (probe(a, gnd) > 0.5) {"));
-    let Expr::High(_) = ir.expr(m.events()[1].guard.expect("en.high()")) else { panic!("en.high() on the event") };
-    // A guard that may be unknown is kept as written: no `known_or` is added, the generated code
-    // decides it (ir-rust RS-11 AC 5).
-    let flagged = m.events()[2].guard.expect("a guard");
-    assert_eq!(ir.expr(flagged), &Expr::Carrier(en));
-    assert_eq!(ir.expr_type(flagged), &ValueType::Flagged(Box::new(ValueType::Bool)));
+    assert_eq!(ir.expr(m.events()[1].guard.expect("en")), &Expr::Carrier(en), "`en` on the event");
+    // A guard that is a carrier is kept as written (ir-rust RS-11 AC 5).
+    let carrier_guard = m.events()[2].guard.expect("a guard");
+    assert_eq!(ir.expr(carrier_guard), &Expr::Carrier(en));
+    assert_eq!(ir.expr_type(carrier_guard), &ValueType::Bool);
     assert!(!matches!(ir.stmt(m.reactions()[2].stmts[0]), Stmt::Expr(_)), "no `if` without a continuous conjunct");
 }
 
 #[test]
 fn an_or_head_is_one_reaction_or_one_per_disjunct() {
     // DIG-09 AC 8, C82.
-    let src = "module M(a: Electrical, in x: Bit, in y: Bit, out q: Bit) { }\n\
+    let src = "module M(a: Electrical, in x: Bit, in y: Bit, out q: Bit = false) { }\n\
                digital for M {\n\
                  on x.rise() || y.rise() { q <- true; }\n\
                  on cross(v(a)) || (x.changed() && v(a) > 0.0) { q <- false; }\n\
                }\n\
-               module Top() { signal n: Electrical; signal x: Bit; signal y: Bit; signal q: Bit; let m = M(n, x, y, q); }";
+               module Top() { signal n: Electrical; signal x: Bit = false; signal y: Bit = false; signal q: Bit; let m = M(n, x, y, q); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
@@ -431,9 +411,9 @@ fn an_or_head_is_one_reaction_or_one_per_disjunct() {
 fn a_split_head_over_an_emitting_body_is_one_reaction() {
     // FIX-13 AC 3 (§13): two disjuncts over a body that emits a record are one reaction on both
     // events: it runs once per microstep, so it writes one record when both fire.
-    let src = "module M(a: Electrical, in x: Bit, out q: Bit) { }\n\
+    let src = "module M(a: Electrical, in x: Bit, out q: Bit = false) { }\n\
                digital for M { on cross(v(a)) || (x.changed() && v(a) > 0.0) { emit!(\"log\", n = 1.0); } }\n\
-               module Top() { signal n: Electrical; signal x: Bit; signal q: Bit; let m = M(n, x, q); }";
+               module Top() { signal n: Electrical; signal x: Bit = false; signal q: Bit; let m = M(n, x, q); }";
     let ir = Elab::ir(src, "Top");
     let m = Read { ir: &ir }.body("M");
     assert_eq!(m.reactions().len(), 1, "one reaction for the whole head");
@@ -443,21 +423,62 @@ fn a_split_head_over_an_emitting_body_is_one_reaction() {
 }
 
 #[test]
-fn a_head_the_ir_cannot_hold_is_p0001() {
-    // DIG-09 AC 9, C83. (A split head over a body that emits is one reaction since FIX-13:
-    // `a_split_head_over_an_emitting_body_is_one_reaction`.)
-    // An event read as a `bool` in a reaction body: the IR has no read of it (§13 rule 2).
-    let src = "module M(in x: Bit, out q: Bit) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } } }\nmodule Top() { signal x: Bit; signal q: Bit; let m = M(x, q); }";
-    let err = Elab::run(src, "Top").expect_err("an event read as a bool");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
-    assert!(err[0].diagnostic.message.contains("an event read as a `bool`"), "{}", err[0].diagnostic.message);
+fn settle_lowers_to_the_settle_event_source() {
+    // §13 rules 10, 14, 17 (unknown-semantics-events UE-03): `settle` is `EventSource::Settle`,
+    // alone, guarded (`settle && g`) and in a disjunction (`settle || ev`, one reaction on both).
+    use piperine_ir::EventSource;
+    let src = "module M(in x: Bit, in en: Bit, out q: Bit = false) { }\ndigital for M {\n on settle { q <- true; }\n on settle && en { q <- false; }\n on settle || x.changed() { q <- true; }\n}";
+    let ir = Elab::ir(src, "M");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let events = m.events();
+    assert_eq!(events.len(), 4, "one event per disjunct: {:?}", events.iter().map(|e| &e.source).collect::<Vec<_>>());
+    assert_eq!((&events[0].source, events[0].guard), (&EventSource::Settle, None), "`settle` alone is unguarded");
+    assert_eq!(events[1].source, EventSource::Settle);
+    assert!(events[1].guard.is_some(), "`settle && en` keeps its guard on the event");
+    assert_eq!(events[2].source, EventSource::Settle, "a disjunction adds one event per disjunct, in source order");
+    assert!(matches!(events[3].source, EventSource::Changed(_)));
+    let heads: Vec<Vec<u32>> = m.reactions().iter().map(|r| r.on.clone()).collect();
+    assert_eq!(heads, [vec![0], vec![1], vec![2, 3]], "the reaction of a disjunction listens to both events");
+}
+
+#[test]
+fn an_event_read_as_a_bool_in_a_body_lowers_to_fired() {
+    // §13 rule 2 (UE-01 AC 1, design D7): an event read as a `bool` in a reaction body is
+    // `fired(k)`. `x.changed()` is the head's own event 0, reused; `x.rise()` is a new event 1
+    // appended to the body's events and to no reaction's `on`. It replaces
+    // `a_head_the_ir_cannot_hold_is_p0001`, which pinned the `P0001` this read used to meet.
+    use piperine_ir::{EventSource, Expr, Stmt};
+    let src = "module M(in x: Bit, out q: Bit = false) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } if x.changed() { q <- false; } } }";
+    let ir = Elab::ir(src, "M");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let events = m.events();
+    assert_eq!(events.len(), 2, "the head's event and the one `rise` appended: {:?}", events.iter().map(|e| &e.source).collect::<Vec<_>>());
+    assert!(matches!(events[0].source, EventSource::Changed(_)) && events[0].guard.is_none(), "the head's `changed`");
+    assert!(matches!(events[1].source, EventSource::Changed(_)) && events[1].guard.is_some(), "`rise` is `changed` with its edge guard");
+    assert_eq!(m.reactions()[0].on, [0], "the appended event is in no head");
+    let fired: Vec<u32> = m.reactions()[0]
+        .stmts
+        .iter()
+        .filter_map(|s| match ir.stmt(*s) {
+            Stmt::Expr(e) => match ir.expr(*e) {
+                Expr::If { cond, .. } => match ir.expr(*cond) {
+                    Expr::Fired(k) => Some(*k),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fired, [1, 0], "`if x.rise()` reads event 1, `if x.changed()` reuses the head's event 0");
 }
 
 /// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the
-/// slice transcribed by hand from the buck's `.msl`.
+/// slice transcribed by hand from the buck's `.msl`, without the flag the explicit model removed.
 fn golden(name: &str) -> String {
-    let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    buck::golden(name)
 }
 
 /// The lines of the reaction `R<k>` of a body print: its header, its locals and its statements.
@@ -473,7 +494,7 @@ fn reaction_text(body: &str, k: usize) -> String {
 fn a_reaction_body_lowers_in_source_order() {
     // DIG-09 AC 10, C84: `Adc`'s reaction (examples/buck/src/sense.msl) is one `let` holding a
     // probe of `ain`, then three commits each with its `after`, in source order.
-    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", buck::module_with_digital("sense.msl", "Adc"));
+    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", buck::module_with_digital("sense.msl", "Adc"));
     let ir = Elab::ir(&src, "Top");
     let read = Read { ir: &ir };
     let adc = read.body("Adc");
@@ -508,7 +529,11 @@ fn a_reaction_body_lowers_in_source_order() {
     // its one listed difference, `DUTY_MAX as i32` folded to `2880i32` (DIG-08 AC 2).
     let src = format!("{}\n{}", buck::spec(), buck::module_with_digital("control.msl", "Pid"));
     let ir = Elab::ir(&src, "Pid");
-    let expected = reaction_text(&golden("pid"), 0).replace("(2880u12 as i32)", "2880i32");
+    // `Pid` reads `run`, `reference` and `meas` directly (explicit-unknowns T24, T31): the fixture, the earlier
+    // transcription, is read without its flag (`golden`) and joins `windup` with `&&` and `||`
+    let expected = reaction_text(&golden("pid"), 0)
+        .replace("(2880u12 as i32)", "2880i32")
+        .replace("(((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16)))", "(((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16)))");
     assert_eq!(reaction_text(&body_text(&ir, "Pid"), 0), expected);
 
     // `Dpwm`'s reaction (dpwm.msl), statement by statement against the same transcription; the
@@ -521,7 +546,16 @@ fn a_reaction_body_lowers_in_source_order() {
     let dpwm: String = lines.iter().enumerate().filter(|(k, _)| *k != at && !(*k + 1 == at && lines[*k].trim_start().starts_with("///"))).map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
     let src = format!("{}\n{}\n{}\n{dpwm}", buck::spec(), buck::item("dpwm.msl", "fn rev3"), buck::item("dpwm.msl", "fn dithered_width"));
     let ir = Elab::ir(&src, "Dpwm");
-    assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), reaction_text(&golden("dpwm"), 0));
+    // `Dpwm` reads `run`, `duty`, `oc` and `sink_oc` directly (explicit-unknowns T24, T31): the fixture is read without
+    // its flag, and its `&` and `|` over values that may be unknown are `&&` and `||` over plain ones
+    let expected = reaction_text(&golden("dpwm"), 0)
+        .replace("\"dithered_width~01\"(duty, (frame + 1u3))", "dithered_width(duty, (frame + 1u3))")
+        .replace("((!wrap) & (hs_cut | (hs & oc)))", "((!wrap) && (hs_cut || (hs && oc)))")
+        .replace("((!wrap) & (ls_cut | (ls & sink_oc)))", "((!wrap) && (ls_cut || (ls && sink_oc)))")
+        .replace("((enabled & (!hs_trip)) & (next < w))", "((enabled && (!hs_trip)) && (next < w))")
+        .replace("(hs & (!hs_next))", "(hs && (!hs_next))")
+        .replace("((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))", "((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))");
+    assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), expected);
 }
 
 #[test]
@@ -603,7 +637,7 @@ const BUCK_TOPS: &[&str] = &["Osc", "SetpointReg", "RefRamp", "Pid", "GateDriver
 /// other monitors are generic: each still `P0001`.)
 const STD_TOPS: &[(&str, &str)] = &[
     ("A2D", "module Top() { signal a: Electrical; signal d: Bit; let x = A2D(a, d); }"),
-    ("Never", "module Top() { signal c: Bit; signal b: Bit; let x = Never(c, b); }"),
+    ("Never", "module Top() { signal c: Bit = false; signal b: Bit = false; let x = Never(c, b); }"),
 ];
 
 /// Every design and top of the invariants: the buck's tops over one loaded package, then the
@@ -676,7 +710,7 @@ fn the_m1_goldens_are_unchanged() {
 fn cross_tolerances_lower_to_the_event() {
     // FIX-12 AC 1 and 2: `cross(e, 1p)`, `cross(e, etol: 1u)`, `cross(e, 1p, 1u)` and a param
     // tolerance lower onto the event; a tolerance left out stays absent (the solver's default).
-    let src = "module M(a: Electrical, out q: Bit) { tt: f64 = 2p; }\n\
+    let src = "module M(a: Electrical, out q: Bit = false) { tt: f64 = 2p; }\n\
                digital for M {\n\
                  on cross(v(a) - 0.5) { q <- true; }\n\
                  on cross(v(a) - 0.5, 1p) { q <- true; }\n\
@@ -707,11 +741,11 @@ fn cross_tolerances_lower_to_the_event() {
 #[test]
 fn a_cross_tolerance_that_is_not_constant_is_p0001() {
     // FIX-12 AC 4: a tolerance that reads a carrier, a probe or a local.
-    for tolerance in ["v(a)", "c.known_or(1.0)", "{ let t = 1.0; t }"] {
+    for tolerance in ["v(a)", "c", "{ let t = 1.0; t }"] {
         let src = format!(
-            "module M(a: Electrical, in c: Bit<f64>, out q: Bit) {{ }}\n\
+            "module M(a: Electrical, in c: Bit<f64>, out q: Bit = false) {{ }}\n\
              digital for M {{ on cross(v(a) - 0.5, {tolerance}) {{ q <- true; }} }}\n\
-             module Top() {{ signal n: Electrical; signal c: Bit<f64>; signal q: Bit; let m = M(n, c, q); }}"
+             module Top() {{ signal n: Electrical; signal c: Bit<f64> = 0.0; signal q: Bit; let m = M(n, c, q); }}"
         );
         let err = Elab::run(&src, "Top").expect_err(tolerance);
         assert_eq!(Elab::codes(&err), ["P0001"], "{tolerance}");

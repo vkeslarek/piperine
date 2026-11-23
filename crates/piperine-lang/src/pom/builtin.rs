@@ -68,8 +68,6 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("Repr", BuiltinKind::Trait, "§2"),
     row("Nature", BuiltinKind::Trait, "§4"),
     row("Fn", BuiltinKind::Trait, "§3"),
-    row("Clone", BuiltinKind::Trait, "App. H"),
-    row("Copy", BuiltinKind::Trait, "App. H"),
     row("PartialEq", BuiltinKind::Trait, "App. H"),
     row("Eq", BuiltinKind::Trait, "App. H"),
     row("PartialOrd", BuiltinKind::Trait, "App. H"),
@@ -106,7 +104,6 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("changed", BuiltinKind::Method, "§14.9"),
     row("prev", BuiltinKind::Method, "§14.12"),
     row("others", BuiltinKind::Method, "§14.12"),
-    row("level", BuiltinKind::Method, "§14.12"),
     row("inflow", BuiltinKind::Method, "§14.1"),
 ];
 

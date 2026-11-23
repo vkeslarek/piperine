@@ -279,7 +279,7 @@ impl Names<'_, '_> {
                 self.ty(*elem);
                 self.expr(*len);
             }
-            TypeKind::Slice(inner) | TypeKind::Ref { inner, .. } | TypeKind::Flip(inner) => self.ty(*inner),
+            TypeKind::Flip(inner) => self.ty(*inner),
             TypeKind::Tuple(items) => {
                 for t in items {
                     self.ty(*t);
@@ -448,7 +448,7 @@ impl Names<'_, '_> {
                     self.bindings(*s, out);
                 }
             }
-            PatKind::Tuple(items) | PatKind::Or(items) | PatKind::Slice(items) | PatKind::TupleStruct { pats: items, .. } => {
+            PatKind::Tuple(items) | PatKind::Or(items) | PatKind::Array(items) | PatKind::TupleStruct { pats: items, .. } => {
                 for p in items {
                     self.bindings(*p, out);
                 }
@@ -463,7 +463,6 @@ impl Names<'_, '_> {
                     }
                 }
             }
-            PatKind::Ref(inner) => self.bindings(*inner, out),
             PatKind::Wild | PatKind::Rest | PatKind::Lit(_) | PatKind::Path(_) | PatKind::Range { .. } => {}
         }
     }
@@ -475,7 +474,7 @@ impl Names<'_, '_> {
     /// binder.
     fn constant_named(&self, id: PatId) -> Option<Resolution> {
         let design = self.ctx.design;
-        let PatKind::Ident { by_ref: false, mutable: false, name, sub: None, .. } = &design.pat_node(id).kind else { return None };
+        let PatKind::Ident { name, sub: None, .. } = &design.pat_node(id).kind else { return None };
         let res = self.lookup(&name.text, Prefer::Values, &mut Vec::new())?;
         let names_one = match res {
             Resolution::Decl(d) => match &design.decl_data(d).kind {
@@ -508,7 +507,7 @@ impl Names<'_, '_> {
             PatKind::Path(p) => {
                 self.path(*p, Prefer::Values);
             }
-            PatKind::Tuple(items) | PatKind::Or(items) | PatKind::Slice(items) => {
+            PatKind::Tuple(items) | PatKind::Or(items) | PatKind::Array(items) => {
                 for p in items {
                     self.pat(*p);
                 }
@@ -532,7 +531,6 @@ impl Names<'_, '_> {
                     self.expr(*e);
                 }
             }
-            PatKind::Ref(inner) => self.pat(*inner),
         }
     }
 

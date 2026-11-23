@@ -1,0 +1,44 @@
+//! Recursion (CV-07): direct and mutual recursion called from a reaction, and a recursion and a
+//! loop that never end, which fail the analysis by name (Q5 (b): 1 024 calls, 2^24 iterations).
+//! The expected values are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn fib(n: u8) -> u16 { if n < 2 { n as u16 } else { fib(n - 1) + fib(n - 2) } }
+fn is_even(n: u8) -> bool { if n == 0 { true } else { is_odd(n - 1) } }
+fn is_odd(n: u8) -> bool { if n == 0 { false } else { is_even(n - 1) } }
+fn deep(n: u32) -> u32 { if n < 4000000000 { deep(n + 1) } else { 0 } }
+fn spin(x: u8) -> u8 { let k = x; loop { k ^= 1; } }
+
+module Rows(in clk: Bit, out a: Bit<u16> = 0, out b: Bit = false, out c: Bit = false, out d: Bit = false) {}
+digital for Rows {
+    on clk.rise() {
+        a <- fib(10);
+        b <- is_even(10);
+        c <- is_odd(7);
+        d <- is_even(7);
+    }
+}
+
+module Bench() {
+    signal clk: Bit; signal a: Bit<u16>; signal b: Bit; signal c: Bit; signal d: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a, b, c, d);
+}
+
+module Runaway(in clk: Bit, out y: Bit<u32> = 0) {}
+digital for Runaway { on clk.rise() { y <- deep(0); } }
+module RunawayBench() {
+    signal clk: Bit; signal y: Bit<u32>;
+    let osc = Osc(clk) { f: 200M };
+    let runaway = Runaway(clk, y);
+}
+
+module Endless(in clk: Bit, out y: Bit<u8> = 0) {}
+digital for Endless { on clk.rise() { y <- spin(1); } }
+module EndlessBench() {
+    signal clk: Bit; signal y: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let endless = Endless(clk, y);
+}

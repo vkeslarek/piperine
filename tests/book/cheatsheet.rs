@@ -1,4 +1,4 @@
-//! Scope: chapter 18 of the Book, "Cheat sheet" (feature `root-e2e`, RE-02 and RE-03): the natures, the
+//! Scope: chapter 16 of the Book, "Cheat sheet" (feature `root-e2e`, RE-02 and RE-03): the natures, the
 //! analog block and the module with its params and signals as the sheet writes them (the first two run
 //! or are refused with the form they show), the body items, the digital block, the debug prints, the
 //! templates, the extern module and the file items (each refused today, asserted refused with its
@@ -55,7 +55,7 @@ impl Surroundings {
 
 #[test]
 fn the_nature_card_is_the_standard_librarys() {
-    // cheatsheet#1 (run): `Bit`, `Wire` and `Electrical` as the sheet writes them; each is a declaration of
+    // cheatsheet#1 (run): `Bit` and `Electrical` as the sheet writes them (the library declares no `Wire`, explicit-unknowns D20); each is a declaration of
     // `std/carriers.msl` or `std/nets.msl`, comments and `pub` aside, and the block is accepted
     let chapter = Chapter::read();
     let model = chapter.wrapped("natures.msl", "", "cheatsheet#1", "module Top() {}\n");
@@ -63,7 +63,7 @@ fn the_nature_card_is_the_standard_librarys() {
     let library = StandardLibrary::normalized(&["carriers.msl", "nets.msl"]);
     let block = StandardLibrary::normalize(&chapter.text("cheatsheet#1"));
     let declarations: Vec<&str> = block.split("nature ").skip(1).collect();
-    assert_eq!(declarations.len(), 3, "Bit, Wire and Electrical: {block}");
+    assert_eq!(declarations.len(), 2, "Bit and Electrical: {block}");
     for declaration in declarations {
         let declaration = format!("nature {}", declaration.trim());
         assert!(library.contains(&declaration), "the standard library declares `{declaration}`");
@@ -107,30 +107,29 @@ fn the_analog_card_runs() {
 }
 
 #[test]
-fn the_digital_card_is_refused_for_its_settle_reaction() {
-    // cheatsheet#5 (refused): the four reactions, the last `on settle { require("hi", v(p, n) <= hi); }`: the
-    // `settle` event is `P0001` (L52)
+fn the_digital_card_runs() {
+    // cheatsheet#5 (run): the four reactions, the last `on settle { require("hi", v(p, n) <= hi); }`: the
+    // `settle` event runs since unknown-semantics-events T5 (L52). The third reaction commits the pulse to
+    // `q`, a `Bit`, not to the node `p` the check probes (E0222 otherwise): the card says `q` since T6
     let chapter = Chapter::read();
-    let before = "module M(in clk: Bit, in rst_n: Bit, in d: Bit, out q: Bit = false, p: Electrical, n: Electrical, in en: Bit) { t0: f64 = 1u; w: f64 = 1n; hi: f64 = 1.0; }\n";
-    let after = "module Top() { signal c: Bit; signal r: Bit; signal d: Bit; signal q: Bit; signal p: Electrical; signal n: Electrical; signal e: Bit; let m = M(c, r, d, q, p, n, e); }\n";
-    let model = chapter.wrapped("digital.msl", before, "cheatsheet#5", after);
-    let given = Surroundings::refusals(&model, "cheatsheet#5");
-    assert!(Surroundings::holds(&given, "P0001", "built-in `settle` is not supported yet"), "{given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "cheatsheet#5", "P0001", "built-in `settle` is not supported yet");
+    // `p` sits 0.5 V above `n`, both driven, so the check `v(p, n) <= hi` holds and the operating point is not singular
+    let before = format!("{}module M(in clk: Bit, in rst_n: Bit, in d: Bit, out q: Bit = false, p: Electrical, n: Electrical, in en: Bit) {{ t0: f64 = 1u; w: f64 = 1n; hi: f64 = 1.0; }}\n", Surroundings::PARTS);
+    let after = "module Top() { signal c: Bit = false; signal r: Bit = false; signal d: Bit = false; signal q: Bit; signal p: Electrical; signal n: Electrical; signal e: Bit = false; let sp = Vdc(p) { dc: 0.5 }; let sn = Vdc(n) { dc: 0.0 }; let m = M(c, r, d, q, p, n, e); }\n";
+    let model = chapter.wrapped("digital.msl", &before, "cheatsheet#5", after);
+    model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#5, the digital card: {failure}"));
 }
 
 #[test]
-fn the_debug_prints_card_is_refused_for_settle_and_the_analog_trace() {
+fn the_debug_prints_card_is_refused_for_the_analog_trace() {
     // cheatsheet#7 (refused): the four reactions that print and `analog for M { emit!("newton", ..); }`: the
-    // `settle` event is `P0001` (L52) and an `emit!` in `analog` is `P0001` (L49)
+    // `settle` event runs (L52, closed) and an `emit!` in `analog` is `P0001` (L49)
     let chapter = Chapter::read();
     let before = "module M(a: Electrical, in clk: Bit, in d: Bit) { vth: f64 = 0.5; signal q: Bit; }\n";
     let after = "module Top() { signal a: Electrical; signal c: Bit; signal d: Bit; let m = M(a, c, d); }\n";
     let model = chapter.wrapped("prints.msl", before, "cheatsheet#7", after);
     let given = Surroundings::refusals(&model, "cheatsheet#7");
-    for expected in ["built-in `settle` is not supported yet", "an `emit!` in an `analog` block is not supported yet"] {
-        assert!(Surroundings::holds(&given, "P0001", expected), "{expected}: {given:?}");
-    }
+    assert!(Surroundings::holds(&given, "P0001", "an `emit!` in an `analog` block is not supported yet"), "{given:?}");
+    assert!(!given.iter().any(|(_, message)| message.contains("`settle`")), "`settle` is no longer refused: {given:?}");
     Refusal::expect(model.run(Commands::operating_point()), "cheatsheet#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
 }
 
@@ -178,11 +177,11 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
     };
     let whole = Refusal::of(package(format!("{card}\nmodule Top() {{ }}\n")).run(Overrides::default()), "cheatsheet#10");
     assert!(whole.iter().any(|(code, message)| code == "E0601" && message == "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)"), "{whole:?}");
-    let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), &IV, \"3E\"); }\n";
+    let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), IV, \"3E\"); }\n";
     let items_only = package(format!("{items}\n{reading}"));
     let given = Refusal::of(items_only.run(Overrides::default()), "cheatsheet#10");
     assert!(Surroundings::holds(&given, "P0001", "generic function is not supported yet"), "{given:?}");
-    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "reference type is not supported yet");
+    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "an array whose length is a generic parameter is not supported yet");
 }
 
 #[test]

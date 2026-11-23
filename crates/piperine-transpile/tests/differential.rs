@@ -312,7 +312,7 @@ impl Names {
     }
 
     fn local(name: &str) -> Local {
-        Local { name: name.into(), ty: ValueType::F64 }
+        Local { name: name.into(), ty: ValueType::F64, mutable: false }
     }
 
     fn param(name: &str, default: f64, line: u32) -> Param {

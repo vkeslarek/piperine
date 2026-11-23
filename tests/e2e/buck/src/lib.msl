@@ -1,0 +1,14 @@
+//! The buck converter under a host (SPEC `examples/buck/SPEC.md` §10, feature `buck-scenarios`):
+//! `Bench` places `Buck` and takes its five `in` ports as its own, so a Rust host drives them
+//! (`Session::drive`) and sets the converter's params (`Session::set_at`) during a run. The bench
+//! holds no stimulus: every scenario's timeline is the host's.
+use buck::top::Buck;
+use buck::{Fault, Mode};
+
+/// The converter with its five host ports open and its three outputs as signals.
+pub module Bench(in en: Bit, in sp_wr: Bit, in sp_data: Bit<u8>, in load_step: Bit, in inject: Bit) {
+    signal pgood: Bit;
+    signal fault: Bit<Fault>;
+    signal mode: Bit<Mode>;
+    pub let buck = Buck(en, sp_wr, sp_data, load_step, inject, pgood, fault, mode);
+}

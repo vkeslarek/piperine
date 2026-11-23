@@ -138,16 +138,16 @@ fn adding_or_removing_an_emit_gives_the_same_waveforms() {
 fn the_delayed_bench_steps_at_one_microsecond() {
     // welcome#17 (benches/delayed.msl added to the rc project); welcome~3afc3430 "on at(t0) {
     // fired <- true; } means when time reaches t0, set fired"; welcome~6c6cac8d "the record is
-    // written when vout rises through 63.2 % of the step"; welcome~ca1522ff "One time constant after
+    // written when vout rises through 63.2 % of the step"; welcome~174ddaf4 "The first line under the header is the record the bench wrote: one time constant after
     // the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs"
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(5e-6), print_step: Some(1e-6), ..Overrides::default() };
     let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.real(1, "Delayed.vin"), 0.0, "the source is at 0 V until t0 = 1 us");
     assert_eq!(ran.real(2, "Delayed.vin"), 1.0, "and at v1 = 1 V after it");
-    Printed::holds("6.321468e-1", ran.real(2, "Delayed.vout"), "vout one time constant after the step");
+    Printed::holds("6.321445e-1", ran.real(2, "Delayed.vout"), "vout one time constant after the step");
     let tau = ran.stream("tau");
     assert_eq!(tau.len(), 1, "{:?}", ran.records);
-    Printed::holds("1.999927e-6", tau[0].time, "the tau record's instant");
+    Printed::holds("1.999933e-6", tau[0].time, "the tau record's instant");
     let Field::Real(vout) = tau[0].fields[1].1 else { panic!("vout is a real number: {:?}", tau[0].fields) };
     Printed::holds("6.321206e-1", vout, "vout at the record");
     assert!((vout - (1.0 - (-1.0f64).exp())).abs() < 5e-7, "1 - 1/e to the digit");
@@ -157,19 +157,21 @@ fn the_delayed_bench_steps_at_one_microsecond() {
 
 #[test]
 fn the_inverter_drives_its_output_a_propagation_delay_after_its_input() {
-    // welcome#21: "its one line drives the output from the input, tpd seconds later": `a` rises at
-    // 1 ns, `y` falls at 1 ns + 10 ps (and starts true 10 ps after the start)
+    // welcome#21: "its one line drives the output from the input, tpd seconds later": `y` starts at
+    // false (that first value is a change, so the reaction records it at time zero), `a` rises at
+    // 1 ns, and `y` is true 10 ps after the start and falls at 1 ns + 10 ps
     let chapter = Chapter::read();
     let top = "module Top() { signal a: Bit = false; signal y: Bit; let inv = Inv(a, y); }\ndigital for Top { on at(1n) { a <- true; } on y.changed() { emit!(\"edge\", t = now(), v = y); } }\n";
     let model = chapter.lone("inv.msl", &["welcome#21"]).with_source("inv.msl", top);
     let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-9), ..Overrides::default() };
     let ran = model.run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     let edges: Vec<(f64, &Field)> = ran.stream("edge").iter().map(|record| (record.time, &record.fields[1].1)).collect();
-    assert_eq!(edges.len(), 2, "{:?}", ran.records);
-    Printed::holds("1.000000e-11", edges[0].0, "y first drives after tpd");
-    assert_eq!(edges[0].1, &Field::Bool(true));
-    Printed::holds("1.010000e-9", edges[1].0, "y falls tpd after a rises");
-    assert_eq!(edges[1].1, &Field::Bool(false));
+    assert_eq!(edges.len(), 3, "{:?}", ran.records);
+    assert_eq!((edges[0].0, edges[0].1), (0.0, &Field::Bool(false)), "the initial value is the first change");
+    Printed::holds("1.000000e-11", edges[1].0, "y first drives after tpd");
+    assert_eq!(edges[1].1, &Field::Bool(true));
+    Printed::holds("1.010000e-9", edges[2].0, "y falls tpd after a rises");
+    assert_eq!(edges[2].1, &Field::Bool(false));
 }
 
 /// A mistake the chapter's table names: a bench of the Book written wrong.
@@ -230,24 +232,26 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~a17f566a: "Parts of the language beyond that are still refused by name with P0001: in analog,
-    // noise, idt and delay; elsewhere, generic modules, params of an integer type, resolved natures such as
-    // Wire and the settle event." Every item is `P0001`; the math methods such as `sin`, which the sentence
-    // no longer lists, run
+    // welcome~e1871864: "Parts of the language beyond that are still refused by name with P0001: in analog,
+    // noise, idt and delay; elsewhere, generic modules, params of an integer type and resolved natures (a nature
+    // that implements Resolve)." Every item is `P0001`; the math methods such as `sin` and the `settle` event, which the sentence
+    // no longer lists, run (unknown-semantics-events T5 and T22)
     let p0001 = |row: &str, source: &str, message: &str| {
         let model = Model::written("refused.msl", source);
         let overrides = Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() };
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~a17f566a";
+    let row = "welcome~e1871864";
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> white_noise(1e-12, \"n\"); }\n", "core primitive `noise` is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> idt(v(p)); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; signal q: Electrical; }\nanalog for Top { v(q) +> delay(v(p), 1n); }\n", "core primitive `delay` is not supported yet");
     p0001(row, "module G<T: Repr>() {}\nmodule Top() { let g = G::<f64>(); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { n: u8 = 3; }\n", "param of type `u8` is not supported yet");
     p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
-    p0001(row, "module Top() { }\ndigital for Top { on settle { } }\n", "built-in `settle` is not supported yet");
+    // the `settle` event is compiled since unknown-semantics-events T5 (L52)
+    let settle = Model::written("settle.msl", "module Top() { }\ndigital for Top { on settle { } }\n");
+    settle.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `on settle` is refused: {failure}"));
     let sin = Model::written("sin.msl", "module Top() { signal p: Electrical; x: f64 = 1.0; }\nanalog for Top { v(p) +> x.sin(); }\n");
     let ran = sin.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `sin` is refused again: {failure}"));
     Printed::holds("8.414710e-1", ran.signal("Top.p"), "sin(1.0) runs");

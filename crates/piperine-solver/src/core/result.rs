@@ -217,7 +217,7 @@ pub(crate) struct ReentryState {
 /// solution, to take every later step the continuous run took (HYG-04). The Newton history the
 /// predictor reads, the step size the controller proposed, the previous accepted step, the size of
 /// the last accepted step, whether the last step was accepted, whether a restart is pending (the
-/// step after a discontinuity is first order and exempt), and the controller's memory.
+/// step after a discontinuity is first order and exempt), whether the last step read a jump, and the controller's memory.
 #[derive(Debug, Clone)]
 pub(crate) struct AnalogResume {
     newton: piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,
@@ -226,6 +226,7 @@ pub(crate) struct AnalogResume {
     last_dt: f64,
     last_step_accepted: bool,
     restart_pending: bool,
+    last_read_jump: bool,
     stepper: piperine_analog_solver::convergence::StepperMemory,
 }
 
@@ -237,9 +238,10 @@ impl AnalogResume {
         last_dt: f64,
         last_step_accepted: bool,
         restart_pending: bool,
+        last_read_jump: bool,
         stepper: piperine_analog_solver::convergence::StepperMemory,
     ) -> Self {
-        Self { newton, dt, prev_h, last_dt, last_step_accepted, restart_pending, stepper }
+        Self { newton, dt, prev_h, last_dt, last_step_accepted, restart_pending, last_read_jump, stepper }
     }
 
     pub(crate) fn newton(&self) -> &piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64> {
@@ -264,6 +266,11 @@ impl AnalogResume {
 
     pub(crate) fn restart_pending(&self) -> bool {
         self.restart_pending
+    }
+
+    /// Whether the last accepted step read a jump (the step after it is first order).
+    pub(crate) fn last_read_jump(&self) -> bool {
+        self.last_read_jump
     }
 
     pub(crate) fn stepper(&self) -> &piperine_analog_solver::convergence::StepperMemory {
@@ -452,6 +459,18 @@ pub struct NoiseAnalysisResult {
     pub frequencies: Vec<f64>,
     pub out_noise_sq: Vec<f64>,
     pub integrated_noise: f64,
+    /// The band total of the output noise, V or A RMS, as ngspice's `onoise_total`: the root of
+    /// the sum, over the sources, of each source's power-law integral
+    /// ([`Integrator::power_law`](piperine_analog_solver::math::integration::Integrator::power_law))
+    /// of its density at the output. ngspice integrates source by source (`Nintegrate` in
+    /// `DIOnoise`, `N_INTEG`), and the sum of those is not the integral of the sum.
+    pub output_total: f64,
+    /// With an input instance: the output density referred to the input, `out_noise_sq / |H_in|²`
+    /// at each frequency (A²/Hz or V²/Hz of the input's own quantity).
+    pub input_noise_sq: Option<Vec<f64>>,
+    /// With an input instance: the band total of the input-referred noise, `inoise_total`, by the
+    /// same per-source power-law rule as [`output_total`](Self::output_total).
+    pub input_total: Option<f64>,
     pub contributions: Vec<NoiseContribution>,
 }
 

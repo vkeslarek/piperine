@@ -1,0 +1,9 @@
+//! A composite param whose `where` is false for the value a placement binds (CV-18 AC 1, E0317).
+
+struct Gains { a: u8, b: f64 }
+
+module Leaf() { g: Gains = Gains { a: 3, b: 0.5 } where g.a > 0; }
+
+module Bench() {
+    let leaf = Leaf { g: Gains { a: 0, b: 0.5 } }();
+}

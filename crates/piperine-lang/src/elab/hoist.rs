@@ -15,7 +15,7 @@
 //! caller's terminal for its argument, a node `signal` to a node the body gained, a module-body
 //! `let` to its value lowered in place. The `analog` blocks of every frame are lowered after the
 //! body's own, in frame order (§8.3.16: the callee's rows read what its inputs probe in the
-//! caller, and the caller reads the callee's unknowns). A discrete `in` value input (`in x: Bit<f64>`) is a carrier of the
+//! caller). A discrete `in` value input (`in x: Bit<f64>`) is a carrier of the
 //! frame driven by the caller's expression, an anonymous definition. `cross` and `at` are core:
 //! a placement of one is an event of the enclosing body, not a frame.
 
@@ -79,8 +79,10 @@ impl Elaboration<'_, '_> {
     pub(super) fn hoist_placements(&mut self, scope: &Scope) {
         let module = self.frames[scope.frame].module;
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
+        // A placement in a loop is hoisted by the unrolling of the loop, once per iteration.
+        let looped = self.looped_placements(module);
         for call in data.instances.clone() {
-            if self.hoisted_callee(call).is_some() {
+            if self.hoisted_callee(call).is_some() && !looped.contains(&call) {
                 self.frame_of(scope, call);
             }
         }
@@ -125,9 +127,13 @@ impl Elaboration<'_, '_> {
     /// caller's frame, with `lower`.
     pub(super) fn in_caller<T>(&mut self, scope: &mut Scope, lower: impl FnOnce(&mut Self, &mut Scope) -> Option<T>) -> Option<T> {
         let parent = self.frames[scope.frame].parent?;
+        // the caller's expression reads the loop variables it was written under (`unroll.rs`)
+        let seen = self.frames[scope.frame].unrolled.clone();
         let outer = std::mem::replace(&mut scope.frame, parent);
+        let outer_unrolled = std::mem::replace(&mut scope.unrolled, seen);
         let lowered = lower(self, scope);
         scope.frame = outer;
+        scope.unrolled = outer_unrolled;
         lowered
     }
 
@@ -149,7 +155,7 @@ impl Elaboration<'_, '_> {
 
     /// The name of the placement `call` of `module` in the frame `parent`: the `let` it
     /// initializes, else `<module>$<k>`.
-    fn hoisted_name(&self, parent: usize, call: ExprId, module: DeclId) -> String {
+    fn hoisted_name(&mut self, parent: usize, call: ExprId, module: DeclId) -> String {
         let owner = self.design.expr_node(call).owner;
         if let DeclKind::Let(l) = &self.design.decl_data(owner).kind
             && self.peel_parens(l.value) == call
@@ -158,11 +164,22 @@ impl Elaboration<'_, '_> {
             return name.text.clone();
         }
         let caller = self.frames[parent].module;
-        let earlier = match &self.design.decl_data(caller).kind {
-            DeclKind::Module(m) => m.instances.iter().take_while(|c| **c != call).filter(|c| self.result_callee(**c) == Some(module)).count(),
-            _ => 0,
+        let looped = self.looped_placements(caller);
+        let same = |c: &ExprId| self.result_callee(*c) == Some(module);
+        let outside: Vec<ExprId> = match &self.design.decl_data(caller).kind {
+            DeclKind::Module(m) => m.instances.iter().copied().filter(|c| same(c) && !looped.contains(c)).collect(),
+            _ => Vec::new(),
         };
         let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str());
+        // A placement in an unrolled loop is numbered after the ones outside any loop, in unrolled
+        // order (`unroll.rs`, D16); the others count the placements before them in source order.
+        let earlier = if looped.contains(&call) {
+            let next = self.unrolled_names.entry((parent, module)).or_insert(0);
+            *next += 1;
+            outside.len() + *next as usize - 1
+        } else {
+            outside.iter().take_while(|c| **c != call).count()
+        };
         format!("{name}${earlier}")
     }
 
@@ -200,6 +217,7 @@ impl Elaboration<'_, '_> {
         frame.call = Some(call);
         frame.prefix = prefix;
         frame.params = bound;
+        frame.unrolled = scope.unrolled.clone();
         let mut node_ports = Vec::new();
         for (k, port) in ports.iter().enumerate() {
             if self.is_value_input(*port) {
@@ -223,7 +241,8 @@ impl Elaboration<'_, '_> {
         for (port, arg) in ports.iter().zip(args) {
             let Some(carrier) = self.frames[index].carriers.get(port).copied() else { continue };
             let origin = self.expr_origin(arg.value);
-            if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None) {
+            let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
+            if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None, wanted.as_ref()) {
                 self.structure.drives.push(Drive { carrier, value, after: None, origin });
             }
         }
@@ -337,7 +356,7 @@ impl Elaboration<'_, '_> {
                     continue;
                 }
             };
-            bindings.bind(*param, value);
+            self.bind_param(&mut bindings, *param, value);
             out.insert(*param, value);
         }
         for param in &params {

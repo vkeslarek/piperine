@@ -60,6 +60,9 @@ struct NetBytes {
     changed_at: u64,
     /// The microstep of the last firing (0: never).
     fired_at: u64,
+    /// The next write is the net's initial value: it is a change whatever it holds, and `PREVIOUS` takes its bytes
+    /// (part II 5.3, D8).
+    first: bool,
 }
 
 /// One net's bytes and stamps, saved to put it back (the relaxation of a cycle writes
@@ -75,6 +78,7 @@ struct Saved {
     net: usize,
     changed_at: u64,
     fired_at: u64,
+    first: bool,
     at: usize,
 }
 
@@ -135,6 +139,7 @@ impl Store {
                     previous: Aligned::zeroed(if quiet { 0 } else { size }),
                     changed_at: 0,
                     fired_at: 0,
+                    first: false,
                 }
             })
             .collect();
@@ -160,6 +165,7 @@ impl Store {
             net.previous.bytes_mut().copy_from_slice(&bytes[value..]);
             net.changed_at = saved.changed_at;
             net.fired_at = saved.fired_at;
+            net.first = saved.first;
         }
         self.journal.arena.truncate(mark.arena);
         self.step = mark.step;
@@ -184,7 +190,7 @@ impl Store {
         if self.journal.log.is_open() && self.journal.stamped[net] != self.journal.epoch {
             self.journal.stamped[net] = self.journal.epoch;
             let n = &self.nets[net];
-            let saved = Saved { net, changed_at: n.changed_at, fired_at: n.fired_at, at: self.journal.arena.len() };
+            let saved = Saved { net, changed_at: n.changed_at, fired_at: n.fired_at, first: n.first, at: self.journal.arena.len() };
             self.journal.arena.extend_from_slice(n.value.bytes());
             self.journal.arena.extend_from_slice(n.previous.bytes());
             self.journal.log.push(saved);
@@ -227,6 +233,18 @@ impl Store {
     pub fn write(&mut self, net: NetId, offset: u32, bytes: &[u8]) -> bool {
         let step = self.step;
         let at = offset as usize;
+        if self.nets[net.0 as usize].first {
+            self.journal_net(net.0 as usize);
+            let n = &mut self.nets[net.0 as usize];
+            n.first = false;
+            n.value.bytes_mut()[at..at + bytes.len()].copy_from_slice(bytes);
+            if !n.quiet {
+                let value = n.value.bytes().to_vec();
+                n.previous.bytes_mut().copy_from_slice(&value);
+                n.changed_at = step;
+            }
+            return true;
+        }
         if self.nets[net.0 as usize].value.bytes()[at..at + bytes.len()] == *bytes {
             return false;
         }
@@ -249,6 +267,13 @@ impl Store {
         if !n.quiet {
             n.previous.bytes_mut()[..bytes.len()].copy_from_slice(bytes);
         }
+    }
+
+    /// Marks `net` as holding no value yet: its next write is its initial value, a change whatever the bytes, with
+    /// `PREVIOUS` the same bytes, so `prev()` reads the initial value until a later change (part II 5.3, D8).
+    pub fn expect_initial(&mut self, net: NetId) {
+        self.journal_net(net.0 as usize);
+        self.nets[net.0 as usize].first = true;
     }
 
     /// The saved state of `net`.

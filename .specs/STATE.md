@@ -1365,6 +1365,7 @@ and three choices fix how.
 `crates/piperine-transpile`, `CLAUDE.md`, `AGENTS.md`.
 **Status:** Accepted (2026-11-16), under the user's standing delegation and the approved
 `.specs/features/msl-digital/design.md` ("Tech Decisions").
+**Superseded in part by MD-78** (2026-11-21, `explicit-unknowns`): unknown-ness as an elaboration analysis is gone, and no value is flagged.
 
 ---
 
@@ -1561,6 +1562,7 @@ forms and unknown-ness as an elaboration analysis).
 `crates/piperine-plan`, `crates/piperine-transpile` (`rt/`, `print/`), `crates/piperine-abi`,
 `crates/piperine-digital-solver`, `crates/piperine-api`, `crates/piperine-cli`, `docs/spec`.
 **Status:** Accepted (2026-11-19), from the approved `.specs/features/unknown-semantics/design.md`.
+**Superseded whole by MD-78** (2026-11-21, `explicit-unknowns`): no merge, no `commit_with`, no `maybe`, no `E0150`/`E0151`.
 
 ### MD-71: a contribution stays where it was written; a module is lowered once per value of its key params
 
@@ -1624,7 +1626,192 @@ It amends MD-28's "root `tests/` holds no Rust target" and extends MD-31 and MD-
 **Status:** Accepted (2026-11-19), from the approved `.specs/features/root-e2e/design.md`.
 **Number:** `MD-70` is `unknown-semantics`, `MD-71` is `analog-structure`; `MD-72` is the next free one after them.
 
+### MD-73: a host scenario of an example is a package under `tests/e2e/<example>/`
+
+`buck-scenarios` (2026-11-20, proposed while the user was away; renumber at merge if another lane took 73).
+
+1. **The scenario package.** `tests/e2e/<example>/` holds a `Piperine.toml` with a path dependency on the
+   example and a crate root whose top exposes the example's `in` ports as its own. Each `[run.<family>]` names
+   what is sampled (`print`, `print_step`) and emitted (`streams`); the example's own manifest is not touched.
+2. **The stimulus is the Rust host's** (`Session::drive`, `Session::set_at`), one mechanism for every scenario,
+   because a timed `set` is not expressible in a bench (X8).
+3. **The harness types live in `piperine-parity::scenario`** (`Stimulus`, `Trace`, `DiscreteTrace`,
+   `ScenarioRun`, `ScenarioBatch`, `CheckTally`), each with inline unit tests.
+4. **One root target per example** (`tests/<example>_scenarios.rs`) runs every family once, all at once, and
+   stores each result so a failure is reported, never re-run.
+
+**Scope:** `tests/e2e/buck/`, `tests/buck_scenarios.rs`, `crates/piperine-parity/src/scenario/`.
+**Status:** Proposed (2026-11-20), from `.specs/features/buck-scenarios/design.md`.
+
+### MD-74: `settle` runs as section 15 says: held settle commits landed by the owner; an event read as a `bool` is `fired(k)`
+
+`unknown-semantics-events` (2026-11-20, written at T23 while the user was away; completed at T31). The
+number: `unknown-semantics` holds MD-70, `analog-structure` MD-71, `root-e2e` MD-72 and `buck-scenarios`
+MD-73 (which `composite-values` had reserved), so this is the next free one, MD-74; the second feature to
+merge renumbers.
+
+1. **`settle` is an event with a pin of its own.** It fires once per time point, after the instant has
+   gone quiet (section 13 rule 17, section 15 step 4); the plan appends a `SETTLE` pin after the
+   derivative abstol pins, so no existing shape moves. A commit made in the settle phase is held by the
+   digital solver and landed by the owner at the next instant (S1 to S7); a commit to a record pin in
+   that phase is no settle commit and applies as the instant exits.
+2. **An event read as a `bool` is `fired(k)`.** Outside an event position, in a guard or a reaction body,
+   an event expression types `bool` and lowers to `fired(j)` of a body event `j` (section 13 rules 2 and
+   9); an event read where another type is expected is `E0441`.
+3. **`limexp` runs from the standard library.** A closure's parameters are bindings the module item walk
+   skips (they are typed with their closure), so `limexp` checks and lowers like any module with a
+   result; it is one `limit` instance per use, its argument moves by at most 1.0 per iteration and its
+   derivative is `limexp` (section 22.2.4 rules 3 to 5).
+4. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
+   and the Book's clipper (`tran_clipper.cir`, ngspice given the harness's own step cap) agrees under
+   `TRAN_VOLTAGE`; no tolerance moved. The Book's buck holds its `regulated` check from 10 ms on (largest
+   deviation 9.4 mV against 50 mV).
+
+**Scope:** `crates/piperine-{ir,plan,transpile,digital-solver,solver,lang}`, the Book's chapters 8 and 10.
+**Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
+`composite-values` and `generics`.
+
+### MD-75: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
+
+`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6 wait on `composite-values` phases A to B). The
+number follows MD-74 (`unknown-semantics-events`, merged first).
+
+1. **Every code of the spec is raised or owned.** `crates/piperine-lang/tests/spec_codes.rs` lists every
+   code of every error table under `docs/spec/`, and fails for one that no non-test source spells and
+   no row of `tests/support/code_owners.tsv` (owner feature and construct) holds, and for a row whose
+   code a source now raises; a type mismatch is `E0180`, no source spells `P0002`.
+2. **The host drives a top's node ports** with one `HostSource` body per nature (a potential source to
+   `gnd`: DC, AC stimulus, piecewise-linear); a run with a node port and no source is `E0810`, a top with
+   a value input is `E0811` (spec §8.1.14, §23.1). ngspice parity runs under the existing contracts.
+3. **A param of module type** is a key param holding its template; a placement through it places the
+   template's module with the template's constants.
+4. **Files are read at elaboration.** `include_str!` is a `const` expression in a `const` item only
+   (`E0610`); `IncludedFiles` resolves the path beside the source file, reads each path once
+   (`E0612`, `E0613`), and a change to the file reaches nothing until the next elaboration (§20).
+5. **The shipped sources are in the formatter's form:** the stdlib, `examples/buck` and the gallery
+   fences, with `piperine fmt --check` guarding them; Appendix C.2 states the `table_model` spline end
+   conditions.
+
+**Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-api`, `crates/piperine-cli`,
+`crates/piperine-parity`, `docs/spec`, `GAPS.md`.
+**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`.
+
+### MD-76: pure value semantics: no reference, no move, no mutability marker
+
+`value-semantics` (2026-11-21; the number follows MD-75, `params-and-io`; user decisions D1 to D8 of `.specs/features/value-semantics/spec.md`; the numbers V1 to V7 are Appendix G.71's).
+
+1. **Every value is copied where it is used** (§1.4.6); hardware is reached by identity and changes only by a definition, a commit or a contribution (§1.4.7). There is no reference, no borrow, no slice, no lifetime, no move.
+2. **Every local is a place** (§1.5.12): `let x = e;` may be assigned. A parameter, a closure parameter, a captured name, `self` and a body `let` are not (`E0183`). `mut`, `ref` and `move` are reserved words (`E0903`).
+3. **`Clone` and `Copy` are not names of the language**: no row of the built-in table, `E0161` in a derive, a bound or as `clone()`, with the help "every value is copied; delete the name". The Rust the backend writes still derives them for every generated type: every MSL value is plain data.
+4. **`str` is a value type; a range index with const bounds is an array** (`[T; b - a]`); `resolve` takes `[T; N]` under `const N`.
+5. **The IR has no slice** (`Expr::SliceOf`, `ValueType::Slice` deleted); `Local::mutable` says the body assigns the local.
+6. **Defaults taken while the user was away:** the parser reports a removed form and reads on as the plain form (one use, one diagnostic); a slice type `[T]` is E0900 at the type; the lifetime after a `&` is one `E0905` and no token; the per-task Full gate was replaced by one full root run at the end of the batch (user, 2026-11-21).
+
+**Scope:** `crates/piperine-lang`, `piperine-ir`, `piperine-interp`, `piperine-transpile`, `std`, `examples`, the Book, `GAPS.md` S7 (closed).
+**Status:** Delivered (2026-11-21).
+
+### MD-77: the buck runs on demand; the integrated suite is the gate
+
+`integrated-tests` (2026-11-21). The number follows MD-75 (`params-and-io`); MD-76 is `value-semantics`'s
+(on `feature/composite-values`, not yet on `main`) and is left to it, so the two never collide at merge.
+The feature's spec and design call this decision MD-76 (D16) and are renumbered here.
+
+1. **A target that simulates the buck is excluded from `cargo test` by `test = false`** (D1), in a
+   `[[test]]` table of its own crate's manifest: `buck_scenarios` and `book_buck` (root), `buck_whole`,
+   `buck_dpwm`, `buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_closed_loop`
+   (`piperine-parity`), `buck_long` (`piperine-api`), `buck` and `book_buck` (`piperine-cli`). Paths, test
+   names and every historical `**Run**` line stay valid: `cargo test -p <crate> --test <name>` selects a
+   `test = false` target. No `#[ignore]`, no `cfg`, no feature.
+2. **`test = false` cannot hide a test** (D2): `ON_DEMAND_TARGETS` in
+   `crates/piperine-lang/tests/suite_hygiene.rs` registers every flagged target; the guard fails for an
+   unregistered one, for a registered one that is gone or runs by default, and for one that
+   `examples/buck/README.md`'s "On demand" block does not name as `--test <name>`.
+3. **When the buck runs** (D11): once at a feature's close, before its merge, for a feature that changes
+   the runtime, the printer, the plan, the solvers or the lowering of an existing form, and in every task
+   that edits `examples/buck/**`, `tests/e2e/buck/**` or a buck target. Per-task and per-batch gates use the
+   integrated suite. A feature that adds a `test = false` target adds its registry row and README line, and
+   its close compiles the on-demand targets (`--no-run`), since `--all-targets` no longer does.
+4. **The mapping of historical commands.** `buck_commits`, `buck_records` and `buck_time` are now
+   `source_commits`, `source_records` and `source_time` (language proofs that stay in the default run,
+   fixtures under `crates/piperine-parity/tests/digital/`); `the_buck_block_is_what_the_binary_prints` runs
+   under `cargo test -p piperine-cli --test book_buck` (it was under `--test book`); the 2 us run of
+   `cli#44` is `the_buck_bench_starts_with_the_supervisor_off` under `cargo test -p piperine --test
+   book_buck`. Closed features are not re-proven.
+5. **The suite** (`tests/integrated/`, package `tests/e2e/integrated/`): `threshold`, `sample_hold`,
+   `pwm_filter`, `state_machine`, `pi_loop`, run at once by one `ScenarioBatch`; the analog half is
+   cross-checked against ngspice by `tran_square_rc.cir` under the existing `TRAN_VOLTAGE`.
+
+**Gate migration** (spec "Gate migration", D12):
+
+The replacement lines each in-flight feature applies to its `tasks.md` at its next rebase onto `main` (D12).
+"Integrated targets" is the line `cargo test -p piperine --test integrated; cargo test -p piperine-cli --test
+integrated; cargo test -p piperine-parity --test source_commits --test source_records --test source_time`.
+"The buck run" is the README's on-demand block.
+
+| Feature (branch) | Lines that cite the buck | Replacement |
+| ---------------- | ------------------------ | ----------- |
+| every one below | the header line `Buck targets: cargo test -p piperine-parity --test buck_whole ... --test buck_power` | `Integrated targets: <the line above>` and `The buck run (on demand): examples/buck/README.md, "On demand"` |
+| every one below | the "Parity is untouchable" sentence "Every buck target passes after every task that touches ..." | "Every integrated target passes after every task that touches ...; the buck run passes once at the feature's close, before merge" |
+| every one below | the `Full` gate row "Quick, then the buck targets, `cargo test -p piperine-cli --test buck --test twins [--test commands]`, `cargo test -p piperine-api --test buck_long`, ..." | "Quick, then the integrated targets, `cargo test -p piperine-cli --test twins [--test commands]`, ..." (the rest of the row as it is) |
+| `composite-values` | T26 (line 1192) "Every buck target passes with unchanged assertions"; B8 note on T48 | "Every integrated target passes with unchanged assertions"; T48's note stays (`elab_buck`'s pin is a default static proof) |
+| `resolved-nets` | lines 36, 47, 89 | the three common rows |
+| `unknown-semantics-per-level` | T8 (line 334) "Every buck target passes with only the listed assertions moved"; B2 note | T8 edits assertions inside buck targets, so its gate is the integrated targets **and** the buck targets it edits, run by name (D11) |
+| `analog-operators` | line 359 (done) "every `buck_*` target ... pass unedited" | done, historical; B4 to B7 gate with the integrated targets |
+| `generics` | T32 (line 840) "Every buck target passes"; B5 note | "Every integrated target passes"; the buck run at the feature's close |
+| `params-and-io` B5, B6 | T26 (line 777: it edits `examples/buck/src`), line 846 (rebase), line 913 (byte-identical) | T26 keeps the buck run (D11: it edits the example); line 846: "the `**Build**` line and the integrated targets pass at the rebased `HEAD`"; line 913: "the transpile goldens are byte-identical and every integrated target passes" |
+| `unknown-semantics-events` B5 | lines 37, 48, 88 (B5 = T24 to T31) | the three common rows; T5's done-when citing `the_buck_block_is_what_the_binary_prints` under `clibook` is done and historical (the test now runs under `--test book_buck`) |
+
+
+**Scope:** `Cargo.toml` manifests, `crates/piperine-lang/tests/suite_hygiene.rs`, `crates/piperine-parity`,
+`crates/piperine-cli`, `tests/`, `examples/buck/README.md`, `CLAUDE.md`, `AGENTS.md`.
+**Status:** Accepted (2026-11-21), from the approved `.specs/features/integrated-tests/design.md`.
+
+### MD-78: unknown is explicit; no value carries a flag
+
+`explicit-unknowns` (2026-11-21, user: "Não acho que unknown deveria ser algo implícito, deveria ser algo EXPLICITO"). The number follows MD-77 (`integrated-tests`); `composite-values` may take a number at its merge, and the second feature to merge renumbers.
+
+1. **A value is what its type says.** Every value of `bool`, `UInt<N>`, `Int<N>`, `Float<N>`, an enum, a struct, a tuple or an array is known. Part I §3.3's known flag, the literal `Unknown`, `level`, `known`/`known_or`/`is_known`, the merge under unknown control, `maybe` and the gate of an analog read are removed from the language.
+2. **Uncertainty and absence are types.** `Logic<N>` is a library struct of two planes with the states 0, 1, X, Z; its operators are library `impl`s of the operator traits of Appendix H.10. Absence is `Option<T>`.
+3. **A carrier starts with a value or with its type's `Default`.** No primitive numeric type implements `Default`; a missing initial value on such a type is `E0187`.
+4. **The device ABI stays major 1 and is edited in place.** It is unreleased (user: "ABI pode continuar major 1 pq não fizemos release ainda"), so no compatibility is promised until the first release; `MINOR` returns to 0. No flag byte, no `commit_with`; `Option` is a presence byte and a payload, `Logic<N>` two planes, a drive pin the driven value and a plain `driving` byte.
+5. **Traits are capabilities.** A nature takes trait `impl`s (`E0134` is narrowed to bundles). A discrete carrier takes more than one drive only when its nature implements `Resolve<X, V = X>`; the `resolve` field and keyword are removed, and the library declares no net nature (`Wire`, `Tri`, `SumNet` leave). A loop of resolved drives that does not settle is `E0511`.
+6. **`unknown-semantics-per-level` is dropped**, and `GAPS.md` S6 and G6 close by this redesign.
+
+It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD-76's D7 into the trait. MD-74 stands. The specification, `abi.md`, the records and the Book are amended first (batches B1 to B3, on `main` ahead of the code); phase A removes the flag from every layer, phase B writes `Logic<N>` from `std` after `generics`.
+
+**Scope:** `docs/spec`, `docs/book`, `crates/piperine-{lang,ir,plan,transpile,abi,digital-solver,solver,api,cli,parity}`, `examples/`, `tests/`.
+**Status:** Accepted (2026-11-21), from the approved `.specs/features/explicit-unknowns/spec.md`. Delivered: the specification, `abi.md`, the records and phase A, the code (T19 to T40, 2026-11-22: no layer carries a known flag, the device ABI is major 1, minor 0, edited in place, `E0511` stops a loop that does not settle, a top `in` port needs its first value; S8 of `GAPS.md` is closed). Phase B (T41 to T48: the operator traits and `Logic<N>` from `std`) waits for `generics` phase A.
+
 ---
+
+### MD-79: composite values are typed IR aggregates; every enum is an IR enum; known control prints plain Rust
+
+`composite-values` phases A and B (2026-11-21; the number follows MD-77, `integrated-tests`; MD-78 is
+`explicit-unknowns`'s, approved and not yet merged, and is left to it). It extends MD-64 (the IR) and MD-67
+(the pair in value code) and supersedes nothing.
+
+1. **The IR holds aggregates as types.** `ValueType::{Tuple, Array, Struct, Enum, Option}`, a type arena of
+   `TypeData` (name, MSL path, origin, fields or variants, derives) and `Constant::Aggregate` (an entry of an
+   arena of composite constants, so `Constant` stays `Copy`). Every enum is an IR enum, a unit one included; its
+   carried bytes are unchanged (the tag), and its variant names live in the arena, never in a net.
+2. **Control.** A known decision prints plain Rust; an unknown one prints `rt::Unrolled` and the merged tuple of
+   the locals it wrote (§3.3.3). Loops and recursion that place or contribute are unrolled at elaboration.
+3. **The ABI is unchanged.** A composite carrier, param or record field is one pin laid out by
+   `piperine_plan::CompositeLayout`: the parts' value bytes one after another, the first lowest and unpadded
+   (what `rt::flag::Carried` writes), then one known byte for the whole value (one flag per value, G6/S6); one
+   ABI field per leaf named by its dotted path, each holding that known byte; an array one field per element.
+   The layout is a function of the IR type alone (abi.md P4).
+4. **The host (Q2 (c), D13).** `piperine-api` decodes a composite pin through the arena (`CellShape`,
+   `CompositeCell`); the text table, record lines and JSON Lines write literal syntax (JSON nested), CSV and the
+   plot one column per dotted leaf, a printed path naming a leaf prints that leaf alone, and an enum with no
+   payload reads as its variant's name (a record field `Field::Variant`, a table cell `Cell::Text`). A composite
+   param is set by the path of one leaf before the run (`Top.f.num[2]=0.5`); its `where` is checked on the whole
+   value after the write (`E0317`).
+5. **Defaults taken while the user was away** (D1 to D20 of `design.md`, plus B1 to B10 of `tasks.md`'s Handoff).
+
+**Scope:** `crates/piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-lang`, `piperine-api`,
+`piperine-cli`, `piperine-parity`, `docs/spec`, the Book, `GAPS.md`.
+**Status:** phases A and B delivered (2026-11-21); phases C and D (arrays of carriers, `f16`/`f128`) follow.
 
 ## Handoff Snapshot
 

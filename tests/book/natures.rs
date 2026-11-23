@@ -1,4 +1,4 @@
-//! Scope: chapter 4 of the Book, "Natures and carriers" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 6 of the Book, "Natures and carriers" (feature `root-e2e`, RE-02 and RE-03): the
 //! natures the standard library gives, the signal declarations, a resistor that heats itself, the
 //! open-drain line and the bundle the Book builds (both refused today, asserted refused with their
 //! diagnostics), an `out` port that gives the initial value, and the mistakes of the chapter's table,
@@ -58,7 +58,7 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
     let library = StandardLibrary::normalized(&["carriers.msl", "nets.msl"]);
     let block = StandardLibrary::normalize(&chapter.text("natures#1"));
     let declarations: Vec<&str> = block.split("nature ").skip(1).collect();
-    assert_eq!(declarations.len(), 5, "Bit, Wire, Electrical, Thermal and VSignal: {block}");
+    assert_eq!(declarations.len(), 4, "Bit, Electrical, Thermal and VSignal; the library declares no net nature: {block}");
     for declaration in declarations {
         let declaration = format!("nature {}", declaration.trim());
         assert!(library.contains(&declaration), "the standard library declares `{declaration}`");
@@ -66,39 +66,44 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
 }
 
 #[test]
-fn signals_of_every_family_are_refused_for_the_arrays_and_the_wire() {
-    // natures#2 (refused): "signal en: Bit; ... signal lines: [Bit; 8]; ... signal sda: Wire; ...": an
-    // array of carriers is `P0001` (L24), and a `Wire` is `P0001` (L21); `logic("10xx")` is typed by its
-    // contract and accepted (`unknown-semantics`); the discrete, node and initial-value lines before
-    // them are accepted. When the block runs this test fails and the row moves to `run`
+fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net() {
+    // natures#2 (refused, S8): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
+    // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
+    // `P0001` (L24), an `Option` is not carried yet (E0112), `Logic` is a library struct the front end does
+    // not take as a type yet (P0001) and `Sda` is the model's own nature, declared further on in the
+    // chapter's example, so here it is unknown (E0161); the discrete, node and initial-value lines are
+    // accepted. When the block runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
-    let model = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
+    let alone = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
+    let unknown = Refusal::of(alone.run(OperatingPoint::of_top()), "natures#2");
+    assert!(unknown.contains(&("E0161".to_string(), "cannot find `Sda` in this scope".to_string())), "the nature `Sda` is not declared in the block: {unknown:?}");
+    // with a nature of that name in scope the type checker reaches the other lines; the stand-in's value type
+    // has a `Default`, so the line `signal sda: Sda;` stays valid once every carrier starts at its default (phase A)
+    let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    for expected in ["array type is not supported yet", "resolved nature `Wire` is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
+    for (code, expected) in [("P0001", "an array of `Bit<bool>` is not supported yet"), ("P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet")] {
+        assert!(given.contains(&(code.to_string(), expected.to_string())), "{expected}: {given:?}");
     }
-    assert_eq!(given.len(), 2, "the array and the wire only; `logic(\"10xx\")` is accepted: {given:?}");
-    assert!(given.iter().all(|(code, _)| code == "P0001"), "the other lines are accepted: {given:?}");
-    Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "array type is not supported yet");
+    assert_eq!(given.len(), 2, "the array and `Logic<4>` only; `Option<u8>` is a carried type since composite-values: {given:?}");
+    Refusal::expect(chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "an array of `Bit<bool>` is not supported yet");
 }
 
 #[test]
-fn the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled() {
-    // natures#3 (refused): the alarm.msl of the Book; natures~e99c1920 "Today the command refuses the file
-    // and runs nothing" (refused); natures~6a449552 "Replace Pullup(alarm_n) with Pulldown(alarm_n) and
-    // predict the stream" (refused: it needs the same Wire). The diagnostics are those of the Book's
-    // listing: the `Wire` ports, the `changed()` on a `Wire`, the field accesses and the standard
-    // library's `struct` of `Logic` (L21, owner `resolved-nets`)
+fn the_open_drain_line_is_refused_until_a_nature_can_implement_resolve() {
+    // natures#3 (refused, S8): the alarm.msl of the Book, whose nature `AlarmLine` implements
+    // `Resolve<Driven>`; natures~e99c1920 "Today the command refuses the file and runs nothing" (refused);
+    // natures~6a449552 "Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream" (refused: it
+    // needs the same nature). The names the file uses, `Driven`, `Resolve`, `Pullup` and the `Logic` behind
+    // them, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
     let chapter = Chapter::read();
     let model = chapter.marked("alarm.msl", "natures#3");
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() };
     let given = Refusal::of(model.run(overrides.clone()), "natures#3");
-    Refusal::expect(model.run(overrides), "natures#3", "P0001", "resolved nature `Wire` is not supported yet");
-    assert_eq!(given.len(), 12, "twelve diagnostics, as the Book's listing: {given:?}");
-    assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    for expected in ["resolved nature `Wire` is not supported yet", "method `changed` on this receiver is not supported yet", "field access is not supported yet", "`struct` item used as a type is not supported yet"] {
-        assert!(given.iter().any(|(_, message)| message == expected), "{expected}: {given:?}");
+    assert!(given.iter().all(|(code, _)| code == "E0161"), "every diagnostic is a name the library does not hold yet: {given:?}");
+    for name in ["Driven", "Resolve"] {
+        assert!(given.iter().any(|(_, message)| message == &format!("cannot find `{name}` in this scope")), "{name}: {given:?}");
     }
+    Refusal::expect(model.run(overrides), "natures#3", "E0161", "cannot find `Driven` in this scope");
 }
 
 #[test]
@@ -122,7 +127,7 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
     let chapter = Chapter::read();
     let placing = "module Top(in clk: Bit) { signal b: Stream<u8>; signal d: Stream<u8>; let s = Slice::<u8>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    assert!(given.contains(&("P0001".to_string(), "`struct` item used as a type is not supported yet".to_string())), "{given:?}");
+    assert!(given.contains(&("P0001".to_string(), "generic struct `Stream` is not supported yet".to_string())), "{given:?}");
     assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
     let generic = "module Top(in clk: Bit) { signal c: Bit; let s = Slice::<u8>(c, gnd, gnd); }\n";
     Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", generic).run(OperatingPoint::of_top()), "natures#8", "P0001", "generic module is not supported yet");
@@ -156,7 +161,7 @@ fn behavior_crosses_freely_inside_one_module() {
     // natures~5c7f5269: "Inside one module, behavior crosses freely: analog reads digital carriers, and
     // reactions probe voltages": one module whose reaction probes `v(vin)` and whose analog block reads the
     // carrier it committed through `known_or`
-    let source = "module Hold(vin: Electrical, vout: Electrical) { signal held: Bit<f64> = 0.0; }\ndigital for Hold { on at(1u) { held <- v(vin); } }\nanalog for Hold { v(vout) +> held.known_or(0.0); }\nmodule Source(p: Electrical, n: Electrical) { dc: f64 = 2.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; let s = Source(a, gnd); let h = Hold(a, b); }\n";
+    let source = "module Hold(vin: Electrical, vout: Electrical) { signal held: Bit<f64> = 0.0; }\ndigital for Hold { on at(1u) { held <- v(vin); } }\nanalog for Hold { v(vout) +> held; }\nmodule Source(p: Electrical, n: Electrical) { dc: f64 = 2.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; let s = Source(a, gnd); let h = Hold(a, b); }\n";
     let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(3e-6), ..Overrides::default() };
     let ran = Model::written("cross.msl", source).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     let last = ran.table.rows.len() - 1;
@@ -217,4 +222,38 @@ fn e0210_an_initial_value_cannot_read_a_carrier() {
     // natures~42b8e61d: "E0210 signal y: Bit<u8> = count;": an initial value is a constant
     let faulty = Faulty::elaborating("natures~42b8e61d", "module Top(in count: Bit<u8>) { signal y: Bit<u8> = count; }\n", "Top");
     assert!(faulty.first("E0210").message.starts_with("an initial value reads a carrier: it is committed at (0, 0)"), "{}", faulty.first("E0210").message);
+}
+
+#[test]
+fn the_book_drives_nets_with_strength() {
+    // EU-18 AC 4: the Book teaches nets through natures the reader declares (a trait is a capability,
+    // `impl Resolve<X> for` a nature), has the section "Driving with strength" with the four worked nets in
+    // order, answers why `resolve` is a function and why the library has no net, and names no library `Wire`.
+    // The four listings are digital#17 to digital#20 (refused, S8); the alarm of natures#3 is the first net.
+    let book = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/book/content.html")).expect("the Book");
+    let chapter = |id: &str| {
+        let start = book.find(&format!("<section id=\"{id}\"")).unwrap_or_else(|| panic!("chapter {id}"));
+        book[start..start + book[start..].find("</section>").expect("a chapter closes")].to_string()
+    };
+    let natures = chapter("natures");
+    assert!(natures.contains("<h3>What a nature can do: traits as capabilities</h3>"), "the capability section");
+    assert!(natures.contains("a second one is error E0220: its message names the nature and <code>Resolve</code>"), "E0220 names the nature and Resolve");
+    assert!(natures.contains("<code>resolve</code> is a function and not a module"), "why resolve is a function");
+    assert!(natures.contains("the library declares no net nature"), "why there is no library net");
+    assert!(natures.contains("<code>impl Resolve&lt;Driven&gt; for AlarmLine</code>") || natures.contains("impl Resolve<Driven> for AlarmLine"), "an impl on a nature the reader declares");
+    let digital = chapter("digital");
+    let at = digital.find("<h3>Driving with strength</h3>").expect("the section Driving with strength");
+    let section = &digital[at..];
+    let mut last = 0;
+    for net in ["<strong>1. A plain bit into a wired-AND net.</strong>", "<strong>2. An open-drain line with a pull-up.</strong>", "<strong>3. A tri-state bus with two drivers and a keeper.</strong>", "<strong>4. A conflict is a value; an instability is an error.</strong>"] {
+        let position = section.find(net).unwrap_or_else(|| panic!("the section lacks {net}"));
+        assert!(position >= last, "the nets come in order: {net}");
+        last = position;
+    }
+    for fact in ["impl Resolve<bool> for AndWire", "impl Resolve<Driven> for Sda", "impl Resolve<Driven> for TriBus", "impl Resolve<Option<u8>, Data> for DataBus", "After its bounded passes the run stops with error E0511"] {
+        assert!(section.contains(fact), "the section lacks {fact}");
+    }
+    // no chapter of the Book names a library `Wire`: a `Wire` that is not the tail of a longer name (`AndWire`)
+    let mut standalone = book.match_indices("Wire").filter(|(at, _)| !book[..*at].ends_with(|c: char| c.is_ascii_alphabetic()));
+    assert!(standalone.next().is_none(), "the Book names a library Wire (AlarmLine and AndWire are the model's own)");
 }

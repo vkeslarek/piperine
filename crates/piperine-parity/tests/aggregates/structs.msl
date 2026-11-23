@@ -1,0 +1,101 @@
+//! Structs and tuples (CV-09, CV-10): struct expressions, tuple structs, unit structs, tuples,
+//! field and tuple-index reads, assignment through fields, and tuple, tuple-struct and struct
+//! patterns, each also copied where it is used (value semantics, §1.4.6). Each function is called
+//! from a reaction that commits the results; the expected values are computed by Rust in
+//! `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+struct P { x: f64, y: u8 }
+struct Pair(f64, bool);
+#[derive(PartialEq)]
+struct Marker;
+struct Line { from: P, to: P }
+
+// fields written out of declaration order
+fn make_p() -> P { P { y: 3, x: 1.5 } }
+fn shorthand() -> P { let y: u8 = 7; P { y, x: 0.5 } }
+fn line() -> Line { let p = shorthand(); Line { from: P { x: 0.0, y: 1 }, to: p } }
+fn marker_count() -> u8 { let m = Marker; if m == Marker { 9 } else { 0 } }
+
+// an assignment changes that field only; a copy is independent (§1.4.6)
+fn assign_field() -> (u8, u8, f64) {
+    let p = P { x: 1.0, y: 1 };
+    let q = p;
+    q.y = 9;
+    (p.y, q.y, q.x)
+}
+fn assign_nested() -> (u8, u8) {
+    let l = Line { from: P { x: 0.0, y: 1 }, to: P { x: 0.0, y: 2 } };
+    let m = l;
+    m.to.y = 5;
+    (l.to.y, m.to.y)
+}
+fn compound_field() -> u8 { let p = P { x: 0.0, y: 4 }; p.y += 3; p.y *= 2; p.y }
+fn bumped(p: P) -> P { let q = p; q.y = q.y + 1; q }
+fn copy_into_fn() -> (u8, u8) { let p = P { x: 0.0, y: 10 }; let q = bumped(p); (p.y, q.y) }
+
+fn tuple_parts() -> (u8, f64, bool) { let t = (1u8, 2.5, true); (t.0, t.1, t.2) }
+fn swap(t: (u8, u8)) -> (u8, u8) { (t.1, t.0) }
+fn swapped() -> (u8, u8) { swap((1, 2)) }
+fn tuple_assign() -> (u8, u8) { let t = (1u8, 2u8); let u = t; u.0 = 7; (t.0, u.0) }
+fn nested_tuple() -> u8 { let t = ((1u8, 2u8), 3u8); (t.0).1 + t.1 }
+
+fn destructure_tuple() -> u8 { let (a, b) = swap((1, 2)); a * 10 + b }
+fn destructure_struct() -> u8 { let P { x, y } = P { x: 2.0, y: 6 }; y + (x as u8) }
+fn destructure_tuple_struct() -> u8 { let Pair(a, b) = Pair(3.0, true); (a as u8) + if b { 1 } else { 0 } }
+fn match_tuple(a: u8, b: u8) -> u8 { match (a, b) { (0, n) => n, (1, n) if n > 4 => n * 2, (_, n) => n + 100 } }
+fn match_struct(a: u8, b: u8) -> u8 { let p = P { x: 0.0, y: b }; match p { P { y: 4, .. } if a == 0 => 1, P { y, .. } => y + 50 } }
+fn if_let_tuple(a: u8, b: u8) -> u8 { if let (1, n) = (a, b) { n } else { 0 } }
+fn match_rest() -> u8 { match (1u8, 2u8, 3u8) { (1, .., c) => c, _ => 0 } }
+
+module Rows(in clk: Bit, out s0: Bit<u8> = 0, out s1: Bit<f64> = 0.0, out s2: Bit<u8> = 0, out s3: Bit<f64> = 0.0, out s4: Bit<f64> = 0.0, out s5: Bit<bool> = false, out s6: Bit<u8> = 0, out s7: Bit<u8> = 0, out s8: Bit<f64> = 0.0, out s9: Bit<u8> = 0, out a0: Bit<u8> = 0, out a1: Bit<u8> = 0, out a2: Bit<f64> = 0.0, out a3: Bit<u8> = 0, out a4: Bit<u8> = 0, out a5: Bit<u8> = 0, out a6: Bit<u8> = 0, out a7: Bit<u8> = 0, out t0: Bit<u8> = 0, out t1: Bit<f64> = 0.0, out t2: Bit<bool> = false, out t3: Bit<u8> = 0, out t4: Bit<u8> = 0, out t5: Bit<u8> = 0, out t6: Bit<u8> = 0, out t7: Bit<u8> = 0, out d0: Bit<u8> = 0, out d1: Bit<u8> = 0, out d2: Bit<u8> = 0, out d3: Bit<u8> = 0, out d4: Bit<u8> = 0, out d5: Bit<u8> = 0, out d6: Bit<u8> = 0, out d7: Bit<u8> = 0, out d8: Bit<u8> = 0, out d9: Bit<u8> = 0, out d10: Bit<u8> = 0) {}
+digital for Rows {
+    on clk.rise() {
+        s0 <- make_p().y;
+        s1 <- make_p().x;
+        s2 <- shorthand().y;
+        s3 <- shorthand().x;
+        s4 <- Pair(2.5, true).0;
+        s5 <- Pair(2.5, true).1;
+        s6 <- line().to.y;
+        s7 <- line().from.y;
+        s8 <- line().to.x;
+        s9 <- marker_count();
+        a0 <- assign_field().0;
+        a1 <- assign_field().1;
+        a2 <- assign_field().2;
+        a3 <- assign_nested().0;
+        a4 <- assign_nested().1;
+        a5 <- compound_field();
+        a6 <- copy_into_fn().0;
+        a7 <- copy_into_fn().1;
+        t0 <- tuple_parts().0;
+        t1 <- tuple_parts().1;
+        t2 <- tuple_parts().2;
+        t3 <- swapped().0;
+        t4 <- swapped().1;
+        t5 <- tuple_assign().0;
+        t6 <- tuple_assign().1;
+        t7 <- nested_tuple();
+        d0 <- destructure_tuple();
+        d1 <- destructure_struct();
+        d2 <- destructure_tuple_struct();
+        d3 <- match_tuple(1, 5);
+        d4 <- match_tuple(0, 7);
+        d5 <- match_tuple(2, 9);
+        d6 <- match_struct(0, 4);
+        d7 <- match_struct(3, 4);
+        d8 <- if_let_tuple(1, 6);
+        d9 <- if_let_tuple(2, 6);
+        d10 <- match_rest();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal s0: Bit<u8>; signal s1: Bit<f64>; signal s2: Bit<u8>; signal s3: Bit<f64>; signal s4: Bit<f64>; signal s5: Bit<bool>; signal s6: Bit<u8>; signal s7: Bit<u8>; signal s8: Bit<f64>; signal s9: Bit<u8>; signal a0: Bit<u8>; signal a1: Bit<u8>; signal a2: Bit<f64>; signal a3: Bit<u8>; signal a4: Bit<u8>; signal a5: Bit<u8>; signal a6: Bit<u8>; signal a7: Bit<u8>; signal t0: Bit<u8>; signal t1: Bit<f64>; signal t2: Bit<bool>; signal t3: Bit<u8>; signal t4: Bit<u8>; signal t5: Bit<u8>; signal t6: Bit<u8>; signal t7: Bit<u8>; signal d0: Bit<u8>; signal d1: Bit<u8>; signal d2: Bit<u8>; signal d3: Bit<u8>; signal d4: Bit<u8>; signal d5: Bit<u8>; signal d6: Bit<u8>; signal d7: Bit<u8>; signal d8: Bit<u8>; signal d9: Bit<u8>; signal d10: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, a0, a1, a2, a3, a4, a5, a6, a7, t0, t1, t2, t3, t4, t5, t6, t7, d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10);
+}

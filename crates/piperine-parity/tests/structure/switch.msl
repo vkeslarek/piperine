@@ -40,12 +40,12 @@ module HalvedBench() {
 
 // -- AS-01 AC 2: a `match` on a `Bit<Mode>` carrier
 
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 enum Mode { Fast, Slow }
 
 module Moded(a: Electrical, in mode: Bit<Mode>) {}
 analog for Moded {
-    match mode.known_or(Mode::Fast) {
+    match mode {
         Mode::Fast => { i(a, gnd) +> v(a) / 1k; }
         Mode::Slow => { i(a, gnd) +> v(a) / 2k; }
     }
@@ -68,7 +68,7 @@ module SlowBench() {
 // -- AS-01 AC 4: no enabled contribution is zero flow
 
 module Gated(a: Electrical, in en: Bit) {}
-analog for Gated { if en.high() { i(a, gnd) +> v(a) / 1k; } }
+analog for Gated { if en { i(a, gnd) +> v(a) / 1k; } }
 
 module GatedLowBench() {
     signal a: Electrical;
@@ -90,8 +90,8 @@ module GatedHighBench() {
 
 module Twice(a: Electrical, in en: Bit) {}
 analog for Twice {
-    if en.high() { i(a, gnd) +> v(a) / 1k; }
-    if en.high() { i(a, gnd) +> v(a) / 1k; }
+    if en { i(a, gnd) +> v(a) / 1k; }
+    if en { i(a, gnd) +> v(a) / 1k; }
 }
 
 module TwiceBench() {
@@ -105,7 +105,7 @@ module TwiceBench() {
 
 module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}
 analog for Switch {
-    if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
+    if ctl { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
 }
 
 module SwitchBench() {
@@ -122,7 +122,7 @@ module SwitchBench() {
 
 module Both(a: Electrical, in en: Bit) {}
 analog for Both {
-    if en.high() { v(a, gnd) +> 1.0; i(a, gnd) +> 1m; }
+    if en { v(a, gnd) +> 1.0; i(a, gnd) +> 1m; }
 }
 
 module BothBench() {
@@ -154,7 +154,7 @@ module SweepBench() {
 /// vetoes nor moves.
 module Stubborn(a: Electrical, in en: Bit) {}
 analog for Stubborn {
-    let x = if en.high() { limit(v(a), |new, old| old) } else { 0.0 };
+    let x = if en { limit(v(a), |new, old| old) } else { 0.0 };
     i(a, gnd) +> x + v(a) / 1k;
 }
 
@@ -179,7 +179,7 @@ module GatedJunction(a: Electrical, k: Electrical, in en: Bit) {
 analog for GatedJunction {
     let nvt = vt();
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
-    if en.high() {
+    if en {
         let vd = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
         i(a, k) +> is * ((vd / nvt).exp() - 1.0) + gmin() * vd;
     }
@@ -218,7 +218,7 @@ module JunctionBench() {
 /// input as its fixed point, so the converged value is the sum): `lv` + half of `v(a)` into 1 kOhm
 /// from 1 mA per volt.
 module CarrierLimited(a: Electrical, in lv: Bit<f64>) {}
-analog for CarrierLimited { i(gnd, a) +> limit(lv.known_or(0.0) + 0.5 * v(a), |new, old| old + 0.5 * (new - old)) * 1m; }
+analog for CarrierLimited { i(gnd, a) +> limit(lv + 0.5 * v(a), |new, old| old + 0.5 * (new - old)) * 1m; }
 
 module CarrierLimitBench() {
     signal a: Electrical;
@@ -229,7 +229,7 @@ module CarrierLimitBench() {
 
 /// A unit AC stimulus that is there only when `en` is high.
 module GatedStim(a: Electrical, in en: Bit) {}
-analog for GatedStim { v(a, gnd) +> if en.high() { ac_stim(1.0) } else { 0.0 }; }
+analog for GatedStim { v(a, gnd) +> if en { ac_stim(1.0) } else { 0.0 }; }
 
 module StimOnBench() {
     signal a: Electrical;
@@ -245,7 +245,7 @@ module StimOffBench() {
 
 /// A unit AC stimulus on the flow, in a statement `if`: 1 mA into 1 kOhm when `en` is high.
 module GatedFlowStim(a: Electrical, in en: Bit) {}
-analog for GatedFlowStim { if en.high() { i(a, gnd) +> ac_stim(1m); } }
+analog for GatedFlowStim { if en { i(a, gnd) +> ac_stim(1m); } }
 
 module FlowStimOnBench() {
     signal a: Electrical;
@@ -263,7 +263,7 @@ module FlowStimOffBench() {
 
 /// A stimulus whose magnitude is the carrier `lv`.
 module CarrierStim(a: Electrical, in lv: Bit<f64>) {}
-analog for CarrierStim { v(a, gnd) +> ac_stim(lv.known_or(0.0)); }
+analog for CarrierStim { v(a, gnd) +> ac_stim(lv); }
 
 module CarrierStimBench() {
     signal a: Electrical;
@@ -275,7 +275,7 @@ module CarrierStimBench() {
 module Capper(p: Electrical, in ctl: Bit) {}
 analog for Capper {
     v(p, gnd) +> (2.0 * 3.141592653589793 * 1k * now()).sin();
-    if ctl.high() { bound_step(1n); }
+    if ctl { bound_step(1n); }
 }
 
 module CapperBench() {

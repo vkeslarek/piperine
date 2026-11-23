@@ -7,14 +7,14 @@ body Pid
   carrier integ: i32 signal init 0
   carrier deriv: i32 signal init 0
   carrier e_prev: i16 signal init 0
-  event E0 changed tick guard tick.high()
+  event E0 changed tick guard tick
   reaction R0 on (E0)
-    local d: flagged<i32>
+    local d: i32
     local e: i16
     local p: i32
-    local u: flagged<i32>
+    local u: i32
     local u_max: i32
-    local windup: flagged<bool>
-    if (!run.known_or(false)) { integ <- 0i32; deriv <- 0i32; e_prev <- 0i16; duty <- 0u12 } else { let e = ((reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)).clamp(-256i16, 255i16); let p = (64i32 * (e as i32)); let d = ((deriv >> 2i32) + (1024i32 * ((e - e_prev) as i32))); let u = (((p + integ) + d) >> 4i32); let u_max = (2880u12 as i32); let windup = (((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16))); if (!windup) { integ <- (integ + (8i32 * (e as i32))).clamp(0i32, (u_max << 4i32)) } else { () }; deriv <- d; e_prev <- e; duty <- (u.clamp(0i32, u_max) as u12) }
+    local windup: bool
+    if (!run) { integ <- 0i32; deriv <- 0i32; e_prev <- 0i16; duty <- 0u12 } else { let e = ((reference as i16) - (meas as i16)).clamp(-256i16, 255i16); let p = (64i32 * (e as i32)); let d = ((deriv >> 2i32) + (1024i32 * ((e - e_prev) as i32))); let u = (((p + integ) + d) >> 4i32); let u_max = (2880u12 as i32); let windup = (((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16))); if (!windup) { integ <- (integ + (8i32 * (e as i32))).clamp(0i32, (u_max << 4i32)) } else { () }; deriv <- d; e_prev <- e; duty <- (u.clamp(0i32, u_max) as u12) }
 body Top
 instance Top: Top  nodes ()  params ()  top

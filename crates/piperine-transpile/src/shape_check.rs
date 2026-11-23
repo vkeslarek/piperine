@@ -104,8 +104,8 @@ impl ShapeCheck {
         let fields: Vec<String> = (0..layout.fields.len())
             .map(|i| match layout.fields.get(i) {
                 Some(f) => format!(
-                    "`{}` leaf {} at {} x{} flags {} known {}",
-                    f.name.as_str(), f.leaf, f.offset, f.count, f.flags, f.known
+                    "`{}` leaf {} at {} x{}",
+                    f.name.as_str(), f.leaf, f.offset, f.count
                 ),
                 None => "<unreadable>".to_string(),
             })

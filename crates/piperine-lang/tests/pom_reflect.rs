@@ -43,6 +43,7 @@ fn nature_impls_lists_its_impl_blocks() {
     let src = "impl Electrical { pub fn one(self) -> f64 { 1.0 } }\nimpl Electrical { pub fn two(self) -> f64 { 2.0 } }\n";
     let design = with_prelude(src);
     assert_eq!(design.nature("Electrical").unwrap().impls().len(), 2);
+    // `std` writes one `impl Bit`: the edges of §22.1.5 (`high` left with the flag methods, explicit-unknowns T29)
     assert_eq!(design.nature("Bit").unwrap().impls().len(), 1);
     assert!(design.nature("Wire").unwrap().impls().is_empty());
 }
@@ -718,7 +719,7 @@ fn float_literal_is_serialized_from_its_text() {
     let doctored: LitKind = serde_json::from_str(&json.replace("1.5k", "2u")).unwrap();
     assert_eq!(doctored, LitKind::Float { value: 2e-6, raw: "2u".to_string() });
     // Other literal kinds keep their form.
-    for other in [LitKind::Int("5u8".into()), LitKind::Bool(true), LitKind::Unknown, LitKind::Str { text: "a".into(), raw_hashes: Some(1) }] {
+    for other in [LitKind::Int("5u8".into()), LitKind::Bool(true), LitKind::Str { text: "a".into(), raw_hashes: Some(1) }] {
         let again: LitKind = serde_json::from_str(&serde_json::to_string(&other).unwrap()).unwrap();
         assert_eq!(again, other);
     }

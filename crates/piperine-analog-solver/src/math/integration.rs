@@ -109,6 +109,18 @@ impl TrBdf2 {
         Self::phase_coeffs(phase, h)
     }
 
+    /// The coefficients of a stage of the step that reads a jump (§15.2.6): the step is first
+    /// order throughout. The trapezoidal stage is the restart's backward Euler over `γh`,
+    /// `(1/(γh), −1/(γh), 0)`; the second stage is backward Euler over the whole step from the
+    /// step's start, `(1/h, 0, −1/h)` on `(Q_{n+1}, Q_{n+γ}, Q_n)`, so the derivative the step
+    /// ends with is its secant `(Q_{n+1} − Q_n)/h` and has the sign of the change.
+    pub fn jump_coeffs(phase: TrBdf2Phase, h: f64) -> (f64, f64, f64) {
+        match phase {
+            TrBdf2Phase::Trapezoidal => Self::stage_coeffs(phase, h, 0.0),
+            TrBdf2Phase::Bdf2 => (1.0 / h, 0.0, -1.0 / h),
+        }
+    }
+
     /// The truncation error of a step over its `ddt` states, normalized as ngspice's `CKTterr`:
     /// per state, Milne's difference `|q_{n+1} − (q_{n+γ} + ((1−γ)/γ)(q_{n+γ} − q_n))|` over the
     /// larger of `h·(abstol + reltol·max(|i_n|, |i_{n+1}|))` and
@@ -145,6 +157,45 @@ impl Integrator {
             .zip(ys.windows(2))
             .map(|(x, y)| 0.5 * (x[1] - x[0]) * (y[0] + y[1]))
             .sum()
+    }
+
+    /// The integral of a density that is a power law between successive points, ngspice's
+    /// quadrature for a noise band (`Nintegrate`): between `(f₁, N₁)` and `(f₂, N₂)` the density
+    /// is `N₁·(f/f₁)^a` with `a = ln(N₂/N₁) / ln(f₂/f₁)`, so the interval adds
+    /// `N₁·f₁/(a+1)·((f₂/f₁)^(a+1) − 1)`, and `N₁·f₁·ln(f₂/f₁)` when `a = −1`.
+    ///
+    /// Where a density is not positive its logarithm does not exist, so the interval takes the
+    /// plain `N₁·(f₂ − f₁)` (design D8). An interval that does not start at a positive frequency
+    /// has no logarithm either and takes the trapezoid. When the slices differ in length the
+    /// shorter one bounds the sum, as for [`Integrator::trapezoid`].
+    pub fn power_law(frequencies: &[f64], densities: &[f64]) -> f64 {
+        frequencies
+            .windows(2)
+            .zip(densities.windows(2))
+            .map(|(f, n)| Self::power_law_interval((f[0], n[0]), (f[1], n[1])))
+            .sum()
+    }
+
+    /// One interval of [`Integrator::power_law`] between the points `(f₁, N₁)` and `(f₂, N₂)`.
+    fn power_law_interval((f1, n1): (f64, f64), (f2, n2): (f64, f64)) -> f64 {
+        /// The distance of `a + 1` from 0 under which the exponent counts as `−1`, as ngspice's.
+        const LOG_CASE: f64 = 1.0e-10;
+        if f2 == f1 {
+            return 0.0;
+        }
+        if f1 <= 0.0 || f2 <= 0.0 {
+            return 0.5 * (f2 - f1) * (n1 + n2);
+        }
+        if n1 <= 0.0 || n2 <= 0.0 {
+            return n1 * (f2 - f1);
+        }
+        let ratio = f2 / f1;
+        let exponent_plus_one = (n2 / n1).ln() / ratio.ln() + 1.0;
+        if exponent_plus_one.abs() < LOG_CASE {
+            n1 * f1 * ratio.ln()
+        } else {
+            n1 * f1 / exponent_plus_one * (ratio.powf(exponent_plus_one) - 1.0)
+        }
     }
 }
 

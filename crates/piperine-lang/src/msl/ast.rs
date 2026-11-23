@@ -183,12 +183,8 @@ pub enum TypeKind {
     Path(Path),
     /// `[T; N]`: `len` is a const expression.
     Array { elem: Box<Type>, len: Box<Expr> },
-    /// `[T]`
-    Slice(Box<Type>),
     /// `(A, B)`; the empty tuple is `()`.
     Tuple(Vec<Type>),
-    /// `&T` or `&'static T`.
-    Ref { static_lifetime: bool, inner: Box<Type> },
     /// `flip T`: reverses every direction of a bundle type.
     Flip(Box<Type>),
     /// `fn(A, B) -> R`: a function-pointer type (`ret` is `None` for `fn()`).
@@ -209,10 +205,10 @@ pub struct Pat {
 pub enum PatKind {
     /// `_`
     Wild,
-    /// `..` inside a tuple, slice or tuple-struct pattern.
+    /// `..` inside a tuple, array or tuple-struct pattern.
     Rest,
-    /// `x`, `mut x`, `ref x`, `x @ p`.
-    Ident { by_ref: bool, mutable: bool, name: Ident, sub: Option<Box<Pat>> },
+    /// `x`, `x @ p`.
+    Ident { name: Ident, sub: Option<Box<Pat>> },
     /// A literal, possibly negated: the expression is a `Lit` or a `Unary` of one.
     Lit(Box<Expr>),
     /// A path naming a constant or a unit variant: `Phase::Liquid`.
@@ -226,9 +222,8 @@ pub enum PatKind {
     Or(Vec<Pat>),
     /// `lo..hi`, `lo..=hi`
     Range { lo: Option<Box<Expr>>, hi: Option<Box<Expr>>, inclusive: bool },
-    /// `&p`
-    Ref(Box<Pat>),
-    Slice(Vec<Pat>),
+    /// `[a, b, ..]`: an array pattern.
+    Array(Vec<Pat>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -304,8 +299,6 @@ pub enum LitKind {
     /// its body with backslash and quote escaped, and its number of `#`.
     Str { text: String, raw_hashes: Option<u8> },
     Bool(bool),
-    /// The `Unknown` literal (A.3).
-    Unknown,
 }
 
 /// The serialized shape of a [`LitKind`]: every variant as is, a float as its
@@ -316,7 +309,6 @@ pub enum LitKindRepr {
     Float { raw: String },
     Str { text: String, raw_hashes: Option<u8> },
     Bool(bool),
-    Unknown,
 }
 
 impl From<LitKindRepr> for LitKind {
@@ -326,7 +318,6 @@ impl From<LitKindRepr> for LitKind {
             LitKindRepr::Float { raw } => LitKind::Float { value: super::lexer::float_value(&raw), raw },
             LitKindRepr::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes },
             LitKindRepr::Bool(b) => LitKind::Bool(b),
-            LitKindRepr::Unknown => LitKind::Unknown,
         }
     }
 }
@@ -338,7 +329,6 @@ impl From<LitKind> for LitKindRepr {
             LitKind::Float { raw, .. } => LitKindRepr::Float { raw },
             LitKind::Str { text, raw_hashes } => LitKindRepr::Str { text, raw_hashes },
             LitKind::Bool(b) => LitKindRepr::Bool(b),
-            LitKind::Unknown => LitKindRepr::Unknown,
         }
     }
 }
@@ -347,9 +337,6 @@ impl From<LitKind> for LitKindRepr {
 pub enum UnOp {
     Neg,
     Not,
-    Deref,
-    /// `&e`: a shared borrow (`&mut` is not in the language).
-    Ref,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -428,7 +415,7 @@ pub enum ExprKind {
     Break(Option<Box<Expr>>),
     Continue,
     Return(Option<Box<Expr>>),
-    Closure { is_move: bool, params: Vec<ClosureParam>, ret: Option<Type>, body: Box<Expr> },
+    Closure { params: Vec<ClosureParam>, ret: Option<Type>, body: Box<Expr> },
     /// `e?`
     Try(Box<Expr>),
     /// `emit!("stream", name = value, ...)` (B.3 `emit`).

@@ -9,9 +9,8 @@ use std::collections::BTreeSet;
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
-use crate::run::{check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
-use piperine_abi::layout::Merge;
-use piperine_abi::raw::{commit_flag, reaction_flag};
+use crate::run::{Phase, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use piperine_abi::raw::reaction_flag;
 use crate::tick::Tick;
 use crate::error::DigitalError;
 
@@ -23,13 +22,21 @@ pub(crate) enum Stepped {
     Landing { time_point: bool },
 }
 
+/// What the settle phase of an instant reported (`Digital::settle_phase`).
+struct SettlePhase {
+    /// A reaction of the phase returned `FINISH`.
+    finish: bool,
+    /// The nets that fired in the phase.
+    fired: BTreeSet<NetId>,
+    /// The analog-read nets the phase's functions changed.
+    boundary: BTreeSet<NetId>,
+}
+
 /// One discrete net as the commits due at a microstep left it.
 struct Settled {
     net: NetId,
     /// The whole net: its value before the microstep, each commit's bytes laid over it in order.
     bytes: Vec<u8>,
-    /// The writer of the last commit, whose bytes the net holds.
-    last: Writer,
     /// A commit came from the host.
     host: bool,
     /// The settled bytes differ from the value before the microstep.
@@ -41,12 +48,8 @@ impl Digital {
     /// commits to one discrete net settle over its value, the later one winning each byte, and
     /// the net is written once (§12.1.1, §12.1.2): `CHANGED`, `PREVIOUS` and the one `Change`
     /// observed compare the settled value with the value before the microstep (§8.2.3, §12.1.18).
-    /// A `MERGE` commit (abi.md C7, part I §3.3.3) applies merged, level by level, with the value
-    /// the net holds at that point of the C2 order: what a plain commit would leave, merged with
-    /// what the net holds, so the levels the commit does not write are kept as they are.
-    /// Returns each written net, in the order of its first commit; a merge the layout cannot do
-    /// is the error.
-    fn apply_due(&mut self, here: Instant) -> Result<Vec<Settled>, DigitalError> {
+    /// Returns each written net, in the order of its first commit.
+    fn apply_due(&mut self, here: Instant) -> Vec<Settled> {
         let mut settled: Vec<Settled> = Vec::new();
         for p in self.queue.take_due(here) {
             if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
@@ -57,42 +60,19 @@ impl Digital {
                 Some(i) => i,
                 None => {
                     let bytes = self.store.value(p.net).to_vec();
-                    settled.push(Settled { net: p.net, bytes, last: p.writer, host: false, changed: false });
+                    settled.push(Settled { net: p.net, bytes, host: false, changed: false });
                     settled.len() - 1
                 }
             };
             let offset = p.offset as usize;
-            if p.flags & commit_flag::MERGE == 0 {
-                let s = &mut settled[at];
-                s.bytes[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
-            } else {
-                let Some(layout) = self.plan.net_layout(p.net) else {
-                    return Err(DigitalError::Unsupported { what: "a merge commit to a net with no layout" });
-                };
-                let mut laid = settled[at].bytes.clone();
-                laid[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
-                Merge::of(layout).merge_into(&mut settled[at].bytes, &laid).map_err(|error| DigitalError::Merge {
-                    net: self.plan.nets[p.net.0 as usize].name.clone(),
-                    writer: self.writer_name(p.writer),
-                    error,
-                })?;
-            }
             let s = &mut settled[at];
-            s.last = p.writer;
+            s.bytes[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
             s.host |= p.writer == Writer::Host;
         }
         for s in &mut settled {
             s.changed = write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here);
         }
-        Ok(settled)
-    }
-
-    /// Who made a commit, for an error: the instance's path, or the host.
-    fn writer_name(&self, writer: Writer) -> String {
-        match writer {
-            Writer::Host => "host".to_string(),
-            Writer::Reaction { instance, .. } => self.plan.instances[instance as usize].path.clone(),
-        }
+        settled
     }
 
     /// `HORIZON`: the last tick before the earliest pending commit and before `limit`, never
@@ -143,9 +123,8 @@ impl Digital {
             let here = (at, n);
             self.store.begin_microstep();
             self.call = 0;
-            for s in self.apply_due(here)? {
+            for s in self.apply_due(here) {
                 out.host_param_write |= s.changed && s.host && self.plan.analysis().is_param_net(s.net);
-                check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
             }
             let mut ambient = self.ambient(at);
             ambient.is_static = mode.is_static;
@@ -164,8 +143,7 @@ impl Digital {
                 }
             }
             if lookahead {
-                let settle = self.plan.analysis().settle_nets();
-                let firing = fired_reactions(&self.plan.instances, settle, &self.store);
+                let firing = fired_reactions(&self.plan.instances, Phase::Microstep, &self.store);
                 let probing = firing.iter().any(|f| self.plan.analysis().probes(f.instance as u32, f.reaction as u32));
                 let irreversible = firing.iter().any(|f| {
                     let shape = self.plan.instances[f.instance].handle.shape();
@@ -188,6 +166,8 @@ impl Digital {
                 &mut self.obs,
                 here,
                 &mut self.call,
+                &mut self.settle_commits,
+                Phase::Microstep,
             )?;
             out.finish |= ran.finish;
             self.obs.flush();
@@ -211,9 +191,7 @@ impl Digital {
                 .any(|p| !self.plan.nets[p.net.0 as usize].is_quiet());
             if !live {
                 // what is left for this instant applies as it exits
-                for s in self.apply_due(next)? {
-                    check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
-                }
+                self.apply_due(next);
                 self.obs.flush();
                 break;
             }
@@ -231,34 +209,56 @@ impl Digital {
             n += 1;
         }
 
+        if !lookahead {
+            self.last_run = Some((at, n));
+        }
         if mode.settle {
-            let here = (at, n + 1);
-            self.store.begin_microstep();
-            self.call = 0;
-            for net in self.plan.analysis().settle_nets().to_vec() {
-                fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, net, here);
-                fired.insert(net);
-            }
-            let mut ambient = self.ambient(at);
-            ambient.is_static = mode.is_static;
-            ambient.horizon = self.horizon(at, limit.stop);
-            ambient.crossing_horizon = self.horizon(at, limit.crossing);
-            let ran = run_reactions(
-                &mut self.plan,
-                &self.store,
-                samples,
-                &ambient,
-                &mut self.queue,
-                &mut self.obs,
-                here,
-                &mut self.call,
-            )?;
-            out.finish |= ran.finish;
-            self.obs.flush();
+            let settled = self.settle_phase(at, n, samples, limit, mode)?;
+            out.finish |= settled.finish;
+            fired.extend(settled.fired);
+            boundary.extend(settled.boundary);
         }
 
         out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
         out.fired = fired.into_iter().collect();
+        out.settle_boundary = self.settle_commits.boundary(|net| self.plan.nets[net.0 as usize].analog_reads, &self.store);
         Ok(Stepped::Done(out))
+    }
+
+    /// The settle phase of the instant `at` (§15 step 4, §19 rule 8), run after the microstep loop
+    /// went quiet at microstep `last`: fire the `SETTLE` nets, run the discrete functions of their
+    /// cone (§13 rule 1: a guard reads in the microstep, so a guarded `settle` fires here), then
+    /// the reactions whose event pins fired. Every reaction that runs is `on_settle` whatever its
+    /// head names (§13 rule 14), and the phase's records are stamped `(at, last)`, the last
+    /// microstep the instant ran (§19 Resolution).
+    fn settle_phase(&mut self, at: Tick, last: u32, samples: &[f64], limit: Horizon, mode: Mode) -> Result<SettlePhase, DigitalError> {
+        let here = (at, last);
+        self.store.begin_microstep();
+        self.call = 0;
+        let mut phase = SettlePhase { finish: false, fired: BTreeSet::new(), boundary: BTreeSet::new() };
+        for net in self.plan.analysis().settle_nets().to_vec() {
+            fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, net, here);
+        }
+        let mut ambient = self.ambient(at);
+        ambient.is_static = mode.is_static;
+        ambient.horizon = self.horizon(at, limit.stop);
+        ambient.crossing_horizon = self.horizon(at, limit.crossing);
+        run_functions(&self.plan, &mut self.store, &mut self.dirty, here, &ambient, &mut self.obs)?;
+        for (i, spec) in self.plan.nets.iter().enumerate() {
+            let id = NetId(i as u32);
+            if self.store.fired(id) {
+                phase.fired.insert(id);
+            }
+            if spec.analog_reads && self.store.changed(id) {
+                phase.boundary.insert(id);
+            }
+        }
+        let ran = run_reactions(&mut self.plan, &self.store, samples, &ambient, &mut self.queue, &mut self.obs, here, &mut self.call, &mut self.settle_commits, Phase::Settle)?;
+        phase.finish = ran.finish;
+        // what the phase left for the instant, its records, applies as the instant exits, as at the
+        // end of the loop: a record left queued would be a commit due at this tick forever
+        self.apply_due((at, last + 1));
+        self.obs.flush();
+        Ok(phase)
     }
 }

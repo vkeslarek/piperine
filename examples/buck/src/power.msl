@@ -4,8 +4,13 @@
 //! which each switch reads as a digital carrier.
 
 /// Ideal resistor.
-pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
-analog for Resistor { i(p, n) +> v(p, n) / r; }
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / r;
+}
 
 /// Capacitor with an equivalent series resistance, through an internal node.
 pub module Capacitor(p: Electrical, n: Electrical) {
@@ -13,6 +18,7 @@ pub module Capacitor(p: Electrical, n: Electrical) {
     esr: f64 = 1m where esr > 0.0;
     signal mid: Electrical;
 }
+
 analog for Capacitor {
     i(p, mid) +> v(p, mid) / esr;
     i(mid, n) +> ddt(c * v(mid, n));
@@ -23,7 +29,10 @@ pub module Inductor(p: Electrical, n: Electrical) {
     l: f64 where l > 0.0;
     dcr: f64 = 0.0 where dcr >= 0.0;
 }
-analog for Inductor { v(p, n) +> ddt(l * i(p, n)) + dcr * i(p, n); }
+
+analog for Inductor {
+    v(p, n) +> ddt(l * i(p, n)) + dcr * i(p, n);
+}
 
 /// The lab supply (SPEC §2): an ideal source behind its wiring resistance. The line-step scenario
 /// (SPEC §10, S4) is a host `set` of `vin`.
@@ -34,6 +43,7 @@ pub module Supply(p: Electrical) {
     rs: f64 = 20m where rs > 0.0;
     signal src: Electrical;
 }
+
 analog for Supply {
     v(src) +> vin;
     i(src, p) +> v(src, p) / rs;
@@ -45,12 +55,16 @@ analog for Supply {
 fn body_diode(vsd: f64, vf: f64, rd: f64) -> f64 {
     let vs = 25m;
     let x = (vsd - vf) / vs;
-    vs / rd * if x > 40.0 { x } else { (1.0 + x.exp()).ln() }
+    vs / rd * if x > 40.0 {
+        x
+    } else {
+        (1.0 + x.exp()).ln()
+    }
 }
 
 /// An N-channel power switch (SPEC §2): a channel that moves between `roff` and `ron` in `tsw`
 /// when its gate command changes, the body diode from source to drain, and the output
-/// capacitance. An unknown gate reads as off (`high()`), which is the safe state.
+/// capacitance.
 pub module PowerSwitch(d: Electrical, s: Electrical, in g: Bit) {
     ron: f64 = 20m where ron > 0.0;
     roff: f64 = 1M where roff > ron;
@@ -62,8 +76,18 @@ pub module PowerSwitch(d: Electrical, s: Electrical, in g: Bit) {
     vf: f64 = 0.7;
     rd: f64 = 20m where rd > 0.0;
     /// 0 when off, 1 when on, a ramp of `tsw` in between.
-    let gate = transition(if g.high() { 1.0 } else { 0.0 }, 0.0, tsw, tsw);
+    let gate = transition(
+        if g {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tsw,
+        tsw,
+    );
 }
+
 analog for PowerSwitch {
     let gch = gate / ron + (1.0 - gate) / roff;
     i(d, s) +> gch * v(d, s) - body_diode(v(s, d), vf, rd) + ddt(coss * v(d, s));
@@ -71,7 +95,12 @@ analog for PowerSwitch {
 
 /// The gate driver (SPEC §5.3): a propagation delay on both gates and a shoot-through interlock.
 /// A command to both switches is a command to neither. Dead time itself comes from the DPWM.
-pub module GateDriver(in hs_cmd: Bit, in ls_cmd: Bit, out hs_gate: Bit, out ls_gate: Bit) {
+pub module GateDriver(
+    in hs_cmd: Bit,
+    in ls_cmd: Bit,
+    out hs_gate: Bit = false,
+    out ls_gate: Bit = false,
+) {
     tpd: f64 = 10n where tpd > 0.0;
     hs_gate = (hs_cmd & !ls_cmd) after tpd;
     ls_gate = (ls_cmd & !hs_cmd) after tpd;
@@ -84,6 +113,7 @@ pub module CurrentSense(a: Electrical, b: Electrical, pos: Electrical, neg: Elec
     rshunt: f64 = 5m where rshunt > 0.0;
     gain: f64 = 20.0;
 }
+
 analog for CurrentSense {
     i(a, b) +> v(a, b) / rshunt;
     v(pos) +> gain * v(a, b);
@@ -102,9 +132,28 @@ pub module Load(p: Electrical, in step: Bit, in inject: Bit) {
     tr: f64 = 4u where tr > 0.0;
     /// Current pushed into the output while `inject` is high.
     i_inject: f64 = 5.0;
-    let k_step = transition(if step.high() { 1.0 } else { 0.0 }, 0.0, tr, tr);
-    let k_inject = transition(if inject.high() { 1.0 } else { 0.0 }, 0.0, tr, tr);
+    let k_step = transition(
+        if step {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tr,
+        tr,
+    );
+    let k_inject = transition(
+        if inject {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tr,
+        tr,
+    );
 }
+
 analog for Load {
     i(p) +> v(p) * (1.0 / r_base + k_step / r_step) - k_inject * i_inject;
 }
@@ -119,8 +168,14 @@ analog for Load {
 ///        │        │                                │
 ///       gnd      gnd                              gnd
 /// ```
-pub module PowerStage(vin: Electrical, vout: Electrical, isense: Electrical, isense_n: Electrical,
-                      in hs_cmd: Bit, in ls_cmd: Bit) {
+pub module PowerStage(
+    vin: Electrical,
+    vout: Electrical,
+    isense: Electrical,
+    isense_n: Electrical,
+    in hs_cmd: Bit,
+    in ls_cmd: Bit,
+) {
     l: f64 = 4.7u;
     dcr: f64 = 15m;
     cout: f64 = 220u;

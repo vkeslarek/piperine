@@ -1,4 +1,4 @@
-//! Scope: chapter 16 of the Book, "The command line" (feature `root-e2e`, RE-02 and RE-03): the RC project
+//! Scope: chapter 15 of the Book, "The command line" (feature `root-e2e`, RE-02 and RE-03): the RC project
 //! the chapter prints file for file, the lowpass and the square-wave RC it saves, and the buck bench, run
 //! through `piperine::` with the keys and flags the chapter gives; the values and records a run gives (the
 //! `from` trim, the shapes of the tables, the derivatives of `sens`, the Bode exercise), the refusals the
@@ -237,7 +237,7 @@ fn the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives() {
     // "A transient that needs more attempts than max_steps fails naming the budget; raise it and the same run
     // succeeds."
     let chapter = Chapter::read();
-    let ring = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\ndigital for Top { on above(v(n) - 0.5) { d <- false; } on above(0.5 - v(n)) { d <- true; } }\n";
+    let ring = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on above(v(n) - 0.5) { d <- false; } on above(0.5 - v(n)) { d <- true; } }\n";
     let rounds = |maxrounds: Option<u32>| format!("{:#}", Model::written("m.msl", ring).run(Overrides { maxrounds, ..Faulty::operating_point_of("Top") }).err().expect("never settles"));
     assert!(rounds(None).contains("did not settle in 20 rounds"), "20 by default: {}", rounds(None));
     assert!(rounds(Some(7)).contains("did not settle in 7 rounds"), "the key sets it: {}", rounds(Some(7)));
@@ -370,7 +370,7 @@ fn the_square_wave_rc_closes_its_orbit_over_one_period() {
 
 #[test]
 fn the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz() {
-    // cli~7656eb9c "In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to
+    // cli~76428b9c "In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to
     // 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus ...)";
     // cli~e1afdf04 "The table needs analysis = "ac", from = 1e3, to = 1e7, per_decade = 10, print = ["vout"]
     // and plot = "bode.svg".) At which frequency should mag(Step.vout) read 0.707 and phase(Step.vout) read
@@ -392,17 +392,10 @@ fn the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz() {
 }
 
 #[test]
-fn the_buck_bench_of_the_chapter_is_the_example_and_starts_with_the_supervisor_off() {
-    // cli#44 (run): the buck's `benches/startup.msl`, which the package of examples/buck runs as `startup`:
-    // the first rows of its table (a short run of the same top) have the supervisor off (mode 0) and the
-    // reference at 0, as the chapter says of the listing
+fn the_buck_bench_of_the_chapter_is_the_example() {
+    // cli#44 (text): the chapter's listing is the buck's `benches/startup.msl`, which the package of
+    // examples/buck runs as `startup`; its short run is `book_buck` (on demand, MD-77)
     let chapter = Chapter::read();
     let buck = Model::example("buck");
     assert_eq!(chapter.text("cli#44").trim_end(), buck.text_of("benches/startup.msl").trim_end(), "cli#44 is benches/startup.msl as it is");
-    let ran = buck.of_run("startup").run(Overrides { stop: Some(2e-6), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{failure}"));
-    assert_eq!(ran.table.rows.len(), 5, "0 to 2 us on the 0.5 us grid of the run");
-    for row in 0..5 {
-        assert_eq!(ran.cell(row, "Startup.mode"), &Cell::Int(0), "row {row}: the supervisor is off");
-        assert_eq!(ran.cell(row, "Startup.buck.ctl.reference"), &Cell::Int(0), "row {row}: the reference is 0");
-    }
 }

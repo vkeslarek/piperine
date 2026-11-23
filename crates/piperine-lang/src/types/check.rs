@@ -5,10 +5,15 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
 use crate::msl::lexer;
-use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, StmtKind, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, PathId, Reflect, Resolution, TypeId, TypeKind};
 
 use super::continuity::Continuity;
+use super::class::FunctionClass;
+use super::closures::ClosureInfo;
 use super::definition::DriveBook;
+use super::assign::Places;
+use super::flow::{ExitFrame, Flow};
+use super::nature_rules::NatureRules;
 use super::record::Records;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty, Types};
@@ -63,6 +68,8 @@ pub(super) struct Checker<'d> {
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) widths: BTreeMap<ExprId, u32>,
+    /// The type of each `T::default()` call checked so far.
+    pub(super) defaults: BTreeMap<ExprId, Ty>,
     /// The type each type node of the reachable set writes.
     pub(super) written: BTreeMap<TypeId, Ty>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
@@ -87,20 +94,45 @@ pub(super) struct Checker<'d> {
     pub(super) event_slot: Option<ExprId>,
     /// Set while the guard of an event, the right operand of `ev && guard`, is typed.
     pub(super) in_guard: bool,
-    /// Set while the value of a commit is typed: an `Event` there is committed (`E0441`), not
-    /// read as a `bool`.
-    pub(super) committing: bool,
+    /// The events read as a `bool` (§13 rules 2 and 9): the expressions of type `Event` that
+    /// stand in a guard or a reaction body and are typed `bool`.
+    pub(super) event_reads: BTreeSet<ExprId>,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
     pub(super) fn_where: bool,
-    /// The one expression that may be a function used as a value: an argument written
-    /// directly where the parameter has a function type.
-    pub(super) fn_value_at: Option<ExprId>,
+    /// Which names are places and which locals the body assigns (§1.5.12).
+    pub(super) places: Places,
+    /// The locals bound to a bare integer literal whose type no use has fixed yet (§1.4.4), each
+    /// with the literal expression: `let mut total = 0;` waits for `total += k`.
+    pub(super) open_literals: BTreeMap<DeclId, ExprId>,
+    /// The locals declared without a value (`let x;`, §1.7.5).
+    pub(super) deferred: BTreeSet<DeclId>,
+    /// The control state of the body being checked.
+    pub(super) flow: Flow,
+    /// The captures and the function class of each closure typed so far.
+    pub(super) closures: BTreeMap<ExprId, ClosureInfo>,
+    /// The closure each local is bound to by `let` (the local's value is that closure).
+    pub(super) closure_locals: BTreeMap<DeclId, ExprId>,
+    /// The locals bound to a closure whose parameters wait for the first call to be typed.
+    pub(super) pending_closures: BTreeMap<DeclId, ExprId>,
+    /// The function class of each function whose class is known.
+    pub(super) classes: BTreeMap<DeclId, FunctionClass>,
     /// The type the context expects of one call, handed down by `check_as` just before the call
     /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
     pub(super) call_expected: Option<(ExprId, Ty)>,
+    /// The typed fields of each struct and each enum variant typed so far (`aggregate.rs`).
+    pub(super) layouts: BTreeMap<DeclId, Vec<super::aggregate::FieldType>>,
+    /// The enums whose variants are typed (`enums.rs`).
+    pub(super) declared: BTreeSet<DeclId>,
+    /// The tag of each enum declared so far.
+    pub(super) enum_tags: BTreeMap<DeclId, super::enums::EnumTag>,
+    /// The structs and enums whose fields are being typed: meeting one again is a type that
+    /// contains itself (§1.3.8).
+    pub(super) declaring: BTreeSet<DeclId>,
+    /// The structs and enums that could not be typed: a use is silent, the cause is reported.
+    pub(super) broken: BTreeSet<DeclId>,
     queued: BTreeSet<DeclId>,
     /// The declarations already checked, so one reached ahead of the queue (`check_ahead`) is not
     /// checked twice.
@@ -125,6 +157,7 @@ impl<'d> Checker<'d> {
             carriers: BTreeMap::new(),
             builtins: BTreeMap::new(),
             widths: BTreeMap::new(),
+            defaults: BTreeMap::new(),
             written: BTreeMap::new(),
             project_methods: Self::project_methods(design),
             continuity: Continuity::new(design),
@@ -136,11 +169,23 @@ impl<'d> Checker<'d> {
             context: Context::Module,
             event_slot: None,
             in_guard: false,
-            committing: false,
+            event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
             fn_where: false,
-            fn_value_at: None,
+            places: Places::default(),
+            open_literals: BTreeMap::new(),
+            deferred: BTreeSet::new(),
+            flow: Flow::default(),
+            closures: BTreeMap::new(),
+            closure_locals: BTreeMap::new(),
+            pending_closures: BTreeMap::new(),
+            classes: BTreeMap::new(),
             call_expected: None,
+            layouts: BTreeMap::new(),
+            declared: BTreeSet::new(),
+            enum_tags: BTreeMap::new(),
+            declaring: BTreeSet::new(),
+            broken: BTreeSet::new(),
             queued: BTreeSet::new(),
             checked: BTreeSet::new(),
             queue: VecDeque::new(),
@@ -160,6 +205,7 @@ impl<'d> Checker<'d> {
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
     pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
+        self.check_attributes();
         self.reach(top);
         self.drain();
         if !self.diagnostics.is_empty() {
@@ -171,7 +217,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -223,17 +269,15 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at);
-        let (book, lets_open, placing) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing));
+        let (owner, context, event_slot, in_guard, fn_where) = (self.owner, self.context, self.event_slot, self.in_guard, self.fn_where);
+        let (book, lets_open, placing, flow) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing), std::mem::take(&mut self.flow));
         self.context = Context::Module;
         self.event_slot = None;
         self.in_guard = false;
-        self.committing = false;
         self.fn_where = false;
-        self.fn_value_at = None;
         self.declaration(module);
-        (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at) = (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at);
-        (self.book, self.lets_open, self.placing) = (book, lets_open, placing);
+        (self.owner, self.context, self.event_slot, self.in_guard, self.fn_where) = (owner, context, event_slot, in_guard, fn_where);
+        (self.book, self.lets_open, self.placing, self.flow) = (book, lets_open, placing, flow);
     }
 
     fn declaration(&mut self, decl: DeclId) {
@@ -241,12 +285,14 @@ impl<'d> Checker<'d> {
             return;
         }
         self.owner = Some(decl);
+        self.flow = Flow::default();
         match &self.design.decl_data(decl).kind {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
             DeclKind::Const(_) => self.constant(decl),
             other => self.unsupported_decl(decl, Unsupported::item(other)),
         }
+        self.report_uncalled_closures();
     }
 
     // ---- reporting -------------------------------------------------------------------------
@@ -281,15 +327,15 @@ impl<'d> Checker<'d> {
         self.unsupported(file, span, what);
     }
 
-    /// `P0002`: a plain type mismatch at `span`, naming both types.
+    /// `E0180`: a plain type mismatch at `span`, naming both types.
     pub(super) fn mismatch(&mut self, file: FileId, span: Span, expected: &Ty, found: &Ty) {
         let (expected, found) = (expected.name(self.design), found.name(self.design));
         self.mismatch_text(file, span, &expected, &found);
     }
 
-    /// `P0002` with the two types already written out.
+    /// `E0180` with the two types already written out.
     pub(super) fn mismatch_text(&mut self, file: FileId, span: Span, expected: &str, found: &str) {
-        self.mismatch_coded(file, span, "P0002", expected, found);
+        self.mismatch_coded(file, span, "E0180", expected, found);
     }
 
     /// A mismatch under the code of the rule that was broken.
@@ -308,6 +354,19 @@ impl<'d> Checker<'d> {
         lowered
     }
 
+    /// Whether the path of a struct or enum type writes no generic argument where the declaration `decl`
+    /// has no generic parameter: `Pair<4>` over a plain `struct Pair` is `P0001` (it would be read as `Pair`,
+    /// silently ignoring `4`). A declaration that is generic is refused by its own type check.
+    fn writes_no_arguments_to_a_plain_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> bool {
+        let written = self.design.path_node(path).segments.last().is_some_and(|segment| segment.args.is_some());
+        if !written || self.design.decl_data(decl).generics_span.is_some() {
+            return true;
+        }
+        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        self.unsupported(file, span, &format!("generic arguments on `{name}`, which has no generic parameter"));
+        false
+    }
+
     fn lower_type_node(&mut self, ty: TypeId) -> Option<Ty> {
         let node = self.design.type_node(ty).clone();
         let file = self.design.decl_data(node.owner).file;
@@ -316,6 +375,8 @@ impl<'d> Checker<'d> {
                 Resolution::Builtin(id) => match (id.info().name, id.width()) {
                     ("fN", Some(64)) => Some(Ty::F64),
                     ("bool", _) => Some(Ty::Bool),
+                    // §1.2.9: `str` is a value type, the type of a string.
+                    ("str", _) => Some(Ty::Str),
                     ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name()),
                     ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name()),
                     // §1 Resolution: `usize` and `isize` are `UInt<64>` and `Int<64>` everywhere.
@@ -329,9 +390,13 @@ impl<'d> Checker<'d> {
                         None
                     }
                 },
-                Resolution::Decl(d) if matches!(&self.design.decl_data(d).kind, DeclKind::Nature(n) if n.kind == NatureKind::Discrete) && self.is_std(d) && self.design.decl_data(d).name.as_ref().is_some_and(|n| n.text == "Bit") => self.bit_type(d, file, node.span, *path),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values && NatureRules::of(self.design, d).one_driver => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && !self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span) => None,
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
+                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_none() => Some(Ty::Module(d)),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));
@@ -343,10 +408,9 @@ impl<'d> Checker<'d> {
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
-            // `&str` (also `&'static str`): the type of a string literal, which no `let`, no carrier
-            // and no param holds.
-            TypeKind::Ref { inner, .. } if matches!(self.design.type_resolution(*inner), Resolution::Builtin(id) if id.info().name == "str") => Some(Ty::Str),
-            TypeKind::Tuple(_) | TypeKind::Array { .. } | TypeKind::Slice(_) | TypeKind::Ref { .. } | TypeKind::Flip(_) | TypeKind::Infer => {
+            TypeKind::Tuple(items) => self.tuple_type(items),
+            TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
+            TypeKind::Flip(_) | TypeKind::Infer => {
                 self.unsupported(file, node.span, Unsupported::ty(&node.kind));
                 None
             }
@@ -434,7 +498,14 @@ impl<'d> Checker<'d> {
             None => {
                 let d = self.design.decl_data(decl);
                 let (file, span) = (d.file, d.span);
-                self.unsupported(file, span, "`const` without a value");
+                let name = d.name.as_ref().map_or_else(String::new, |name| name.text.clone());
+                let in_trait = d.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)));
+                if in_trait {
+                    self.unsupported(file, span, "`const` without a value");
+                } else {
+                    // §3.9.2: a `const` has a value everywhere but in a trait.
+                    self.coded(file, "E0188", span, format!("the `const` `{name}` has no value"), "a `const` outside a trait has a value");
+                }
             }
         }
     }
@@ -514,6 +585,7 @@ impl<'d> Checker<'d> {
             }
         }
         self.context = Context::Function;
+        self.flow.exit = Some(ExitFrame::new(parts.ret.clone(), false));
         match (&f.body, parts.ret) {
             (Some(body), Some(ret)) => self.function_body(body, &ret, data.file),
             (Some(body), None) => {
@@ -525,22 +597,14 @@ impl<'d> Checker<'d> {
     }
 
     /// The statements of a body against the declared result. A missing result is reported
-    /// whatever else the body got wrong, since it is its own mistake; only when the last
-    /// statement is a `return`, refused as outside the subset and standing where the value
-    /// would be, is it a consequence of that refusal and left out.
+    /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
             && found != *ret
-            && !self.ends_in_return(body)
+            && found != Ty::Never
         {
             self.mismatch(file, body.span, ret, &found);
         }
-    }
-
-    /// Whether the last statement of `body` is a `return`.
-    fn ends_in_return(&self, body: &BlockNode) -> bool {
-        let Some(last) = body.stmts.last() else { return false };
-        matches!(&self.design.stmt_node(*last).kind, StmtKind::Expr { expr, .. } if matches!(self.design.expr_node(*expr).kind, ExprKind::Return(_)))
     }
 
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
@@ -574,6 +638,9 @@ impl<'d> Checker<'d> {
                     (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
                     (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
                     (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
+                    // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
+                    // module that holds the closure, typed with it, not module items (design D9).
+                    (DeclKind::Binding(_), _) => {}
                     (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
                     (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
                     (_, _) => {}
@@ -590,7 +657,6 @@ impl<'d> Checker<'d> {
                     self.context = Context::Analog;
                     self.statements(&bd.body, None);
                     self.context = Context::Module;
-                    self.analog_reads(&bd.body);
                 }
                 BehaviorKind::Digital => self.digital_block(behavior),
             }
@@ -601,6 +667,7 @@ impl<'d> Checker<'d> {
                 self.infer(instance);
             }
         }
+        self.missing_initial_values(&data.children);
         self.handed_drives();
     }
 }

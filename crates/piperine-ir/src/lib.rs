@@ -14,17 +14,18 @@ mod print;
 mod real;
 mod statements;
 mod typing;
+mod written;
 
 pub use check::Broken;
 pub use contributions::{Condition, Contribution};
 pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSpec};
 pub use handle::{Body, Function, Instance, Nature, Net, Node, RecordSite};
-pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
+pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 pub use model::{
-    Addend, AnalysisKind, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Env, Event, EventSource, Expr,
+    Addend, AggregateData, AnalysisKind, Derives, FieldsForm, TypeData, TypeKind, VariantData, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Env, Event, EventSource, Expr,
     ExprData, FunctionData, Hoisted, InstanceData, Inflow, Merge, Reach, ReachedItem, Ir, LevelPart, Local, MathFn, Method, NatureData, NetData, NodeAlias, NodeData, NodeRef,
-    NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
+    NodeRole, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
     ValueType,
 };
 pub use real::Real;

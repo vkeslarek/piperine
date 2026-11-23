@@ -22,7 +22,7 @@ pub use crate::core::net::{Net, NetKind};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;
-pub use crate::analyses::noise::{NoiseAnalysisOptions, NoiseKind};
+pub use crate::analyses::noise::{FlowOutput, NoiseAnalysisOptions, NoiseKind};
 pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analyses::pz::{PoleZeroOptions, PoleZeroSolver};

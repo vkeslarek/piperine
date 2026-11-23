@@ -1,0 +1,74 @@
+//! Every local is a place (VS-03), and every value copies (VS-04): a `let` with no marker assigned in a
+//! function, a reaction and an `analog` block; a name a pattern binds, assigned; a loop variable assigned
+//! without moving the loop; a closure that keeps what it captured; a callee that cannot change its caller's
+//! local; a value read twice. The expected values are computed by Rust in `source_value_semantics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn real_ops(a: f64) -> f64 { let x = a; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0; x }
+fn int_ops(a: u8) -> u8 { let n = a; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1; n }
+fn bump(x: u8) -> u8 { let y = x; y += 1; y }
+fn read_twice(x: u8) -> u8 { let a = x; let b = x; a + b }
+fn shifted_sum(n: u8) -> u8 { let total = 0u8; for i in 0..n { i += 10; total += i; } total }
+
+module Rows(in clk: Bit, out f: Bit<f64> = 0.0, out g: Bit<u8> = 0, out local_n: Bit<u8> = 0, out in_arm: Bit<u8> = 0, out in_if: Bit<u8> = 0,
+            out loop_sum: Bit<u8> = 0, out loop_again: Bit<u8> = 0, out kept: Bit<u8> = 0, out latest: Bit<u8> = 0,
+            out caller: Bit<u8> = 0, out callee: Bit<u8> = 0, out twice: Bit<u8> = 0, out copied: Bit<u8> = 0) {}
+digital for Rows {
+    on clk.rise() {
+        f <- real_ops(2.0);
+        g <- int_ops(20);
+        let n = 20u8; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1;
+        local_n <- n;
+        // a name a pattern binds is a place, and changes that name only
+        let o = Some(4u8);
+        match o { Some(v) => { v += 1; in_arm <- v; } None => { in_arm <- 0; } }
+        if let Some(w) = o { w *= 3; in_if <- w; }
+        // an assigned loop variable: the loop still counts 0, 1, 2, 3
+        loop_sum <- shifted_sum(4);
+        let steps = 0u8;
+        for i in 0..4 { i += 1; steps += 1; }
+        loop_again <- steps;
+        // a closure keeps the value it captured where it was written
+        let k = 3u8;
+        let plus_k = |x: u8| x + k;
+        k = 10;
+        kept <- plus_k(1);
+        latest <- k;
+        // a callee changes its own copy only
+        let a = 5u8;
+        callee <- bump(a);
+        caller <- a;
+        // a value is read twice
+        twice <- read_twice(7);
+        let p = a; let q = a; p += 1;
+        copied <- p + q + a;
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal f: Bit<f64>; signal g: Bit<u8>; signal local_n: Bit<u8>; signal in_arm: Bit<u8>; signal in_if: Bit<u8>;
+    signal loop_sum: Bit<u8>; signal loop_again: Bit<u8>; signal kept: Bit<u8>; signal latest: Bit<u8>;
+    signal caller: Bit<u8>; signal callee: Bit<u8>; signal twice: Bit<u8>; signal copied: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, f, g, local_n, in_arm, in_if, loop_sum, loop_again, kept, latest, caller, callee, twice, copied);
+}
+
+module Load(p: Electrical, n: Electrical) {}
+analog for Load { i(p, n) +> v(p, n); }
+
+module Currents(a: Electrical, b: Electrical) {}
+analog for Currents {
+    let x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
+    i(gnd, a) +> x;
+    let y = 20.0; y -= 7.0; y += 1.0;
+    i(gnd, b) +> y;
+}
+
+module AnalogBench() {
+    signal a: Electrical; signal b: Electrical;
+    let rows = Currents(a, b);
+    let la = Load(a, gnd); let lb = Load(b, gnd);
+}

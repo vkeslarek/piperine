@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 
 use piperine_abi::caller::Handle;
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, REAL};
+use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
 use piperine_abi::raw::{
     Cell, Created, Eval as RawEval, Field, Instance, Layout, List, Module, Note, React as RawReact, Shape, Statement, Str,
     Value, cell, global, kind, leaf, part, pin_flag, reaction_flag, role, statement_flag, status,
@@ -57,16 +57,13 @@ fn pin(index: u32) -> Cell {
 fn pin_part(index: u32, part: u32) -> Cell {
     Cell { kind: cell::PIN, index, part }
 }
-/// `v` bytes of a `BIT`: the value and its known byte.
-fn bit(value: bool, known: bool) -> [u8; 2] {
-    if known { [value as u8, 1] } else { [0, 0] }
+/// `v` bytes of a `BIT`: the value.
+fn bit(value: bool) -> [u8; 1] {
+    [value as u8]
 }
-/// A `REAL`: value and known byte.
-fn real(v: f64) -> [u8; 16] {
-    let mut b = [0u8; 16];
-    b[..8].copy_from_slice(&v.to_le_bytes());
-    b[8] = 1;
-    b
+/// An `F64` carrier: its value bytes.
+fn real(v: f64) -> [u8; 8] {
+    v.to_le_bytes()
 }
 fn statement(pin: u32, len: u32, flags: u32) -> Statement {
     Statement { pin, offset: 0, len, flags, min_after: 0.0 }
@@ -78,8 +75,8 @@ fn count_of(bytes: &[u8]) -> u32 {
 }
 
 static COUNT_FIELDS: [Field; 1] =
-    [Field { name: Str::from_static("v"), leaf: leaf::U32, offset: 0, count: 1, flags: 0, known: 0 }];
-/// One `U32` with no known byte: a field that can move with no "unknown" to fall back to.
+    [Field { name: Str::from_static("v"), leaf: leaf::U32, offset: 0, count: 1 }];
+/// One `U32`: a field that can move with no "unknown" to fall back to.
 pub static COUNT: Layout = Layout { size: 4, align: 4, fields: List::from_slice(&COUNT_FIELDS) };
 
 /// A shape built once and shared by every instance (abi.md §9).
@@ -114,7 +111,7 @@ fn rising(cx: &Eval<'_>) -> bool {
 
 // ─── Inverter ───────────────────────────────────────────────────────────────
 
-/// pins: a=0, y=1 (PORT BIT).  fn 0 "inv": reads [a] writes [y]; y is unknown while a is.
+/// pins: a=0, y=1 (PORT BIT).  fn 0 "inv": reads [a] writes [y]; y is the negation of a.
 pub struct Inverter;
 static INVERTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static INVERTER: OnceLock<Module> = OnceLock::new();
@@ -137,7 +134,7 @@ impl Device for Inverter {
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         bump("inverter", false);
         let a = cx.bytes(0);
-        let y = bit(a[0] == 0, a[1] != 0);
+        let y = bit(a[0] == 0);
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())
     }
@@ -152,7 +149,7 @@ pub fn inverter() -> Handle {
 
 // ─── And2 ───────────────────────────────────────────────────────────────────
 
-/// pins: a=0, b=1, y=2 (PORT BIT).  fn 0 "and": reads [a, b] writes [y]; known when both are.
+/// pins: a=0, b=1, y=2 (PORT BIT).  fn 0 "and": reads [a, b] writes [y].
 pub struct And2;
 static AND2_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static AND2: OnceLock<Module> = OnceLock::new();
@@ -176,7 +173,7 @@ impl Device for And2 {
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         bump("and2", false);
         let (a, b) = (cx.bytes(0), cx.bytes(1));
-        let y = bit(a[0] != 0 && b[0] != 0, a[1] != 0 && b[1] != 0);
+        let y = bit(a[0] != 0 && b[0] != 0);
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())
     }
@@ -209,7 +206,7 @@ fn dff_shape() -> ShapeRef {
         name: "sample",
         on: vec![rise],
         reads: vec![pin(d)],
-        writes: vec![statement(q, 2, 0)],
+        writes: vec![statement(q, 1, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -264,7 +261,7 @@ fn timer_shape() -> ShapeRef {
         name: "run",
         on: vec![start, tick],
         reads: vec![pin(out), pin(half)],
-        writes: vec![statement(out, 2, 0), statement(tick, 0, statement_flag::REPLACE)],
+        writes: vec![statement(out, 1, 0), statement(tick, 0, statement_flag::REPLACE)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -284,7 +281,7 @@ impl Device for Timer {
         bump("timer", true);
         let out = cx.bytes(0);
         let half = cx.f64(1);
-        cx.commit(0, &bit(out[0] == 0, true), half)?;
+        cx.commit(0, &bit(out[0] == 0), half)?;
         cx.commit(1, &[], half)?;
         Ok(Flow::Continue)
     }
@@ -347,9 +344,9 @@ pub fn counter() -> Handle {
 
 // ─── Resolver ───────────────────────────────────────────────────────────────
 
-/// A wired-or over two drives, `unknown` when neither is known (abi.md §9 D1).
+/// A wired-or over two drives (abi.md §9 D1).
 ///
-/// pins: d0=0 (PORT BIT, RELAX); d1=1 (PORT BIT, RELAX, OPTIONAL: unbound it reads as unknown); v=2 (PORT BIT)
+/// pins: d0=0 (PORT BIT, RELAX); d1=1 (PORT BIT, RELAX, OPTIONAL: unbound it reads as zero); v=2 (PORT BIT)
 /// fn 0 "resolve": reads [d0, d1] writes [v]
 pub struct Resolver;
 static RESOLVER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
@@ -374,9 +371,8 @@ impl Device for Resolver {
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         bump("resolver", false);
         let (a, b) = (cx.bytes(0), cx.bytes(1));
-        let known = a[1] != 0 || b[1] != 0;
-        let value = (a[1] != 0 && a[0] != 0) || (b[1] != 0 && b[0] != 0);
-        cx.out_bytes(0).copy_from_slice(&bit(value, known));
+        let value = a[0] != 0 || b[0] != 0;
+        cx.out_bytes(0).copy_from_slice(&bit(value));
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -390,8 +386,8 @@ pub fn resolver() -> Handle {
 
 // ─── Succ ───────────────────────────────────────────────────────────────────
 
-/// A function whose output has no "unknown": `y = a + 1`. Bound with `a` and `y` on one net it is a
-/// relaxed self-loop whose field always moves (abi.md §9 D1: a field without a known byte is a fault).
+/// A function whose output always moves: `y = a + 1`. Bound with `a` and `y` on one net it is a
+/// relaxed self-loop that never settles (abi.md §9 D1: a net that still moves is a fault).
 ///
 /// pins: a=0 (PORT COUNT); y=1 (PORT COUNT, RELAX)    fn 0 "succ": reads [a] writes [y]
 pub struct Succ;
@@ -433,7 +429,7 @@ pub fn succ() -> Handle {
 /// Emits eight records through one statement when `go` fires.
 ///
 /// pins: go=0 (PORT event); log=1 (PORT BYTE, RECORD)
-/// reaction 0: on [go]  writes [S0 {log}]; commits `[i, known]` for i = 1 to 8, no delay
+/// reaction 0: on [go]  writes [S0 {log}]; commits `[i]` for i = 1 to 8, no delay
 pub struct Recorder;
 static RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static RECORDER: OnceLock<Module> = OnceLock::new();
@@ -442,7 +438,7 @@ fn recorder_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let go = s.pin(PinSpec::event("go", role::PORT));
     let log = s.pin(PinSpec { flags: pin_flag::RECORD, ..PinSpec::discrete("log", role::PORT, &BYTE) });
-    s.reaction(ReactionSpec { name: "emit", on: vec![go], writes: vec![statement(log, 2, 0)], ..ReactionSpec::default() });
+    s.reaction(ReactionSpec { name: "emit", on: vec![go], writes: vec![statement(log, 1, 0)], ..ReactionSpec::default() });
     s.freeze()
 }
 
@@ -459,7 +455,7 @@ impl Device for Recorder {
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
         bump("recorder", true);
         for i in 1..=8u8 {
-            cx.commit(0, &[i, 1], 0.0)?;
+            cx.commit(0, &[i], 0.0)?;
         }
         Ok(Flow::Continue)
     }
@@ -467,6 +463,45 @@ impl Device for Recorder {
 
 pub fn recorder() -> Handle {
     make::<Recorder>(&RECORDER, "recorder")
+}
+
+// ─── Settle recorder ────────────────────────────────────────────────────────
+
+/// `on settle { emit!(..) }`: one record when the settle phase runs.
+///
+/// pins: log=0 (PORT BYTE, RECORD); settle=1 (GLOBAL SETTLE event)
+/// reaction 0: on [settle] writes [S0 {log}]; commits `[7]`, no delay
+pub struct SettleRecorder;
+static SETTLE_RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_RECORDER: OnceLock<Module> = OnceLock::new();
+
+fn settle_recorder_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let log = s.pin(PinSpec { flags: pin_flag::RECORD, ..PinSpec::discrete("log", role::PORT, &BYTE) });
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    s.reaction(ReactionSpec { name: "emit", on: vec![settle], writes: vec![statement(log, 1, 0)], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for SettleRecorder {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SETTLE_RECORDER_SHAPE, settle_recorder_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleRecorder, Arc::clone(shared(&SETTLE_RECORDER_SHAPE, settle_recorder_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settle_recorder", true);
+        cx.commit(0, &[7], 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settle_recorder() -> Handle {
+    make::<SettleRecorder>(&SETTLE_RECORDER, "settle_recorder")
 }
 
 // ─── Checked ────────────────────────────────────────────────────────────────
@@ -507,7 +542,7 @@ impl Device for Checked {
         if r > 100.0 {
             return Err(Fault::reshape("r above 100 needs another shape"));
         }
-        cx.out_bytes(0).copy_from_slice(&bit(r > 0.0, true));
+        cx.out_bytes(0).copy_from_slice(&bit(r > 0.0));
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -547,8 +582,8 @@ impl Device for Faulty {
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         bump("faulty", false);
         match cx.bytes(0) {
-            [1, 1] => Err(Fault::new(7, "boom")),
-            [0, 1] => Err(Fault::reshape("another shape")),
+            [1] => Err(Fault::new(7, "boom")),
+            [0] => Err(Fault::reshape("another shape")),
             _ => Ok(()),
         }
     }
@@ -563,9 +598,9 @@ pub fn faulty() -> Handle {
 
 // ─── Sampler ────────────────────────────────────────────────────────────────
 
-/// A reaction that reads a continuous pin: its sample becomes a `REAL` when `go` fires.
+/// A reaction that reads a continuous pin: its sample becomes an `F64` when `go` fires.
 ///
-/// pins: v=0 (PORT continuous); go=1 (PORT event); s=2 (PORT REAL)
+/// pins: v=0 (PORT continuous); go=1 (PORT event); s=2 (PORT F64)
 /// reaction 0: on [go]  reads [v]  writes [S0 {s}]; s <- the sample, no delay
 pub struct Sampler;
 static SAMPLER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
@@ -575,12 +610,12 @@ fn sampler_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let v = s.pin(PinSpec::continuous("v", role::PORT));
     let go = s.pin(PinSpec::event("go", role::PORT));
-    let out = s.pin(PinSpec::discrete("s", role::PORT, &REAL));
+    let out = s.pin(PinSpec::discrete("s", role::PORT, &F64));
     s.reaction(ReactionSpec {
         name: "sample",
         on: vec![go],
         reads: vec![pin(v)],
-        writes: vec![statement(out, 16, 0)],
+        writes: vec![statement(out, 8, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -625,7 +660,7 @@ fn stub_shape() -> ShapeRef {
         name: "run",
         flags: reaction_flag::IRREVERSIBLE,
         on: vec![go],
-        writes: vec![statement(out, 2, 0)],
+        writes: vec![statement(out, 1, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -671,9 +706,9 @@ fn odd_shape() -> ShapeRef {
     let events: Vec<u32> = (0..3).map(|k| s.pin(PinSpec::event(&format!("e{k}"), role::PORT))).collect();
     for (k, e) in events.iter().enumerate() {
         let later = if k == 0 {
-            Statement { flags: statement_flag::LATER, min_after: 1e-9, ..statement(out, 2, 0) }
+            Statement { flags: statement_flag::LATER, min_after: 1e-9, ..statement(out, 1, 0) }
         } else {
-            statement(out, 2, 0)
+            statement(out, 1, 0)
         };
         s.reaction(ReactionSpec { name: "odd", on: vec![*e], writes: vec![later], ..ReactionSpec::default() });
     }
@@ -693,7 +728,7 @@ impl Device for Odd {
     fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
         bump("odd", true);
         match k {
-            0 => cx.commit(0, &[1, 1], 0.5e-9)?,
+            0 => cx.commit(0, &[1], 0.5e-9)?,
             1 => return Ok(Flow::Finish),
             _ => return Err(Fault::new(9, "bang")),
         }
@@ -722,7 +757,7 @@ fn rogue_shape() -> ShapeRef {
     let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
     for k in 0..2 {
         let go = s.pin(PinSpec::event(&format!("go{k}"), role::PORT));
-        s.reaction(ReactionSpec { name: "rogue", on: vec![go], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+        s.reaction(ReactionSpec { name: "rogue", on: vec![go], writes: vec![statement(out, 1, 0)], ..ReactionSpec::default() });
     }
     s.freeze()
 }
@@ -776,7 +811,7 @@ fn setter_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let up = s.pin(PinSpec::event("up", role::PORT));
     let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
-    s.reaction(ReactionSpec { name: "set", on: vec![up], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+    s.reaction(ReactionSpec { name: "set", on: vec![up], writes: vec![statement(out, 1, 0)], ..ReactionSpec::default() });
     s.freeze()
 }
 
@@ -820,7 +855,7 @@ fn settler_shape() -> ShapeRef {
         name: "settle",
         on: vec![settle],
         reads: vec![pin(delay)],
-        writes: vec![statement(out, 2, 0)],
+        writes: vec![statement(out, 1, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -847,6 +882,67 @@ pub fn settler() -> Handle {
     make::<Settler>(&SETTLER, "settler")
 }
 
+// ─── Settle event ───────────────────────────────────────────────────────────
+
+/// `on settle && en.high() { out <- HIGH after delay }` as the plan builds it (§13 rule 17): an
+/// event function reads the `SETTLE` pin's `CHANGED` byte and the guard, and fires a private event
+/// pin the reaction listens to; the reaction never names `SETTLE`.
+///
+/// pins: delay=0 (PARAM F64, default 0); en=1 (PORT BIT); out=2 (PORT BIT); settle=3 (GLOBAL SETTLE
+///       event); seen=4 (PRIVATE event)
+/// fn 0 "settle_event": reads [en.VALUE, settle.CHANGED] writes [seen]; fires when both hold
+/// reaction 0: on [seen] reads [delay] writes [S0 {out}]; out <- HIGH after delay
+pub struct SettleEvent;
+static SETTLE_EVENT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_EVENT: OnceLock<Module> = OnceLock::new();
+
+fn settle_event_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let delay = s.pin(PinSpec::discrete("delay", role::PARAM, &F64));
+    let en = s.pin(PinSpec::discrete("en", role::PORT, &BIT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    let seen = s.pin(PinSpec::event("seen", role::PRIVATE));
+    s.function(FunctionSpec {
+        name: "settle_event",
+        reads: vec![pin(en), pin_part(settle, part::CHANGED)],
+        writes: vec![pin_part(seen, part::CHANGED)],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "on_seen",
+        on: vec![seen],
+        reads: vec![pin(delay)],
+        writes: vec![statement(out, 1, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for SettleEvent {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SETTLE_EVENT_SHAPE, settle_event_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleEvent, Arc::clone(shared(&SETTLE_EVENT_SHAPE, settle_event_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let guard_holds = cx.bytes(0) == HIGH;
+        let settling = cx.bytes(1) == [1];
+        cx.set(0, (guard_holds && settling) as u8);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settle_event", true);
+        cx.commit(0, &HIGH, cx.f64(0))?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settle_event() -> Handle {
+    make::<SettleEvent>(&SETTLE_EVENT, "settle_event")
+}
+
 // ─── Delayed ────────────────────────────────────────────────────────────────
 
 /// A statement that promises a delay of at least 1 ns (`LATER`) and commits after 2 ns.
@@ -864,7 +960,7 @@ fn delayed_shape() -> ShapeRef {
     s.reaction(ReactionSpec {
         name: "later",
         on: vec![go],
-        writes: vec![Statement { flags: statement_flag::LATER, min_after: 1e-9, ..statement(out, 2, 0) }],
+        writes: vec![Statement { flags: statement_flag::LATER, min_after: 1e-9, ..statement(out, 1, 0) }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -894,10 +990,10 @@ pub fn delayed() -> Handle {
 // ─── Clockwatch ─────────────────────────────────────────────────────────────
 
 static TICKS_FIELDS: [Field; 2] = [
-    Field { name: Str::from_static("tick"), leaf: leaf::I64, offset: 0, count: 1, flags: 0, known: 0 },
-    Field { name: Str::from_static("horizon"), leaf: leaf::I64, offset: 8, count: 1, flags: 0, known: 0 },
+    Field { name: Str::from_static("tick"), leaf: leaf::I64, offset: 0, count: 1 },
+    Field { name: Str::from_static("horizon"), leaf: leaf::I64, offset: 8, count: 1 },
 ];
-/// Two `I64`s with no known byte: the `TICK` and `HORIZON` a reaction read.
+/// Two `I64`s: the `TICK` and `HORIZON` a reaction read.
 pub static TICKS: Layout = Layout { size: 16, align: 8, fields: List::from_slice(&TICKS_FIELDS) };
 
 /// Writes down the `TICK` and `HORIZON` it was given when `go` fires.
@@ -945,51 +1041,6 @@ impl Device for Clockwatch {
 
 pub fn clockwatch() -> Handle {
     make::<Clockwatch>(&CLOCKWATCH, "clockwatch")
-}
-
-// ─── Sloppy ─────────────────────────────────────────────────────────────────
-
-/// Writes a value with its known byte clear (`[1, 0]`: abi.md P3 says such a field is all zero), once
-/// through a function and once through a commit.
-///
-/// pins: a=0, y=1, z=2 (PORT BIT); go=3 (PORT event)
-/// fn 0 "bad": reads [a] writes [y]; y <- [1, 0] when a is high     reaction 0: on [go] writes [S0 {z}]; z <- [1, 0]
-pub struct Sloppy;
-static SLOPPY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static SLOPPY: OnceLock<Module> = OnceLock::new();
-
-fn sloppy_shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
-    let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
-    let z = s.pin(PinSpec::discrete("z", role::PORT, &BIT));
-    let go = s.pin(PinSpec::event("go", role::PORT));
-    s.function(FunctionSpec { name: "bad", reads: vec![pin(a)], writes: vec![pin(y)], ..FunctionSpec::default() });
-    s.reaction(ReactionSpec { name: "bad", on: vec![go], writes: vec![statement(z, 2, 0)], ..ReactionSpec::default() });
-    s.freeze()
-}
-
-impl Device for Sloppy {
-    fn prototype() -> &'static Shape<'static> {
-        shared(&SLOPPY_SHAPE, sloppy_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Sloppy, Arc::clone(shared(&SLOPPY_SHAPE, sloppy_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        if cx.bytes(0) == HIGH {
-            cx.out_bytes(0).copy_from_slice(&[1, 0]);
-        }
-        Ok(())
-    }
-    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        cx.commit(0, &[1, 0], 0.0)?;
-        Ok(Flow::Continue)
-    }
-}
-
-pub fn sloppy() -> Handle {
-    make::<Sloppy>(&SLOPPY, "sloppy")
 }
 
 // ─── Rearm ──────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@
 use crate::spec::*;
 
 /// Where the converter is (SPEC §8).
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub enum Mode {
     /// Not switching: disabled, or Vin below UVLO.
     Off,
@@ -18,18 +18,24 @@ pub enum Mode {
 
 /// The cause of the last hiccup (SPEC §8.5). It is latched on entry to `Hiccup` and cleared when
 /// a retry reaches `Regulate`.
-#[derive(Repr, Clone, Copy, PartialEq)]
-pub enum Fault { Clear, OverCurrent, OverVoltage }
+#[derive(Repr, PartialEq)]
+pub enum Fault {
+    Clear,
+    OverCurrent,
+    OverVoltage,
+}
 
 /// True when `meas` is inside `reference ± reference / 16` (SPEC §8.6).
 pub fn in_window(meas: u10, reference: u10) -> bool {
-    let (m, r) = (meas as u11, reference as u11);     // one level wider: no wrap at full scale
+    let (m, r) = (meas as u11, reference as u11); // one level wider: no wrap at full scale
     let half = r >> 4;
     m + half >= r && m <= r + half
 }
 
 /// The over-voltage threshold: 112.5 % of the reference plus 100 mV (SPEC §8.4).
-pub fn ovp_threshold(reference: u10) -> u10 { reference + (reference >> 3) + OV_FLOOR }
+pub fn ovp_threshold(reference: u10) -> u10 {
+    reference + (reference >> 3) + OV_FLOOR
+}
 
 /// The supervisor (SPEC §8): mode, fault code and power-good.
 ///
@@ -40,10 +46,19 @@ pub fn ovp_threshold(reference: u10) -> u10 { reference + (reference >> 3) + OV_
 /// | `SoftStart`, `Regulate` | 8 cut periods, or 2 samples over OVP | `Hiccup`    |
 /// | `Hiccup`                | 1000 samples                         | `SoftStart` |
 /// | any                     | `en` low or `vin_ok` low             | `Off`       |
-pub module Supervisor(in tick: Bit, in en: Bit, in vin_ok: Bit, in cut: Bit,
-                      in meas: Bit<u10>, in reference: Bit<u10>, in at_target: Bit,
-                      out run: Bit, out pgood: Bit = false,
-                      out mode: Bit<Mode> = Mode::Off, out fault: Bit<Fault> = Fault::Clear) {
+pub module Supervisor(
+    in tick: Bit,
+    in en: Bit,
+    in vin_ok: Bit,
+    in cut: Bit,
+    in meas: Bit<u10>,
+    in reference: Bit<u10>,
+    in at_target: Bit,
+    out run: Bit,
+    out pgood: Bit = false,
+    out mode: Bit<Mode> = Mode::Off,
+    out fault: Bit<Fault> = Fault::Clear,
+) {
     /// Consecutive current-limited periods (SPEC §8.2).
     signal oc_count: Bit<u4> = 0;
     /// Consecutive samples over the OVP threshold (SPEC §8.4).
@@ -55,53 +70,93 @@ pub module Supervisor(in tick: Bit, in en: Bit, in vin_ok: Bit, in cut: Bit,
     signal pg_out: Bit<u3> = 0;
     run = mode == Mode::SoftStart || mode == Mode::Regulate;
 }
+
 digital for Supervisor {
     on tick.rise() {
-        // Unknown control is read on the safe side: not enabled, Vin low, a cut period.
         // The run counters stop at their thresholds, so they never wrap (`GAPS.md` G3: the
         // natural `saturating_add` on a carrier is not resolved by the front end yet).
-        let enabled = en.known_or(false) && vin_ok.known_or(false);
-        let m = meas.known_or(1023);
-        let r = reference.known_or(0);
-        let oc_n = if !cut.known_or(true) { 0 } else if oc_count < OC_PERIODS { oc_count + 1 } else { OC_PERIODS };
-        let ov_n = if m <= ovp_threshold(r) { 0 } else if ov_count < OV_SAMPLES { ov_count + 1 } else { OV_SAMPLES };
-        let fault_now = if oc_n >= OC_PERIODS { Some(Fault::OverCurrent) }
-                        else if ov_n >= OV_SAMPLES { Some(Fault::OverVoltage) }
-                        else { None };
+        let enabled = en && vin_ok;
+        let m = meas;
+        let r = reference;
+        let oc_n = if !cut {
+            0
+        } else if oc_count < OC_PERIODS {
+            oc_count + 1
+        } else {
+            OC_PERIODS
+        };
+        let ov_n = if m <= ovp_threshold(r) {
+            0
+        } else if ov_count < OV_SAMPLES {
+            ov_count + 1
+        } else {
+            OV_SAMPLES
+        };
+        let fault_now = if oc_n >= OC_PERIODS {
+            Some(Fault::OverCurrent)
+        } else if ov_n >= OV_SAMPLES {
+            Some(Fault::OverVoltage)
+        } else {
+            None
+        };
         oc_count <- oc_n;
         ov_count <- ov_n;
 
         if !enabled {
-            mode <- Mode::Off;                      // UVLO is not a fault: `fault` is untouched
+            mode <- Mode::Off; // UVLO is not a fault: `fault` is untouched
         } else {
-            match mode.known_or(Mode::Off) {
-                Mode::Off => { mode <- Mode::SoftStart; }
+            match mode {
+                Mode::Off => {
+                    mode <- Mode::SoftStart;
+                },
                 Mode::Hiccup => {
-                    if retry == 0 { mode <- Mode::SoftStart; } else { retry <- retry - 1; }
-                }
+                    if retry == 0 {
+                        mode <- Mode::SoftStart;
+                    } else {
+                        retry <- retry - 1;
+                    }
+                },
                 Mode::SoftStart | Mode::Regulate => {
                     if let Some(f) = fault_now {
                         mode <- Mode::Hiccup;
                         fault <- f;
-                        retry <- HICCUP_SAMPLES;
+                        // the entry is the first sample of the hiccup, so SPEC §8.5's 1000 samples
+                        // end when the count has run 999 more: `retry == 0` then retries
+                        retry <- HICCUP_SAMPLES - 1;
                         log(Severity::Warning, "buck: fault, entering hiccup");
-                    } else if mode == Mode::SoftStart && at_target.known_or(false) {
+                    } else if mode == Mode::SoftStart && at_target {
                         mode <- Mode::Regulate;
                         fault <- Fault::Clear;
                     }
-                }
+                },
             }
         }
 
         // Power-good: only in Regulate, after a run of in-window samples, deglitched on the way out.
         let regulating = mode == Mode::Regulate && enabled && fault_now.is_none();
         let inside = in_window(m, r);
-        let in_n = if !(regulating && inside) { 0 } else if pg_in < PG_ASSERT { pg_in + 1 } else { PG_ASSERT };
-        let out_n = if !(regulating && !inside) { 0 } else if pg_out < PG_DEASSERT { pg_out + 1 } else { PG_DEASSERT };
+        let in_n = if !(regulating && inside) {
+            0
+        } else if pg_in < PG_ASSERT {
+            pg_in + 1
+        } else {
+            PG_ASSERT
+        };
+        let out_n = if !(regulating && !inside) {
+            0
+        } else if pg_out < PG_DEASSERT {
+            pg_out + 1
+        } else {
+            PG_DEASSERT
+        };
         pg_in <- in_n;
         pg_out <- out_n;
-        if !regulating { pgood <- false; }
-        else if in_n >= PG_ASSERT { pgood <- true; }
-        else if out_n >= PG_DEASSERT { pgood <- false; }
+        if !regulating {
+            pgood <- false;
+        } else if in_n >= PG_ASSERT {
+            pgood <- true;
+        } else if out_n >= PG_DEASSERT {
+            pgood <- false;
+        }
     }
 }

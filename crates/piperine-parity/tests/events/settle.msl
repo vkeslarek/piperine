@@ -1,0 +1,133 @@
+//! `on settle` from source (§13 rule 17, §15 step 4, §16): reactions that run in the settle
+//! phase of every time point, on an RC network driven by a DC source or by a digital gate.
+use buck::dpwm::Osc;
+
+/// An ideal DC source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vsrc { v(p) +> dc; }
+
+/// A resistor.
+module Res(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Res { i(p, n) +> v(p, n) / r; }
+
+/// A capacitor.
+module Cap(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Cap { i(p, n) +> ddt(c * v(p, n)); }
+
+/// Writes one `settled` record in the settle phase of every time point.
+module Tap(p: Electrical) {}
+digital for Tap { on settle { emit!("settled", t = now()); } }
+
+/// An RC low-pass (1 kOhm, 1 nF: tau 1 us) on 1 V, tapped.
+module TapBench() {
+    signal a: Electrical; signal b: Electrical;
+    let source = Vsrc(a) { dc: 1.0 };
+    let r = Res(a, b) { r: 1k };
+    let c = Cap(b, gnd) { c: 1n };
+    let tap = Tap(b);
+}
+
+/// The same network and a free-running clock nothing continuous reads: its edges are instants
+/// that are no time point (§15 T4).
+module ClockBench() {
+    signal a: Electrical; signal b: Electrical; signal clk: Bit;
+    let source = Vsrc(a) { dc: 1.0 };
+    let r = Res(a, b) { r: 1k };
+    let c = Cap(b, gnd) { c: 1n };
+    let tap = Tap(b);
+    let osc = Osc(clk) { f: 1.35M };
+}
+
+/// Runs on `settle` or on a rising clock edge: a head with two sources fires by §13 rule 1 when
+/// either does.
+module Either(in clk: Bit) {}
+digital for Either { on settle || clk.rise() { emit!("either", t = now()); } }
+
+/// The network, the clock and a reaction on either.
+module EitherBench() {
+    signal a: Electrical; signal b: Electrical; signal clk: Bit;
+    let source = Vsrc(a) { dc: 1.0 };
+    let r = Res(a, b) { r: 1k };
+    let c = Cap(b, gnd) { c: 1n };
+    let osc = Osc(clk) { f: 1.35M };
+    let either = Either(clk);
+}
+
+/// A chain of reactions: a clock edge sets `x` in microstep 1, `x` sets `y` in microstep 2.
+module Chain(in clk: Bit, out x: Bit = false, out y: Bit = false) {}
+digital for Chain {
+    on clk.rise() { x <- true; }
+    on x.rise() { y <- true; }
+}
+
+/// `y` drives the RC network, so the instant it changes in is a time point that ran three
+/// microsteps; the tap writes its record in that time point's settle phase.
+module ChainBench() {
+    signal clk: Bit; signal x: Bit; signal y: Bit;
+    signal vdd: Electrical; signal n: Electrical;
+    let rail = Vsrc(vdd) { dc: 1.0 };
+    let osc = Osc(clk) { f: 1.35M };
+    let chain = Chain(clk, x, y);
+    let drive = D2A(y, n, vdd) { rout: 1k, tr: 20p };
+    let load = Res(n, gnd) { r: 9k };
+    let c = Cap(n, gnd) { c: 0.5n };
+    let tap = Tap(n);
+}
+
+/// The same chain with no reaction on `settle`: no phase, no record.
+module PlainBench() {
+    signal clk: Bit; signal x: Bit; signal y: Bit;
+    signal vdd: Electrical; signal n: Electrical;
+    let rail = Vsrc(vdd) { dc: 1.0 };
+    let osc = Osc(clk) { f: 1.35M };
+    let chain = Chain(clk, x, y);
+    let drive = D2A(y, n, vdd) { rout: 1k, tr: 20p };
+    let load = Res(n, gnd) { r: 9k };
+    let c = Cap(n, gnd) { c: 0.5n };
+}
+
+/// A gate that rises at 2.5 us and falls at 5 us drives the network through `D2A`: each edge is
+/// a jump of the analog side, a time point of its own.
+module JumpBench() {
+    signal gate: Bit; signal vdd: Electrical; signal n: Electrical;
+    let rail = Vsrc(vdd) { dc: 1.0 };
+    let osc = Osc(gate) { f: 200k };
+    let drive = D2A(gate, n, vdd) { rout: 1k, tr: 20p };
+    let load = Res(n, gnd) { r: 9k };
+    let c = Cap(n, gnd) { c: 0.5n };
+    let tap = Tap(n);
+}
+
+/// Writes the voltage it sees in the settle phase: a reaction that probes the continuous side.
+module Probe(p: Electrical) {}
+digital for Probe { on settle { emit!("seen", v = v(p)); } }
+
+/// The network with a probing reaction on the capacitor.
+module ProbeBench() {
+    signal a: Electrical; signal b: Electrical;
+    let source = Vsrc(a) { dc: 1.0 };
+    let r = Res(a, b) { r: 1k };
+    let c = Cap(b, gnd) { c: 1n };
+    let probe = Probe(b);
+}
+
+/// A reaction on `settle` in a design with nothing continuous.
+module Settler() {}
+digital for Settler { on settle { emit!("settled", t = now()); } }
+
+/// Nothing continuous: a clock and a settle reaction.
+module DigitalBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 100M };
+    let settler = Settler();
+}
+
+/// Ends the analysis at 10 ns.
+module Stopper() {}
+digital for Stopper { on at(10n) { finish(); } }
+
+/// Nothing continuous, a settle reaction and a `finish`: the last instant is a time point.
+module FinishBench() {
+    let settler = Settler();
+    let stopper = Stopper();
+}

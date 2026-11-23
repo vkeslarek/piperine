@@ -1,0 +1,82 @@
+//! The passive parts of the board, and the two things it talks to through wires: the supply and
+//! a contact that a `Bit` closes (a float switch, a relay contact).
+
+/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / r;
+}
+
+/// Capacitor with a leakage resistance in parallel. An aluminium electrolytic leaks a few
+/// microamperes; `rleak` is how the timing capacitor's leakage is studied (README, "Notas").
+pub module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+    /// Leakage, as a resistance. The default is as good as none.
+    rleak: f64 = 1e12 where rleak > 0.0;
+}
+
+analog for Capacitor {
+    i(p, n) +> ddt(c * v(p, n)) + v(p, n) / rleak;
+}
+
+/// A potentiometer wired as a rheostat (wiper tied to one end): `pos` is the shaft position,
+/// 0 (minimum) to 1 (maximum). The 1 ohm is the wiper contact, so the branch never shorts.
+pub module Pot(p: Electrical, n: Electrical) {
+    /// End-to-end resistance.
+    r_total: f64 where r_total > 0.0;
+    pos: f64 = 0.5 where pos >= 0.0 && pos <= 1.0;
+}
+
+analog for Pot {
+    i(p, n) +> v(p, n) / (pos * r_total + 1.0);
+}
+
+/// Junction diode, i = is * (exp(v / (n * vt)) - 1), with a 1 nS leak that keeps a reverse-biased
+/// node from floating. Defaults are a 1N4007; a 1N5819 Schottky is `is: 3u, n: 1.05`.
+pub module Diode(a: Electrical, k: Electrical) {
+    is: f64 = 7n where is > 0.0;
+    n: f64 = 1.8 where n > 0.0;
+}
+
+analog for Diode {
+    i(a, k) +> is * (limexp(v(a, k) / (n * vt())) - 1.0) + 1n * v(a, k);
+}
+
+/// The 12 V / 12 W supply: an ideal source on `src` behind its output and wiring resistance,
+/// which ends on `p`. `src` is a port so that a bench can meter the power that leaves the source.
+pub module Supply(src: Electrical, p: Electrical) {
+    vdc: f64 = 12.0 where vdc >= 0.0;
+    rs: f64 = 0.2 where rs > 0.0;
+}
+
+analog for Supply {
+    v(src) +> vdc;
+    i(src, p) +> v(src, p) / rs;
+}
+
+/// A contact closed by a digital carrier: a float switch moved by the water, or the contact of a
+/// relay moved by its armature. It goes between `roff` and `ron` in `tsw`; an unknown command
+/// reads as open.
+pub module Contact(a: Electrical, b: Electrical, in closed: Bit) {
+    ron: f64 = 0.1 where ron > 0.0;
+    roff: f64 = 1G where roff > ron;
+    tsw: f64 = 10u where tsw > 0.0;
+    /// 0 open, 1 closed.
+    let k = transition(
+        if closed {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tsw,
+        tsw,
+    );
+}
+
+analog for Contact {
+    i(a, b) +> v(a, b) * (k / ron + (1.0 - k) / roff);
+}

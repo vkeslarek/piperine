@@ -13,7 +13,8 @@ what each analysis can and cannot say about the system.
 | `Resistor`, `Capacitor`, `Switch` | §8, §11; declarations as assumed in Appendix D |
 | `Dram1T1C`, `MemoryBank`, bundle `Cell` | §8.4, §7 |
 | `Vco`, `RSwitch` | D.3, D.6 |
-| `Tran`, `Keeper`, `Logic`, `Wire` | §22.3 |
+| `Tran`, `Keeper`, `Driven`, `Strength` | §22.3 |
+| `Logic` | §22.1 |
 
 **Guarded instants.** Claims marked "(guarded instant)" rest on §17.2.2: a reaction counts at a
 scheduled time only if its event fires at `(t, 0)` (Appendix D).
@@ -26,27 +27,52 @@ comparator located by the solver, and a binary search in a reaction.
 ```rust
 /// 8-bit DAC: ideal level, ladder resistance, output switch.
 module Dac8(in code: Bit<u8>, vout: Electrical) {
-    vref: f64 = 1.0; rout: f64 = 1k; rsw: f64 = 200.0;
+    vref: f64 = 1.0;
+    rout: f64 = 1k;
+    rsw: f64 = 200.0;
     signal src: Electrical;
     pub signal core: Electrical;
 }
+
 analog for Dac8 {
-    v(src) +> vref * (code.known_or(0x80) as f64) / 256.0;     // unknown code: mid-scale
+    v(src) +> vref * (code as f64) / 256.0;
     i(src, core) +> v(src, core) / rout;
     i(core, vout) +> v(core, vout) / rsw;
 }
 
 /// Binary search; cmp is high when the input is above the DAC.
-module SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0x80, out done: Bit = false) {
+module SarLogic(
+    in clk: Bit,
+    in start: Bit,
+    in cmp: Bit,
+    out code: Bit<u8> = 0x80,
+    out done: Bit = false,
+) {
     signal bit: Bit<u3> = 7;
     signal busy: Bit = false;
 }
+
 digital for SarLogic {
-    on clk.rise() && start && !busy { busy <- true; bit <- 7; code <- 0x80; done <- false; }
+    on clk.rise() && start && !busy {
+        busy <- true;
+        bit <- 7;
+        code <- 0x80;
+        done <- false;
+    }
     on clk.rise() && busy {
-        let kept = if cmp { code } else { code & !(1u8 << bit) };
-        if bit == 0 { code <- kept; done <- true; busy <- false; }
-        else { code <- kept | (1u8 << (bit - 1)); bit <- bit - 1; }
+        let kept = if cmp {
+            code
+        } else {
+            code & !(1u8 << bit)
+        };
+        if bit == 0 {
+            code <- kept;
+            done <- true;
+            busy <- false;
+        } else {
+            code <- kept | (1u8 << (bit - 1));
+            bit <- bit - 1;
+        }
     }
 }
 
@@ -55,12 +81,15 @@ module SarAdc(vin: Electrical, in clk: Bit, in start: Bit, out code: Bit<u8>, ou
     signal vh: Electrical;
     signal vdac: Electrical;
     signal cmp: Bit;
-    let sh = SampleHold(vin, vh, start);      // 12.1
+    let sh = SampleHold(vin, vh, start); // 12.1
     let dac = Dac8(code, vdac);
-    let comp = Comparator(vh, vdac, cmp);    // 13
+    let comp = Comparator(vh, vdac, cmp); // 13
     let logic = SarLogic(clk, start, cmp, code, done);
 }
-analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's own branch on a public node
+
+analog for SarAdc {
+    i(dac.core) +> ddt(cpar * v(dac.core));
+} // the parent's own branch on a public node
 ```
 
 > **Resolution.** `rsw` is written `200.0`. The source model had the integer literal `200` as
@@ -73,7 +102,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 | Discrete drives | `code` and `done` are driven by `logic` through its `out` ports, which supply the initial values. `SarAdc` passes its own `out` ports down and writes neither (§5.2). `cmp` is driven by `comp`; `held` by `sh`. |
 | Branches | `Dac8`: a potential branch `(src, gnd)` and two flow branches. `SampleHold`: a potential branch `(vh, gnd)`. `SarAdc`: its own flow branch `(dac.core, gnd)`, attached to a public node of a child (§8.2, `pub` rule). |
 | Loads | `Comparator` and `SampleHold` probe their inputs and draw no flow (§11 rule 4). `vdac` carries no flow, so `v(vdac) = v(dac.core)`. |
-| Reading `code` | `Dac8` reads it through `known_or(0x80)`: an unknown code is mid-scale (§3.3.5). |
+| Reading `code` | `Dac8` reads it directly: `code` is a `Bit<u8>` and holds `0x80` from `(0, 0)` (§3.3.6). |
 
 **Semantics walkthrough: the operating point.**
 
@@ -82,7 +111,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 | `(0, 0)` commits | `code ← 0x80`, `done ← false`, `bit ← 7`, `busy ← false`, `held ← 0.0`, `cmp ← false` (§16 step 2). |
 | Solve | `v(vh) = 0`. `v(src) = v(dac.core) = v(vdac) = vref / 2`; `cpar` carries no flow. Every node has a resistive path. |
 | Reactions of `(0, 0)` | `v(vh, vdac)` is negative. `dn = above(−v(inp, inn))` fires through its `init()` arm (§22.2). `q <- up` commits false, the value `cmp` already has. |
-| `clk` or `start` high at 0 | Their first commits are edges (§13 rule 6). With both high, a conversion starts at `(0, 0)` and `sh` samples the operating point's `v(vin)`. |
+| `clk` or `start` high at 0 | A carrier that starts high has not risen (§13 rule 6): no conversion starts at `(0, 0)`. A conversion starts at the first rise after it. |
 
 **Semantics walkthrough: one conversion.**
 
@@ -107,7 +136,6 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 | `Dc` | The operating point above. `at`-free and delay-free, so reactions run at each sweep point (§16.1). |
 | `Ac` | `held` and `code` are constant (§11.1): `vh` and `src` are potential sources of zero small-signal value. `vin` has no path to any output. The zero-order-hold response of `SampleHold` appears only in a periodic analysis (§11.1, §16.3). |
 | `Noise` | No `noise` instance: the resistances are written as bare contributions. |
-| Unknown `cmp` | `kept` is the merge of both arms (§3.3.3): the bit under test becomes unknown, and stays so in `code`. `Dac8` then outputs mid-scale. |
 | Gradients | `held` is real and carries the sensitivity of `v(vin)` at the sampling instant. `code` is not real and acts through event times only (§23.3.4). |
 
 ## F.2 Charge-pump PLL
@@ -116,28 +144,59 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 the VCO of D.3 and a divider. The top module is pure structure.
 
 ```rust
-module Pfd(in fref: Bit, in fdiv: Bit, out up: Bit = false, out dn: Bit = false) { treset: f64 = 50p; }
-digital for Pfd {
-    on fref.rise() { up <- true; }
-    on fdiv.rise() { dn <- true; }
-    on (up.changed() || dn.changed()) && up && dn { up <- false after treset; dn <- false after treset; }
+module Pfd(in fref: Bit, in fdiv: Bit, out up: Bit = false, out dn: Bit = false) {
+    treset: f64 = 50p;
 }
 
-module ChargePump(in up: Bit, in dn: Bit, vc: Electrical) { icp: f64 = 100u; }
+digital for Pfd {
+    on fref.rise() {
+        up <- true;
+    }
+    on fdiv.rise() {
+        dn <- true;
+    }
+    on (up.changed() || dn.changed()) && up && dn {
+        up <- false after treset;
+        dn <- false after treset;
+    }
+}
+
+module ChargePump(in up: Bit, in dn: Bit, vc: Electrical) {
+    icp: f64 = 100u;
+}
+
 analog for ChargePump {
-    i(vc) +> if dn.high() { icp } else { 0.0 } - if up.high() { icp } else { 0.0 };
+    i(vc) +> if dn {
+        icp
+    } else {
+        0.0
+    } - if up {
+        icp
+    } else {
+        0.0
+    };
 }
 
 module Divider<const N: u32>(in clk: Bit, out q: Bit = false) where N >= 2 && N % 2 == 0 {
     signal cnt: Bit<u32> = 0;
 }
+
 digital<N> for Divider<N> {
-    on clk.rise() { if cnt == N / 2 - 1 { cnt <- 0; q <- !q; } else { cnt <- cnt + 1; } }
+    on clk.rise() {
+        if cnt == N / 2 - 1 {
+            cnt <- 0;
+            q <- !q;
+        } else {
+            cnt <- cnt + 1;
+        }
+    }
 }
 
 /// Pure structure.
 module Pll(in fref: Bit, out clk: Bit) {
-    r: f64 = 10k; c1: f64 = 10p; c2: f64 = 1p;
+    r: f64 = 10k;
+    c1: f64 = 10p;
+    c2: f64 = 1p;
     signal up: Bit;
     signal dn: Bit;
     signal fdiv: Bit;
@@ -148,7 +207,7 @@ module Pll(in fref: Bit, out clk: Bit) {
     let rz = Resistor(vc, mid) { r: r };
     let cz = Capacitor(mid, gnd) { c: c1 };
     let cp2 = Capacitor(vc, gnd) { c: c2 };
-    let vco = Vco(vc, clk);                  // D.3
+    let vco = Vco(vc, clk); // D.3
     let div = Divider::<8>(clk, fdiv);
 }
 ```
@@ -166,7 +225,7 @@ module Pll(in fref: Bit, out clk: Bit) {
 | Holds | Two holds to `gnd` and a resistor between them. The resistor is a flow branch, so no loop of potential contributions exists. |
 | `(0, 0)` | All discrete initial values are committed. `up.changed()` and `dn.changed()` fire (§13 rule 6); the guard `up && dn` is false. The VCO's `above` fires (D.3). |
 | `(0, 1)` | `clk ← true`. `clk.rise()` runs the divider: `cnt <- 1`. The divider counts the edge at time 0. |
-| `fref` high at 0 | `fref.rise()` fires at `(0, 0)`. `up` applies at `(0, 1)`; `analog` reads it, so the equilibrium is solved again with the hold absorbing `icp` (§16 step 4). |
+| `fref` high at 0 | `fref.rise()` does not fire at `(0, 0)` (§13 rule 6): `up` stays low until the first rise after the start. |
 | First step | The holds are removed. Both nodes carry `ddt` states, so the release is not a jump (§16). |
 
 **Semantics walkthrough: the detector.**
@@ -191,7 +250,6 @@ module Pll(in fref: Bit, out clk: Bit) {
 | Loop frequency | `vc` starts at 0 V: the VCO runs at `f0`, 1 GHz, and `fdiv` at 125 MHz. |
 | `Dc` | Singular, naming `vc` and `mid`: the truth about a charge-pump filter (§16). |
 | `Ac`, `Noise` | Their operating point fails the same way, also at a transient's last instant (§16.4.2). The loop is closed through discrete carriers and event times, so its response needs a periodic analysis (§16.3, G.30). |
-| Unknown | Every carrier has an initial value. A `fref` that goes from low to unknown fires `rise()` (§22.1); the reaction is unguarded, so `up <- true` is committed known. |
 | Gradients | Edge times move with `kvco`, `f0`, `icp` and the filter params through the located VCO crossings (§23.3.2). |
 
 ## F.3 DRAM array with a swappable cell
@@ -201,35 +259,57 @@ charge-based cell of §8.4 without touching the array.
 
 ```rust
 /// Behavioral cell with the ports of Dram1T1C (§8.4), for fast runs.
-module BehavioralCell(c: Cell) { vdd: f64 = 1.0; ron: f64 = 2k; signal bit: Bit = false; }
-analog for BehavioralCell {
-    if c.wl.high() { i(c.bl) +> (v(c.bl) - if bit.high() { vdd } else { 0.0 }) / ron; }
-}
-digital for BehavioralCell {
-    on c.wl.fall() && c.wl.prev().is_known() { bit <- v(c.bl) > vdd / 2.0; }
+module BehavioralCell(c: Cell) {
+    vdd: f64 = 1.0;
+    ron: f64 = 2k;
+    signal bit: Bit = false;
 }
 
-module SenseAmp(bl: Electrical, vref: Electrical, in en: Bit, out q: Bit) {}
-digital for SenseAmp { on en.rise() { q <- v(bl, vref) > 0.0; } }
+analog for BehavioralCell {
+    if c.wl {
+        i(c.bl) +> (v(c.bl) - if bit {
+            vdd
+        } else {
+            0.0
+        }) / ron;
+    }
+}
+
+digital for BehavioralCell {
+    on c.wl.fall() {
+        bit <- v(c.bl) > vdd / 2.0;
+    }
+}
+
+module SenseAmp(bl: Electrical, vref: Electrical, in en: Bit, out q: Bit = false) {}
+
+digital for SenseAmp {
+    on en.rise() {
+        q <- v(bl, vref) > 0.0;
+    }
+}
 
 module Dram<const ROWS: u32, const COLS: u32>(in wl: [Bit; ROWS], in pre: Bit, in sense: Bit, out q: [Bit; COLS]) {
-    cbl: f64 = 100f; vpre: f64 = 0.5;
+    cbl: f64 = 100f;
+    vpre: f64 = 0.5;
     signal bl: [Electrical; COLS];
     signal vref: Electrical;
-    pub let bank = MemoryBank::<_, ROWS, COLS>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // 8.4
+    pub let bank = MemoryBank::<_, ROWS, COLS>(wl, bl) { cell: Dram1T1C { cs: 30f } }; // 8.4
     for c in 0..COLS {
         let cb = Capacitor(bl[c], gnd) { c: cbl };
-        let pc = RSwitch(bl[c], vref, pre);  // D.6
+        let pc = RSwitch(bl[c], vref, pre); // D.6
         let sa = SenseAmp(bl[c], vref, sense, q[c]);
     }
 }
-analog<ROWS, COLS> for Dram<ROWS, COLS> { v(vref) +> vpre; }
+
+analog<ROWS, COLS> for Dram<ROWS, COLS> {
+    v(vref) +> vpre;
+}
 ```
 
-> **Resolution.** The store reaction of `BehavioralCell` is guarded by
-> `c.wl.prev().is_known()`. A word line that starts low has fallen at `(0, 0)` (§13 rule 6). The
-> unguarded reaction would then overwrite the declared `bit = false` with a comparison of the
-> precharged bit line against `vdd / 2`. The guard is the idiom of §12.1.
+> **Resolution.** The store reaction of `BehavioralCell` listens to `c.wl.fall()`. A word line
+> that starts low has not fallen at `(0, 0)` (§13 rule 6), so the declared `bit = false` is
+> kept; no guard is needed.
 
 **Semantics walkthrough: structure.**
 
@@ -247,7 +327,7 @@ analog<ROWS, COLS> for Dram<ROWS, COLS> { v(vref) +> vpre; }
 | Aspect | Trace |
 | --- | --- |
 | Operating point | Word lines low: the access branch has `g = 0` and carries no flow. Each `bl[c]` reaches `vref` through an `RSwitch`, on or off: 0.5 V. Each `sn` is held at 0 V, and its leak agrees (§16). |
-| `(0, 0)` | `SenseAmp` has no initial `q`: it is unknown until the first `sense` edge. If `sense` starts high, `en.rise()` fires and reads the operating point (§13 rule 6). |
+| `(0, 0)` | `SenseAmp` starts with `q` false until the first `sense` edge. If `sense` starts high, `en.rise()` does not fire (§13 rule 6). |
 | Precharge | `pre` high: `bl` follows `vref` through `ron`. `pre` low: `bl` floats on `cbl`, leaking through `roff`. |
 | Word line rises | `analog` of `COLS` cells reads it: a time point and a jump. The switch is resistive, so `cs · v(sn)` and `cbl · v(bl)` stay (§15.2.1). The flows step. |
 | Charge sharing | `sn` and `bl` approach each other with time constant near `ron · cs · cbl / (cs + cbl)`, about 0.1 ns. The bit line moves by `(v(sn) − vpre) · cs / (cs + cbl)`. |
@@ -266,60 +346,170 @@ analog<ROWS, COLS> for Dram<ROWS, COLS> { v(vref) +> vpre; }
 | Word line high | The cell drives the bit line toward `vdd` or 0 V through `ron`. |
 | Word line falls, `(t, n)` | The reaction runs before the step to `t` is solved and probes the solution of the previous time point (§15 step 3.3): the bit line as the cell and any writer left it. It commits `bit`. |
 | `(t, n + 1)` | `bit` applies. Nothing is pending, so the step that arrives at `t` is solved (§15 step 3.4). It reads both changes: the fall of the word line removes the cell's flow, and `bit`, which `analog` reads statically, moves nothing with the word line low. |
-| Unknown `wl` | `high()` reads it as low (§22.1). A fall to unknown fires `fall()`; the stored bit is the probe's comparison, which is known. |
 | Time points | Every word-line change that `analog` reads; every fall, since the reaction probes. |
 
-## F.4 Two tristate buses joined by a pass gate
+## F.4 Four resolved nets
 
-**Purpose.** Two resolved lines, each with two tristate devices, joined by a bidirectional gate,
-with a keeper on one side. Nothing here is analog.
+**Purpose.** A discrete net that takes several drivers is a nature that the model declares and
+gives the capability `Resolve` (§4 rule 8, §5.2). The library declares no net nature. Each of
+the four nets below has its nature, its `impl`, its module code and a table of outcomes, and
+none is analog.
 
-```rust
-/// A device on a shared line: drives when enabled, always listens.
-module Dev(in d: Bit, in oe: Bit, out seen: Bit, pad: Wire) {
-    pad = if oe { Logic::strong(d) } else { Logic::Z };
-    seen = pad.v;
+### F.4.1 A plain `bool` into a wired-AND net
+
+**Purpose.** No strength and no `Logic`: the `impl` says that a driver that is missing reads
+high, which is the pull-up.
+
+```rust,fragment
+pub nature AndWire { value: bool }
+
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(drives: [bool; N]) -> bool {
+        drives.iter().all(|d| d)
+    }
 }
 
-module Board(in en: Bit, in d: [Bit; 4], in oe: [Bit; 4], out seen: [Bit; 4]) {
-    signal la: Wire;
-    signal lb: Wire;
-    let a0 = Dev(d[0], oe[0], seen[0], la);
-    let a1 = Dev(d[1], oe[1], seen[1], la);
-    let b0 = Dev(d[2], oe[2], seen[2], lb);
-    let b1 = Dev(d[3], oe[3], seen[3], lb);
-    let gate = Tran(la, lb, en);             // 22.3
-    let keep = Keeper(lb);
+module IrqSource(irq_n: AndWire, in pending: Bit) {
+    irq_n = !pending; // drives a plain bool
+}
+
+module Board(in a: Bit, in b: Bit) {
+    signal irq_n: AndWire; // no value of its own: it is resolve of its drives
+    let s0 = IrqSource(irq_n, a);
+    let s1 = IrqSource(irq_n, b);
 }
 ```
 
-| Situation | `la` | `lb` |
+| `a` | `b` | `irq_n` |
 | --- | --- | --- |
-| `oe[0]`, gate on | strong `d[0]` | strong `d[0]`, through the gate |
-| `oe[0]` and `oe[2]`, gate on, levels differ | strong, level unknown | strong, level unknown |
-| nobody enabled, gate on | weak, the keeper's level, through the gate | weak, the keeper's level |
-| nobody enabled, gate off | high impedance (`s == HighZ`, level unknown) | weak, the keeper's level |
-
-**Semantics walkthrough.**
+| false | false | true |
+| true | false | false |
+| true | true | false |
+| (no `IrqSource` instance) | | true: `resolve` of an empty array |
 
 | Aspect | Trace |
 | --- | --- |
-| Drives of `la` | `a0`, `a1`, and the gate's drive, which is `lb.others()` while `en` is high (§22.3). |
-| Drives of `lb` | `b0`, `b1`, the keeper, and the gate's drive, `la.others()`. |
-| `others()` | The resolution of every drive but the caller's own (§5.2). From the gate, `lb.others()` is `b0`, `b1` and the keeper; `la.others()` is `a0` and `a1`. |
-| No loop | Neither gate drive depends on the gate's other drive. The keeper's drive reads `last`, written by a reaction. Dependencies are per drive (§8.2.3): no relaxation is needed. |
-| Row 1 | `lb.others()` is `weak(last)`, so `la = wired(strong d[0], Z, weak)`: strong `d[0]`. `la.others()` is strong `d[0]`, and it beats the keeper on `lb`. |
-| Row 2 | Each side resolves two strong drives that disagree: strength `Strong`, level `merge` of both, unknown (§22.3). |
-| Row 3 | `la.others()` is `Z`. `lb` is the keeper's `weak(last)`, and the gate carries it to `la`. |
-| Row 4 | Both gate drives are `Z`. `la` resolves `Z` drives only: `Logic::Z`, whose level is unknown. |
-| Settling | One microstep: definitions and `resolve` are evaluated in dependency order (§8.2.1). `seen` settles in the same microstep, after the line. |
-| Row 1, microstep by microstep | `(t, 0)`: `oe[0]` applies; `la`, `lb` and `seen` settle; `changed()` fires. The keeper's reaction runs, since `lb.s > Weak`, and commits `last <- lb.v`. `(t, 1)`: the keeper's drive becomes `weak(d[0])`; both resolved values are unchanged. |
-| The keeper's memory | `last` has no initial value: before the first strong drive, rows 3 and 4 show a weak unknown level. After the contention of row 2 the keeper stores unknown. |
-| Unknown `en` | Each gate drive is the merge of its arms (§3.3.3): a level stays known only where `others()` and `Z` agree. |
-| A second gate | A second `Tran` between `la` and `lb` makes each gate's drive depend on the other's: a loop among resolved drives. It settles by relaxation to the same table (§8.2.3, §22.3). |
-| Solver | No node, no probe: no time point (§17.2.2). In a small-signal sweep nothing happens (§16.2). |
+| Drives | `s0` and `s1` each hold one drive of `irq_n`, of the type `bool`. `irq_n` needs no initial value of its own (§5.2.3). |
+| Resolution | `all` of the present drives: low when either source pulls it low, high when both release it or nobody drives it. |
+| One drive | With one source the value is still `resolve` of that one drive (§5.2.10). |
+| A drive of another type | A third module that drove a `Logic` into `irq_n` is `E0180` naming `AndWire` and `Logic`: the nature has no `Resolve<Logic>` (§5.2.15). |
 
-Undriven, contended and kept are three different values, told apart by the strength.
+### F.4.2 An open-drain line with a pull-up
+
+**Purpose.** The pull-up is a module, and the line shows Z when it is missing.
+
+```rust,fragment
+pub nature Sda { value: Driven }
+
+impl Resolve<Driven> for Sda {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
+        Driven::strongest(drives)
+    }
+}
+
+module OpenDrainPin(sda: Sda, in pull_low: Bit) {
+    sda = if pull_low { Driven::strong(false) } else { Driven::Z };
+}
+
+module I2cBus(in m: Bit, in s: Bit) {
+    signal sda: Sda;
+    let master = OpenDrainPin(sda, m);
+    let slave = OpenDrainPin(sda, s);
+    let rp = Pullup(sda); // Driven::pull(true)
+}
+```
+
+| `master` | `slave` | `rp` | `sda` |
+| --- | --- | --- | --- |
+| Z | Z | pull 1 | 1 at `Pull` |
+| strong 0 | Z | pull 1 | 0 at `Strong` |
+| strong 0 | strong 0 | pull 1 | 0 at `Strong` |
+| Z | Z | (no `Pullup` instance) | `Driven::Z`: `sda.v.is_z()` |
+
+| Aspect | Trace |
+| --- | --- |
+| Drives | Three drives of `sda`: `master`, `slave`, `rp`, in instance-path order. `Pullup` is generic over `W: Nature + Resolve<Driven>` and accepts `Sda` because the nature implements the capability (§22.3.5). |
+| Strength | A pull wins only while every stronger drive is released: `Strong` beats `Pull`, and `Pull` beats nothing. |
+| Without the pull-up | With both pins released the line is `Driven::Z`. A reader that decides on it writes how: `sda.v.is_z()`, or `sda.v.to_volts(vdd)` in a converter, which reads Z as mid-rail. |
+| Analog side | The analog pull-up resistor of a mixed model is the same line read from `analog`: `i(vdd, pad) +> v(vdd, pad) / rp` beside `v(pad) +> sda.v.to_volts(v(vdd))` in a converter module (`Bidir`, §22.4.3). |
+
+### F.4.3 A tri-state bus with two drivers and a keeper
+
+**Purpose.** Two buffers share one line, and a keeper remembers the last level that was driven.
+
+```rust,fragment
+pub nature TriBus { value: Driven }
+
+impl Resolve<Driven> for TriBus {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
+        Driven::strongest(drives)
+    }
+}
+
+module Bus(in d0: Bit, in oe0: Bit, in d1: Bit, in oe1: Bit) {
+    signal line: TriBus;
+    let a = Tribuf(line, d0, oe0);
+    let b = Tribuf(line, d1, oe1);
+    let k = Keeper(line); // §22.3.6
+}
+```
+
+| `oe0` | `oe1` | `line` |
+| --- | --- | --- |
+| true | false | `d0` at `Strong` |
+| false | true | `d1` at `Strong` |
+| false | false | the keeper's last level at `Weak`; before any buffer has driven, X at `Weak` |
+
+| Aspect | Trace |
+| --- | --- |
+| Drives | `a`, `b` and `k`. `k.others()` is `strongest` of the two buffers, without the keeper's own drive (§5.2.11). |
+| Keeper memory | `last` starts at X (a `Bit<Logic>`): the model says it has never been driven, which a `bool` could not. A reaction remembers a level only when `others()` gives a 0 or a 1. |
+| Before any drive | `line` reads X at `Weak`: `line.v.is_x()`. |
+| No loop | The keeper's drive reads `last`, written by a reaction, and `others()` leaves its own drive out: no relaxation is needed (§8.2.3). |
+
+### F.4.4 A conflict of equal strengths
+
+**Purpose.** A conflict is a value; an instability is an error.
+
+Both buffers of F.4.3 enabled, `d0` true and `d1` false: two `Strong` drives that disagree, so
+`Driven::strongest` gives `Driven { v: Logic::X, s: Strength::Strong }`.
+
+| `d0` | `d1` | `line` |
+| --- | --- | --- |
+| true | false | X at `Strong` |
+| true | true | 1 at `Strong` |
+
+| Aspect | Trace |
+| --- | --- |
+| A conflict | A reader sees `line.v.is_x()`; `line.v.to_bit()` is `None`; nothing stops. The keeper does not record it (it remembers only a 0 or a 1). |
+| An instability | A loop of drives through `others()` with no reaction and no `after` that never stops changing, such as two modules that each drive the inverse of what the other drives, is not a conflict. After its bounded passes the run stops with `E0511`, naming the two drives (§8.2.3). |
+
+A typed bus that allows one driver at a time is the same pattern with the author's own result
+type, which is why the library has no `Tri`:
+
+```rust,fragment
+#[derive(Repr, PartialEq)]
+pub enum Data {
+    Free,
+    Byte(u8),
+    Contended,
+}
+
+pub nature DataBus { value: Data }
+
+impl Resolve<Option<u8>, Data> for DataBus {
+    fn resolve<const N: usize>(drives: [Option<u8>; N]) -> Data {
+        drives.iter().fold(Data::Free, |a, x| match (a, x) {
+            (y, None) => y,
+            (Data::Free, Some(b)) => Data::Byte(b),
+            _ => Data::Contended,
+        })
+    }
+}
+```
+
+Here the driven type is `Option<u8>` and the value a reader sees is `Data`: `Resolve<X, V>`
+with two types (§4 rule 8).
 
 ## F.5 Charge sharing through an ideal switch
 
@@ -328,11 +518,11 @@ capacitors at different potentials.
 
 ```rust
 module ShareCharge(in close: Bit) {
-    pub signal a: Electrical = 1.0;            // held at 1 V through the transient's operating point
-    pub signal b: Electrical = 0.0;            // held at 0 V
+    pub signal a: Electrical = 1.0; // held at 1 V through the transient's operating point
+    pub signal b: Electrical = 0.0; // held at 0 V
     let c1 = Capacitor(a, gnd) { c: 1p };
     let c2 = Capacitor(b, gnd) { c: 3p };
-    let sw = Switch(a, b, close);              // 11: a short while close is high
+    let sw = Switch(a, b, close); // 11: a short while close is high
 }
 ```
 
@@ -363,12 +553,11 @@ previous derivative enters them:
 
 | Step | Trace |
 | --- | --- |
-| The step | Adding the node rows removes `i` and `k`: `1p · (v − 1) + 3p · v = 0`, so the stage ends at 0.25 V. The BDF2 stage has the same form over the charges of `t − h`, the stage point and `t`, and conserves the same sum. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
+| The step | Adding the node rows removes `i` and `k`: `1p · (v − 1) + 3p · v = 0`, so the stage ends at 0.25 V. The second stage, backward Euler over the whole step from the charges of `t − h` (§15.2.6), has the same form and conserves the same sum. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
 | Conservation | The cut that the switch closes holds 1 pC before and `4p · 0.25 = 1 pC` after (§15.2.2). |
 | No solve of its own | The change has no solve at an unchanged `t`; the step to `t` is the solve that reads it (§15.2). |
 | Restart | The step to `t` landed there for the commit of `close`, so it is exempt from the truncation-error test; the step after it drops the previous derivative and runs its trapezoidal stage as backward Euler (§15.2.6). |
 | Afterwards | `a` and `b` float together at 0.25 V. The transient is determined by the states (§15.2.1). |
 | `Dc` | Singular with the switch open or closed: no node has a DC path. Nothing is held outside a transient's operating point (§16). |
 | `Ac`, `Noise` | Their operating point fails the same way. |
-| Unknown `close` | `high()` reads it as low: the switch is open (§22.1). |
 | Gradients | Across the jump the sensitivities of the states are carried by the step that reads it, as the states are (§15.2.10, §23.3.2). |

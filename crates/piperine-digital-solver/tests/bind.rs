@@ -3,7 +3,7 @@
 //! layouts, an unbound global, `LATER` against the resolution and shape
 //! validation. Fixtures are bare shapes: no device stands behind them.
 
-use piperine_abi::layout::{BIT, REAL};
+use piperine_abi::layout::{BIT, F64};
 use piperine_abi::raw::{
     Cell, Statement, cell, global, part, pin_flag, role, statement_flag,
 };
@@ -41,19 +41,19 @@ fn setter(flags: u32, min_after: f64) -> ShapeRef {
         name: "set",
         on: vec![trig],
         reads: vec![pin(d, part::VALUE)],
-        writes: vec![Statement { pin: q, offset: 0, len: 2, flags, min_after }],
+        writes: vec![Statement { pin: q, offset: 0, len: 1, flags, min_after }],
         ..ReactionSpec::default()
     });
     s.freeze()
 }
 
-/// pins: g (GLOBAL TEMPERATURE REAL, flags); fn 0 reads g, writes nothing a net names but y.
+/// pins: g (GLOBAL TEMPERATURE F64, flags); fn 0 reads g, writes nothing a net names but y.
 fn reader_of_global(flags: u32) -> ShapeRef {
     let mut s = ShapeBuf::new();
     let g = s.pin(PinSpec {
         global: global::TEMPERATURE,
         flags,
-        ..PinSpec::discrete("temperature", role::GLOBAL, &REAL)
+        ..PinSpec::discrete("temperature", role::GLOBAL, &F64)
     });
     let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
     s.function(FunctionSpec {
@@ -66,7 +66,7 @@ fn reader_of_global(flags: u32) -> ShapeRef {
 }
 
 fn nets(n: usize) -> Vec<NetSpec> {
-    (0..n).map(|i| NetSpec::discrete(&format!("n{i}"), 2, 1)).collect()
+    (0..n).map(|i| NetSpec::discrete(&format!("n{i}"), 1, 1)).collect()
 }
 
 fn net(i: u32) -> Binding {
@@ -117,7 +117,7 @@ fn one_instance_writing_a_net_twice_is_one_writer() {
     for _ in 0..2 {
         s.reaction(ReactionSpec {
             on: vec![t],
-            writes: vec![Statement { pin: q, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: q, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         });
     }
@@ -130,7 +130,7 @@ fn one_instance_writing_a_net_twice_is_one_writer() {
 
 #[test]
 fn unequal_layouts_on_one_net_are_refused() {
-    // C9, P4: a BIT pin and a REAL pin on one net
+    // C9, P4: a BIT pin and an F64 pin on one net
     let (a, b) = (inverter(), reader_of_global(0));
     let r = analyze_of(
         &nets(3),

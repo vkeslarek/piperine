@@ -1,11 +1,12 @@
 # Params and I/O Specification
 
 **Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+**Amended**: 2026-11-20 - under the user's standing AFK rule ("always take the most reasonable default and tell later"; "Eu gostaria que engatilhasse até o 12"): `docs/spec/` revision 38 (`index.md` §0.10) gave a plain mismatch the code `E0180`, so Q2's `E0106` is `E0180` and no row is added; PI-06 gains the other codes of the checker's mismatches (`E0182`, `E0141`, `E0188`); the code table follows the spec's 189 codes and the 68 still absent at `494a7f75`, with `E0102` and `E0122` for closures handed to `composite-values` (its T16, T43), `E0807` to `E0809` to `gradients`, and the codes of constructs that already run (`E0244`, `E0354`, `E0906`) taken here by the sibling specs' own rule; `host-ii`, `msl-fixes` and `analog-structure` are delivered. Each change is a D-default of design.md ("Amendments" below lists them).
 
 Opened 2026-11-17 from `GAPS.md` (audit of 2026-11-17) at the user's request: "gostaria que
 abrisse feature e escrevesse a spec para todos esses gaps [...] Preciso que TODOS os gaps estejam
 endereçados ok? Principalmente esses que tu listou que limitam a expressividade da linguagem ok?"
-Spec only: no design, no tasks yet.
+Design and tasks: `design.md`, `tasks.md` (2026-11-20).
 
 This feature gathers what a model is parameterized by and what it reads from outside: params of
 every value type (L28), the top's continuous ports (L39), input files and tables (L57), the codes
@@ -17,7 +18,7 @@ spec that no source raises and no other feature claims (`GAPS.md` §10).
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
 | Q1 | L39: what does the host API do with a continuous port of the top? The user decided X8 (2026-11-17, `host-ii`): "Só pela API host" - a top's ports are driven only through `piperine-api`, never a manifest key; `host-ii` drives discrete `in` ports and leaves continuous ones. | (a) **A host source per node port**: `piperine-api` attaches to each node port of the top a potential source to `gnd` with a DC value, an optional AC magnitude and phase, and an optional piecewise-linear waveform; a node port without one is refused at session start (`E0810`); a value input of the top is refused (`E0811`). (b) **Refusal only**: §8.1.14 and §23.1 rule 1 are amended to say a top's ports are discrete; a continuous port is `E0810` and the user wraps the design in an MSL bench module. (c) **(a), and a value input bound by the host** as a constant per analysis, changed by a timed `set` | **(a).** It is what §23.1 rule 1 implies for a node ("the host connects the top's ports", §8.1.14) and what the Book's analog examples need to be driven without a wrapper; the source is the same mechanism a host `force` on a node uses (§23.1 Resolution). A value input is an expression of a parent, and a top has none, so refusing it is the smaller rule |
-| Q2 | X5: which code does a plain type mismatch carry? Today it is `P0002`, an implementation code the spec does not list; the spec gives codes to four positions only (`E0417`, `E0432`, `E0337`, `E0210`) and says "as in Rust" for the rest. | (a) **A new spec code `E0106`** in Part I §1's error table: "an expression whose type is not the type its position requires, where no other row names the position"; `P0002` disappears from the source. (b) **Keep `P0002`** and amend Appendix C to say diagnostics outside the spec's tables carry `P` codes. (c) **One code per position** (operand, argument, return, binding, condition, connection, param value): seven new rows | **(a).** One row closes the hole, a user reads a spec code for the most common error, and the four specific codes keep winning where they apply |
+| Q2 | (Amended A1: the spec's revision 38 added `E0180` with exactly the row (a) proposes; read `E0106` as `E0180` below.) X5: which code does a plain type mismatch carry? Today it is `P0002`, an implementation code the spec does not list; the spec gives codes to four positions only (`E0417`, `E0432`, `E0337`, `E0210`) and says "as in Rust" for the rest. | (a) **A new spec code `E0106`** in Part I §1's error table: "an expression whose type is not the type its position requires, where no other row names the position"; `P0002` disappears from the source. (b) **Keep `P0002`** and amend Appendix C to say diagnostics outside the spec's tables carry `P` codes. (c) **One code per position** (operand, argument, return, binding, condition, connection, param value): seven new rows | **(a).** One row closes the hole, a user reads a spec code for the most common error, and the four specific codes keep winning where they apply |
 
 ---
 
@@ -53,7 +54,7 @@ source file (`GAPS.md` §10); 17 of them belong to no other feature and belong h
 | `force`, `release` and waiting on an event (H1 rest) | `host-iii` |
 | A digital-only transient (L56), which the Book's debouncer and PWM need to run | `host-ii`; PI-01 AC 6 depends on it |
 | Checking unreached items, so that an unreached `include_str!` is checked (S3, X6) | `generics` |
-| The 57 absent codes that belong to a construct another feature owns | Named per code in "Gaps closed"; PI-13's guard keeps each one listed until its feature raises it |
+| The 46 absent codes that belong to a construct another feature owns | Named per code in "Gaps closed"; PI-13's guard keeps each one listed until its feature raises it |
 | Enum variant names on the ABI and in observations (`GAPS.md` §4.7) | No feature claims it in this round; PI-02 needs the names for params only, from the elaborated design |
 | `f16`, `f32`, `f128` and integers over 64 bits as param types (L13) | `composite-values` |
 
@@ -131,7 +132,7 @@ count; the user named "the gaps that limit the expressiveness of the language" f
 2. WHEN a parent binds `{ cell: Dram1T1C { cs: 10f } }` THEN the child SHALL place a `Dram1T1C` with `cs` 10 fF.
 3. IF a placement whose head is a module-typed param carries a param block THEN the system SHALL report `E0361`.
 4. IF the template bound to a module-typed param leaves a required param unbound THEN the system SHALL report `E0319` naming it (§8.4.2).
-5. IF a template of another module is bound to a param of type `Dram1T1C` THEN the system SHALL report `E0106` (Q2 (a)) naming both modules.
+5. IF a template of another module is bound to a param of type `Dram1T1C` THEN the system SHALL report `E0180` (Q2 (a), A1) naming both modules.
 6. The POM SHALL keep the placement through the param as written, and the IR SHALL hold the concrete module (the navigability rule).
 
 **PI-05. The interpreter.**
@@ -221,10 +222,13 @@ that I can look it up.
 **PI-06. A plain mismatch, and a param that hides a function.**
 
 **Acceptance Criteria**:
-1. WHERE Q2 is answered (a), WHEN an expression's type differs from the type its position requires and no other row of the spec names that position THEN the system SHALL report `E0106` naming the expected and found types.
+1. WHERE Q2 is answered (a), WHEN an expression's type differs from the type its position requires and no other row of the spec names that position THEN the system SHALL report `E0180` naming the expected and found types.
 2. WHERE Q2 is answered (a), the system SHALL contain no source file that emits the code `P0002`.
-3. IF a call's callee resolves to a param, a `let` or a `const` that is not a function, and a function of that name is in scope behind it THEN the system SHALL report `E0106` ("expected a function, found ..") with a note naming the hidden function and its declaration (L20, §3.5.4).
-4. WHEN this feature merges THEN Part I §1 SHALL carry the `E0106` row (or Appendix C the rule of Q2 (b)), and every Book listing that printed `P0002` SHALL print the new code.
+3. IF a call's callee resolves to a param, a `let` or a `const` that is not a function, and a function of that name is in scope behind it THEN the system SHALL report `E0180` ("expected a function, found ..") with a note naming the hidden function and its declaration (L20, §3.5.4).
+4. WHEN this feature merges THEN every Book listing that printed `P0002` SHALL print the spec code that replaces it (Part I §1 already carries the `E0180` row, A1).
+5. IF an `as` converts between two types that are not a row of §1.4.5 (`true as f64`, `1.0 as bool`) THEN the system SHALL report `E0182` naming both types (A2).
+6. IF a call through a function value, a probe or a builtin has too few or too many arguments THEN the system SHALL report `E0141` naming the expected and found counts (A2; the checker's last `P0002` site).
+7. IF the initializer of a `const` item reads something only a run gives (a probe, a param, a carrier), a `const` has no value outside a trait, or a `const` depends on itself THEN the system SHALL report `E0188` naming the `const` (A2, §3.9.2).
 
 **Independent Test**: `crates/piperine-lang/tests/types_*.rs` per position; the Book's listings.
 
@@ -254,18 +258,21 @@ or listed with the feature that will raise it, so that no code is forgotten.
 
 **Why P1**: `GAPS.md` §10: 73 codes; the user asked that every gap be addressed.
 
-**PI-12. The 16 codes owned here.**
+**PI-12. The codes owned here.**
 
 **Acceptance Criteria**:
-1. IF `&` appears other than as a shared borrow in a call argument or as an array, slice or string parameter type (`let r = &x;`, `fn f(x: &f64)`) THEN the system SHALL report `E0102` naming the form.
+1. WHEN this feature merges THEN `E0102` SHALL be raised where `&` appears other than as a shared borrow in a call argument or as an array, slice or string parameter type, by `composite-values` (its CV-14 AC 2, T43; A3), and PI-13's allow-list SHALL not hold it.
 2. IF a run panics under known control (an integer division or remainder by zero, a shift by a negative amount under `spec-closure` Q3 (a), an `unwrap` of `None`) THEN the system SHALL fail the analysis with `E0105` naming the operation, the instance and the time.
-3. IF a solve-reading function is called in a const context, or an emitting function where `emit!` is not allowed THEN the system SHALL report `E0122` naming the function and its class.
+3. IF a named solve-reading function is called in a const context, or a named emitting function where `emit!` is not allowed THEN the system SHALL report `E0122` naming the function and its class (a closure's call is `composite-values`' T16, A3; today a named emitting function there is `E0601`, which §6 reserves for `emit!` written directly).
 4. IF a nature's quantity carries an attribute other than `access`, `units` and `abstol`, an attribute of the wrong type, or an `abstol` that is not positive THEN the system SHALL report `E0204` naming the attribute.
 5. IF the two `access` names of one nature are equal THEN the system SHALL report `E0205` naming them.
 6. IF an expression is connected to a carrier port that is not an `in` port (`R(2.0 * v(a), gnd)`) THEN the system SHALL report `E0315` naming the port.
 7. IF the name of an instance without a result is used as a value THEN the system SHALL report `E0333` naming the instance.
 8. IF an attribute is not in Appendix A.1's table (`#[cfg(test)]`, `#[allow(..)]`) or a listed attribute sits on another kind of item (`#[link]` on a `fn`, `#[repr(u2)]` on a `struct`) THEN the system SHALL report `E0904` naming the attribute and the item.
 9. The codes `E0610`, `E0612`, `E0613`, `E0614`, `E0703`, `E0704`, `E0705` and `E0706` SHALL be raised as PI-08 to PI-10 state.
+10. IF a probe or a contribution names a node the module cannot reach under §6 rule 7 (a child's node that is not `pub`) THEN the system SHALL report `E0244` naming the node (A4).
+11. IF a continuous result is read where probes are not allowed, or an `Event` result outside an event position (§8.3.10) THEN the system SHALL report `E0354` naming the placement (A4).
+12. IF `Unknown` stands where no type can be inferred (`let x = Unknown;`) THEN the system SHALL report `E0906` (A4; the half of the row about a type that does not implement `Repr` needs `generics`' traits on user types and stays in the allow-list under `generics` only if no reachable form raises it).
 
 **PI-13. The guard of codes.**
 
@@ -273,7 +280,7 @@ or listed with the feature that will raise it, so that no code is forgotten.
 1. The system SHALL have a test that lists every code of every error table under `docs/spec/` and fails for a code that appears in no non-test source file under `crates/` and in no entry of its allow-list.
 2. The system SHALL give each allow-list entry the owning feature and the `GAPS.md` id of the construct.
 3. IF a code of the allow-list appears in a non-test source file THEN the test SHALL fail naming the stale entry.
-4. WHEN this feature merges THEN the allow-list SHALL hold none of the 16 codes of PI-12, nor `E0361`, `E0106`, `E0810` or `E0811`.
+4. WHEN this feature merges THEN the allow-list SHALL hold none of the 22 codes this feature owns (the "Gaps closed" table), nor `E0810` or `E0811`, and no source file SHALL emit `P0002`.
 
 **PI-14. Records.**
 
@@ -285,7 +292,7 @@ or listed with the feature that will raise it, so that no code is forgotten.
 ## Edge Cases
 
 - WHEN an integer param's default is a const expression of another integer type (`n: u8 = K as u8`) THEN the system SHALL evaluate the `as` under Part I §1 rule 1.
-- IF a `where` on an `Option` param reads it as a number (`rs > 0.0`) THEN the system SHALL report `E0106` (Q2 (a)), not accept it.
+- IF a `where` on an `Option` param reads it as a number (`rs > 0.0`) THEN the system SHALL report `E0180` (Q2 (a), A1), not accept it.
 - WHEN a top module's node port is `gnd`-connected inside the design only THEN the host SHALL still drive it under PI-07 or the run SHALL be refused.
 - WHEN `include_str!` names the same file from two `const`s THEN the system SHALL read it once.
 - IF a `parse_table` row has a value whose nearest `f64` is infinite THEN the system SHALL report `E0706` naming the row.
@@ -304,16 +311,18 @@ or listed with the feature that will raise it, so that no code is forgotten.
 | X5 a type mismatch has no spec code | PI-06 AC 1, 2 and 4 (Q2) |
 | H12 `piperine fmt` over the stdlib, galleries and `examples/buck` | PI-11 |
 
-**The 73 codes of `GAPS.md` §10.** "Raised" means a requirement raises the code where the spec
-says. Each code owned elsewhere stays in PI-13's allow-list until its feature raises it.
+**The 68 codes of `GAPS.md` §10** (189 codes in the spec's error tables at `494a7f75`, 68 spelled
+in no non-test source; recounted 2026-11-20, A5). "Raised here" means a requirement of this
+feature raises the code where the spec says. Each code owned elsewhere stays in PI-13's
+allow-list, with its owner and construct, until its feature raises it.
 
 | Code | Owner | Requirement or construct |
 | ---- | ----- | ------------------------ |
-| `E0102` | params-and-io | PI-12 AC 1, raised |
-| `E0105` | params-and-io | PI-12 AC 2, raised |
+| `E0102` | composite-values | CV-14 AC 2 (T43); PI-12 AC 1 checks it |
+| `E0105` | params-and-io | PI-12 AC 2, raised here |
 | `E0110` | composite-values | L1, L4 (`derive(Repr)`) |
 | `E0111` | composite-values | L4 (`#[repr(uN)]`) |
-| `E0122` | params-and-io | PI-12 AC 3, raised (foreign-models FM-04 AC 6 for `extern` functions) |
+| `E0122` | params-and-io | PI-12 AC 3 (named functions), raised here |
 | `E0123` | foreign-models | FM-04 AC 1 |
 | `E0124` | foreign-models | FM-04 AC 2, 3 |
 | `E0126` | composite-values | L10 (recursion) |
@@ -322,71 +331,80 @@ says. Each code owned elsewhere stays in PI-13's allow-list until its feature ra
 | `E0132` | generics | L8 |
 | `E0133` | generics | L8 (handles) |
 | `E0134` | generics | L7 (traits) |
-| `E0151` | unknown-semantics | L18, L19 |
+| `E0180` | params-and-io | PI-06 AC 1, 3, raised here |
+| `E0181` | composite-values | inference (T16; raised on its branch) |
+| `E0182` | params-and-io | PI-06 AC 5, raised here |
+| `E0183` | composite-values | moves and assignment (T11, T44) |
+| `E0184` | composite-values | patterns (T14, T15) |
+| `E0185` | composite-values | control flow (T12, T13) |
+| `E0186` | composite-values | structs and enums (T38, T39) |
+| `E0187` | generics | L7 (traits and generic arguments) |
+| `E0188` | params-and-io | PI-06 AC 7, raised here |
 | `E0203` | resolved-nets | L21 |
-| `E0204` | params-and-io | PI-12 AC 4, raised |
-| `E0205` | params-and-io | PI-12 AC 5, raised |
+| `E0204` | params-and-io | PI-12 AC 4, raised here |
+| `E0205` | params-and-io | PI-12 AC 5, raised here |
 | `E0224` | resolved-nets | L21 (`others()`) |
 | `E0242` | resolved-nets | L23 (signal-flow) |
-| `E0243` | analog-structure | L26 (`inflow`) |
-| `E0244` | analog-structure | L36 (a child's nodes) |
+| `E0244` | params-and-io | PI-12 AC 10, raised here |
 | `E0260` | resolved-nets | L25 (bundles) |
 | `E0261` | resolved-nets | L25 |
 | `E0262` | resolved-nets | L25 |
 | `E0264` | resolved-nets | L25 |
 | `E0313` | composite-values | L24 (array carriers) |
-| `E0315` | params-and-io | PI-12 AC 6, raised |
+| `E0315` | params-and-io | PI-12 AC 6, raised here |
 | `E0322` | generics | L31 (generation) |
-| `E0333` | params-and-io | PI-12 AC 7, raised |
+| `E0333` | params-and-io | PI-12 AC 7, raised here |
 | `E0340` | generics | L31 |
 | `E0342` | generics | L31 |
 | `E0351` | composite-values | L5 (loops) |
-| `E0354` | analog-structure | L35, L38 |
+| `E0354` | params-and-io | PI-12 AC 11, raised here |
 | `E0360` | generics | L32 (`Fn(P)`) |
-| `E0361` | params-and-io | PI-04 AC 3, raised (`generics` extends it to other template values) |
+| `E0361` | params-and-io | PI-04 AC 3 (`generics` extends it to other template values), raised here |
 | `E0362` | generics | L32 |
 | `E0371` | foreign-models | FM-07 AC 1 |
 | `E0372` | foreign-models | FM-07 AC 2, 3 |
 | `E0373` | foreign-models | FM-07 AC 4, 5 |
 | `E0374` | foreign-models | FM-07 AC 6 |
+| `E0375` | generics | its spec, a model item named `m` or `dtemp` |
 | `E0413` | resolved-nets | L23 (a nature without `flow`) |
-| `E0414` | analog-structure | L40 |
 | `E0416` | composite-values | L5 |
-| `E0418` | analog-structure | L40 |
 | `E0451` | analog-operators | L43 (`ddx`) |
 | `E0452` | analog-operators | L44 (`delay`) |
 | `E0453` | analog-operators | L44 |
 | `E0454` | analog-operators | L45 (`noise`) |
 | `E0456` | analog-operators | L47 (`simparam`) |
-| `E0503` | solver-hygiene (in flight) | §4.8, V15 |
-| `E0504` | solver-hygiene (in flight) | §4.8 |
-| `E0505` | solver-hygiene (in flight) | §4.8 |
-| `E0507` | solver-hygiene (in flight) | §4.8 |
-| `E0508` | solver-hygiene (in flight) | V3 |
-| `E0610` | params-and-io | PI-08 AC 2, raised |
-| `E0612` | params-and-io | PI-08 AC 3, raised |
-| `E0613` | params-and-io | PI-08 AC 4, raised |
-| `E0614` | params-and-io | PI-09 AC 3, raised |
-| `E0701` | unknown-semantics | L18 (`cast`) |
-| `E0702` | unknown-semantics | L18 (`logic`, `matches_bits`) |
-| `E0703` | params-and-io | PI-10 AC 6, raised |
-| `E0704` | params-and-io | PI-10 AC 7, raised |
-| `E0705` | params-and-io | PI-10 AC 5, raised |
-| `E0706` | params-and-io | PI-09 AC 4, raised |
-| `E0803` | host-ii (in flight) | H9 |
-| `E0804` | host-ii (in flight) | H9 |
-| `E0805` | host-ii (in flight) | H9 |
-| `E0806` | host-ii (in flight) | H9 |
-| `E0807` | host-iii | H8 (gradients) |
-| `E0808` | host-iii | H8 |
-| `E0809` | host-iii | H8 |
-| `E0904` | params-and-io | PI-12 AC 8, raised |
-| `E0906` | unknown-semantics | L18 (`Unknown`) |
+| `E0610` | params-and-io | PI-08 AC 2, raised here |
+| `E0612` | params-and-io | PI-08 AC 3, raised here |
+| `E0613` | params-and-io | PI-08 AC 4, raised here |
+| `E0614` | params-and-io | PI-09 AC 3, raised here |
+| `E0703` | params-and-io | PI-10 AC 6, raised here |
+| `E0704` | params-and-io | PI-10 AC 7, raised here |
+| `E0705` | params-and-io | PI-10 AC 5, raised here |
+| `E0706` | params-and-io | PI-09 AC 4, raised here |
+| `E0807` | gradients | H8 |
+| `E0808` | gradients | H8 |
+| `E0809` | gradients | H8 |
+| `E0904` | params-and-io | PI-12 AC 8, raised here |
+| `E0906` | params-and-io | PI-12 AC 12, raised here |
 
-Counts: 73 codes; 17 raised here (`E0361` taken from `generics`' L32 because PI-04 meets it first),
-6 by `foreign-models`, 50 by the other features. No code is closed by amending the spec: each
-condition is reachable once its construct exists. Three codes are added to the spec: `E0106`
-(Q2), `E0810` and `E0811` (Q1).
+Counts: 68 codes; 22 raised here, 12 by `composite-values`, 12 by `generics`, 8 by
+`resolved-nets`, 6 by `foreign-models`, 5 by `analog-operators`, 3 by `gradients`. No code is
+closed by amending the spec: each condition is reachable once its construct exists. Two codes
+are added to the spec: `E0810` and `E0811` (Q1). The codes `E0180` to `E0188` came with the
+spec's revision 38 after this spec was approved; the sibling specs give "codes of constructs
+that already run" to this feature, so `E0180`, `E0182` and `E0188` are here and the rest go
+with the construct that raises them (A2, A3).
+
+## Amendments (2026-11-20, user AFK)
+
+| # | Change | Why |
+| - | ------ | --- |
+| A1 | `E0106` reads `E0180` everywhere; no row is added to Part I | `docs/spec/` revision 38 (`index.md` §0.10 row 38) added `E0180` with the text Q2 (a) proposed; the spec is the authority (design.md D1) |
+| A2 | PI-06 gains `E0182` (`as`), `E0141` (arity) and `E0188` (const expressions) | they are the checker's other `P0002`/`P0001` sites for type and const errors that already run; X5 asks that every mismatch carry a spec code (D2) |
+| A3 | `E0102`, and `E0122` for closures, are `composite-values`' | its T43 and T16 raise them; this feature checks them through the guard and raises `E0122` for named functions (D3) |
+| A4 | `E0244`, `E0354`, `E0906` are this feature's | their constructs run since `analog-structure` and `unknown-semantics`; the sibling specs give such codes here (D4) |
+| A5 | The code table is recounted against the spec of `494a7f75` (68 of 189) | the 73-of-180 count predates revision 38 and four deliveries (D5) |
+| A6 | `E0807` to `E0809` are `gradients`', not `host-iii`'s | `.specs/features/gradients/spec.md` claims them (D5) |
 
 ---
 
@@ -394,39 +412,41 @@ condition is reachable once its construct exists. Three codes are added to the s
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PI-01 | P1: a param of any carried type | - | Pending |
-| PI-02 | P1: a param of any carried type | - | Pending |
-| PI-03 | P1: a param of any carried type | - | Pending |
-| PI-04 | P1: a param of any carried type | - | Pending |
-| PI-05 | P1: a param of any carried type | - | Pending |
-| PI-06 | P1: type errors carry spec codes | - | Pending |
-| PI-07 | P1: the host drives every port of the top | - | Pending |
-| PI-08 | P1: a design reads data from files | - | Pending |
-| PI-09 | P1: a design reads data from files | - | Pending |
-| PI-10 | P1: a design reads data from files | - | Pending |
-| PI-11 | P2: the shipped sources are formatted | - | Pending |
-| PI-12 | P1: every error code is raised or owned | - | Pending |
-| PI-13 | P1: every error code is raised or owned | - | Pending |
-| PI-14 | P1: every error code is raised or owned | - | Pending |
+| PI-01 | P1: a param of any carried type | 9 | Planned (T30–T33, T35) |
+| PI-02 | P1: a param of any carried type | 9 | Planned (T31–T33) |
+| PI-03 | P1: a param of any carried type | 9 | Planned (T31–T33) |
+| PI-04 | P1: a param of any carried type | 5 | Planned (T21, T22) |
+| PI-05 | P1: a param of any carried type | 9 | Planned (T34) |
+| PI-06 | P1: type errors carry spec codes | 2 | Planned (T3–T7) |
+| PI-07 | P1: the host drives every port of the top | 4 | Planned (T16–T20) |
+| PI-08 | P1: a design reads data from files | 6 | Planned (T23, T24, T43) |
+| PI-09 | P1: a design reads data from files | 11 | Planned (T37, T38, T43) |
+| PI-10 | P1: a design reads data from files | 7, 11 | Planned (T27, T39–T42) |
+| PI-11 | P2: the shipped sources are formatted | 7 | Planned (T25, T26) |
+| PI-12 | P1: every error code is raised or owned | 3, 8, 10, 12 | Planned (T8–T15, T29, T36, T44) |
+| PI-13 | P1: every error code is raised or owned | 1, 8, 12 | Planned (T2, T29, T44) |
+| PI-14 | P1: every error code is raised or owned | 7, 12 | Planned (T28, T44) |
 
-**Coverage:** 14 total, 0 mapped to tasks (spec only).
+**Coverage:** 14 total, 14 mapped to tasks (tasks.md, 44 tasks in 12 phases).
 
 ---
 
 ## Dependencies and size
 
-- **Depends on:** `composite-values` for arrays of tuples and of integers and `&` as a call
-  argument (PI-09, PI-10); `host-ii` (in flight) for `E0802` on a `set`, the drive API PI-07
-  builds on, and L56 for PI-01 AC 6; `msl-fixes` (in flight) for `E0140`/`E0141` at calls.
-  PI-01 to PI-07, PI-11, PI-12 (except AC 9) and PI-13 need none of the not-yet-started features.
+- **Depends on:** `composite-values` phases A–B (not yet on `main`): arrays of tuples and of
+  integers, `&` as a call argument and composite constants (PI-09, PI-10), the IR enum and
+  `Option` types and its param path by leaf (PI-01 to PI-03, PI-05; design.md D6), its function
+  classes (PI-12 AC 3) and `E0102` (PI-12 AC 1). `host-ii` (delivered, MD-69) for `E0802`,
+  `E0803`, `set_at` and L56; `msl-fixes` (delivered, MD-67) for `E0140`/`E0141`. PI-04, PI-06,
+  PI-07, PI-08, PI-11, PI-12 (but AC 1, 3 and 9) and PI-13 need nothing that is not on `main`.
 - **Touches:** `piperine-lang` (`types/module.rs`, `types/expr.rs`, `types/call.rs`, elaboration
   of params and consts, the const evaluator), `piperine-ir` and `piperine-plan` (param leaves of
   integer, enum and `Option` type), `piperine-transpile` (`table_model` and its derivative),
   `piperine-api` (node sources, param text), `docs/spec/` Part I §1, Part III §8.1.14,
   Part VIII §23.1, Appendix C.2, the galleries.
-- **Size:** L. About 30 tasks: params about 10, files and `table_model` about 9, the top's ports
-  about 4, codes and the guard about 5, formatting 2. It splits cleanly into two features at
-  the P1 boundaries if the user prefers.
+- **Size:** L. 44 tasks (tasks.md): contract and guard 2, codes 13, the top's ports 5,
+  module-typed params 2, `include_str!` 2, formatting and spec notes 3, records 2, rebase 1,
+  scalar params 6, `E0122` 1, files and `table_model` 7.
 
 ## Sources
 
@@ -442,4 +462,4 @@ condition is reachable once its construct exists. Three codes are added to the s
 - [ ] The Book's debouncer and PWM build; a param of each type is set from the command line.
 - [ ] A measured-table diode runs inside `analog` and passes the partials verifier.
 - [ ] A top with a node port runs from `piperine-api`, or is refused with `E0810`.
-- [ ] `spec_codes` is green with an allow-list of at most 56 entries (50, plus `foreign-models`' 6 until it merges), each naming its owner.
+- [ ] `spec_codes` is green with an allow-list of at most 46 entries, each naming its owner and the construct, less every code `composite-values` raised before this feature merges.

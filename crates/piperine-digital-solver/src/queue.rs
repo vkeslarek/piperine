@@ -3,8 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use piperine_abi::raw::commit_flag;
-
 use crate::journal::Journal;
 use crate::net::NetId;
 use crate::tick::Tick;
@@ -32,8 +30,6 @@ pub struct Pending {
     /// The order of the call within the microstep that made it.
     pub call: u32,
     pub due: Instant,
-    /// `commit_flag::*` bits: 0 for every commit that is not made under unknown control (abi.md C7).
-    pub flags: u32,
 }
 
 impl Pending {
@@ -65,8 +61,6 @@ enum Undo {
     Inserted(Instant),
     /// Commits left the list due at this instant, each from its position at the time.
     Removed(Instant, Vec<(usize, Pending)>),
-    /// The commits at these positions of the list due at this instant took `MERGE`.
-    Converted(Instant, Vec<usize>),
     /// The whole list due at this instant was taken, in its stored order.
     Taken(Instant, Vec<Pending>),
 }
@@ -91,23 +85,11 @@ impl Queue {
 
     /// C3: removes the pending commits of the same statement and byte range
     /// due at or after this one (every one of the statement when `replace`),
-    /// then inserts it. A host commit is never transported. A commit made under
-    /// unknown control (`MAYBE`, abi.md C7) may not have happened, so what it would
-    /// remove stays, as a `MERGE` commit: its value applies merged with the value
-    /// the net holds then, which is the merge of "the path that ran" and "the path
-    /// that did not" (part I §3.3.3 applied to §12.1.4).
+    /// then inserts it. A host commit is never transported.
     pub fn push(&mut self, pending: Pending, replace: bool) {
         if pending.writer != Writer::Host {
-            let maybe = pending.flags & commit_flag::MAYBE != 0;
             let journaling = self.journal.is_open();
             for (due, list) in self.by_due.iter_mut() {
-                if maybe {
-                    let converted = Self::convert(list, |old| old.removed_by(&pending, *due, replace));
-                    if !converted.is_empty() {
-                        self.journal.push(Undo::Converted(*due, converted));
-                    }
-                    continue;
-                }
                 let (mut index, mut gone) = (0usize, Vec::new());
                 list.retain(|old| {
                     let removed = old.removed_by(&pending, *due, replace);
@@ -125,19 +107,6 @@ impl Queue {
         }
         self.journal.push(Undo::Inserted(pending.due));
         self.by_due.entry(pending.due).or_default().push(pending);
-    }
-
-    /// Gives `MERGE` to every commit of `list` that `selected` picks and that does not have it,
-    /// returning their positions, which `rewind` clears again.
-    fn convert(list: &mut [Pending], selected: impl Fn(&Pending) -> bool) -> Vec<usize> {
-        let mut converted = Vec::new();
-        for (index, old) in list.iter_mut().enumerate() {
-            if selected(old) && old.flags & commit_flag::MERGE == 0 {
-                old.flags |= commit_flag::MERGE;
-                converted.push(index);
-            }
-        }
-        converted
     }
 
     /// Starts journaling: from here to the matching `release`, every push, removal and take is
@@ -164,13 +133,6 @@ impl Queue {
                         list.insert(index, pending);
                     }
                 }
-                Undo::Converted(due, positions) => {
-                    if let Some(list) = self.by_due.get_mut(&due) {
-                        for index in positions {
-                            list[index].flags &= !commit_flag::MERGE;
-                        }
-                    }
-                }
                 Undo::Taken(due, list) => {
                     self.by_due.insert(due, list);
                 }
@@ -195,16 +157,7 @@ impl Queue {
             return;
         }
         let journaling = self.journal.is_open();
-        let maybe = pending.flags & commit_flag::MAYBE != 0;
         for (due, list) in self.by_due.iter_mut() {
-            if maybe {
-                // under unknown control the cancelling path may not have run: what it would remove stays, merged
-                let converted = Self::convert(list, |old| old.same_statement(pending));
-                if !converted.is_empty() {
-                    self.journal.push(Undo::Converted(*due, converted));
-                }
-                continue;
-            }
             let (mut index, mut gone) = (0usize, Vec::new());
             list.retain(|old| {
                 let removed = old.same_statement(pending);

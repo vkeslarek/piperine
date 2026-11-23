@@ -402,23 +402,30 @@ impl Ctx<'_> {
                 Some((Resolution::Decl(found), visible))
             }
             // `Mode::WIDTH` reads a member of `Repr` through the enum (§2); a variant or an item of
-            // the enum's own named alike wins, and the checker refuses an enum without `Repr`.
+            // the enum's own named alike wins, and a carrier of an enum without `Repr` is `E0112`.
             DeclKind::Enum(_) => self
                 .variant(owner, name)
                 .or_else(|| self.associated(owner, name))
                 .map(|v| (Resolution::Decl(v), true))
-                .or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true))),
+                .or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true)))
+                .or_else(|| Self::default_member(name)),
             // `Self::NAME` in a trait: its own items, then each supertrait in the order written.
             DeclKind::Trait(t) => match self.associated(owner, name) {
                 Some(item) => Some((Resolution::Decl(item), true)),
                 None => self.through_bounds(&t.supertraits, name, self.parent_namespace(owner).unwrap_or(from), visiting),
             },
-            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Module(_) => {
-                self.associated(owner, name).map(|v| (Resolution::Decl(v), true))
-            }
+            DeclKind::Struct(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)).or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true)))
+                .or_else(|| Self::default_member(name)),
+            DeclKind::Nature(_) | DeclKind::Module(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)),
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => self.through_bounds(bounds, name, from, visiting),
             _ => None,
         }
+    }
+
+    /// `Point::default()` reads `Default::default` through the type (App. H.8): left for the checker,
+    /// which refuses a type that does not implement `Default`.
+    fn default_member(name: &str) -> Option<(Resolution, bool)> {
+        (name == "default").then_some((Resolution::Deferred(DeferReason::BuiltinTraitMember), true))
     }
 
     /// `name` after a generic: an item of a user trait it is bounded by, a
@@ -561,6 +568,14 @@ pub(super) fn path_diagnostic(design: &Design, segments: &[PathSegment], span: c
             // A first segment that is a crate of the design but no dependency of this one.
             if at == 0 && design.crates.iter().any(|c| c.name == *name) {
                 return diagnostic.with_help("name it under [dependencies] in Piperine.toml");
+            }
+            // The names value semantics took out of the language (§1.4.6): nothing grants a copy.
+            if matches!(name.as_str(), "Clone" | "Copy" | "clone") {
+                return diagnostic.with_help(crate::msl::diag::COPY_HELP);
+            }
+            // The name the explicit model of unknowns took out (§3.3): a value is always known.
+            if name == "Unknown" {
+                return diagnostic.with_help(crate::msl::diag::UNKNOWN_HELP);
             }
             diagnostic
         }

@@ -20,7 +20,7 @@ use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
 use piperine_plan::{BodyPlan, DerivePlan, Mode};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, DerivativePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
+use crate::print::{AnalogPrinter, DerivativePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, TypeItems, ValuePrinter};
 
 /// Prints a design.
 #[derive(Debug)]
@@ -93,6 +93,10 @@ impl LibraryPrinter {
         t.line("");
         for line in Self::imports(&uses) {
             t.line(&line);
+        }
+        for item in TypeItems::new(ir).items()? {
+            t.line("");
+            t.line(item.trim_end());
         }
         for text in &function_texts {
             t.line("");
@@ -350,7 +354,7 @@ impl LibraryPrinter {
                 exprs.extend(e.guard);
                 match e.source {
                     EventSource::Cross { e: x, .. } | EventSource::At(x) => exprs.push(x),
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
             }
             for r in body.reactions() {
@@ -373,6 +377,11 @@ impl LibraryPrinter {
                         exprs.push(ir.function(*function).body());
                     }
                     exprs.extend(args);
+                }
+                Expr::FunctionRef(function) => {
+                    if found.insert(function.index()) {
+                        exprs.push(ir.function(*function).body());
+                    }
                 }
                 other => ValuePrinter::children(ir, other, &mut exprs),
             }

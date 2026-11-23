@@ -1,11 +1,10 @@
-//! The five functions of §22.1 that are generic over `Repr` (`merge`, `same`, `cast`, `logic`,
-//! `matches_bits`), typed by their normative contract at the concrete type until `generics`
+//! The two functions of §22.1 that are generic over `Repr` and have no `Logic` in them (`same`, `cast`), typed by their normative contract at the concrete type until `generics`
 //! lands (spec Q1 (b)). A call whose callee is the stdlib's own item never reaches
 //! `signature_parts`, which refuses a generic function and an `extern` one; a project's own
 //! function of the same name is an ordinary function (§22 rule 3).
 
 use crate::msl::Span;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode};
 
 use super::check::Checker;
 use super::{Callee, Ty};
@@ -13,27 +12,18 @@ use super::{Callee, Ty};
 /// A function of §22.1 the checker types by its contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intrinsic {
-    /// `merge<T: Repr>(a: T, b: T) -> T` (§22.1.2).
-    Merge,
     /// `same<T: Repr>(a: T, b: T) -> bool` (§22.1.4).
     Same,
     /// `cast<A: Repr, B: Repr>(a: A) -> B`, `A::WIDTH == B::WIDTH` (§22.1.3).
     Cast,
-    /// `logic<T: Repr>(pattern: &str) -> T` (§22.1.4).
-    Logic,
-    /// `matches_bits<T: Repr>(s: T, pattern: &str) -> bool` (§22.1.4).
-    MatchesBits,
 }
 
 impl Intrinsic {
-    /// The function of §22.1 called `name`, if it is one of the five.
+    /// The function of §22.1 called `name`, if it is one of the two.
     fn named(name: &str) -> Option<Intrinsic> {
         match name {
-            "merge" => Some(Intrinsic::Merge),
             "same" => Some(Intrinsic::Same),
             "cast" => Some(Intrinsic::Cast),
-            "logic" => Some(Intrinsic::Logic),
-            "matches_bits" => Some(Intrinsic::MatchesBits),
             _ => None,
         }
     }
@@ -51,7 +41,7 @@ impl Checker<'_> {
         in_values.then(|| Intrinsic::named(&data.name.as_ref()?.text)).flatten()
     }
 
-    /// A call of one of the five: its type from the arguments, the turbofish or the type the
+    /// A call of one of the two: its type from the arguments, the turbofish or the type the
     /// context expects, the contract's errors reported (`E0701`, `E0702`), the callee recorded.
     pub(super) fn intrinsic_call(&mut self, expr: ExprId, callee: ExprId, intrinsic: Intrinsic, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
@@ -59,13 +49,18 @@ impl Checker<'_> {
         let written = self.turbofish_types(callee);
         let expected = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty);
         let result = match intrinsic {
-            Intrinsic::Merge | Intrinsic::Same => {
+            Intrinsic::Same => {
                 let value = self.operand_type(file, span, written.first().cloned(), args.first())?;
                 self.apply(expr, &[value.clone(), value.clone()], args)?;
-                if intrinsic == Intrinsic::Merge { value } else { Ty::Bool }
+                Ty::Bool
             }
             Intrinsic::Cast => {
                 let from = self.operand_type(file, span, written.first().cloned(), args.first())?;
+                // the result is `Option<B>` (§22.1.3): the expected type names `B` through its `Option`
+                let expected = expected.map(|ty| match ty {
+                    Ty::Option(inner) => *inner,
+                    other => other,
+                });
                 let Some(to) = written.get(1).cloned().or(expected) else {
                     self.unsupported(file, span, "`cast` whose result type is not written (use `cast::<A, B>` or an expected type)");
                     return None;
@@ -73,19 +68,8 @@ impl Checker<'_> {
                 let to = self.value_type(file, span, Some(to))?;
                 self.apply(expr, &[from.clone()], args)?;
                 self.same_width(file, span, &from, &to)?;
-                to
-            }
-            Intrinsic::Logic => {
-                let value = self.value_type(file, span, written.first().cloned().or(expected))?;
-                self.apply(expr, &[Ty::Str], args)?;
-                self.bit_pattern(file, &value, args.first()?)?;
-                value
-            }
-            Intrinsic::MatchesBits => {
-                let value = self.operand_type(file, span, written.first().cloned(), args.first())?;
-                self.apply(expr, &[value.clone(), Ty::Str], args)?;
-                self.bit_pattern(file, &value, args.get(1)?)?;
-                Ty::Bool
+                self.refuse_enum_in_a_sequence(file, span, &to)?;
+                Ty::Option(Box::new(to))
             }
         };
         self.callees.insert(expr, Callee::Intrinsic(intrinsic));
@@ -116,7 +100,7 @@ impl Checker<'_> {
     /// `ty` as the `Repr` type a call works at: `None` after a diagnostic when it has none.
     fn value_type(&mut self, file: FileId, span: Span, ty: Option<Ty>) -> Option<Ty> {
         let ty = ty?;
-        if !ty.has_repr() {
+        if !self.repr_ok(&ty) {
             let message = format!("`{}` has no `Repr`: this function of §22.1 works on a type that implements it (part I §2)", ty.name(self.design));
             self.coded(file, "E0112", span, message, "no `Repr`");
             return None;
@@ -124,30 +108,44 @@ impl Checker<'_> {
         Some(ty)
     }
 
-    /// `E0701` unless `from` and `to` have the same number of levels (§22.1.3 rule 3).
-    fn same_width(&mut self, file: FileId, span: Span, from: &Ty, to: &Ty) -> Option<()> {
-        let (a, b) = (from.levels(self.design)?, to.levels(self.design)?);
-        if a != b {
-            let message = format!("`cast` between `{}` ({a} levels) and `{}` ({b} levels): the widths differ (§22.1.3)", from.name(self.design), to.name(self.design));
-            self.coded(file, "E0701", span, message, "widths differ");
+    /// `P0001` (`GAPS.md` L58) for a `cast` target that is a tuple or an array holding an enum, directly or
+    /// through a struct or a payload: the generated decoders judge a tag that names no variant for an enum and a
+    /// struct, and the runtime's tuples and arrays do not yet, so `None` would not be given where the rule needs it.
+    fn refuse_enum_in_a_sequence(&mut self, file: FileId, span: Span, to: &Ty) -> Option<()> {
+        if self.sequence_holds_enum(to, false) {
+            self.unsupported(file, span, &format!("`cast` to `{}`, a tuple or an array holding an enum: a tag that names no variant is not judged inside one yet", to.name(self.design)));
             return None;
         }
         Some(())
     }
 
-    /// `E0702` unless `arg` is a string literal of `0`, `1` and `x`, one character per level of
-    /// `value` (§22.1.4 rule 3).
-    fn bit_pattern(&mut self, file: FileId, value: &Ty, arg: &Arg) -> Option<()> {
-        let levels = value.levels(self.design)?;
-        let ExprKind::Lit(lit) = &self.design.expr_node(arg.value).kind else {
-            let message = "a pattern is a string literal of `0`, `1` and `x` (§22.1.4)".to_string();
-            self.coded(file, "E0702", arg.span, message, "not a pattern literal");
-            return None;
-        };
-        let LitKind::Str { text, .. } = &lit.kind else { return None };
-        if text.chars().count() != levels as usize || !text.chars().all(|c| matches!(c, '0' | '1' | 'x')) {
-            let message = format!("the pattern `{text}` is not {levels} characters of `0`, `1` and `x`, one per level of `{}` (§22.1.4)", value.name(self.design));
-            self.coded(file, "E0702", arg.span, message, "bad pattern");
+    /// Whether `ty` holds an enum below a tuple or an array (`in_sequence`: already below one).
+    fn sequence_holds_enum(&self, ty: &Ty, in_sequence: bool) -> bool {
+        match ty {
+            Ty::Enum(decl) => {
+                in_sequence
+                    || self.design.decl_data(*decl).children.iter().any(|variant| {
+                        self.types_of_fields(*variant).iter().any(|field| self.sequence_holds_enum(field, false))
+                    })
+            }
+            Ty::Tuple(items) => items.iter().any(|item| self.sequence_holds_enum(item, true)),
+            Ty::Array(element, _) => self.sequence_holds_enum(element, true),
+            Ty::Struct(decl) => self.types_of_fields(*decl).iter().any(|field| self.sequence_holds_enum(field, in_sequence)),
+            _ => false,
+        }
+    }
+
+    /// The types of the fields of the struct or variant `owner`.
+    fn types_of_fields(&self, owner: DeclId) -> Vec<Ty> {
+        self.layouts.get(&owner).map(|fields| fields.iter().map(|f| f.ty.clone()).collect()).unwrap_or_default()
+    }
+
+    /// `E0701` unless `from` and `to` have the same number of levels (§22.1.3 rule 3).
+    fn same_width(&mut self, file: FileId, span: Span, from: &Ty, to: &Ty) -> Option<()> {
+        let (a, b) = (self.repr_levels(from)?, self.repr_levels(to)?);
+        if a != b {
+            let message = format!("`cast` between `{}` ({a} levels) and `{}` ({b} levels): the widths differ (§22.1.3)", from.name(self.design), to.name(self.design));
+            self.coded(file, "E0701", span, message, "widths differ");
             return None;
         }
         Some(())

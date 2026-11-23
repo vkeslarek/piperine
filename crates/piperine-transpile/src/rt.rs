@@ -5,7 +5,7 @@
 
 pub mod commits;
 pub mod control;
-pub mod flag;
+pub mod pin;
 pub mod int;
 pub mod real;
 
@@ -17,26 +17,26 @@ pub const INT: &str = include_str!("rt/int.rs");
 pub const COMMITS: &str = include_str!("rt/commits.rs");
 /// The text of `rt/control.rs`, as generated code compiles it.
 pub const CONTROL: &str = include_str!("rt/control.rs");
-/// The text of `rt/flag.rs`, as generated code compiles it.
-pub const FLAG: &str = include_str!("rt/flag.rs");
+/// The text of `rt/pin.rs`, as generated code compiles it.
+pub const PIN: &str = include_str!("rt/pin.rs");
 
-/// The `rt.rs` of a design with digital forms: the five files as its modules, their names
-/// re-exported, so generated code spells `rt::Real`, `rt::UInt`, `rt::Flagged` whatever file
+/// The `rt.rs` of a design with digital forms: the files as its modules, their names
+/// re-exported, so generated code spells `rt::Real`, `rt::UInt`, `rt::Carried` whatever file
 /// each is in.
 const ROOT: &str = "\
 //! The runtime of a design with digital forms: reals and their derivatives (real.rs), integers
-//! that wrap at their width (int.rs), values that may be unknown (flag.rs), raising and catching
-//! a panic, and the decision of an unknown condition (control.rs), and the commits of a reaction
-//! (commits.rs).
+//! that wrap at their width (int.rs), the types a pin carries (pin.rs), raising a panic and the
+//! bounds of a model's own values (control.rs), and the commits of a reaction (commits.rs).
 
 pub mod commits;
 pub mod control;
-pub mod flag;
+pub mod pin;
 pub mod int;
 pub mod real;
 
 pub use commits::Commits;
-pub use flag::Flagged;
+pub use control::{Depth, Index, Panic, Trips};
+pub use pin::{Carried, LevelWords};
 pub use int::{Int, UInt, Unwrap};
 pub use real::{Dual, Real};
 ";
@@ -51,7 +51,7 @@ impl Runtime {
     /// key are what an analog-only build has always had.
     pub fn files(digital: bool) -> Vec<(&'static str, &'static str)> {
         if digital {
-            vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/flag.rs", FLAG), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS)]
+            vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS)]
         } else {
             vec![("rt.rs", REAL)]
         }

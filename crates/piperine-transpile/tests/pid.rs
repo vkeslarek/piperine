@@ -92,14 +92,11 @@ fn script_body(b: &mut IrBuilder) -> BodyId {
     b.carrier(body, Buck::carrier("n", u8_.clone(), CarrierRole::Signal, Some(Constant::Int(0)), F, 2, 12));
     let mut x = Dx::new(b, F, 5, 12);
     let clk = x.carrier(0, BIT);
-    let high = x.high(clk);
-    let low = x.un(UnaryOp::Not, high, BIT);
+    let low = x.un(UnaryOp::Not, clk, BIT);
     let fall = b.event(body, Event { source: EventSource::Changed(0), guard: Some(low), origin: Buck::origin(F, 5, 8) });
     let mut x = Dx::new(b, F, 6, 17);
     let n = x.carrier(4, u8_.clone());
-    let zero = x.int(0, u8_.clone());
-    let known = x.known_or(n, zero, u8_.clone());
-    let let_s = x.let_(0, known);
+    let let_s = x.let_(0, n);
     x.at(7, 9);
     let s = x.local(0, u8_.clone());
     let one = x.int(1, u8_.clone());
@@ -114,7 +111,7 @@ fn script_body(b: &mut IrBuilder) -> BodyId {
     x.at(10, 17);
     let meas = chain(&mut x, &[(40, 0), (80, 20), (110, 1023), (140, 0)], 100, &u10);
     let commit_meas = x.commit(3, meas, None);
-    let locals = vec![Local { name: "s".into(), ty: u8_ }];
+    let locals = vec![Local { name: "s".into(), ty: u8_, mutable: false }];
     Buck::reaction(b, body, vec![fall], vec![let_s, commit_n, commit_run, commit_target, commit_meas], locals, F, 5);
     body
 }
@@ -219,10 +216,8 @@ fn value_at(series: &[(i64, Vec<u8>)], at: i64) -> &[u8] {
     &series.iter().rev().find(|(t, _)| *t <= at).expect("an initial value").1
 }
 
-/// A little-endian integer of `bytes` bytes, sign-extended when `signed`; its known byte must
-/// be set (a net the loop wrote is never unknown here).
+/// A little-endian integer of `bytes` bytes, sign-extended when `signed`.
 fn decode(raw: &[u8], bytes: usize, signed: bool) -> i32 {
-    assert_eq!(raw[bytes], 1, "the value is known: {raw:?}");
     let mut buf = [0u8; 4];
     buf[..bytes].copy_from_slice(&raw[..bytes]);
     let v = u32::from_le_bytes(buf);

@@ -92,11 +92,12 @@ fn functions_run_after_every_writer_of_their_reads() {
     let mut e = Env::new(plan(vec![
         ("sink", inverter(), vec![("a", "m"), ("y", "z")]),
         ("src", inverter(), vec![("a", "a"), ("y", "m")]),
-    ]));
-    e.write("a", &HIGH);
+    ]))
+    .all_dirty();
+    e.write("a", &LOW);
     e.run().unwrap();
-    assert_eq!(e.value("m"), LOW);
-    assert_eq!(e.value("z"), HIGH, "the sink saw the new m in the same microstep");
+    assert_eq!(e.value("m"), HIGH);
+    assert_eq!(e.value("z"), LOW, "the sink saw the new m in the same microstep");
     assert_eq!(calls("inverter").0, 2, "each ran once");
 }
 
@@ -127,7 +128,7 @@ fn every_function_runs_once_at_the_first_instant() {
     e.run().unwrap();
     assert_eq!(calls("inverter").0, 1);
     assert_eq!(calls("and2").0, 1);
-    assert_eq!(e.value("y"), [0, 0], "an unknown input gives an unknown output");
+    assert_eq!(e.value("y"), HIGH, "the inverter of a zero input is high");
     e.next_microstep();
     e.run().unwrap();
     assert_eq!((calls("inverter").0, calls("and2").0), (1, 1), "and no more");
@@ -135,15 +136,15 @@ fn every_function_runs_once_at_the_first_instant() {
 
 #[test]
 fn an_absent_optional_pin_reads_zero_bytes() {
-    // d1 of the resolver is OPTIONAL and unbound: it reads as unknown
+    // d1 of the resolver is OPTIONAL and unbound: it reads as zero bytes
     let mut e = Env::new(plan(vec![("r", resolver(), vec![("d0", "d0"), ("v", "v")])]));
     e.write("d0", &HIGH);
     e.run().unwrap();
     assert_eq!(e.value("v"), HIGH, "d0 alone decides");
     e.next_microstep();
-    e.write("d0", &[0, 0]);
+    e.write("d0", &LOW);
     e.run().unwrap();
-    assert_eq!(e.value("v"), [0, 0], "neither drive is known");
+    assert_eq!(e.value("v"), LOW, "neither drive is high");
 }
 
 /// The feedback loop `v = d | e`, `d = v` through a resolver and an AND, with `d` a `RELAX` net.
@@ -165,7 +166,6 @@ fn a_relax_group_settles_within_its_bound() {
     assert_eq!(e.value("v"), HIGH);
     assert_eq!(e.value("d"), HIGH);
     assert_eq!(calls("resolver").0, 2, "one pass that moves, one that does not");
-    assert!(e.obs.list().iter().all(|o| !matches!(o, Observation::Unsettled { .. })), "it settled");
     // the net `d` changed once for the run, from nothing to high
     let changes: Vec<_> = e
         .obs
@@ -177,31 +177,26 @@ fn a_relax_group_settles_within_its_bound() {
 }
 
 #[test]
-fn a_moving_known_field_is_zeroed_and_observed() {
-    // C17: v = d | LOW, d = not v never settles; the known field is zeroed
+fn a_moving_loop_is_e0511_not_a_value_made_up() {
+    // C17, abi.md §9 D1: v = d | LOW, d = not v never settles; a loop that still moves after the
+    // bounded passes is `E0511`, never a value made up
     let mut e = Env::new(plan(vec![
         ("res", resolver(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
         ("inv", inverter(), vec![("a", "v"), ("y", "d")]),
-    ]));
+    ]))
+    .all_dirty();
     e.write("e", &LOW);
-    e.run().unwrap();
-    assert_eq!(e.value("d"), [0, 0], "zeroed: no value");
-    assert_eq!(e.value("v"), [0, 0]);
-    let unsettled: Vec<&Observation> =
-        e.obs.list().iter().filter(|o| matches!(o, Observation::Unsettled { net, .. } if net == "d")).collect();
-    assert_eq!(unsettled.len(), 1, "one observation naming d: {:?}", e.obs.list());
+    let error = e.run().expect_err("a loop that does not settle is E0511");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle"), "{error}");
 }
 
 #[test]
-fn a_moving_field_without_a_known_byte_fails() {
-    // C17: a counter field that always moves has nothing to fall back to
+fn a_counter_that_always_moves_is_e0511() {
+    // C17: a counter field that always moves has nothing to fall back to: the loop is `E0511`
     let mut e = Env::new(plan(vec![("s", succ(), vec![("a", "x"), ("y", "x")])])).all_dirty();
     match e.run() {
-        Err(DigitalError::Fault { message, instance, .. }) => {
-            assert!(message.contains("`x`"), "the net is named: {message}");
-            assert!(instance.contains("s"), "the cycle is named: {instance}");
-        }
-        other => panic!("expected a fault, got {other:?}"),
+        Err(DigitalError::Unsettled { code: "E0511", drives, .. }) => assert_eq!(drives, ["x"], "the loop's drive is named"),
+        other => panic!("expected E0511, got {other:?}"),
     }
 }
 
@@ -211,7 +206,8 @@ fn a_function_fault_carries_code_tick_and_instance() {
     let mut e = Env::new(plan(vec![
         ("front", inverter(), vec![("a", "x"), ("y", "m")]),
         ("f", faulty(), vec![("a", "m"), ("y", "out")]),
-    ]));
+    ]))
+    .all_dirty();
     e.write("x", &LOW); // m = high: a FAULT
     match e.run() {
         Err(DigitalError::Fault { code, message, tick, instance }) => {
@@ -223,7 +219,8 @@ fn a_function_fault_carries_code_tick_and_instance() {
     let mut e = Env::new(plan(vec![
         ("front", inverter(), vec![("a", "x"), ("y", "m")]),
         ("f", faulty(), vec![("a", "m"), ("y", "out")]),
-    ]));
+    ]))
+    .all_dirty();
     e.write("x", &HIGH); // m = low: a RESHAPE
     match e.run() {
         Err(DigitalError::Fault { tick, instance, message, .. }) => {
@@ -239,7 +236,7 @@ fn changed_is_zero_one_microstep_later() {
     // the flip-flop's edge function reads CHANGED and fires `rise`
     let mut e = Env::new(plan(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]));
     let rise = e.net("ff.rise");
-    e.write("clk", &LOW); // unknown to low is no edge
+    e.write("clk", &LOW); // zero to low is no change, so no edge
     e.run().unwrap();
     assert!(!e.store.fired(rise));
     e.next_microstep();

@@ -19,25 +19,16 @@ struct Row {
 const NODE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
 const ROWS: &[Row] = &[
-    Row { construct: "a while loop", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { while true { } } }", names: "`while` loop" },
-    Row { construct: "a loop", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { loop { } } }", names: "`loop`" },
-    Row { construct: "a for loop", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { for k in 0..3 { } } }", names: "`for` loop" },
-    Row { construct: "let mut", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let mut n = 0; } }", names: "`let mut` binding" },
-    Row { construct: "an assignment", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let n = 0; n = 1; } }", names: "assignment" },
-    Row { construct: "a struct", source: "struct S { a: f64 }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let s = S { a: 1.0 }; } }", names: "struct expression" },
-    Row { construct: "an array", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = [1.0, 2.0]; } }", names: "array expression" },
-    Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "array type" },
-    Row { construct: "an index", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = clk; let b = a[0]; } }", names: "index expression" },
-    Row { construct: "a closure that is not a limit function", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let f = |x: f64| x; } }", names: "closure" },
+    Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "an array of" },
     Row { construct: "a user trait and impl", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let y = 1.0.get(); } }", names: "method `get`" },
     Row { construct: "a generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: Electrical) { let g = G(a); }", names: "generic module" },
     Row { construct: "a generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = g(1.0); } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
-    Row { construct: "a bundle", source: "struct Bn { a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
-    Row { construct: "others()", source: "module Top(in c: Bit) { let x = c.others(); }", names: "method `others`" },
-    Row { construct: "settle", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`settle`" },
-    Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
-    Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
+    Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
+    // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
+    // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
+    Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
+    Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
     Row { construct: "delay", source: "module Top(p: Electrical) { }\nanalog for Top { let x = delay(v(p), 1.0); }", names: "`delay`" },
     Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
     Row { construct: "ddx", source: "module Top(p: Electrical) { }\nanalog for Top { let x = ddx(v(p), v(p)); }", names: "`ddx`" },

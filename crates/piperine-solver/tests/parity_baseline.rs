@@ -311,7 +311,7 @@ fn cmp_shape() -> ShapeRef {
         origin: ORIGIN,
         on: vec![start, up, down],
         reads: vec![pin(sense), pin(th)],
-        writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -462,13 +462,7 @@ impl Device for And2 {
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let (a, b) = (cx.bytes(0), cx.bytes(1));
-        let y = if a == LOW || b == LOW {
-            LOW
-        } else if a == HIGH && b == HIGH {
-            HIGH
-        } else {
-            [0, 0]
-        };
+        let y = if a == HIGH && b == HIGH { HIGH } else { LOW };
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())
     }

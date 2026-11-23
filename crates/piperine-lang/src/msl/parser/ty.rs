@@ -174,25 +174,31 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
         .ignore_then(ty.clone())
         .map_with(move |t, e| mk(TypeKind::Flip(Box::new(t)), e.span()));
 
-    let reference = punct(Punct::And)
-        .ignore_then(
-            just(Token::StaticLifetime).ignored().or_not().map(|l| l.is_some()),
-        )
-        .then(ty.clone())
-        .map_with(move |(static_lifetime, inner), e| {
-            mk(TypeKind::Ref { static_lifetime, inner: Box::new(inner) }, e.span())
-        });
+    // `&T`, `&&T`, `&mut T`: removed (B.3.6); reported at the head, read as the type it borrows.
+    let reference = reference_head().then(ty.clone()).validate(|(head, inner), _, emitter| {
+        emitter.emit(removed("references and borrows", head));
+        inner
+    });
 
-    let array_or_slice = ty
+    // `[T; N]`. `[T]` is no type (B.3.7): it is reported at the type and stands as an inferred one, so the
+    // form around it (`&[T]`) is still reported for itself.
+    let array = ty
         .clone()
         .then(punct(Punct::Semi).ignore_then(h.expr.clone()).or_not())
         .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
-        .map_with(move |(elem, len), e| {
-            let kind = match len {
-                Some(len) => TypeKind::Array { elem: Box::new(elem), len: Box::new(len) },
-                None => TypeKind::Slice(Box::new(elem)),
-            };
-            mk(kind, e.span())
+        .validate(move |(elem, len), e, emitter| match len {
+            Some(len) => mk(TypeKind::Array { elem: Box::new(elem), len: Box::new(len) }, e.span()),
+            None => {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    Custom {
+                        code: "E0900",
+                        message: "slice types are not part of the language".into(),
+                        help: Some("write an array type with its length, `[T; N]`: a function takes a table as `[T; N]` under `const N: usize`".into()),
+                    },
+                ));
+                mk(TypeKind::Infer, e.span())
+            }
         });
 
     // `fn(A, B) -> R`, taken only where a type is expected.
@@ -261,7 +267,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
         flip.boxed(),
         fn_ptr.boxed(),
         reference.boxed(),
-        array_or_slice.boxed(),
+        array.boxed(),
         tuple_or_paren.boxed(),
         infer.boxed(),
         impl_trait.boxed(),

@@ -126,7 +126,7 @@ fn a_trace_record_survives_a_rejected_step() {
 
     let recs = asm.drain_traces();
     let got: Vec<(String, String, u64, f64, u8)> =
-        recs.iter().map(|r| (r.instance.clone(), r.watch.clone(), r.iteration, f64_of(&r.bytes), r.bytes[8])).collect();
+        recs.iter().map(|r| (r.instance.clone(), r.watch.clone(), r.iteration, f64_of(&r.bytes[8..]), r.bytes[0])).collect();
     assert_eq!(
         got,
         vec![("top.tr".into(), "hi".into(), 0, 0.7, 1), ("top.tr".into(), "hi".into(), 1, 0.9, 1)],

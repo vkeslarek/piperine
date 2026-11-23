@@ -42,7 +42,7 @@ fn tw_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let x = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("x", role::PORT, &BIT) });
     let go = s.pin(PinSpec::event("go", role::PORT));
-    let st = Statement { pin: x, offset: 0, len: 2, flags: 0, min_after: 0.0 };
+    let st = Statement { pin: x, offset: 0, len: 1, flags: 0, min_after: 0.0 };
     s.reaction(ReactionSpec { name: "two", origin: ORIGIN, on: vec![go], writes: vec![st, st], ..ReactionSpec::default() });
     s.freeze()
 }

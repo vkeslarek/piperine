@@ -1,16 +1,8 @@
 name: IDE Extension CI
 
+# Manual only: the account's Actions minutes go to the docs build (docs.yml).
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'editors/vscode/**'
-      - '.github/workflows/ide.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'editors/vscode/**'
+  workflow_dispatch:
 
 permissions:
   contents: write

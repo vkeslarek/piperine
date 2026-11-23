@@ -25,7 +25,7 @@ fn inverter_circuit() -> CircuitInstance {
     b.build().expect("build")
 }
 
-/// The value and known bytes of the discrete net `name` of the plan.
+/// The value bytes of the discrete net `name` of the plan.
 fn read(circuit: &CircuitInstance, name: &str) -> Vec<u8> {
     let bound = circuit.bound().expect("bound");
     let at = bound.digital.plan().nets.iter().position(|n| n.name == name).expect("the net is in the plan");
@@ -34,23 +34,23 @@ fn read(circuit: &CircuitInstance, name: &str) -> Vec<u8> {
 
 #[test]
 fn write_net_before_a_run_is_an_initial_value() {
-    // HII-12 AC 1 and 5: a net the host never writes is unknown (known byte 0) after the
-    // operating point, and one written before the run holds the value (known byte 1) there, the
-    // inverter's output following it
+    // HII-12 AC 1 and 5: a net the host never writes holds its zero bytes after the operating
+    // point, and one written before the run holds the value there, the inverter's output
+    // following it
     let mut untouched = inverter_circuit();
     untouched.dc(Context::default()).expect("dc").solve().expect("op");
-    assert_eq!(read(&untouched, "y"), [0, 0], "unwritten input: unknown output");
+    assert_eq!(read(&untouched, "a"), [0], "unwritten input: its zero bytes");
 
     let mut circuit = inverter_circuit();
     circuit.write_net("a", ParamValue::Bool(true)).expect("write");
     circuit.dc(Context::default()).expect("dc").solve().expect("op");
-    assert_eq!(read(&circuit, "a"), [1, 1], "the written value, known");
-    assert_eq!(read(&circuit, "y"), [0, 1], "the inverter of a high input is low and known");
+    assert_eq!(read(&circuit, "a"), [1], "the written value");
+    assert_eq!(read(&circuit, "y"), [0], "the inverter of a high input is low");
 
     // a later write of the same net replaces the earlier one, and a name that is no net is refused
     circuit.write_net("a", ParamValue::Bool(false)).expect("rewrite");
     circuit.dc(Context::default()).expect("dc").solve().expect("op");
-    assert_eq!(read(&circuit, "y"), [1, 1]);
+    assert_eq!(read(&circuit, "y"), [1]);
     let refused = circuit.write_net("nothing", ParamValue::Bool(true)).expect_err("no such net");
     assert!(format!("{refused}").contains("nothing"), "{refused}");
 }

@@ -8,8 +8,11 @@
 #[path = "support/devices.rs"]
 #[allow(dead_code)]
 mod devices;
+#[path = "support/sources.rs"]
+mod sources;
 
 use devices::{Devices, Ex};
+use sources::SourceTree;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodySpec, Branch, BranchKind, ExprId, InstanceId, Ir, IrBuilder,
     NodeRole, Operator, Origin, QuantityRole, Stmt, Terminal,
@@ -250,12 +253,9 @@ fn printing_twice_is_byte_identical() {
 
 #[test]
 fn no_parser_of_the_text_exists() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    for entry in std::fs::read_dir(&dir).expect("read src") {
-        let path = entry.expect("dir entry").path();
-        let text = std::fs::read_to_string(&path).expect("read a source");
+    for (path, text) in SourceTree::files() {
         for needle in ["FromStr", "fn parse", "fn from_text", "fn from_str"] {
-            assert!(!text.contains(needle), "{} holds `{needle}`", path.display());
+            assert!(!text.contains(needle), "{path} holds `{needle}`");
         }
     }
 }

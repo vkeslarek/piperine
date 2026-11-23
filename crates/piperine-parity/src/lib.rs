@@ -12,5 +12,6 @@ pub mod host;
 pub mod ngspice;
 pub mod operating_point;
 pub mod project;
+pub mod scenario;
 pub mod scratch;
 pub mod waveform;

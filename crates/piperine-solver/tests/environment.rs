@@ -273,7 +273,7 @@ impl Device for FlagProbe {
         Ok(())
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        let read = [0, 1, 2, 3].map(|i| cx.bytes(i) == [1, 1]);
+        let read = [0, 1, 2, 3].map(|i| cx.bytes(i) == [1]);
         FLAGS.with(|f| f.borrow_mut().push(read));
         Ok(Flow::Continue)
     }
@@ -315,6 +315,7 @@ fn a_noise_operating_point_carries_the_noise_flag() {
         output_node: mid,
         reference_node: piperine_solver::prelude::NodeIdentifier::Gnd,
         input_source_name: None,
+        output_flow: None,
     };
     circuit.noise(options, Context::default()).expect("noise");
     assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, false, false, true]]);

@@ -241,6 +241,10 @@ impl CircuitInstance {
                 if let Some(slot) = bound.names.slots.get(&net) {
                     bound.analog.set_discrete(*slot, &bytes);
                 }
+                // The idle engine holds the value too, so the next write's `where` reads it.
+                if bound.digital.plan().nets[net.0 as usize].param {
+                    bound.digital.seed_param(net, &bytes);
+                }
                 bound.host_writes.push((net, bytes));
             }
             Shadow::Accept | Shadow::Reshape { .. } => {}
@@ -276,11 +280,19 @@ impl CircuitInstance {
         }
     }
 
+    /// Whether the host has written the discrete net `net` (its name in the digital plan) before
+    /// the run, so that the write is the net's initial value; `false` for a name that is no net.
+    pub fn net_written(&self, net: &str) -> bool {
+        let Some(bound) = self.abi.as_ref() else { return false };
+        let Some(at) = bound.digital.plan().nets.iter().position(|n| n.name == net) else { return false };
+        bound.host_writes.iter().any(|(id, _)| id.0 as usize == at)
+    }
+
     /// Writes `value` to the discrete net `net` (its name in the digital plan) between analyses
     /// (abi.md §10 "Host actions"): the net's shadow checks it first, a refusal or a `RESHAPE`
     /// changes nothing, and an accepted write is one of the host's initial writes of every later
     /// analysis, which the analog copy reads at once. The value is encoded in the net's layout,
-    /// its known byte set.
+    /// its value bytes only.
     pub fn write_net(&mut self, net: &str, value: crate::core::bind::ParamValue) -> crate::core::result::Result<()> {
         use piperine_digital_solver::engine::Shadow;
         let bound = self.abi.as_mut().ok_or_else(|| {

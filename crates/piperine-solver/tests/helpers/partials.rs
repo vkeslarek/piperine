@@ -11,20 +11,12 @@ use piperine_abi::device::{Access, cell_lens};
 use piperine_abi::raw::Module;
 use piperine_abi::verify::{Verdict, verify_partials};
 
-/// One read cell's bytes at a point: an `F64` (8 bytes) is `real`; a byte is
-/// 1 (a `CHANGED`, a flag, an age); a `BIT` is `bit`; a 16-byte cell is a
-/// `REAL` (`real`, known); any other layout is zero bytes.
-fn read_bytes(len: usize, real: f64, bit: [u8; 2]) -> Vec<u8> {
+/// One read cell's bytes at a point: an `F64` (8 bytes) is `real`; a byte (a `BIT`, a `CHANGED`,
+/// a flag, an age) is `bit`; any other layout is zero bytes.
+fn read_bytes(len: usize, real: f64, bit: u8) -> Vec<u8> {
     match len {
         8 => real.to_le_bytes().to_vec(),
-        1 => vec![1],
-        2 => bit.to_vec(),
-        16 => {
-            let mut b = vec![0u8; 16];
-            b[..8].copy_from_slice(&real.to_le_bytes());
-            b[8] = 1;
-            b
-        }
+        1 => vec![bit],
         n => vec![0u8; n],
     }
 }
@@ -32,8 +24,8 @@ fn read_bytes(len: usize, real: f64, bit: [u8; 2]) -> Vec<u8> {
 /// Two points with positive, moderate, distinct reals (a param read as a
 /// divisor or under a logarithm stays meaningful) and both `BIT` values.
 fn points(lens: &[usize]) -> [Vec<Vec<u8>>; 2] {
-    let a = lens.iter().enumerate().map(|(j, len)| read_bytes(*len, 0.3 + 0.13 * j as f64, [1, 1])).collect();
-    let b = lens.iter().enumerate().map(|(j, len)| read_bytes(*len, 0.05 + 0.07 * j as f64, [0, 1])).collect();
+    let a = lens.iter().enumerate().map(|(j, len)| read_bytes(*len, 0.3 + 0.13 * j as f64, 1)).collect();
+    let b = lens.iter().enumerate().map(|(j, len)| read_bytes(*len, 0.05 + 0.07 * j as f64, 0)).collect();
     [a, b]
 }
 
@@ -83,7 +75,7 @@ fn verify(name: &str, module: &'static Module, fixed: &[(u32, usize, f64)], fixt
         let mut exact = false;
         for (i, mut point) in points(&lens).into_iter().enumerate() {
             for (_, read, value) in fixed.iter().filter(|(f, _, _)| *f == k) {
-                point[*read] = read_bytes(lens[*read], *value, [1, 1]);
+                point[*read] = read_bytes(lens[*read], *value, 1);
             }
             let verdict = verify_partials(&handle, k, &point, 1.0e-6);
             match (fixture, verdict) {

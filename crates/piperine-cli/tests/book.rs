@@ -260,15 +260,16 @@ fn selection(block: &Block) -> Result<(), String> {
     Ok(())
 }
 
-/// Every listing of the whole Book, any chapter and any project, run once per test binary
-/// and shared by the tests that read it (the buck alone takes minutes).
+/// Every listing of the whole Book, any chapter and any project but `buck`, run once per test binary
+/// and shared by the tests that read it. The buck's listing runs the 600 us start (minutes) and is
+/// held on demand by `book_buck` (MD-77).
 fn checked() -> &'static [Checked] {
     static CHECKED: OnceLock<Vec<Checked>> = OnceLock::new();
     CHECKED.get_or_init(|| {
         let html = content();
         let all = blocks(&html);
         all.iter()
-            .filter(|b| b.attr("data-cli-output").is_some())
+            .filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-project") != Some("buck"))
             .map(|block| Checked {
                 at: block.at,
                 project: block.attr("data-cli-project").map(str::to_string),
@@ -386,25 +387,36 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
     }
 }
 
+/// `data-cli-lines` is checked on every listing of the Book, the buck's included: its run is on demand
+/// (`book_buck`), its selection is not, so the range stays held by default.
+#[test]
+fn every_listing_selects_lines_inside_its_block() {
+    let html = content();
+    let selecting: Vec<Block> = blocks(&html).into_iter().filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-lines").is_some()).collect();
+    assert!(selecting.iter().any(|b| b.attr("data-cli-project") == Some("buck")), "the buck listing selects lines of its block");
+    let failures: Vec<String> = selecting.iter().filter_map(|b| selection(b).err().map(|why| format!("`{}`: {why}", b.attr("data-cli-output").unwrap_or("")))).collect();
+    assert!(failures.is_empty(), "listings with a bad `data-cli-lines`:\n{}", failures.join("\n"));
+}
+
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
-    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, from-rust~4938c15f, values~2931bd2e, values~9a0ece05, cli~54e71d59
+    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, language~b8b3f31f, types~a1ff299b, values~4938c15f, solver~1cdf59b8, values~4f830aa0, values~9a0ece05, cli~54e71d59
     // verification F6: every listing of the whole Book that claims to be the binary's output, in
     // every chapter and of any project, is the binary's whole output; `data-cli-lines` only
     // selects the lines the page shows, so a line it leaves out is held all the same
     let all: Vec<&Checked> = checked().iter().collect();
     let commands = hold(&all);
-    assert!(commands.len() >= 29, "the Book shows {} listings: {commands:?}", commands.len());
+    // the Book shows 56 listings of the binary; the buck's moved to `book_buck` (MD-77), so exactly 55 are held here
+    assert_eq!(commands.len(), 55, "the Book shows {} listings: {commands:?}", commands.len());
     let html = content();
     let (from, to) = span_of(&html, "cli");
     assert!(all.iter().any(|c| c.at >= from && c.at < to) && all.iter().any(|c| c.at < from), "listings of chapter `cli` and of the other chapters are held");
 }
 
 #[test]
-fn the_buck_block_is_what_the_binary_prints() {
-    // Book claims held here: cli~9c4b6fcf
-    // CLI-19 AC 4: the buck's bench and its `startup` table equal to the files, and the standard
-    // output of `piperine run startup` in `examples/buck` equal to what the binary prints
+fn the_buck_block_shows_the_example_files() {
+    // CLI-19 AC 4: the buck's bench and its `startup` table equal to the files, and the command in a
+    // shell block; what the binary prints for it is held on demand by `book_buck`
     let html = content();
     let cli = chapter(&html, "cli");
     assert!(holds(&cli, "msl", &example("buck/benches/startup.msl")), "the chapter shows examples/buck/benches/startup.msl as it is");
@@ -412,9 +424,6 @@ fn the_buck_block_is_what_the_binary_prints() {
     let table = blocks(&cli).into_iter().find(|b| b.lang == "toml" && b.text.contains("[run.startup]")).expect("the chapter shows the run table `startup`");
     assert!(manifest.ends_with(&table.text), "the `startup` table is the end of examples/buck/Piperine.toml, as it is:\n{}", table.text);
     assert!(holds(&cli, "sh", "piperine run startup"), "the chapter gives the command in a shell block");
-    let (from, to) = span_of(&html, "cli");
-    let commands = hold(&listings_of(from, to, "buck"));
-    assert_eq!(commands, ["piperine run startup"]);
 }
 
 #[test]
@@ -527,19 +536,22 @@ fn the_cycle_counter_prints_three_pulses() {
 }
 
 #[test]
-fn the_clipper_refusal_no_longer_names_sin() {
-    // CAT-05 AC 3: the clipper's refusal names `settle` and `limexp`, not `sin` or `bound_step`,
-    // and the page's prose around it does not wait for them either.
+fn the_clipper_runs_as_the_book_prints() {
+    // UE-06 AC 3, UE-07 AC 2: the clipper's listing is the binary's output (`every_cli_listing_of_the_book_is_what_the_binary_prints`
+    // holds the bytes): two `clip` records, one per period, each `vin` near 0.72, and the page's
+    // prose around it no longer waits for `settle` or `limexp`.
     let out = run_listing("piperine run clipper.msl");
-    assert!(out.contains("`settle`") && out.contains("limexp"), "{out}");
-    for gone in ["`sin`", "method sin", "bound_step"] {
-        assert!(!out.contains(gone), "the refusal still names {gone}: {out}");
+    let clips: Vec<&str> = out.lines().filter(|l| l.contains(" clip t=")).collect();
+    assert_eq!(clips.len(), 2, "one clip record per period: {out}");
+    for clip in clips {
+        let vin: f64 = clip.split_whitespace().find_map(|w| w.strip_prefix("vin=")).and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("vin in `{clip}`"));
+        assert!((vin - 0.72).abs() < 0.05, "vin within 50 mV of 0.72 V: {clip}");
     }
     let html = content();
     let at = html.find("piperine run clipper.msl").expect("the clipper's command");
     let callout = &html[at..at + html[at..].find("</div>").expect("the callout closes")];
     let prose = plain(callout);
-    for gone in ["once `sin`", "`bound_step` is compiled", "sin is compiled", "bound_step is compiled"] {
+    for gone in ["are compiled", "does not take", "runs nothing", "those three diagnostics"] {
         assert!(!prose.contains(gone), "the clipper's prose still says {gone:?}");
     }
 }
@@ -557,14 +569,20 @@ fn the_chapter_shows_the_session_options() {
         ("vntol", "--vntol"),
         ("trtol", "--trtol"),
         ("temp", "--temp"),
+        ("tnom", "--tnom"),
         ("resolution", "--resolution"),
         ("maxrounds", "--maxrounds"),
         ("maxmicro", "--maxmicro"),
         ("max_steps", "--max-steps"),
         ("nodeset", "--nodeset"),
+        ("simparam", "--simparam"),
     ] {
         assert!(has(key), "the chapter names the option `{key}`");
         assert!(has(flag), "the chapter names the flag `{flag}`");
+    }
+    // the key table gives the noise analysis its keys: the sweep ends, the grid, `output` and `input`
+    for read_by_noise in ["<code>dc</code>, <code>ac</code>, <code>noise</code></td><td>The ends of the sweep", "<code>--per-decade</code></td><td><code>ac</code>, <code>noise</code>", "<code>--points</code></td><td><code>ac</code>, <code>noise</code>", "<code>tf</code>, <code>pz</code>, <code>noise</code></td><td>The voltage source that excites"] {
+        assert!(html.contains(read_by_noise), "the key table says `noise` reads the key of {read_by_noise}");
     }
     let out = run_listing("piperine run lowpass.msl --analysis op --reltol");
     let row = out.lines().find(|l| l.starts_with("Lowpass.vout")).unwrap_or_else(|| panic!("the vout row in\n{out}"));
@@ -609,11 +627,11 @@ fn the_chapter_runs_each_new_analysis() {
 
 #[test]
 fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one() {
-    // Book chapter 16 (root-e2e, cli~1369f2e0): "Every printed real signal is a curve on one shared axis, with a
+    // Book chapter 15 (root-e2e, cli~1369f2e0): "Every printed real signal is a curve on one shared axis, with a
     // legend; every digital signal is a step trace in a lane of its own below": a node that follows a bit
     // gives one curve, one lane and a legend naming both
     let dir = tempfile::tempdir().expect("tmp");
-    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
+    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
     write(dir.path(), "plot.msl", design);
     let out = Command::new(binary())
         .args(["run", "plot.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "n", "--print", "d", "--plot", "out.svg"])
@@ -640,4 +658,15 @@ fn blinky_runs_to_its_stop_in_the_book() {
     let cells: Vec<&str> = last.split_whitespace().collect();
     assert_eq!(cells.first(), Some(&"3.000000e-6"), "the table ends at the stop: {last}");
     assert_eq!(cells.last(), Some(&"3"), "the counter has counted three edges: {last}");
+}
+
+#[test]
+fn no_book_listing_prints_p0002() {
+    // PI-06 (X5): a type mismatch carries the code its spec row names (`E0180`), so the plain
+    // `P0002` is no code of the tool: no block and no code span of the Book prints it.
+    let html = content();
+    let printing: Vec<usize> = blocks(&html).iter().filter(|block| block.text.contains("P0002")).map(|block| block.at).collect();
+    assert!(printing.is_empty(), "blocks of the Book print P0002 at {printing:?}");
+    let spans: Vec<String> = code_spans(&html).into_iter().filter(|span| span.contains("P0002")).collect();
+    assert!(spans.is_empty(), "code spans of the Book name P0002: {spans:?}");
 }

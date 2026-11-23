@@ -1,0 +1,41 @@
+//! `threshold`: a 100 kHz square through `D2A` and 900 ohms into 1 nF (tau = 1 us), watched by an `A2D`
+//! comparator at 0.5 V with 0.1 V of hysteresis, whose edges a counter counts and emits.
+
+use crate::{Capacitor, Clock, Resistor, Vdc};
+
+/// Counts the rising and the falling edges of `cmp`, one `edges` record per edge: whether it was a rise
+/// and the count of that kind so far. An edge is a transition: the comparator starts at false, so its
+/// first commit at time 0 is no fall.
+pub module EdgeCounter(in cmp: Bit, out rises: Bit<u8> = 0, out falls: Bit<u8> = 0) {}
+
+digital for EdgeCounter {
+    on cmp.rise() {
+        let n = rises + 1;
+        rises <- n;
+        emit!("edges", rising = true, n = n);
+    }
+    on cmp.fall() {
+        let n = falls + 1;
+        falls <- n;
+        emit!("edges", rising = false, n = n);
+    }
+}
+
+/// The comparator counter: the clock drives the capacitor through `D2A` and a resistor, the `A2D`
+/// trips at 0.55 V going up and at 0.45 V going down.
+pub module Threshold() {
+    signal clk: Bit;
+    signal cmp: Bit;
+    signal rail: Electrical;
+    signal drive: Electrical;
+    signal cap: Electrical;
+    signal rises: Bit<u8>;
+    signal falls: Bit<u8>;
+    pub let source = Vdc(rail) { dc: 1.0 };
+    pub let osc = Clock(clk) { f: 100k };
+    pub let driver = D2A(clk, drive, rail) { rout: 100.0, tr: 20p };
+    pub let series = Resistor(drive, cap) { r: 900.0 };
+    pub let hold = Capacitor(cap, gnd) { c: 1n };
+    pub let comparator = A2D(cap, cmp) { vth: 0.5, hyst: 0.1 };
+    pub let counter = EdgeCounter(cmp, rises, falls);
+}

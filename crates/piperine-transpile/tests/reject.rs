@@ -57,21 +57,20 @@ fn at(line: u32, col: u32) -> Origin {
 /// ```text
 /// module Sampled(a: Electrical, in en: Bit) {}            // sampled.msl:1
 /// analog for Sampled {
-///     let x = <the site, over en.high()>;                // sampled.msl:3
+///     let x = <the site, over en>;                // sampled.msl:3
 ///     i(a) +> x;                                          // sampled.msl:4
 /// }
 /// ```
 ///
-/// `site` builds the `limit` or `ac_stim` expression from `en.high()` read as a real (the
+/// `site` builds the `limit` or `ac_stim` expression from `en` read as a real (the
 /// analog read of a carrier §3.3.5 allows), with `limits`/`stims` naming its site.
 fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut IrBuilder, piperine_ir::ExprId) -> piperine_ir::ExprId) -> BodyId {
     let el = Buck::electrical(b);
     let mut x = Dx::new(b, F, 3, 20);
     let en = x.carrier(0, ValueType::Bool);
-    let high = x.high(en);
     let one = x.real(1.0);
     let zero = x.real(0.0);
-    let level = x.if_(high, one, zero, ValueType::F64);
+    let level = x.if_(en, one, zero, ValueType::F64);
     let init = site(b, level);
     let let_x = b.stmt(Stmt::Let { local: 0, init });
     let value = b.expr(Expr::Local(0), ValueType::F64, at(4, 13));
@@ -86,9 +85,9 @@ fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut
         limits,
         stims,
         locals: vec![
-            Local { name: "x".into(), ty: ValueType::F64 },
-            Local { name: "new".into(), ty: ValueType::F64 },
-            Local { name: "old".into(), ty: ValueType::F64 },
+            Local { name: "x".into(), ty: ValueType::F64, mutable: false },
+            Local { name: "new".into(), ty: ValueType::F64, mutable: false },
+            Local { name: "old".into(), ty: ValueType::F64, mutable: false },
         ],
         analog: Some(vec![let_x, contribute]),
         ..Buck::spec("Sampled", F, 1)
@@ -100,7 +99,7 @@ fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut
 #[test]
 fn a_limit_or_stim_function_reading_a_carrier_lowers() {
     // analog-structure T21 (AS-06 AC 2, AC 5) lifted the refusal this test asserted (verification
-    // F-B6): a `limit` or `ac_stim` function that reads a carrier (`en.high()` read as a real, the
+    // F-B6): a `limit` or `ac_stim` function that reads a carrier (`en` read as a real, the
     // analog read §3.3.5 allows) is an ordinary read of the site's function, decoded as a `terms`
     // function decodes it (abi.md F2: an analog function may read discrete pins). The source is
     // generated and the function names the carrier.

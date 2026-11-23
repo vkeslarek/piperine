@@ -117,7 +117,7 @@ fn flip_flop() -> Specs {
             origin: "dff.msl:3:5",
             on: vec![3],
             reads: vec![pin_cell(1, part::VALUE)],
-            writes: vec![Statement { pin: 2, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: 2, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         }],
         ..Specs::default()
@@ -254,7 +254,7 @@ fn a_zeroed_shape_entry_is_an_unknown_constant() {
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "function i"));
 
     let mut specs = flip_flop();
-    specs.reactions[0].writes[0] = Statement { pin: 2, offset: 0, len: 2, flags: 0x80, min_after: 0.0 };
+    specs.reactions[0].writes[0] = Statement { pin: 2, offset: 0, len: 1, flags: 0x80, min_after: 0.0 };
     let err = validate(specs.build().shape()).expect_err("an unknown statement flag");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "reaction sample"));
 }

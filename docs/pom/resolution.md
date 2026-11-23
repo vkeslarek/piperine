@@ -21,7 +21,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
 | 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
 | 7. Members | `e.name` and `e.m()` through declared types | `ExprKind::Field::res`, `MethodCall::res`, `E0343` |
-| 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields | `E0370`, `E0125`, `E0201` |
+| 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields, bundle fields | `E0370`, `E0125`, `E0201`, `E0260`, `E0261`, `E0262`, `E0264` |
 | 9. Index | `references`, `writers`, `instantiated_by` | the [`Index`](model.md#index) |
 
 Diagnostics are sorted by file, then span start, then code after the last stage, so their order
@@ -155,7 +155,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Node` | `gnd` (§6) |
 | `ImplicitParam` | `m` (§8.5), `dtemp` (§8.5): in scope only inside a module body and the blocks bound to a module; `builtin_implicit(name)` finds one |
 | `Member` | `Repr::WIDTH`, `Repr::encode`, `Repr::decode` (§2): reached through a generic bounded by `Repr` (`builtin_member("Repr", name)`), never as a name |
-| `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `level` (§14.12), `inflow` (§14.1) |
+| `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `inflow` (§14.1) |
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
 `f64`, `f128`). The six constants of §1 (`Q`, `K_B`, `EPS0`, `PI`, `E`, `inf`) are not rows: they are items of `std::constants`, found through the prelude like any library item. Standard-library modules such as `idt`, `transition` and `above` are *not*
@@ -252,7 +252,7 @@ slot only.
 | --- | --- | --- |
 | an instance of a known module | the module's item of that name: a port, param, signal or `let` | |
 | a value of a declared struct or bundle type (a port, signal or `let` with that annotated type) | the field | |
-| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`, `level`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type, then a blanket `impl<T: Repr> Tr for T` (or `impl<T> Tr for T`) of a trait that has the method and is in scope at the call |
+| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type, then a blanket `impl<T: Repr> Tr for T` (or `impl<T> Tr for T`) of a trait that has the method and is in scope at the call |
 | `self` in an `impl` | | a value of the impl's self type, then as above |
 | anything else | `Deferred` | `Deferred` |
 
@@ -263,7 +263,7 @@ slot only.
   The call is listed in that method's `references()`. A value receiver stays `Deferred(ReceiverTypeUnknown)`:
   the POM does no trait solving, so a type checker links it.
 * A member item that is not `pub` still resolves, and `E0343` is reported at the member name. A
-  member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8).
+  member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8). A non-`pub` node that is the operand of a probe or a contribution is `E0244` instead (§6 rule 7).
 * A field a declared struct does not have stays `Unresolved` with no diagnostic: the POM has no
   code for it (only the eight binding codes), and a type checker reports it.
 * A method a known receiver does not have stays `Unresolved`, with no diagnostic.
@@ -324,14 +324,21 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one; an `extern "intrinsic"` function in a crate other than `std` (the help reads `only the standard library declares intrinsic functions`). `Function::is_intrinsic` is true exactly for the ABI `intrinsic`; an `extern "intrinsic" fn` of `std` is reported nothing and a call to it is an ordinary `CallClass::Function` | the function's name |
 | `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
-| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
+| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
 | `E0162` | 2, 3, 5 | `§3.4` | a name declared twice in one table of a namespace or of a block (§3.4.10); an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
 | `E0163` | 3, 5 | `§3.5` | the first segment of a `use` path (also in a block) names both a dependency of the crate and an item or an import of the enclosing namespace (a type-namespace one: a `fn` or `const` of that name is no clash); the path stays `Unresolved`, no `E0161`; the name the `use` binds is an errored binding, so a later read of it reports nothing more; the help names `package = ".."` in the manifest and `crate::<name>` | the `use` path |
 | `E0171` | 0 | `§3.6` | the file stem of a single root file is a keyword or `std`, so it cannot name the root crate; the crate is named with a `_` appended | the start of the root file |
+| `E0186` | 6 | `§1.3` | a field that a struct literal or a struct pattern names and the struct or variant does not have | the name |
 | `E0201` | 8 | `§4` | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
 | `E0206` | 6 | `§4` | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
 | `E0211` | 7 | `§5.1` | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |
+| `E0244` | 7 | `§6` | a node of an instance that is not `pub`, named as the operand of a probe or a contribution (`v(c.x)`, `i(c.x) +> ..`): the module cannot reach it (§6 rule 7); the member is still resolved | the member name |
+| `E0413` | 6 | `§11` | an access call that is the target of a contribution (`i(o) +> x`), whose first argument has a declared nature without a `flow` and whose access name is that of a flow quantity of another nature (rule 11): a flow contribution to a node with no flow, where the same call read is `E0206`; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
+| `E0260` | 8 | `§7` | a `struct` that is a bundle (it has a carrier field, directly or through a bundle field) and has a field of a value type (§7 rule 1); the message names that field and a carrier field | the value field's name |
+| `E0261` | 8 | `§7` | a field of a bundle whose nature is one-driver (a discrete nature without `resolve`) and has no `in` or `out`, or whose nature is any other (`Wire`, `Electrical`, a signal-flow nature) and has a direction (§7 rule 2); a field of a generic nature is not judged | the field's name |
+| `E0262` | 8 | `§7` | `flip` on a type that is no bundle (§7 rule 6); `out` on a bundle port (§7 rule 6); `in` or `out` on a field whose type is a bundle (§7 rule 5); a generic or unresolved type is not judged | the field, the port or the `flip` type |
 | `E0263` | 6 | `§7` | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
+| `E0264` | 8 | `§7` | a bundle at a declaration that makes it a value: a param type, a type argument of a nature (`Bit<Stream>`), a function result (§7 rule 9), or a bundle signal or port with an initial value (§7 rule 10); the operand and literal positions are the checker's | the param, the type or the initial value |
 | `E0320` | 6 | `§8.1` | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
 | `E0330` | 2 | `§8.2` | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
 | `E0343` | 7 | `§8.2` | a member of an instance that is missing or not `pub`, named from outside its module (§8.4.8) | the member name |

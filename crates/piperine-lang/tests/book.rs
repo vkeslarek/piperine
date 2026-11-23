@@ -56,7 +56,7 @@ fn the_book_source_is_in_docs_book() {
         assert!(book_dir().join(file).is_file(), "docs/book/{file} exists");
     }
     let ids = chapter_ids(&content());
-    for id in ["welcome", "from-rust", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "errors", "pom", "cheatsheet"] {
+    for id in ["welcome", "language", "types", "generics", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "errors", "pom", "cheatsheet"] {
         assert!(ids.iter().any(|c| c == id), "the Book keeps its chapter `{id}`: {ids:?}");
     }
 }
@@ -204,12 +204,22 @@ fn the_chapter_has_a_part_per_namespace() {
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
 
+/// Prelude exports the Book no longer names because the explicit model removed them (`Wire`, `Tri`, `tri`, `SumNet`) while `std` still declares them; owned by explicit-unknowns T23.
+const STD_BEHIND_THE_BOOK: [&str; 4] = ["tri", "Tri", "SumNet", "Wire"];
+
 #[test]
 fn the_chapter_names_every_prelude_export() {
     let exports = prelude_exports(&embedded());
     assert!(exports.len() >= 80, "the prelude exports {} names", exports.len());
-    let absent = missing(&chapter(&content(), "core-std"), &exports);
+    let html = chapter(&content(), "core-std");
+    let absent: Vec<String> = missing(&html, &exports).into_iter().filter(|name| !STD_BEHIND_THE_BOOK.contains(&name.as_str())).collect();
     assert!(absent.is_empty(), "the chapter does not name these prelude exports: {absent:?}");
+    // the exceptions are honest: each is still exported and still unnamed (explicit-unknowns removed it from
+    // the Book ahead of the files; its task T23 deletes it from `std` and empties the list)
+    for name in STD_BEHIND_THE_BOOK {
+        assert!(exports.iter().any(|e| e == name), "{name} is no longer exported: drop it from STD_BEHIND_THE_BOOK");
+        assert!(missing(&html, &[name.to_string()]).len() == 1, "the chapter names {name} again: drop it from STD_BEHIND_THE_BOOK");
+    }
 }
 
 #[test]
@@ -230,6 +240,10 @@ fn the_chapter_explains_the_prelude_and_the_engine_items() {
     assert!(code_spans(part.split("<h3>").next().unwrap()).iter().any(|s| s == "std::prelude"), "the part on the engine names `std::prelude`");
 }
 
+/// Markers of chapter blocks that use library names the standard library does not hold yet (core-std#6, owned by
+/// `resolved-nets` B3 and later, tasks T27 to T32 of the roadmap).
+const BLOCKS_AHEAD_OF_STD: [&str; 1] = ["pub nature IrqLine"];
+
 #[test]
 fn chapter_blocks_build_against_std() {
     let html = chapter(&content(), "core-std");
@@ -238,6 +252,12 @@ fn chapter_blocks_build_against_std() {
     for text in msl {
         let design = Design::builder().source("top.msl", &text).build();
         let found: Vec<String> = design.diagnostics().iter().map(|d| format!("{}: {}", d.diagnostic.code, d.diagnostic.message)).collect();
+        // a block that needs `Driven` and `Resolve` (core-std#6) is registered in GAPS.md section 11 as
+        // refused until the feature `resolved-nets` adds them: it must still fail with E0161 on exactly those names
+        if BLOCKS_AHEAD_OF_STD.iter().any(|marker| text.contains(marker)) {
+            assert!(!found.is_empty() && found.iter().all(|f| f.starts_with("E0161")), "a block ahead of std now builds or fails otherwise: drop it from BLOCKS_AHEAD_OF_STD: {found:?}");
+            continue;
+        }
         assert!(found.is_empty(), "a chapter block does not build against std: {found:?}\n{text}");
     }
 }
@@ -287,7 +307,7 @@ fn the_book_says_transient() {
         assert!(!text.contains("analysis(Tran)"), "block {n} ({lang}) writes `analysis(Tran)`: the analysis kind is `Transient`");
     }
     assert!(!html.contains("analysis(Tran)"), "no span or paragraph writes `analysis(Tran)` either");
-    // The list of analysis kinds in chapter 6 names the kind, not the pass-gate module.
+    // The list of analysis kinds in chapter 8 names the kind, not the pass-gate module.
     assert!(!html.contains("<code>Dc</code>, <code>Tran</code>"), "the analysis kinds are Dc, Transient, Ac and Noise");
     assert!(html.contains("<code>Dc</code>, <code>Transient</code>"), "the analysis kinds name `Transient`");
 }
@@ -295,15 +315,16 @@ fn the_book_says_transient() {
 // ---- the chapter "The command line" (feature `msl-cli`, CLI-19 AC 1 and 13) -------------------------
 
 #[test]
-fn the_cli_chapter_sits_between_compiler_and_cheatsheet() {
-    // CLI-19 AC 1: the chapter `cli`, titled `The command line`, after `compiler` and before
-    // `cheatsheet`; between it and the cheat sheet stands `structure` (the Book's order, settled
-    // mid-build: the command line 16, how Piperine is organized 17, the cheat sheet 18); the
-    // chapter numbers are consecutive from 1
+fn the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet() {
+    // CLI-19 AC 1: the chapter `cli`, titled `The command line`, belongs to Part 1 of the Book, after
+    // `errors` and before `cheatsheet`, which closes the part; Part 2 follows with `pom`, `abi`, `solver`,
+    // `compiler` and `structure` (the Book's order: reading errors 14, the command line 15, the cheat
+    // sheet 16, then the object model 17 to how Piperine is organized 21); the chapter numbers are
+    // consecutive from 1
     let html = content();
     let ids = chapter_ids(&html);
-    let tail: Vec<&str> = ids.iter().rev().take(4).rev().map(String::as_str).collect();
-    assert_eq!(tail, ["compiler", "cli", "structure", "cheatsheet"], "{ids:?}");
+    let tail: Vec<&str> = ids.iter().rev().take(8).rev().map(String::as_str).collect();
+    assert_eq!(tail, ["errors", "cli", "cheatsheet", "pom", "abi", "solver", "compiler", "structure"], "{ids:?}");
     assert!(chapter(&html, "cli").contains("<h2>The command line</h2>"), "the title");
     let numbers: Vec<usize> = html
         .split("<p class=\"ch-num\">Chapter ")
@@ -311,7 +332,61 @@ fn the_cli_chapter_sits_between_compiler_and_cheatsheet() {
         .map(|s| s.split_once('<').expect("the label closes").0.parse().expect("a chapter number"))
         .collect();
     assert_eq!(numbers, (1..=ids.len()).collect::<Vec<_>>(), "chapter numbers are consecutive from 1");
-    assert_eq!(ids.len(), 18, "{ids:?}");
+    assert_eq!(ids.len(), 21, "{ids:?}");
+}
+
+#[test]
+fn the_book_has_two_parts_and_the_second_starts_at_the_object_model() {
+    // The Book is two parts, each opened by a `<div class="part">` that names it: Part 1, Fundamentals,
+    // before the first chapter, and Part 2, In depth, right before `pom`; `simulation` follows `mixed`
+    // in Part 1, and the value language takes the chapters `language`, `types` and `generics`, the second to
+    // the fourth, before `values` shows where a value meets hardware
+    let html = content();
+    let parts: Vec<(&str, &str)> = html
+        .split("<div class=\"part\" id=\"")
+        .skip(1)
+        .map(|s| {
+            let number = s.split_once("data-part=\"").and_then(|(_, rest)| rest.split_once('"')).expect("a part has a number").0;
+            let title = s.split_once("data-title=\"").and_then(|(_, rest)| rest.split_once('"')).expect("a part has a title").0;
+            (number, title)
+        })
+        .collect();
+    assert_eq!(parts, [("1", "Fundamentals"), ("2", "In depth")]);
+    let first = html.find("<div class=\"part\" id=\"part-fundamentals\"").expect("Part 1");
+    let second = html.find("<div class=\"part\" id=\"part-in-depth\"").expect("Part 2");
+    let at = |id: &str| html.find(&format!("<section id=\"{id}\" class=\"chapter\">")).unwrap_or_else(|| panic!("a chapter `{id}`"));
+    assert!(first < at("welcome"), "Part 1 opens the Book");
+    assert!(at("cheatsheet") < second && second < at("pom"), "Part 2 opens right before the object model");
+    let ids = chapter_ids(&html);
+    assert_eq!(&ids[..5], ["welcome", "language", "types", "generics", "values"], "{ids:?}");
+    let mixed = ids.iter().position(|c| c == "mixed").expect("a chapter `mixed`");
+    assert_eq!(ids.get(mixed + 1).map(String::as_str), Some("simulation"), "{ids:?}");
+    assert!(ids.iter().position(|c| c == "pom").expect("a chapter `pom`") == 16, "the object model is chapter 17: {ids:?}");
+}
+
+#[test]
+fn the_book_teaches_the_language_on_its_own_terms() {
+    // No sentence of the Book sends the reader to another language to learn this one: the prose (code
+    // blocks apart, where `backend rust` is what the binary prints) never names Rust except as what it is
+    // here, the compiled backend, the generated source, `rustc` and the host library
+    let html = content();
+    let mut prose = String::new();
+    let mut rest = html.as_str();
+    while let Some(open) = rest.find("<pre") {
+        prose.push_str(&rest[..open]);
+        rest = rest[open..].split_once("</pre>").map_or("", |(_, after)| after);
+    }
+    prose.push_str(rest);
+    let text = plain(&prose);
+    for deferral in ["like Rust", "as in Rust", "is Rust", "are Rust", "know Rust", "Rust's", "Rust has", "Rust and Cargo", "follow Rust", "to Rust's", "Rust habits", "Rust programmer", "Rust eyes", "Rust local", "Rust variable", "Rust method", "Rust-like", "Rust 2018"] {
+        assert!(!text.contains(deferral), "the Book defers to Rust: `{deferral}`");
+    }
+    let allowed = ["Rust backend", "generated Rust", "compiled Rust", "as Rust", "Rust source", "Rust compiler", "Rust crates", "Rust program", "Rust library", "Rust side", "in Rust", "In Rust", "to Rust", "from Rust", "into Rust", "Generated Rust"];
+    let words: Vec<&str> = text.split(' ').collect();
+    for (at, _) in words.iter().enumerate().filter(|(_, word)| word.contains("Rust")) {
+        let around = words[at.saturating_sub(1)..(at + 2).min(words.len())].join(" ");
+        assert!(allowed.iter().any(|phrase| around.contains(phrase)), "an unexpected mention of Rust: `{around}`");
+    }
 }
 
 #[test]
@@ -349,7 +424,7 @@ fn the_compiler_chapter_says_the_command_line_exists() {
     let next = html.split("<h3>What comes next</h3>").nth(1).expect("a part `What comes next`");
     let text = plain(next.split("<h3>").next().unwrap_or(next));
     assert!(!text.to_lowercase().contains("command line"), "what comes next still mentions the command line: {text}");
-    assert!(text.contains("Chapter 16"), "what comes next points at the chapter that runs a design: {text}");
+    assert!(text.contains("Chapter 15"), "what comes next points at the chapter that runs a design: {text}");
 }
 
 #[test]

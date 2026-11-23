@@ -85,23 +85,62 @@ pub enum Method {
     Then,
     /// `c.then_some(v)` on a `bool`.
     ThenSome,
+    /// `a.len()` on an array (H.5).
+    ArrayLen,
+    /// `a.is_empty()` on an array.
+    ArrayIsEmpty,
+    /// `a.iter()`: the elements of an array as an iterator.
+    ArrayIter,
+    /// `a.contains(x)` on an array of a `PartialEq` type.
+    ArrayContains,
+    /// `a.first()` on an array: `Some` of element 0.
+    ArrayFirst,
+    /// `a.last()` on an array: `Some` of the last element.
+    ArrayLast,
+    /// `a.get(i)` on an array: `None` past the end.
+    ArrayGet,
+    /// `r.contains(x)` on a range (H.6).
+    RangeContains,
+    /// `r.is_empty()` on a range.
+    RangeIsEmpty,
+    /// `it.map(f)` on an iterator (H.7).
+    IteratorMap,
+    /// `it.filter(f)`.
+    IteratorFilter,
+    /// `it.fold(init, f)`.
+    IteratorFold,
+    /// `it.sum()` of an integer or float element type.
+    IteratorSum,
+    /// `it.count()`.
+    IteratorCount,
+    /// `it.zip(other)`.
+    IteratorZip,
+    /// `it.enumerate()`.
+    IteratorEnumerate,
+    /// `it.rev()` on a reversible iterator.
+    IteratorRev,
+    /// `it.any(f)`.
+    IteratorAny,
+    /// `it.all(f)`.
+    IteratorAll,
+}
+
+impl Method {
+    /// Whether the row is one of H.5 to H.7 the elaborator lowers as a loop over a sequence and
+    /// reads as a value (`first`, `last` and `get` are `Option`s, lowered on their pair).
+    pub fn is_sequence_row(self) -> bool {
+        matches!(
+            self,
+            Method::ArrayLen | Method::ArrayIsEmpty | Method::ArrayContains | Method::RangeContains | Method::RangeIsEmpty | Method::IteratorSum | Method::IteratorCount | Method::IteratorFold | Method::IteratorAny | Method::IteratorAll
+        )
+    }
 }
 
 /// A method the checker treats as part of the language because it resolved to the stdlib's own
-/// item (part I §3.3.7): the four flag-total reads, the edges of `Bit` and the history of a
+/// item (part I §3.3.7): the edges of `Bit` and the history of a
 /// carrier. A project's replacement is `P0001` at its use, never one of these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Builtin {
-    /// `x.known() -> Option<T>`.
-    Known,
-    /// `x.known_or(d) -> T`.
-    KnownOr,
-    /// `x.is_known() -> bool`.
-    IsKnown,
-    /// `x.level(k) -> Option<bool>`: level `k` of `x`, `None` when that level is unknown (§22.1).
-    Level,
-    /// `c.high() -> bool` on a `Bit`.
-    High,
     /// `c.changed() -> Event`.
     Changed,
     /// `c.prev() -> T`: the value before the most recent change.
@@ -148,15 +187,24 @@ pub struct Types<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    pub(super) event_reads: BTreeSet<ExprId>,
     pub(super) widths: BTreeMap<ExprId, u32>,
+    /// The type `T` of each `T::default()` call of the reachable set (H.8 rule 4).
+    pub(super) defaults: BTreeMap<ExprId, Ty>,
+    /// The typed fields of every struct and every enum variant the check reached.
+    pub(super) layouts: BTreeMap<DeclId, Vec<super::FieldType>>,
+    /// The tag of every enum the check reached.
+    pub(super) enum_tags: BTreeMap<DeclId, super::EnumTag>,
     pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
+    /// The locals some assignment of a checked body writes (§1.5.12): the elaborator makes exactly these assignable.
+    pub(super) assigned: BTreeSet<DeclId>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.widths == other.widths && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.event_reads == other.event_reads && self.widths == other.widths && self.defaults == other.defaults && self.layouts == other.layouts && self.enum_tags == other.enum_tags && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits && self.assigned == other.assigned
     }
 }
 
@@ -191,6 +239,11 @@ impl<'d> Types<'d> {
         self.design
     }
 
+    /// Whether some assignment of a checked body writes the local `decl` (§1.5.12).
+    pub fn is_assigned(&self, decl: DeclId) -> bool {
+        self.assigned.contains(&decl)
+    }
+
     /// The type of an expression; `None` outside the reachable set.
     pub fn ty(&self, expr: ExprId) -> Option<&Ty> {
         self.exprs.get(expr.index())?.as_ref()
@@ -214,16 +267,59 @@ impl<'d> Types<'d> {
         self.methods.get(&expr).copied()
     }
 
-    /// The built-in a method call resolved to (`known_or`, `prev`, ..), set only when the name
+    /// The built-in a method call resolved to (`prev`, `cast`, ..), set only when the name
     /// resolved to the stdlib's own item.
     pub fn builtin(&self, expr: ExprId) -> Option<Builtin> {
         self.builtins.get(&expr).copied()
+    }
+
+    /// Whether `expr`, an `Event` in a guard or a reaction body, is read as a `bool` that says
+    /// whether it fired in the microstep (§13 rules 2 and 9). Its type is `bool`.
+    pub fn event_read(&self, expr: ExprId) -> bool {
+        self.event_reads.contains(&expr)
     }
 
     /// The level count a `T::WIDTH` path of the reachable set reads (§2, §22.1): 1 for `bool`, `N`
     /// for `uN` and `iN`, 64 for `f64`, the tag width of an enum. `None` for any other expression.
     pub fn width(&self, expr: ExprId) -> Option<u32> {
         self.widths.get(&expr).copied()
+    }
+
+    /// The type `T` of a `T::default()` call of the reachable set (H.8 rule 4), whose value is the
+    /// default of `T`. `None` for any other expression.
+    pub fn default_of(&self, expr: ExprId) -> Option<&Ty> {
+        self.defaults.get(&expr)
+    }
+
+    /// The structs and enums the check reached, in declaration order of the design: the types a
+    /// value of the design may have.
+    pub fn aggregate_types(&self) -> Vec<DeclId> {
+        let structs = self.layouts.keys().copied().filter(|d| matches!(self.design.decl_data(*d).kind, crate::pom::DeclKind::Struct(_)));
+        let mut all: Vec<DeclId> = structs.chain(self.enum_tags.keys().copied()).collect();
+        all.sort();
+        all
+    }
+
+    /// The typed fields of the struct or enum variant `owner`, in declaration order.
+    pub fn fields(&self, owner: DeclId) -> Option<&[super::FieldType]> {
+        self.layouts.get(&owner).map(Vec::as_slice)
+    }
+
+    /// The value of the const expression `expr` of an array length or a range bound: a non-negative
+    /// integer built of literals, `const` names and integer arithmetic (§1.2.5). The elaborator's
+    /// own constant evaluator needs a typed literal, which a length does not have.
+    pub fn integer_constant(&self, expr: ExprId) -> Option<u128> {
+        super::lengths::IntegerFolder { design: self.design }.fold(expr, 16)
+    }
+
+    /// The tag of the enum `decl`.
+    pub fn enum_tag(&self, decl: DeclId) -> Option<&super::EnumTag> {
+        self.enum_tags.get(&decl)
+    }
+
+    /// Whether the struct or enum `decl` writes `#[derive(.., name, ..)]`.
+    pub fn derives(&self, decl: DeclId, name: &str) -> bool {
+        super::derives::DerivedTrait::is_listed(self.design, decl, name)
     }
 
     /// Whether an expression of the reachable set is discrete or continuous (part III §8.2);

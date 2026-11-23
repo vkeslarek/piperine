@@ -1,4 +1,4 @@
-//! Scope: chapter 15 of the Book, "From source to solver" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 20 of the Book, "From source to solver" (feature `root-e2e`, RE-02 and RE-03): the
 //! divider the chapter runs and the diode it can be swapped for, run through `piperine::`; the printed
 //! intermediate form, the generated Rust and the library the Rust backend loads; the three compiler
 //! codes a source can raise (`P0001` to `P0003`; `P0004` is an internal error no source raises); the
@@ -170,27 +170,29 @@ fn the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds() {
 #[test]
 fn a_compiler_code_says_what_the_chapter_says() {
     // compiler~79f44db1 "P0001": valid MSL the compiler cannot run yet, naming the construct;
-    // compiler~79f450b1 "P0002": a value of the wrong type, or a call with the wrong number of arguments;
+    // (`P0002`, a value of the wrong type, is gone: a mismatch is `E0180` of chapter 11, PI-06.)
     // compiler~79f44fb1 "P0003": the top module asked for does not exist. (compiler~79f44ab1 "P0004" is
     // a bug of Piperine no source raises: a `prose` row.)
     let generic = "module Gen<const N: u32>() { }\nmodule Top() { let g = Gen::<2>(); }\n";
     let given = Refusal::of(Model::written("m.msl", generic).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
     assert!(given.iter().any(|(code, message)| code == "P0001" && message.contains("not supported yet")), "P0001 names the construct it cannot run: {given:?}");
-    let arguments = "module Top() { signal a: Electrical; }\nanalog for Top { i(a, gnd) +> (2.0).powf(); }\n";
-    Refusal::expect(Model::written("m.msl", arguments).run(Faulty::operating_point_of("Top")), "compiler~79f450b1", "P0002", "mismatched types: expected 1 argument(s), found 0");
     Refusal::expect(Model::written("m.msl", "module Top() { }\n").run(Faulty::operating_point_of("Nope")), "compiler~79f44fb1", "P0003", "`Nope` is not a module of the root crate");
 }
 
 #[test]
-fn a_digital_if_on_an_unknown_value_runs_both_arms_and_merges_what_they_commit() {
+fn a_digital_if_runs_the_arm_its_condition_selects_and_only_that_arm_commits() {
     // compiler chapter, "Digital code reads the same way: a reaction is a function whose commits go out
-    // together when it ends, and an if on a value that may be unknown runs both arms and merges what they
-    // commit." (`d` is unknown: one arm commits `true` to `q`, the other commits nothing, so `q` is
-    // `true` merged with its prior `false` and reads unknown; the run does not stop)
-    let source = "module Top() { signal d: Bit; signal q: Bit = false; }\ndigital for Top { on at(1u) { if d { q <- true; } } }\n";
-    let ran = Model::written("m.msl", source).run(Faulty::transient_of_top(3e-6, None)).unwrap_or_else(|failure| panic!("{failure:#}"));
-    let column = ran.table.columns.iter().position(|name| name == "Top.q").expect("the table shows q");
-    assert_eq!(ran.table.rows.last().expect("a last row")[column], Cell::Unknown, "q merges its two arms");
+    // together when it ends, and an if runs one arm, the one its condition selects, and only that arm
+    // commits." (`d` is false: the arm that commits `true` to `q` does not run, so `q` keeps the `false`
+    // it started at; with `d` true the arm runs and `q` reads true)
+    let run = |first: &str| {
+        let source = format!("module Top() {{ signal d: Bit = {first}; signal q: Bit = false; }}\ndigital for Top {{ on at(1u) {{ if d {{ q <- true; }} }} }}\n");
+        let ran = Model::written("m.msl", &source).run(Faulty::transient_of_top(3e-6, None)).unwrap_or_else(|failure| panic!("{failure:#}"));
+        let column = ran.table.columns.iter().position(|name| name == "Top.q").expect("the table shows q");
+        ran.table.rows.last().expect("a last row")[column].clone()
+    };
+    assert_eq!(run("false"), Cell::Bool(false), "the arm did not run");
+    assert_eq!(run("true"), Cell::Bool(true), "the arm ran");
 }
 
 #[test]

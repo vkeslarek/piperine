@@ -32,15 +32,25 @@
 //!
 //! Locals are bound by scope, as `Ir::check` reads them: a `let` until its block ends, a
 //! closure's parameters in its body. The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
-//! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
+//! a meaning to (a local read before its `let`, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
+//!
+//! Mutation, loops and recursion (`control.rs`) stay inside the finite lattice: an assignment
+//! joins the assigned value into the local's, a loop's body is walked again until no local
+//! changes, and a recursive call reads the function's result so far, which the function's own
+//! walk grows until it holds still. A loop's trip count and the conditions its exits sit under
+//! reach every local the loop assigns, and a function value is walked as a call whose
+//! arguments are unknown.
 
-use std::collections::{BTreeSet, HashMap};
+mod control;
+
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::OnceLock;
 
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
-use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp, ValueType};
+use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
+use control::LoopFrame;
 
 /// The index of a branch in its body (`Body::branches`).
 pub type BranchIndex = u32;
@@ -160,14 +170,6 @@ impl<'a> Body<'a> {
         self.sources_of(target).fired.iter().copied().collect()
     }
 
-    /// Whether `target` takes a decision on a value that may be unknown, through locals and
-    /// function calls: an `if` whose condition is `Flagged`, which is also what a `match` and a
-    /// short-circuit operand over such a value lower to (§3.3.3). The commits and records of a
-    /// reaction that does are joined across the paths the decision opens.
-    pub fn decides_on_unknown(&self, target: Target) -> bool {
-        self.sources_of(target).unknown_control
-    }
-
     fn sources_of(&self, target: Target) -> &'a Sources {
         let deps = self.deps();
         let (list, i, what) = match target {
@@ -266,8 +268,6 @@ struct Sources {
     previous: BTreeSet<u32>,
     /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
     fired: BTreeSet<u32>,
-    /// Whether an `if` with a `Flagged` condition is evaluated (`Body::decides_on_unknown`).
-    unknown_control: bool,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
     derivatives: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
@@ -285,7 +285,6 @@ impl Sources {
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
-        self.unknown_control |= other.unknown_control;
         self.derivatives.extend(&other.derivatives);
         self.param_previous.extend(&other.param_previous);
     }
@@ -351,11 +350,16 @@ struct Scope {
     in_body: bool,
     locals: Vec<Option<Value>>,
     memo: HashMap<ExprId, Value>,
+    /// The join of what the `return`s of this function carry; `None` for a body.
+    returned: Option<Value>,
+    /// How many conditions of `Walk::enclosing` held when this owner's walk began: a `return`
+    /// or an assignment reads only the conditions inside the owner.
+    enclosed_from: usize,
 }
 
 impl Scope {
     fn new(owner: String, in_body: bool, locals: usize) -> Self {
-        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new() }
+        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new(), returned: None, enclosed_from: 0 }
     }
 }
 
@@ -386,6 +390,19 @@ enum Task {
     Restore(Vec<Option<Value>>),
     /// A callee's body has been walked (its value on the stack): leave its scope.
     Return { at: ExprId, function: FunctionId, args: Vec<Value> },
+    /// The value of an assignment is on the stack: join it into the local.
+    Assign { local: u32, op: Option<BinaryOp>, at: ExprId, indices: usize },
+    /// The bounds of a `for` range are on the stack: the loop variable and the trip count.
+    LoopBounds(ExprId),
+    /// The condition of a `while` is on the stack: it decides the trip count.
+    LoopCondition(ExprId),
+    /// A pass over the body of loop `0` ended (`before` holds the locals it began with), or the
+    /// loop has just begun (`before` is `None`): walk again while a local changed, else finish.
+    LoopPass { id: ExprId, before: Option<Vec<Option<Value>>> },
+    /// A `break` or `continue` (its value on the stack when `valued`) leaves the innermost loop.
+    Escape { at: ExprId, valued: bool },
+    /// A `return` (its value on the stack when `valued`) joins the function's result.
+    Yield { at: ExprId, valued: bool },
 }
 
 /// One abstract walk of a body, and of the functions it calls. The walk is iterative (an
@@ -416,6 +433,13 @@ struct Walk<'a> {
     /// The conditions of the arms enclosing the statement being walked, outermost first: what a
     /// nested contribution reads beyond its own addends (analog-structure, mechanism 1).
     enclosing: Vec<Value>,
+    /// The loops being walked, innermost last.
+    frames: Vec<LoopFrame>,
+    /// The functions a recursive call met while their own body was being walked: each is walked
+    /// again until its result holds still.
+    recursing: HashSet<FunctionId>,
+    /// The result of each function in `recursing` so far (absent until the first walk ends).
+    approximate: HashMap<FunctionId, Value>,
 }
 
 impl<'a> Walk<'a> {
@@ -436,6 +460,9 @@ impl<'a> Walk<'a> {
             caps: Vec::new(),
             held: HashMap::new(),
             enclosing: Vec::new(),
+            frames: Vec::new(),
+            recursing: HashSet::new(),
+            approximate: HashMap::new(),
         };
         let owner = format!("body {}", data.name);
         let checks = data
@@ -481,19 +508,19 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             ttols.push(one(match event.source {
                 EventSource::Cross { ttol, .. } => ttol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             etols.push(one(match event.source {
                 EventSource::Cross { etol, .. } => etol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             guards.push(one(event.guard));
         }
@@ -652,20 +679,14 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                Task::Restore(locals) => {
-                    let scope = self.scope();
-                    if scope.locals != locals {
-                        scope.memo.clear();
-                        scope.locals = locals;
-                    }
-                }
-                Task::Return { at, function, args } => {
-                    let callee = self.pop();
-                    self.scopes.pop();
-                    self.calls.pop();
-                    self.called(at, &args, &callee);
-                    self.returns.insert((function, args), callee);
-                }
+                Task::Restore(outside) => self.restore(outside),
+                Task::Return { at, function, args } => self.leave_call(at, function, args, &mut next),
+                Task::Assign { local, op, at, indices } => self.assign(local, op, at, indices),
+                Task::LoopBounds(id) => self.loop_bounds(id),
+                Task::LoopCondition(id) => self.loop_condition(id),
+                Task::LoopPass { id, before } => self.loop_pass(id, before, &mut next),
+                Task::Escape { at, valued } => self.escape(at, valued),
+                Task::Yield { at, valued } => self.yield_value(at, valued),
             }
             // `next` holds the follow-up tasks in evaluation order.
             stack.extend(next.drain(..).rev());
@@ -677,6 +698,12 @@ impl<'a> Walk<'a> {
         match &ir.stmts[id.index()] {
             Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
             Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
+            Stmt::Assign { place, op, value } => {
+                next.push(Task::Expr(*value));
+                let indices: Vec<ExprId> = place.index_operands().collect();
+                next.extend(indices.iter().map(|&index| Task::Expr(index)));
+                next.push(Task::Assign { local: place.local, op: *op, at: *value, indices: indices.len() });
+            }
             Stmt::BoundStep { site, value, when } => {
                 next.extend([Task::Expr(*value), Task::Cap(*site)]);
                 // What decides whether the call runs is read by the same site.
@@ -725,7 +752,10 @@ impl<'a> Walk<'a> {
         if let Some(reads) = &mut self.reads {
             reads.join(&value.sources);
         }
-        self.scope().memo.insert(id, value.clone());
+        // A form that assigns is walked on every visit: a memoized value would hide its effect.
+        if !Walk::assigns(&self.ir.exprs[id.index()].kind) {
+            self.scope().memo.insert(id, value.clone());
+        }
         self.values.push(value);
     }
 
@@ -739,7 +769,7 @@ impl<'a> Walk<'a> {
         }
         let in_body = self.scope().in_body;
         match &ir.exprs[id.index()].kind {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => return self.done(id, Value::constant()),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) => return self.done(id, Value::constant()),
             Expr::Local(i) => {
                 let value = match self.scope().locals.get(*i as usize) {
                     Some(Some(value)) => value.clone(),
@@ -823,9 +853,8 @@ impl<'a> Walk<'a> {
                 }
                 return self.done(id, Value::of(sources, Class::Affine));
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Task::Expr(*expr)),
-            Expr::KnownOr { value, default } => next.extend([Task::Expr(*value), Task::Expr(*default)]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
             Expr::LevelCast { expr, .. } => next.push(Task::Expr(*expr)),
             Expr::Unwrap { is, value, .. } => next.extend([Task::Expr(*is), Task::Expr(*value)]),
             Expr::Method { receiver, args, .. } => {
@@ -848,6 +877,32 @@ impl<'a> Walk<'a> {
                 next.push(Task::Restore(outside));
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
+            // An aggregate is one abstract value: what its parts read (`finish`).
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                next.extend(ir.exprs[id.index()].kind.operands().into_iter().map(Task::Expr));
+            }
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
+            Expr::Break(value) => {
+                next.extend(value.iter().map(|&v| Task::Expr(v)));
+                next.push(Task::Escape { at: id, valued: value.is_some() });
+                return;
+            }
+            Expr::Continue => {
+                next.push(Task::Escape { at: id, valued: false });
+                return;
+            }
+            Expr::Return(value) => {
+                next.extend(value.iter().map(|&v| Task::Expr(v)));
+                next.push(Task::Yield { at: id, valued: value.is_some() });
+                return;
+            }
+            // A function used as a value reads what its body reads, for arguments nothing is known of.
+            Expr::FunctionRef(function) => {
+                let unknown = Value::of(Sources::default(), Class::Nonlinear);
+                let arguments = vec![unknown; ir.functions[function.index()].params.len()];
+                return self.enter(id, *function, arguments, next);
+            }
+            Expr::CallValue { callee, args } => next.extend([Task::Expr(*callee)].into_iter().chain(args.iter().map(|&a| Task::Expr(a)))),
             Expr::Closure { body, .. } => {
                 // The parameters end with the closure.
                 let outside = self.scope().locals.clone();
@@ -888,7 +943,7 @@ impl<'a> Walk<'a> {
                 let l = self.pop();
                 Walk::binary(*op, l, r)
             }
-            Expr::If { cond, .. } => {
+            Expr::If { .. } => {
                 let o = self.pop();
                 let t = self.pop();
                 let c = self.pop();
@@ -896,7 +951,6 @@ impl<'a> Walk<'a> {
                 let mut sources = c.sources;
                 sources.join(&t.sources);
                 sources.join(&o.sources);
-                sources.unknown_control |= matches!(ir.exprs[cond.index()].ty, ValueType::Flagged(_));
                 Value::of(sources, class)
             }
             Expr::Block { value, .. } => match value {
@@ -912,16 +966,25 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(args.len());
                 Value::nonlinear(&values)
             }
-            Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::LevelCast { .. } => {
+            Expr::CallValue { args, .. } => {
+                let values = self.pop_n(1 + args.len());
+                Value::nonlinear(&values)
+            }
+            Expr::Cast { .. } | Expr::LevelCast { .. } => {
                 let value = self.pop();
                 Value::nonlinear([&value])
             }
-            Expr::KnownOr { .. } | Expr::Unwrap { .. } | Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } => {
+            Expr::Unwrap { .. } | Expr::Same { .. } => {
                 let values = self.pop_n(2);
                 Value::nonlinear(&values)
             }
             Expr::Method { args, .. } => {
                 let values = self.pop_n(1 + args.len());
+                Value::nonlinear(&values)
+            }
+            // An aggregate and each of its projections read everything its parts read.
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                let values = self.pop_n(ir.exprs[id.index()].kind.operands().len());
                 Value::nonlinear(&values)
             }
             Expr::Closure { .. } => {
@@ -951,7 +1014,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };
@@ -973,15 +1036,25 @@ impl<'a> Walk<'a> {
     /// Enters `function`, called at `at` with `args`: its body is walked in a scope of its own,
     /// its parameters (its first locals) bound to the arguments; `Return` leaves it.
     fn enter(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
-        let ir = self.ir;
         if let Some(callee) = self.returns.get(&(function, args.clone())).cloned() {
             self.called(at, &args, &callee);
             return;
         }
-        let data = &ir.functions[function.index()];
         if self.calls.contains(&function) {
-            self.refuse(at, &format!("recursive call of {}", data.name));
+            // A recursive call reads the result known so far (§3 rule 12): the walk of the
+            // function that began it grows that result until it holds still (`leave_call`).
+            self.recursing.insert(function);
+            let known = self.approximate.get(&function).cloned().unwrap_or_else(Value::constant);
+            self.called(at, &args, &known);
+            return;
         }
+        self.start_call(at, function, args, next);
+    }
+
+    /// Walks the body of `function`, called at `at` with `args`, in a scope of its own.
+    fn start_call(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
+        let ir = self.ir;
+        let data = &ir.functions[function.index()];
         let mut callee = Scope::new(format!("function {}", data.name), false, data.locals.len());
         if args.len() != data.params.len() || args.len() > callee.locals.len() {
             self.refuse(at, &format!("call of {} with {} args, it takes {}", data.name, args.len(), data.params.len()));
@@ -989,6 +1062,7 @@ impl<'a> Walk<'a> {
         for (slot, arg) in callee.locals.iter_mut().zip(&args) {
             *slot = Some(arg.clone());
         }
+        callee.enclosed_from = self.enclosing.len();
         self.calls.push(function);
         self.scopes.push(callee);
         next.extend([Task::Expr(data.body), Task::Return { at, function, args }]);

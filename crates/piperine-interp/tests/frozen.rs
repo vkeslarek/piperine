@@ -8,10 +8,11 @@ use std::sync::Arc;
 
 use piperine_interp::Interpreter;
 use piperine_ir::{
-    Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, Hoisted,
-    Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
-    StreamField, Terminal, ValueType,
+    Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, Hoisted,
+    Inflow, InstanceSpec, Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
+    StreamField, StmtId, Terminal, ValueType,
 };
+use piperine_ir::{Derives, FieldsForm, TypeData, TypeKind, VariantData};
 use piperine_ir::Method as M;
 
 #[allow(dead_code)]
@@ -111,6 +112,25 @@ impl Amended {
         });
     }
 
+    /// The shape of the elaborator's host source (PI-07): `v(p, gnd) +> now() + ac_stim(1.0);`
+    fn host_source(b: &mut IrBuilder) {
+        let mut x = Dx::new(b, Amended::F, 30, 10);
+        let o = x.origin();
+        let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o.clone());
+        let mag = x.real(1.0);
+        let stim = x.b.expr(Expr::Stim { site: 0, mag, phase: None }, ValueType::F64, o);
+        let value = x.bin(BinaryOp::Add, now, stim, ValueType::F64);
+        let stmt = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Potential, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
+        let el = Buck::electrical(b);
+        b.body(BodySpec {
+            nodes: vec![BodyNode { name: "p".into(), nature: el, role: NodeRole::Port, init: None, origin: Amended::at(1) }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Potential }],
+            stims: vec![Site { name: "ac".into(), origin: Amended::at(30), enabled: None }],
+            analog: Some(vec![stmt]),
+            ..Buck::spec("HostSource", Amended::F, 29)
+        });
+    }
+
     /// `v(p, n) +> ddt(i(p, n));`
     fn inductor(b: &mut IrBuilder) {
         let x = Dx::new(b, Amended::F, 12, 10);
@@ -142,6 +162,17 @@ impl Amended {
         Buck::reaction(b, body, vec![event], vec![commit], vec![], Amended::F, 22);
     }
 
+    /// `on settle { q <- true; }`
+    fn settling(b: &mut IrBuilder) {
+        let body = b.body(Buck::spec("Settling", Amended::F, 51));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 51, 20));
+        let event = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Amended::at(52) });
+        let mut x = Dx::new(b, Amended::F, 52, 20);
+        let yes = x.boolean(true);
+        let commit = x.commit(0, yes, None);
+        Buck::reaction(b, body, vec![event], vec![commit], vec![], Amended::F, 52);
+    }
+
     /// `on q.changed() { emit!("sim", finish = true); }`
     fn monitor(b: &mut IrBuilder) {
         let body = b.body(Buck::spec("Monitor", Amended::F, 31));
@@ -154,12 +185,11 @@ impl Amended {
         Buck::reaction(b, body, vec![event], vec![emit], vec![], Amended::F, 32);
     }
 
-    /// `i(p, n) +> if clk.prev().high() { 1.0 } else { 0.0 };`
+    /// `i(p, n) +> if clk.prev() { 1.0 } else { 0.0 };`
     fn edge(b: &mut IrBuilder) {
         let mut x = Dx::new(b, Amended::F, 42, 10);
         let o = x.origin();
-        let prev = x.b.expr(Expr::Previous(0), ValueType::Flagged(Box::new(ValueType::Bool)), o);
-        let was_high = x.high(prev);
+        let was_high = x.b.expr(Expr::Previous(0), ValueType::Bool, o);
         let one = x.real(1.0);
         let zero = x.real(0.0);
         let value = x.if_(was_high, one, zero, ValueType::F64);
@@ -227,6 +257,29 @@ fn a_body_with_an_amended_form_is_rejected_by_name() {
     for entry in &rejected.entries {
         assert_eq!(entry.origin.file, Amended::F, "{entry:?}");
     }
+}
+
+/// §13 rule 17 (unknown-semantics-events UE-03): the event `settle` is a form the interpreter
+/// refuses by name, as it refuses `at(t)` (codegen context R1).
+#[test]
+fn a_settle_event_is_refused_by_name() {
+    let mut b = IrBuilder::new();
+    Amended::settling(&mut b);
+    let top_body = b.body(Buck::spec("Top", "top.msl", 1));
+    let top = b.instance(InstanceSpec {
+        path: "Top".into(),
+        name: "Top".into(),
+        body: top_body,
+        parent: None,
+        nodes: vec![],
+        params: vec![],
+        origin: Origin { file: "top.msl".into(), line: 1, col: 1 },
+    });
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "the design itself is well formed");
+    let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a design with a settle event was accepted") };
+    let named: Vec<&str> = rejected.entries.iter().map(|e| e.what.split_once(": ").map_or(e.what.as_str(), |(head, _)| head)).collect();
+    assert!(named.contains(&"body Settling holds settle"), "{named:?}");
 }
 
 /// Bodies that hold one form msl-fixes added, each in a design of its own.
@@ -445,21 +498,12 @@ fn the_interpreter_refuses_each_new_form_by_name() {
 }
 
 #[test]
-fn the_unknown_nodes_are_refused_by_name() {
-    // The walk names `level`, `merge`, `same` and `cast` when it meets one, as the source spells
-    // them (R1, the interpreter is frozen at the M1 analog subset): `x.level(k)` of a value read
-    // from a probe, in a statement of the block that gives the contribution its value.
+fn the_level_nodes_are_refused_by_name() {
+    // The walk names `same` and `cast` when it meets one, as the source spells them (R1, the
+    // interpreter is frozen at the M1 analog subset): `same(v, v)` of a value read from a probe,
+    // in a statement of the block that gives the contribution its value.
     type Node = fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId;
-    let nodes: [(&str, Node); 5] = [
-        ("level", |x, v| {
-            let k = x.int(0, Ty::u(32));
-            x.level(v, k, LevelPart::Is, ValueType::Bool)
-        }),
-        ("level", |x, v| {
-            let k = x.int(0, Ty::u(32));
-            x.level(v, k, LevelPart::Value, ValueType::Bool)
-        }),
-        ("merge", |x, v| x.merge(v, v, Ty::flagged(ValueType::F64))),
+    let nodes: [(&str, Node); 2] = [
         ("same", |x, v| x.same(v, v)),
         ("cast", |x, v| x.level_cast(v, Ty::u(64), None, Ty::u(64))),
     ];
@@ -600,4 +644,159 @@ fn an_analog_body_without_new_forms_still_runs_on_the_interpreter() {
     assert_eq!(ir.check(), vec![], "the design itself is well formed");
     let interpreter = Interpreter::new(Arc::new(ir)).expect("a body of the M1 subset is accepted");
     assert!(interpreter.module(resistor).is_some(), "the resistor has a module");
+}
+
+/// Designs that hold one form of `composite-values`, each refused by name (R1).
+struct Composite;
+
+impl Composite {
+    /// The design whose `analog` block runs what `write` returns (with its locals) and then
+    /// contributes `1.0`; `Structured::refused` names the forms the interpreter refuses it for.
+    fn refused(write: impl FnOnce(&mut IrBuilder) -> (Vec<Local>, Vec<StmtId>)) -> Vec<String> {
+        let ir = Switching::ir(BranchKind::Flow, |b| {
+            let (locals, mut analog) = write(b);
+            analog.push(Switching::contribute(b, QuantityRole::Flow, 1.0));
+            Written { analog, locals, ..Written::default() }
+        });
+        Structured::refused(ir)
+    }
+
+    /// A statement that evaluates a form of type `ty`.
+    fn run(b: &mut IrBuilder, kind: Expr, ty: ValueType) -> StmtId {
+        let form = b.expr(kind, ty, Switching::at());
+        b.stmt(Stmt::Expr(form))
+    }
+
+    /// `fn name(x: f64) -> f64 { body }` over the one local `x`.
+    fn function(b: &mut IrBuilder, name: &str, body: ExprId) -> piperine_ir::FunctionId {
+        let x = Local { name: "x".into(), ty: ValueType::F64, mutable: false };
+        b.function(FunctionSpec { name: name.into(), origin: Switching::at(), params: vec![x.clone()], ret: ValueType::F64, locals: vec![x], body })
+    }
+}
+
+#[test]
+fn each_composite_values_form_is_refused_by_name() {
+    // `let mut x = 0.0; x = 1.0;` (T2)
+    let assignment = Composite::refused(|b| {
+        let (zero, one) = (Switching::ex(b).real(0.0), Switching::ex(b).real(1.0));
+        let declare = b.stmt(Stmt::Let { local: 0, init: zero });
+        let set = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![] }, op: None, value: one });
+        (vec![Local { name: "x".into(), ty: ValueType::F64, mutable: true }], vec![declare, set])
+    });
+    assert_eq!(assignment, ["an assignment"]);
+
+    // `loop { break }`, `while true { continue }`, `for k in 0..2 { }` (T3)
+    let looped = Composite::refused(|b| {
+        let stop = Composite::run(b, Expr::Break(None), ValueType::Unit);
+        (vec![], vec![Composite::run(b, Expr::Loop { body: vec![stop] }, ValueType::Unit)])
+    });
+    assert_eq!(looped, ["a loop", "break"]);
+    let whiled = Composite::refused(|b| {
+        let (always, skip) = (Switching::ex(b).boolean(true), Composite::run(b, Expr::Continue, ValueType::Unit));
+        (vec![], vec![Composite::run(b, Expr::While { cond: always, body: vec![skip] }, ValueType::Unit)])
+    });
+    assert_eq!(whiled, ["a while loop", "continue"]);
+    let ranged = Composite::refused(|b| {
+        let (low, high) = {
+            let mut x = Dx::new(b, "composite.msl", 2, 5);
+            (x.int(0, Ty::u(8)), x.int(2, Ty::u(8)))
+        };
+        let kind = Expr::ForRange { local: 0, low, high, inclusive: false, reverse: false, body: vec![] };
+        (vec![Local { name: "k".into(), ty: Ty::u(8), mutable: false }], vec![Composite::run(b, kind, ValueType::Unit)])
+    });
+    assert_eq!(ranged, ["a for loop"]);
+
+    // `fn early(x) -> f64 { return x }` called from the block (T4), and the same function named
+    // and called through its value (T5)
+    let returned = Composite::refused(|b| {
+        let result = Switching::ex(b).local(0);
+        let exit = Composite::run(b, Expr::Return(Some(result)), ValueType::F64);
+        let fallthrough = Switching::ex(b).real(0.0);
+        let body = Switching::ex(b).block(vec![exit], Some(fallthrough), ValueType::F64);
+        let early = Composite::function(b, "early", body);
+        let argument = Switching::ex(b).real(1.0);
+        let call = Switching::ex(b).call(early, vec![argument]);
+        (vec![], vec![b.stmt(Stmt::Expr(call))])
+    });
+    assert_eq!(returned, ["return"]);
+    let through_a_value = Composite::refused(|b| {
+        let read = Switching::ex(b).local(0);
+        let identity = Composite::function(b, "identity", read);
+        let reference = b.expr(Expr::FunctionRef(identity), ValueType::Fn(vec![ValueType::F64], Box::new(ValueType::F64)), Switching::at());
+        let argument = Switching::ex(b).real(1.0);
+        let call = b.expr(Expr::CallValue { callee: reference, args: vec![argument] }, ValueType::F64, Switching::at());
+        (vec![], vec![b.stmt(Stmt::Expr(call))])
+    });
+    assert_eq!(through_a_value, ["a function value", "a call through a function value"]);
+
+    // `let t = (1.0, 2.0); let a = [t.0; 2]; a[0]; a.len()` and the struct and variant
+    // expressions (T31): each form is named, in the order of the list.
+    let aggregates = Composite::refused(|b| {
+        let (one, two) = (Switching::ex(b).real(1.0), Switching::ex(b).real(2.0));
+        let pair = ValueType::Tuple(vec![ValueType::F64, ValueType::F64]);
+        let tuple = b.expr(Expr::Tuple(vec![one, two]), pair, Switching::at());
+        let field = b.expr(Expr::Field { expr: tuple, index: 0 }, ValueType::F64, Switching::at());
+        let array_type = ValueType::Array(Box::new(ValueType::F64), 2);
+        let repeated = b.expr(Expr::ArrayRepeat { element: field, count: 2 }, array_type.clone(), Switching::at());
+        let listed = b.expr(Expr::Array(vec![one, two]), array_type, Switching::at());
+        let zero = Dx::new(b, "composite.msl", 2, 5).int(0, Ty::u(8));
+        let element = b.expr(Expr::Index { expr: listed, index: zero }, ValueType::F64, Switching::at());
+        let length = b.expr(Expr::Length(repeated), ValueType::UInt(64), Switching::at());
+        let shape = b.type_data(TypeData {
+            name: "S".into(),
+            path: "S".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Struct { form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::F64)] },
+            derives: Derives::default(),
+        });
+        let built = b.expr(Expr::StructOf { ty: shape, fields: vec![element] }, ValueType::Struct(shape), Switching::at());
+        let choice = b.type_data(TypeData {
+            name: "E".into(),
+            path: "E".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
+            derives: Derives::default(),
+        });
+        let variant = b.expr(Expr::VariantOf { ty: choice, variant: 0, fields: vec![] }, ValueType::Enum(choice), Switching::at());
+        (vec![], [length, built, variant].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect())
+    });
+    assert_eq!(
+        aggregates,
+        ["a tuple", "an array", "an array repeat", "a struct expression", "a variant expression", "a field read", "an element read", "a length read"]
+    );
+
+    // `matches!(e, E::A)`, `e.0` of a variant, an option from its pair and back, `default` (T32)
+    let variants = Composite::refused(|b| {
+        let (yes, one) = (Switching::ex(b).boolean(true), Switching::ex(b).real(1.0));
+        let choice = b.type_data(TypeData {
+            name: "E".into(),
+            path: "E".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::F64)] }] },
+            derives: Derives::default(),
+        });
+        let built = b.expr(Expr::VariantOf { ty: choice, variant: 0, fields: vec![one] }, ValueType::Enum(choice), Switching::at());
+        let test = b.expr(Expr::IsVariant { expr: built, variant: 0 }, ValueType::Bool, Switching::at());
+        let payload = b.expr(Expr::VariantField { expr: built, variant: 0, field: 0 }, ValueType::F64, Switching::at());
+        let packed = b.expr(Expr::OptionPack { is: yes, value: one }, ValueType::Option(Box::new(ValueType::F64)), Switching::at());
+        let part = b.expr(Expr::OptionPart { option: packed, part: piperine_ir::LevelPart::Is }, ValueType::Bool, Switching::at());
+        let fresh = b.expr(Expr::Default(ValueType::F64), ValueType::F64, Switching::at());
+        (vec![], [test, payload, part, fresh].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect())
+    });
+    assert_eq!(variants, ["a variant expression", "a variant test", "a variant field read", "an option pack", "an option part", "a default value"]);
+}
+
+#[test]
+fn a_host_source_body_is_rejected_by_name() {
+    // PI-07, design R2: the host source reads the clock, which the frozen interpreter does not
+    // run; it is refused naming the body and the form, never run wrongly
+    let mut b = IrBuilder::new();
+    Amended::host_source(&mut b);
+    let top_body = b.body(Buck::spec("Top", "top.msl", 1));
+    let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: Origin { file: "top.msl".into(), line: 1, col: 1 } });
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "the design itself is well formed");
+    let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a host source was accepted") };
+    let named: Vec<&str> = rejected.entries.iter().map(|e| e.what.split_once(": ").map_or(e.what.as_str(), |(head, _)| head)).collect();
+    assert_eq!(named, ["body HostSource holds now()"]);
 }

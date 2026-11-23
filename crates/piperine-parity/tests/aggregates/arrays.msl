@@ -1,0 +1,95 @@
+//! Arrays and range indexes (CV-13): array literals, `[x; N]`, indexing, element assignment, nested
+//! arrays, arrays passed and returned by value, array patterns, a range index as the array of its
+//! elements, an index out of range that fails the analysis, and an index that may be unknown. The
+//! expected values are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+struct P { x: f64, y: u8 }
+
+fn literal_sum() -> u8 { let a = [1u8, 2, 3]; a[0] + a[2] }
+fn repeated() -> u8 { let r = [7u8; 4]; r[3] }
+fn nested_read() -> u8 { let m = [[1u8, 2], [3, 4]]; m[1][0] }
+fn element_assign() -> u8 { let m = [[1u8, 2], [3, 4]]; m[1][1] = 9; m[1][1] + m[0][1] }
+fn float_sum() -> u8 { let f = [1.5, 2.5]; (f[0] + f[1]) as u8 }
+fn bump(a: [u8; 3]) -> [u8; 3] { let b = a; b[0] = b[0] + 1; b }
+fn copy_unchanged() -> (u8, u8) { let a = [1u8, 2, 3]; let b = bump(a); (a[0], b[0]) }
+fn pick(i: u8) -> u8 { let a = [10u8, 20, 30]; a[i] }
+fn struct_elements() -> u8 { let ps = [P { x: 0.0, y: 4 }; 2]; ps[1].y = 6; ps[0].y + ps[1].y }
+
+fn ends() -> u8 { let a = [1u8, 2, 3, 4]; let [x, .., z] = a; x * 10 + z }
+fn head_rest() -> u8 { let a = [1u8, 2, 3]; let [h, rest @ ..] = a; h * 100 + rest[0] * 10 + rest[1] }
+fn match_literals(k: u8) -> u8 { let a = [k, 5, 6]; match a { [1, ..] => 10, [2, n, _] => n, _ => 0 } }
+
+fn range_mid() -> u8 { let a = [1u8, 2, 3, 4]; let s = a[1..3]; s[0] * 10 + s[1] }
+fn range_to() -> u8 { let a = [1u8, 2, 3, 4]; let s = a[..2]; s[0] * 10 + s[1] }
+fn range_inclusive() -> u8 { let a = [1u8, 2, 3, 4]; let s = a[1..=2]; s[0] * 10 + s[1] }
+fn range_then_index() -> u8 { let a = [1u8, 2, 3, 4]; a[1..4][2] }
+fn range_is_a_copy() -> u8 { let a = [1u8, 2, 3]; let s = a[0..2]; s[0] = 9; a[0] * 10 + s[0] }
+
+module Rows(in clk: Bit, out a0: Bit<u8> = 0, out a1: Bit<u8> = 0, out a2: Bit<u8> = 0, out a3: Bit<u8> = 0, out a4: Bit<u8> = 0, out a5: Bit<u8> = 0, out a6: Bit<u8> = 0, out a7: Bit<u8> = 0, out a8: Bit<u8> = 0, out a9: Bit<u8> = 0, out p0: Bit<u8> = 0, out p1: Bit<u8> = 0, out p2: Bit<u8> = 0, out p3: Bit<u8> = 0, out r0: Bit<u8> = 0, out r1: Bit<u8> = 0, out r2: Bit<u8> = 0, out r3: Bit<u8> = 0, out r4: Bit<u8> = 0) {}
+digital for Rows {
+    on clk.rise() {
+        a0 <- literal_sum();
+        a1 <- repeated();
+        a2 <- nested_read();
+        a3 <- element_assign();
+        a4 <- float_sum();
+        a5 <- copy_unchanged().0;
+        a6 <- copy_unchanged().1;
+        a7 <- pick(2);
+        a8 <- pick(0);
+        a9 <- struct_elements();
+        p0 <- ends();
+        p1 <- head_rest();
+        p2 <- match_literals(1);
+        p3 <- match_literals(2);
+        r0 <- range_mid();
+        r1 <- range_to();
+        r2 <- range_inclusive();
+        r3 <- range_then_index();
+        r4 <- range_is_a_copy();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal a0: Bit<u8>; signal a1: Bit<u8>; signal a2: Bit<u8>; signal a3: Bit<u8>; signal a4: Bit<u8>; signal a5: Bit<u8>; signal a6: Bit<u8>; signal a7: Bit<u8>; signal a8: Bit<u8>; signal a9: Bit<u8>; signal p0: Bit<u8>; signal p1: Bit<u8>; signal p2: Bit<u8>; signal p3: Bit<u8>; signal r0: Bit<u8>; signal r1: Bit<u8>; signal r2: Bit<u8>; signal r3: Bit<u8>; signal r4: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, p0, p1, p2, p3, r0, r1, r2, r3, r4);
+}
+
+// an index past the end fails the analysis, naming the instance, the instant and the index
+fn element(a: [u8; 3], i: u8) -> u8 { a[i] }
+module Overrun(in clk: Bit, out y: Bit<u8> = 0) {}
+digital for Overrun { on clk.rise() { y <- element([1, 2, 3], 5); } }
+module OverrunBench() {
+    signal clk: Bit; signal y: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let overrun = Overrun(clk, y);
+}
+
+// an index is an integer (§3.3.5): it reads the element it names and writes into that one; `sel` holds 1
+module Merges(in clk: Bit, in sel: Bit<u2>, in e0: Bit<u8>, in e1: Bit<u8>, in e2: Bit<u8>, in e3: Bit<u8>, out same: Bit<u8> = 1, out differ: Bit<u8> = 1, out w0: Bit<u8> = 1, out w1: Bit<u8> = 1) {}
+digital for Merges {
+    on clk.rise() {
+        let eq = [e0, e1, e2];
+        same <- eq[sel];
+        let ne = [e0, e1, e3];
+        differ <- ne[2];
+        let w = [e0, e1];
+        w[sel] = 7;
+        w0 <- w[0];
+        let v = [e0, e3];
+        v[sel] = 7;
+        w1 <- v[1];
+    }
+}
+module MergeBench() {
+    signal clk: Bit; signal sel: Bit<u2> = 1;
+    signal e0: Bit<u8> = 5; signal e1: Bit<u8> = 5; signal e2: Bit<u8> = 5; signal e3: Bit<u8> = 6;
+    signal same: Bit<u8>; signal differ: Bit<u8>; signal w0: Bit<u8>; signal w1: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let merges = Merges(clk, sel, e0, e1, e2, e3, same, differ, w0, w1);
+}

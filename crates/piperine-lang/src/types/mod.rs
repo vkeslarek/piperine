@@ -7,29 +7,48 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
+mod aggregate;
+mod aggregate_patterns;
 mod analog;
+mod assign;
+mod attributes;
 mod call;
 mod carrier;
 mod catalogue;
 mod check;
+mod class;
+mod closures;
 mod compound;
 mod continuity;
 mod control;
+mod cover;
 mod definition;
+mod derives;
+mod enums;
 mod event;
+mod exits;
 mod expr;
-mod flag_total;
+mod flow;
 mod intrinsic;
+mod iterators;
+mod lengths;
+mod literals;
+mod loops;
 mod model;
 mod module;
+mod patterns;
+mod plain;
+mod nature_rules;
 mod reach;
 mod reaction;
 mod record;
 mod result;
 mod table;
 mod ty;
-mod unsupported;
+pub(crate) mod unsupported;
 
+pub use aggregate::FieldType;
+pub use enums::EnumTag;
 pub use intrinsic::Intrinsic;
 pub use table::{Builtin, Callee, Continuity, Method, Types};
 pub use ty::Ty;

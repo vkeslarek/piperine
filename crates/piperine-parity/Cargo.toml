@@ -16,3 +16,40 @@ tempfile.workspace = true
 [dev-dependencies]
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
+
+# The buck's targets run by name, not by `cargo test` (MD-77; registered in `suite_hygiene.rs`).
+
+[[test]]
+name = "buck_whole"
+path = "tests/buck_whole.rs"
+test = false
+
+[[test]]
+name = "buck_dpwm"
+path = "tests/buck_dpwm.rs"
+test = false
+
+[[test]]
+name = "buck_control"
+path = "tests/buck_control.rs"
+test = false
+
+[[test]]
+name = "buck_boundary"
+path = "tests/buck_boundary.rs"
+test = false
+
+[[test]]
+name = "buck_power"
+path = "tests/buck_power.rs"
+test = false
+
+[[test]]
+name = "buck_supervisor"
+path = "tests/buck_supervisor.rs"
+test = false
+
+[[test]]
+name = "buck_closed_loop"
+path = "tests/buck_closed_loop.rs"
+test = false

@@ -1,0 +1,90 @@
+//! Composite carriers (CV-17, §2): a struct, a tuple, an array, a payload enum and an `Option`
+//! held by a `Bit<T>`, with an initial value, a definition, commits, reads, `changed()` and
+//! `prev()` over the whole value, the widths of §2 and a tag that names no variant. The expected
+//! bytes are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+struct Pair { a: u8, b: bool }
+#[derive(Repr, PartialEq)]
+enum Tx { Idle, Data { n: u3 }, Stop }
+#[derive(Repr, PartialEq)]
+struct Wrap { t: (u8, bool), a: [u8; 3], o: Option<u8> }
+
+// Commits of every composite shape, the same value at both rising edges (2.5 ns and 7.5 ns).
+module Commits(in clk: Bit, out s: Bit<Pair> = Pair { a: 0, b: false }, out t: Bit<(u8, bool)> = (0, false), out arr: Bit<[u8; 3]> = [0, 0, 0], out tx: Bit<Tx> = Tx::Idle, out opt: Bit<Option<u8>>) {}
+digital for Commits {
+    on clk.rise() {
+        s <- Pair { a: 7, b: true };
+        t <- (9, false);
+        arr <- [1, 2, 3];
+        tx <- Tx::Data { n: 5 };
+        opt <- Some(4);
+    }
+}
+
+// A value that changes at each edge, and a tag a variant names (1, with n = 3).
+module Moves(in clk: Bit, out u: Bit<Pair> = Pair { a: 6, b: false }, out step: Bit<u8> = 7, out good: Bit<Tx> = Tx::Idle, out none: Bit<bool> = false) {}
+digital for Moves {
+    on clk.rise() {
+        u <- Pair { a: step, b: false };
+        step <- step + 1;
+        good <- cast::<u5, Tx>(13).unwrap();
+        none <- cast::<u5, Tx>(15).is_none();
+    }
+}
+
+// Reads of the whole value: how often it changed, its fields and the value before the change.
+module Watch(in u: Bit<Pair>, in s: Bit<Pair>, out now_a: Bit<u8> = 0, out before_a: Bit<u8> = 0, out s_changes: Bit<u8> = 0) {}
+digital for Watch {
+    on u.changed() {
+        now_a <- u.a;
+        before_a <- u.prev().a;
+    }
+    // the initial value is the first value of `s`, not a change from another (§3.3.4)
+    on s.changed() { if s != (Pair { a: 0, b: false }) { s_changes <- s_changes + 1; } }
+}
+
+// Reads of a tuple, an array, an `Option` and a payload enum, whole and by part.
+module Reads(in t: Bit<(u8, bool)>, in arr: Bit<[u8; 3]>, in opt: Bit<Option<u8>>, in tx: Bit<Tx>, in good: Bit<Tx>,
+             out r_t: Bit<u8> = 0, out r_arr: Bit<u8> = 0, out r_opt: Bit<u8> = 0, out r_tx: Bit<u8> = 0) {}
+digital for Reads {
+    on tx.changed() {
+        r_t <- t.0;
+        r_arr <- arr[1];
+        r_opt <- opt.unwrap_or(0);
+        r_tx <- match tx { Tx::Data { n } => n as u8, _ => 99 };
+    }
+}
+
+// The width of each type, §2.
+module Widths(in clk: Bit, out w_pair: Bit<u8> = 0, out w_enum: Bit<u8> = 0, out w_wrap: Bit<u8> = 0) {}
+digital for Widths {
+    on clk.rise() {
+        w_pair <- Pair::WIDTH as u8;
+        w_enum <- Tx::WIDTH as u8;
+        w_wrap <- Wrap::WIDTH as u8;
+    }
+}
+
+// An initial value, and a definition.
+module Defined(out first: Bit<Pair> = Pair { a: 3, b: true }, out defined: Bit<Pair>) { defined = Pair { a: 1, b: true }; }
+
+module Bench() {
+    signal clk: Bit;
+    signal s: Bit<Pair>; signal t: Bit<(u8, bool)>; signal arr: Bit<[u8; 3]>; signal tx: Bit<Tx>; signal opt: Bit<Option<u8>>;
+    signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>; signal none: Bit<bool>;
+    signal r_t: Bit<u8>; signal r_arr: Bit<u8>; signal r_opt: Bit<u8>; signal r_tx: Bit<u8>; 
+    signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal s_changes: Bit<u8>;
+    signal w_pair: Bit<u8>; signal w_enum: Bit<u8>; signal w_wrap: Bit<u8>;
+        signal first: Bit<Pair>; signal defined: Bit<Pair>;
+    let osc = Osc(clk) { f: 200M };
+    let commits = Commits(clk, s, t, arr, tx, opt);
+    let moves = Moves(clk, u, step, good, none);
+    let watch = Watch(u, s, now_a, before_a, s_changes);
+    let reads = Reads(t, arr, opt, tx, good, r_t, r_arr, r_opt, r_tx);
+    let widths = Widths(clk, w_pair, w_enum, w_wrap);
+    let defs = Defined(first, defined);
+}

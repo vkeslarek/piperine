@@ -3,12 +3,10 @@
 //!
 //! Each is one Rust `fn` over `Eval`, named from the MSL name first: `<carrier>_drive`,
 //! `event<k>`, `<carrier>_drive_changed`. It binds the cells it reads (decoded: a carrier's pin
-//! is an `rt::Flagged<T>` from the pin's bytes, a `CHANGED` byte a `bool`), only those its code
-//! uses, and writes its cells: a drive writes the pin's bytes (`Flagged::write`; an unknown value
-//! is all zero bytes, RS-11 AC 4); an event writes its `CHANGED` byte, nonzero when it fires
-//! (abi.md §4.1). An event fires when its source fired and its guard holds; the guard is
-//! evaluated only then, and a guard that may be unknown stops the event only when it is known
-//! false.
+//! is a `T` from the pin's bytes, a `CHANGED` byte a `bool`), only those its code uses, and writes
+//! its cells: a drive writes the pin's bytes (`Carried::write_pin`); an event writes its `CHANGED`
+//! byte, nonzero when it fires (abi.md §4.1). An event fires when its source fired and its guard
+//! holds; the guard is evaluated only then.
 
 use piperine_ir::{Body, EventSource, Ir, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source};
@@ -83,13 +81,13 @@ impl<'a> DigitalPrinter<'a> {
     }
 
     /// The `let` that binds read `i` of a function (or reaction) from its lens `cx`: a carrier's
-    /// pin decoded into a flagged value, a `CHANGED` byte as a `bool`, a real as an `f64`.
+    /// pin decoded into its value, a `CHANGED` byte as a `bool`, a real as an `f64`.
     /// `None` for a read no discrete code has.
     pub(crate) fn bind(&self, values: &ValuePrinter<'_>, cx: &str, i: usize, s: Source) -> Result<Option<String>, Error> {
         let name = self.names.read_name(s);
         let carrier_of_drive = |k: u32| self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
         let pin = |ty: &ValueType| -> Result<String, Error> {
-            Ok(format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", values.pin_type(ty)?))
+            Ok(format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))))
         };
         Ok(Some(match s {
             // a previous value is in the carrier's own layout (abi.md §4.1)
@@ -106,8 +104,9 @@ impl<'a> DigitalPrinter<'a> {
             | Source::Crossed(_)
             | Source::Timer(_)
             | Source::Fired(_)
+            | Source::Settle
             | Source::ParamChanged(_) => format!("let {name} = {cx}.bool({i});"),
-            Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq | Source::Resolution => {
+            Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte
@@ -116,9 +115,11 @@ impl<'a> DigitalPrinter<'a> {
             Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
-                    let (rust, zero) = (values.type_of(ty)?, ValuePrinter::zero(ty));
-                    format!("let {name} = rt::Flagged::<{rust}>::decode({cx}.bytes({i})).known_or({zero});")
+                    let rust = values.type_of(ty)?;
+                    format!("let {name} = {};", ValuePrinter::pin_value(&rust, &format!("{cx}.bytes({i})")))
                 }
+                // a composite param is the bytes of a composite pin
+                Some(ty) if ty.is_composite() => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
@@ -167,7 +168,7 @@ impl<'a> DigitalPrinter<'a> {
             return Err(self.unsupported(&format!("a drive of carrier {}", drive.carrier)));
         };
         let values = ValuePrinter::of_digital(self.ir, self.body).with_reads(self.reads());
-        let value = values.expr_as(drive.value, &ValueType::Flagged(Box::new(carrier.ty.clone())))?;
+        let value = values.expr(drive.value)?;
         let mut t = Text::new();
         self.header(&mut t, k, f);
         t.line(&format!("fn {}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{", self.function_name(f)));
@@ -178,7 +179,7 @@ impl<'a> DigitalPrinter<'a> {
             }
             t.comment(&format!("drive of {}.{}: the value its pin takes", self.body.name(), carrier.name), &drive.origin);
             t.line(&format!("let value_ = {value};"));
-            t.line("value_.write(cx_.out_bytes(0));");
+            t.line("rt::Carried::write_pin(value_, cx_.out_bytes(0));");
             t.line("Ok(())");
         });
         t.line("}");
@@ -211,6 +212,8 @@ impl<'a> DigitalPrinter<'a> {
                     EventSource::Cross { .. } => (self.names.read_name(Source::Crossed(e)), format!("its crossing fired (event {e})")),
                     // only a guarded timer has an event function: it gates the timer's own pin
                     EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),
+                    // §13 rule 17: the `SETTLE` pin's `CHANGED` byte, which the engine fires in the settle phase (§15 step 4)
+                    EventSource::Settle => (self.names.read_name(Source::Settle), "the settle phase runs".to_string()),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }
@@ -230,12 +233,8 @@ impl<'a> DigitalPrinter<'a> {
             }
             _ => return Err(self.unsupported(&format!("function {k} as an event"))),
         };
-        // a guard that may be unknown does not stop the event: it fires unless the guard is known
-        // false, and its reaction then runs as a maybe (§13 rule 1)
-        let guard_flagged = guard.is_some_and(|g| matches!(self.ir.expr_type(g), ValueType::Flagged(_)));
         let condition = match guard {
-            Some(g) if guard_flagged => Some(values.expr(g)?),
-            Some(g) => Some(values.known_condition(g)?),
+            Some(g) => Some(values.condition(g)?),
             None => None,
         };
         let forced: Vec<Source> = f.reads.iter().copied().filter(|s| self.names.read_name(*s) == fired).collect();
@@ -248,11 +247,6 @@ impl<'a> DigitalPrinter<'a> {
                 t.line(line);
             }
             match &condition {
-                Some(guard) if guard_flagged => {
-                    t.comment(&format!("event of {}: it fires when {what} and its guard is not known false", self.body.name()), &origin);
-                    t.line(&format!("let guard_ = {guard};"));
-                    t.line(&format!("let fired_ = {fired} && (!guard_.is_known() || guard_.high());"));
-                }
                 Some(guard) => {
                     t.comment(&format!("event of {}: it fires when {what} and its guard holds", self.body.name()), &origin);
                     t.line(&format!("let fired_ = {fired} && {guard};"));
@@ -302,16 +296,15 @@ mod tests {
 
     #[test]
     fn drives_and_events_print_as_discrete_functions() {
-        // dpwm.msl:51 `sample = count == 0;`: `count` is read from its pin as a value that may
-        // be unknown (§3.3.1), so the comparison is unknown until `count` is written; the drive
-        // writes the carrier's pin bytes, all zero when unknown (RS-11 AC 4)
+        // dpwm.msl:51 `sample = count == 0;`: `count` is read from its pin as its value; the drive
+        // writes the carrier's pin bytes (`Carried::write_pin`)
         let sample = "\
 // function 0 `drive:sample`: reads count; writes sample @ dpwm.msl:51:5
 fn sample_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
-    let count = rt::Flagged::<rt::UInt<9>>::decode(cx_.bytes(0));
+    let count = <rt::UInt<9> as rt::Carried>::from_pin(cx_.bytes(0));
     // drive of Dpwm.sample: the value its pin takes @ dpwm.msl:51:5
-    let value_ = count.equal(rt::Flagged::known(rt::UInt::<9>::new(0)));
-    value_.write(cx_.out_bytes(0));
+    let value_ = count == rt::UInt::<9>::new(0);
+    rt::Carried::write_pin(value_, cx_.out_bytes(0));
     Ok(())
 }";
         assert_eq!(printed(Buck::dpwm, "drive:sample"), sample);
@@ -322,10 +315,10 @@ fn sample_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         let rise = "\
 // function 0 `event:0`: reads clk, clk_changed_; writes event:0 @ dff.msl:2:22
 fn event0(cx_: &mut Eval<'_>) -> Result<(), Fault> {
-    let clk = rt::Flagged::<bool>::decode(cx_.bytes(0));
+    let clk = <bool as rt::Carried>::from_pin(cx_.bytes(0));
     let clk_changed_ = cx_.bool(1);
     // event of Dff: it fires when carrier clk changed and its guard holds @ dff.msl:2:22
-    let fired_ = clk_changed_ && clk.high();
+    let fired_ = clk_changed_ && clk;
     cx_.set(0, u8::from(fired_));
     Ok(())
 }";
@@ -350,11 +343,11 @@ fn event0(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         let gate = "\
 // function 1 `drive:hs_gate`: reads hs_cmd, ls_cmd; writes drive:hs_gate.now @ power.msl:76:5
 fn hs_gate_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
-    let hs_cmd = rt::Flagged::<bool>::decode(cx_.bytes(0));
-    let ls_cmd = rt::Flagged::<bool>::decode(cx_.bytes(1));
+    let hs_cmd = <bool as rt::Carried>::from_pin(cx_.bytes(0));
+    let ls_cmd = <bool as rt::Carried>::from_pin(cx_.bytes(1));
     // drive of GateDriver.hs_gate: the value its pin takes @ power.msl:76:5
     let value_ = hs_cmd & !ls_cmd;
-    value_.write(cx_.out_bytes(0));
+    rt::Carried::write_pin(value_, cx_.out_bytes(0));
     Ok(())
 }";
         assert_eq!(printed(Buck::gate_driver, "drive:hs_gate"), gate);
@@ -373,11 +366,11 @@ fn hs_gate_drive_changed(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         let at_target = "\
 // function 0 `drive:at_target`: reads target, reference; writes at_target @ control.msl:24:5
 fn at_target_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
-    let target = rt::Flagged::<rt::UInt<10>>::decode(cx_.bytes(0));
-    let reference = rt::Flagged::<rt::UInt<10>>::decode(cx_.bytes(1));
+    let target = <rt::UInt<10> as rt::Carried>::from_pin(cx_.bytes(0));
+    let reference = <rt::UInt<10> as rt::Carried>::from_pin(cx_.bytes(1));
     // drive of RefRamp.at_target: the value its pin takes @ control.msl:24:5
-    let value_ = reference.equal(target);
-    value_.write(cx_.out_bytes(0));
+    let value_ = reference == target;
+    rt::Carried::write_pin(value_, cx_.out_bytes(0));
     Ok(())
 }";
         assert_eq!(printed(Buck::ref_ramp, "drive:at_target"), at_target);

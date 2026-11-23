@@ -9,35 +9,51 @@
 //! (first-reach order, each function variant lowered when a call first reaches it), then the
 //! instance tree. Any diagnostic means no `Ir`.
 
+mod aggregate;
 mod body;
 mod carriers;
 mod children;
+mod closures;
 mod compound;
 mod consts;
+mod control;
 mod contribute;
 mod derivatives;
+mod derived;
 mod diagnose;
 mod drives;
+mod event_reads;
 mod events;
+mod exits;
+mod files;
 mod elaborator;
 mod analog;
 mod functions;
 mod hoist;
+mod host_sources;
 mod inflow;
 mod intrinsics;
-mod known;
+mod iterators;
 mod lower;
 mod nature;
 mod origin;
+mod patterns;
 mod place;
 mod reach;
 mod reactions;
+mod returns;
 mod records;
 mod selectors;
+mod signal_flow;
 mod structural;
+mod templates;
+mod types;
 mod unlowered;
+mod unroll;
 mod variants;
 
-pub use consts::{Bindings, ConstEval, ConstFault, Folded};
+pub use consts::{Bindings, ConstEval, ConstFault, Exit};
+pub use files::{FileFault, IncludedFiles};
 pub use elaborator::Elaborator;
+pub use host_sources::HostSourceParam;
 pub use structural::Overrides;

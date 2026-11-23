@@ -7,6 +7,7 @@ use piperine_solver::abi::{Error, SolverDomain};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result};
 
 use crate::BodyPlan;
+use crate::pin::PinLayout;
 
 /// Who supplies the module of a body: the interpreter, or a compiled library.
 pub trait Modules {
@@ -93,21 +94,20 @@ impl<'a> Netlist<'a> {
                     None => Port::Open,
                 });
             }
-            let values: Vec<(&str, ParamValue)> = body
-                .params()
-                .iter()
-                .zip(instance.params())
-                .filter(|(param, given)| param.default.as_ref() != Some(*given))
-                .map(|(param, given)| {
-                    let value = match given {
-                        Constant::Real(r) => ParamValue::Real(r.get()),
-                        Constant::Bool(b) => ParamValue::Bool(*b),
-                        // The solver's integer leaf; an `N`-bit value fits its 64 bits.
-                        Constant::Int(v) => ParamValue::Int(*v as i64),
-                    };
-                    (param.name.as_str(), value)
-                })
-                .collect();
+            let mut values: Vec<(&str, ParamValue)> = Vec::new();
+            for (param, given) in body.params().iter().zip(instance.params()).filter(|(param, given)| param.default.as_ref() != Some(*given)) {
+                let value = match given {
+                    Constant::Real(r) => ParamValue::Real(r.get()),
+                    Constant::Bool(b) => ParamValue::Bool(*b),
+                    // The solver's integer leaf; an `N`-bit value fits its 64 bits.
+                    Constant::Int(v) => ParamValue::Int(*v as i64),
+                    // A composite is exactly the pin's bytes (`CompositeLayout::bytes`).
+                    Constant::Aggregate(_) => ParamValue::Bytes(PinLayout::bytes_in(ir, &param.ty, *given).ok_or_else(|| {
+                        Error::simple(SolverDomain::Device, format!("instance `{}`: param `{}` holds a composite constant that is no value of {}", instance.path(), param.name, param.ty))
+                    })?),
+                };
+                values.push((param.name.as_str(), value));
+            }
             builder.device(module, instance.path(), &values, &ports);
         }
         builder.build()

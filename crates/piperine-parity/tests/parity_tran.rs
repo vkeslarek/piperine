@@ -28,13 +28,41 @@ impl TranRun {
     fn options(times: &[f64]) -> TransientAnalysisOptions {
         Self::options_to(times, Self::STOP)
     }
-
     /// [`options`](Self::options) for a run to `stop`.
     fn options_to(times: &[f64], stop: f64) -> TransientAnalysisOptions {
         let print_step = times[1] - times[0];
         let mut options = TransientAnalysisOptions::new(stop, print_step / 10.0);
         options.dt_max = print_step / 10.0;
         options
+    }
+
+    /// Runs the transient of `bench` (a twin loaded on its backend) with the options `options_of`
+    /// makes from the export's times, and holds `v(node)` to the reference at each exported time
+    /// under `TRAN_VOLTAGE`.
+    fn compare(bench: &mut Bench, node: &str, reference: &Reference, expected_rows: usize, options_of: impl Fn(&[f64]) -> TransientAnalysisOptions) {
+        let (fixture, backend) = (bench.fixture().to_string(), bench.backend());
+        let export = format!("{fixture}_tran");
+        let quantity = format!("v({node})");
+        let out = bench.node(node);
+        let rows = match reference {
+            Reference::Golden(golden) => {
+                let rows = golden.real(&export);
+                golden.expect_rows(&export, &rows, expected_rows);
+                rows
+            }
+            Reference::Skipped => vec![(0.0, 0.0), (0.1e-6, 0.0)],
+        };
+        let times: Vec<f64> = rows.iter().map(|(t, _)| *t).collect();
+        let options = options_of(&times);
+        let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().unwrap_or_else(|error| panic!("{fixture}: the transient does not solve on {}: {error}", backend.name()));
+        let steps: Vec<_> = result.iter().collect();
+        let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).unwrap_or_else(|| panic!("{fixture}: no {quantity}"))).collect());
+        let Reference::Golden(golden) = reference else { return };
+        for (time, wanted) in rows {
+            let actual = waveform.at(time).unwrap_or_else(|| panic!("{fixture}: the time {time:e} s lies outside the solver's result on {}", backend.name()));
+            let at = Point::new(&fixture, &quantity, Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(backend.name());
+            ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
+        }
     }
 }
 
@@ -127,28 +155,27 @@ fn compare_on(fixture: &str, node: &str, reference: &Reference, backend: Backend
 
 /// [`compare_on`] with the export's `expected_rows` and the options `options_of` makes from its times.
 fn compare_with(fixture: &str, node: &str, reference: &Reference, backend: Backend, expected_rows: usize, options_of: impl Fn(&[f64]) -> TransientAnalysisOptions) {
-    let export = format!("{fixture}_tran");
-    let quantity = format!("v({node})");
     let mut bench = Bench::load_on(fixture, backend);
-    let out = bench.node(node);
-    let rows = match reference {
-        Reference::Golden(golden) => {
-            let rows = golden.real(&export);
-            golden.expect_rows(&export, &rows, expected_rows);
-            rows
-        }
-        Reference::Skipped => vec![(0.0, 0.0), (0.1e-6, 0.0)],
-    };
-    let times: Vec<f64> = rows.iter().map(|(t, _)| *t).collect();
-    let options = options_of(&times);
-    let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().unwrap_or_else(|error| panic!("{fixture}: the transient does not solve on {}: {error}", backend.name()));
-    let steps: Vec<_> = result.iter().collect();
-    let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).unwrap_or_else(|| panic!("{fixture}: no {quantity}"))).collect());
-    let Reference::Golden(golden) = reference else { return };
-    for (time, wanted) in rows {
-        let actual = waveform.at(time).unwrap_or_else(|| panic!("{fixture}: the time {time:e} s lies outside the solver's result on {}", backend.name()));
-        let at = Point::new(fixture, &quantity, Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(backend.name());
-        ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
+    TranRun::compare(&mut bench, node, reference, expected_rows, options_of);
+}
+
+/// The print rows ngspice exports for the clipper: its 20 us grid over 2 ms, both ends included.
+const CLIPPER_ROWS: usize = 101;
+
+/// The Book's diode clipper (`tests/limexp/tran_clipper.msl`, its diodes written with `limexp`)
+/// against ngspice's `tests/e2e/twins/tran_clipper.cir`: `v(vout)` over two periods of the 1 kHz
+/// sine, under `TRAN_VOLTAGE`. It runs on the compiled backend only: the interpreter does not run
+/// `now()`. The step configuration is the one of every twin here, on both sides (a step cap of a
+/// tenth of the print step, `tmax` of the netlist). The model is not in `tests/e2e/twins/`: a
+/// `.msl` beside a `.cir` is a corpus twin that owes a `.command` (the command-line twins stay
+/// sixteen).
+#[test]
+fn tran_clipper() {
+    let reference = Ngspice::from_environment().run("tran_clipper");
+    let model = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/limexp/tran_clipper.msl");
+    for backend in compiled_backends() {
+        let mut bench = Bench::load_file_on("tran_clipper", &model, backend);
+        TranRun::compare(&mut bench, "vout", &reference, CLIPPER_ROWS, |times| TranRun::options_to(times, 2e-3));
     }
 }
 

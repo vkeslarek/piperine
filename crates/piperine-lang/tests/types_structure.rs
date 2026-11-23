@@ -7,7 +7,7 @@ use piperine_lang::pom::{Design, DesignDiagnostic, ExprId};
 use piperine_lang::types::{Ty, Types};
 
 /// A module whose result reads only its own carrier, so it goes through an unknown (§8.3.5).
-const INTEG: &str = "module Integ(x: f64, ic: f64) -> f64 {\n    signal s: Bit<f64> = 0.0;\n    s.known_or(0.0)\n}\n";
+const INTEG: &str = "module Integ(x: f64, ic: f64) -> f64 {\n    signal s: Bit<f64> = 0.0;\n    s\n}\n";
 /// A module whose result depends directly on its input (§8.3.5).
 const TWICE: &str = "module twice(x: f64) -> f64 { 2.0 * x }\n";
 
@@ -85,7 +85,7 @@ fn a_discrete_argument_read_by_a_callee_definition_is_accepted() {
     // AS-08 AC 4, the other side: a literal, a param or a carrier read is discrete, so a definition may
     // read it; and a continuous argument for an input that only an `analog` block reads is no
     // definition's read (the `analog` rule, `E0150`, is not this one).
-    for call in ["Hold(2.0, q)", "Hold(k * 2.0, q)", "Hold(c.known_or(0.0), q)"] {
+    for call in ["Hold(2.0, q)", "Hold(k * 2.0, q)", "Hold(c, q)"] {
         let src = format!("{HOLD}module Top(a: Electrical, in c: Bit<f64>) {{ k: f64 = 1.0; signal q: Bit<f64>; let h = {call}; }}");
         let design = design_of(&src);
         Types::check(&design, "Top").unwrap_or_else(|d| panic!("{call}: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
@@ -102,7 +102,7 @@ fn inst_name_types_as_the_pub_item() {
     // AS-11 AC 1 to 4 (§8.2.8): `c.mid` is the child's node (a probe takes it), `c.state` the child's
     // carrier of `Bit<u8>` (read by `known_or`, it is a `u8`), `c.r` the child's param (an `f64`) and
     // `c.e` the child's `let` (the type of its value, an `f64`): each types as the item itself.
-    let src = format!("{CELL}module Top(a: Electrical) {{\n    let c = Cell(a);\n    let z = c.r;\n    let w = c.e;\n}}\nanalog for Top {{ v(a) +> v(c.mid) + (c.state.known_or(0) as f64) + z + w; }}");
+    let src = format!("{CELL}module Top(a: Electrical) {{\n    let c = Cell(a);\n    let z = c.r;\n    let w = c.e;\n}}\nanalog for Top {{ v(a) +> v(c.mid) + (c.state as f64) + z + w; }}");
     let design = design_of(&src);
     let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
     let typed_as = |text: &str| -> Vec<Option<Ty>> { (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| src.get(design.expr_node(*e).span.range()) == Some(text) && matches!(design.expr_node(*e).kind, piperine_lang::pom::ExprKind::Field { .. })).map(|e| types.ty(e).cloned()).collect() };
@@ -178,7 +178,7 @@ fn changed_and_prev_of_a_param_type_as_an_event_and_the_params_type() {
 fn an_initial_value_that_reads_a_carrier_is_e0210() {
     // AS-15 AC 3 (§5.1.5): an initial value is over params and constants: a carrier or a probe in it is
     // `E0210` at the read, for a node and for a carrier alike; a param is accepted.
-    for (init, read) in [("signal a: Electrical = c.known_or(0.0);", "c"), ("signal b: Bit<f64> = c.known_or(0.0);", "c"), ("signal a: Electrical = v(x);", "v(x)")] {
+    for (init, read) in [("signal a: Electrical = c;", "c"), ("signal b: Bit<f64> = c;", "c"), ("signal a: Electrical = v(x);", "v(x)")] {
         let src = format!("module Top(in c: Bit<f64>, x: Electrical) {{ {init} }}");
         let found = diagnostics(&src);
         let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
@@ -188,5 +188,27 @@ fn an_initial_value_that_reads_a_carrier_is_e0210() {
     for init in ["signal a: Electrical = k0;", "signal b: Bit<f64> = k0 * 2.0;"] {
         let src = format!("module Top() {{ k0: f64 = 1.0; {init} }}");
         Types::check(&design_of(&src), "Top").unwrap_or_else(|d| panic!("{init}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    }
+}
+
+#[test]
+fn an_attribute_a1_does_not_list_is_e0904() {
+    // A.1: an attribute outside the table is `E0904`, `#[cfg]` and `#[allow]` included.
+    for attribute in ["#[cfg(test)]", "#[allow(dead_code)]", "#[inline]"] {
+        let src = format!("{attribute}\nmodule Top() {{ }}");
+        let d = diagnostics(&src);
+        assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0904"], "{attribute}");
+        assert!(d[0].diagnostic.message.contains(&attribute[2..attribute.find('(').unwrap_or(attribute.len() - 1)]), "{}", d[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_listed_attribute_on_the_wrong_item_is_e0904() {
+    // A.1: `#[link]` is for an `extern` module, `#[repr(uN)]` for an `enum`, `#[derive]` for a type.
+    for (attribute, item) in [("#[link(\"x.osdi\")]", "fn f() { }"), ("#[repr(u2)]", "struct S { x: f64 }"), ("#[derive(Repr)]", "fn g() { }")] {
+        let src = format!("{attribute}\n{item}\nmodule Top() {{ }}");
+        let d = diagnostics(&src);
+        assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0904"], "{attribute}");
+        assert!(d[0].diagnostic.message.contains("A.1 allows it only on"), "{}", d[0].diagnostic.message);
     }
 }

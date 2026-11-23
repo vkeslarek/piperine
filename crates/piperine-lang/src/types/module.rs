@@ -5,6 +5,8 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::derives::DerivedTrait;
+use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
 
@@ -42,7 +44,8 @@ impl Checker<'_> {
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
                 self.infer(default);
             }
-            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out)) => {
+            // An `in` port of a top level starts at its written value too (§3.3.4, §23.1 rule 9).
+            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) => {
                 self.initial_reads(default);
                 self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
             }
@@ -54,10 +57,13 @@ impl Checker<'_> {
         }
     }
 
-    /// `name: T = default where cond;` — `T` is `f64` or `bool`; `where` is `bool` (`E0318`).
+    /// `name: T = default where cond;` — `T` is `f64`, `bool`, a module (its value a template
+    /// `Name { params }`, PI-04) or a struct, tuple or array of plain data (CV-18); `where` is `bool` (`E0318`).
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
-            Ty::F64 | Ty::Bool => Some(ty),
+            Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
+            // An `Option` or enum param is `params-and-io`'s (L28).
+            composite if self.is_param_composite(&composite) => Some(composite),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -117,10 +123,10 @@ impl Checker<'_> {
         let pat = self.design.pat_node(data.pat).clone();
         let file = self.design.decl_data(pat.owner).file;
         if matches!(pat.kind, PatKind::Tuple(_)) {
-            self.tuple_let(file, &pat, data.value);
+            self.let_pattern(file, data.pat, None, Some(data.value), None);
             return;
         }
-        let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
+        let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
             self.infer_event_position(data.value);
             return;
@@ -128,6 +134,9 @@ impl Checker<'_> {
         self.lets_open.insert(*binding, data.value);
         let ty = self.infer_event_position(data.value);
         self.lets_open.remove(binding);
+        if let Some(closure) = self.closure_expr(data.value) {
+            self.closure_locals.insert(*binding, closure);
+        }
         match ty {
             Some(Ty::Str) => {
                 self.unsupported(file, pat.span, "a string literal bound by a `let`");
@@ -168,6 +177,15 @@ impl Checker<'_> {
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
+            // `cell(c)` through a param of module type (§8.4.4): the module's ports are connected;
+            // the param block belongs to the template, so one on the placement is `E0361`.
+            ExprKind::Path(_) if self.callee_is_param_of(*callee, module) => {
+                if params.is_some() {
+                    let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.coded(file, "E0361", node.span, format!("a placement through a param of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
+                }
+                Vec::new()
+            }
             _ => {
                 if !self.reads_poisoned(*callee) {
                     self.unsupported(file, node.span, "placement through a template value or a function");
@@ -196,6 +214,15 @@ impl Checker<'_> {
     fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
+            _ => false,
+        }
+    }
+
+    /// Whether `callee` names a param whose declared type is the module `module`.
+    fn callee_is_param_of(&self, callee: ExprId, module: DeclId) -> bool {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(d)) => matches!(&self.design.decl_data(d).kind, DeclKind::Param(p) if self.design.type_resolution(p.ty) == Resolution::Decl(module)),
             _ => false,
         }
     }
@@ -246,15 +273,14 @@ impl Checker<'_> {
                 continue;
             };
             match kind {
-                Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
+                Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    self.connect(arg.value, &expected, &found);
+                    self.connect(arg.value, port_decl, &expected, &found);
                 }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
                     self.check_argument(arg.value, &value);
-                    self.analog_value_input(module, port_decl, arg.value);
                     self.definition_value_input(expr, module, port_decl, arg.value);
                 }
                 None => {
@@ -264,8 +290,10 @@ impl Checker<'_> {
         }
     }
 
-    /// One node argument: the nature of its port, or `gnd`.
-    fn connect(&mut self, arg: ExprId, port: &Ty, found: &Ty) {
+    /// One node argument to the port `port_decl`: the nature of its port, or `gnd`. A value (an
+    /// expression that is not a node) at a continuous carrier port is `E0315` naming the port:
+    /// only an `in` port takes an expression, and a node port is never one (§8.1.11).
+    fn connect(&mut self, arg: ExprId, port_decl: DeclId, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -275,11 +303,16 @@ impl Checker<'_> {
             return;
         }
         match (port, found) {
-            (Ty::Node(p), Ty::Node(f)) if p == f => {}
+            (Ty::Node(p), Ty::Node(f)) if NatureRules::compatible(self.design, *p, *f) => {}
             (_, Ty::AnyNode) => {}
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
+            }
+            (Ty::Node(_), _) => {
+                let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let message = format!("an expression of type {} is connected to the node port `{name}`: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
         }
@@ -288,7 +321,7 @@ impl Checker<'_> {
     /// One argument at a carrier port holding `value`. At an `in` port a carrier of the same
     /// type or a discrete expression (an anonymous definition, §8.2.9); at an `out` port a
     /// carrier the parent may hand to one driver, and nothing else (§8.1.11).
-    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, value: &Ty) {
+    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
@@ -300,9 +333,9 @@ impl Checker<'_> {
             (None, _) if found == Some(Ty::AnyNode) => {
                 self.coded(file, "E0250", span, "`gnd` is connected to a port of a discrete nature (§6.1)".to_string(), "`gnd` at a discrete port");
             }
-            (Some((decl, Ty::Carrier { value: held, .. })), dir) => {
-                if **held != *value {
-                    let message = format!("a carrier of `Bit<{}>` is connected to a port of `Bit<{}>`", held.name(self.design), value.name(self.design));
+            (Some((decl, held @ Ty::Carrier { .. })), dir) => {
+                if held != port {
+                    let message = format!("a carrier of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
                     self.coded(file, "E0251", span, message, "carrier of another type");
                 } else if dir == Some(crate::msl::ast::Dir::Out) {
                     self.hand_over(*decl, span, file);
@@ -314,6 +347,7 @@ impl Checker<'_> {
                 self.coded(file, "E0314", span, message, "expression at an `out` port");
             }
             (None, _) => {
+                let Ty::Carrier { value, .. } = port else { return };
                 self.check_as(arg, value, "E0337");
                 if self.continuous(arg) {
                     let message = "a continuous expression is connected to an `in` port: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` (§8.1.12)".to_string();
@@ -352,8 +386,45 @@ impl Checker<'_> {
         }
     }
 
+    /// Every carrier of this module that has a value from `(0, 0)` on (§3.3.4): a `signal` or an `out` port of a
+    /// one-driver nature with no initial value needs a value type that implements `Default`, else `E0187` at the
+    /// declaration naming the carrier and `Default` (once per declaration). The one driver may specify the value
+    /// instead: an undelayed definition of the carrier, or an `out` port of a child instance it is handed to
+    /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An `in` port is driven by its caller.
+    pub(super) fn missing_initial_values(&mut self, children: &[DeclId]) {
+        for decl in children.iter().copied() {
+            let item = self.design.decl_data(decl).clone();
+            let is_carrier = match &item.kind {
+                DeclKind::Signal(_) => true,
+                DeclKind::Port(port) => port.dir == Some(crate::msl::ast::Dir::Out),
+                _ => false,
+            };
+            let Some(Ty::Carrier { nature, value }) = self.carriers.get(&decl).cloned() else { continue };
+            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
+                continue;
+            }
+            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _)| *carrier == decl);
+            if specified_by_the_driver {
+                continue;
+            }
+            let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let found = value.name(self.design);
+            let message = format!("`{name}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
+            self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
+        }
+    }
+
+    /// A template `Name { params }` where a value of module type is expected (PI-04): its params
+    /// are checked like a placement's block, and its type is the module it names, so a template
+    /// of another module is a mismatch (`E0180`) naming both.
+    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
+        self.param_block(fields);
+        self.exprs[expr.index()] = Some(Ty::Module(module));
+        Some(Ty::Module(module))
+    }
+
     /// `{ name: value }` of a placement: each value against the declared type of its param.
-    fn param_block(&mut self, fields: &[FieldInit]) {
+    pub(super) fn param_block(&mut self, fields: &[FieldInit]) {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
@@ -364,7 +435,8 @@ impl Checker<'_> {
                 _ => None,
             };
             match param.and_then(|t| self.lower_type(t)) {
-                Some(ty @ (Ty::F64 | Ty::Bool)) => self.check(field.value, &ty),
+                Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
+                Some(composite) if self.is_param_composite(&composite) => self.check(field.value, &composite),
                 _ => {
                     self.infer(field.value);
                 }

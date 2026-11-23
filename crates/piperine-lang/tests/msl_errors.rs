@@ -147,7 +147,7 @@ fn macros_other_than_emit_and_include_str_report_e0901() {
         let found = codes(src);
         assert!(found.contains(&("E0901", Span::new(at, at + len))), "{src:?}: {found:?}");
     }
-    let r = parse("fn f() { emit!(\"sim\", finish = true); } const A: &'static str = include_str!(\"a.txt\");");
+    let r = parse("fn f() { emit!(\"sim\", finish = true); } const A: str = include_str!(\"a.txt\");");
     assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
 
@@ -281,7 +281,7 @@ fn an_on_every_inside_a_reaction_is_a_placement_in_a_reaction_body_e0350() {
 
 #[test]
 fn an_emit_statement_in_a_module_body_reports_e0601() {
-    // from-rust~64ee8d1d of the Book (chapter 14, part VI §19 rule 10): `emit!` written where only
+    // values~64ee8d1d of the Book (chapter 5, part VI §19 rule 10): `emit!` written where only
     // items go is E0601 at the statement, not a syntax error; the items after it still parse
     let src = "module M() { emit!(\"hello\"); let x = 1.0; }";
     let found = codes(src);
@@ -309,16 +309,54 @@ fn a_statement_outside_a_reaction_in_digital_reports_e0434() {
 }
 
 #[test]
-fn module_forms_report_e0302_e0303_e0331() {
+fn module_forms_report_e0302_and_e0303() {
     // E0302: a result expression needs `-> T`.
     assert_eq!(codes("module M(a: Bit) { a }"), [("E0302", Span::new(19, 20))]);
     assert!(codes("module M(a: Bit) -> Bit { a }").is_empty());
     // E0303: a module in a block or a function.
     let found = codes("fn f() { module M() {} }");
     assert!(found.contains(&("E0303", Span::new(9, 22))), "{found:?}");
-    // E0331: `let mut` in a module body.
-    let found = codes("module M() { let mut x = 1; }");
-    assert!(found.contains(&("E0331", Span::new(17, 22))), "{found:?}");
+}
+
+#[test]
+fn let_mut_in_a_module_body_is_e0903() {
+    // VS-02 AC 2 (A.1, B.3.6): `mut` is a reserved word wherever it stands, a module body
+    // included; the module-body rule `E0331` no longer exists.
+    assert_eq!(codes("module M() { let mut x = 1; }"), [("E0903", Span::new(17, 20))]);
+}
+
+#[test]
+fn the_markers_are_reserved_words_with_a_help_each() {
+    // VS-02 AC 1 (B.3.6): `mut`, `ref` and `move` are each `E0903` at the word, once, and the help
+    // names the plain form of that word.
+    for (src, word, at, help) in [
+        ("fn f() { let mut x = 0; }", "mut", 13, "let x"),
+        ("fn f() { match v { ref y => { } _ => { } } }", "ref", 19, "plain name"),
+        ("fn f() { let g = move |a| a; }", "move", 17, "|x| e"),
+        ("fn f(mut x: u8) { }", "mut", 5, "let x"),
+    ] {
+        let r = parse(src);
+        assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
+        let d = &r.diagnostics[0];
+        assert_eq!((d.code.as_ref(), d.span()), ("E0903", Span::new(at, at + word.len())), "{src}");
+        assert!(d.message.contains(&format!("`{word}`")), "{src}: {}", d.message);
+        assert!(d.help.as_deref().is_some_and(|h| h.contains(help)), "{src}: {:?}", d.help);
+    }
+}
+
+#[test]
+fn e0102_and_e0331_are_raised_nowhere() {
+    // VS-02 AC 3: both codes are retired (G.71); no source of the forms they named raises them.
+    for src in [
+        "module M() { let mut x = 1; }",
+        "fn f() { let mut x = 1; }",
+        "fn f(x: &mut u8) { }",
+        "fn f() { let r = &mut x; }",
+        "fn f(x: &u8) { }",
+    ] {
+        let found = codes(src);
+        assert!(found.iter().all(|(code, _)| *code != "E0102" && *code != "E0331"), "{src}: {found:?}");
+    }
 }
 
 #[test]
@@ -431,7 +469,7 @@ fn diagnostic_has_code_message_label_help() {
         ("E0121", "fn f() { x +> 1.0; }"),
         ("E0302", "module M(a: Bit) { a }"),
         ("E0303", "fn f() { module M() {} }"),
-        ("E0331", "module M() { let mut x = 1; }"),
+        ("E0903", "module M() { let mut x = 1; }"),
         ("E0404", "analog for M { q <- 1; }"),
         ("E0434", "digital for M { q <- 1; }"),
         ("E0901", "fn f() { println!(\"x\"); }"),
@@ -439,7 +477,6 @@ fn diagnostic_has_code_message_label_help() {
         ("E0903", "fn out() {}"),
         ("E0905", "const A: u8 = 'a';"),
         ("E0907", "fn f() { let x = a +> b; }"),
-        ("E0908", "fn f() { let Unknown = 1; }"),
         ("E0900", "fn f( { }"),
     ];
     for (code, src) in fixtures {
@@ -518,7 +555,7 @@ fn fixtures() -> Vec<Fixture> {
         fixture("E0302", "module M(a: Bit) { ", "a", " }"),
         fixture("E0303", "fn f() { ", "module M() {}", " }"),
         fixture("E0303", "module M() { ", "module N() {}", " }"),
-        fixture("E0331", "module M() { let ", "mut x", " = 1; }"),
+        fixture("E0903", "module M() { let ", "mut", " x = 1; }"),
         // Part IV
         fixture("E0404", "analog for M { ", "q <- 1;", " }"),
         fixture("E0404", "digital for M { on e { ", "i(p, n) +> 1.0;", " } }"),
@@ -546,9 +583,6 @@ fn fixtures() -> Vec<Fixture> {
         fixture("E0909", "const A: f64 = ", "1e999", ";"),
         fixture("E0907", "fn f() { let x = a ", "+>", " b; }"),
         fixture("E0907", "fn f() { g(a ", "<-", " b); }"),
-        fixture("E0908", "fn f() { let ", "Unknown", " = 1; }"),
-        fixture("E0908", "module M() { ", "Unknown", ": f64 = 1.0; }"),
-        fixture("E0908", "fn f() { S { ", "Unknown", ": 1 }; }"),
         // The 257th nested delimiter.
         Fixture {
             code: "E0910",
@@ -603,7 +637,7 @@ fn spec_parse_phase_codes() -> std::collections::BTreeSet<String> {
 fn every_parse_phase_row_has_a_fixture() {
     // A parse-phase row added to the spec without a fixture fails here.
     let spec = spec_parse_phase_codes();
-    assert!(spec.len() >= 19, "the spec's tables list at least the 17 rows and E0900/E0910: {spec:?}");
+    assert!(spec.len() >= 18, "the spec's tables list at least the 16 rows and E0900/E0910 (E0908 retired by explicit-unknowns): {spec:?}");
     let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
     let missing: Vec<&String> = spec.difference(&covered).collect();
     assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
@@ -801,8 +835,8 @@ fn faults(src: &str) -> Vec<(String, String, String)> {
 
 #[test]
 fn commit_target_must_be_a_place() {
-    // POL-14 AC 1: eight non-places (a tuple index is none: B.3.2 `place` has `.IDENT` only) give one E0900 over the left side; four places are clean.
-    for lhs in ["-q", "a + b", "f(q)", "q.x()", "*q", "q as u8", "q.0", "a.b.1"] {
+    // POL-14 AC 1: seven non-places (a tuple index is none: B.3.2 `place` has `.IDENT` only) give one E0900 over the left side; four places are clean.
+    for lhs in ["-q", "a + b", "f(q)", "q.x()", "q as u8", "q.0", "a.b.1"] {
         let src = format!("digital for M {{ on e {{ {lhs} <- 1; }} }}");
         let found = faults(&src);
         assert_eq!(found.len(), 1, "{lhs}: {found:?}");
@@ -904,13 +938,15 @@ fn pub_on_a_behavior_block_is_e0900() {
 #[test]
 fn forms_outside_the_grammar_are_parse_errors() {
     // POL-14 AC 7: one E0900 for each.
-    for src in ["nature A { }", "module M() { signal g: (Bit, Bit); }", "module M() { signal h: &Bit; }"] {
+    for src in ["nature A { }", "module M() { signal g: (Bit, Bit); }", "module M() { signal h: (Bit,); }"] {
         let found = faults(src);
         assert_eq!(found.len(), 1, "{src}: {found:?}");
         assert_eq!(found[0].0, "E0900", "{src}");
     }
     // The same in a block statement.
-    assert_eq!(faults("analog for M { signal h: &Bit; }").iter().filter(|f| f.0 == "E0900").count(), 1);
+    assert_eq!(faults("analog for M { signal h: (Bit,); }").iter().filter(|f| f.0 == "E0900").count(), 1);
+    // A reference is its own removed form (B.3.6), not a sigtype fault.
+    assert_eq!(faults("module M() { signal h: &Bit; }").iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), ["E0101"]);
     // A port of value type `(Bit, Bit)` is unaffected: only `signal` uses a sigtype.
     assert!(faults("module M(a: (Bit, Bit)) { }").is_empty());
     // Carrier types stay clean.
@@ -947,10 +983,20 @@ const REMOVED: &[Removed] = &[
     removed("restricted visibility", "pub(super) struct S;", "E0900", "restricted visibility is not part of the language", "`pub`"),
     removed("loop labels", "fn f() { 'a: loop { } }", "E0905", "loop labels are not part of the language", "restructure the loop"),
     removed("loop labels", "fn f() { loop { break 'a; } }", "E0905", "loop labels are not part of the language", "restructure the loop"),
-    removed("`&self` and `&mut self` receivers", "impl S { fn h(&self) { } }", "E0900", "`&self` and `&mut self` receivers are not part of the language", "write `self`"),
-    removed("`&self` and `&mut self` receivers", "impl S { fn h(&mut self) { } }", "E0900", "`&self` and `&mut self` receivers are not part of the language", "write `self`"),
-    removed("`mut` and pattern parameters", "fn f(mut x: u8) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
-    removed("`mut` and pattern parameters", "fn f((a, b): (u8, u8)) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
+    removed("references and borrows", "impl S { fn h(&self) { } }", "E0101", "references and borrows are not part of the language", "write `self`"),
+    removed("references and borrows", "impl S { fn h(&mut self) { } }", "E0101", "references and borrows are not part of the language", "write `self`"),
+    removed("references and borrows", "fn f(x: &u8) { }", "E0101", "references and borrows are not part of the language", "pass the value itself"),
+    removed("references and borrows", "fn f(x: &mut [u8; 2]) { }", "E0101", "references and borrows are not part of the language", "every value is copied"),
+    removed("references and borrows", "fn f() { let x = &a; }", "E0101", "references and borrows are not part of the language", "pass the value itself"),
+    removed("references and borrows", "fn f() { let x = &&a; }", "E0101", "references and borrows are not part of the language", "pass the value itself"),
+    removed("references and borrows", "fn f() { let x = &mut a; }", "E0101", "references and borrows are not part of the language", "pass the value itself"),
+    removed("references and borrows", "fn f() { let x = *a; }", "E0101", "references and borrows are not part of the language", "pass the value itself"),
+    removed("references and borrows", "fn f() { match v { &p => { } _ => { } } }", "E0101", "references and borrows are not part of the language", "pass the value itself"),
+    removed("pattern parameters", "fn f((a, b): (u8, u8)) { }", "E0900", "pattern parameters are not part of the language", "a plain name"),
+    removed("the markers `mut`, `ref` and `move`", "fn f(mut x: u8) { }", "E0903", "`mut` is a reserved keyword", "`let x`"),
+    removed("the markers `mut`, `ref` and `move`", "fn f() { let mut x = 0; }", "E0903", "`mut` is a reserved keyword", "`let x`"),
+    removed("the markers `mut`, `ref` and `move`", "fn f() { match v { ref y => { } _ => { } } }", "E0903", "`ref` is a reserved keyword", "plain name"),
+    removed("the markers `mut`, `ref` and `move`", "fn f() { let g = move |a| a; }", "E0903", "`move` is a reserved keyword", "`|x| e`"),
     removed("half-open range patterns", "fn f() { match x { ..5 => { } _ => { } } }", "E0900", "half-open range patterns are not part of the language", "`..=x`"),
     removed("a leading `::`", "fn f() { let x = ::a::b; }", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
     removed("a leading `::`", "use ::a::b;", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
@@ -968,8 +1014,6 @@ const REMOVED: &[Removed] = &[
     removed("attributes and doc comments on a parameter", "fn f<\n/// x\nT>() { }", "E0900", "attributes and doc comments on parameters", "on the item"),
     removed("attributes and doc comments on a parameter", "fn f() { S { #[a] x: 1 }; }", "E0900", "attributes and doc comments on parameters", "on the item"),
     removed("attributes and doc comments on a parameter", "fn f() { S { /// d\n x: 1 }; }", "E0900", "attributes and doc comments on parameters", "on the item"),
-    removed("double borrows", "fn f() { g(&&a); }", "E0900", "double borrows are not part of the language", "`&a`"),
-    removed("double borrows", "fn f() { let x = &&a; }", "E0900", "double borrows are not part of the language", "`&a`"),
     removed("inner attributes", "#![allow(x)] fn f() { }", "E0900", "inner attributes are not part of the language", "an outer attribute"),
     removed("the never type", "fn f() -> ! { }", "E0900", "the never type is not part of the language", "a unit return type"),
     removed("raw-pointer types", "fn f(p: *const u8) { }", "E0900", "raw-pointer types are not part of the language", "a value or an array"),
@@ -1005,7 +1049,7 @@ fn removed_rust_forms_report_targeted_messages() {
         "extern \"C\" fn f();",
         "fn f<T: Tr>(x: T) { }",
         "fn f() { let a = 1 - 1; let g = x * 2; }",
-        "fn f() { let a = x && &y; g(&a); }",
+        "fn f() { let a = x && !y; g(a & -b); let c = a * (b); }",
         "fn f(p: fn(f64) -> f64) { }",
     ] {
         let found = faults(src);
@@ -1030,7 +1074,76 @@ fn every_b36_row_has_a_fixture() {
         assert!(REMOVED.iter().any(|r| cell.starts_with(r.row)), "B.3.6 row `{cell}` has no fixture");
     }
     for r in REMOVED {
-        assert!(cells.iter().any(|c| c.starts_with(r.row)), "fixture `{}` matches no row", r.row);
+        assert!(cells.iter().any(|c| c.starts_with(r.row)), "fixture `{}` matches no row of B.3.6", r.row);
+    }
+}
+
+#[test]
+fn every_reference_form_is_e0101_once() {
+    // VS-01 AC 1 (B.3.6): each reference form is `E0101` at the form, once, with a help that says to
+    // pass the value itself; a receiver's help says `self`.
+    for (src, at, form) in [
+        ("fn f(x: &u8) { }", 8, "&"),
+        ("fn f(x: &mut u8) { }", 8, "&mut"),
+        ("fn f(x: &&u8) { }", 8, "&&"),
+        ("fn f() { let y = &x; }", 17, "&"),
+        ("fn f() { let y = &&x; }", 17, "&&"),
+        ("fn f() { let y = &mut x; }", 17, "&mut"),
+        ("fn f() { let y = *x; }", 17, "*"),
+        ("fn f() { match v { &p => { } _ => { } } }", 19, "&"),
+        ("impl S { fn h(&self) { } }", 14, "&self"),
+        ("impl S { fn h(&mut self) { } }", 14, "&mut self"),
+    ] {
+        let r = parse(src);
+        let hits: Vec<_> = r.diagnostics.iter().filter(|d| d.code == "E0101").collect();
+        assert_eq!(hits.len(), 1, "{src}: {:?}", r.diagnostics);
+        assert_eq!(r.diagnostics.len(), 1, "{src}: nothing else is reported: {:?}", r.diagnostics);
+        let d = hits[0];
+        let expected = if form.ends_with("self") { (at, at + form.len()) } else { (at, at + form.len()) };
+        assert_eq!((d.span().start, d.span().end), expected, "{src}");
+        let help = d.help.as_deref().unwrap_or_default();
+        assert!(help.contains(if form.ends_with("self") { "`self`" } else { "pass the value itself" }), "{src}: {help}");
+    }
+}
+
+#[test]
+fn a_lifetime_is_e0905_static_included() {
+    // VS-01 AC 2 (A.6): a lifetime is a token of a dropped class, `'static` as any other.
+    for (src, at, lifetime) in [
+        ("const A: &'static str = \"a\";", 10, "'static"),
+        ("fn f(x: &'a u8) { }", 9, "'a"),
+        ("fn f<'a>() { }", 5, "'a"),
+    ] {
+        let r = parse(src);
+        let d = r.diagnostics.iter().find(|d| d.code == "E0905").unwrap_or_else(|| panic!("{src}: {:?}", r.diagnostics));
+        assert_eq!((d.span().start, d.span().end), (at, at + lifetime.len()), "{src}");
+        assert_eq!(r.diagnostics.iter().filter(|d| d.code == "E0905").count(), 1, "{src}");
+    }
+}
+
+#[test]
+fn a_slice_type_does_not_parse() {
+    // VS-01 AC 3 (B.3.7): `[T]` is no type; an array type has its length.
+    for src in ["fn f(x: [u8]) { }", "const A: [f64] = x;", "fn f() -> [Bit] { }"] {
+        let r = parse(src);
+        assert!(r.diagnostics.iter().any(|d| d.code == "E0900"), "{src}: {:?}", r.diagnostics);
+    }
+    assert!(faults("fn f(x: [u8; 2]) { }").is_empty());
+}
+
+#[test]
+fn binary_ampersand_and_star_still_parse() {
+    // VS-01 AC 4: the operand position decides; the binary operators are not references.
+    for src in [
+        "fn f() { let c = a & -b; }",
+        "fn f() { let c = a && !b; }",
+        "fn f() { let c = a * (b); }",
+        "fn f() { let c = (a) & (b) && c * d; }",
+        "fn f() { let c = a & b & c; }",
+        "fn f() { let c = x.y & z[1] * w(2); }",
+    ] {
+        let found = faults(src);
+        assert!(found.is_empty(), "{src}: {found:?}");
     }
 }
 

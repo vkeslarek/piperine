@@ -310,3 +310,146 @@ fn an_unwritable_plot_names_the_path_and_exits_1() {
     assert!(text(&op.stderr).contains("P0010") && text(&op.stderr).contains("nothing to plot"), "{}", text(&op.stderr));
     assert!(!project.path().join("op.svg").exists());
 }
+
+/// The command line of `piperine run`, as the library reads it.
+struct CommandLine;
+
+impl CommandLine {
+    /// The settings the flags `args` of `piperine run` give, as the command line reads them.
+    fn flags(args: &[&str]) -> piperine_api::Overrides {
+        let line: Vec<&str> = ["piperine", "run", "x"].iter().chain(args).copied().collect();
+        match piperine_cli::Cli::parse(line) {
+            Ok(piperine_cli::Invocation::Run { overrides, .. }) => overrides,
+            other => panic!("{args:?} parse as a run, found {:?}", other.err()),
+        }
+    }
+}
+
+#[test]
+fn tnom_key_and_flag_default_to_27() {
+    // AO-08 AC 1: `--tnom` takes degrees Celsius and reaches the run's settings, whatever the
+    // design reads: with the flag the request holds 50, without it the table's value stands, and
+    // a run with the flag prints the divider's operating point like one without (it reads no `tnom`).
+    assert_eq!(CommandLine::flags(&["--tnom", "50"]).tnom, Some(50.0));
+    assert_eq!(CommandLine::flags(&["--tnom", "-10"]).tnom, Some(-10.0));
+    assert_eq!(CommandLine::flags(&[]).tnom, None);
+    let dir = tempfile::tempdir().expect("tmp");
+    let plain = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op"]));
+    let hot = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "50"]));
+    assert_eq!(plain, hot, "the divider does not read tnom");
+}
+
+#[test]
+fn a_tnom_that_is_no_number_is_p0010_naming_the_flag() {
+    // AO-08 AC 2: like `--simparam gain=two`, `--tnom abc` is a P0010 naming it, exit 1, nothing on stdout.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "abc"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("--tnom abc"), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
+#[test]
+fn tnom_at_or_below_absolute_zero_is_p0010() {
+    // AO-08 AC 2: `--tnom -273.15` is a P0010 naming the key, exit code 1, nothing on stdout.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "-273.15"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("`tnom`"), "{}", text(&out.stderr));
+}
+
+#[test]
+fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
+    // AO-07 AC 5: `--simparam <name>=<value>` repeats, each entry reaching the request in the order
+    // given (the divider reads no session parameter, so a run cannot show it); a value that is no
+    // number is a P0010 naming the entry, exit 1, and nothing runs.
+    assert_eq!(CommandLine::flags(&["--simparam", "gain=2", "--simparam", "bias=0.5"]).simparam, [("gain".to_string(), 2.0), ("bias".to_string(), 0.5)]);
+    let dir = tempfile::tempdir().expect("tmp");
+    let divider = twin("divider.msl");
+    let divider = divider.to_str().expect("path");
+    let given = piperine_in(dir.path(), &["run", divider, "--analysis", "op", "--simparam", "gain=2", "--simparam", "bias=0.5"]);
+    assert_eq!(given.status.code(), Some(0), "{}", text(&given.stderr));
+    let bad = piperine_in(dir.path(), &["run", divider, "--analysis", "op", "--simparam", "gain=two"]);
+    assert_eq!(bad.status.code(), Some(1), "{}", text(&bad.stderr));
+    assert!(text(&bad.stderr).contains("P0010") && text(&bad.stderr).contains("gain=two"), "{}", text(&bad.stderr));
+    assert_eq!(text(&bad.stdout), "");
+}
+
+#[test]
+fn a_simparam_entry_naming_an_option_is_p0010() {
+    // AO-07 AC 5 (D13): `--simparam reltol=1e-3` is a P0010 naming the entry, exit code 1.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--simparam", "reltol=1e-3"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("reltol"), "{}", text(&out.stderr));
+}
+
+/// The lone design of `piperine-api/tests/fixtures/bounded_params.msl`, shared with the API tests:
+/// its `Thresh` has a param bounded below by a constant (`x >= 0.0`) and one bounded by another
+/// param (`v_release < v_pick`).
+struct BoundedParams;
+
+impl BoundedParams {
+    /// The design file.
+    fn file() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../piperine-api/tests/fixtures/bounded_params.msl")
+    }
+
+    /// `piperine run` of the design with each of `params` given as one `--param`, in order. Each
+    /// is one host `set`, applied in that order.
+    fn run(params: &[&str]) -> Output {
+        let file = Self::file();
+        let file = file.to_str().expect("path");
+        let mut args = vec!["run", file, "--top", "Top", "--analysis", "op", "--print", "a"];
+        for param in params {
+            args.extend(["--param", param]);
+        }
+        piperine_in(&rc(), &args)
+    }
+
+    /// Asserts that `params` are refused with E0802 and exit 1; `named` is what the report names.
+    fn assert_refused(params: &[&str], named: &str) {
+        let out = Self::run(params);
+        assert_eq!(out.status.code(), Some(1), "{params:?}: {}", text(&out.stdout));
+        let stderr = text(&out.stderr);
+        assert!(stderr.contains("E0802") && stderr.contains(named), "{params:?}: {stderr}");
+    }
+}
+
+#[test]
+fn a_param_is_checked_at_equality_and_against_the_others() {
+    // Part III 8.1 and §8.1.23: a `where` holds at its boundary (`x >= 0.0` takes 0) and reads the
+    // other params as they are now (`v_release < v_pick` takes 1.5 under the default pick of 2 and
+    // refuses 2.5); every dependent `where` is re-checked at each host `set`. Each `--param` is one
+    // host `set`, applied in order, so a table that passes through an invalid state is refused
+    // even when its end state is valid
+    for accepted in [&["Top.t.x=0"][..], &["Top.t.x=0.5"], &["Top.t.v_release=1.5"], &["Top.t.v_release=1.2"], &["Top.t.v_release=0.5", "Top.t.v_pick=1.0"]] {
+        stdout_of(&BoundedParams::run(accepted));
+    }
+    for refused in [&["Top.t.x=-1"][..], &["Top.t.v_release=2.5"], &["Top.t.v_release=2"]] {
+        BoundedParams::assert_refused(refused, "E0802");
+    }
+    // the pick alone makes `v_release = 1.2 < v_pick` false: the release's check refuses it
+    BoundedParams::assert_refused(&["Top.t.v_pick=1.0"], "v_release");
+    BoundedParams::assert_refused(&["Top.t.v_pick=1.0", "Top.t.v_release=0.5"], "v_release");
+    BoundedParams::assert_refused(&["Top.t.v_pick=1.0", "Top.t.v_release=1.5"], "v_release");
+}
+
+#[test]
+fn a_long_transient_at_the_default_resolution_lands_its_crossings() {
+    // §15 T1 and T4: at the default 1 fs a tick is finer than an f64 second past 4.5 s. The
+    // pump controller's 45 s run locates a relay crossing at 16.2 s; its steps must still
+    // advance there, and the run must reach the instants the 1 ps run of the same design reaches
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/projects/pump_tolerance");
+    let default = stdout_of(&piperine_in(&project, &["run", "tolerance"]));
+    let metrics = default.lines().find(|l| l.contains(" metrics ")).unwrap_or_else(|| panic!("no metrics record in\n{default}"));
+    for field in ["t_on=1.012092e0", "t_off=1.623526e1", "run_on=1.323526e1", "pump_off_at_end=true"] {
+        assert!(metrics.contains(field), "{field} missing from {metrics}");
+    }
+    let last = default.lines().last().unwrap_or_default();
+    assert!(last.starts_with("4.500000e1"), "the table ends at the stop: {default}");
+    let picoseconds = stdout_of(&piperine_in(&project, &["run", "tolerance", "--resolution", "1e-12"]));
+    let reference = picoseconds.lines().find(|l| l.contains(" metrics ")).expect("metrics at 1 ps");
+    let timing = |line: &str| line.split_whitespace().filter(|c| c.starts_with("t_on=") || c.starts_with("t_off=") || c.starts_with("run_on=")).map(str::to_string).collect::<Vec<_>>();
+    assert_eq!(timing(metrics), timing(reference), "the same edges at both resolutions");
+}

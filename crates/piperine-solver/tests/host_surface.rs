@@ -118,7 +118,7 @@ fn the_sink_receives_everything_in_instant_order() {
         .filter_map(|o| match &o.kind {
             ObservationKind::Trace { iteration, bytes } => {
                 assert_eq!(o.path, "tr.seen");
-                assert_eq!(bytes, &vec![1, 1]);
+                assert_eq!(bytes, &vec![1]);
                 Some(*iteration)
             }
             _ => None,
@@ -142,7 +142,7 @@ fn records_of_an_undone_instant_do_not_reach_the_sink() {
     let result = tran(&mut solver);
     assert!(result.stats.steps_rejected >= 1);
     assert!(reactions("recorder") >= 2, "the instant ran again after the rejection ({})", reactions("recorder"));
-    let expected: Vec<Vec<u8>> = (1..=8u8).map(|i| vec![i, 1]).collect();
+    let expected: Vec<Vec<u8>> = (1..=8u8).map(|i| vec![i]).collect();
     assert_eq!(records(&seen.borrow()), expected, "each record reaches the sink once");
 }
 

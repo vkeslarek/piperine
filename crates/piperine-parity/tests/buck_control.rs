@@ -6,8 +6,7 @@
 //! it on the 200 MHz oscillator. The expected values are the difference equations of
 //! `examples/buck/SPEC.md` §6.2 to §6.4 (the PID) and §7.2 (the ramp) written here in plain
 //! `i32` arithmetic, sample by sample, and compared with every value the solver committed, bit
-//! for bit. `SetpointReg` (SPEC §7.1) takes known data, saturates a large code and ignores
-//! unknown data.
+//! for bit. `SetpointReg` (SPEC §7.1) takes the data written and saturates a large code.
 #![cfg(unix)]
 
 use piperine_parity::project::Project;
@@ -179,21 +178,21 @@ fn the_ramp_and_the_pid_follow_their_difference_equations() {
 fn the_setpoint_register_takes_known_data_and_saturates() {
     // `tests/buck/control.msl` `Writes`: `wr` rises at the rising edges 2, 5, 8 and 11 (the
     // 2nd, 5th, 8th and 11th of the oscillator, 1 + 3k of its counter), with the data 7, 100,
-    // 200 and unknown presented before
+    // 200 and 200 again presented before
     let seen = build(&project(), "SetpointBench").run(70e-9, 1e-9);
     // SPEC §7.1: the register resets to 100; a write of 7 takes 7; 100 takes 100 (a change from
-    // 7); 200 saturates to 168; unknown data is ignored, the register keeps 168
+    // 7); 200 saturates to 168; a second 200 commits the held 168, which is no change
     let code = transient(&seen, "SetpointBench.code");
     assert_eq!(
         code,
-        vec![(rise(2), vec![7, 1]), (rise(5), vec![100, 1]), (rise(8), vec![168, 1])],
-        "the register's code changes at the three known writes and at no other time"
+        vec![(rise(2), vec![7]), (rise(5), vec![100]), (rise(8), vec![168])],
+        "the register's code changes at the three first writes and at no other time"
     );
-    // the unknown write rose `wr` at the 11th edge and committed nothing (SPEC §7.1: ignored):
-    // `wr` itself did rise there, the register's commits are the three above and no fourth
+    // the fourth write rose `wr` at the 11th edge and committed the held 168: `wr` rose there, and the
+    // register's commits are the three above and a fourth that changes nothing
     let wr = transient(&seen, "SetpointBench.wr");
     assert_eq!(wr.iter().filter(|(_, b)| b[0] == 1).count(), 4, "wr rose four times: {wr:?}");
     let made = seen.commits("SetpointBench.reg");
-    assert_eq!(made.len(), 3, "three commits: the unknown write made none: {made:?}");
+    assert_eq!(made.len(), 4, "four commits: the fourth is the held value: {made:?}");
     assert!(made.iter().all(|t| *t % (5 * NS) == 5 * NS / 2), "each at a rising edge: {made:?}");
 }

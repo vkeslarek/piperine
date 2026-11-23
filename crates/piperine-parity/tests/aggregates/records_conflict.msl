@@ -1,0 +1,16 @@
+//! Two sites of one stream give the field `v` different composite types (CV-19 AC 2, E0605).
+
+struct Pair { a: u8, b: f64 }
+
+module Logger(in clk: Bit) {}
+digital for Logger {
+    on clk.rise() {
+        emit!("sample", v = Pair { a: 1, b: 0.5 });
+        emit!("sample", v = (1u8, 2u8));
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    let logger = Logger(clk);
+}

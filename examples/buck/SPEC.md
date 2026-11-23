@@ -129,16 +129,26 @@ inside the error budget below. No anti-alias filter is modelled.
 
 ### 4.3 Regulation budget
 
-| Contribution | At 0.8 V | At 5.0 V |
-| --- | --- | --- |
-| ADC quantization, ±½ LSB | ±3.1 mV | ±3.1 mV |
-| Ripple aliasing (§4.2) | ±1.0 mV | ±2.2 mV |
-| Divider, 0.1 % resistors | ±1.6 mV | ±10 mV |
-| ADC reference, ±0.1 % | ±0.8 mV | ±5 mV |
-| **Total, worst case** | **±6.5 mV** (target ±10 mV) | **±20 mV = 0.41 %** (target ±1 %) |
+| Contribution | At 0.8 V | At 3.3 V | At 5.0 V |
+| --- | --- | --- | --- |
+| ADC quantization, ±½ LSB | ±3.1 mV | ±3.1 mV | ±3.1 mV |
+| Ripple aliasing (§4.2) | ±1.0 mV | ±1.7 mV | ±2.2 mV |
+| Divider, 0.1 % resistors | ±1.6 mV | ±6.6 mV | ±10 mV |
+| ADC reference, ±0.1 % | ±0.8 mV | ±3.3 mV | ±5 mV |
+| **Total, worst case** | **±6.5 mV** (target ±10 mV) | **±14.7 mV = 0.45 %** (target ±1 %) | **±20 mV = 0.41 %** (target ±1 %) |
 
-The model reproduces the quantization part: the steady-state error stays within ±2.4 mV at
-every corner of Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V.
+The 3.3 V column follows the rule of the other two. Quantization is the same LSB. Aliasing is half
+the ESR ripple (§4.2) at the worst Vin, 16 V: ΔIL = 3.3 V · (1 − 3.3/16) / (4.7 µH · 500 kHz) =
+1.12 A, ΔVesr = 3.35 mV, half of it 1.7 mV. The divider (0.2 % of the output in the two other
+columns) and the reference (0.1 %) scale with the output voltage: 6.6 mV and 3.3 mV. The total is
+the sum of the four rows.
+
+The model reproduces the quantization part and then some. Over the nine corners of Vin
+{9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V the measured error of the window mean is at most
+3.51 mV (corner 5, 12 V and 3.3 V), then 2.94 mV (corner 4), not the ±2.4 mV of quantization
+alone: the loop settles on a code, so the mean sits within about half a code of the setpoint
+(quantization, ±3.1 mV at 3.3 V), and the sampled ripple (§3.3) moves the mean by a further
+fraction of a code. It stays well inside the §4.3 totals, which S9 judges.
 
 ## 5. Digital PWM
 
@@ -261,8 +271,9 @@ The three classic conditions for a digitally controlled converter without limit 
 3. **No integrator dead band.** One code of error adds KI = 8 Q4 units = 0.5 duty LSB per
    sample. The Q4 fraction keeps sub-LSB integral increments instead of rounding them away.
 
-In the model, with the mid-tread ADC, the steady state is a constant code at every tested
-corner (no idle tone). A truncating ADC was also tried: it adds a +3.1 mV bias, which is why the
+In the model, with the mid-tread ADC, the steady state is a constant code at seven of the nine
+tested corners; at corners 5 and 9 the code swings by one (the ripple reaches a code boundary),
+which is within the 1-code bound and not a sub-harmonic idle tone. A truncating ADC was also tried: it adds a +3.1 mV bias, which is why the
 ADC rounds.
 
 ## 7. Reference
@@ -346,7 +357,7 @@ is 3.81 V; at 5.0 V it is 5.73 V, below the 6.4 V ADC full scale.
 ### 8.5 Fault and retry
 
 `Hiccup` turns both switches off, resets the loop and counts **1000 samples (2 ms)**, then
-retries through `SoftStart`. The fault code (`None`, `OverCurrent`, `OverVoltage`) is latched on
+retries through `SoftStart`. The fault code (`Clear`, `OverCurrent`, `OverVoltage`) is latched on
 entry to `Hiccup` and cleared when a retry reaches `Regulate`.
 
 ### 8.6 Power-good
@@ -385,15 +396,74 @@ criteria; the model column is the averaged-model prediction.
 | S1 | Startup | `en` rises | `mode` Off → SoftStart at the next sample; Vout reaches 3.3 V ±1 % at 1.06 ms ±0.05 ms; overshoot ≤ 15 mV; peak inductor current ≤ 1.6 A; `pgood` rises 128 µs after `mode` = Regulate (≈ 1.19 ms) | 1.054 ms, 7.3 mV, 1.27 A |
 | S1b | UVLO startup | Vin ramps 0 → 12 V in 2 ms, `en` high | no switching below 8.5 V; soft-start begins at the sample after Vin crosses 8.5 V | — |
 | S2 | Setpoint up | write 168 (5.0 V) | ramp of 0.544 ms; Vout within ±1 % of 5.0 V at 0.54 ms ±0.05 ms; overshoot ≤ 15 mV; `pgood` stays high | 0.536 ms, 7.0 mV |
-| S2b | Setpoint down | from 5.0 V, write 8 (1.0 V) | ramp of 1.28 ms; within ±1 % of 1.0 V at 1.29 ms; inductor current goes negative (≈ −0.6 A, FCCM sinking) without hitting the −3 A limit; no OVP | 1.286 ms, −0.62 A |
+| S2b | Setpoint down | from 5.0 V, write 8 (1.0 V) | ramp of 1.28 ms; within ±1 % of 1.0 V at 1.38 ms ±0.05 ms; inductor current goes negative (≈ −0.6 A, FCCM sinking) without hitting the −3 A limit; no OVP | 1.38 ms (1.284 ms without dead time), −0.62 A |
 | S3 | Load step | 0.5 A → 4.5 A → 0.5 A, 1 A/µs | deviation ≤ 165 mV (5 %) each way; back within ±1 % in ≤ 200 µs; `pgood` stays high; no current limit | 150 mV / 155 mV, 174 / 178 µs |
 | S4 | Line step | 12 V → 16 V → 12 V in 10 µs, 2 A load | deviation ≤ 165 mV; back within ±1 % in ≤ 200 µs; no fault | +151 / −153 mV |
-| S5 | Overcurrent | load step to 0.3 Ω (11 A demand) | high side cut at 7.5 A every period; `fault` = OverCurrent and `mode` = Hiccup within 16 to 20 µs; `pgood` low within 8 µs of the deviation; retry every 2 ms + soft-start while the overload stays; a retry after the overload is removed reaches Regulate and clears `fault` | hand estimate |
+| S5 | Overcurrent | load step to 0.3 Ω (11 A demand) | high side cut at 7.5 A every period; `fault` = OverCurrent and `mode` = Hiccup 16.5 µs after the start of the first cut period, 26.5 to 30.5 µs after the step; `pgood` low within 8 µs of the deviation; retry every 2 ms + soft-start while the overload stays; a retry after the overload is removed reaches Regulate and clears `fault` | 28.5 µs (first cut period 12 µs after the step); 22.5 µs at best with the duty at its 90 % clamp from the first period after the step |
 | S6 | Over-voltage | inject 5 A into the output (back-drive) | the sink limit holds the low-side current at −3 A; Vout rises at ≈ 7 mV/µs; `fault` = OverVoltage once Vout > 3.81 V (≈ 80 to 120 µs); both switches off | hand estimate |
 | S7 | Brown-out | Vin ramps 12 V → 7.5 V → 12 V | `mode` = Off below 8.0 V, both switches off, `pgood` low, `fault` unchanged; soft-start again above 8.5 V | — |
 | S8 | Disable | `en` falls in Regulate | both switches off at the next sample; `pgood` low; Vout decays through the load | — |
-| S9 | Steady state | 9 corners: Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V at full load | DC error within §4.3; ripple ≤ 10 mV p-p; no sub-harmonic idle tone above 1 code | max 2.4 mV error, constant code |
+| S9 | Steady state | 9 corners: Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V at full load, each measured after the wait of §10.1 | DC error within §4.3; ripple ≤ 10 mV p-p; no sub-harmonic idle tone above 1 code | error at most 3.51 mV (corner 5, quantization plus sampled ripple); constant code at seven corners, 1-code swing at corners 5 and 9 |
 | S10 | Shoot-through | any of the above | the `Never` monitor never fails (`checks` stream has no failed `never`) | — |
+
+### 10.1 How the bench measures
+
+The scenarios of §10 are driven by a host (`tests/buck_scenarios.rs`), which schedules the stimulus
+and reads what each run prints on a 10 ns grid. This section fixes what the host does and how it
+reads a result, so that a bound the bench adds is written here and never only in a test.
+
+**Stimulus shapes.**
+
+| Stimulus | Shape |
+| --- | --- |
+| Setpoint write | `sp_data` is presented 1 µs before `sp_wr` rises and `sp_wr` stays high 9 µs; the stimulus edge of the scenario is the rise of `sp_wr` (§7.1) |
+| Ramp of a supply or load value | a staircase of 0.1 V (or equivalent) steps, equally spaced, the last step at the end of the ramp and equal to the target; the supply is an ideal source behind 20 mΩ (§2) with no slew of its own |
+| Line step, 12 V to 16 V and back (S4) | 10 µs, one step every 0.25 µs |
+| Supply ramp between the corners of S9 | 200 µs in 0.1 V steps, equally spaced: at 5 A and 5.0 V a 9 V to 12 V step in 10 µs sends the inductor current to the 7.5 A limit for eight periods and trips `OverCurrent` (§8.2), which is S5's mechanism and not S9's |
+| Wait before an S9 window | **450 µs** after the last supply ramp or setpoint move, then a 64 µs window (32 periods, 4 dither frames). The slowest closed-loop poles of §6.2 are a pair at 5 to 6 kHz with \|z\| ≤ 0.982, τ ≤ 110 µs (at 9 V). A 200 µs ramp leaves a tracking lag of Δu / (N · Ki) codes. The worst ramp is 9 V → 12 V at 5.0 V, 5 A (corner 8): the duty word moves 5.2 · 3200 · (1/9 − 1/12) = 462 steps, a lag of 462 / (100 · 0.5) = 9.2 codes (12 V → 9 V at 3.3 V is 6.2 codes, 12 V → 16 V at 5.0 V is 6.9). The lag decays under ¼ code (1.6 mV, so the §3.3 ripple of 6.1 mV plus the residue stays under 10 mV and within one code) after τ · ln(9.2 / 0.25) = 3.6 τ ≈ 375 to 400 µs, so 450 µs suffices. The linear derivation is optimistic where the loop is least linear: at 450 µs (≈ 4 τ) corner 9 (16 V, 5.0 V) still drifts 2.78 mV over the half-windows, not the under 1.6 mV the derivation predicts, and its ripple is 8.64 mV against the 10 mV bound. The linear pole pair does not model the duty quantization or the large-signal start of the ramp's decay, and the measurement has not attributed the residue to either; it is bounded by the 6.25 mV drift criterion, which corner 9 meets with 3.5 mV to spare. S3 and S4's 200 µs is a recovery into ±1 %, not into one code |
+| Brown-out (S7) | 50 mV/µs (0.1 V every 2 µs) down to 7.5 V, held 60 µs, then 50 mV/µs up to 12 V |
+| Load of S4 | 2 A: `r_load` = 1.65 Ω (3.3 V / 2 A), set 200 µs before the step |
+
+**Settling time.** The time of the first sample from which every later sample of the window is
+inside the band; none when the last sample is outside it.
+
+**Dead time at the end of a down ramp (S2b).** While the output ramps down the inductor sinks
+≈ −0.6 A and both 20 ns dead times of §5.3 freewheel through the high-side body diode (switch node
+at Vin + 0.7 V); when the ramp ends the current returns to the load's +0.15 A and they freewheel
+through the low side (−0.7 V). The same duty word then gives ≈ 2 · 20 ns / 2 µs · 13.4 V = 0.27 V
+less at the switch node, ≈ 70 duty LSBs at 12 V, which the integrator (Ki = 0.5, §6.2) absorbs in
+≈ 100 µs while Vout dips 15 to 25 mV under 1.0 V. The averaged model with this dead-time term
+settles at 1.389 ms (1.284 ms without it); the bound is 1.38 ms ±0.05 ms.
+
+**Deviation.** The largest absolute difference between a sample and the nominal value, with the
+time of that sample.
+
+**Time resolution.** The grid is 10 ns. A mode that changes at the next sample (UVLO, `en`, S7, S8)
+shows within **2.02 µs** of its cause: one period (2 µs, §4.2) plus 20 ns for the supervisor's
+commit and one grid row. A fault that needs two consecutive samples (the OVP of §8.4) shows within
+**4.52 µs**: two periods, plus the 500 ns of conversion of §4.1, plus the same 20 ns.
+
+**Current-limit reaction.** The inductor current may exceed a limit of §8.2 and §8.3 by at most
+**0.1 A**: the cut takes one 5 ns clock, 10 ns of driver delay and 5 ns of channel ramp (§5.3), 20 ns
+at a slope of at most 3.4 A/µs, which is 0.068 A.
+
+**Overcurrent timing (S5).** `Hiccup` comes at the `done` strobe after the 8th cut period:
+8 × 2 µs + 500 ns = 16.5 µs after the start of the first cut period. Before it, the inductor current
+climbs from 0.5 A to the 7.5 A limit under the loop of §6.2: the step's edge is at a period start, the
+duty word first moves in the period 4 µs after it (one sample to see the droop, one of computational
+delay, §9) and rises to ≈ 68 % by +8 µs; the current gains 0.75, 1.8, 2.1 and 2.0 A in the periods
+from +4 µs, and its peak reaches 7.5 A in the period that starts at +12 µs. `Hiccup` is then at
+28.5 µs; the bench allows one period either way, 26.5 to 30.5 µs, the resolution at which the first
+cut lands. Even with the duty at its 90 % clamp from the first period after the edge, the first cut
+period starts at +6 µs: no run can be faster than 22.5 µs.
+
+**Disable decay (S8).** After `en` falls and both switches are off, Vout decays through the load
+and the divider with the time constant (6.6 Ω ∥ 40 kΩ) · 220 µF = **1.452 ms**; the measured
+constant is held to **±2 %** of it and Vout falls in every sample of the span.
+
+**Values written with ≈.** The "≈" of §10 (S2b −0.6 A, S6 7 mV/µs and 80 to 120 µs) is an estimate,
+not a pass criterion ("the tolerances are the bench's pass criteria"): the bench reports it and
+judges the mechanism instead (S6: `OverVoltage` within two samples of Vout passing 3.81 V).
 
 ## 11. Model map
 

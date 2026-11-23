@@ -1,0 +1,89 @@
+//! Records from source (T52): the stdlib `Never` on a clock and `log` from a reaction.
+
+/// The clock: a free-running oscillator, its first change at half a period.
+module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Holds `bad` false for the first two rising edges and drives it true at the third, so a
+/// `Never` on the same clock sees it false at edges 1 to 3 and true from edge 4.
+module Bad(in clk: Bit, out bad: Bit = false) {
+    signal n: Bit<u8> = 0;
+}
+digital for Bad {
+    on clk.rise() {
+        let s = n;
+        n <- s + 1;
+        if s == 2 { bad <- true; }
+    }
+}
+
+module NeverBench() {
+    signal clk: Bit; signal bad: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let drive = Bad(clk, bad);
+    let never = Never(clk, bad);
+}
+
+/// Two `log` statements per rising edge.
+module Talk(in clk: Bit) {}
+digital for Talk {
+    on clk.rise() {
+        log(Severity::Warning, "x");
+        log(Severity::Error, "y");
+    }
+}
+
+module LogBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = Talk(clk);
+}
+
+/// Two reactions on the same edge, each with one `log` at its statement 0: a record is tied to
+/// its site by the reaction and the statement of its commit.
+module TwoTalk(in clk: Bit) {}
+digital for TwoTalk {
+    on clk.rise() { log(Severity::Warning, "first"); }
+    on clk.rise() { log(Severity::Error, "second"); }
+}
+
+module TwoBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = TwoTalk(clk);
+}
+
+/// Two reactions on one edge with `log`s at different statement indices: the first logs at its
+/// statements 0 and 1, the second at its statement 0 (verification F1).
+module ThreeTalk(in clk: Bit) {}
+digital for ThreeTalk {
+    on clk.rise() {
+        log(Severity::Info, "a");
+        log(Severity::Warning, "b");
+    }
+    on clk.rise() { log(Severity::Error, "c"); }
+}
+
+module ThreeBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = ThreeTalk(clk);
+}
+
+/// The variant the other way round: one `log` first, then a reaction with two.
+module AfterTalk(in clk: Bit) {}
+digital for AfterTalk {
+    on clk.rise() { log(Severity::Info, "p"); }
+    on clk.rise() {
+        log(Severity::Warning, "q");
+        log(Severity::Error, "r");
+    }
+}
+
+module AfterBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = AfterTalk(clk);
+}

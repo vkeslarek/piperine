@@ -69,7 +69,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
     let mode = InstantMode { is_static: false, settle: true };
     assert_eq!(d.advance(10).unwrap(), Advance::Landing { tick: 7, time_point: true });
     assert_eq!(d.advance(10).unwrap(), Advance::Reached, "an exhausted script answers Reached");
-    a.deliver(&[Boundary { slot: 1, bytes: vec![1, 1] }], Restart::Integrator);
+    a.deliver(&[Boundary { slot: 1, bytes: vec![1] }], Restart::Integrator);
     assert!(d.run_instant(7, &[0.5], horizon(99, 7), mode).unwrap().finish);
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Refused { check: "r > 0".into() });
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Accept);
@@ -86,7 +86,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
     assert_eq!(*log.borrow(), vec![
         Call::Advance(10),
         Call::Advance(10),
-        Call::Deliver(vec![Boundary { slot: 1, bytes: vec![1, 1] }], Restart::Integrator),
+        Call::Deliver(vec![Boundary { slot: 1, bytes: vec![1] }], Restart::Integrator),
         Call::RunInstant { at: 7, samples: vec![0.5], limit: horizon(99, 7), mode },
         Call::Shadow(2, vec![9]),
         Call::Shadow(2, vec![9]),

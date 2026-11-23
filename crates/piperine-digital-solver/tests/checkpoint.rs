@@ -115,12 +115,12 @@ fn every_change_commit_and_record_is_observed_in_order() {
     let seen = d.drain_observations();
     let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
     let want: Vec<Observation> = (1..=8u8)
-        .map(|i| Observation::Record { stream: "r.log".into(), reaction: 0, statement: 0, at: (Tick(3), 0), bytes: vec![i, 1] })
+        .map(|i| Observation::Record { stream: "r.log".into(), reaction: 0, statement: 0, at: (Tick(3), 0), bytes: vec![i] })
         .collect();
     assert_eq!(records, want.iter().collect::<Vec<_>>(), "eight records, none lost to transport");
     let commits = seen.iter().filter(|o| matches!(o, Observation::Commit { instance, statement: 0, .. } if instance == "r")).count();
     assert_eq!(commits, 8);
-    assert_eq!(d.read(net(&d, "log")), [8, 1], "transport leaves the last value in the pin");
+    assert_eq!(d.read(net(&d, "log")), [8], "transport leaves the last value in the pin");
     let changes: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Change { net, .. } if net == "log")).collect();
     assert_eq!(changes.len(), 1, "one applied change of log");
     assert_eq!(seen.first(), Some(&Observation::Fire { net: "go".into(), at: (Tick(3), 0) }));
@@ -131,7 +131,7 @@ fn every_change_commit_and_record_is_observed_in_order() {
     let mut last = (Tick(i64::MIN), 0);
     for o in d.drain_observations() {
         let at = match o {
-            Observation::Change { at, .. } | Observation::Fire { at, .. } | Observation::Record { at, .. } | Observation::Unsettled { at, .. } => at,
+            Observation::Change { at, .. } | Observation::Fire { at, .. } | Observation::Record { at, .. } => at,
             Observation::Commit { made, .. } => made,
         };
         assert!(at >= last, "{at:?} after {last:?}");
@@ -261,7 +261,7 @@ fn nested_marks_rewind_in_order() {
 #[test]
 fn a_mark_journals_only_the_nets_that_changed() {
     // HYG-14 AC 5: 1 of 1 000 nets changes between the mark and the rewind: one entry.
-    let nets: Vec<NetSpec> = (0..1000).map(|i| NetSpec::discrete(&format!("n{i}"), 2, 1)).collect();
+    let nets: Vec<NetSpec> = (0..1000).map(|i| NetSpec::discrete(&format!("n{i}"), 1, 1)).collect();
     let plan = piperine_digital_solver::plan::DigitalPlan::bind(nets, vec![], Resolution::default()).unwrap();
     let mut d = Digital::new(plan, DigitalLimits::default());
     d.start().unwrap();
@@ -271,7 +271,67 @@ fn a_mark_journals_only_the_nets_that_changed() {
     assert_eq!(d.read(NetId(417)), HIGH);
     assert_eq!(d.journaled_nets(), 1, "one net changed: one entry, not a thousand");
     d.rewind(&mark);
-    assert_eq!(d.read(NetId(417)), [0, 0]);
+    assert_eq!(d.read(NetId(417)), [0]);
     assert_eq!(d.next_due(), None);
     d.release(mark);
+}
+
+/// A `settler` design whose `out` the analog side reads and whose commit has no delay.
+fn settler_engine() -> Digital {
+    let plan = bind_by_name_with(vec![("s", settler(), vec![("out", "out")])], Resolution::default(), |nets| {
+        nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
+    })
+    .expect("binds");
+    Digital::new(plan, DigitalLimits::default())
+}
+
+/// The settle phase of the instant at tick 0, which makes the held commit.
+fn settle_instant(d: &mut Digital) {
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }).expect("the instant runs");
+}
+
+#[test]
+fn a_restore_brings_back_the_held_settle_commits() {
+    // §15 S5: a step rejected after a settle commit was made restores the checkpoint taken after
+    // it, which holds the commit for the retried time point; one taken before it holds none
+    let mut d = settler_engine();
+    d.start().unwrap();
+    let before = d.checkpoint();
+    settle_instant(&mut d);
+    let held = d.checkpoint();
+    assert!(d.holds_settle_commits());
+    d.drop_settle_commits();
+    assert!(!d.holds_settle_commits());
+    d.restore(&held);
+    assert!(d.holds_settle_commits(), "the commit is held again");
+    d.land_settle_commits(Tick(5));
+    instant(&mut d, Tick(5));
+    assert_eq!(d.read(net(&d, "out")), HIGH, "and lands as it would have");
+    d.restore(&before);
+    assert!(!d.holds_settle_commits(), "a checkpoint from before the commit holds none");
+    // the journal mark of the owner protocol does the same
+    let mut d = settler_engine();
+    d.start().unwrap();
+    settle_instant(&mut d);
+    let mark = d.mark();
+    d.drop_settle_commits();
+    d.rewind(&mark);
+    assert!(d.holds_settle_commits(), "a rewind brings the held commits back");
+    d.release(mark);
+}
+
+#[test]
+fn a_restore_takes_back_a_landing() {
+    // §15 S5: a step that landed the commits and was rejected takes the landing back: the commit is
+    // held again and nothing is due at the time point
+    let mut d = settler_engine();
+    d.start().unwrap();
+    settle_instant(&mut d);
+    let cp = d.checkpoint();
+    d.land_settle_commits(Tick(5));
+    assert_eq!(d.next_due(), Some(Tick(5)));
+    d.restore(&cp);
+    assert!(d.holds_settle_commits(), "held again");
+    assert_eq!(d.next_due(), None, "no commit is due at the time point");
+    assert_eq!(d.checkpoint(), cp);
 }

@@ -185,8 +185,7 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(ddt).clone();
         let ExprKind::Call { args, .. } = &node.kind else { return None };
         let [x] = &args[..] else { return None };
-        let value = self.lower_expr(scope, x.value)?;
-        self.known_in_analog(scope.file, x.value, value, "the argument of `ddt`")
+        self.lower_expr(scope, x.value)
     }
 
     /// One run of non-`ddt` leaves re-joined in order, signed relative to its first leaf: the
@@ -195,9 +194,9 @@ impl Elaboration<'_, '_> {
     fn direct_run(&mut self, scope: &mut Scope, run: &[Leaf]) -> Option<LoweredExpr> {
         let first = run[0];
         let origin = self.expr_origin(first.expr);
-        let mut value = self.lower_expr(scope, first.expr).and_then(|v| self.known_in_analog(scope.file, first.expr, v, "a contribution"));
+        let mut value = self.lower_expr(scope, first.expr);
         for leaf in &run[1..] {
-            let rhs = self.lower_expr(scope, leaf.expr).and_then(|v| self.known_in_analog(scope.file, leaf.expr, v, "a contribution"));
+            let rhs = self.lower_expr(scope, leaf.expr);
             let op = if leaf.negated == first.negated { BinaryOp::Add } else { BinaryOp::Sub };
             value = match (value, rhs) {
                 (Some(lhs), Some(rhs)) => Some(self.emit(Expr::Binary { op, lhs, rhs }, ValueType::F64, origin.clone())),

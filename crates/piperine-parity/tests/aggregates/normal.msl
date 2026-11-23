@@ -1,0 +1,51 @@
+//! `normal` and the jitter clock (CV-16): the stdlib's `normal(rng, mean, sigma)` called with fixed
+//! seeds, once with `sigma = 0.0`, and the clock of §22.2.17's example, whose edges are placed by the
+//! generator's state. The expected values are computed by Rust in `source_aggregates.rs` from the
+//! text of §22.2.17.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn sample(seed: u64) -> f64 { normal(seed, 1.5, 0.25).0 }
+fn following(seed: u64) -> u64 { normal(seed, 1.5, 0.25).1 }
+fn flat(seed: u64) -> f64 { normal(seed, 3.0, 0.0).0 }
+
+module Rows(in clk: Bit, out s0: Bit<f64> = 0.0, out s1: Bit<f64> = 0.0, out s2: Bit<f64> = 0.0, out n0: Bit<u64> = 0, out n1: Bit<u64> = 0, out f0: Bit<f64> = 0.0, out f1: Bit<f64> = 0.0) {}
+digital for Rows {
+    on clk.rise() {
+        s0 <- sample(0);
+        s1 <- sample(42);
+        s2 <- sample(0xDEADBEEFCAFEF00D);
+        n0 <- following(0);
+        n1 <- following(42);
+        f0 <- flat(0);
+        f1 <- flat(7);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal s0: Bit<f64>; signal s1: Bit<f64>; signal s2: Bit<f64>; signal n0: Bit<u64>; signal n1: Bit<u64>; signal f0: Bit<f64>; signal f1: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, s0, s1, s2, n0, n1, f0, f1);
+}
+
+// §22.2.17's example as a clock: the state lives in a signal, each edge is placed half a period plus
+// one draw of the jitter after the last
+pub module JitterClock(out clk: Bit = false) {
+    period: f64 = 10n where period > 0.0;
+    jitter: f64 = 1n;
+    signal rng: Bit<u64> = 7; // the seed, until the first draw
+}
+digital for JitterClock {
+    on clk.changed() {
+        let (j, next) = normal(rng, 0.0, jitter);
+        rng <- next;
+        clk <- !clk after period / 2.0 + j;
+    }
+}
+
+module JitterBench() {
+    signal clk: Bit;
+    let clock = JitterClock(clk) { period: 10n, jitter: 1n };
+}

@@ -1,0 +1,214 @@
+//! Arrays, ranges and iterators of Appendix H (CV-15): every row of H.5, H.6 and H.7, `for` over an
+//! array, a range and an adaptor chain, an empty array, and the value code of the `zi_nd` reaction body
+//! as a function over arrays. Each row is one function whose value a reaction commits; the expected
+//! values are computed by Rust in `source_aggregates.rs` from the same text, with Rust's own iterators.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn r_len() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.len() as u8 }
+fn r_is_empty() -> bool { let a = [3u8, 1, 4, 1, 5]; a.is_empty() }
+fn r_contains_hit() -> bool { let a = [3u8, 1, 4, 1, 5]; a.contains(4) }
+fn r_contains_miss() -> bool { let a = [3u8, 1, 4, 1, 5]; a.contains(9) }
+fn r_first() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.first().unwrap_or(0) }
+fn r_last() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.last().unwrap_or(0) }
+fn r_get_in() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.get(2).unwrap_or(99) }
+fn r_get_out() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.get(7).unwrap_or(99) }
+fn r_get_end_is_none() -> bool { let a = [3u8, 1, 4, 1, 5]; a.get(5).is_none() && a.len() == 5 }
+fn r_range_in() -> bool { (2..5).contains(4) }
+fn r_range_at_end() -> bool { (2..5).contains(5) }
+fn r_range_inclusive() -> bool { (2..=5).contains(5) }
+fn r_range_below() -> bool { (2..5).contains(1) }
+fn r_range_float() -> bool { (0.5..1.5).contains(1.0) }
+fn r_range_empty() -> bool { (5..2).is_empty() }
+fn r_range_single() -> bool { (2..=2).is_empty() }
+fn r_range_named() -> bool { let r = 1..4; r.contains(3) }
+fn r_range_to() -> bool { (..3).contains(2) }
+fn r_range_from() -> bool { (2..).contains(1) }
+fn r_map_sum() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().map(|x| x * 2).sum() }
+fn r_filter_count() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().filter(|x| x > 1).count() as u8 }
+fn r_fold() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().fold(0u8, |acc, x| acc * 2 + x) }
+fn r_sum() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().sum() }
+fn r_count() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().count() as u8 }
+fn r_zip() -> u8 { let a = [3u8, 1, 4, 1, 5]; let b = [2u8, 0, 1, 3, 1]; a.iter().zip(b.iter()).map(|(x, y)| x * y).sum() }
+fn r_zip_shorter() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().zip([7u8, 8].iter()).count() as u8 }
+fn r_enumerate() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().enumerate().fold(0u8, |acc, (i, x)| acc + (i as u8) * x) }
+fn r_rev() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().rev().fold(0u8, |acc, x| acc * 2 + x) }
+fn r_enumerate_then_rev() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().enumerate().rev().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) }
+fn r_rev_then_enumerate() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().rev().enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) }
+fn r_any_hit() -> bool { let a = [3u8, 1, 4, 1, 5]; a.iter().any(|x| x == 4) }
+fn r_any_miss() -> bool { let a = [3u8, 1, 4, 1, 5]; a.iter().any(|x| x > 9) }
+fn r_all_hit() -> bool { let a = [3u8, 1, 4, 1, 5]; a.iter().all(|x| x > 0) }
+fn r_all_miss() -> bool { let a = [3u8, 1, 4, 1, 5]; a.iter().all(|x| x > 1) }
+fn r_empty_any() -> bool { let e: [u8; 0] = []; e.iter().any(|x| x > 0) }
+fn r_empty_all() -> bool { let e: [u8; 0] = []; e.iter().all(|x| x > 0) }
+fn r_empty_sum() -> u8 { let e: [u8; 0] = []; e.iter().sum() }
+fn r_empty_fold() -> u8 { let e: [u8; 0] = []; e.iter().fold(7u8, |acc, x| acc + x) }
+fn r_empty_len() -> u8 { let e: [u8; 0] = []; e.len() as u8 }
+fn r_empty_first_is_none() -> bool { let e: [u8; 0] = []; e.first().is_none() && e.is_empty() }
+fn r_empty_is_empty() -> bool { let e: [u8; 0] = []; e.is_empty() }
+fn r_filter_enumerate() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().filter(|x| x != 1).enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) * 3 + x) }
+fn r_chain() -> u8 { let a = [3u8, 1, 4, 1, 5]; a.iter().map(|x| x * 2).filter(|x| x > 4).map(|x| x + 1).sum() }
+fn r_range_map_sum() -> u8 { (1u8..5).map(|k| k * k).sum() }
+fn r_range_rev() -> u8 { (1u8..5).rev().fold(0u8, |acc, k| acc * 2 + k) }
+fn r_range_filter_count() -> u8 { (0u8..10).filter(|k| k % 3 == 0).count() as u8 }
+fn r_range_inclusive_sum() -> u8 { (1u8..=4).sum() }
+fn r_range_empty_sum() -> u8 { (5u8..2).sum() }
+fn r_range_zip() -> u8 { let a = [3u8, 1, 4, 1, 5]; (0u8..3).zip(a.iter()).map(|(i, x)| i * x).sum() }
+fn r_let_iterator() -> u8 { let a = [3u8, 1, 4, 1, 5]; let it = a.iter().map(|x| x + 1); it.sum() }
+fn r_signed_range_sum() -> u8 { let s: i8 = (-3i8..2).sum(); s as u8 }
+fn r_signed_range_count() -> u8 { (-3i8..2).count() as u8 }
+fn r_for_array() -> u8 { let a = [3u8, 1, 4, 1, 5]; let acc = 0u8; for x in a { acc = acc * 2 + x; } acc }
+fn r_for_iter_rev() -> u8 { let a = [3u8, 1, 4, 1, 5]; let acc = 0u8; for x in a.iter().rev() { acc = acc * 2 + x; } acc }
+fn r_for_enumerate() -> u8 { let a = [3u8, 1, 4, 1, 5]; let acc = 0u8; for (i, x) in a.iter().enumerate() { acc = acc * 2 + (i as u8) + x; } acc }
+fn r_for_zip() -> u8 { let a = [3u8, 1, 4, 1, 5]; let acc = 0u8; for (x, y) in a.iter().zip([1u8, 2, 3].iter()) { acc = acc * 2 + x + y; } acc }
+fn r_for_filtered_range() -> u8 { let acc = 0u8; for k in (0u8..8).filter(|k| k % 2 == 0) { acc = acc * 2 + k; } acc }
+fn r_for_range_rev() -> u8 { let acc = 0u8; for k in (0u8..4).rev() { acc = acc * 2 + k; } acc }
+fn r_for_break() -> u8 { let a = [3u8, 1, 4, 1, 5]; let acc = 0u8; for x in a { if x == 4 { break; } acc = acc * 2 + x; } acc }
+fn r_for_continue() -> u8 { let a = [3u8, 1, 4, 1, 5]; let acc = 0u8; for x in a.iter().filter(|x| x != 5) { if x == 1 { continue; } acc = acc * 2 + x; } acc }
+fn r_for_named() -> u8 { let a = [3u8, 1, 4, 1, 5]; let it = a.iter().map(|x| x * 3); let acc = 0u8; for x in it { acc = acc + x; } acc }
+
+// the value code of the `zi_nd` reaction body (stdlib `analog.msl`): `acc` over `num`, `xs`, `den`, `ys`
+fn zi_acc(num: [f64; 3], xs: [f64; 2], den: [f64; 2], ys: [f64; 2], x: f64) -> f64 {
+    let acc = num[0] * x;
+    for k in 1..3 { acc += num[k] * xs[k - 1]; }
+    for k in 0..2 { acc -= den[k] * ys[k]; }
+    acc
+}
+fn r_zi_nd() -> f64 { zi_acc([0.5, 0.25, 0.125], [1.5, -2.0], [0.75, -0.5], [0.3, 0.7], 2.0) }
+
+module Rows(in clk: Bit, out len: Bit<u8> = 0, out is_empty: Bit<bool> = false, out contains_hit: Bit<bool> = false, out contains_miss: Bit<bool> = false, out first: Bit<u8> = 0, out last: Bit<u8> = 0, out get_in: Bit<u8> = 0, out get_out: Bit<u8> = 0, out get_end_is_none: Bit<bool> = false, out range_in: Bit<bool> = false, out range_at_end: Bit<bool> = false, out range_inclusive: Bit<bool> = false, out range_below: Bit<bool> = false, out range_float: Bit<bool> = false, out range_empty: Bit<bool> = false, out range_single: Bit<bool> = false, out range_named: Bit<bool> = false, out range_to: Bit<bool> = false, out range_from: Bit<bool> = false, out map_sum: Bit<u8> = 0, out filter_count: Bit<u8> = 0, out fold: Bit<u8> = 0, out sum: Bit<u8> = 0, out count: Bit<u8> = 0, out zip: Bit<u8> = 0, out zip_shorter: Bit<u8> = 0, out enumerate: Bit<u8> = 0, out rev: Bit<u8> = 0, out enumerate_then_rev: Bit<u8> = 0, out rev_then_enumerate: Bit<u8> = 0, out any_hit: Bit<bool> = false, out any_miss: Bit<bool> = false, out all_hit: Bit<bool> = false, out all_miss: Bit<bool> = false, out empty_any: Bit<bool> = false, out empty_all: Bit<bool> = false, out empty_sum: Bit<u8> = 0, out empty_fold: Bit<u8> = 0, out empty_len: Bit<u8> = 0, out empty_first_is_none: Bit<bool> = false, out empty_is_empty: Bit<bool> = false, out filter_enumerate: Bit<u8> = 0, out chain: Bit<u8> = 0, out range_map_sum: Bit<u8> = 0, out range_rev: Bit<u8> = 0, out range_filter_count: Bit<u8> = 0, out range_inclusive_sum: Bit<u8> = 0, out range_empty_sum: Bit<u8> = 0, out range_zip: Bit<u8> = 0, out let_iterator: Bit<u8> = 0, out signed_range_sum: Bit<u8> = 0, out signed_range_count: Bit<u8> = 0, out for_array: Bit<u8> = 0, out for_iter_rev: Bit<u8> = 0, out for_enumerate: Bit<u8> = 0, out for_zip: Bit<u8> = 0, out for_filtered_range: Bit<u8> = 0, out for_range_rev: Bit<u8> = 0, out for_break: Bit<u8> = 0, out for_continue: Bit<u8> = 0, out for_named: Bit<u8> = 0, out zi_nd: Bit<f64> = 0.0) {}
+digital for Rows {
+    on clk.rise() {
+        len <- r_len();
+        is_empty <- r_is_empty();
+        contains_hit <- r_contains_hit();
+        contains_miss <- r_contains_miss();
+        first <- r_first();
+        last <- r_last();
+        get_in <- r_get_in();
+        get_out <- r_get_out();
+        get_end_is_none <- r_get_end_is_none();
+        range_in <- r_range_in();
+        range_at_end <- r_range_at_end();
+        range_inclusive <- r_range_inclusive();
+        range_below <- r_range_below();
+        range_float <- r_range_float();
+        range_empty <- r_range_empty();
+        range_single <- r_range_single();
+        range_named <- r_range_named();
+        range_to <- r_range_to();
+        range_from <- r_range_from();
+        map_sum <- r_map_sum();
+        filter_count <- r_filter_count();
+        fold <- r_fold();
+        sum <- r_sum();
+        count <- r_count();
+        zip <- r_zip();
+        zip_shorter <- r_zip_shorter();
+        enumerate <- r_enumerate();
+        rev <- r_rev();
+        enumerate_then_rev <- r_enumerate_then_rev();
+        rev_then_enumerate <- r_rev_then_enumerate();
+        any_hit <- r_any_hit();
+        any_miss <- r_any_miss();
+        all_hit <- r_all_hit();
+        all_miss <- r_all_miss();
+        empty_any <- r_empty_any();
+        empty_all <- r_empty_all();
+        empty_sum <- r_empty_sum();
+        empty_fold <- r_empty_fold();
+        empty_len <- r_empty_len();
+        empty_first_is_none <- r_empty_first_is_none();
+        empty_is_empty <- r_empty_is_empty();
+        filter_enumerate <- r_filter_enumerate();
+        chain <- r_chain();
+        range_map_sum <- r_range_map_sum();
+        range_rev <- r_range_rev();
+        range_filter_count <- r_range_filter_count();
+        range_inclusive_sum <- r_range_inclusive_sum();
+        range_empty_sum <- r_range_empty_sum();
+        range_zip <- r_range_zip();
+        let_iterator <- r_let_iterator();
+        signed_range_sum <- r_signed_range_sum();
+        signed_range_count <- r_signed_range_count();
+        for_array <- r_for_array();
+        for_iter_rev <- r_for_iter_rev();
+        for_enumerate <- r_for_enumerate();
+        for_zip <- r_for_zip();
+        for_filtered_range <- r_for_filtered_range();
+        for_range_rev <- r_for_range_rev();
+        for_break <- r_for_break();
+        for_continue <- r_for_continue();
+        for_named <- r_for_named();
+        zi_nd <- r_zi_nd();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal len: Bit<u8>;
+    signal is_empty: Bit<bool>;
+    signal contains_hit: Bit<bool>;
+    signal contains_miss: Bit<bool>;
+    signal first: Bit<u8>;
+    signal last: Bit<u8>;
+    signal get_in: Bit<u8>;
+    signal get_out: Bit<u8>;
+    signal get_end_is_none: Bit<bool>;
+    signal range_in: Bit<bool>;
+    signal range_at_end: Bit<bool>;
+    signal range_inclusive: Bit<bool>;
+    signal range_below: Bit<bool>;
+    signal range_float: Bit<bool>;
+    signal range_empty: Bit<bool>;
+    signal range_single: Bit<bool>;
+    signal range_named: Bit<bool>;
+    signal range_to: Bit<bool>;
+    signal range_from: Bit<bool>;
+    signal map_sum: Bit<u8>;
+    signal filter_count: Bit<u8>;
+    signal fold: Bit<u8>;
+    signal sum: Bit<u8>;
+    signal count: Bit<u8>;
+    signal zip: Bit<u8>;
+    signal zip_shorter: Bit<u8>;
+    signal enumerate: Bit<u8>;
+    signal rev: Bit<u8>;
+    signal enumerate_then_rev: Bit<u8>;
+    signal rev_then_enumerate: Bit<u8>;
+    signal any_hit: Bit<bool>;
+    signal any_miss: Bit<bool>;
+    signal all_hit: Bit<bool>;
+    signal all_miss: Bit<bool>;
+    signal empty_any: Bit<bool>;
+    signal empty_all: Bit<bool>;
+    signal empty_sum: Bit<u8>;
+    signal empty_fold: Bit<u8>;
+    signal empty_len: Bit<u8>;
+    signal empty_first_is_none: Bit<bool>;
+    signal empty_is_empty: Bit<bool>;
+    signal filter_enumerate: Bit<u8>;
+    signal chain: Bit<u8>;
+    signal range_map_sum: Bit<u8>;
+    signal range_rev: Bit<u8>;
+    signal range_filter_count: Bit<u8>;
+    signal range_inclusive_sum: Bit<u8>;
+    signal range_empty_sum: Bit<u8>;
+    signal range_zip: Bit<u8>;
+    signal let_iterator: Bit<u8>;
+    signal signed_range_sum: Bit<u8>;
+    signal signed_range_count: Bit<u8>;
+    signal for_array: Bit<u8>;
+    signal for_iter_rev: Bit<u8>;
+    signal for_enumerate: Bit<u8>;
+    signal for_zip: Bit<u8>;
+    signal for_filtered_range: Bit<u8>;
+    signal for_range_rev: Bit<u8>;
+    signal for_break: Bit<u8>;
+    signal for_continue: Bit<u8>;
+    signal for_named: Bit<u8>;
+    signal zi_nd: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, len, is_empty, contains_hit, contains_miss, first, last, get_in, get_out, get_end_is_none, range_in, range_at_end, range_inclusive, range_below, range_float, range_empty, range_single, range_named, range_to, range_from, map_sum, filter_count, fold, sum, count, zip, zip_shorter, enumerate, rev, enumerate_then_rev, rev_then_enumerate, any_hit, any_miss, all_hit, all_miss, empty_any, empty_all, empty_sum, empty_fold, empty_len, empty_first_is_none, empty_is_empty, filter_enumerate, chain, range_map_sum, range_rev, range_filter_count, range_inclusive_sum, range_empty_sum, range_zip, let_iterator, signed_range_sum, signed_range_count, for_array, for_iter_rev, for_enumerate, for_zip, for_filtered_range, for_range_rev, for_break, for_continue, for_named, zi_nd);
+}

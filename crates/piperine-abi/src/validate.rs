@@ -9,7 +9,7 @@ use std::fmt;
 
 use crate::layout::{F64, layout_eq, leaf_size};
 use crate::raw::{
-    Cell, DEFAULT, Function, GROUND, Layout, Pin, Reaction, Shape, Str, ambient, cell, field_flag, fn_flag, global,
+    Cell, DEFAULT, Function, GROUND, Layout, Pin, Reaction, Shape, Str, ambient, cell, fn_flag, global,
     input, kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
 };
 
@@ -371,12 +371,8 @@ fn check_layout(e: &Entry<'_>, layout: &Layout) -> Result<(), ShapeError> {
         let Some(width) = leaf_size(f.leaf) else {
             return Err(e.fail(Rule::UnknownConstant, format!("field {} leaf {}", f.name.as_str(), f.leaf)));
         };
-        if !known_bits(f.flags, field_flag::HAS_KNOWN) {
-            return Err(e.fail(Rule::UnknownConstant, format!("field {} flags {:#x}", f.name.as_str(), f.flags)));
-        }
         let end = f.offset as u64 + width as u64 * f.count as u64;
-        let known_end = f.known as u64 + f.count as u64;
-        if end > layout.size as u64 || (f.flags & field_flag::HAS_KNOWN != 0 && known_end > layout.size as u64) {
+        if end > layout.size as u64 {
             return Err(e.fail(
                 Rule::IndexOutOfRange,
                 format!("field {} lies past the layout's {} bytes", f.name.as_str(), layout.size),

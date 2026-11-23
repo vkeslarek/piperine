@@ -879,9 +879,7 @@ The forms of a type expression.
 | --- | --- | --- |
 | `Path` | `(PathId)` | A named type, `a::T<U>`. |
 | `Array` | `{ elem: TypeId, len: ExprId }` | `[T; N]`: `len` is a const expression. |
-| `Slice` | `(TypeId)` | `[T]` |
 | `Tuple` | `(Vec<TypeId>)` | `(A, B)`; the empty tuple is `()`. |
-| `Ref` | `{ static_lifetime: bool, inner: TypeId }` | `&T` or `&'static T`. |
 | `Flip` | `(TypeId)` | `flip T` |
 | `FnPtr` | `{ params: Vec<TypeId>, ret: Option<TypeId> }` | `fn(A, B) -> R`; `ret` is `None` for `fn()`. |
 | `Infer` | — | `_` |
@@ -908,7 +906,7 @@ The forms of a pattern.
 | --- | --- | --- |
 | `Wild` | — | `_` |
 | `Rest` | — | `..` |
-| `Ident` | `{ by_ref: bool, mutable: bool, name: Name, sub: Option<PatId>, binding: DeclId, res: Resolution }` | `x`, `mut x`, `ref x`, `x @ p`. `binding` is the `Binding` declaration the identifier introduces (the lowering cannot tell a binder from a constant name; resolution can). `res` is what a plain name resolves to when it names a constant, a unit variant, a unit struct or a built-in variant but `Some`: the pattern is a path then and binds nothing; it stays `Unresolved` for a binder. |
+| `Ident` | `{ name: Name, sub: Option<PatId>, binding: DeclId, res: Resolution }` | `x`, `x @ p`. `binding` is the `Binding` declaration the identifier introduces (the lowering cannot tell a binder from a constant name; resolution can). `res` is what a plain name resolves to when it names a constant, a unit variant, a unit struct or a built-in variant but `Some`: the pattern is a path then and binds nothing; it stays `Unresolved` for a binder. |
 | `Lit` | `(ExprId)` | A literal, possibly negated. |
 | `Path` | `(PathId)` | A path naming a constant or a unit variant. |
 | `Tuple` | `(Vec<PatId>)` | `(a, b)` |
@@ -916,8 +914,7 @@ The forms of a pattern.
 | `Struct` | `{ path: PathId, fields: Vec<FieldPatNode>, rest: bool }` | `Path { a, b: p, .. }`; `rest` is the trailing `..`. |
 | `Or` | `(Vec<PatId>)` | `a \| b` |
 | `Range` | `{ lo: Option<ExprId>, hi: Option<ExprId>, inclusive: bool }` | `lo..hi` or `lo..=hi`. |
-| `Ref` | `(PatId)` | `&p` |
-| `Slice` | `(Vec<PatId>)` | `[a, b]` |
+| `Array` | `(Vec<PatId>)` | `[a, b]`, `[first, .., last]` |
 
 ### `FieldPatNode`
 
@@ -1043,7 +1040,7 @@ One variant per `ast::ExprKind` variant.
 | `Break` | `(Option<ExprId>)` | `break value?`. |
 | `Continue` | — | `continue`. |
 | `Return` | `(Option<ExprId>)` | `return value?`. |
-| `Closure` | `{ is_move: bool, params: Vec<ClosureParam>, ret: Option<TypeId>, body: ExprId }` | `move \|p: T\| -> R body`. |
+| `Closure` | `{ params: Vec<ClosureParam>, ret: Option<TypeId>, body: ExprId }` | `\|p: T\| -> R body`. |
 | `Try` | `(ExprId)` | `e?` |
 | `Emit` | `{ stream: Lit, fields: Vec<FieldInit> }` | `emit "stream" { fields }`. |
 | `IncludeStr` | `(Lit)` | `include_str!("file")`. |
@@ -1213,7 +1210,7 @@ The arguments of an attribute.
 | --- | --- | --- |
 | `None` | — | `#[path]`. |
 | `Eq` | `(ExprId)` | `#[doc = "text"]` |
-| `List` | `(Vec<AttrArgNode>)` | `#[derive(Repr, Clone)]`, `#[link("x.osdi", model = "bsim4")]` |
+| `List` | `(Vec<AttrArgNode>)` | `#[derive(Repr, PartialEq)]`, `#[link("x.osdi", model = "bsim4")]` |
 
 ### `AttrArgNode`
 
@@ -1283,7 +1280,7 @@ What a built-in is.
 | `Variant` | — | A built-in enum variant (`Some`, `Transient`, ...). |
 | `Fn` | — | A built-in function. |
 | `Module` | — | A built-in module placed as an instance (`ddt`, `delay`, `limit`, `noise`, `cross`, `at`). |
-| `Method` | — | A built-in method (`changed`, `prev`, `others`, `level`, `inflow`); reached only as a member, never as a name. |
+| `Method` | — | A built-in method (`changed`, `prev`, `others`, `inflow`); reached only as a member, never as a name. |
 | `Event` | — | A built-in event (`settle`). |
 | `Statement` | — | A built-in statement (`bound_step`). |
 | `Node` | — | A reference node (`gnd`). |
@@ -1580,13 +1577,13 @@ Shape: `pub kind: LitKind`, `pub span: Loc`.
 
 *enum*. The literal forms. `Int` keeps the text with its type suffix; `Float` keeps the SI-scaled value and the raw text (serialized as the raw text only: the value is recomputed from it on read, so `1e999` round-trips through JSON); `Str` keeps escapes unprocessed.
 
-Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`, `Unknown`.
+Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`.
 
 ### `UnOp`
 
-*enum*. Unary operators. `Ref` is `&e` (`&mut` is not in the language).
+*enum*. Unary operators.
 
-Shape: `Neg`, `Not`, `Deref`, `Ref`.
+Shape: `Neg`, `Not`.
 
 ### `BinOp`
 

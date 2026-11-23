@@ -1,4 +1,4 @@
-//! Scope: chapter 5 of the Book, "Modules and hierarchy" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 7 of the Book, "Modules and hierarchy" (feature `root-e2e`, RE-02 and RE-03): the
 //! switched-capacitor integrator that runs, the library integrator the chapter shows, the generic
 //! ladder, the module that returns a value, the memory bank, the template and the extern module (all
 //! refused today, asserted refused with their diagnostics), and each sentence and mistake of the
@@ -152,17 +152,17 @@ fn the_book_shows_the_integrator_the_standard_library_gives() {
 }
 
 #[test]
-fn the_pi_controller_is_refused_for_its_signal_flow_ports() {
-    // modules#8 (refused): `windup` and `PiAw`: the ports `e: VSignal` and `y: VSignal` are a signal-flow
-    // nature (L23), and the integral's `idt` is a generic module (L30)
+fn the_pi_controller_is_refused_only_for_its_generic_idt() {
+    // modules#8 (refused): `windup` and `PiAw`: the ports `e: VSignal` and `y: VSignal` are signal-flow
+    // nodes (spec §6 rule 2), so only the integral's `idt`, a generic module (L30), is refused
     let chapter = Chapter::read();
     let after = "module Top() { signal a: VSignal; signal b: VSignal; let c = PiAw(a, b); }\n";
     let model = chapter.wrapped("piaw.msl", "", "modules#8", after);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#8");
-    for expected in ["signal-flow nature `VSignal` is not supported yet", "generic module is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
-    Refusal::expect(model.run(Commands::of_top()), "modules#8", "P0001", "signal-flow nature `VSignal` is not supported yet");
+    let expected = "generic module is not supported yet";
+    assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
+    assert!(given.iter().all(|(_, message)| !message.contains("signal-flow")), "a signal-flow node is typed: {given:?}");
+    Refusal::expect(model.run(Commands::of_top()), "modules#8", "P0001", expected);
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
     // structure, placed in a top with the clock as an `in` port. `Capacitor` is chapter 1's, written first
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
     let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.table.rows.len(), 3, "the clock and the two analog nodes");
     assert!(ran.signal("Top.b").abs() < 1e-12, "the integrator's output with no input is at rest");
@@ -186,11 +186,11 @@ fn the_memory_bank_is_refused_for_its_struct_arrays_and_generics() {
     let top = format!("module Top() {{\n    signal wl: [Bit; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    for expected in ["array type is not supported yet", "generic module is not supported yet"] {
+    for expected in ["an array of `Bit<bool>` is not supported yet", "generic module is not supported yet"] {
         assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
     }
     assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "array type is not supported yet");
+    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "an array of `Bit<bool>` is not supported yet");
 }
 
 #[test]
@@ -255,21 +255,20 @@ fn e0343_a_parent_sees_only_what_the_child_publishes() {
 }
 
 #[test]
-fn e0333_is_not_raised_an_instance_as_a_value_is_a_type_mismatch() {
-    // modules~4bcf201d: "E0333 let x = r1 * 2.0; where r1 is a resistor instance". `E0333` is named by the
-    // spec (section 8.2.14) and no source raises it (GAPS.md section 10): the checker gives `P0002`
-    // (X5, mismatched types) where the Book says the instance is not a value
+fn e0333_an_instance_used_as_a_value_names_the_instance() {
+    // modules~4bcf201d: "E0333 let x = r1 * 2.0; where r1 is a resistor instance". `E0333` (section 8.2.14,
+    // PI-12 AC 7) names the instance of a module without a result read as a value
     let faulty = Faulty::elaborating("modules~4bcf201d", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k };\n    let x = r1 * 2.0;\n"), "Top");
-    assert_eq!(faulty.first("P0002").message, "mismatched types: expected `f64`, found `module `Resistor``");
-    assert!(faulty.given.iter().all(|reported| reported.code != "E0333"), "E0333 is not raised");
+    assert_eq!(faulty.first("E0333").message, "the instance `r1` has no result: a module without a result is not a value (§8.2.14)");
+    assert_eq!(faulty.pointed_at("E0333"), "r1");
 }
 
 #[test]
-fn e0331_a_body_holds_no_variables() {
-    // modules~4bcf221d: "E0331 let mut acc = 0.0; in a module body": a state is a signal
-    let faulty = Faulty::elaborating("modules~4bcf221d", &Parts::with_top("    let mut acc = 0.0;\n"), "Top");
-    assert_eq!(faulty.first("E0331").message, "`let mut` in a module body");
-    assert_eq!(faulty.first("E0331").help.as_deref(), Some("drop `mut`; compute the value in one expression"));
+fn e0903_a_body_holds_no_variables() {
+    // modules~80317e1d "E0903 let mut acc = 0.0; in a module body": `mut` is a reserved word; a state is a signal
+    let faulty = Faulty::elaborating("modules~80317e1d", &Parts::with_top("    let mut acc = 0.0;\n"), "Top");
+    assert_eq!(faulty.first("E0903").message, "`mut` is a reserved keyword");
+    assert_eq!(faulty.first("E0903").help.as_deref(), Some("write the plain form `let x`: every local may be assigned"));
 }
 
 #[test]

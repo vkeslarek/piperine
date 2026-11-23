@@ -1,0 +1,193 @@
+//! The analog power stage (SPEC §2, §3): the input source, two behavioral power switches behind a
+//! gate driver, the inductor with its DCR, the current-sense shunt and amplifier, the output
+//! capacitor with its ESR, and the load. Everything here is continuous except the gate commands,
+//! which each switch reads as a digital carrier.
+
+/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / r;
+}
+
+/// Capacitor with an equivalent series resistance, through an internal node.
+pub module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+    esr: f64 = 1m where esr > 0.0;
+    signal mid: Electrical;
+}
+
+analog for Capacitor {
+    i(p, mid) +> v(p, mid) / esr;
+    i(mid, n) +> ddt(c * v(mid, n));
+}
+
+/// Inductor with its winding resistance (DCR) in the same branch.
+pub module Inductor(p: Electrical, n: Electrical) {
+    l: f64 where l > 0.0;
+    dcr: f64 = 0.0 where dcr >= 0.0;
+}
+
+analog for Inductor {
+    v(p, n) +> ddt(l * i(p, n)) + dcr * i(p, n);
+}
+
+/// The lab supply (SPEC §2): an ideal source behind its wiring resistance. The line-step scenario
+/// (SPEC §10, S4) is a host `set` of `vin`.
+pub module Supply(p: Electrical) {
+    /// Open-circuit voltage, in volts.
+    vin: f64 = 12.0 where vin >= 0.0;
+    /// Source and wiring resistance.
+    rs: f64 = 20m where rs > 0.0;
+    signal src: Electrical;
+}
+
+analog for Supply {
+    v(src) +> vin;
+    i(src, p) +> v(src, p) / rs;
+}
+
+/// The current of a body diode, from source to drain, at a source-to-drain voltage `vsd`: zero
+/// below the knee `vf`, a slope of `1 / rd` above it, the two joined by a softplus 25 mV wide so
+/// that Newton sees a smooth derivative.
+fn body_diode(vsd: f64, vf: f64, rd: f64) -> f64 {
+    let vs = 25m;
+    let x = (vsd - vf) / vs;
+    vs / rd * if x > 40.0 {
+        x
+    } else {
+        (1.0 + x.exp()).ln()
+    }
+}
+
+/// An N-channel power switch (SPEC §2): a channel that moves between `roff` and `ron` in `tsw`
+/// when its gate command changes, the body diode from source to drain, and the output
+/// capacitance.
+pub module PowerSwitch(d: Electrical, s: Electrical, in g: Bit) {
+    ron: f64 = 20m where ron > 0.0;
+    roff: f64 = 1M where roff > ron;
+    /// Channel transition time (SPEC §2: 5 ns).
+    tsw: f64 = 5n where tsw > 0.0;
+    /// Drain-source capacitance, which sets the switch-node slew during dead time.
+    coss: f64 = 200p where coss >= 0.0;
+    /// Body diode knee and slope.
+    vf: f64 = 0.7;
+    rd: f64 = 20m where rd > 0.0;
+    /// 0 when off, 1 when on, a ramp of `tsw` in between.
+    let gate = transition(
+        if g {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tsw,
+        tsw,
+    );
+}
+
+analog for PowerSwitch {
+    let gch = gate / ron + (1.0 - gate) / roff;
+    i(d, s) +> gch * v(d, s) - body_diode(v(s, d), vf, rd) + ddt(coss * v(d, s));
+}
+
+/// The gate driver (SPEC §5.3): a propagation delay on both gates and a shoot-through interlock.
+/// A command to both switches is a command to neither. Dead time itself comes from the DPWM.
+pub module GateDriver(in hs_cmd: Bit, in ls_cmd: Bit, out hs_gate: Bit = false, out ls_gate: Bit = false) {
+    tpd: f64 = 10n where tpd > 0.0;
+    hs_gate = (hs_cmd & !ls_cmd) after tpd;
+    ls_gate = (ls_cmd & !hs_cmd) after tpd;
+}
+
+/// Inductor-current sense (SPEC §2): a 5 mΩ shunt in series with the inductor and an ideal
+/// amplifier of gain 20, so 0.1 V/A on `pos`. `neg` is the inverted output that the sink limit
+/// compares (SPEC §8.3). The amplifier outputs draw no flow from the shunt.
+pub module CurrentSense(a: Electrical, b: Electrical, pos: Electrical, neg: Electrical) {
+    rshunt: f64 = 5m where rshunt > 0.0;
+    gain: f64 = 20.0;
+}
+
+analog for CurrentSense {
+    i(a, b) +> v(a, b) / rshunt;
+    v(pos) +> gain * v(a, b);
+    v(neg) +> -gain * v(a, b);
+}
+
+/// The load (SPEC §10): a base resistor, a second resistor switched in by `step` with a slew of
+/// `tr` (the load step, S3; the overload, S5, is the same step with `r_step` set low), and a
+/// back-drive current source switched in by `inject` (the over-voltage test, S6).
+pub module Load(p: Electrical, in step: Bit, in inject: Bit) {
+    /// 0.5 A at 3.3 V.
+    r_base: f64 = 6.6 where r_base > 0.0;
+    /// 4 A more at 3.3 V: the 0.5 A to 4.5 A step.
+    r_step: f64 = 825m where r_step > 0.0;
+    /// 4 A in 4 µs: 1 A/µs.
+    tr: f64 = 4u where tr > 0.0;
+    /// Current pushed into the output while `inject` is high.
+    i_inject: f64 = 5.0;
+    let k_step = transition(
+        if step {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tr,
+        tr,
+    );
+    let k_inject = transition(
+        if inject {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tr,
+        tr,
+    );
+}
+
+analog for Load {
+    i(p) +> v(p) * (1.0 / r_base + k_step / r_step) - k_inject * i_inject;
+}
+
+/// The power stage: everything between the input node and the output node, gates in, current
+/// sense out.
+///
+/// ```text
+///  vin ──┬── HS ──┬── sw ── L+DCR ── lx ── shunt ──┬── vout
+///        │        │                                │
+///       Cin       LS                              Cout
+///        │        │                                │
+///       gnd      gnd                              gnd
+/// ```
+pub module PowerStage(
+    vin: Electrical,
+    vout: Electrical,
+    isense: Electrical,
+    isense_n: Electrical,
+    in hs_cmd: Bit,
+    in ls_cmd: Bit,
+) {
+    l: f64 = 4.7u;
+    dcr: f64 = 15m;
+    cout: f64 = 220u;
+    esr: f64 = 3m;
+    cin: f64 = 22u;
+    esr_in: f64 = 5m;
+    ron: f64 = 20m;
+    tpd: f64 = 10n;
+    pub signal sw: Electrical;
+    pub signal lx: Electrical;
+    signal hs_gate: Bit;
+    signal ls_gate: Bit;
+    let drv = GateDriver(hs_cmd, ls_cmd, hs_gate, ls_gate) { tpd: tpd };
+    let hs = PowerSwitch(vin, sw, hs_gate) { ron: ron };
+    let ls = PowerSwitch(sw, gnd, ls_gate) { ron: ron };
+    let ind = Inductor(sw, lx) { l: l, dcr: dcr };
+    let shunt = CurrentSense(lx, vout, isense, isense_n);
+    let c_out = Capacitor(vout, gnd) { c: cout, esr: esr };
+    let c_in = Capacitor(vin, gnd) { c: cin, esr: esr_in };
+}

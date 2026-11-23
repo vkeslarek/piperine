@@ -151,7 +151,7 @@ fn worked_examples_produce_their_stated_values() {
     // 11.6: code 128 of 255 against vref 2 V: T0 = f, T1 = v(out) − k·vref.
     let dac = Handle::create(m_dac, &[]).unwrap();
     let k = 128.0 / 255.0;
-    let (out, jac) = eval(&dac, 0, &[vec![128, 1], f(0.4), f(1e-3), f(2.0)]);
+    let (out, jac) = eval(&dac, 0, &[vec![128], f(0.4), f(1e-3), f(2.0)]);
     close(as_f64(&out[0]), 1e-3, "dac T0");
     close(as_f64(&out[1]), -0.6039215686274509, "dac T1");
     assert_eq!(jac, [1.0, 1.0, -k]);
@@ -177,7 +177,7 @@ fn worked_examples_pass_the_partials_verifier() {
         (m_d, 1, vec![f(0.65), f(IS), f(1.0), f(CJ), f(T), f(0.0), f(0.0)]),
         (m_c, 0, vec![f(0.7), f(0.1), f(2e-9)]),
         (m_cmp, 0, vec![f(0.3), f(0.1)]),
-        (m_dac, 0, vec![vec![128, 1], f(0.4), f(1e-3), f(2.0)]),
+        (m_dac, 0, vec![vec![128], f(0.4), f(1e-3), f(2.0)]),
     ];
     for (m, k, point) in cases {
         let h = Handle::create(m, &[]).unwrap();

@@ -31,6 +31,7 @@ fn options(output: NodeIdentifier) -> NoiseAnalysisOptions {
         output_node: output,
         reference_node: NodeIdentifier::Gnd,
         input_source_name: None,
+        output_flow: None,
     }
 }
 
@@ -189,6 +190,7 @@ fn test_per_source_noise_reporting_and_conservation() {
         output_node: abi_devices::node_id(&top),
         reference_node: NodeIdentifier::Gnd,
         input_source_name: None,
+        output_flow: None,
     };
     let mut solver = circuit.noise(opts, Context::default()).unwrap();
     let res = solver.solve().unwrap();

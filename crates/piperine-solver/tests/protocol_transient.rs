@@ -8,14 +8,27 @@
 //! and asks the next acceptance for a restart (the small one after a host
 //! param write); with no unknown no attempt is made; settle runs at time
 //! points and the stop time only; a resume off the grid steps on from the
-//! tick its discrete side ran at, and a stop inside that tick is an error.
+//! tick its discrete side ran at, and a stop inside that tick is an error; on a real discrete
+//! side, a loop that never settles stops the run with `E0511` (spec §8.2.3 step 4).
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
 mod stub_sides;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, OnceLock};
+
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::BIT;
+use piperine_abi::raw::{Cell, Module, Shape, cell, part, pin_flag, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::Port;
+use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 
 use piperine_solver::protocol::{
     Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
@@ -50,7 +63,7 @@ fn attempts(log: &Log) -> Vec<Call> {
 }
 
 fn boundary() -> Boundary {
-    Boundary { slot: 3, bytes: vec![1, 1] }
+    Boundary { slot: 3, bytes: vec![1] }
 }
 
 #[test]
@@ -540,4 +553,182 @@ fn the_proposal_sees_the_next_due_time() {
     p.transient(5.0).unwrap();
     let (_, a) = p.into_sides();
     assert_eq!(a.next_dues, [None, None], "nothing queued: no next time point");
+}
+
+/// The settle boundary of the commits an instant held: slot 3 will read `[1]` (§15 S2).
+fn settle_outcome() -> Outcome {
+    Outcome { settle_boundary: vec![boundary()], ..Outcome::default() }
+}
+
+/// The calls of the settle commit protocol and of the instants, in order.
+fn settle_calls(log: &Log) -> Vec<Call> {
+    calls(log, |c| {
+        matches!(c, Call::LandSettleCommits(_) | Call::DropSettleCommits | Call::RunInstant { .. } | Call::Attempt { .. } | Call::DiscreteRestore(_))
+    })
+}
+
+#[test]
+fn a_settle_commit_lands_at_the_next_time_point() {
+    // §15 S1: the instant at tick 2 makes a settle commit (it lands nothing: none was held); the next accepted time point, tick 4,
+    // lands it before it runs; the first instant lands nothing it did not hold
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0]);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
+    let at = |tick| Call::RunInstant { at: tick, samples: vec![], limit: horizon(4, tick), mode: InstantMode { is_static: false, settle: true } };
+    assert_eq!(
+        settle_calls(&log),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::LandSettleCommits(2),
+            at(2),
+            Call::Attempt { to: 2.0, exempt: true },
+            Call::LandSettleCommits(4),
+            at(4),
+            Call::DropSettleCommits,
+        ],
+        "each time point lands what the one before held, before its instant runs"
+    );
+}
+
+#[test]
+fn the_step_after_a_settle_commit_is_exempt_and_restarts() {
+    // §15 S2, S3: the commit reaches the analog side with a restart; the step that arrives at the
+    // next time point is exempt from the truncation test, and the one after it is not
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0, 3.0]);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(3.0).unwrap();
+    assert_eq!(
+        attempts(&log),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 2.0, exempt: true },
+            Call::Attempt { to: 3.0, exempt: false },
+        ]
+    );
+    assert_eq!(calls(&log, |c| matches!(c, Call::Deliver(..))), [Call::Deliver(vec![boundary()], Restart::Integrator)]);
+}
+
+#[test]
+fn an_event_time_before_the_next_time_point_reads_the_old_value() {
+    // §15 S4: a forced landing that is not a time point (an `IRREVERSIBLE` reaction) lands nothing:
+    // the commit stays held until the time point
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0]);
+    d.instants.push_back(settle_outcome());
+    d.advances.extend([Advance::Reached, Advance::Landing { tick: 3, time_point: false }]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(2.0).unwrap();
+    let lands = calls(&log, |c| matches!(c, Call::LandSettleCommits(_)));
+    // tick 2 (a time point: it lands what was held before it, nothing), tick 3 (not a time point) lands nothing, tick 4 lands
+    assert_eq!(lands, [Call::LandSettleCommits(2), Call::LandSettleCommits(4)], "{:?}", settle_calls(&log));
+}
+
+#[test]
+fn a_rejected_step_moves_the_settle_commit() {
+    // §15 S5: the step to the next time point is rejected: both sides restore, nothing lands, and
+    // the retried step (still exempt) lands it at the time point it finally reaches
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0, 2.0]);
+    a.attempts.extend([Attempt::Converged, Attempt::Rejected, Attempt::Converged]);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(2.0).unwrap();
+    assert_eq!(
+        attempts(&log),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 2.0, exempt: true },
+            Call::Attempt { to: 2.0, exempt: true },
+        ]
+    );
+    let order = settle_calls(&log);
+    let restore = order.iter().position(|c| matches!(c, Call::DiscreteRestore(_))).expect("the rejection restored");
+    let land = order.iter().rposition(|c| matches!(c, Call::LandSettleCommits(4))).expect("landed at 4");
+    assert!(restore < land, "nothing lands before the retried step is accepted: {order:?}");
+    assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(4))).count(), 1, "{order:?}");
+}
+
+#[test]
+fn a_settle_commit_at_the_stop_time_is_dropped() {
+    // §15 S6: the commit made at the stop time has no time point to land at: it is dropped
+    let (log, mut d, mut a) = sides();
+    a.proposals.push_back(1.0);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(1.0).unwrap(), Ended::StopTime);
+    let order = settle_calls(&log);
+    assert_eq!(order.last(), Some(&Call::DropSettleCommits), "{order:?}");
+    assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(_))).count(), 1, "only the stop's own landing: {order:?}");
+}
+
+/// A function that never settles on its own net: it writes the inverse of the level it reads.
+/// Bound with `a` and `y` on one `RELAX` net it relaxes forever.
+///
+/// pins: a=0 (PORT BIT); y=1 (PORT BIT, RELAX).  fn 0 "flip": reads [a] writes [y]
+struct Flipper;
+static FLIPPER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static FLIPPER: OnceLock<Module> = OnceLock::new();
+
+impl Flipper {
+    /// The shape every `Flipper` shares.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+        let y = s.pin(PinSpec { flags: pin_flag::RELAX, ..PinSpec::discrete("y", role::PORT, &BIT) });
+        s.function(FunctionSpec {
+            name: "flip",
+            origin: "protocol_transient.rs",
+            reads: vec![Cell { kind: cell::PIN, index: a, part: part::VALUE }],
+            writes: vec![Cell { kind: cell::PIN, index: y, part: part::VALUE }],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
+}
+
+impl Device for Flipper {
+    fn prototype() -> &'static Shape<'static> {
+        FLIPPER_SHAPE.get_or_init(Flipper::shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Flipper, Arc::clone(FLIPPER_SHAPE.get_or_init(Flipper::shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let level = cx.bytes(0)[0] == 0;
+        cx.out_bytes(0).copy_from_slice(&[level as u8]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+#[test]
+fn an_unsettled_loop_is_e0511_naming_its_drives() {
+    // abi.md §9 D1: a loop that still moves after the bounded passes stops the run with `E0511`,
+    // naming the loop's drives; the bytes of a layout hold only values, so there is nothing to
+    // zero
+    let mut builder = CircuitBuilder::new("unsettled");
+    builder.device(
+        FLIPPER.get_or_init(|| module::<Flipper>("Flipper")),
+        "flip",
+        &[],
+        &[Port::Net("x".to_string()), Port::Net("x".to_string())],
+    );
+    let mut solver = Solver::new(builder.build().expect("build"))
+        .with_tran_opts(TransientAnalysisOptions::new(1.0e-7, 1.0e-8))
+        .with_sink(Box::new(Collect(Rc::new(RefCell::new(Vec::new())))))
+        .build();
+    let error = solver.tran().expect("transient").solve().expect_err("a loop that does not settle fails the run");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle; its drives: x"), "{error}");
+}
+
+/// SAI-15: the target's own device passes the partials verifier (the guard of `abi_devices.rs`).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Flipper", FLIPPER.get_or_init(|| module::<Flipper>("Flipper")));
 }

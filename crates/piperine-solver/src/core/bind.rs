@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::{
-    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, field_flag, global, kind, leaf, pin_flag, role, watch,
+    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, global, kind, leaf, pin_flag, role, watch,
 };
 use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, Assembly};
 use piperine_analog_solver::error::{Error, SolverDomain};
@@ -151,6 +151,8 @@ pub struct Bound {
     pub holds: Vec<Hold>,
     /// The smallest non-zero `abstol` of the pins on each node.
     pub vntol: HashMap<NodeIdentifier, f64>,
+    /// The flow `abstol` of the pins of each branch unknown that has one.
+    pub branch_abstol: HashMap<BranchIdentifier, f64>,
     /// The analysis-kind globals some pin reads (`DC`, `TRAN`, `AC`, `NOISE`):
     /// the constant, its net and the bytes that mean "this analysis runs".
     pub analyses: Vec<(u32, NetId, Vec<u8>)>,
@@ -241,17 +243,22 @@ impl Bound {
     }
 
     /// Tightens `tol` with the per-node tolerances of the pins: a node keeps
-    /// the smaller of its present override and the pins' (design AC 4).
+    /// the smaller of its present override and the pins' (design AC 4). A branch
+    /// unknown takes the flow `abstol` of its pins (§17.1 rules 1 and 2).
     pub fn tighten(&self, tol: &mut Tolerances) {
-        if self.vntol.is_empty() {
-            return;
+        if !self.vntol.is_empty() {
+            let mut map = (*tol.node_vntol_overrides).clone();
+            for (id, v) in &self.vntol {
+                let entry = map.entry(id.clone()).or_insert(*v);
+                *entry = entry.min(*v);
+            }
+            tol.node_vntol_overrides = std::rc::Rc::new(map);
         }
-        let mut map = (*tol.node_vntol_overrides).clone();
-        for (id, v) in &self.vntol {
-            let entry = map.entry(id.clone()).or_insert(*v);
-            *entry = entry.min(*v);
+        if !self.branch_abstol.is_empty() {
+            let mut map = (*tol.branch_abstol_overrides).clone();
+            map.extend(self.branch_abstol.iter().map(|(id, v)| (id.clone(), *v)));
+            tol.branch_abstol_overrides = std::rc::Rc::new(map);
         }
-        tol.node_vntol_overrides = std::rc::Rc::new(map);
     }
 }
 
@@ -272,7 +279,7 @@ fn bind_error(path: &str, detail: impl std::fmt::Display) -> Error {
     Error::simple(SolverDomain::Device, format!("instance `{path}`: {detail}"))
 }
 
-/// The bytes of `value` in `layout` (P3: a field with a known byte gets it set).
+/// The bytes of `value` in `layout` (P3: the bytes of its type and nothing else).
 pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result<Vec<u8>, String> {
     if let ParamValue::Bytes(b) = value {
         return if b.len() == layout.size as usize {
@@ -313,9 +320,6 @@ pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result
             put(&mut bytes, &le(n)?)?;
         }
         _ => return Err("the value does not fit the first field of the layout".into()),
-    }
-    if field.flags & field_flag::HAS_KNOWN != 0 {
-        *bytes.get_mut(field.known as usize).ok_or("the known byte lies outside the layout")? = 1;
     }
     Ok(bytes)
 }
@@ -425,6 +429,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
     let mut binds: Vec<Bind> = Vec::with_capacity(specs.len());
     let mut holds = Vec::new();
     let mut vntol: HashMap<NodeIdentifier, f64> = HashMap::new();
+    let mut branch_abstol: HashMap<BranchIdentifier, f64> = HashMap::new();
     let mut params = HashMap::new();
     let mut analyses: Vec<(u32, NetId, Vec<u8>)> = Vec::new();
 
@@ -507,11 +512,16 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                                 value: v.ok_or_else(|| bind_error(path, format!("`{pname}`: init is not an F64")))?,
                             });
                         }
-                        if pin.abstol[0] > 0.0
-                            && let AnalogVariable::Node(id) = r.variable().as_ref()
-                        {
-                            let e = vntol.entry(id.clone()).or_insert(pin.abstol[0]);
-                            *e = e.min(pin.abstol[0]);
+                        match r.variable().as_ref() {
+                            AnalogVariable::Node(id) if pin.abstol[0] > 0.0 => {
+                                let e = vntol.entry(id.clone()).or_insert(pin.abstol[0]);
+                                *e = e.min(pin.abstol[0]);
+                            }
+                            AnalogVariable::Branch(id) if pin.abstol[1] > 0.0 => {
+                                let e = branch_abstol.entry(id.clone()).or_insert(pin.abstol[1]);
+                                *e = e.min(pin.abstol[1]);
+                            }
+                            _ => {}
                         }
                     }
                     (site, None)
@@ -711,5 +721,5 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         }
     }
     let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() });
-    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
+    Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
 }

@@ -1,0 +1,86 @@
+//! Payload enums, discriminants and `Option` of aggregates (CV-11): variants built by name, by a
+//! call and by a struct expression, matched with bindings; `#[repr]` and written discriminants as
+//! the tag and the value of `as`; an `Option` of a struct, a tuple, an array or an enum read through `match`, `if let`
+//! and `unwrap_or`. The expected values are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+enum Tx { Idle, Start, Data { n: u3 }, Stop }
+#[derive(Repr, PartialEq)]
+enum Msg { Quit, Move(u8, u8), Say { len: u8 } }
+#[derive(Repr, PartialEq)]
+#[repr(u8)]
+enum Op { Add = 0, Sub = 1, Mul = 0x80 }
+#[derive(Repr, PartialEq)]
+enum Level { Low, Mid, High }
+struct P { x: f64, y: u8 }
+struct Wrapped { inner: Option<P>, tag: u8 }
+
+fn size(t: Tx) -> u8 { match t { Tx::Idle => 0, Tx::Start => 1, Tx::Data { n } => (n as u8) + 10, Tx::Stop => 2 } }
+fn build(k: u8) -> Tx { match k { 0 => Tx::Idle, 1 => Tx::Data { n: 5 }, _ => Tx::Stop } }
+fn msg_weight(m: Msg) -> u8 { match m { Msg::Quit => 0, Msg::Move(a, b) => a * 10 + b, Msg::Say { len } => len + 100 } }
+fn op_code(o: Op) -> u8 { match o { Op::Mul => o as u8, _ => 0 } }
+fn tx_data(t: Tx) -> u8 { if let Tx::Data { n } = t { n as u8 } else { 99 } }
+
+fn pick(b: bool) -> Option<P> { if b { Some(P { x: 0.5, y: 8 }) } else { None } }
+fn pick_y(b: bool) -> u8 { match pick(b) { Some(P { y, .. }) => y, None => 0 } }
+fn wrapped() -> Wrapped { Wrapped { inner: Some(P { x: 1.0, y: 3 }), tag: 1 } }
+fn wrapped_y() -> u8 { match wrapped().inner { Some(p) => p.y, None => 0 } }
+fn wrapped_is_none() -> bool { let w = Wrapped { inner: None, tag: 0 }; w.inner.is_none() }
+
+fn opt_tuple(b: bool) -> Option<(u8, u8)> { if b { Some((3, 4)) } else { None } }
+fn opt_tuple_weight(b: bool) -> u8 { match opt_tuple(b) { Some((x, y)) => x * 10 + y, None => 0 } }
+fn opt_array(b: bool) -> Option<[u8; 2]> { if b { Some([5, 6]) } else { None } }
+fn opt_array_sum(b: bool) -> u8 { match opt_array(b) { Some(a) => a[0] + a[1], None => 0 } }
+fn opt_enum(k: u8) -> Option<Msg> { if k == 0 { Some(Msg::Move(1, 2)) } else if k == 1 { Some(Msg::Say { len: 9 }) } else if k == 2 { Some(Msg::Quit) } else { None } }
+fn opt_enum_weight(k: u8) -> u8 { match opt_enum(k) { Some(Msg::Move(a, b)) => a * 10 + b, Some(Msg::Say { len }) => len, Some(Msg::Quit) => 1, None => 0 } }
+
+module OptionRows(in clk: Bit, out p0: Bit<u8> = 0, out p1: Bit<u8> = 0, out p2: Bit<u8> = 0, out p3: Bit<u8> = 0, out p4: Bit<u8> = 0, out p5: Bit<u8> = 0, out p6: Bit<u8> = 0, out p7: Bit<bool> = false, out p8: Bit<u8> = 0) {}
+digital for OptionRows {
+    on clk.rise() {
+        p0 <- opt_tuple_weight(true); p1 <- opt_tuple_weight(false);
+        p2 <- opt_array_sum(true); p3 <- opt_array_sum(false);
+        p4 <- opt_enum_weight(0); p5 <- opt_enum_weight(1); p6 <- opt_enum_weight(2); p8 <- opt_enum_weight(3);
+        p7 <- opt_enum(1).is_some();
+    }
+}
+
+module Rows(in clk: Bit, out v0: Bit<u8> = 0, out v1: Bit<u8> = 0, out v2: Bit<u8> = 0, out v3: Bit<u8> = 0, out v4: Bit<u8> = 0, out v5: Bit<u8> = 0, out v6: Bit<u8> = 0, out v7: Bit<u8> = 0, out v8: Bit<u8> = 0, out v9: Bit<u8> = 0, out v10: Bit<bool> = false, out v11: Bit<bool> = false, out c0: Bit<u8> = 0, out c1: Bit<u8> = 0, out c2: Bit<u8> = 0, out c3: Bit<u8> = 0, out c4: Bit<u8> = 0, out o0: Bit<u8> = 0, out o1: Bit<u8> = 0, out o2: Bit<u8> = 0, out o3: Bit<u8> = 0, out o4: Bit<u8> = 0, out o5: Bit<bool> = false) {}
+digital for Rows {
+    on clk.rise() {
+        v0 <- size(Tx::Idle);
+        v1 <- size(Tx::Start);
+        v2 <- size(Tx::Data { n: 5 });
+        v3 <- size(Tx::Stop);
+        v4 <- size(build(0));
+        v5 <- size(build(1));
+        v6 <- size(build(2));
+        v7 <- msg_weight(Msg::Quit);
+        v8 <- msg_weight(Msg::Move(3, 4));
+        v9 <- msg_weight(Msg::Say { len: 6 });
+        v10 <- build(1) == Tx::Data { n: 5 };
+        v11 <- build(1) == Tx::Data { n: 4 };
+        c0 <- Op::Add as u8;
+        c1 <- Op::Sub as u8;
+        c2 <- Op::Mul as u8;
+        c3 <- op_code(Op::Mul);
+        c4 <- Level::High as u8;
+        o0 <- pick_y(true);
+        o1 <- pick_y(false);
+        o2 <- tx_data(build(1));
+        o3 <- tx_data(build(0));
+        o4 <- wrapped_y();
+        o5 <- wrapped_is_none();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal p0: Bit<u8>; signal p1: Bit<u8>; signal p2: Bit<u8>; signal p3: Bit<u8>; signal p4: Bit<u8>; signal p5: Bit<u8>; signal p6: Bit<u8>; signal p7: Bit<bool>; signal p8: Bit<u8>;
+    signal v0: Bit<u8>; signal v1: Bit<u8>; signal v2: Bit<u8>; signal v3: Bit<u8>; signal v4: Bit<u8>; signal v5: Bit<u8>; signal v6: Bit<u8>; signal v7: Bit<u8>; signal v8: Bit<u8>; signal v9: Bit<u8>; signal v10: Bit<bool>; signal v11: Bit<bool>; signal c0: Bit<u8>; signal c1: Bit<u8>; signal c2: Bit<u8>; signal c3: Bit<u8>; signal c4: Bit<u8>; signal o0: Bit<u8>; signal o1: Bit<u8>; signal o2: Bit<u8>; signal o3: Bit<u8>; signal o4: Bit<u8>; signal o5: Bit<bool>;
+    let osc = Osc(clk) { f: 200M };
+    let option_rows = OptionRows(clk, p0, p1, p2, p3, p4, p5, p6, p7, p8);
+    let rows = Rows(clk, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, c0, c1, c2, c3, c4, o0, o1, o2, o3, o4, o5);
+}

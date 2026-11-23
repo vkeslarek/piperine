@@ -9,7 +9,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use piperine_api::{Built, Failure, Overrides, Project, RunSpec, Session};
+use piperine_api::{Built, Failure, Overrides, ParamValue, Project, Record, RecordSink, RunSpec, Session};
+
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 use piperine_transpile::Settings;
 
@@ -102,7 +103,7 @@ fn a_run_fails_on_an_unreached_error_with_the_check_diagnostic() {
     match Session::open(&project, &spec, &unused()) {
         Err(Failure::Diagnostics { stage: "typeck", found, .. }) => {
             assert_eq!(found, expected);
-            assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["P0002"]);
+            assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
         }
         Err(other) => panic!("a typeck failure, found {other}"),
         Ok(s) => panic!("a session with top {}", s.top()),
@@ -184,37 +185,80 @@ fn a_run_compiles_once_and_never_during_an_analysis() {
 }
 
 #[test]
-fn a_top_with_discrete_in_ports_runs_with_them_unknown() {
-    // spec edge 5: the port `en` is a net of the top that nothing writes (contract "The top")
+fn a_top_with_discrete_in_ports_starts_them_at_their_initial_values() {
+    // spec edge 5: the port `en` is a net of the top that nothing writes after its initial value
+    // `true` (contract "The top")
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = tempfile::tempdir().expect("tmp");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let text = format!(
+        "{DEVICES}\nmodule Top(in en: Bit = true) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
+    );
+    let mut session = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    assert!(session.ir().net_at("Top.en").is_some(), "the port is a net of the top");
+    let circuit = session.circuit().expect("a circuit");
+    let result = circuit.transient(TransientAnalysisOptions::new(1e-9, 1e-10), Context::default()).expect("tran").solve().unwrap_or_else(|e| panic!("{e}"));
+    // the first step is the operating point; a `Bit` is laid out as its value byte (abi.md P3):
+    // nothing wrote `en` after its initial value, so it holds `true`
+    let first = result.get(0).expect("the operating point");
+    let en = first.digital_named("Top.en").expect("the net `Top.en` in the result");
+    assert_eq!(en.get(0), Some(&1), "`en` holds its initial value: {en:?}");
+}
+
+#[test]
+fn an_undriven_top_port_without_default_refuses_the_analysis() {
+    // EU-04 (§3.3.4): an `in` port with no initial value, no `Default` and no value from the host
+    // when the analysis starts refuses it with `E0187` naming the port; a drive at 0 gives it its
+    // first value and the analysis runs
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let cache = tempfile::tempdir().expect("tmp");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let text = format!(
         "{DEVICES}\nmodule Top(in en: Bit) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
     );
-    let mut session = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
-    assert!(session.ir().net_at("Top.en").is_some(), "the port is a net of the top");
-    let circuit = session.circuit().expect("a circuit");
-    let result = circuit.transient(TransientAnalysisOptions::new(1e-9, 1e-10), Context::default()).expect("tran").solve().unwrap_or_else(|e| panic!("{e}"));
-    // the first step is the operating point; a `Bit` is laid out as its value then its known
-    // byte (abi.md §2): known byte 0 is unknown
-    let first = result.get(0).expect("the operating point");
-    let en = first.digital_named("Top.en").expect("the net `Top.en` in the result");
-    assert_eq!(en.get(1), Some(&0), "`en` is unknown: {en:?}");
+    let mut refused = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    match refused.run(std::rc::Rc::new(std::cell::RefCell::new(NoRecords))) {
+        Err(Failure::Host { code: "E0187", message }) => assert!(message.contains("`en`"), "the port is named: {message}"),
+        other => panic!("E0187 naming `en`, found {other:?}"),
+    }
+    let mut driven = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    driven.drive("en", ParamValue::Bool(true), 0.0).expect("a drive at 0");
+    driven.run(std::rc::Rc::new(std::cell::RefCell::new(NoRecords))).unwrap_or_else(|f| panic!("{f}"));
+}
+
+/// A sink that keeps no record.
+struct NoRecords;
+
+impl RecordSink for NoRecords {
+    fn record(&mut self, _record: &Record) {}
 }
 
 #[test]
-fn a_top_with_a_continuous_port_is_the_front_ends_diagnostic() {
-    // spec edge 6: an `Electrical` port of the top has nothing to connect to
+fn a_top_with_a_node_port_is_refused_by_the_interpreter_naming_the_host_source() {
+    // PI-07 (D8, R2): a node port of the top elaborates (the IR gains the host source), and the
+    // frozen interpreter, which does not run the clock the source reads, refuses it by name
     let text = format!("{DEVICES}\nmodule Top(a: Electrical) {{\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n");
     match open(&text, &flags("op", "interp", Some("Top")), &unused()) {
-        Err(Failure::Diagnostics { stage, found, .. }) => {
-            assert_eq!(stage, "elaborate");
-            assert_eq!(found.len(), 1, "{found:?}");
-            assert_eq!(found[0].diagnostic.code, "P0001", "{found:?}");
-            assert!(found[0].diagnostic.message.contains("port"), "{}", found[0].diagnostic.message);
+        Err(failure) => assert!(failure.to_string().contains("HostSource"), "{failure}"),
+        Ok(_) => panic!("the interpreter ran a host source"),
+    }
+}
+
+#[test]
+fn a_module_typed_param_is_not_set_by_text() {
+    // PI-04, design D13: a param of module type is bound in the source, so a request param that
+    // names it is E0802 at elaboration; the design itself opens
+    let devices = format!("{DEVICES}\nmodule Cell(p: Electrical) {{ r: f64 = 1k; }}\nanalog for Cell {{ i(p, gnd) +> v(p, gnd) / r; }}\n");
+    let top = "module Top() {\n    cell: Cell = Cell { r: 2k };\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = cell(a);\n}\n";
+    let text = format!("{devices}\n{top}");
+    open(&text, &flags("op", "interp", Some("Top")), &unused()).unwrap_or_else(|f| panic!("the design opens: {f}"));
+    let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..flags("op", "interp", Some("Top")) };
+    match open(&text, &overrides, &unused()) {
+        Err(Failure::Diagnostics { found, .. }) => {
+            assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0802"], "{found:?}");
+            assert!(found[0].diagnostic.message.contains("Top.cell"), "{}", found[0].diagnostic.message);
         }
-        Err(other) => panic!("the front end's diagnostic, found {other}"),
-        Ok(_) => panic!("a continuous port of the top is refused"),
+        Err(other) => panic!("E0802 from elaboration, found {other}"),
+        Ok(_) => panic!("a text value was given to a module-typed param"),
     }
 }

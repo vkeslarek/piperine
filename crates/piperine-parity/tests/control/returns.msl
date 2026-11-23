@@ -1,0 +1,46 @@
+//! `return` and `?` (CV-03), in functions called from a reaction: an early return from inside a
+//! loop, an `if` and a `match`, and `?` on an `Option`. The expected values are computed by Rust
+//! in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn first_over(limit: u8) -> u8 {
+    for k in 0..200u8 { if k * k > limit { return k; } }
+    255
+}
+fn clamp_low(x: i16) -> i16 { if x < 0 { return 0; } x }
+fn named(m: u8) -> u8 {
+    let v = match m { 0 => return 100, 1 => 7u8, _ => m * 2 };
+    v + 1
+}
+fn shout(x: u8) { if x > 3 { return; } }
+fn halved(x: Option<u8>) -> Option<u8> { let v = x?; Some(v / 2) }
+fn twice_halved(x: Option<u8>) -> Option<u8> { let a = halved(x)?; halved(Some(a)) }
+
+module Rows(in clk: Bit, out a: Bit<u8> = 0, out b: Bit<i16> = 0, out c: Bit<i16> = 0, out d: Bit<u8> = 0, out e: Bit<u8> = 0, out f: Bit<u8> = 0,
+            out g: Bit<u8> = 0, out h: Bit<u8> = 0, out some: Bit = false, out none: Bit = false, out third: Bit<u8> = 0) {}
+digital for Rows {
+    on clk.rise() {
+        a <- first_over(50);
+        b <- clamp_low(-5);
+        c <- clamp_low(5);
+        d <- named(0);
+        e <- named(1);
+        f <- named(5);
+        g <- halved(Some(8)).unwrap_or(99);
+        h <- halved(None).unwrap_or(99);
+        some <- halved(Some(8)).is_some();
+        none <- halved(None).is_none();
+        third <- twice_halved(Some(8)).unwrap_or(99);
+        shout(5);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal a: Bit<u8>; signal b: Bit<i16>; signal c: Bit<i16>; signal d: Bit<u8>; signal e: Bit<u8>; signal f: Bit<u8>;
+    signal g: Bit<u8>; signal h: Bit<u8>; signal some: Bit; signal none: Bit; signal third: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a, b, c, d, e, f, g, h, some, none, third);
+}

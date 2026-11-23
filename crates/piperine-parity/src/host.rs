@@ -51,7 +51,7 @@ impl HostRun {
 
     /// The compiler settings of every run of this process: one temporary cache, so a test run
     /// never writes the user's own cache.
-    fn settings() -> Settings {
+    pub fn settings() -> Settings {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("a temporary cache"));
         Settings { rustc: None, cache: dir.path().to_path_buf() }

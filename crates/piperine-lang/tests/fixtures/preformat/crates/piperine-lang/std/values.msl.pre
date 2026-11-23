@@ -1,0 +1,55 @@
+//! Values and `Bit` (§22.1): `cast`, `same`, the engine-implemented pattern
+//! functions, the edges of `Bit`, `init`, `every` and `since`.
+
+/// The same levels under another type of the same width, or `None` when `B` rejects them.
+pub fn cast<A: Repr, B: Repr>(a: A) -> Option<B> where A::WIDTH == B::WIDTH {
+    B::decode(a.encode())
+}
+
+/// Equal level by level: on a `Logic`, the four states are compared literally.
+pub fn same<T: Repr>(a: T, b: T) -> bool {
+    a.encode() == b.encode()
+}
+
+pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: str) -> bool;
+
+pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
+
+impl Bit {
+    /// A change that ends at true: false to true.
+    pub fn rise(self) -> Event {
+        self.changed() && !self.prev() && self
+    }
+    /// A change that ends at false: true to false.
+    pub fn fall(self) -> Event {
+        self.changed() && self.prev() && !self
+    }
+}
+
+pub module init() -> Event {
+    signal up: Bit = true;
+    up.changed()
+}
+
+pub module every(t0: f64, period: f64) -> Event {
+    signal k: Bit<u64> = 0;
+    let tick = at(t0 + k as f64 * period);
+    tick
+}
+
+digital for every {
+    on tick {
+        k <- k + 1;
+    }
+}
+
+pub module since<T: Repr>(in s: Bit<T>) -> f64 {
+    signal t: Bit<f64> = -inf;
+    now() - t // a plain real, so analog may read it (§3.3.6)
+}
+
+digital<T> for since<T> {
+    on s.changed() {
+        t <- now();
+    }
+}

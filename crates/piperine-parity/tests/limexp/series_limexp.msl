@@ -1,0 +1,36 @@
+//! `tests/e2e/twins/diode_series.msl` with its diodes written with `limexp`: two series diodes
+//! behind 1 kOhm from 5 V (the twin of ngspice's `diode_series.cir`).
+
+/// Independent voltage source (the twins' `Vsource`).
+module Vsource(p: Electrical, n: Electrical) {
+    dc: f64 = 0.0;
+}
+analog for Vsource { v(p, n) +> dc * source_scale(); }
+
+/// Ideal resistor (the twins' `Resistor`).
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Junction diode of the twin `Diode` with `limexp` for its exponential (§22.2.4), the junction
+/// shunt of ngspice kept.
+module DiodeLimexp(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+}
+analog for DiodeLimexp {
+    let nvt = n * vt();
+    let vd  = v(a, k);
+    i(a, k) +> is * (limexp(vd / nvt) - 1.0) + gmin() * vd;
+}
+
+module DiodeSeries() {
+    signal vin: Electrical;
+    signal a: Electrical;
+    signal b: Electrical;
+    let v1 = Vsource { dc: 5.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, a);
+    let d1 = DiodeLimexp { is: 1e-14, n: 1.0 }(a, b);
+    let d2 = DiodeLimexp { is: 1e-14, n: 1.0 }(b, gnd);
+}

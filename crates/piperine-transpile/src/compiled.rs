@@ -71,7 +71,9 @@ impl Compiled {
             }
             modules.push(Some(module));
         }
-        if !DerivePlan::of(&ir).is_empty() && !loaded.derives() {
+        // a composite param derived from another keeps its elaborated value: no function recomputes it
+        let recomputed = DerivePlan::of(&ir).bindings().iter().any(|binding| !binding.ty.is_composite());
+        if recomputed && !loaded.derives() {
             return Err(Error::Load {
                 file: loaded.file().to_path_buf(),
                 cause: format!("has no symbol `{}` and the design derives params from others", crate::print::derive::SYMBOL),

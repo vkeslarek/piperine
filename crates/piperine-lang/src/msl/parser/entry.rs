@@ -45,36 +45,8 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
         {
             name_error(&t, span)
         }
-        // `&mut`: the `&` before the `mut` that was found is part of the form.
-        RichReason::ExpectedFound { found: Some(t), .. }
-            if matches!(&**t, Token::Kw(Kw::Mut))
-                && tokens.iter().any(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start) =>
-        {
-            let start = tokens
-                .iter()
-                .find(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start)
-                .map_or(span.start, |(_, s)| s.start);
-            Diagnostic::new(
-                "E0101",
-                "a mutable reference is not part of the language",
-                Span::new(start, span.end),
-                "a syntactic form left out of the language",
-            )
-            .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out")
-        }
         // A Rust keyword no production of the language accepts anywhere.
         RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Kw(k) if unused_keyword(*k)) => {
-            name_error(&t, span)
-        }
-        // `Unknown` where a declaration or field name goes: `Unknown: T = ..`.
-        RichReason::ExpectedFound { found: Some(t), .. }
-            if matches!(&**t, Token::Unknown)
-                && tokens
-                    .iter()
-                    .position(|(_, s)| *s == span)
-                    .and_then(|i| tokens.get(i + 1))
-                    .is_some_and(|(n, _)| matches!(n, Token::Punct(Punct::Colon))) =>
-        {
             name_error(&t, span)
         }
         RichReason::ExpectedFound { found: Some(t), .. } if names_expected(e, &t) => name_error(&t, span),
@@ -301,8 +273,7 @@ fn is_close(t: &Token) -> bool {
 /// postfix; otherwise the next operator token is a prefix form.
 fn ends_operand(t: &Token) -> bool {
     match t {
-        Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. }
-        | Token::Unknown | Token::StaticLifetime => true,
+        Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. } => true,
         Token::Kw(Kw::SelfLower | Kw::SelfUpper | Kw::True | Kw::False) => true,
         Token::Punct(p) => matches!(p, Punct::RParen | Punct::RBracket | Punct::RBrace | Punct::Question),
         _ => false,
@@ -767,8 +738,8 @@ fn unused_keyword(k: Kw) -> bool {
     use Kw::*;
     matches!(
         k,
-        Type | Static | Abstract | Become | Box | Do | Final | Macro | Override | Priv | Typeof | Unsized
-            | Virtual | Yield | Try | Gen
+        Type | Static | Mut | Ref | Move | Abstract | Become | Box | Do | Final | Macro | Override | Priv
+            | Typeof | Unsized | Virtual | Yield | Try | Gen
     )
 }
 
@@ -778,30 +749,24 @@ fn added_keyword(k: Kw) -> bool {
     matches!(k, Module | Nature | Signal | On | Out | Flip | After)
 }
 
-/// A keyword or `Unknown` found where a name was expected.
+/// A keyword found where a name was expected.
 fn names_expected(e: &Err<'_>, found: &Token) -> bool {
-    matches!(found, Token::Kw(_) | Token::Unknown)
+    matches!(found, Token::Kw(_))
         && e.expected().any(|p| matches!(p, RichPattern::Label(l) if NAME_LABELS.contains(&&**l)))
 }
 
 fn name_error(found: &Token, span: Span) -> Diagnostic {
     match found {
-        Token::Unknown => Diagnostic::new(
-            "E0908",
-            "`Unknown` is a literal, not a name",
-            span,
-            "cannot name a binding, item or field `Unknown`",
-        )
-        .with_help("choose another name"),
         Token::Kw(Kw::Unsafe | Kw::Async | Kw::Await | Kw::Dyn) => Diagnostic::new(
             "E0101",
             format!("{found} is not part of the language"),
             span,
             "a syntactic form left out of the language",
         )
-        .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out"),
+        .with_help("Part I §1 rule 2 lists the forms left out"),
         other => {
             let help = match other {
+                Token::Kw(k) if ReservedMarker::of(*k).is_some() => ReservedMarker::of(*k).map_or_else(String::new, |m| m.help.to_string()),
                 Token::Kw(k) if added_keyword(*k) => format!("choose another name, or write the keyword as a raw identifier: `r#{}`", other.to_string().trim_matches('`')),
                 _ => "choose another name".to_string(),
             };

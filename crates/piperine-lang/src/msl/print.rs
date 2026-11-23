@@ -392,14 +392,10 @@ impl<'h> Printer<'h> {
         match &t.kind {
             TypeKind::Path(p) => self.path(p),
             TypeKind::Array { elem, len } => format!("[{}; {}]", self.ty(elem), self.expr(len)),
-            TypeKind::Slice(e) => format!("[{}]", self.ty(e)),
             TypeKind::Tuple(items) => match items.as_slice() {
                 [one] => format!("({},)", self.ty(one)),
                 _ => format!("({})", items.iter().map(|t| self.ty(t)).collect::<Vec<_>>().join(", ")),
             },
-            TypeKind::Ref { static_lifetime, inner } => {
-                format!("&{}{}", if *static_lifetime { "'static " } else { "" }, self.ty(inner))
-            }
             TypeKind::Flip(inner) => format!("flip {}", self.ty(inner)),
             TypeKind::FnPtr { params, ret } => {
                 let ret = ret.as_ref().map_or(String::new(), |r| format!(" -> {}", self.ty(r)));
@@ -423,15 +419,8 @@ impl<'h> Printer<'h> {
         match &p.kind {
             PatKind::Wild => "_".to_string(),
             PatKind::Rest => "..".to_string(),
-            PatKind::Ident { by_ref, mutable, name, sub } => {
-                let mut s = String::new();
-                if *by_ref {
-                    s.push_str("ref ");
-                }
-                if *mutable {
-                    s.push_str("mut ");
-                }
-                s.push_str(&name.spelled());
+            PatKind::Ident { name, sub } => {
+                let mut s = name.spelled();
                 if let Some(sub) = sub {
                     s.push_str(&format!(" @ {}", self.pat1(sub)));
                 }
@@ -472,8 +461,7 @@ impl<'h> Printer<'h> {
                     hi.as_ref().map_or(String::new(), |e| self.expr(e))
                 )
             }
-            PatKind::Ref(inner) => format!("&{}", self.pat1(inner)),
-            PatKind::Slice(items) => format!("[{}]", items.iter().map(|p| self.pat(p)).collect::<Vec<_>>().join(", ")),
+            PatKind::Array(items) => format!("[{}]", items.iter().map(|p| self.pat(p)).collect::<Vec<_>>().join(", ")),
         }
     }
 
@@ -495,7 +483,6 @@ impl<'h> Printer<'h> {
             }
             LitKind::Str { text, raw_hashes: None } => format!("\"{}\"", enc(text)),
             LitKind::Bool(b) => b.to_string(),
-            LitKind::Unknown => "Unknown".to_string(),
         }
     }
 
@@ -544,15 +531,13 @@ impl<'h> Printer<'h> {
             ExprKind::Lit(l) => self.lit(l),
             ExprKind::Path(p) => self.path(p),
             ExprKind::Unary { op, expr: x } => {
-                let (sym, space) = match op {
-                    UnOp::Neg => ("-", false),
-                    UnOp::Not => ("!", false),
-                    UnOp::Deref => ("*", false),
-                    UnOp::Ref => ("&", true),
+                let sym = match op {
+                    UnOp::Neg => "-",
+                    UnOp::Not => "!",
                 };
                 let inner = self.expr(x);
-                // `& &x` must not read as `&&`; `- -x` is fine but kept apart too.
-                let sep = if (space && inner.starts_with('&')) || (sym == "-" && inner.starts_with('-')) { " " } else { "" };
+                // `- -x` is fine but kept apart.
+                let sep = if sym == "-" && inner.starts_with('-') { " " } else { "" };
                 format!("{sym}{sep}{inner}")
             }
             ExprKind::Binary { op, lhs, rhs } => format!("{} {} {}", self.expr(lhs), binop(*op), self.expr(rhs)),
@@ -616,7 +601,7 @@ impl<'h> Printer<'h> {
             ExprKind::Break(v) => v.as_ref().map_or("break".to_string(), |x| format!("break {}", self.expr(x))),
             ExprKind::Continue => "continue".to_string(),
             ExprKind::Return(v) => v.as_ref().map_or("return".to_string(), |x| format!("return {}", self.expr(x))),
-            ExprKind::Closure { is_move, params, ret, body } => {
+            ExprKind::Closure { params, ret, body } => {
                 let ps: Vec<String> = params
                     .iter()
                     .map(|p| match &p.ty {
@@ -625,10 +610,9 @@ impl<'h> Printer<'h> {
                     })
                     .collect();
                 let head = if ps.is_empty() { "||".to_string() } else { format!("|{}|", ps.join(", ")) };
-                let mv = if *is_move { "move " } else { "" };
                 match ret {
-                    Some(r) => format!("{mv}{head} -> {} {}", self.ty(r), self.expr(body)),
-                    None => format!("{mv}{head} {}", self.expr(body)),
+                    Some(r) => format!("{head} -> {} {}", self.ty(r), self.expr(body)),
+                    None => format!("{head} {}", self.expr(body)),
                 }
             }
             ExprKind::Try(x) => format!("{}?", self.expr(x)),

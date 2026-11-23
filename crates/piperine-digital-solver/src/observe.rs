@@ -13,14 +13,12 @@ pub enum Observation {
     Change { net: String, at: Instant, bytes: Vec<u8> },
     /// An event net fired.
     Fire { net: String, at: Instant },
-    /// A reaction made a commit; `due` is `None` for one that never comes due.
+    /// A reaction made a commit; `due` is `None` for one that never comes due, and for a settle commit, which is due when the owner lands it (§15 S1).
     Commit { instance: String, reaction: u32, statement: u32, made: Instant, due: Option<Instant> },
     /// A commit to a `RECORD` net, stamped with the instant it was made, with the reaction and
     /// the statement that made it (abi.md C5): a record names its own site, whatever order the
     /// records and commits of one microstep are delivered in.
     Record { stream: String, reaction: u32, statement: u32, at: Instant, bytes: Vec<u8> },
-    /// A relaxed field with a known byte still moved and was zeroed (abi.md §9 D1).
-    Unsettled { net: String, at: Instant },
 }
 
 impl Observation {
@@ -29,9 +27,8 @@ impl Observation {
         match self {
             Observation::Change { net, .. } => (0, net, 0),
             Observation::Fire { net, .. } => (1, net, 0),
-            Observation::Unsettled { net, .. } => (2, net, 0),
-            Observation::Commit { instance, statement, .. } => (3, instance, *statement),
-            Observation::Record { stream, .. } => (4, stream, 0),
+            Observation::Commit { instance, statement, .. } => (2, instance, *statement),
+            Observation::Record { stream, .. } => (3, stream, 0),
         }
     }
 }

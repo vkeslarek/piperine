@@ -9,6 +9,6 @@ body Switch
   carrier g: bool in
   branch b0 (p, n) flow
   analog
-    b0.flow +> direct (probe(p, n) * if g.high() { (1.0 / ron) } else { (1.0 / roff) })
+    b0.flow +> direct (probe(p, n) * if g { (1.0 / ron) } else { (1.0 / roff) })
 body Top
 instance Top: Top  nodes ()  params ()  top

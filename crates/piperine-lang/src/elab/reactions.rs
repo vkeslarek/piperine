@@ -14,7 +14,11 @@ impl Elaboration<'_, '_> {
     /// checker allows a commit in a reaction body only.
     pub(super) fn lower_commit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, place: ExprId, value: ExprId, after: Option<ExprId>) -> bool {
         let carrier = self.drive_target(scope, place);
-        let value = self.lower_expr(scope, value);
+        let wanted = carrier.and_then(|c| self.structure.carriers.get(c as usize)).map(|c| c.ty.clone());
+        let value = match &wanted {
+            Some(ty) => self.lower_stored(scope, value, ty),
+            None => self.lower_expr(scope, value),
+        };
         let after = match after {
             Some(after) => self.lower_expr(scope, after).map(Some),
             None => Some(None),

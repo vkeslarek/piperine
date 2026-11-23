@@ -1,0 +1,25 @@
+//! Two locals whose names differ only by a trailing underscore, written in one `if` whose condition
+//! is never driven (so unknown): the merge hands both back under names that never collide. The
+//! expected values are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Rows(in clk: Bit, in d: Bit, out p: Bit<u8> = 0, out q: Bit<u8> = 0, out s: Bit<u8> = 0) {}
+digital for Rows {
+    on clk.rise() {
+        let a = 1u8;
+        let a_ = 2u8;
+        if d { a = 5; a_ = 6; } else { a = 5; a_ = 6; }
+        p <- a;
+        q <- a_;
+        s <- a + a_;
+    }
+}
+
+module Bench() {
+    signal clk: Bit; signal d: Bit = false;
+    signal p: Bit<u8>; signal q: Bit<u8>; signal s: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, d, p, q, s);
+}

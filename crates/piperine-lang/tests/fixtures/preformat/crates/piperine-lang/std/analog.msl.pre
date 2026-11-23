@@ -1,0 +1,496 @@
+//! Analog functions and modules (§22.2): `State`, `vt`, noise, limiters, `above`, `absdelta`,
+//! `last_crossing`, `idt`, `idtmod`, `slew`, `transition`, the `zi_*` and `laplace_*` filters,
+//! `table_model`, `db10`, `db20`, `normal`.
+
+pub nature State {
+    potential: Value { access: pos, abstol: 1u },
+    flow: Rate { access: rate, abstol: 1n },
+}
+
+pub fn vt() -> f64 {
+    K_B * temperature() / Q
+}
+
+pub module white_noise(psd: f64, name: Option<str>) -> f64 {
+    noise(psd, name)
+}
+
+pub module flicker_noise(k: f64, exp: f64, name: Option<str>) -> f64 {
+    noise(k / freq().powf(exp), name)
+}
+
+pub module noise_table<const N: usize>(name: Option<str>) -> f64 {
+    table: [(f64, f64); N];
+    noise(table_model(freq(), table, "1C"), name)
+}
+
+pub module limexp(x: f64) -> f64 {
+    limit(x, |new, old| deltalim(new, old, 1.0)).exp()
+}
+
+pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
+    if new > vcrit && (new - old).abs() > 2.0 * nvt {
+        if old > 0.0 {
+            let arg = (new - old) / nvt;
+            if arg > 0.0 {
+                old + nvt * (2.0 + (arg - 2.0).ln())
+            } else {
+                old - nvt * (2.0 + (2.0 - arg).ln())
+            }
+        } else {
+            nvt * (new / nvt).ln()
+        }
+    } else if new < 0.0 {
+        let arg = if old > 0.0 {
+            -old - 1.0
+        } else {
+            2.0 * old - 1.0
+        };
+        if new < arg {
+            arg
+        } else {
+            new
+        }
+    } else {
+        new
+    }
+}
+
+pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
+    let hi = (2.0 * (old - vth)).abs() + 2.0;
+    let lo = (old - vth).abs() + 1.0;
+    let vtox = vth + 3.5;
+    let delv = new - old;
+    if old >= vth {
+        if old >= vtox {
+            if delv <= 0.0 {
+                if new >= vtox {
+                    if -delv > lo {
+                        old - lo
+                    } else {
+                        new
+                    }
+                } else if new > vth + 2.0 {
+                    new
+                } else {
+                    vth + 2.0
+                }
+            } else if delv >= hi {
+                old + hi
+            } else {
+                new
+            }
+        } else if delv <= 0.0 {
+            if new > vth - 0.5 {
+                new
+            } else {
+                vth - 0.5
+            }
+        } else if new < vth + 4.0 {
+            new
+        } else {
+            vth + 4.0
+        }
+    } else if delv <= 0.0 {
+        if -delv > hi {
+            old - hi
+        } else {
+            new
+        }
+    } else if new <= vth + 0.5 {
+        if delv > lo {
+            old + lo
+        } else {
+            new
+        }
+    } else {
+        vth + 0.5
+    }
+}
+
+pub fn limvds(new: f64, old: f64) -> f64 {
+    if old >= 3.5 {
+        if new > old {
+            if new < 3.0 * old + 2.0 {
+                new
+            } else {
+                3.0 * old + 2.0
+            }
+        } else if new < 3.5 {
+            if new > 2.0 {
+                new
+            } else {
+                2.0
+            }
+        } else {
+            new
+        }
+    } else if new > old {
+        if new < 4.0 {
+            new
+        } else {
+            4.0
+        }
+    } else if new > -0.5 {
+        new
+    } else {
+        -0.5
+    }
+}
+
+pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 {
+    new.clamp(old - delta, old + delta)
+}
+
+pub module above(e: f64, ttol: Option<f64>, etol: Option<f64>) -> Event {
+    cross(e, ttol, etol) || (init() && e > 0.0)
+}
+
+pub module absdelta(e: f64, delta: f64) -> Event {
+    signal last: Bit<f64> = 0.0;
+    let moved = init() || cross(e - last - delta) || cross(last - delta - e);
+    moved
+}
+
+digital for absdelta {
+    on moved {
+        last <- e;
+    }
+}
+
+pub module last_crossing(e: f64) -> f64 {
+    signal t: Bit<f64> = -1.0;
+    t // a plain real, so analog may read it (§3.3.6)
+}
+
+digital for last_crossing {
+    on cross(e) {
+        t <- now();
+    }
+}
+
+pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
+    signal y: S;
+    potential(y) // the result
+}
+
+analog<S> for idt<S> {
+    let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
+    if hold {
+        potential(y) +> ic.unwrap_or(0.0);
+    } else {
+        flow(y) +> ddt(potential(y)) - x;
+    }
+}
+
+pub module idtmod<S: Nature = State>(x: f64, ic: Option<f64>, modulus: f64, offset: Option<f64>) -> f64 {
+    signal base: Bit<Option<f64>>; // where the integral was last seated; None before the first wrap
+    signal seat: Bit = false; // true for the one microstep that seats it
+    let lo = offset.unwrap_or(0.0);
+    let start = lo + (ic.unwrap_or(0.0) - lo).rem_euclid(modulus);
+    let acc = idt::<S>(x, base.unwrap_or(start), reset: seat);
+    acc
+}
+
+digital<S> for idtmod<S> {
+    on cross(acc - lo - modulus) {
+        base <- Some(acc - modulus);
+        seat <- true;
+    } // over the top
+    on cross(lo - acc) {
+        base <- Some(acc + modulus);
+        seat <- true;
+    } // under the bottom
+    on seat.rise() {
+        seat <- false;
+    }
+}
+
+#[derive(Repr, PartialEq)]
+enum Slewing {
+    Track,
+    Up,
+    Down,
+}
+
+pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
+    signal y: State;
+    signal mode: Bit<Slewing> = Slewing::Track;
+    let (r, f) = (rise.unwrap_or(inf), fall.unwrap_or(inf));
+    let dx = ddt(x);
+    pos(y)
+}
+
+analog for slew {
+    match mode {
+        Slewing::Track => {
+            pos(y) +> x;
+        },
+        Slewing::Up => {
+            rate(y) +> ddt(pos(y)) - r;
+        },
+        Slewing::Down => {
+            rate(y) +> ddt(pos(y)) + f;
+        },
+    }
+}
+
+digital for slew {
+    on above(dx - r) && mode == Slewing::Track {
+        mode <- Slewing::Up;
+    } // x runs away upward
+    on above(-dx - f) && mode == Slewing::Track {
+        mode <- Slewing::Down;
+    }
+    on (cross(pos(y) - x) || cross(x - pos(y))) && mode != Slewing::Track {   // caught up
+        mode <- if dx > r { Slewing::Up } else if dx < -f { Slewing::Down } else { Slewing::Track };
+    }
+}
+
+pub module transition(in x: Bit<f64>, td: Option<f64>, tr: Option<f64>, tf: Option<f64>) -> f64 {
+    signal xd: Bit<f64> = 0.0; // x after the delay
+    signal y0: Bit<f64> = 0.0; // output where the current edge began
+    signal y1: Bit<f64> = 0.0; // where it ends
+    signal t0: Bit<f64> = 0.0; // when it began
+    signal dt: Bit<f64> = 0.0; // its duration; 0.0 at rest
+    xd = x after td.unwrap_or(0.0);
+    let (a, b, s, d) = (y0, y1, t0, dt);
+    let y = if analysis(Static) {
+        x
+    } else if d > 0.0 {
+        a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0)
+    } else {
+        b
+    };
+    y
+}
+
+digital for transition {
+    on at(t0 + dt) && dt > 0.0 {
+        dt <- 0.0;
+    } // the far corner
+    on x.changed() && analysis(Static) {
+        y0 <- x;
+        y1 <- x;
+    } // no delay to wait out, no ramp: at rest on x
+    on xd.changed() && !analysis(Static) {                    // written last: wins a tie (§12.1.2)
+        let to = xd;
+        y0 <- y; y1 <- to; t0 <- now();
+        dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 };
+    }
+}
+
+pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    num: [f64; N];
+    den: [f64; D]; // den[k] is the coefficient of y[n−1−k]
+    signal xs: [Bit<f64>; N] = [0.0; N]; // xs[k] = x[n−1−k]
+    signal ys: [Bit<f64>; D] = [0.0; D]; // ys[k] = y[n−1−k]
+    signal vout: Bit<f64> = 0.0; // the current sample y[n]
+    signal y: State;
+    let sampled = analysis(Transient) && !analysis(Static);
+    pos(y)
+}
+
+digital<N, D> for zi_nd<N, D> {
+    on settle && analysis(Static) {          // the history of a steady input, read by the first step (§15)
+        vout <- pos(y);
+        for k in 0..N { xs[k] <- x; }
+        for k in 0..D { ys[k] <- pos(y); }
+    }
+    on every(period, period) {
+        let acc = num[0] * x;
+        for k in 1..N {
+            acc += num[k] * xs[k - 1];
+        }
+        for k in 0..D {
+            acc -= den[k] * ys[k];
+        }
+        vout <- acc;
+        xs[0] <- x;
+        for k in 1..N {
+            xs[k] <- xs[k - 1];
+        }
+        ys[0] <- acc;
+        for k in 1..D {
+            ys[k] <- ys[k - 1];
+        }
+    }
+}
+
+analog<N, D> for zi_nd<N, D> {
+    if sampled {
+        pos(y) +> vout;
+    } else {
+        let acc = 0.0;
+        for k in 0..N {
+            acc += num[k] * delay(x, k as f64 * period);
+        }
+        for k in 0..D {
+            acc -= den[k] * delay(pos(y), (k + 1) as f64 * period);
+        }
+        rate(y) +> pos(y) - acc; // the row of y: y = Σ num·x(t−kT) − Σ den·y(t−(k+1)T)
+    }
+}
+
+/// True when each complex root has its conjugate as often as itself.
+const fn conjugate_closed<const N: usize>(roots: [(f64, f64); N]) -> bool {
+    roots.iter().all(
+        |r| r.1 == 0.0 || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count() == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count(),
+    )
+}
+
+/// Coefficients, ascending in `q = z^−1`, of the product of `1 − ρ·q` over the roots.
+const fn poly_q<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
+    let c = [(0.0, 0.0); N + 1];
+    c[0] = (1.0, 0.0);
+    for n in 0..N {
+        let (a, b) = roots[n];
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = (c[k].0 - (a * pr - b * pi), c[k].1 - (a * pi + b * pr));
+        }
+    }
+    let re = [0.0; N + 1];
+    for k in 0..=N {
+        re[k] = c[k].0;
+    }
+    re
+}
+
+/// The same product without its leading 1: the `den` of `zi_nd` (§22.2.12 rule 1).
+const fn den_q<const D: usize>(poles: [(f64, f64); D]) -> [f64; D] {
+    let c = poly_q(poles);
+    let d = [0.0; D];
+    for k in 0..D {
+        d[k] = c[k + 1];
+    }
+    d
+}
+
+pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    zi_nd(x, period) { num: poly_q(zeros), den: den_q(poles) }
+}
+
+pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    den: [f64; D];
+    zi_nd(x, period) { num: poly_q(zeros), den }
+}
+
+pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    num: [f64; N];
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    zi_nd(x, period) { num, den: den_q(poles) }
+}
+
+/// Coefficients, ascending in `s`, of the product of `1 − s/ρ`; a root at zero gives the factor `s`.
+const fn poly_s<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
+    let c = [(0.0, 0.0); N + 1];
+    c[0] = (1.0, 0.0);
+    for n in 0..N {
+        let (a, b) = roots[n];
+        let zero = a == 0.0 && b == 0.0;
+        let m = a * a + b * b;
+        let (ia, ib) = if zero {
+            (0.0, 0.0)
+        } else {
+            (a / m, -b / m)
+        }; // 1/ρ
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = if zero {
+                (pr, pi)
+            } else {
+                (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr))
+            };
+        }
+        if zero {
+            c[0] = (0.0, 0.0);
+        }
+    }
+    let re = [0.0; N + 1];
+    for k in 0..=N {
+        re[k] = c[k].0;
+    }
+    re
+}
+
+pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
+    num: [f64; N];
+    den: [f64; D] where den[D - 1] != 0.0;
+    signal w: [State; D - 1]; // w[k]: the k-th derivative of W, where den(s)·W = x
+    let top = if D > 1 {
+        ddt(pos(w[D - 2]))
+    } else {
+        x / den[0]
+    };
+    let y = (0..N).map(
+        |k| num[k] * if k + 1 < D {
+            pos(w[k])
+        } else {
+            top
+        },
+    ).sum();
+    y
+}
+
+analog<N, D> for laplace_nd<N, D> {
+    for k in 0..D - 1 {
+        if k + 2 < D {
+            rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]);
+        }
+    }
+    if D > 1 {
+        let acc = den[D - 1] * top - x;
+        for j in 0..D - 1 {
+            acc += den[j] * pos(w[j]);
+        }
+        rate(w[D - 2]) +> acc; // the row of the last state: den(s)·W = x
+    }
+}
+
+pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= D {
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    laplace_nd(x) { num: poly_s(zeros), den: poly_s(poles) }
+}
+
+pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    den: [f64; D];
+    laplace_nd(x) { num: poly_s(zeros), den }
+}
+
+pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
+    num: [f64; N];
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    laplace_nd(x) { num, den: poly_s(poles) }
+}
+
+pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: [(f64, f64); N], control: str) -> f64;
+
+pub fn db10(x: f64) -> f64 {
+    10.0 * x.log10()
+} // a power ratio
+
+pub fn db20(x: f64) -> f64 {
+    20.0 * x.abs().log10()
+} // an amplitude ratio
+
+/// One step of SplitMix64: a uniform real in [0, 1) and the next state.
+fn uniform(rng: u64) -> (f64, u64) {
+    let s = rng + 0x9E3779B97F4A7C15;
+    let z = (s ^ (s >> 30)) * 0xBF58476D1CE4E5B9;
+    let z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
+    let z = z ^ (z >> 31);
+    ((z >> 11) as f64 / 9007199254740992.0, s)
+}
+
+pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64) {
+    let (a, s1) = uniform(rng);
+    let (b, s2) = uniform(s1);
+    let z = (-2.0 * (1.0 - a).ln()).sqrt() * (2.0 * PI * b).cos();
+    (mean + sigma * z, s2)
+}

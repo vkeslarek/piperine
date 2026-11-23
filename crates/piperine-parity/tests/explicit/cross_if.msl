@@ -1,0 +1,16 @@
+//! An `if` on a carrier inside a `cross` argument (MSL §13). A node
+//! ramps at 1 V per microsecond; `d` holds true.
+
+/// A node ramping at 1 V per microsecond.
+module Ramp(p: Electrical) {}
+analog for Ramp { v(p, gnd) +> now() * 1.0e6; }
+
+/// Watches `v(p)` against 0.3 V when `d` is true and against 0.7 V when it is false.
+module Watch(in d: Bit, p: Electrical) {}
+digital for Watch { on cross(if d { v(p) - 0.3 } else { v(p) - 0.7 }) { emit!("hit", t = now()); } }
+
+module KnownBench() {
+    signal d: Bit = true; signal a: Electrical;
+    let r = Ramp(a);
+    let w = Watch(d, a);
+}

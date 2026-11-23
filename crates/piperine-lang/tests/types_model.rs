@@ -66,7 +66,7 @@ fn an_unreached_function_with_an_error_fails_the_model_check() {
     // GN-08 AC 3: `broken` is called by nothing, and the model check names it
     let (src, found) = model_errors("fn broken(x: f64) -> bool { x + 1.0 }\nmodule Top() { }");
     assert_eq!(snippets(&src, &found), ["x + 1.0"]);
-    assert_eq!(codes_of(&found), ["P0002"]);
+    assert_eq!(codes_of(&found), ["E0180"]);
 }
 
 #[test]
@@ -98,5 +98,5 @@ fn the_standard_library_is_left_to_its_own_check() {
     assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
     assert!(Types::check_model(&design).is_ok());
     let (_, found) = model_errors(&format!("{std_error}module Top() {{ }}"));
-    assert_eq!(codes_of(&found), ["P0002"]);
+    assert_eq!(codes_of(&found), ["E0180"]);
 }

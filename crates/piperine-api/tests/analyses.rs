@@ -67,17 +67,17 @@ fn an_operating_point_is_signal_and_value_in_print_order() {
     // convention, which the spec does not fix, so the magnitude is asserted
     assert!((real(&table.rows[2][1]).abs() - 2.5e-3).abs() <= 1e-9, "{:?}", table.rows[2][1]);
     // a discrete net is decoded by its type: `flag` holds its initial `false`, the undriven
-    // in-port `en` is unknown (spec edge 5)
+    // in-port `en` holds its zero bytes (spec edge 5)
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("mixed.msl");
-    let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule Top(in en: Bit) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 2.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
+    let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule Top(in en: Bit = false) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 2.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
     std::fs::write(&file, text).expect("write");
     let overrides = Overrides { top: Some("Top".into()), ..op(&["flag", "a", "en"]) };
     let table = run(&file, "rust", overrides).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(table.rows, [
         vec![Cell::Text("Top.flag".into()), Cell::Bool(false)],
         vec![Cell::Text("Top.a".into()), table.rows[1][1].clone()],
-        vec![Cell::Text("Top.en".into()), Cell::Unknown],
+        vec![Cell::Text("Top.en".into()), Cell::Bool(false)],
     ]);
     assert!((real(&table.rows[1][1]) - 2.0).abs() <= 1e-9, "a is the source's 2 V");
 }
@@ -510,4 +510,27 @@ fn pss_takes_the_sessions_step_budget() {
     let (period, budget) = (4e-6, 100);
     let Err(failure) = pss_run(Overrides { max_steps: Some(budget), ..pss(period, 8e-6, None) }) else { panic!("{budget} attempts cannot cover a period") };
     assert!(matches!(&failure, Failure::Solver { analysis: "pss", .. }), "{failure:?}");
+}
+
+#[test]
+fn a_where_holds_at_equality_and_reads_the_other_params() {
+    // Part III 8.1 and §0.3: `x >= 0.0` takes 0; `v_release < v_pick` is checked against the
+    // pick's value now. Each entry of a table is one host `set`, applied in order, and §8.1.23
+    // re-checks every dependent `where` at each: a table that passes through an invalid state is
+    // refused even when its end state is valid
+    // `fixtures/bounded_params.msl`: a `Thresh` with a param bounded below by a constant
+    // (`x >= 0.0`) and one bounded by another param (`v_release < v_pick`); the CLI tests share it
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bounded_params.msl");
+    let overrides = |params: &[(&str, f64)]| with_params(Overrides { top: Some("Top".into()), ..op(&["a"]) }, params);
+    for backend in ["interp", "rust"] {
+        for accepted in [&[("Top.t.x", 0.0)][..], &[("Top.t.v_release", 1.5)], &[("Top.t.v_release", 1.2)], &[("Top.t.v_release", 0.5), ("Top.t.v_pick", 1.0)]] {
+            run(&file, backend, overrides(accepted)).unwrap_or_else(|f| panic!("{backend} {accepted:?}: {f}"));
+        }
+        for refused in [&[("Top.t.x", -1.0)][..], &[("Top.t.v_release", 2.0)], &[("Top.t.v_release", 2.5)], &[("Top.t.v_pick", 1.0)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 0.5)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 1.5)]] {
+            match run(&file, backend, overrides(refused)) {
+                Err(Failure::Host { code: "E0802", .. }) => {}
+                other => panic!("{backend} {refused:?}: expected E0802, found {other:?}"),
+            }
+        }
+    }
 }

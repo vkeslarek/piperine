@@ -1,54 +1,63 @@
-//! Discrete carriers (DIG-02, DIG-04): the type of a `signal` or a port of the nature `Bit<T>`,
-//! the types a carrier may hold (`E0112`), initial values (`E0210`), the flag reads `known`,
-//! `known_or`, `is_known`, `high`, and the history read `prev` (part II §5, part I §3.3).
+//! Discrete carriers (DIG-02, DIG-04): the type of a `signal` or a port of a discrete nature (`Bit<T>` or a project's),
+//! the types a carrier may hold (`E0112`), initial values (`E0210`) and the history read `prev` (part II §5, part I §3.3).
 //!
-//! A carrier has the type `Ty::Carrier { value }`; reading it gives `value`. The checker reads
-//! the four flag reads, the two edges of `Bit` and `prev` as built-ins only when the name
+//! A carrier has the type `Ty::Carrier { nature, value }`; reading it gives `value`. The checker reads
+//! the two edges of `Bit` and `prev` as built-ins only when the name
 //! resolved to the stdlib's own item (§3.3.7): a project item of the same name is `P0001`.
 
-use crate::msl::Diagnostic;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureKind, PathId, Resolution, TypeId};
+use crate::msl::{Diagnostic, Span};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
 use super::check::Checker;
+use super::nature_rules::NatureRules;
 use super::{Builtin, Ty};
 
-/// The methods of a value or a carrier that are flag reads, by name.
-pub(super) fn flag_builtin(name: &str) -> Option<Builtin> {
-    match name {
-        "known" => Some(Builtin::Known),
-        "known_or" => Some(Builtin::KnownOr),
-        "is_known" => Some(Builtin::IsKnown),
-        "level" => Some(Builtin::Level),
-        "high" => Some(Builtin::High),
-        _ => None,
-    }
-}
-
 impl Checker<'_> {
-    /// `Bit<T>` written at `path`: a carrier of the nature `nature` holding `T` (`bool` when the
-    /// argument is left out, the default of the nature's generic).
-    pub(super) fn bit_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
-        let args = self.design.path_node(path).segments.last().and_then(|s| s.args.clone());
-        let value = match &args {
-            Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
-                GenericArgNode::Type(t) => self.carried_type(*t)?,
-                GenericArgNode::Const(_) => {
-                    self.unsupported(file, span, "`Bit` of a const argument");
-                    return None;
-                }
-            },
-            None => {
-                let default = self.design.decl_data(nature).children.iter().find_map(|c| match &self.design.decl_data(*c).kind {
-                    DeclKind::GenericParam(GenericParamData::Type { default: Some(t), .. }) => Some(*t),
-                    _ => None,
-                })?;
-                self.carried_type(default)?
-            }
+    /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
+    /// carrier of `nature` holding the type its `value` field names. A generic nature takes its
+    /// type arguments in order and falls back to each parameter's default; a nature whose `value`
+    /// is not one of its parameters holds that type for every argument list.
+    pub(super) fn discrete_carrier_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
+        let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let DeclKind::Nature(data) = &self.design.decl_data(nature).kind else { return None };
+        let value_type = data.fields.iter().find_map(|f| match f {
+            NatureFieldNode::Value { ty, .. } => Some(*ty),
+            _ => None,
+        })?;
+        let parameters: Vec<DeclId> = self.design.decl_data(nature).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::GenericParam(_))).collect();
+        let arguments = match self.design.path_node(path).segments.last().and_then(|s| s.args.clone()) {
+            Some(GenericArgsNode::Angle { args, .. }) => args,
+            None => Vec::new(),
             Some(_) => {
-                self.unsupported(file, span, "`Bit` with these generic arguments");
+                self.unsupported(file, span, &format!("`{name}` with these generic arguments"));
                 return None;
             }
         };
+        if arguments.len() > parameters.len() {
+            self.unsupported(file, span, &format!("`{name}` with {} generic arguments", arguments.len()));
+            return None;
+        }
+        let held = match self.design.type_resolution(value_type) {
+            Resolution::Decl(parameter) if parameters.contains(&parameter) => {
+                let position = parameters.iter().position(|p| *p == parameter)?;
+                match arguments.get(position) {
+                    Some(GenericArgNode::Type(t)) => *t,
+                    Some(GenericArgNode::Const(_)) => {
+                        self.unsupported(file, span, &format!("`{name}` of a const argument"));
+                        return None;
+                    }
+                    None => match &self.design.decl_data(parameter).kind {
+                        DeclKind::GenericParam(GenericParamData::Type { default: Some(default), .. }) => *default,
+                        _ => {
+                            self.unsupported(file, span, &format!("`{name}` without its type argument"));
+                            return None;
+                        }
+                    },
+                }
+            }
+            _ => value_type,
+        };
+        let value = self.carried_type(held)?;
         Some(Ty::Carrier { nature, value: Box::new(value) })
     }
 
@@ -78,7 +87,7 @@ impl Checker<'_> {
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if v.has_repr() => Some(value),
+            v if self.repr_levels(v).is_some() => Some(value),
             other => {
                 let name = other.name(self.design);
                 self.no_repr(file, node.span, &name);
@@ -99,23 +108,17 @@ impl Checker<'_> {
         let file = self.design.decl_data(node.owner).file;
         match self.lower_type(ty)? {
             Ty::Node(nature) => {
-                let DeclKind::Nature(data) = &self.design.decl_data(nature).kind else { return None };
                 let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                match data.kind {
-                    NatureKind::Conservative => Some(Ty::Node(nature)),
-                    NatureKind::Discrete => {
-                        self.unsupported(file, node.span, &format!("discrete nature `{name}`"));
-                        None
-                    }
-                    NatureKind::Resolved => {
-                        self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
-                        None
-                    }
-                    NatureKind::SignalFlow => {
-                        self.unsupported(file, node.span, &format!("signal-flow nature `{name}`"));
-                        None
-                    }
-                    NatureKind::Invalid => None,
+                let rules = NatureRules::of(self.design, nature);
+                if rules.flow || rules.signal_flow {
+                    // A conservative node, or a signal-flow node (§6 rule 2): both are nodes of the
+                    // analog solver.
+                    Some(Ty::Node(nature))
+                } else if rules.resolved {
+                    self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
+                    None
+                } else {
+                    None
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
@@ -192,7 +195,7 @@ impl Checker<'_> {
     }
 
     /// Whether `f` is the stdlib's own item behind a built-in method (§3.3.7): a method of the
-    /// trait `Known`, or of the `impl Bit`.
+    /// `impl Bit` (`rise`, `fall`).
     pub(super) fn stdlib_builtin(&self, f: DeclId) -> Option<Builtin> {
         let data = self.design.decl_data(f);
         if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(f) {
@@ -201,33 +204,31 @@ impl Checker<'_> {
         let name = data.name.as_ref()?.text.as_str();
         let parent = data.parent.map(|p| self.design.decl_data(p))?;
         match (&parent.kind, name) {
-            (DeclKind::Trait(_), "known" | "known_or" | "is_known") if parent.name.as_ref().is_some_and(|n| n.text == "Known") => flag_builtin(name),
-            (DeclKind::Impl(_), "high") => Some(Builtin::High),
             (DeclKind::Impl(_), "rise") => Some(Builtin::Rise),
             (DeclKind::Impl(_), "fall") => Some(Builtin::Fall),
             _ => None,
         }
     }
 
-    /// The flag read `builtin` applied to a receiver of type `recv_ty`: its result type, or
-    /// `None` when the receiver's type has no such read (`high` is the read of a `Bit`).
-    pub(super) fn flag_read(&mut self, expr: ExprId, builtin: Builtin, recv_ty: &Ty, args: &[Arg]) -> Option<Option<Ty>> {
-        if !recv_ty.has_repr() || (builtin == Builtin::High && *recv_ty != Ty::Bool) {
-            return None;
+    /// The type a path's first segment names when it is the owner of an associated item
+    /// (`T::WIDTH`, `T::default()`): a built-in scalar type, a struct or an enum. `None` for any
+    /// other segment.
+    pub(super) fn path_owner_type(&mut self, file: FileId, span: Span, owner: Resolution) -> Option<Ty> {
+        match owner {
+            Resolution::Builtin(id) => match (id.info().name, id.width()) {
+                ("fN", Some(64)) => Some(Ty::F64),
+                ("bool", _) => Some(Ty::Bool),
+                ("str", _) => Some(Ty::Str),
+                ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
+                ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
+                ("usize", _) => Some(Ty::UInt(64)),
+                ("isize", _) => Some(Ty::Int(64)),
+                _ => None,
+            },
+            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
+            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
+            _ => None,
         }
-        let (params, result) = match builtin {
-            Builtin::Known => (vec![], Ty::Option(Box::new(recv_ty.clone()))),
-            Builtin::KnownOr => (vec![recv_ty.clone()], recv_ty.clone()),
-            Builtin::IsKnown | Builtin::High => (vec![], Ty::Bool),
-            // §22.1: level `k` of the value, `k: u32`; known when `k` is (§3.3.14).
-            Builtin::Level => (vec![Ty::UInt(32)], Ty::Option(Box::new(Ty::Bool))),
-            Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall | Builtin::Inflow => return None,
-        };
-        if self.apply(expr, &params, args).is_none() {
-            return Some(None);
-        }
-        self.builtins.insert(expr, builtin);
-        Some(Some(result))
     }
 
     /// `T::WIDTH` written with a concrete `Repr` type `T` as its first segment: the level count
@@ -242,22 +243,31 @@ impl Checker<'_> {
             return None;
         }
         let file = self.file_of_expr(expr);
-        let owner_type = match owner.res {
-            Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                ("fN", Some(64)) => Ty::F64,
-                ("bool", _) => Ty::Bool,
-                ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name())?,
-                ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name())?,
-                ("usize", _) => Ty::UInt(64),
-                ("isize", _) => Ty::Int(64),
-                _ => return None,
-            },
-            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, node.span)?,
-            _ => return None,
-        };
-        let levels = owner_type.levels(self.design)?;
+        let owner_type = self.path_owner_type(file, node.span, owner.res)?;
+        let levels = self.repr_levels(&owner_type)?;
         self.widths.insert(expr, levels);
         Some(Ty::UInt(32))
+    }
+
+    /// `s.others()` written on a carrier of a one-driver nature is `E0224` naming the carrier: the
+    /// method reads the drives of a resolved carrier other than the module's own, and a one-driver
+    /// carrier has no other (§5.2.7). Returns whether the rule fired, so the caller stops there; a
+    /// resolved carrier is not this rule's (until the resolved carriers are typed it stays `P0001`).
+    pub(super) fn others_on_one_driver(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> bool {
+        let Some((decl, Ty::Carrier { nature, .. })) = self.declared_port(recv) else { return false };
+        if !NatureRules::of(self.design, nature).one_driver {
+            return false;
+        }
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let nature_name = self.design.decl_data(nature).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("`{name}.others()`: `{name}` is a carrier of `{nature_name}`, which has no `resolve`, so it has one drive and no other to read (§5.2.7)");
+        self.coded(file, "E0224", span, message, "`others()` on a one-driver carrier");
+        for arg in args {
+            self.infer(arg.value);
+        }
+        true
     }
 
     /// `c.prev()` on a discrete carrier: the value before its most recent change, of the

@@ -2,16 +2,20 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
-use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, LitKind, PatKind, Resolution};
+use crate::msl::Span;
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
-use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
+use super::flow::ExitFrame;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty};
 
-/// The carrier and flag methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
-const CARRIER_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "changed", "prev", "rise", "fall", "others", "inflow", "level"];
+/// The carrier methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
+const CARRIER_METHODS: &[&str] = &["changed", "prev", "rise", "fall", "others", "inflow"];
+
+/// The methods the explicit model of unknowns took out (§3.3): a call is `E0161` with the help that names the three forms.
+const REMOVED_FLAG_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "level", "merge"];
 
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
@@ -34,6 +38,9 @@ impl Checker<'_> {
         if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(id)) if id.info().name == "Some") {
             return self.some(expr, args, None);
         }
+        if let Some(found) = self.default_call(expr, *callee, args.len()) {
+            return found;
+        }
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
@@ -52,7 +59,11 @@ impl Checker<'_> {
             Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
-                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, args),
+                // A local that is no function and hides the function of its name is `E0180` (§3.5.4).
+                DeclKind::FnParam(_) | DeclKind::Binding(_) if self.hidden_function(decl).is_some() && matches!(self.infer(*callee), Some(ty) if !matches!(ty, Ty::Fn(..))) => self.hidden_function_call(expr, *callee, decl, args),
+                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_call(expr, decl, args),
+                DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_call(expr, decl, args),
+                DeclKind::Param(_) | DeclKind::Const(_) | DeclKind::Let(_) if self.hidden_function(decl).is_some() => self.hidden_function_call(expr, *callee, decl, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
@@ -88,19 +99,14 @@ impl Checker<'_> {
             })
             .collect();
         self.bind_arguments(expr, &name, &params, required, args, &named)?;
-        Some(ret)
-    }
-
-    /// A call of a parameter or a local whose type is `fn(..) -> R`: there is no named function
-    /// to record as its callee, so the form is outside the subset.
-    fn indirect_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
-        let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        self.unsupported(file, span, "call of a function value (a parameter or a local)");
-        for arg in args {
-            self.infer(arg.value);
+        // a parameter of function type is a function pointer: a closure that captures is refused
+        let slots = self.bindings.get(&expr).cloned().unwrap_or_default();
+        for (slot, param) in slots.iter().zip(&params) {
+            if let (Some(arg), Ty::Fn(..)) = (slot, param) {
+                self.refuse_capturing_pointer(*arg);
+            }
         }
-        None
+        Some(ret)
     }
 
     /// §3.2: binds the arguments of a call of `name` to its parameters. The first `required`
@@ -164,17 +170,66 @@ impl Checker<'_> {
         Some(())
     }
 
+    /// The function of the name of `hider` (a param, a `let` or a `const` that is not a function)
+    /// that `hider` hides: a `fn` of that name among the children of an enclosing namespace
+    /// (Part I §3.5.4).
+    fn hidden_function(&self, hider: DeclId) -> Option<DeclId> {
+        let name = &self.design.decl_data(hider).name.as_ref()?.text;
+        let mut scope = self.design.decl_data(hider).parent;
+        while let Some(namespace) = scope {
+            let data = self.design.decl_data(namespace);
+            let hidden = data.children.iter().copied().find(|child| {
+                let child_data = self.design.decl_data(*child);
+                matches!(child_data.kind, DeclKind::Fn(_)) && child_data.name.as_ref().is_some_and(|candidate| candidate.text == *name)
+            });
+            if hidden.is_some() {
+                return hidden;
+            }
+            scope = data.parent;
+        }
+        None
+    }
+
+    /// `E0180` "expected a function, found `<type>`" for a call whose callee is a value that
+    /// hides the function of its name, with a note at that function's declaration (Part I
+    /// §3.5.4, L20). The arguments are still inferred, so the one mistake is one diagnostic.
+    fn hidden_function_call(&mut self, expr: ExprId, callee: ExprId, hider: DeclId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(callee).span;
+        let found = self.infer(callee).map_or_else(|| "a value".to_string(), |ty| ty.name(self.design));
+        let name = self.design.decl_data(hider).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+        let mut diagnostic = crate::msl::Diagnostic::new("E0180", format!("expected a function, found `{found}`"), span, format!("`{name}` is a `{found}` here, not the function"));
+        if let Some(function) = self.hidden_function(hider) {
+            let declaration = self.design.decl_data(function);
+            if declaration.file == file {
+                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", Unsupported::item(&self.design.decl_data(hider).kind)));
+            }
+        }
+        self.report(file, diagnostic);
+        for arg in args {
+            self.infer(arg.value);
+        }
+        None
+    }
+
+    /// `E0141` (Part I §3.2.6): a call that takes `expected` arguments (a count, or a range
+    /// spelled `1 to 2`) and has the arguments of `args`. Every argument is still inferred, so
+    /// one wrong count is one diagnostic.
+    pub(super) fn arity_mismatch(&mut self, file: FileId, span: Span, expected: impl std::fmt::Display, args: &[Arg]) {
+        let found = args.len();
+        self.coded(file, "E0141", span, format!("expected {expected} argument(s), found {found}"), "wrong number of arguments");
+        for arg in args {
+            self.infer(arg.value);
+        }
+    }
+
     /// Check each argument against its parameter, in order. Only a function call binds by name
     /// (`bind_arguments`); the callers of this one take positional arguments.
     pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         if args.len() != params.len() {
-            let message = format!("expected {} argument(s), found {}", params.len(), args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
-            for arg in args {
-                self.infer(arg.value);
-            }
+            self.arity_mismatch(file, span, params.len(), args);
             return None;
         }
         for (arg, ty) in args.iter().zip(params) {
@@ -183,7 +238,7 @@ impl Checker<'_> {
         Some(())
     }
 
-    /// A method call: a built-in the stdlib's own item stands for (`known_or`, `prev`, ..), or
+    /// A method call: a built-in the stdlib's own item stands for (`prev`, `cast`, ..), or
     /// a `Deferred` or `Unresolved` one resolved against the Appendix H catalogue on the type of
     /// its receiver, the row recorded (DIG-02). Every other method is `P0001` naming it.
     pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {
@@ -195,12 +250,15 @@ impl Checker<'_> {
             self.unsupported(file, node.span, &format!("method `{name}`"));
             return None;
         }
+        if name == "others" && self.others_on_one_driver(expr, *recv, args) {
+            return None;
+        }
         // The built-in a stdlib item resolved to, or the built-in row of the language.
         let builtin = match res {
             Resolution::Decl(f) => match self.stdlib_builtin(*f) {
                 Some(builtin) => Some(builtin),
                 None => {
-                    let replaced = flag_builtin(name).is_some() || matches!(name, "rise" | "fall");
+                    let replaced = matches!(name, "rise" | "fall");
                     let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
                     self.unsupported(file, node.span, &what);
                     return None;
@@ -209,8 +267,6 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match id.info().name {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
-                // `level` of a carrier or a value the POM resolved to the language's own row
-                "level" => Some(Builtin::Level),
                 "inflow" => return self.inflow_read(expr, *recv, args),
                 _ => {
                     self.unsupported(file, node.span, &format!("method `{name}`"));
@@ -233,29 +289,25 @@ impl Checker<'_> {
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
             return self.edge_read(expr, edge, *recv, args);
         }
-        // A receiver the POM could not type might be a value of a project's own `impl`: the
-        // checker knows only the stdlib's flag reads (§3.3.7).
-        if builtin.is_none() && flag_builtin(name).is_some() && self.project_methods.contains(name) {
-            self.unsupported(file, node.span, &format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)"));
-            self.infer(*recv);
-            return None;
-        }
         let recv_ty = self.infer(*recv)?;
-        // The four flag-total reads apply to any value and to a carrier's value.
-        let builtin = builtin.or_else(|| flag_builtin(name));
-        if let Some(builtin) = builtin {
-            if let Some(result) = self.flag_read(expr, builtin, &recv_ty, args) {
-                return result;
-            }
-        }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
             miss => {
                 let type_name = recv_ty.name(self.design);
-                if matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name) {
+                // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
+                let copy_method = name == "clone" && !self.project_methods.contains(name);
+                if copy_method || (matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name)) {
                     let message = format!("no method `{name}` on `{type_name}`");
-                    self.report(file, crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)")));
+                    let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
+                    let help = if copy_method {
+                        Some(crate::msl::diag::COPY_HELP)
+                    } else if REMOVED_FLAG_METHODS.contains(&name) {
+                        Some(crate::msl::diag::UNKNOWN_HELP)
+                    } else {
+                        None
+                    };
+                    self.report(file, help.map_or(diagnostic.clone(), |help| diagnostic.with_help(help)));
                 } else {
                     self.unsupported(file, method.span, &format!("method `{name}` on `{type_name}`"));
                 }
@@ -275,6 +327,9 @@ impl Checker<'_> {
     /// `expect`, `unwrap_or_else`, `map`, `and_then` on an `Option<T>`, `then` and `then_some` on
     /// a `bool`. A closure's parameter is the payload `T`; its body's type is the result's.
     fn payload_row(&mut self, expr: ExprId, row: Method, recv: &Ty, args: &[Arg]) -> Option<Ty> {
+        if matches!(recv, Ty::Array(..) | Ty::Range { .. } | Ty::Iterator { .. }) {
+            return self.sequence_row(expr, row, recv, args);
+        }
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let payload = match recv {
@@ -282,11 +337,7 @@ impl Checker<'_> {
             _ => Ty::Unit,
         };
         if args.len() != 1 {
-            let message = format!("expected 1 argument(s), found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
-            for arg in args {
-                self.infer(arg.value);
-            }
+            self.arity_mismatch(file, node.span, 1, args);
             return None;
         }
         let value = args[0].value;
@@ -332,12 +383,7 @@ impl Checker<'_> {
     /// A closure passed where `expected` is the declared type of the parameter. Anywhere else
     /// it is `P0001`: the subset has no type variable to infer its parameters with.
     pub(super) fn closure(&mut self, expr: ExprId, expected: &Ty) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
-        let file = self.file_of_expr(expr);
-        let Ty::Fn(declared, result) = expected else {
-            self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
-            return None;
-        };
+        let Ty::Fn(declared, result) = expected else { return self.closure_value(expr) };
         self.closure_typed(expr, declared, Some(result))?;
         Some(expected.clone())
     }
@@ -351,14 +397,15 @@ impl Checker<'_> {
         let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
         if params.len() != declared.len() {
             let message = format!("expected a closure of {} parameter(s), found {}", declared.len(), params.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.report(file, crate::msl::Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
         for (param, ty) in params.iter().zip(declared) {
             let pat = self.design.pat_node(param.pat).clone();
-            let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
-                self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
-                return None;
+            let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
+                // §1.6.11: a closure parameter takes an irrefutable pattern
+                self.irrefutable_pattern(file, param.pat, ty, "a closure parameter");
+                continue;
             };
             if let Some(annotation) = param.ty
                 && let Some(written) = self.lower_type(annotation)
@@ -377,16 +424,36 @@ impl Checker<'_> {
             self.mismatch(file, span, result, written);
         }
         let outer = std::mem::replace(&mut self.context, Context::Function);
-        let found = match result.or(written.as_ref().map(|(_, ty)| ty)) {
+        self.places.enter_closure(node.span);
+        let given = result.or(written.as_ref().map(|(_, ty)| ty));
+        let enclosing = self.flow.enter_body(ExitFrame::new(given.cloned(), given.is_none()));
+        let found = match given {
             Some(result) => {
                 self.check(*body, result);
                 Some(result.clone())
             }
             None => self.infer(*body),
         };
+        let returned = self.flow.leave_body(enclosing).and_then(|frame| frame.returned);
         self.context = outer;
-        let found = found?;
+        self.places.leave_closure();
+        let found = self.settle_result(file, node.span, found?, returned);
         self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
+        self.record_closure(expr);
         Some(found)
+    }
+
+    /// The result type of a closure whose result was inferred: its body's, or, when the body
+    /// never completes, the type of its first `return`; a `return` of another type than the body's
+    /// is a mismatch.
+    fn settle_result(&mut self, file: crate::pom::FileId, span: crate::msl::Span, body: Ty, returned: Option<Ty>) -> Ty {
+        match returned {
+            Some(returned) if body == Ty::Never => returned,
+            Some(returned) if body != returned => {
+                self.mismatch(file, span, &returned, &body);
+                returned
+            }
+            _ => body,
+        }
     }
 }

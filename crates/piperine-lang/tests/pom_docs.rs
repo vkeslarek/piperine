@@ -213,8 +213,8 @@ fn page_section<'a>(page: &'a str, heading: &str) -> Vec<&'a str> {
 #[test]
 fn every_b1_construct_is_mapped() {
     let constructs = b12_constructs();
-    assert_eq!(constructs.len(), 65, "B.1.2 lists 65 constructs: {constructs:?}");
-    assert_eq!(constructs.iter().map(|(n, _)| *n).collect::<Vec<_>>(), (1..=65).collect::<Vec<_>>());
+    assert_eq!(constructs.len(), 62, "B.1.2 lists 62 constructs (explicit-unknowns removed `resolve`, `Unknown` and `level`): {constructs:?}");
+    assert_eq!(constructs.iter().map(|(n, _)| *n).collect::<Vec<_>>(), (1..=62).collect::<Vec<_>>());
     let docs = pom_docs();
     let page = &docs.iter().find(|(n, _)| n == "mapping.md").expect("docs/pom/mapping.md").1;
     let section = page_section(page, "## Constructs of B.1");
@@ -235,7 +235,7 @@ fn every_b1_construct_is_mapped() {
         }
     }
     assert!(unmapped.is_empty(), "no row of the `Constructs of B.1` table maps: {unmapped:?}");
-    assert_eq!(rows.iter().filter(|r| r.first().is_some_and(|c| c.parse::<usize>().is_ok())).count(), 65, "one row per construct, no extra");
+    assert_eq!(rows.iter().filter(|r| r.first().is_some_and(|c| c.parse::<usize>().is_ok())).count(), 62, "one row per construct, no extra");
 }
 
 /// The table rows (`| .. |` lines) of the `## heading` section of a page, as trimmed cells.
@@ -332,7 +332,7 @@ fn builtin_rows() -> Vec<(String, String)> {
 #[test]
 fn every_builtin_row_is_documented() {
     let rows = builtin_rows();
-    assert!(rows.len() >= 60 && rows.iter().any(|(n, k)| n == "ddt" && k == "Module"), "the scrape found only {rows:?}");
+    assert!(rows.len() >= 59 && rows.iter().any(|(n, k)| n == "ddt" && k == "Module"), "the scrape found only {rows:?}");
     let table = section_rows(&page_of("resolution.md"), "## The built-in table");
     let mut missing = Vec::new();
     for (name, kind) in &rows {
@@ -459,4 +459,57 @@ fn the_builtin_table_doc_has_no_const_row() {
     let model = page_of("model.md");
     let kinds = section_rows(&model, "### `BuiltinKind`");
     assert!(kinds.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "BuiltinKind has no `Const` variant row");
+}
+
+/// One statement of `docs/pom/` that describes a form the implementation still has, although the
+/// specification no longer has it (explicit-unknowns, D7): the page, the text that says it, the source file
+/// and the text that keeps it alive, and the task that removes both.
+struct DocAheadOfTheCode {
+    /// The page of `docs/pom/` that holds the statement.
+    page: &'static str,
+    /// The text of the statement, as written on the page.
+    statement: &'static str,
+    /// The source file, relative to the repository root, that still has the form.
+    source: &'static str,
+    /// The text of the source that is the form.
+    form: &'static str,
+    /// The task that removes the form from the code and rewrites the page.
+    owner: &'static str,
+}
+
+impl DocAheadOfTheCode {
+    /// The statements that wait for their task. When a task removes a form the entry fails here, naming it.
+    const WAITING: [DocAheadOfTheCode; 6] = [
+        DocAheadOfTheCode { page: "mapping.md", statement: "`NatureFieldNode::Resolve`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "reflection.md", statement: "`resolve_fn(self)`", source: "crates/piperine-lang/src/pom/reflect/hardware.rs", form: "pub fn resolve_fn", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "reflection.md", statement: "nature Wire { value: bool, resolve: pick }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "model.md", statement: "value: T, resolve: f }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "model.md", statement: "`resolve: expr`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "resolution.md", statement: "a discrete nature without `resolve`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+    ];
+
+    /// The offences of this statement: the page no longer says it, or the source no longer has the form.
+    /// Either way the entry is stale and its owner has delivered.
+    fn offences(&self) -> Vec<String> {
+        let mut found = Vec::new();
+        if !page_of(self.page).contains(self.statement) {
+            found.push(format!("docs/pom/{} no longer says {}: drop the entry (owner {})", self.page, self.statement, self.owner));
+        }
+        let source = std::fs::read_to_string(repo().join(self.source)).unwrap_or_else(|e| panic!("{}: {e}", self.source));
+        if !source.contains(self.form) {
+            found.push(format!("{} no longer has `{}`: rewrite docs/pom/{} and drop the entry (owner {})", self.source, self.form, self.page, self.owner));
+        }
+        found
+    }
+}
+
+#[test]
+fn the_pom_docs_that_wait_for_the_code_stay_honest() {
+    // docs/pom describes the implementation, which still has the `resolve` field
+    // that the specification removed; each statement is owned by the task that removes its form,
+    // and a stale entry (the form gone or the page rewritten) fails here instead of hiding a divergence.
+    let found: Vec<String> = DocAheadOfTheCode::WAITING.iter().flat_map(DocAheadOfTheCode::offences).collect();
+    assert!(found.is_empty(), "{found:#?}");
+    let note = page_of("mapping.md");
+    assert!(note.contains("`resolved-nets` T16"), "the mapping note names the owners of the forms it keeps");
 }

@@ -168,7 +168,7 @@ fn every_diagnostic_has_a_span_and_a_code() {
         "module Top(a: E) { }\nanalog for Top { let x = 1.0; x +> 1.0; }",
         "module Top(a: E) { }\nanalog for Top { v(a) +> true; }",
         "fn f(x: f64) -> f64 { ddt(x) }\nmodule Top() { }\nanalog for Top { let y = f(1.0); }",
-        "module Top() { }\nanalog for Top { let m = match 1.0 { _ => 1.0 }; }",
+        "module Top() { }\nanalog for Top { let m = match \"a\" { _ => 1.0 }; }",
     ];
     for body in bodies {
         let src = format!("{natures}{body}");

@@ -1,7 +1,7 @@
 //! Discrete carriers and definitions of `piperine_lang::types` (feature `msl-digital`, DIG-04,
 //! DIG-02 AC 1): the type of a `signal` and of a port of `Bit<T>`, what a carrier may hold
-//! (`E0112`), initial values (`E0210`), the flag reads `known`, `known_or`, `is_known`, `high`
-//! and `prev`, and a catalogue method applied to a carrier. Sources are written over the embedded
+//! (`E0112`), initial values (`E0210`),
+//! and the history read `prev`, and a catalogue method applied to a carrier. Sources are written over the embedded
 //! standard library, the buck's own enums read as written.
 
 #[path = "support/buck.rs"]
@@ -71,7 +71,7 @@ fn carriers_of_bit_are_typed_by_their_value() {
     // DIG-04 AC 1: a `signal`, an `in` port and an `out` port of `Bit<T>` for `T` a `bool`, an
     // integer type, `f64` or a unit enum; `Bit` alone is `Bit<bool>` (part II §4 rule 12).
     let src = format!(
-        "{}\nmodule Top(in a: Bit, in b: Bit<u9>, out c: Bit<i16> = 0, out d: Bit<f64> = 0.0, out e: Bit<Mode> = Mode::Off) {{\n    signal f: Bit<bool>;\n    signal g: Bit<Mode>;\n    signal h: Bit<u3> = 5;\n    signal k: Bit<f64>;\n}}",
+        "{}\nmodule Top(in a: Bit, in b: Bit<u9>, out c: Bit<i16> = 0, out d: Bit<f64> = 0.0, out e: Bit<Mode> = Mode::Off) {{\n    signal f: Bit<bool> = false;\n    signal g: Bit<Mode> = Mode::Off;\n    signal h: Bit<u3> = 5;\n    signal k: Bit<f64> = 0.0;\n}}",
         buck_enum("Mode")
     );
     let design = design_of(&src);
@@ -97,12 +97,13 @@ fn carriers_of_bit_are_typed_by_their_value() {
 
 #[test]
 fn a_carried_type_without_repr_is_e0112() {
-    // DIG-04 AC 2 (part I §2): a carried type without `Repr` is `E0112`, at the type: `&str`,
-    // `()`, an `Option`, an enum that does not derive `Repr`, and a module.
+    // DIG-04 AC 2 (part I §2): a carried type without `Repr` is `E0112`, at the type: `str`,
+    // `()`, an `Option` of one, an enum that does not derive `Repr`, and a module. `Option<u8>` is
+    // carried since composite-values T46 (`composite_carriers_type_check`).
     for (items, carried) in [
-        ("", "&str"),
+        ("", "str"),
         ("", "()"),
-        ("", "Option<u8>"),
+        ("", "Option<str>"),
         ("#[derive(PartialEq)]\nenum Plain { A, B }", "Plain"),
         ("", "Event"),
     ] {
@@ -130,47 +131,6 @@ fn a_carrier_read_has_its_value_type() {
 }
 
 #[test]
-fn the_flag_reads_are_typed() {
-    // DIG-04 AC 4 (part I §3.3.4, §3.3.7): `known()` is `Option<T>`, `known_or(d)` is `T`,
-    // `is_known()` and `high()` are `bool`, on a carrier and on a value, and the checker records
-    // each as a built-in.
-    let src = "module Top(in c: Bit<u9>, in g: Bit, in x: Bit<f64>) {\n    let a = c.known();\n    let b = c.known_or(0);\n    let d = c.is_known();\n    let e = g.high();\n    let f = (c + 1).known_or(0);\n    let h = (x * 2.0).known();\n    let k = x.known_or(1.5);\n}";
-    let design = design_of(src);
-    let types = checked(&design, src);
-    let got: Vec<Option<&Ty>> = ["a", "b", "d", "e", "f", "h", "k"].iter().map(|n| types.local(decl(&design, n, "binding"))).collect();
-    let (u9, f64_) = (Ty::UInt(9), Ty::F64);
-    let (opt_u9, opt_f64) = (Ty::Option(Box::new(u9.clone())), Ty::Option(Box::new(f64_.clone())));
-    assert_eq!(got, [Some(&opt_u9), Some(&u9), Some(&Ty::Bool), Some(&Ty::Bool), Some(&u9), Some(&opt_f64), Some(&f64_)]);
-    let builtins: Vec<(String, Option<Builtin>)> = ["known", "known_or", "is_known", "high"].iter().flat_map(|n| method_calls(&design, &types, n)).map(|e| (src[design.expr_node(e).span.range()].to_string(), types.builtin(e))).collect();
-    let kinds: Vec<Option<Builtin>> = builtins.iter().map(|(_, b)| *b).collect();
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::Known)).count(), 2);
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::KnownOr)).count(), 3);
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::IsKnown)).count(), 1);
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::High)).count(), 1);
-    assert_eq!(kinds.len(), 7, "{builtins:?}");
-
-    // `high` is the read of a `Bit`; a default of the wrong type is a mismatch.
-    let src = "module Top(in c: Bit<u9>) { let a = c.high(); }";
-    let d = diagnostics(src);
-    assert_eq!((codes(&d), d[0].diagnostic.message.contains("`high` on `u9`")), (vec!["P0001".to_string()], true), "{}", d[0].diagnostic.message);
-    let src = "module Top(in c: Bit<u9>) { let a = c.known_or(true); }";
-    let d = diagnostics(src);
-    assert_eq!(codes(&d), ["P0002"]);
-    assert_eq!(snippet(src, &d[0]), "true");
-
-    // §3.3.7: a project's own `high` is not the stdlib's. It is `P0001` at its use, whether the
-    // POM resolved the receiver to it or left it to the checker.
-    for src in [
-        "impl Bit { pub fn high(self) -> bool { true } }\nmodule Top(in g: Bit) { let a = g.high(); }",
-        "trait Mine { fn known_or(self, d: u8) -> u8; }\nimpl Mine for u8 { fn known_or(self, d: u8) -> u8 { d } }\nmodule Top(in c: Bit<u8>) { let a = (c + 1).known_or(0); }",
-    ] {
-        let d = diagnostics(src);
-        assert_eq!(codes(&d), ["P0001"], "{src}");
-        assert!(d[0].diagnostic.message.contains("defined by the project"), "{}", d[0].diagnostic.message);
-    }
-}
-
-#[test]
 fn an_initial_value_of_the_wrong_kind_is_e0210() {
     // DIG-04 AC 5 (part II §5.1.5, §8.1.7): the initial value of a carrier has the carried type,
     // and reads no carrier and no probe; the same for a node, whose initial value is an `f64`,
@@ -195,14 +155,13 @@ fn an_initial_value_of_the_wrong_kind_is_e0210() {
 
 #[test]
 fn a_catalogue_method_on_a_carrier_is_typed_on_its_value() {
-    // DIG-02 AC 1: `d.min(SETPOINT_MAX)` on a `Bit<u8>` carrier is a `u8`, whether the carrier is
-    // the receiver or `known()` unwrapped it first (the `SetpointReg` of the buck).
-    let src = "const SETPOINT_MAX: u8 = 168;\nmodule Top(in data: Bit<u8>) {\n    let direct = data.min(SETPOINT_MAX);\n    let unwrapped = if let Some(d) = data.known() { d.min(SETPOINT_MAX) } else { 0 };\n}";
+    // DIG-02 AC 1: `d.min(SETPOINT_MAX)` on a `Bit<u8>` carrier is a `u8` (the `SetpointReg` of the buck).
+    let src = "const SETPOINT_MAX: u8 = 168;\nmodule Top(in data: Bit<u8>) {\n    let direct = data.min(SETPOINT_MAX);\n}";
     let design = design_of(src);
     let types = checked(&design, src);
-    assert_eq!([types.local(decl(&design, "direct", "binding")), types.local(decl(&design, "unwrapped", "binding"))], [Some(&Ty::UInt(8)), Some(&Ty::UInt(8))]);
+    assert_eq!(types.local(decl(&design, "direct", "binding")), Some(&Ty::UInt(8)));
     let mins = method_calls(&design, &types, "min");
-    assert_eq!(mins.iter().map(|e| types.method(*e)).collect::<Vec<_>>(), [Some(Method::Min), Some(Method::Min)]);
+    assert_eq!(mins.iter().map(|e| types.method(*e)).collect::<Vec<_>>(), [Some(Method::Min)]);
     // DIG-02 AC 2: a method with no row names the method and the value type (`E0161`, Appendix H
     // rule 1, now that the integer catalogue is complete).
     let src = "module Top(in oc_count: Bit<u4>) { let n = oc_count.leading_zeros(); }";
@@ -214,13 +173,13 @@ fn a_catalogue_method_on_a_carrier_is_typed_on_its_value() {
 #[test]
 fn a_single_variant_enum_cannot_be_carried() {
     // Edge case 3: a single-variant enum has a tag of zero levels (part I §2 rule 5): `P0001`.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum One { A }\nmodule Top() { signal s: Bit<One>; }";
+    let src = "#[derive(Repr, PartialEq)]\nenum One { A }\nmodule Top() { signal s: Bit<One> = One::A; }";
     let d = diagnostics(src);
     assert_eq!(codes(&d), ["P0001"]);
     assert!(d[0].diagnostic.message.contains("single-variant enum `One`"), "{}", d[0].diagnostic.message);
     assert_eq!(snippet(src, &d[0]), "One");
     // Two variants are the smallest carried enum.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Two { A, B }\nmodule Top() { signal s: Bit<Two>; }";
+    let src = "#[derive(Repr, PartialEq)]\nenum Two { A, B }\nmodule Top() { signal s: Bit<Two> = Two::A; }";
     checked(&design_of(src), src);
 }
 
@@ -283,7 +242,10 @@ fn a_continuous_definition_is_e0336() {
         ("s = x after now();", "now()"),
         ("s = x after v(p);", "v(p)"),
     ] {
-        let src = format!("{items}module Top(p: Electrical, in x: Bit, out s: Bit, out b: Bit, out f: Bit<f64>) {{ {body} }}");
+        // an undelayed definition gives its carrier the value (`E0338` forbids another); a carrier no definition
+        // drives, or a delayed one drives, holds a value of its own (§3.3.4)
+        let initial = |name: &str, value: &str| if body.contains(&format!("{name} = ")) && !body.contains(" after ") { String::new() } else { format!(" = {value}") };
+        let src = format!("{items}module Top(p: Electrical, in x: Bit, out s: Bit{}, out b: Bit{}, out f: Bit<f64>{}) {{ {body} }}", initial("s", "false"), initial("b", "false"), initial("f", "0.0"));
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["E0336"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert_eq!(snippet(&src, &d[0]), at, "{body}");
@@ -306,13 +268,13 @@ fn a_continuous_definition_is_e0336() {
 fn a_target_the_module_may_not_drive_is_e0222() {
     // DIG-04 AC 8 (§8.2.10): a definition of an `in` port, of a carrier of a child, of a node, of
     // a param or of a `let` name is `E0222`, at the target.
-    let items = "module Child() { pub signal q: Bit; }\n";
+    let items = "module Child() { pub signal q: Bit = false; }\n";
     for (header, body, at) in [
-        ("in a: Bit, out q: Bit", "a = q;", "a"),
-        ("in a: Bit, out q: Bit", "let c = Child(); c.q = true;", "c.q"),
-        ("in a: Bit, out q: Bit", "signal n: Electrical; n = 1.0;", "n"),
-        ("in a: Bit, out q: Bit", "k: f64 = 1.0; k = 2.0;", "k"),
-        ("in a: Bit, out q: Bit", "let m = a; m = q;", "m"),
+        ("in a: Bit, out q: Bit = false", "a = q;", "a"),
+        ("in a: Bit, out q: Bit = false", "let c = Child(); c.q = true;", "c.q"),
+        ("in a: Bit, out q: Bit = false", "signal n: Electrical; n = 1.0;", "n"),
+        ("in a: Bit, out q: Bit = false", "k: f64 = 1.0; k = 2.0;", "k"),
+        ("in a: Bit, out q: Bit = false", "let m = a; m = q;", "m"),
     ] {
         let src = format!("{items}module Top({header}) {{ {body} }}");
         let d = diagnostics(&src);
@@ -357,13 +319,14 @@ fn a_loop_of_definitions_is_e0339() {
     // DIG-04 AC 16 (§8.2.3): undelayed definitions that depend on each other, directly or through
     // a `let`, are a loop through one-driver carriers: one `E0339` per loop. An `after`, or a chain
     // with no cycle, is none.
-    for body in ["a = !b; b = !a;", "let n = !b; a = n; b = !a;", "a = !a;"] {
-        let src = format!("module Top() {{ signal a: Bit; signal b: Bit; {body} }}");
+    for (body, undriven) in [("a = !b; b = !a;", ""), ("let n = !b; a = n; b = !a;", ""), ("a = !a;", " = false")] {
+        // the signal no definition drives holds a value of its own
+        let src = format!("module Top() {{ signal a: Bit; signal b: Bit{undriven}; {body} }}");
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["E0339"], "{body}");
         assert_eq!(d[0].diagnostic.span().start, src.find("a =").unwrap(), "{body}: reported at the first definition of the loop");
     }
-    let src = "module Top(in x: Bit) { signal a: Bit; signal b: Bit; a = !b after 1n; b = !a; }";
+    let src = "module Top(in x: Bit) { signal a: Bit = false; signal b: Bit; a = !b after 1n; b = !a; }";
     checked(&design_of(src), src);
     let src = "module Top(in x: Bit) { signal a: Bit; signal b: Bit; a = !x; b = !a; }";
     checked(&design_of(src), src);
@@ -386,7 +349,15 @@ fn buck_tops() -> String {
     let header = |file: &str, name: &str| {
         let text = buck::item(file, &format!("pub module {name}("));
         let end = text.find("{").expect("a body");
-        text[..end].trim_end().to_string()
+        // the stub has no definition to drive its `out` ports, so each one carries a value of its own (§3.3.4)
+        let valued = |line: &str| match line.trim_start().strip_prefix("out ").and_then(|port| port.split_once(": ")) {
+            Some((_, ty)) if !ty.contains('=') => {
+                let initial = if ty.trim_end_matches(',') == "Bit" { "false" } else { "0" };
+                format!("{} = {initial},", line.trim_end().trim_end_matches(','))
+            }
+            _ => line.to_string(),
+        };
+        text[..end].trim_end().lines().map(valued).collect::<Vec<_>>().join("\n")
     };
     let mut stubs = String::new();
     for (file, name, params) in [
@@ -426,7 +397,7 @@ fn a_continuous_expression_at_an_in_port_is_e0316() {
     // DIG-04 AC 7 (§8.1.12): an expression at an `in` port is an anonymous definition and must be
     // discrete: a probe, `now()` and `analysis(Static)`, directly or through a `let`, are `E0316`
     // at the argument. A discrete expression is the positive case: `Controller` of the buck hands
-    // `target_codes(setpoint.known_or(0))` to the ramp.
+    // `target_codes(setpoint)` to the ramp.
     let items = "module Child(in a: Bit<f64>) { }\n";
     for (body, at) in [
         ("let c = Child(v(p));", "v(p)"),
@@ -448,7 +419,7 @@ fn a_continuous_expression_at_an_in_port_is_e0316() {
 fn a_second_drive_is_e0220() {
     // DIG-04 AC 11 (§5.2.1, §5.2.6): a carrier at two `out` ports, or at one while its module
     // drives it by a definition, has a second drive; the error is at the second connection.
-    let items = "module Source(out q: Bit) { }\n";
+    let items = "module Source(out q: Bit = false) { }\n";
     let src = format!("{items}module Top() {{ signal s: Bit; let a = Source(s); let b = Source(s); }}");
     let d = diagnostics(&src);
     assert_eq!(codes(&d), ["E0220"]);
@@ -482,7 +453,7 @@ fn an_out_port_takes_only_a_carrier_the_parent_hands_over() {
     // DIG-04 AC 14 (§8.1.11): an expression at an `out` port, and an `in` port of the parent, are
     // `E0314`. A signal of the parent and an `out` port of the parent are the carriers it hands
     // over: `PowerStage` of the buck hands its own signals to `GateDriver`.
-    let items = "module Source(out q: Bit) { }\n";
+    let items = "module Source(out q: Bit = false) { }\n";
     for (header, body, at) in [
         ("in x: Bit", "let a = Source(!x);", "!x"),
         ("in x: Bit", "let a = Source(true);", "true"),
@@ -501,9 +472,10 @@ fn a_carrier_of_another_value_type_is_e0251() {
     // DIG-04 AC 15 (§6.1.3, §8.1.10): a `Bit<u8>` carrier connected to a `Bit<u10>` port is `E0251`,
     // at an `in` and at an `out` port; a node and a carrier never connect (`E0250`, §6.1); an
     // expression of another type at an `in` port is a definition of the wrong type (`E0337`).
-    let items = "module Wide(in a: Bit<u10>, out q: Bit<u10>) { }\n";
-    for (body, at) in [("let c = Wide(narrow, wide);", "narrow"), ("let c = Wide(wide, narrow);", "narrow")] {
-        let src = format!("{items}module Top(in narrow: Bit<u8>) {{ signal wide: Bit<u10>; {body} }}");
+    let items = "module Wide(in a: Bit<u10>, out q: Bit<u10> = 0) { }\n";
+    for (body, at, initial) in [("let c = Wide(narrow, wide);", "narrow", ""), ("let c = Wide(wide, narrow);", "narrow", " = 0")] {
+        // `wide` handed to the `out` port has the instance's drive; read at the `in` port it needs a value of its own
+        let src = format!("{items}module Top(in narrow: Bit<u8>) {{ signal wide: Bit<u10>{initial}; {body} }}");
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["E0251"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert_eq!(snippet(&src, &d[0]), at, "{body}");
@@ -521,4 +493,22 @@ fn a_carrier_of_another_value_type_is_e0251() {
     // The same type connects, a literal takes the type of the port it is connected to.
     let src = format!("{items}module Top() {{ signal w: Bit<u10>; signal v: Bit<u10>; let c = Wide(5, w); let d = Wide(w, v); }}");
     checked_top(&src, "Top");
+}
+
+#[test]
+fn a_probe_on_a_childs_private_node_is_e0244() {
+    // §6 rule 7 (`E0244`): a probe or a contribution naming a node of a child that is not `pub`
+    // cannot reach it. The same node under `pub`, and a port of the child, are accepted.
+    let child = "module Child(p: Electrical) { signal hidden: Electrical; }\n";
+    for (body, at) in [("i(x) +> v(c.hidden);", "hidden"), ("i(c.hidden) +> 1.0;", "hidden"), ("i(x) +> v(c.hidden, gnd);", "hidden")] {
+        let src = format!("{child}module Step() {{ signal x: Electrical; let c = Child(x); }}\nanalog for Step {{ {body} }}");
+        let design = Design::builder().source("top.msl", &src).build();
+        assert_eq!(codes(design.diagnostics()), ["E0244"], "{body}");
+        assert_eq!(snippet(&src, &design.diagnostics()[0]), at, "{body}");
+        assert!(design.diagnostics()[0].diagnostic.message.contains("`hidden`"), "{}", design.diagnostics()[0].diagnostic.message);
+    }
+    for (child, body) in [("module Child(p: Electrical) { pub signal hidden: Electrical; }\n", "i(x) +> v(c.hidden);"), (child, "i(x) +> v(c.p);")] {
+        let src = format!("{child}module Step() {{ signal x: Electrical; let c = Child(x); }}\nanalog for Step {{ {body} }}");
+        assert!(design_of(&src).diagnostics().is_empty(), "{body}");
+    }
 }

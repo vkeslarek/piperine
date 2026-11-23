@@ -55,10 +55,9 @@ impl Switching {
         b.stmt(Stmt::Expr(expr))
     }
 
-    /// `en.high()` of the carrier `en`.
+    /// A read of the `bool` carrier `en`.
     pub fn carrier_high(b: &mut IrBuilder) -> ExprId {
-        let read = b.expr(Expr::Carrier(0), ValueType::Flagged(Box::new(ValueType::Bool)), Self::at());
-        b.expr(Expr::High(read), ValueType::Bool, Self::at())
+        b.expr(Expr::Carrier(0), ValueType::Bool, Self::at())
     }
 
     /// `<quantity>(a, gnd) +> 2.0 * rate(D<k>);`
@@ -120,7 +119,7 @@ impl Switching {
         ir
     }
 
-    /// `if en.high() { v(a, gnd) +> 1.0; } else { i(a, gnd) +> 2.0; }`: a switch branch.
+    /// `if en { v(a, gnd) +> 1.0; } else { i(a, gnd) +> 2.0; }`: a switch branch.
     pub fn on_the_carrier(b: &mut IrBuilder) -> Written {
         let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
         Written { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![flow])], ..Written::default() }
@@ -128,7 +127,7 @@ impl Switching {
 
     /// The two `f64` locals `new` and `old` that `halving_limit` closes over.
     pub fn limit_locals() -> Vec<Local> {
-        ["new", "old"].iter().map(|name| Local { name: (*name).into(), ty: ValueType::F64 }).collect()
+        ["new", "old"].iter().map(|name| Local { name: (*name).into(), ty: ValueType::F64, mutable: false }).collect()
     }
 
     /// `limit(v(a, gnd), |new, old| old + (new - old) * 0.5)` as site 0, over the locals of

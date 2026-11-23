@@ -1,5 +1,5 @@
 //! Value expressions: `check` against an expected type where the position gives one, `infer`
-//! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
+//! otherwise. A mismatch is one `E0180` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
 use crate::msl::lexer;
@@ -8,6 +8,8 @@ use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKi
 use crate::stack;
 
 use super::check::{Checker, Context};
+use super::derives::DerivedTrait;
+use super::flow::Assigned;
 use super::unsupported::Unsupported;
 use super::Ty;
 
@@ -15,28 +17,31 @@ impl Checker<'_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
     /// the expected type.
     pub(super) fn check(&mut self, expr: ExprId, expected: &Ty) {
-        self.check_as(expr, expected, "P0002");
+        self.check_as(expr, expected, "E0180");
     }
 
-    /// `check` of an argument written directly: the one place a function may stand as a value,
-    /// for a parameter of function type. Through an `if` or a block it is no named function.
+    /// `check` of an argument: an `Option<T>` parameter takes a `T` as `Some` of it (§3.2.3).
     pub(super) fn check_argument(&mut self, expr: ExprId, expected: &Ty) {
         if let Ty::Option(inner) = expected {
             self.option_argument(expr, expected, inner);
             return;
         }
-        self.fn_value_at = Some(expr);
         self.check(expr, expected);
     }
 
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
-    /// with a code of its own, `E0318` for a `where`) instead of the plain `P0002`.
+    /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
         stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
             if *expected == Ty::Event {
                 self.event_slot = Some(expr);
+            }
+            // A local bound to a bare literal takes the integer type its first use requires (§1.4.4).
+            if self.fix_open_literal(expr, expected) {
+                self.exprs[expr.index()] = Some(expected.clone());
+                return;
             }
             // Where the expected type flows into the parts of the expression: the value of a
             // block or of the arms of an `if` is where a mismatch is reported.
@@ -47,11 +52,13 @@ impl Checker<'_> {
                 }
                 ExprKind::Block(block) => self.statements_as(&block.stmts, Some(expected), code),
                 ExprKind::Closure { .. } => self.closure(expr, expected),
-                ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.fn_value_at == Some(expr) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.condition(*cond);
+                    let before = self.flow.assigned.clone();
                     self.statements_as(&then.stmts, Some(expected), code);
+                    let after_then = self.flow.end_branch(&before);
                     self.check_as(*else_, expected, code);
+                    self.flow.assigned = Assigned::join([after_then, self.flow.assigned.clone()]);
                     Some(expected.clone())
                 }
                 // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
@@ -60,9 +67,13 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
-                // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
-                // computes with known reals (§3.3.5): there it is refused by name.
-                ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && expected.has_repr() && self.context != Context::Analog => Some(expected.clone()),
+                // The expected aggregate type flows into the parts of a tuple and an array.
+                ExprKind::Tuple(items) => self.tuple_expression(items, Some(expected)),
+                ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
+                ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
+                ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
+                // `Name { params }` where a module type is expected: a template value (PI-04).
+                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -117,9 +128,14 @@ impl Checker<'_> {
             };
             if let Some(found) = found
                 && found != *expected
+                && found != Ty::Never
             {
-                let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
-                self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
+                if self.event_reads.contains(&expr) {
+                    self.event_where_another_type_is_expected(expr, expected);
+                } else {
+                    let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
+                    self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
+                }
             }
             self.exprs[expr.index()] = Some(expected.clone());
         })
@@ -133,8 +149,7 @@ impl Checker<'_> {
         }
     }
 
-    /// A function passed as an argument whose parameter has a function type: reached, typed from
-    /// its signature.
+    /// A function's name used as a value: reached, typed from its signature.
     fn function_value(&mut self, expr: ExprId) -> Option<Ty> {
         let decl = self.function_named(expr)?;
         self.reach(decl);
@@ -146,9 +161,9 @@ impl Checker<'_> {
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
         stack::deep(|| {
             let in_event_position = self.event_slot == Some(expr);
-            let ty = self.infer_kind(expr);
+            let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
-                self.event_out_of_place(expr);
+                ty = Some(self.event_out_of_place(expr));
             }
             self.exprs[expr.index()] = ty.clone();
             ty
@@ -190,10 +205,7 @@ impl Checker<'_> {
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
-                    Some(Ty::Event) => {
-                        self.negated_event(expr);
-                        None
-                    }
+                    Some(Ty::Event) => self.negated_event(expr, *operand),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::Bool, &other);
@@ -201,6 +213,14 @@ impl Checker<'_> {
                     }
                 }
             }
+            ExprKind::Assign { op, lhs, rhs } => self.assignment(expr, *op, *lhs, *rhs),
+            ExprKind::While { cond, body } => self.while_loop(*cond, body),
+            ExprKind::Loop { body } => self.loop_expr(body, None),
+            ExprKind::For { pat, iter, body } => self.for_loop(*iter, *pat, body),
+            ExprKind::Break(value) => self.break_expr(expr, *value),
+            ExprKind::Continue => self.continue_expr(expr),
+            ExprKind::Return(value) => self.return_expr(expr, *value),
+            ExprKind::Try(operand) => self.try_expr(expr, *operand),
             ExprKind::Cast { expr: operand, ty } => self.cast(*operand, *ty),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
@@ -209,11 +229,15 @@ impl Checker<'_> {
             ExprKind::Match { .. } => self.match_expr(expr, None),
             ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Field { .. } => self.field_read(expr),
-            ExprKind::Closure { .. } => {
-                self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
-                None
-            }
+            ExprKind::Tuple(items) => self.tuple_expression(items, None),
+            ExprKind::Array(items) => self.array_expression(expr, items, None),
+            ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, None),
+            ExprKind::Index { expr: base, index } => self.index_expression(expr, *base, *index),
+            ExprKind::Range { lo, hi, .. } => self.range_expr(file, node.span, *lo, *hi),
+            ExprKind::Struct { path, fields, class: StructClass::StructLiteral } => self.struct_expression(expr, *path, fields),
+            ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
+            ExprKind::IncludeStr(_) => self.include_str(expr),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
                 self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
                 None
@@ -225,7 +249,21 @@ impl Checker<'_> {
         }
     }
 
-    fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
+    /// `include_str!("path")` is the text of a file, a `str`, and a const expression allowed in a
+    /// `const` item only (§20.2 rule 1); a param default, a `where` or any other position is
+    /// `E0610`.
+    fn include_str(&mut self, expr: ExprId) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let in_const_item = self.context == Context::Const && self.owner.is_some_and(|owner| matches!(self.design.decl_data(owner).kind, DeclKind::Const(_)));
+        if !in_const_item {
+            self.coded(file, "E0610", span, "`include_str!` outside a `const` item".to_string(), "`include_str!` is allowed in the initializer of a `const` item only");
+            return None;
+        }
+        Some(Ty::Str)
+    }
+
+    pub(super) fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(lhs);
         let span = self.design.expr_node(whole).span;
         match op {
@@ -241,15 +279,13 @@ impl Checker<'_> {
             BinOp::Eq | BinOp::Ne => {
                 let (first, second) = self.literal_last(lhs, rhs);
                 match self.infer(first) {
-                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_))) => self.check(second, &t),
-                    // §2 rule 5: an enum compares when it derives `PartialEq`.
-                    Some(t @ Ty::Enum(e)) => {
+                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
+                    // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
+                    // when it implements `PartialEq`.
+                    Some(t) if t.is_composite() => {
                         self.check(second, &t);
-                        if !self.derives(e, "PartialEq") {
-                            let span = self.design.expr_node(first).span;
-                            let found = t.name(self.design);
-                            self.mismatch_text(file, span, "a type that derives `PartialEq`", &found);
-                        }
+                        let span = self.design.expr_node(first).span;
+                        self.require_trait(file, span, &t, DerivedTrait::PartialEq);
                     }
                     Some(_) => {
                         let span = self.design.expr_node(first).span;
@@ -297,14 +333,11 @@ impl Checker<'_> {
                 self.check(second, &t);
                 Some(t)
             }
-            Some(t @ Ty::Enum(e)) if ordering => {
+            Some(t) if ordering && t.is_composite() => {
                 self.check(second, &t);
-                if !self.derives(e, "PartialOrd") {
-                    let file = self.file_of_expr(first);
-                    let span = self.design.expr_node(first).span;
-                    let found = t.name(self.design);
-                    self.mismatch_text(file, span, "a type that derives `PartialOrd`", &found);
-                }
+                let file = self.file_of_expr(first);
+                let span = self.design.expr_node(first).span;
+                self.require_trait(file, span, &t, DerivedTrait::PartialOrd);
                 Some(t)
             }
             found => {
@@ -323,8 +356,8 @@ impl Checker<'_> {
 
     /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
     /// two operands of one type are typed.
-    fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
-        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty());
+    pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
         if bare(self, lhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
     }
 
@@ -343,19 +376,26 @@ impl Checker<'_> {
     }
 
     /// `expr as T`: between any two of the integer types and `f64`, and from `bool` to an integer
-    /// type (§1 rule 1); anything else is a plain mismatch.
+    /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
         let target = self.lower_type(ty);
         let source = self.infer(operand);
         let target = target?;
         let numeric = |t: &Ty| t.is_integer() || *t == Ty::F64;
+        // §1.3.7: an enum without fields converts to an integer type; its value is the discriminant.
+        if let Some(Ty::Enum(decl)) = &source
+            && target.is_integer()
+            && !self.has_payload(*decl)
+        {
+            return Some(target);
+        }
         if let Some(source) = source
             && !(numeric(&target) && (numeric(&source) || (source == Ty::Bool && target.is_integer())))
         {
             let file = self.file_of_expr(operand);
             let span = self.design.expr_node(operand).span;
-            let found = source.name(self.design);
-            self.mismatch_text(file, span, &format!("a value `as` converts to `{}`", target.name(self.design)), &found);
+            let (found, wanted) = (source.name(self.design), target.name(self.design));
+            self.coded(file, "E0182", span, format!("no `as` conversion from `{found}` to `{wanted}`"), &format!("`{found}` does not convert `as` `{wanted}`"));
         }
         Some(target)
     }
@@ -364,36 +404,43 @@ impl Checker<'_> {
     /// without one, `()`.
     fn conditional(&mut self, cond: ExprId, then: &BlockNode, else_: Option<ExprId>) -> Option<Ty> {
         self.condition(cond);
-        // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
-        // the type the literal takes (local literal typing).
-        if let Some(else_) = else_
-            && self.block_waits(then)
-        {
-            let else_ty = self.infer(else_);
-            if let Some(t) = &else_ty {
-                self.statements(&then.stmts, Some(t));
-            } else {
-                self.statements(&then.stmts, None);
+        let before = self.flow.assigned.clone();
+        let (found, after_then, after_else) = match else_ {
+            // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
+            // the type the literal takes (local literal typing).
+            Some(else_) if self.block_waits(then) => {
+                let else_ty = self.infer(else_);
+                let after_else = self.flow.end_branch(&before);
+                self.statements(&then.stmts, else_ty.as_ref());
+                (else_ty, self.flow.end_branch(&before), after_else)
             }
-            return else_ty;
-        }
-        let then_ty = self.statements(&then.stmts, None);
-        match (else_, then_ty) {
-            (Some(else_), Some(t)) => {
-                self.check(else_, &t);
-                Some(t)
+            _ => {
+                let then_ty = self.statements(&then.stmts, None);
+                let after_then = self.flow.end_branch(&before);
+                let (found, after_else) = match (else_, then_ty) {
+                    // a `then` that never completes takes the type of the `else`
+                    (Some(else_), Some(Ty::Never)) => (self.infer(else_), self.flow.end_branch(&before)),
+                    (Some(else_), Some(t)) => {
+                        self.check(else_, &t);
+                        (Some(t), self.flow.end_branch(&before))
+                    }
+                    (Some(else_), None) => {
+                        self.infer(else_);
+                        (None, self.flow.end_branch(&before))
+                    }
+                    (None, Some(Ty::Never)) => (Some(Ty::Unit), before.clone()),
+                    (None, Some(t)) if t != Ty::Unit => {
+                        let file = self.file_of_expr(cond);
+                        self.mismatch(file, then.span, &Ty::Unit, &t);
+                        (Some(Ty::Unit), before.clone())
+                    }
+                    (None, t) => (t, before.clone()),
+                };
+                (found, after_then, after_else)
             }
-            (Some(else_), None) => {
-                self.infer(else_);
-                None
-            }
-            (None, Some(t)) if t != Ty::Unit => {
-                let file = self.file_of_expr(cond);
-                self.mismatch(file, then.span, &Ty::Unit, &t);
-                Some(Ty::Unit)
-            }
-            (None, t) => t,
-        }
+        };
+        self.flow.assigned = Assigned::join([after_then, after_else]);
+        found
     }
 
     fn literal(&mut self, kind: &LitKind, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
@@ -409,15 +456,6 @@ impl Checker<'_> {
             LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => Some(Ty::Str),
-            LitKind::Unknown if self.context == Context::Analog => {
-                let message = "`analog` takes known reals, and the literal `Unknown` is unknown: it has no unknowns (§3.3.5)".to_string();
-                self.coded(file, "E0150", span, message, "may be unknown");
-                None
-            }
-            LitKind::Unknown => {
-                self.unsupported(file, span, "`Unknown` literal where no carried type is expected");
-                None
-            }
         }
     }
 
@@ -425,7 +463,7 @@ impl Checker<'_> {
     /// 7). A suffix of another type than `expected` is a mismatch; a value outside the type's
     /// range is `E0909`; a suffix outside the subset (`u128`, `f32`) is `P0001` naming it. With
     /// `negated` the literal is the operand of a unary `-`.
-    fn integer_literal(&mut self, file: FileId, span: Span, text: &str, expected: Option<&Ty>, negated: bool) -> Option<Ty> {
+    pub(super) fn integer_literal(&mut self, file: FileId, span: Span, text: &str, expected: Option<&Ty>, negated: bool) -> Option<Ty> {
         let suffix = lexer::int_suffix_text(text);
         let ty = match suffix {
             "" => expected.cloned().unwrap_or(Ty::Int(32)),
@@ -462,7 +500,7 @@ impl Checker<'_> {
     }
 
     /// The text of `expr` when it is an integer literal without an `f64` suffix, through parens.
-    fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
+    pub(super) fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_text(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
@@ -515,8 +553,24 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
+                        // A read that requires no type gives the literal its default `i32` (§1.4.2).
+                        self.open_literals.remove(&decl);
+                        if self.read_before_assignment(file, node.span, decl) {
+                            return local;
+                        }
+                        if self.pending_closures.contains_key(&decl) {
+                            let message = "a closure whose parameters have no written type is typed by its first call: call it before using it as a value (§1.4.4)".to_string();
+                            self.coded(file, "E0181", node.span, message, "parameter type unknown");
+                            return None;
+                        }
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
+                        }
+                        if local.is_none() && self.continuous_result_in_const(file, node.span, decl) {
+                            return None;
+                        }
+                        if let Some(Ty::Module(module)) = &local {
+                            return self.instance_as_value(file, node.span, decl, *module);
                         }
                         if local.is_none() && !self.poisoned.contains(&decl) {
                             let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
@@ -524,17 +578,9 @@ impl Checker<'_> {
                         }
                         local
                     }
-                    DeclKind::Variant(_) => match self.design.decl_data(decl).parent {
-                        Some(parent) if matches!(self.design.decl_data(parent).kind, DeclKind::Enum(_)) => self.enum_type(parent, file, node.span),
-                        _ => {
-                            self.unsupported(file, node.span, "`enum` variant used as a value");
-                            None
-                        }
-                    },
-                    DeclKind::Fn(_) => {
-                        self.unsupported(file, node.span, "function used as a value outside an argument whose parameter has a function type");
-                        None
-                    }
+                    DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(decl, file, node.span),
+                    // §1.2.10: a function's name is a value of type `fn(T..) -> U`
+                    DeclKind::Fn(_) => self.function_value(expr),
                     other => {
                         self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
                         None
@@ -542,9 +588,10 @@ impl Checker<'_> {
                 }
             }
             Resolution::Builtin(id) if id.info().kind == BuiltinKind::Node => Some(Ty::AnyNode),
+            Resolution::Builtin(id) if id.info().kind == BuiltinKind::Event => Some(self.settle_event()),
             Resolution::Builtin(id) if id.info().name == "None" => {
                 let message = "`None` has no type here: write it where an `Option<T>` is expected";
-                self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
+                self.report(file, Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
                 None
             }
             Resolution::Builtin(id) => match self.width_read(expr) {
@@ -572,25 +619,21 @@ impl Checker<'_> {
     /// that of its last expression without a `;`, else `()`. With an `expected` type the last
     /// expression is checked against it.
     pub(super) fn statements(&mut self, stmts: &[StmtId], expected: Option<&Ty>) -> Option<Ty> {
-        self.statements_as(stmts, expected, "P0002")
+        self.statements_as(stmts, expected, "E0180")
     }
 
     /// `statements`, where a mismatch of the block's value carries `code` (see `check_as`).
     fn statements_as(&mut self, stmts: &[StmtId], expected: Option<&Ty>, code: &'static str) -> Option<Ty> {
         let mut value = Some(Ty::Unit);
+        // Whether a statement never completes: a block with no final expression is then `!`.
+        let mut diverged = false;
         for (i, stmt) in stmts.iter().enumerate() {
             let last = i + 1 == stmts.len();
             value = Some(Ty::Unit);
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
-                StmtKind::Let { pat, ty, init, else_ } => {
-                    if else_.is_some() {
-                        self.unsupported(file, node.span, Unsupported::stmt(&node.kind));
-                    } else {
-                        self.let_statement(file, node.span, *pat, *ty, *init);
-                    }
-                }
+                StmtKind::Let { pat, ty, init, else_ } => self.let_statement(file, *pat, *ty, *init, else_.as_ref()),
                 StmtKind::Expr { expr, semi } => {
                     if last && !semi {
                         match expected {
@@ -601,7 +644,7 @@ impl Checker<'_> {
                             None => value = self.infer(*expr),
                         }
                     } else {
-                        self.infer(*expr);
+                        diverged |= self.infer(*expr) == Some(Ty::Never);
                     }
                 }
                 StmtKind::Empty => {}
@@ -612,21 +655,22 @@ impl Checker<'_> {
                 }
             }
         }
-        value
+        if diverged && value == Some(Ty::Unit) { Some(Ty::Never) } else { value }
     }
 
-    /// `let x = init;` or `let x: T = init;`: the binding takes the annotation, else the type of
-    /// the initializer.
-    fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>) {
+    /// `let x = init;`, `let x: T = init;`, and `let x;` or `let x: T;` (§1.7.5):
+    /// the binding takes the annotation, else the type of the initializer, else the type of its
+    /// first assignment.
+    fn let_statement(&mut self, file: crate::pom::FileId, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let pat_node = self.design.pat_node(pat).clone();
-        if let (PatKind::Tuple(_), None, Some(init)) = (&pat_node.kind, ty, init) {
-            self.tuple_let(file, &pat_node, init);
-            return;
-        }
-        let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
-            self.unsupported(file, pat_node.span, Unsupported::pat(&pat_node.kind));
+        let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
+            self.let_pattern(file, pat, ty, init, else_);
             return;
         };
+        if else_.is_some() {
+            self.let_pattern(file, pat, ty, init, else_);
+            return;
+        }
         let annotated = match ty {
             Some(t) => match self.lower_type(t) {
                 Some(t) => Some(t),
@@ -640,23 +684,40 @@ impl Checker<'_> {
             },
             None => None,
         };
+        if annotated.is_none()
+            && let Some(init) = init
+            && let Some(closure) = self.closure_expr(init)
+            && self.has_open_parameter(closure)
+            && closure == init
+        {
+            self.defer_closure(*binding, closure);
+            return;
+        }
         let bound = match (annotated, init) {
             (Some(t), Some(init)) => {
                 self.check(init, &t);
+                if matches!(t, Ty::Fn(..)) {
+                    self.refuse_capturing_pointer(init);
+                }
                 Some(t)
             }
             (None, Some(init)) => self.infer(init),
-            (Some(_), None) | (None, None) => {
-                self.unsupported(file, span, "`let` without a value");
-                None
+            (annotated, None) => {
+                self.deferred.insert(*binding);
+                if let Some(t) = annotated {
+                    self.locals.insert(*binding, t);
+                }
+                return;
             }
         };
+        if let Some(closure) = init.and_then(|i| self.closure_expr(i)) {
+            self.closure_locals.insert(*binding, closure);
+        }
         match bound {
-            Some(Ty::Str) => {
-                self.unsupported(file, span, "a string literal bound by a `let`");
-                self.poisoned.insert(*binding);
-            }
             Some(t) => {
+                if let (None, Some(init)) = (ty, init) {
+                    self.wait_for_use(*binding, init);
+                }
                 self.locals.insert(*binding, t);
             }
             None => {

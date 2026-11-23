@@ -105,28 +105,39 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
         )
     };
     let default_value = punct(Punct::Eq).ignore_then(h.expr.clone()).map_with(|_, e| e.span());
-    // `&self` and `&mut self` receivers are removed: reported, kept as an error parameter.
-    let ref_receiver = punct(Punct::And)
-        .ignore_then(kw(Kw::Mut).or_not())
-        .ignore_then(kw(Kw::SelfLower))
-        .validate(|_, e, emitter| {
-            emitter.emit(removed("`&self` and `&mut self` receivers", e.span()));
-            FnParam::Error(Loc(e.span()))
+    // `&self` and `&mut self` receivers are removed (B.3.6): reported, read as `self`.
+    let ref_receiver = reference_head().then_ignore(kw(Kw::SelfLower)).validate(|_, e, emitter| {
+        emitter.emit(Rich::custom(
+            e.span(),
+            Custom {
+                code: "E0101",
+                message: "references and borrows are not part of the language".into(),
+                help: Some("write `self`: a method takes `self` and returns what it changed".into()),
+            },
+        ));
+        FnParam::SelfValue(Loc(e.span()))
+    });
+    // `mut x: T`: the marker is a reserved word (`E0903`), the parameter is read as a plain one.
+    let marked_param = choice((kw(Kw::Mut).to(Kw::Mut), kw(Kw::Ref).to(Kw::Ref)))
+        .map_with(|word, e| (word, e.span()))
+        .then(ident())
+        .then_ignore(punct(Punct::Colon))
+        .then(h.ty.clone())
+        .validate(|(((word, at), name), ty), e, emitter| {
+            emitter.emit(ReservedMarker::report(word, at));
+            FnParam::Named { name, ty, span: Loc(e.span()) }
         });
-    // `mut x: T` and `(a, b): T`: a parameter is a plain name.
+    // `(a, b): T`: a parameter is a plain name.
     let pattern_param = any()
         .filter(|t: &Token| {
-            matches!(
-                t,
-                Token::Kw(Kw::Mut | Kw::Ref) | Token::Punct(Punct::LParen | Punct::LBracket | Punct::And | Punct::Underscore)
-            )
+            matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::And | Punct::Underscore))
         })
         .rewind()
         .ignore_then(h.pat1.clone())
         .then_ignore(punct(Punct::Colon))
         .then_ignore(h.ty.clone())
         .validate(|_, e, emitter| {
-            emitter.emit(removed("`mut` and pattern parameters", e.span()));
+            emitter.emit(removed("pattern parameters", e.span()));
             FnParam::Error(Loc(e.span()))
         });
     let param = rejected_meta(h).ignore_then(first_of(vec![
@@ -143,6 +154,7 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
                 FnParam::Named { name, ty, span: Loc(e.span()) }
             })
             .boxed(),
+        marked_param.boxed(),
         punct(Punct::DotDotDot)
             .validate(move |_, e, emitter| {
                 emitter.emit(signature_error(e.span(), "a variadic parameter"));

@@ -38,20 +38,8 @@ impl Transpiler {
 
         let rustc = Rustc::locate(settings)?;
         let cache = Cache::at(&settings.cache)?;
-        let flags = Rustc::FLAGS.join(" ");
-        // parts: source, runtime, compiler text, flags, then the ABI files; the ABI library's
-        // own key leaves out the first two.
-        let runtime = Runtime::files(self.digital());
-        let mut abi_parts: Vec<&[u8]> = vec![rustc.version_text().as_bytes(), flags.as_bytes()];
-        for (name, text) in AbiSource::FILES {
-            abi_parts.push(name.as_bytes());
-            abi_parts.push(text.as_bytes());
-        }
-        let mut parts: Vec<&[u8]> = vec![source.as_bytes()];
-        parts.extend(runtime.iter().map(|(_, text)| text.as_bytes()));
-        parts.extend(abi_parts.iter().copied());
-        let key = Key::of(&parts);
-        let abi_key = Key::of(&abi_parts);
+        let runtime = Runtime::files(self.digital() || self.loops());
+        let (key, abi_key) = Self::cache_keys(&source, &runtime, rustc.version_text(), AbiSource::FILES);
 
         // RS-04 AC 5: an entry that is incomplete or fails to open is not what it recorded; it
         // is removed and rebuilt. Only what was there at this look is removed: an entry is placed
@@ -79,6 +67,24 @@ impl Transpiler {
         };
         report.rustc_invocations = rustc.invocations();
         Compiled::bind(self.ir.clone(), &self.plans, entry, loaded, report)
+    }
+
+    /// The cache keys of a design: its own, then the ABI library's (RS-Q3). A design's key is the SHA-256 of
+    /// the generated `source`, the `runtime` files, the compiler's `version_text`, the flags and the `abi_files`
+    /// (the name and text of each file of the ABI crate); the library's own key leaves out the first two. The ABI
+    /// contract is edited in place and stays major 1, so its text is in the key: an entry built against an earlier
+    /// contract is never found by the current key.
+    pub fn cache_keys(source: &str, runtime: &[(&str, &str)], version_text: &str, abi_files: &[(&str, &str)]) -> (Key, Key) {
+        let flags = Rustc::FLAGS.join(" ");
+        let mut abi_parts: Vec<&[u8]> = vec![version_text.as_bytes(), flags.as_bytes()];
+        for (name, text) in abi_files {
+            abi_parts.push(name.as_bytes());
+            abi_parts.push(text.as_bytes());
+        }
+        let mut parts: Vec<&[u8]> = vec![source.as_bytes()];
+        parts.extend(runtime.iter().map(|(_, text)| text.as_bytes()));
+        parts.extend(abi_parts.iter().copied());
+        (Key::of(&parts), Key::of(&abi_parts))
     }
 
     fn build_and_open(

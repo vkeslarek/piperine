@@ -28,6 +28,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | blocking writes and `#0` | commits; every read sees the past (§12.1.1) |
 | indirect contributions | the row of an internal node (§11, `Nullor`) |
 | heap types | arrays and carriers fixed at elaboration (§1 rule 2) |
+| references, borrows, moves, mutability markers | values, copied where they are used (§1.4.6); hardware named by identity (§1.4.7); G.71 |
 | reading files during a run | `include_str!` into a `const` (§20) |
 | implicit converters | `D2A`, `A2D`, `Bidir` placed explicitly (§6.1, §22.4) |
 | global nets other than `gnd` | ports (§6 rule 1) |
@@ -68,8 +69,6 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.22 | Load-dependent delay | Open |
 | G.23 | Bit fields on values | Open |
 | G.24 | Frequency-domain post-processing | Provisional |
-| G.28 | Cost of unknown control | Provisional |
-| G.29 | `known_or` on a module's own state | Provisional |
 | G.30 | Small-signal response of sampled blocks | Implementation |
 | G.32 | Delayed logic where time does not advance | Provisional |
 | G.33 | `analysis(Static)` in an analysis without time at a transient's last instant | Open |
@@ -89,6 +88,8 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.68 | `Tran` passed to `analysis` names a module | Open |
 | G.69 | Implementation-defined float results: the bits of a NaN, the last place of the elementary functions | Resolved provisionally |
 | G.70 | The rules of the value language that were formerly taken from Rust | Resolved provisionally |
+| G.71 | Value semantics: no reference, no move, no `mut` | Closed |
+| G.72 | Explicit unknowns: no value carries a flag; `Logic`, `Option` and `Default` say what a type may hold; the implementation meets it but for `Logic<N>` | Implementation |
 
 ## Open items
 
@@ -119,7 +120,7 @@ Alternatives under consideration: a named result port, or `-> name: T`.
 | Gap | Defined in |
 | --- | --- |
 | switch branches | §11 rule 2 |
-| known flags | §3.3 |
+| the explicit model of unknowns | G.72 |
 | resolved natures | §4, §5.2 |
 | user `limit` functions | §18 |
 | integer time | §15 |
@@ -136,9 +137,9 @@ Running Yosys netlists needs its own part: the netlist form consumed (RTLIL or c
 | Cell | Maps to |
 | --- | --- |
 | `$mux` | `if` |
-| `$tribuf` | `Tribuf` on a `Wire` (§22.3.5) |
+| `$tribuf` | `Tribuf` on a net of a `Resolve<Driven>` nature (§22.3.5) |
 | `$dff` | a reaction |
-| `inout` | a `Wire` port |
+| `inout` | a port of a `Resolve<Driven>` nature |
 
 Several writers in a behavioral netlist are several drives of a resolved carrier (§5.2).
 
@@ -160,7 +161,7 @@ The resolution is one session option (§15). Whether one design may mix resoluti
 ### G.13 Metastability
 
 **Status: Open.**
-A stdlib synchronizer whose first stage commits `Unknown` when `since(d) < tw` at the edge. It needs no language change (§22.5.1 rule 4 shows the pattern).
+A stdlib synchronizer whose first stage commits X (a `Logic`) when `since(d) < tw` at the edge. It needs no language change (§22.5.1 rule 4 shows the pattern).
 
 ### G.14 Field-init shorthand
 
@@ -217,16 +218,6 @@ Slices and concatenations of integers (Yosys `$slice`, `$concat`) are written wi
 
 **Status: Provisional.** In force: measures over complex results belong to the host. A sweep over frequency has no instants, so no reaction runs in it (§16.2).
 The item asks whether to confirm this or add a hook.
-
-### G.28 Cost of unknown control
-
-**Status: Provisional.** In force: an unknown address merges into every word it could select (§3.3.3, Appendix E.5). This is exact and can be expensive on a large memory.
-The elaborator may warn; the semantics stays.
-
-### G.29 `known_or` on a module's own state
-
-**Status: Provisional.** In force: §3.3.5 has no exception. It asks for `known_or` even on a signal the module always commits known (`seg` in Appendix D.1).
-A static proof of known-ness could waive it. The rule without exceptions was preferred.
 
 ### G.30 Small-signal response of sampled blocks
 
@@ -299,12 +290,12 @@ A traced example is wanted so that the definition is exercised. `SampleHold` (§
 
 **Status: Closed.**
 The standard library is source: `crates/piperine-lang/std/*.msl` compile with zero diagnostics in the POM, and Part VII's fences are excerpts of them (§22). Two guards keep that true. `std_excerpts` ties each Part VII fence to its `std` file and each `std` item to a fence. `std_galleries` builds the 18 gallery fences of Appendices D, E and F against the embedded library and requires no diagnostic, a sound design and no unresolved member.
-What the gates prove is a front end: the library and the galleries are parsed and resolved, and nothing is type-checked, elaborated or executed. The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
+What the gates prove is a front end: the library and the galleries are parsed and resolved, and nothing is type-checked, elaborated or executed. The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on nets of a `Resolve<Driven>` nature, and the trace of §15.1.
 
 ### G.39 Size of the addition
 
 **Status: Open.** No action is planned.
-The language has 65 mixed-signal constructs beside its value language (Appendix B.1), for 11 concepts (§0). No further construct has been found that can be removed without a model paying for it.
+The language has 62 mixed-signal constructs beside its value language (Appendix B.1), for 11 concepts (§0). No further construct has been found that can be removed without a model paying for it.
 
 ## Flagged resolutions
 
@@ -312,8 +303,6 @@ These were silent in the design. A part resolved each with a `Resolution` note, 
 
 | Item | Resolved in | In force | For review |
 | --- | --- | --- | --- |
-| G.45 Panic under unknown control | §1 rules 11–13 | a value-level failure is a panic; on a path taken under unknown control it is not an error, and every effect of that merge becomes unknown | whether a possible panic should be reported, at least on `log` |
-| G.46 Bound on loop unrolling under unknown control | §3.3.16 | the bound of §3.3.3 is implementation-defined and documented; implementations may differ only in how many levels stay known | whether to fix the bound |
 | G.47 Symbol lookup for `extern "C" fn` | §3 rule 2 and its notes | the toolchain locates the symbol; `#[link]` is defined on extern modules only (§8.5) | whether a model should name the library |
 | G.48 `pub` items of an instance bound to its result | §8.2.14 | a body `let` bound to a module with a result names the result (§8.3.3); the instance's `pub` items are not reachable as `name.item` | whether such an instance needs a second name, which bears on G.5 |
 
@@ -329,13 +318,11 @@ Each item is in force through the `Resolution` note cited, which refers back her
 | G.52 | §13 rule 16, §5.3.11 | `p.changed()` never fires at `(0, 0)`; a `set` made before the run binds the param | the design commits such a `set` at `(0, 0)` like an initial value |
 | G.53 | §8.4.4 | a placement through a template value takes no param block | removes `cell(c) { m: 2.0 }` |
 | G.54 | §8.5.3 | `m` and `dtemp` are readable names inside a module, with their effective values | the design has them as implicit params only |
-| G.55 | §19 rule 5, §22.6.2 | a `finish` record ends the analysis only if known true and not `maybe` | a `fatal()` under unknown control does not stop the run |
 | G.56 | §8.3.6 | every core result has a direct dependence on its value inputs | `let y = delay(f(y), td);` is an error |
-| G.57 | §3.3.6, §3.3.7 | the `analog` check is syntactic over flag-total functions; four stdlib functions are mandatory | a new term that carries a conformance rule |
 | G.58 | §11 rule 3 | the selector rule also binds the flow contributions of a potential-capable branch; a probed short is not merged | extends the rule, with one exception clause |
 | G.59 | §6 rule 5 | `p.inflow()` includes the branches of child instances that end on `p` | the design says "this module's branches" |
 | G.60 | §15 T2, §15 T3 | a half-tick tie rounds to the later tick; a positive delay that rounds to no advance is the next microstep | observable at half-tick delays |
-| G.61 | A.1, A.3, §1 | `Unknown` is a reserved literal; an unlisted attribute is an error; `char` and every lifetime but `'static` are dropped | closes the token classes and the attribute set (A.1, A.8) |
+| G.61 | A.1, §1 | an unlisted attribute is an error; `char` and every lifetime are dropped | closes the token classes and the attribute set (A.1, A.8) |
 | G.62 | §1 | `usize` and `isize` are 64 bits on every platform | a fixed width, whatever the machine; needed for §0.1.1 |
 | G.63 | §23.1 | a `force` on a node is a potential source to `gnd`; a host action answering an event is due at `(t, n + 1)` | new host semantics |
 
@@ -349,7 +336,7 @@ For review: fix one pair of end conditions.
 
 **Status: Closed.**
 The C interface of an extern module, `"cosim"` included, is the device ABI, whose exported symbol is `piperine_abi_1` (§8.5.8). `"cosim"` ports stay discrete-only (§8.5.11); continuous ports on a `"cosim"` module are not accepted.
-In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is not run; every `out` port commits `Unknown`). `"osdi"` is OSDI 0.4 (§8.5.8), reached through an adapter over the same ABI.
+In force: the contract of §8.5, and §8.5.16 (a step receives and commits the bytes of the types its ports declare). `"osdi"` is OSDI 0.4 (§8.5.8), reached through an adapter over the same ABI.
 
 ### G.66 Session parameter names of `simparam`
 
@@ -380,6 +367,58 @@ For review: fix a canonical NaN, and require correctly rounded elementary functi
 In force: the rules as written. Most restate what the earlier text implied. The ones that had to be decided, because the design never chose, are listed in §0.10 with the rule written for each.
 For review: each row of §0.10.
 
+### G.71 Value semantics
+
+**Status: Closed.** Decided (2026-11-20; V1 to V7 under "Closed items"): the value language has values only. Data are copied wherever they are used; hardware is reached by identity and changes only by a definition, a commit or a contribution.
+In force: §1 rule 2, §1.2.5 to §1.2.7, §1.2.9, §1.4.6, §1.4.7, §1.5.9, §1.5.12, §1.5.14, §1.6.2, §1.6.7, §1.6.9, §1.7.5, §1.7.7, §3.1.10, §4 rule 8, §8.2.12, A.1, B.3.6, B.3.7 and H.4 to H.8.
+
+This revision removes these special cases of earlier ones:
+
+| Removed | Was stated in | What stands in its place |
+| --- | --- | --- |
+| the borrow type `&T`, allowed in a parameter type for an array, a slice or a string, and on any call argument | §1 rule 2, §1.2.6, `E0102` | the value: a parameter of type `T` (§1.2.6) |
+| the four places where a borrow was read through without an operator, and `*r` elsewhere | §1.2.6, §1.2.7 | nothing to read through |
+| the slice type `[T]`, only behind a borrow; `&[T; N]` accepted where `&[T]` was required | §1.2.5 | arrays; a const parameter `N` where the length varies (§1.2.5) |
+| `e[a..b]` usable only as a borrowed argument or a receiver | §1.5.9 | `e[a..b]` is an array, with const bounds (§1.5.9) |
+| the lifetime `'static`, and `&'static str` as the one borrow a `const` could hold | §1.2.7, §1.2.9, A.1 | `str`, a value type (§1.2.9); no lifetime token |
+| the `Copy` property, held by some types and not by others; the move of a value without it; no field read out of such a value | §1.4.6, §1.4.7, `E0183` | every value is copied (§1.4.6) |
+| the traits `Clone` and `Copy`, their derives, `clone()`; the `Copy` requirement of `[x; N]`, of `*r` and of `Repr` | H.8, §1.2.4, §2 | none: the names do not resolve (`E0161`, H.8 rule 1) |
+| `let mut`, `mut x` in a pattern, and a local assigned at most once without it | §1.5.12, §1.6.2, §1.7.5, §1.7.7 | every local is a place (§1.5.12) |
+| `let mut` reported separately in a module body | §8.2.12, `E0331` | a body `let` is not a place (`E0183`); `mut` is a reserved word (`E0903`) |
+| `ref x` and `&p` patterns; a pattern that meets a borrow binds borrows | §1.6.2, §1.6.9 | a pattern binds copies (§1.6.9) |
+| `move` before a closure, accepted with no effect | §1.5.14 | a closure captures by value; `move` is a reserved word |
+| the `&self` spelling of Appendix H, for a method that did not move its receiver | H rule 4 | `self` in every signature |
+| `resolve` typed by a function pointer over a slice, `fn(&[T]) -> T` | §4 rule 8 | a function with a const parameter, `fn f<const N: usize>(drives: [T; N]) -> T` |
+
+Two codes are retired: `E0102` (§1) and `E0331` (§8.2). `E0183` no longer has a move to report.
+
+Provisional note, for review: that a parameter is not a place (§1.5.12, §3.1.10), so a method cannot assign `self`; and that `resolve` takes its drives as an array with a const length (§4 rule 8).
+
+### G.72 Explicit unknowns
+
+**Status: Implementation.** Decided (2026-11-21, user: "Não acho que unknown deveria ser algo implícito, deveria ser algo EXPLICITO"; rules R1 to R10 of the feature `explicit-unknowns`): no value carries a hidden known flag. What a type may hold is what its declaration says.
+In force: §1 rule 13, §2, §3.1.9, §3.3, §3.7.13, §4 rules 1, 2, 6, 8 and 15, §5.1 to §5.3, §8.2.3, §13 rules 1 and 6, §19, §23.1 rule 9, §22.1, §22.3, Appendix H.8 and H.10.
+
+This revision removes these special cases of earlier ones:
+
+| Removed | Was stated in | What stands in its place |
+| --- | --- | --- |
+| the known flag of every level of every value, and the literal `Unknown` | §3.3, A.3, B.1.2 | `bool`, the integers, the floats, enums, structs, tuples and arrays are always determined (§3.3.1); `Logic<N>` says "may be X or Z" (§22.1.1); `Option<T>` says "may be absent" (§3.3.3) |
+| `level`, `known`, `known_or`, `is_known`, `high`, `merge`, and `Known` | §3.3.4, §22.1.1, §22.1.2 | names that do not resolve (`E0161`); `to_bits()`, `is_high()`, `same`, `match` on a `Logic` or an `Option` |
+| the merge of effects under unknown control, its loop bound, an unknown index, an unknown delay | §3.3.3, §3.3.13, §3.3.16, §12.1.19, Appendix C.2 | control takes a `bool` (§3.3.5): one path runs |
+| the gate of an `analog` read and the flag-total functions that passed it | §3.3.5 to §3.3.7, `E0150` | `analog` reads a discrete carrier directly, a `Logic` through a function (§3.3.6) |
+| an unknown structural decision, `E0151` | §3.3.8 | a `bool` or an integer (§3.3.7) |
+| a carrier with no value until its first commit | §5.1.1, §5.3.8 | the initial value, written or `Default::default()`, is committed at `(0, 0)` (§3.3.4); a type without `Default` requires it (`E0187`); no primitive numeric type implements `Default` |
+| the first commit of a carrier that starts high being a rise | §13 rule 6, §22.1.5 | a rise is a change that ends at true; a carrier that starts high has not risen (`init()` marks the start) |
+| `maybe` on a record, an unknown `pass`, a `finish` that goes on under unknown control | §19, §22.6, §23.2 | a record is its declared fields; a `require` is a pass or a fail; a `finish` ends the analysis |
+| the `resolve` field of a nature, and the library nets `Wire`, `Tri` and `SumNet` | §4, §22.3 | the trait `Resolve<X, V>` that a nature implements (§4 rule 8); a net nature is declared by the model (Appendix F.4) |
+| "a loop of resolved drives that does not settle is not an error" | §8.2.3 | `E0511`: a conflict is a value, an instability is an error |
+
+Four codes are retired: `E0150`, `E0151` (§3.3), `E0906` and `E0908` (A.3). `E0134` is narrowed to a bundle, `E0187` gains the three `Default` conditions, `E0220` names the nature and `Resolve`, and `E0225` and `E0511` are new. Items G.28, G.29, G.45, G.46, G.55 and G.57 closed with the model they concerned.
+
+The reference implementation meets this item in every layer: it carries no known byte in its IR, its plan, its layouts, its generated code or its device contract (the contract is major 1, minor 0, edited in place), runs no merge, writes no `maybe`, and stops a loop that does not settle with `E0511`. What it does not yet hold is `Logic<N>` and the operator traits that write it, which phase B of `explicit-unknowns` brings to `std` (`GAPS.md` L58), and the `Resolve` trait with the library nets, which `resolved-nets` brings (`GAPS.md` L21): the fences of §22.1 and §22.3 that `std_excerpts` lists as ahead of `std` are those.
+For review: that no primitive numeric type implements `Default`, which differs from Rust on purpose (§3.3.4); and that a rise is a change that ends at true, so a carrier that starts high has not risen (§22.1.5).
+
 ## Closed items
 
 ### Closed in this specification
@@ -391,12 +430,12 @@ For review: each row of §0.10.
 | G.42 | How the solve tables read in a periodic analysis | the small-signal column is taken at each point of the trajectory, with `now()` its time. `zi_nd` is in its `delay` form there, on purpose. | §16.2, §16.3 |
 | G.43 | A hold that agrees with a potential contribution on the same node | always an error: a hold is a potential source, and a loop of potential contributions is singular whether or not the values agree | §16 |
 | G.44 | Host actions between two runs of a continued transient; the old stop time | a host `set` or drive is a commit collected at the resume instant. The old stop time remains a time point. | §16.4.1 |
-| D1 | Which forms a reader of Rust would expect are not in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern and `mut` parameters, `&self`. In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
-| D2 | Which library names exist without a declaration | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays and slices, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
+| D1 | Which forms a reader of Rust would expect are not in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern parameters, references and the markers `mut`, `ref` and `move` (V1, V2). In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
+| D2 | Which library names exist without a declaration | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
 | D3 | `gnd`, `Nature`, `m`, `dtemp` and `str` | core names, in the built-in table, that no declaration can define. | §6 rule 11, §3.4.2, A.1 rule 8 |
 | D5 | Duplicate names, colliding imports, ambiguous globs | `E0162`, with these rules: one name per table per namespace; an item or an explicit `use` beats a glob; two globs are an error only when the name is used. | §3.4.7, §3.4.8, §3.4.9 |
 | D6 | Generic names of a behavior block | the block repeats the module's generic names in the same order and introduces none of its own. | §10 rule 6, B.3.3 item 14 |
-| D7 | `&` in argument position | a shared borrow of any value is allowed as a call argument; `E0102` covers the rest. | §1 (`E0102`), §3.2 |
+| D7 | `&` in argument position | superseded by V1: no position takes a borrow, an argument is the value, and `E0102` is retired. | §1 rule 2, §3.2 |
 | D8 | What `E0910` counts | nesting only (delimiters, blocks, unary and type nesting) up to 256 levels; flat chains of binary operators, methods and `else if` arms have a separate bound of 4096 links. | A.6 |
 | D9 | Where docs and attributes may be written | before every item, field, variant, `match` arm and statement, and before reactions, definitions, generation and nature quantities; the docs of a quantity and of a reaction are metadata, those of a statement are kept and ignored. | A.4, §21 |
 | D10 | Identifier patterns | a plain identifier pattern that resolves to a constant, a unit variant or a unit struct is that path, not a binding. | §1 rule 14 |
@@ -418,8 +457,15 @@ For review: each row of §0.10.
 | S3 | The analysis kind and the pass switch share a name | the analysis kind is `Transient`; the module `Tran` of §22.3.7 keeps its name. | §11.1.1, §22.3.7 |
 | S4 | The namespaces of `std` | `std::constants`, `std::carriers`, `std::values`, `std::analog`, `std::nets`, `std::convert`, `std::monitor`, `std::io`, all re-exported by `std::prelude`. | §22 |
 | S5 | Where the prelude constants live | `Q`, `K_B`, `EPS0`, `PI`, `E` and `inf` are `pub const` items of `std::constants`; `inf` is `1.0 / 0.0`. | §1 rule 3 |
+| V1 | Whether data are passed by value or by reference | by value, always: there is no reference, borrow or pointer, and no lifetime. `&` is the bitwise operator only. | §1 rule 2, §1.2.6, §1.4.6 |
+| V2 | Which locals may be assigned | every one: `mut` is gone, with `ref` and `move`; the three are reserved words (`E0903`). A parameter, `self` included, is not a place. | §1.5.12, §1.7.7, A.1 |
+| V3 | What happens to a value used twice | it is copied: no move, no `Copy`, no `Clone`, no `clone()`. The two names are not accepted as empty derives: they do not resolve (`E0161`). | §1.4.6, H.8 rule 1 |
+| V4 | Slices | none. An array is a value; a function over any length takes `const N: usize`; `e[a..b]` is the array `[T; b - a]`, with const bounds; `resolve` takes `[T; N]`. | §1.2.5, §1.5.9, §4 rule 8 |
+| V5 | Strings | `str` is a value type, the text of a literal; `&str`, `&'static str` and the lifetime `'static` are gone. | §1.2.9, A.1 |
+| V6 | Methods that change a value | `self` is a copy; the method returns the new value and the caller assigns it, `s = s.step(x)`. There is no shorthand. | §3.1.10 |
+| V7 | What is reached by identity | hardware only: carriers, nodes, instances and bundles, through ports, connections and handles. Shared state changes only by a definition, a commit or a contribution, at the time its rule gives. | §1.4.7, §3.1 |
 
-G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)). S1 to S5 number the decisions of the standard library ([§22](part_vii_stdlib.md#22-standard-library)).
+G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)). S1 to S5 number the decisions of the standard library ([§22](part_vii_stdlib.md#22-standard-library)). V1 to V7 number the decisions of value semantics (G.71).
 
 ### Other closed items
 
@@ -431,3 +477,4 @@ G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the de
 | G.18 | bundles and `Fn(P)` (§7, §8.4) |
 | G.26 | `above` (§22.2.5) |
 | G.27, G.31 | relaxation of loops among resolved drives (§8.2.3) |
+| G.28, G.29, G.45, G.46, G.55, G.57 | the explicit model of unknowns: nothing is merged and nothing is gated (G.72) |

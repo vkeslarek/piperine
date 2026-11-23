@@ -1,0 +1,28 @@
+//! Pump-action: a 12 V controller that empties a tank.
+//!
+//! Two float switches watch the tank. When the top one closes (tank full) the pump starts and
+//! stays on, latched, while the level falls. When the bottom one closes (tank empty) the pump
+//! keeps running for an adjustable time `T` (1 to 25 s, one pot) and then stops. It stays off
+//! while the tank refills, although the bottom float is closed at the start of the refill.
+//!
+//! One NE555 does both jobs, latch and timer, straight from the 12 V rail:
+//!
+//! | Namespace    | What it holds                                                        |
+//! | ------------ | -------------------------------------------------------------------- |
+//! | `parts`      | resistor, capacitor, diode, supply, pot, a switch closed by a `Bit`  |
+//! | `ne555`      | the timer IC: divider, two comparators, latch, output, discharge     |
+//! | `relay`      | coil (R + L) and a contact with pick-up / drop-out hysteresis        |
+//! | `controller` | `PumpAction`: the board, wired exactly as the schematic in README.md |
+//!
+//! The pump, the floats and the tank are the outside world: `Pump` is here because every bench
+//! needs one, the tank lives in `benches/cycle.msl`.
+
+pub mod parts;
+
+pub mod ne555;
+
+pub mod relay;
+
+pub mod controller;
+
+pub use crate::controller::{PumpAction, Pump};

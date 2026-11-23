@@ -161,3 +161,9 @@ _context_default_compiles_for_later_tests	a compile stub for the recording Eleme
 milne_lte_is_positive_for_curvature	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller: the state estimate skips nothing (solver-hygiene T23)
 milne_lte_is_zero_for_constant_charge	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller (solver-hygiene T23)
 milne_lte_is_zero_for_linear_charge	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller (solver-hygiene T23)
+a_settle_commit_with_no_delay_is_refused	a settle commit is held, not refused (unknown-semantics-events T7, section 15 S1): replaced by a_settle_commit_is_held_until_it_is_landed
+a_moving_known_field_is_zeroed_and_observed	a loop that still moves after the bounded passes is E0511, there is no known byte to zero (explicit-unknowns T36, T37): replaced by a_moving_loop_is_e0511_not_a_value_made_up
+a_non_canonical_write_is_a_fault_through_a_function_a_commit_and_the_host	the canonical-form check went with the known byte (explicit-unknowns T36): a pin holds the bytes of its type and nothing else
+a_valueless_field_with_value_bytes_is_not_canonical	the canonical-form check went with the known byte (explicit-unknowns T36)
+shipped_layouts_have_their_stated_fields	the shipped layouts hold the value only (explicit-unknowns T36): replaced by the_shipped_layouts_hold_the_value_only
+a_moving_field_without_a_known_byte_fails	there is no known byte any more; a loop that always moves is E0511 (explicit-unknowns T37): replaced by a_counter_that_always_moves_is_e0511
