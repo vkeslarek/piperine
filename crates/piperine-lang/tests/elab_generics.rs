@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 #[allow(dead_code)]
 mod support;
 
+#[path = "support/elab_forms.rs"]
+#[allow(dead_code)]
+mod elab_forms;
+
+use elab_forms::IrReading;
 use support::Elab;
 
 /// The source files of `piperine_lang::elab`.
@@ -323,4 +328,27 @@ fn each_instance_of_a_generic_hand_written_repr_has_its_own_codec() {
     }
     found.sort();
     assert_eq!(found, [("bool".to_string(), 2), ("u8".to_string(), 16)]);
+}
+
+#[test]
+fn a_const_fn_and_a_generic_repeat_fold_in_a_const_context() {
+    // GN-14 AC 2 (§3.8, §1.8): a `const fn` called as a param value folds with arrays and loops, and an array repeat whose
+    // length reads a const generic folds in a generic `const fn` called with explicit arguments
+    let src = "\
+        const fn poly_q(coefficients: [f64; 3]) -> f64 { let sum = 0.0; for k in 0..3 { sum += coefficients[k] * (k as f64 + 1.0); } sum }\n\
+        const fn zeros<const N: usize>() -> [f64; N + 1] { [0.0; N + 1] }\n\
+        const fn tail_sum<const N: usize>(xs: [f64; N]) -> f64 { let wide = [1.0; N + 1]; let sum = 0.0; for k in 0..N + 1 { sum += wide[k]; } sum + xs[N - 1] }\n\
+        module Top() {\n\
+            q: f64 = poly_q([1.0, 2.0, 3.0]);\n\
+            z: f64 = zeros::<3>()[3] + 7.0;\n\
+            t: f64 = tail_sum([4.0, 5.0]);\n\
+        }\n";
+    let ir = Elab::ir(src, "Top");
+    let real = |name: &str| match IrReading::default_of(&ir, name) {
+        piperine_ir::Constant::Real(value) => value.get(),
+        other => panic!("{name} is {other:?}"),
+    };
+    assert_eq!(real("q"), 1.0 + 4.0 + 9.0, "a `const fn` over an array and a loop");
+    assert_eq!(real("z"), 7.0, "an array repeat of a generic length (3 + 1 = 4 elements)");
+    assert_eq!(real("t"), 3.0 + 5.0, "a repeat of `N + 1` read in a loop");
 }

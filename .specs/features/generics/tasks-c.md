@@ -430,8 +430,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_const_fn_and_a_generic_repeat_fold_in_a_const_context` passes under `**Run elabgen**`
-- [ ] Gate check passes: Full (last task of batch B10)
+- [x] `a_const_fn_and_a_generic_repeat_fold_in_a_const_context` passes under `**Run elabgen**`
+- [x] Gate check passes: Full (last task of batch B10)
 
 **Tests**: integration
 **Gate**: full
@@ -1091,7 +1091,23 @@ is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C127. B10 = 
 (4) Continue from the draft: merge `origin/wip/generics-c-b10` into T60/T61's work, then put `ModelCheck`'s seeding and the
 placement typing behind the gate (the draft's `refuse_generic_placements` becomes `UnfinishedForms`); its `GAPS.md` S3 drop
 and `gaps_drops_s3` move to T71.
-**Dispatched:** none yet.
+**B10 done (T59, T116, T60, T61, T117, T62, T63, T64; 2026-11-23).** Executed under the user's AFK standing instruction; the
+approval of the 2026-11-23 amendment (gate, G1 to G9, T116, T117) is pending, no Approved line written.
+(1) The draft was taken as code and tests only (specs, `GAPS.md` S3 drop and `gaps_drops_s3` left for T71). The gate is
+`types/unfinished.rs` (`UnfinishedForm`, `UnfinishedForms::{closed, admitting, admits, IN_FORCE}`), `Types::check_admitting` and
+`Types::check_model_admitting`, the `Checker.forms` field; the pin `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed`
+is in `types_model.rs`; tests admit through `GenericSources::admitting_found` and `Admitted` in `types_generic_modules.rs`.
+Generation and digital generation are not yet read from the gate (their checker `P0001` is unchanged); T72/T78 start reading
+`self.forms.admits(..)`. (2) T61 pushes the placement on `placing` before typing its arguments (G5), `_` generic arguments are
+skipped in `explicit_arguments`. `[S; N]` (an array of a nature parameter) as a port type is still `P0001` "value input port of
+type `[S; N]`": owner T68 or the ladder tasks if the Book needs it. (3) T117: `pom::PortArguments` (crate-private) binds
+positional then named arguments; the POM already reports `E0140` for every bad name, so the checker only counts; the
+`hoist.rs` elaborator reads the same binding; the `types_subset` row "named argument of a result module" left. (4) T63 and T64
+were already satisfied by T56 and the earlier phases: their tests pin it (T64 over plain generic `const fn`s); the half of
+T64 that reads `N` of a generic *module* (`[0.0; N + 1]`, `[false; N]`) is proven in T65 to T68's tests. (5) Env: commands over
+about 120 s are moved to the background by the harness and notify on completion; helper scripts in
+`/var/tmp/piperine-tmp-d/helpers` (`gate.sh`, `build.sh`, `lang.sh`, `commit.sh`).
+**Dispatched:** none.
 **Walked:** none yet.
 
 ---
