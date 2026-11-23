@@ -148,9 +148,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `the_numeric_crate_is_embeddable_source` passes under `**Run purity**`
-- [ ] The Handoff names every anchor found or its difference
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `the_numeric_crate_is_embeddable_source` passes under `**Run purity**`
+- [x] The Handoff names every anchor found or its difference
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -1062,6 +1062,9 @@ Proof: `cargo build -p piperine-numbers -p piperine-abi -p piperine-digital-solv
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
+**Defaults and findings (D1 to D3, numeric crate):**
+- T91 anchors re-read on main (52b2223c): all found. Differences: check.rs sized_type is at 460-475 and integer_type 505-515 (a GenericInteger{signed,width} Ty variant and ConstTerm already exist, so D4's checker widening must carry it); catalogue.rs keys F64_METHODS/INTEGER_METHODS at 69/105 and dispatch at 140-141 (INTEGER_METHODS also covers Ty::GenericInteger); consts.rs wrap is 1i128 << bits at 918/933/942; model.rs ValueType at 906 and Constant at 1034; rt.rs Runtime::files(digital: bool) at 58; Cell at table.rs:19; rust_type refusal at print/value.rs ~605; types check at ir check.rs 773. No tasks-d.md approval line exists; the caller authorized execution.
+
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

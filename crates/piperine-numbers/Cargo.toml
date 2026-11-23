@@ -1,0 +1,11 @@
+[package]
+name = "piperine-numbers"
+version.workspace = true
+edition.workspace = true
+description = "Numbers of any width: limb integers, exact f16, correctly rounded f128 (embeddable source, MD-63 item 1)"
+
+[dependencies]
+
+[dev-dependencies]
+# Test oracle only: exact rational arithmetic the library under test is compared against.
+num-bigint = "0.4"

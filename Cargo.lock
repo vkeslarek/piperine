@@ -1449,6 +1449,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-numbers"
+version = "0.2.0"
+dependencies = [
+ "num-bigint",
+]
+
+[[package]]
 name = "piperine-parity"
 version = "0.2.0"
 dependencies = [
