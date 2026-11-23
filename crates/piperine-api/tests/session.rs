@@ -531,6 +531,57 @@ const WRAPPED: &str = "enum Mode { Fast, Slow }\n\
       let i = Inner { rs3: rt * 2.0, rs4: a + b, r: match md { Mode::Fast => 1000.0, Mode::Slow => 3000.0 }, rs2: rt, md3: match k { 0 => Mode::Fast, _ => Mode::Slow }, n: n, md: md, rs: rs, big: big, md2: if slow { Mode::Slow } else { Mode::Fast } }(p); }\n\
     module Top() { signal a: Electrical; let v1 = Vsource(a); let w = Wrap { rs: 2k }(a); }\n";
 
+const PASSED: &str = "enum Mode { Fast, Slow }\n#[derive(Repr, PartialEq)]\nstruct Cfg { g: f64, n: u8 }\n\
+    module Inner(p: Electrical) { n: u8 = 1; md: Mode = Mode::Fast; rs: Option<f64>; cfg: Cfg = Cfg { g: 1.0, n: 1 }; r: f64 = 1.0; big: u64 = 0; }\n\
+    analog for Inner { i(p, gnd) +> (n as f64) * v(p) / 1k + match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / rs.unwrap_or(1k) + cfg.g * v(p) / 1k + r * v(p) / 1k; }\n\
+    module Wrap(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; cfg: Cfg = Cfg { g: 1.0, n: 1 }; rt: f64 = 3000.0; big: u64 = 0; \
+      let i = Inner { n: n, md: md, rs: rs, cfg: cfg, r: rt * 2.0, big: big }(p); }\n\
+    module Top() { signal a: Electrical; let w = Wrap(a); }\n";
+
+#[test]
+fn a_description_shows_the_values_a_run_reads_for_every_param_kind() {
+    // F38, HII-10: `Session::describe` and `Session::open` apply a host value through the one write path (`Pins`), so the child of every
+    // param a placement passes down reads the same in the description as in the run: an integer, an enum, an `Option`, a leaf of a
+    // composite, a scalar a placement scales, and an integer above 2^53
+    let (_dir, file) = lone(PASSED);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = || Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let texts = [("Top.w.n", "6"), ("Top.w.md", "Slow"), ("Top.w.rs", "3000"), ("Top.w.cfg.g", "2.5"), ("Top.w.rt", "2500"), ("Top.w.big", "9007199254740993")];
+    let overrides = Overrides { param_texts: texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect(), ..flags("op", "rust", Some("Top")) };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let (_, described) = Session::describe(&project, &spec, &|| Ok(settings())).unwrap_or_else(|f| panic!("{f}"));
+    let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let run = session.metadata();
+    let value = |metadata: &piperine_api::Metadata, path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone()).unwrap_or_else(|| panic!("no `{path}`"));
+    for param in ["n", "md", "rs", "cfg", "r", "big"] {
+        let path = format!("Top.w.i.{param}");
+        assert_eq!(value(&described, &path), value(&run, &path), "{path}: the description is what the run reads");
+    }
+    // and they are the values written, not the defaults
+    assert_eq!(value(&described, "Top.w.i.n"), piperine_api::Cell::Int(6));
+    assert_eq!(value(&described, "Top.w.i.md"), piperine_api::Cell::Text("Slow".into()));
+    assert_eq!(Typed::literal(value(&described, "Top.w.i.rs")), "Some(3000)");
+    assert_eq!(value(&described, "Top.w.i.r"), piperine_api::Cell::Real(5000.0));
+    assert_eq!(value(&described, "Top.w.i.big"), piperine_api::Cell::Int(9_007_199_254_740_993));
+    let cfg = |metadata: &piperine_api::Metadata| format!("{:?}", value(metadata, "Top.w.i.cfg"));
+    assert!(cfg(&described).contains("2.5"), "a leaf of a composite reaches the child: {}", cfg(&described));
+}
+
+#[test]
+fn a_described_option_and_leaf_reach_the_child() {
+    // F38: `Top.w.rs=3000` shows `Some(3000)` in the child, not `None`; `Top.w.cfg.g=2.5` shows 2.5, not 1.0 (numeric `--param` form too)
+    let (_dir, file) = lone(PASSED);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let cache = tempfile::tempdir().expect("a cache");
+    let overrides = Overrides { params: vec![("Top.w.cfg.g".into(), 2.5)], param_texts: vec![("Top.w.rs".to_string(), "3000".to_string())], ..flags("op", "rust", Some("Top")) };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let (_, metadata) = Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: cache.path().to_path_buf() })).unwrap_or_else(|f| panic!("{f}"));
+    let value = |path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone()).unwrap_or_else(|| panic!("no `{path}`"));
+    assert_eq!(Typed::literal(value("Top.w.i.rs")), "Some(3000)");
+    assert!(format!("{:?}", value("Top.w.i.cfg")).contains("2.5"), "{:?}", value("Top.w.i.cfg"));
+}
+
 #[test]
 fn describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_plan() {
     // F34: `Session::describe` with a host value for `Top.w.n`, which a placement passes to an integer param of the child, cannot be

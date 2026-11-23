@@ -30,6 +30,7 @@ use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
 use crate::param_text::{ParamText, Scalar as ParamScalar};
+use crate::pins::{Pins, Unbound};
 use crate::params::{Changed, Derive, Evaluated, LeafChange, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
@@ -229,7 +230,7 @@ impl ParamTarget {
 impl Session {
     /// Writes `value` to `leaf` of the composite param `path` names: the whole value after the write
     /// is checked against the param's `where` (`E0317`) before anything is changed, then written.
-    pub(crate) fn set_leaf(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
+    pub(crate) fn set_leaf(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
         let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
         Session::write_leaf_change(table, derive, circuit, path, &change, &value.to_string())
     }
@@ -237,7 +238,7 @@ impl Session {
     /// Writes `text` to the param `path` names as its type reads it (PI-01 to PI-03, D24): an integer
     /// literal, a variant name, `None` or a value of `T`. A refusal changes nothing (`E0802`). An integer an
     /// `f64` cannot hold is written as its exact pin bytes (PI-01 AC 4).
-    pub(crate) fn set_text_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
+    pub(crate) fn set_text_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
         Session::write_text(table, derive, circuit, ir, path, text).map_err(|failure| Session::name_text(failure, &path.label(), text))
     }
 
@@ -254,7 +255,7 @@ impl Session {
     }
 
     /// [`Session::set_text_param`] before its refusals are renamed.
-    fn write_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
+    fn write_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
         let read = ParamText::read(ir, path, text)?;
         match read.option_leaves(&path.label())? {
             None => match read {
@@ -281,7 +282,7 @@ impl Session {
 
     /// Writes an integer no `f64` holds exactly to its pin as the pin's own bytes, and recomputes what a placement derives from it from
     /// those bytes (PI-01 AC 4, §8.1.23).
-    fn set_exact_integer(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
+    fn set_exact_integer(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
         let ParamScalar::Integer(value) = scalar else { return Ok(()) };
         let changes = table.changes_integer(&path.instance, &path.param, value, derive)?;
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
@@ -289,14 +290,14 @@ impl Session {
             if Session::unwritten(circuit, change, forwarded) {
                 return Ok(());
             }
-            circuit.set(&change.instance, &change.param, change.param_value()).map_err(|error| error.to_string())
+            circuit.write(&change.instance, &change.param, change.param_value())
         };
         table.write_changes(&changes, &mut write)
     }
 
     /// Writes the `--param` entry `text` of `target`: a leaf of a composite takes a number or a flag, a whole param is read
     /// by its type. A structural param is an elaboration input already used, so the text is only checked against its type.
-    pub(crate) fn set_target_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, target: &ParamTarget, text: &str) -> Result<(), Failure> {
+    pub(crate) fn set_target_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, target: &ParamTarget, text: &str) -> Result<(), Failure> {
         match &target.leaf {
             Some(leaf) => {
                 let number = table.leaf_number(&target.param.instance, &target.param.param, leaf, text)?;
@@ -309,14 +310,13 @@ impl Session {
 
     /// Checks `change` against the param's `where` (`E0317`), writes it to `circuit` and takes it into `table`;
     /// `shown` is the value as the host gave it, for the refusals.
-    fn write_leaf_change(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
+    fn write_leaf_change(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
         let label = change.label();
         let changes = table.changes_composite(&path.instance, &path.param, change.bytes.clone(), shown, derive)?;
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
         // the `where` of the param is checked where a device pin holds it; a param no pin holds is not written when others derive from it
-        if Session::pinned(circuit, &path.instance, &path.param) {
-            circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
-                let text = error.to_string();
+        if circuit.holds(&path.instance, &path.param) {
+            circuit.check(&path.instance, &path.param, &change.param_value()).map_err(|text| {
                 if text.contains("is refused, check") {
                     Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {shown} written at `{label}`", path.instance, path.param) }
                 } else {
@@ -328,14 +328,9 @@ impl Session {
             if Session::unwritten(circuit, changed, forwarded) {
                 return Ok(());
             }
-            circuit.set(&changed.instance, &changed.param, changed.param_value()).map_err(|error| error.to_string())
+            circuit.write(&changed.instance, &changed.param, changed.param_value())
         };
         table.write_changes(&changes, &mut write)
-    }
-
-    /// Whether a device pin holds the param `param` of `instance`.
-    fn pinned(circuit: &CircuitInstance, instance: &str, param: &str) -> bool {
-        circuit.bound().is_some_and(|bound| bound.names.params.contains_key(&(instance.to_string(), param.to_string())))
     }
 }
 
@@ -433,13 +428,13 @@ impl Session {
     /// instance order (X9). A param no device pin holds is not written when others derive from
     /// it, or when it is itself derived: nothing reads it on a device, and what derives from it
     /// is written. A refusal changes nothing (`E0802`).
-    pub(crate) fn set_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, value: f64) -> Result<(), Failure> {
+    pub(crate) fn set_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, value: f64) -> Result<(), Failure> {
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
         let mut write = |change: &Changed| {
             if Session::unwritten(circuit, change, forwarded) {
                 return Ok(());
             }
-            circuit.set(&change.instance, &change.param, change.param_value()).map_err(|error| error.to_string())
+            circuit.write(&change.instance, &change.param, change.param_value())
         };
         table.set(&path.instance, &path.param, value, derive, &mut write).map(|_| ())
     }
@@ -447,9 +442,8 @@ impl Session {
     /// Whether `change` is left unwritten: no device pin holds the param, and it is itself
     /// derived or others derive from it (`forwarded`). A pinless param nothing derives from is
     /// still written, so the circuit's refusal names it.
-    pub(crate) fn unwritten(circuit: &CircuitInstance, change: &Changed, forwarded: bool) -> bool {
-        let pinned = circuit.bound().is_some_and(|bound| bound.names.params.contains_key(&(change.instance.clone(), change.param.clone())));
-        !pinned && (change.derived || forwarded)
+    pub(crate) fn unwritten(circuit: &dyn Pins, change: &Changed, forwarded: bool) -> bool {
+        !circuit.holds(&change.instance, &change.param) && (change.derived || forwarded)
     }
 
     /// The context a run's options give: the solver's own default with each given option in its
@@ -962,46 +956,17 @@ impl Session {
             Some(compiled) => compiled,
             None => &evaluated,
         };
+        let mut unbound = Unbound;
         for (entry, value) in &spec.params {
             let target = ParamTarget::resolve(&ir, ir.top().path(), entry)?;
             match &target.leaf {
-                Some(leaf) => {
-                    let change = table.leaf_change(&target.param.instance, &target.param.param, leaf, *value)?;
-                    table.apply_leaf(&change);
-                }
-                None => {
-                    table.set(&target.param.instance, &target.param.param, *value, Some(derive), &mut |_| Ok(()))?;
-                }
+                Some(leaf) => Session::set_leaf(&mut table, Some(derive), &mut unbound, &target.param, leaf, *value)?,
+                None => Session::set_param(&mut table, Some(derive), &mut unbound, &target.param, *value)?,
             }
         }
         for (entry, text) in &spec.param_texts {
             let target = ParamTarget::resolve_text(&ir, ir.top().path(), entry)?;
-            let path = &target.param;
-            if let Some(leaf) = &target.leaf {
-                let number = table.leaf_number(&path.instance, &path.param, leaf, text)?;
-                let change = table.leaf_change(&path.instance, &path.param, leaf, number)?;
-                table.apply_leaf(&change);
-                continue;
-            }
-            let read = ParamText::read(&ir, path, text)?;
-            if path.is_structural(&ir) {
-                continue;
-            }
-            match (read.option_leaves(&path.label())?, read) {
-                (Some(leaves), _) => {
-                    for (leaf, value) in leaves {
-                        let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
-                        table.apply_leaf(&change);
-                    }
-                }
-                (None, ParamText::Whole(scalar)) => {
-                    table.set(&path.instance, &path.param, scalar.exact_real().unwrap_or(f64::NAN), Some(derive), &mut |_| Ok(()))?;
-                    if let (None, ParamScalar::Integer(value)) = (scalar.exact_real(), scalar) {
-                        table.keep_exact(&path.instance, &path.param, value);
-                    }
-                }
-                (None, ParamText::Option { .. }) => {}
-            }
+            Session::set_target_text(&mut table, Some(derive), &mut unbound, &ir, &target, text)?;
         }
         Ok((top, Metadata::of(&ir, &table)))
     }

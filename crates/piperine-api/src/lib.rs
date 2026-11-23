@@ -20,6 +20,7 @@ pub mod backend;
 pub mod composite;
 pub mod failure;
 mod held;
+mod pins;
 mod host;
 pub mod prelude;
 pub mod metadata;
