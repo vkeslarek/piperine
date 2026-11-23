@@ -8,6 +8,7 @@ pub mod contribution;
 pub mod control;
 pub mod cross;
 pub mod derive;
+pub mod delay;
 pub mod derivative;
 pub mod digital;
 pub mod library;
@@ -22,6 +23,7 @@ pub mod value;
 
 pub use analog::AnalogPrinter;
 pub use contribution::ContributionSums;
+pub use delay::DelayPrinter;
 pub use derivative::DerivativePrinter;
 pub use derive::DerivePrinter;
 pub use digital::DigitalPrinter;

@@ -778,8 +778,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `the_delay_terms_clamp_td_to_max` and `the_delay_function_faults_453` pass
-- [ ] Gate check passes: `Run tops`, `Run tgolden`, then `Run twins`
+- [x] `the_delay_terms_clamp_td_to_max` and `the_delay_function_faults_453` pass
+- [x] Gate check passes: `Run tops`, `Run tgolden`, then `Run twins`
 
 **Tests**: integration
 **Gate**: full

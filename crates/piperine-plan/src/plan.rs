@@ -751,8 +751,15 @@ impl BodyPlan {
             for set in &sets {
                 all.union(set);
             }
-            // `terms` also writes the `TIME` of each delay: `td`, read like any other input
-            let times: Vec<ReadSet> = (0..body.delays().len() as u32).map(|k| ReadSet::target(body, Query::DelayTime(k))).collect();
+            // `terms` also writes the `TIME` of each delay, `min(td, max)`: it reads what `td` and
+            // `max` read, like any other input
+            let times: Vec<ReadSet> = (0..body.delays().len() as u32)
+                .map(|k| {
+                    let mut set = ReadSet::target(body, Query::DelayTime(k));
+                    set.union(&ReadSet::target(body, Query::DelayMaximum(k)));
+                    set
+                })
+                .collect();
             for set in &times {
                 all.union(set);
             }

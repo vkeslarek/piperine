@@ -139,6 +139,8 @@ pub struct Reads {
     pub flows: Vec<String>,
     /// By derivative site: the variable of its rate pin (`rate(D<k>)`, analog-structure AS-07).
     pub derivatives: Vec<String>,
+    /// By delay site: the variable of its output pin (`delay<k>.value`, analog-operators AO-02).
+    pub delays: Vec<String>,
     /// By body param: the variable its pin's `PREVIOUS` was decoded into (`p.prev()`, §5.3.1).
     pub param_previous: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
@@ -758,9 +760,10 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the rate of a derivative site")),
             },
-            // SPEC_DEVIATION: a delay is refused until T28 prints its site.
-            // Reason: the IR form lands first (T17); a form with no printer fails loud.
-            Expr::Delay(_) => Err(self.unsupported(e, "delay")),
+            Expr::Delay(k) => match self.analog.as_ref().and_then(|r| r.delays.get(*k as usize)) {
+                Some(name) => atom(self.read(name)),
+                None => Err(self.unsupported(e, "the output of a delay site")),
+            },
             Expr::Noise(_) => Err(self.unsupported(e, "noise")),
             Expr::SessionParameter { .. } => Err(self.unsupported(e, "simparam")),
             Expr::ParamPrevious(p) => match self.analog.as_ref().and_then(|r| r.param_previous.get(*p as usize)) {
