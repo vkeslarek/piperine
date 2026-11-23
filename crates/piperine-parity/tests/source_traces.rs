@@ -93,6 +93,18 @@ fn a_trace_writes_one_record_per_evaluation_with_path_analysis_instant_and_itera
 }
 
 #[test]
+fn a_trace_written_through_a_fn_is_the_trace_of_its_call() {
+    // AO-09 AC 1 (§19 rule 10, GAPS L72): `note(v(a))` with `fn note(level) { emit!("newton", v = level); }` writes the
+    // records `emit!("newton", v = v(a))` writes: the same instants and values as the diode bench's.
+    let (_, direct) = Traced::run("DiodeBench", Traced::op());
+    let (_, through) = Traced::run("FnTracedBench", Traced::op());
+    let values = |records: &[Record]| records.iter().map(|r| (r.iteration, Traced::real(r, "v"))).collect::<Vec<_>>();
+    assert!(!through.is_empty());
+    assert_eq!(values(&through), values(&direct));
+    assert!(through.iter().all(|r| r.instance == "FnTracedBench.d" && r.stream == "newton"), "{through:?}");
+}
+
+#[test]
 fn traces_are_recorded_only_for_a_named_stream() {
     // AO-09 AC 6 (Q5): with no stream named the host receives no trace; naming another stream receives none either.
     let (_, none) = Traced::run("DiodeBench", Overrides { streams: vec![], ..Traced::op() });

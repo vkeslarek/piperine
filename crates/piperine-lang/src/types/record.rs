@@ -111,13 +111,6 @@ impl Checker<'_> {
         self.coded(file, "E0603", span, message, "`analog` writes a reserved stream");
     }
 
-    /// An `emit!` on a stream other than `sim` and `checks` that a `fn` reaches, called from
-    /// `analog`: a trace written inside a function needs a watch buffer passed through calls,
-    /// which the elaborator does not lower (design D14), so it is refused naming the `fn`.
-    fn analog_trace_through(&mut self, file: FileId, span: Span, function: &str) {
-        self.unsupported(file, span, &format!("an `emit!` reached from `analog` through the `fn` `{function}`"));
-    }
-
     /// A call of `function`, which may reach `emit!`: from `analog` it writes neither `sim` nor `checks`
     /// (`E0603`). Where an emitting call may not stand at all, in a definition, a body `let` or a const
     /// context, it is `E0122` (`refuse_outside_class`); `E0601` is `emit!` written directly (§19 rule 10).
@@ -134,9 +127,6 @@ impl Checker<'_> {
         if self.context == Context::Analog {
             if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
                 self.analog_writes_reserved(file, span, &stream.clone());
-            } else {
-                let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                self.analog_trace_through(file, span, &name);
             }
         }
     }

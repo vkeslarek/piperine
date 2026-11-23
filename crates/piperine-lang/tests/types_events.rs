@@ -505,27 +505,18 @@ fn a_check_reached_from_analog_is_e0603() {
         assert_eq!(snippet(&src, &d[0]), at, "{src}");
     }
     // analog-operators T23: an `emit!` written in `analog` on another stream is a trace and checks; a `log` is a
-    // call of a `fn` that emits, which stays P0001 (design D14), and neither is an `E0603`.
-    let src = "module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); log(Severity::Info, \"stepped\"); }";
-    assert_eq!(codes(&diagnostics(src)), ["P0001"], "a trace is no `E0603` and a `log` in `analog` is one `P0001`");
+    // call of a `fn` that emits, inlined where it is called (closing round, GAPS L72), and neither is an `E0603`.
+    checked_top("module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); log(Severity::Info, \"stepped\"); }", "Top");
 }
 
 #[test]
-fn an_emit_in_analog_is_p0001_by_name() {
-    // Edge case 7 (verification F3), as analog-operators T23 left it: an `emit!` written in `analog` is a trace (AO-09)
-    // and checks. One reached through `log` or through a `fn` is one `P0001` naming the `fn`, at the call in `analog` (design D14); never a model
-    // that checks and then fails elaboration.
+fn an_emit_reached_from_analog_through_a_fn_checks() {
+    // Edge case 7 (verification F3), as the closing round of analog-operators leaves it (GAPS L72): an `emit!` written
+    // in `analog` is a trace (AO-09), and one reached through `log` or through a `fn` is the trace of the call, which
+    // the elaborator inlines where it stands (§19 rule 10); only `sim` and `checks` are `E0603`.
     let items = "fn note(x: f64) { emit!(\"trace\", x = x); }\n";
-    for (src, at) in [
-        (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ log(Severity::Info, \"stepped\"); i(p) +> v(p); }}"), "log(Severity::Info, \"stepped\")"),
-        (format!("{items}module Top(p: Electrical) {{ }}\nanalog for Top {{ note(v(p)); i(p) +> v(p); }}"), "note(v(p))"),
-    ] {
-        let d = diagnostics(&src);
-        assert_eq!(codes(&d), ["P0001"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert_eq!(snippet(&src, &d[0]), at, "{src}");
-        assert!(d[0].diagnostic.message.contains("an `emit!` reached from `analog` through the `fn`"), "{}", d[0].diagnostic.message);
-    }
-    // Written in `analog`, the trace checks (the elaborator refuses it until T37).
+    checked_top("module Top(p: Electrical) { }\nanalog for Top { log(Severity::Info, \"stepped\"); i(p) +> v(p); }", "Top");
+    checked_top(&format!("{items}module Top(p: Electrical) {{ }}\nanalog for Top {{ note(v(p)); i(p) +> v(p); }}"), "Top");
     checked_top("module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); i(p) +> v(p); }", "Top");
     // The same `log` in a reaction checks.
     checked_top("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { log(Severity::Info, \"stepped\"); } }", "Top");
