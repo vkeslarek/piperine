@@ -135,6 +135,8 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 1. WHEN a project writes `impl Repr for T` with `WIDTH`, `encode` and `decode` (a one-hot or Gray encoding) THEN the system SHALL carry `Bit<T>` with that layout.
 2. WHEN a hand-written `decode` returns `None` THEN the system SHALL return the `None` to the caller (§2 rule 9 as MD-78 amends it).
+3. WHEN a project writes `impl<T: Repr> Repr for Pair<T>` for a generic type THEN the system SHALL carry each instance with the layout of that `impl` (phase C; until then each such use is `P0001` naming the form, GAPS L69).
+4. WHEN a carrier of a hand-written type has a `Default` and no initial value THEN the system SHALL start it at the levels `encode` gives for that default (phase C; until then `P0001` naming the form, GAPS L69).
 
 **Acceptance Criteria** (GN-06, generic value types):
 

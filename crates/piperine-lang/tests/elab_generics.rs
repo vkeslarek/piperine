@@ -187,3 +187,21 @@ fn a_bound_that_writes_the_trait_arguments_picks_the_impl_of_that_list() {
     let ir = IrFunctions::of(items, "v(o) +> as_real(Cell) + as_byte(Cell) as f64;");
     assert_eq!(IrFunctions::names(&ir), ["as_real::<Cell>", "Cell.to::<f64>", "as_byte::<Cell>", "Cell.to::<u8>"]);
 }
+
+#[test]
+fn a_carrier_of_a_hand_written_type_with_no_initial_value_is_refused_by_name() {
+    // the `Default` of a hand-written `Repr` type needs `encode` run on a value no expression writes: until phase C the
+    // elaborator refuses it by name instead of starting the carrier at zero levels, which `decode` may not read as the default
+    let src = "#[derive(Default, PartialEq)] struct Slot { v: Option<bool> }\nimpl Repr for Slot {\n    const WIDTH: u32 = 2;\n    fn encode(self) -> [bool; 2] { [true, true] }\n    fn decode(l: [bool; 2]) -> Option<Slot> { Some(Slot { v: None }) }\n}\nmodule Top() { signal s: Bit<Slot>; }\n";
+    let found = Elab::run(src, "Top").err().expect("refused");
+    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a carrier of a type with a hand-written `Repr` and no initial value")), "{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_hand_written_repr_on_a_generic_type_is_refused_by_name() {
+    // an instance of a generic type would be laid out from its fields although the checker reads its `WIDTH` from the
+    // `impl`: refused by name until phase C instead of carrying the wrong layout
+    let src = "#[derive(PartialEq)] struct Pair<T> { a: T, b: T }\nimpl<T: Repr> Repr for Pair<T> {\n    const WIDTH: u32 = 2;\n    fn encode(self) -> [bool; 2] { [true, true] }\n    fn decode(l: [bool; 2]) -> Option<Pair<T>> { None }\n}\nmodule Top() { signal s: Bit<Pair<bool>> = Pair { a: true, b: false }; }\n";
+    let found = Elab::run(src, "Top").err().expect("refused");
+    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a hand-written `Repr` on a generic type")), "{:?}", found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
+}

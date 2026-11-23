@@ -43,6 +43,11 @@ impl Elaboration<'_, '_> {
         let mut layouts = Vec::new();
         for (owner, decl) in impls {
             if self.type_arena.id_of(decl).is_none() {
+                // an instance of a generic type would be laid out from its fields, silently: refused by name until phase C
+                if self.type_arena.has_instance_of(decl) {
+                    let data = self.design.decl_data(owner);
+                    self.unsupported(data.file, data.span, "a hand-written `Repr` on a generic type");
+                }
                 continue;
             }
             if let Some(layout) = self.lower_hand_written_repr(owner, decl) {
