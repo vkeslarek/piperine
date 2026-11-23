@@ -18,6 +18,7 @@ use num_bigint::{BigInt, BigUint};
 use piperine_numbers::constants::ReferenceConstants;
 use piperine_numbers::quad::Float128;
 use piperine_numbers::reduction::ArgumentReduction;
+use piperine_numbers::ziv::ZivRounding;
 use piperine_numbers::precision::{Interval, MultiPrecision, Rounding};
 use random::Xorshift;
 use std::cmp::Ordering;
@@ -314,4 +315,52 @@ fn reduction_keeps_full_precision_for_every_finite_argument() {
         scenario.check_ln_two(value, 160);
         scenario.check_ln_two(value, 400);
     }
+}
+
+/// Synthetic evaluations around a midpoint of binary128, to watch the Ziv loop.
+struct MidpointScenario;
+
+impl MidpointScenario {
+    /// `1 + 2^-113`: the midpoint of 1 and its successor `1 + 2^-112`.
+    fn midpoint() -> MultiPrecision {
+        MultiPrecision::exact(false, &[1, 1 << 49], -113)
+    }
+
+    /// The interval `[midpoint + low, midpoint + high]` for offsets given as powers of two (sign, exponent).
+    fn around(low: (bool, i64), high: (bool, i64), precision: u32) -> Interval {
+        let offset = |(negative, exponent): (bool, i64)| MultiPrecision::exact(negative, &[1], exponent);
+        let lower = Self::midpoint().add(&offset(low), 2_000, Rounding::Down);
+        let upper = Self::midpoint().add(&offset(high), 2_000, Rounding::Up);
+        Interval::new(lower, upper, precision)
+    }
+}
+
+#[test]
+fn ziv_rounding_raises_precision_until_the_bounds_agree() {
+    let successor = Float128::from_bits(0x3FFF_0000_0000_0000_0000_0000_0000_0001);
+    // Straddles the midpoint at 160 and 320 bits, lies above it at 640: three evaluations.
+    let mut evaluations = Vec::new();
+    let rounded = ZivRounding::round(None, |precision| {
+        evaluations.push(precision);
+        Some(if precision < 640 { MidpointScenario::around((true, -130), (false, -130), precision) } else { MidpointScenario::around((false, -300), (false, -290), precision) })
+    });
+    assert_eq!(rounded.map(Float128::to_bits), Some(successor.to_bits()), "the value above the midpoint rounds up");
+    assert_eq!(evaluations, vec![160, 320, 640], "precision doubles until the bounds agree");
+    // An exact case returns without evaluating.
+    let mut calls = 0;
+    let exact = ZivRounding::round(Some(Float128::ONE), |_| {
+        calls += 1;
+        None
+    });
+    assert_eq!((exact.map(Float128::to_bits), calls), (Some(Float128::ONE.to_bits()), 0), "an exact case never evaluates");
+    // A midpoint with no exact case straddles at every precision: None at the cap.
+    let mut attempts = 0;
+    let undecided = ZivRounding::round(None, |precision| {
+        attempts += 1;
+        Some(MidpointScenario::around((true, -(precision as i64) - 200), (false, -(precision as i64) - 200), precision))
+    });
+    assert_eq!(undecided.map(Float128::to_bits), None, "an undecidable midpoint gives None at the cap");
+    assert_eq!(attempts, 13, "160 doubling up to 2^20 is thirteen evaluations");
+    // A function outside its domain (no interval) stops the loop at once.
+    assert_eq!(ZivRounding::round(None, |_| None).map(Float128::to_bits), None);
 }

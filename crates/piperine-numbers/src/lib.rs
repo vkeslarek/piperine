@@ -20,3 +20,4 @@ pub mod precision;
 pub mod quad;
 pub mod reduction;
 pub mod wide;
+pub mod ziv;

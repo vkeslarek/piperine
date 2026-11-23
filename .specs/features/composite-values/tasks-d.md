@@ -405,8 +405,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `ziv_rounding_raises_precision_until_the_bounds_agree` passes under `**Run precision**` (a synthetic function whose interval straddles a midpoint at 160 and 320 bits and not at 640 returns the right bits after three evaluations; an exact case returns without evaluating; a function whose value is a midpoint and that offers no exact case returns `None` at the cap)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `ziv_rounding_raises_precision_until_the_bounds_agree` passes under `**Run precision**` (a synthetic function whose interval straddles a midpoint at 160 and 320 bits and not at 640 returns the right bits after three evaluations; an exact case returns without evaluating; a function whose value is a midpoint and that offers no exact case returns `None` at the cap)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T103: ZivRounding::round takes the exact case as an Option<Float128> and a closure from the precision to an Interval (None meaning outside the domain); it starts at 160 bits and doubles to 2^20 (thirteen evaluations); the cap returns None.
 - T102: ArgumentReduction::quarter_turns raises its working precision (precision + exponent + 160, doubling) until the remainder interval is relatively narrow; ln_two_steps takes an Interval (so exp can reduce y*ln x) and refuses values above 2^60. ReferenceConstants quantizes the precision up to a multiple of 256 so nearby requests share one cached entry. The reduction test checks the interval against a 20 000-bit pi (floor from pi_bits.hex, so the oracle remainder is exact within |n| * 2^-20001), skipping only arguments within 2^-200 of a quarter turn where the quadrant is ambiguous; ln 2 is checked against the 1000-decimal value.
 - T101: the constants' tests compare with the committed 1000-decimal values (truncated, from mpmath, cross-checked inside generate.py against the well-known leading digits of OEIS A000796, A002162, A002392; the digits were not typed from memory beyond those prefixes) as consistency intervals [T, T + 10^-1000] since the series interval at 3 300 bits is narrower than the 1000th decimal; the returned interval is carried at precision + 32 guard bits, so it is far narrower than two units in the last place. A static OnceLock<Mutex<HashMap>> caches per (constant, precision).
 - T100: Interval ops take their working precision from the interval; a sticky bit is valid only on a magnitude longer than the precision (documented on MultiPrecision::rounded; add pads the larger operand to precision+3 bits before using the far-operand shortcut, which found a bug the directed-rounding test caught). The tests' shared fixtures were split into small files (tests/support/exact*.rs, one concern each, included per target with #[path]) so no target carries unused code.
