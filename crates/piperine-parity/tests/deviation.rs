@@ -142,14 +142,15 @@ fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
 /// `uic_rc` and `diode_rs` joined them with `analog-structure` (T23, T24): `CapIc` reads
 /// `analysis(..)` and `DiodeRs` selects a contribution by a param, forms the interpreter refuses by
 /// name (T15).
-const COMPILED_ONLY: [&str; 7] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs", "delay_tline"];
+const COMPILED_ONLY: [&str; 8] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs", "delay_tline", "noise_rc"];
 
 /// The twins of `host-ii` whose `parity_*` target measures and prints its own deviation per
-/// quantity (`parity_tf`, `parity_pz`, `parity_sens`): resistances, eigenvalues and derivatives
+/// quantity (`parity_tf`, `parity_pz`, `parity_sens`, and `parity_noise` for the noise twins, whose rows
+/// are densities under `NOISE`): resistances, eigenvalues and derivatives
 /// are not an operating-point node, a waveform or a sweep this table's rows can hold; the gate is
 /// that target under `ToleranceContract`, and the table does not repeat it. `temp_res` is an
 /// operating point and `pss_rc` a waveform, so both are rows here.
-const OWN_TARGET: [&str; 3] = ["pz_lowpass", "sens_divider", "tf_divider"];
+const OWN_TARGET: [&str; 4] = ["noise_rc", "pz_lowpass", "sens_divider", "tf_divider"];
 
 /// The twin `temp_res` at 75 C (the run key `temp`, ngspice's `.options temp=75`) and at the
 /// default 27 C (what ngspice prints as `cold`), `v(mid)` under `DC_VOLTAGE`.

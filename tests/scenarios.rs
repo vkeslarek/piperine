@@ -22,7 +22,7 @@ use piperine_transpile::Settings;
 
 /// The twins only the Rust backend runs: their source reads `now()`, which the interpreter refuses
 /// (the same list `piperine-cli/tests/twins.rs` holds the binary to); `uic_rc` and `diode_rs` read `analysis(..)`.
-const COMPILED_ONLY: [&str; 7] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline"];
+const COMPILED_ONLY: [&str; 8] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc"];
 
 /// A sink that keeps nothing: a scenario reads the table.
 struct Ignore;
@@ -231,6 +231,10 @@ enum Comparison {
     /// ngspice's long transient `export` (`rows` rows, `periods` periods) at the same phase, and
     /// the end of the high half against the closed form of the twin's RC of time constant `tau`.
     PeriodicOrbit { export: &'static str, rows: usize, node: &'static str, tau: f64, periods: f64 },
+    /// A noise run: the table's `onoise` column (and `inoise` when `input` names ngspice's
+    /// `(density export, total export)` of the input-referred noise) against ngspice's `export` of
+    /// `rows` rows, and the run's band totals against ngspice's `total` exports, under `NOISE`.
+    Noise { export: &'static str, total: &'static str, input: Option<(&'static str, &'static str)>, rows: usize },
     /// A transient no step can settle: the run fails `E0508` at ngspice's 1 us, where ngspice
     /// stops with "Timestep too small".
     StepFloor,
@@ -250,6 +254,33 @@ impl Comparison {
             Comparison::Sensitivity { derivatives } => Self::hold_sensitivity(derivatives, &scenario.run(check.backend), check),
             Comparison::PeriodicOrbit { export, rows, node, tau, periods } => Self::hold_periodic_orbit(export, *rows, node, *tau, *periods, scenario, &scenario.run(check.backend), check),
             Comparison::StepFloor => Self::hold_step_floor(scenario, check),
+            Comparison::Noise { export, total, input, rows } => Self::hold_noise(export, total, *input, *rows, scenario, check),
+        }
+    }
+
+    /// The run's grid is ngspice's; each density of the table and each band total of the report agree
+    /// with ngspice's under `NOISE`.
+    fn hold_noise(export: &str, total: &str, input: Option<(&str, &str)>, rows: usize, scenario: &Scenario, check: &Check) {
+        let (mut session, build) = scenario.open(check.backend).unwrap_or_else(|failure| panic!("{}: the session does not open on {}: {failure}", scenario.name(), check.backend.name()));
+        let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|failure| panic!("{}: the run fails on {}: {failure}", scenario.name(), check.backend.name()));
+        let ran = Ran { table, build };
+        let Some(golden) = check.golden else { return };
+        let report = session.noise_report().expect("a noise run keeps its report");
+        let wanted = golden.real(export);
+        golden.expect_rows(export, &wanted, rows);
+        golden.same_grid(export, &report.frequencies);
+        let band = Coordinate::Band(wanted[0].0, wanted[rows - 1].0);
+        for (row, (frequency, density)) in wanted.iter().enumerate() {
+            check.assert(&ToleranceContract::NOISE, "onoise", Coordinate::Frequency(*frequency), *density, ran.real(row, 1));
+        }
+        check.assert(&ToleranceContract::NOISE, "onoise_total", band, golden.real(total)[0].1, report.output_total);
+        if let Some((input_export, input_total)) = input {
+            let referred = golden.real(input_export);
+            golden.expect_rows(input_export, &referred, rows);
+            for (row, (frequency, density)) in referred.iter().enumerate() {
+                check.assert(&ToleranceContract::NOISE, "inoise", Coordinate::Frequency(*frequency), *density, ran.real(row, 2));
+            }
+            check.assert(&ToleranceContract::NOISE, "inoise_total", band, golden.real(input_total)[0].1, report.input_total.expect("an input run has its total"));
         }
     }
 
@@ -517,6 +548,12 @@ fn temp_res() {
 fn delay_tline() {
     // AO-02: a lossless line matched at both ends is `0.5 * delay(v(src), 1.05 us)`; the 100 kHz sine reads `now()`
     Scenario::of("delay_tline").hold(&Comparison::Transient { export: "delay_tline_tran", rows: 101, node: "out" });
+}
+
+#[test]
+fn noise_rc() {
+    // AO-06: the thermal noise of the resistor of an RC pole; 301 points of `dec 100 1k 1Meg`
+    Scenario::of("noise_rc").hold(&Comparison::Noise { export: "noise_rc_psd", total: "noise_rc_total", input: None, rows: 301 });
 }
 
 #[test]

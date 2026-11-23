@@ -1061,8 +1061,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `noise_rc`, `the_noise_contract_carries_its_bound_and_rationale` and `noise_twins_run_and_print_the_skip_line_without_ngspice` pass; `the_five_contracts_carry_bounds_and_rationale` passes unedited
-- [ ] Gate check passes: `Run parnoise`, `Run contract`, `Run corpus`, `Run twins`
+- [x] `noise_rc`, `the_noise_contract_carries_its_bound_and_rationale` and `noise_twins_run_and_print_the_skip_line_without_ngspice` pass; `the_five_contracts_carry_bounds_and_rationale` passes unedited
+- [x] Gate check passes: `Run parnoise`, `Run contract`, `Run corpus`, `Run twins`
 
 **Tests**: e2e
 **Gate**: full
