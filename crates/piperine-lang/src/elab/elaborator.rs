@@ -175,6 +175,11 @@ impl<'d, 't> Elaboration<'d, 't> {
         let reprs = self.lower_hand_written_reprs();
         self.add_functions();
         self.set_hand_written_reprs(reprs);
+        // the last net: an elaboration that placed no top and said nothing is refused by name, never an empty `Err`
+        if top_instance.is_none() && self.diagnostics.is_empty() {
+            let (file, span) = (self.design.decl_data(top).file, self.design.decl_data(top).span);
+            self.refuse_silent_failure(file, span, "the top module (its elaboration failed without a diagnostic)");
+        }
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);

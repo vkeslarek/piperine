@@ -239,7 +239,7 @@ fn a_generic_extern_call_is_never_dropped_in_any_position() {
     for tail in tails {
         for position in positions {
             let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
-            assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("generic `extern` function")), "{tail}\n{position}\n{found:?}");
+            assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("the generic `extern` function `matches_bits` is not supported yet")), "{tail}\n{position}\n{found:?}");
         }
     }
 }
@@ -254,7 +254,7 @@ fn a_logic_call_in_a_function_tail_is_refused_by_name() {
         "module Top() { signal o: Electrical; let b = g(); }\nanalog for Top { v(o) +> if b > 1 { 1.0 } else { 0.0 }; }",
     ] {
         let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
-        assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("generic `extern` function")), "{position}\n{found:?}");
+        assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("the generic `extern` function `logic` is not supported yet")), "{position}\n{found:?}");
     }
 }
 

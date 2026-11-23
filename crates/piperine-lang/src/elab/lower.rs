@@ -233,8 +233,24 @@ impl Elaboration<'_, '_> {
         self.locator.origin(self.design.decl_data(node.owner).file, node.span)
     }
 
-    /// `expr` lowered, or `None` after the diagnostics of what could not be.
+    /// `expr` lowered, or `None` after the diagnostics of what could not be. An expression that fails while nothing
+    /// has been reported is refused by name here, so no position (a statement, a definition, an event expression, a
+    /// value input) can drop it silently.
     pub(super) fn lower_expr(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
+        let lowered = self.lower_expr_unchecked(scope, expr);
+        if lowered.is_none() && self.diagnostics.is_empty() {
+            self.refuse_silent_failure(scope.file, self.design.expr_node(expr).span, "this expression");
+        }
+        lowered
+    }
+
+    /// `P0001` for something that failed to lower while no diagnostic was reported: the one place the elaborator says
+    /// "nothing vanishes silently".
+    pub(super) fn refuse_silent_failure(&mut self, file: FileId, span: Span, what: &str) {
+        self.unsupported(file, span, what);
+    }
+
+    fn lower_expr_unchecked(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
         let file = self.design.decl_data(node.owner).file;
         let origin = self.expr_origin(expr);
@@ -444,7 +460,8 @@ impl Elaboration<'_, '_> {
             // a generic `extern` function types like any generic function but has no body to instantiate: its call is
             // refused by name until the feature that runs it (`params-and-io`: `parse_table`, `parse_hex`, `table_model`)
             if matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
-                self.unsupported(scope.file, span, "a call of a generic `extern` function");
+                let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                self.unsupported(scope.file, span, &format!("a call of the generic `extern` function `{name}`"));
                 return None;
             }
             // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
@@ -612,7 +629,7 @@ impl Elaboration<'_, '_> {
             }
             // a statement that failed to lower while nothing was reported is refused by name: nothing vanishes silently (a failure that rests on an earlier diagnostic, such as an unreadable file, keeps that one)
             if !ok && self.diagnostics.is_empty() {
-                self.unsupported(file, node.span, "this statement");
+                self.refuse_silent_failure(file, node.span, "this statement");
             }
             ok &= carried;
             // a statement that is the value of its block leaves the flag to the code that takes the value

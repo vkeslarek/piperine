@@ -131,7 +131,7 @@ impl Elaboration<'_, '_> {
                 Some(Pair { is: present, val: sum, literal: Some(true) })
             }
             _ => {
-                self.unsupported(scope.file, span, "`decode` into a type whose layout is derived (only `bool`, unsigned integers up to 64 bits and hand-written `Repr` types run)");
+                self.unsupported(scope.file, span, "`decode` into a signed integer or a type whose layout is derived (only `bool`, unsigned integers up to 64 bits and hand-written `Repr` types run)");
                 None
             }
         }

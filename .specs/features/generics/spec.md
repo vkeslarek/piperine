@@ -352,7 +352,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 1. WHEN a phase closes a `GAPS.md` id THEN the same commit SHALL remove it, update `§9 Coverage`, and move each L58 item it unblocks to the id of what still blocks it.
 2. WHEN a phase lets a gallery fence (Appendices D to F) or a Book example check that was refused before THEN the system SHALL hold it to the checker in the existing gallery or Book test.
 
-**Acceptance Criteria** (GN-32, hand-written `Repr` on generic types and initial values; phase C; added by implementer 2026-11-23, AFK default, pending user review; moved out of GN-05, whose approved text is AC 1 and AC 2):
+**Acceptance Criteria** (GN-32, hand-written `Repr` on generic types and initial values; phase C; added by implementer 2026-11-23, approved by the user 2026-11-23; moved out of GN-05, whose approved text is AC 1 and AC 2):
 
 1. WHEN a project writes `impl<T: Repr> Repr for Pair<T>` for a generic type THEN the system SHALL carry each instance with the layout of that `impl` (until phase C each such use is `P0001` naming the form, GAPS L69).
 2. WHEN a carrier of a hand-written type has a `Default` and no initial value THEN the system SHALL start it at the levels `encode` gives for that default (until phase C `P0001` naming the form, GAPS L69).
