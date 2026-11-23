@@ -1570,7 +1570,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0187` | an `impl Tr for T` that leaves out an item without a default, defines an item the trait does not have, or gives an item another signature; a type that does not implement a supertrait; two `impl`s that overlap (§3.7.6); an `impl` in a crate that §3.7.7 does not allow; `self` outside an `impl` or a trait, or not first; a generic argument that does not satisfy its bound, or a wrong number of generic arguments ([§3.8](#38-generics-and-bounds)); a `pub` on an item of an `impl Tr for T`; a carrier, a drive or a param with no initial value whose type does not implement `Default` (§3.3.4), `#[derive(Default)]` on a type with a field that does not, and `T::default()` on a type that does not (Appendix H.8 rule 4) | elaboration |
+| `E0187` | an `impl Tr for T` that leaves out an item without a default, defines an item the trait does not have, or gives an item another signature; a type that does not implement a supertrait; two `impl`s that overlap (§3.7.6); an `impl` in a crate that §3.7.7 does not allow; `self` outside an `impl` or a trait, or not first; a generic argument that does not satisfy its bound, or a wrong number of generic arguments ([§3.8](#38-generics-and-bounds)); a generic parameter list in which a parameter without a default follows one with a default, or a const parameter is neither an integer nor `bool` (§3.8.3, §3.8.4); a `pub` on an item of an `impl Tr for T`; a carrier, a drive or a param with no initial value whose type does not implement `Default` (§3.3.4), `#[derive(Default)]` on a type with a field that does not, and `T::default()` on a type that does not (Appendix H.8 rule 4) | elaboration |
 | [§3.1](#31-impl) | `impl Tr for` a bundle (`E0134`) | elaboration |
 
 **Examples**
@@ -1650,6 +1650,7 @@ generic_arg    ::= type | literal | '-' literal | block
 | Code | Condition | Phase |
 | --- | --- | --- |
 | [§3.7](#37-traits) | a generic argument that does not satisfy its bound, or a wrong number of arguments (`E0187`) | elaboration |
+| [§3.8](#38-generics-and-bounds) | a parameter without a default after one with a default, or a const parameter that is neither an integer nor `bool` (`E0187`); a bound that names no trait (`E0161`) | elaboration |
 | [§1.4](#14-typing-inference-and-conversion) | a generic argument that cannot be inferred (`E0181`) | elaboration |
 | [§3](#3-functions) | an error inside an instantiation, reported at elaboration; a false `where` (`E0127`) | elaboration |
 

@@ -2283,3 +2283,15 @@ fn part_v_convergence_tests_both_rows_against_the_smaller_abstol() {
     assert!(rule2.contains("the smaller of the session `vntol` and the smallest potential `abstol`"), "{rule2}");
     assert!(rule2.contains("the smaller of the session `abstol` and its flow `abstol`"), "{rule2}");
 }
+
+#[test]
+fn part_i_3_8_names_the_rules_of_a_parameter_list() {
+    // GN-01, GN-06: §3.8.3 and §3.8.4 are held by the checker, so the table that lists `E0187` names them
+    let text = flat(&spec("part_i_values.md"));
+    let row = &text[text.find("| `E0187` |").expect("the E0187 row")..];
+    let row = &row[..row.find(" | elaboration |").expect("the row ends")];
+    assert!(row.contains("a generic parameter list in which a parameter without a default follows one with a default"), "{row}");
+    assert!(row.contains("a const parameter is neither an integer nor `bool` (§3.8.3, §3.8.4)"), "{row}");
+    let errors = flat(&section(&spec("part_i_values.md"), "### 3.8 "));
+    assert!(errors.contains("a bound that names no trait (`E0161`)"), "{errors}");
+}

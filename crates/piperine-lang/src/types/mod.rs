@@ -29,6 +29,7 @@ mod event;
 mod exits;
 mod expr;
 mod flow;
+mod generics;
 mod intrinsic;
 mod iterators;
 mod lengths;
@@ -49,6 +50,7 @@ pub(crate) mod unsupported;
 
 pub use aggregate::FieldType;
 pub use enums::EnumTag;
+pub use generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
 pub use intrinsic::Intrinsic;
 pub use table::{Builtin, Callee, Continuity, Method, Types};
 pub use ty::{ConstTerm, GenericValue, Length, Nominal, Ty};

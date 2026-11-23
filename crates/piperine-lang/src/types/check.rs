@@ -359,7 +359,17 @@ impl<'d> Checker<'d> {
     /// silently ignoring `4`). A declaration that is generic is refused by its own type check.
     fn writes_no_arguments_to_a_plain_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> bool {
         let written = self.design.path_node(path).segments.last().is_some_and(|segment| segment.args.is_some());
-        if !written || self.design.decl_data(decl).generics_span.is_some() {
+        if self.design.decl_data(decl).generics_span.is_some() {
+            // a generic declaration: its list is held to §3.8 and the use to the list's length
+            // (`E0187`); the declaration itself is refused by its own type check until T17
+            self.generic_signature(decl);
+            let count = match self.design.path_node(path).segments.last().and_then(|segment| segment.args.clone()) {
+                Some(GenericArgsNode::Angle { args, .. }) => args.len(),
+                _ => 0,
+            };
+            return self.generic_argument_count(decl, count, file, span);
+        }
+        if !written {
             return true;
         }
         let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -528,6 +538,7 @@ impl<'d> Checker<'d> {
         let DeclKind::Fn(f) = &data.kind else { return None };
         let mut ok = true;
         if data.generics_span.is_some() {
+            self.generic_signature(decl);
             self.unsupported(data.file, data.span, "generic function");
             ok = false;
         }
