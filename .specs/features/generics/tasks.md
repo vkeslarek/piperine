@@ -1260,8 +1260,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `gaps_drops_what_generics_phase_b_closed` and `state_records_the_generics_decision` pass under `**Run docs**`
-- [ ] Gate check passes: Build
+- [x] `gaps_drops_what_generics_phase_b_closed` and `state_records_the_generics_decision` pass under `**Run docs**`
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
