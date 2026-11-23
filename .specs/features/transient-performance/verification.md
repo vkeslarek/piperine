@@ -1,7 +1,7 @@
 # Transient Performance verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at f2e2235b, rerun after the fix round (58 pass, 0 fail; the first run, at 1c3e74ba, had 24 pass and 27 "no test ran"). Findings F1 to F14 are closed below; the fix round's own commit is the one that adds `proofs.md` and this line, so `HEAD` is one commit past the sha `proofs.md` names
+**Proofs**: `proofs.md` at 5f0494fb, rerun after the fix round and T26 (60 pass, 0 fail; the first run, at 1c3e74ba, had 24 pass and 27 "no test ran"). Findings F1 to F14 are closed below. Checks C49 to C55 were added by the fix round and T26 and have no `## Checks` row yet: the Verifier judges them. `HEAD` is one commit past the sha `proofs.md` names, because the commit that adds `proofs.md` is the last
 **Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22
 
 The optimisations hold their gates at `HEAD` (read from `proofs.md`): the buck's 600 µs start takes
