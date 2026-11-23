@@ -1223,7 +1223,8 @@ fn reference_rows_describe_the_kept_jump() {
         assert!(!row.contains("gap"), "{row}");
     }
     let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
-    assert!(restart.contains("10⁻³ of the last step"), "{restart}");
+    assert!(restart.contains("a tenth of the last step (`HOST_RESTART_FRACTION` 0.1)"), "{restart}");
+    assert!(!restart.contains("10⁻³"), "the old restart fraction is gone: {restart}");
     assert!(restart.contains("after a host `set` only"), "{restart}");
     let g6 = section(&spec("appendix_g_scope.md"), "### G.6 ");
     for row in table_rows(&g6) {

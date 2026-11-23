@@ -271,8 +271,8 @@ fn a_scheduled_host_write_lands_and_restarts_small() {
     assert_eq!(v(k), 1.0, "the landing is solved before the write");
     assert_eq!(v(k + 1), 2.0, "the next step reads it");
     let (last, next) = (t(k) - t(k - 1), t(k + 1) - t(k));
-    let small = (1.0e-3 * last).max(dt_min);
-    assert!((next - small).abs() <= 1e-9 * small, "the next step is 1e-3 of the last: {next:e} vs {small:e}");
+    let small = (0.1 * last).max(dt_min);
+    assert!((next - small).abs() <= 1e-9 * small, "the next step is 0.1 of the last: {next:e} vs {small:e}");
 }
 
 #[test]

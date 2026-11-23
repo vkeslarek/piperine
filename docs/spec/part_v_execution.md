@@ -266,7 +266,7 @@ of them reads them all.
 that arrives there: that step is tested for truncation error like any other and does not read
 the set. The set applies after the step to `t` is accepted, after the settle phase (§15 step 5).
 The first step after `t` reads it. That step is tested with the first-order estimate of rule 6, restarts
-the integrator, and its size restarts at 10⁻³ of the last step (Appendix C.2). A `set` of a
+the integrator, and its size restarts at a tenth of the last step (Appendix C.2). A `set` of a
 param whose change moves the operating point (the solver's `OperatingPoint` invalidation strength, Appendix C.2)
 also retakes the step to `t` with the new value; the retaken step's solution replaces the
 solution at `t`. It is a transient step that reads the change, so the set still has no solve
@@ -315,7 +315,7 @@ of its own.
    derivative.** The first step after the operating point keeps its BDF2 stage unless the
    operating point holds a settle commit, which that step reads as a jump (S3) and takes first order. A change made after the solve of
    `t` restarts nothing. After a host `set` the step size also restarts
-   at 10⁻³ of the last step (Appendix C.2). **The step that restarts the integrator after a
+   at a tenth of the last step (Appendix C.2). **The step that restarts the integrator after a
    landing or a host `set` is at most a tenth of the smaller of the last accepted step and the
    time from `t` to the next scheduled time point, and never larger than the controller's
    proposal; the first stage is first order, whose error grows with the square of the step.

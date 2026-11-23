@@ -323,6 +323,24 @@ later feature; the first two are the constants of §15.2 rule 6 and Appendix C.2
 does not touch. The per-step cost of the 1.13x is the generated devices' call frame (`piperine_abi::thunk`
 allocates per call, outside this feature's tasks) and the rest of the assembly, not measured here.
 
+### 10.1 After the restart fraction (T26)
+
+The step that reads a host write now restarts at a tenth of the last step instead of 10⁻³ (user decision 2026-11-22). Release profile, best of 3, same machine:
+
+| | Before | After |
+| --- | --- | --- |
+| Piperine accepted steps | 30 920 | 27 547 |
+| Piperine time | 0.844 s | 0.726 s |
+| Piperine time per step | 27.3 µs | 26.3 µs |
+| ngspice (unchanged) | 12 043 steps, 0.290 s, 24.1 µs | 12 043 steps, 0.289 s, 24.0 µs |
+| Piperine / ngspice, steps | 2.57x | 2.29x |
+| Piperine / ngspice, time | 2.91x | 2.51x |
+| Piperine / ngspice, per step | 1.13x | 1.10x |
+| `buck_long` (600 µs) | 210 188 steps | 210 188 steps (26.0 s wall in dev) |
+| `buck_accuracy` largest `vout` difference | 0.000136 mV | 0.000136 mV (gate 0.104 mV) |
+
+The buck has no host-write restarts, so its counts do not move. The second change, the controller's growth clamp 1.5 to 2.0, was measured and not adopted: with it the power stage takes 25 670 steps (dev profile), but the `tran_corner` twin prints `6.150041e-6` at 1 µs where its golden has `6.150198e-6`, and twin bytes never move (D5). The remaining gap (2.29x) is the 1.5 growth and the rejections after each corner.
+
 ## 11. After (the counts of section 2, 100 µs, `max_step = 1e-8`)
 
 Printed by `buck_accuracy` (`cargo test -p piperine-api --test buck_accuracy -- --nocapture`) on the

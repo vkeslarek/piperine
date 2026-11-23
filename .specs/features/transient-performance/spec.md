@@ -232,6 +232,23 @@ A mixed-signal transient of the buck converter takes about 6 million accepted st
 
 ---
 
+### P2: The step after a host write restarts where ngspice's does
+
+**User Story**: As a host that drives a node with a piecewise-linear source, I want the step that reads each corner to restart at a size close to ngspice's, so that a corner does not cost dozens of picosecond steps.
+
+**Why P2**: `diagnosis.md` section 10: 22 017 of Piperine's 30 920 steps on the power stage fall within 100 ns after a corner, against ngspice's 3 143; the first step after a corner is 10⁻³ of the one before it (ngspice: a sixth). Added after the verification round, on the user's decision of 2026-11-22: "O 1 e 2 poderiam ser mudados. Pois o ngspice já é bem preciso e economiza tempo. Pode colocar para rodar e testar se não quebra nada. Faz escolha de defaults mais razoáveis". Items 1 and 2 were the restart fraction and the step controller's growth clamp. No approved criterion is edited.
+
+**TP-13** (the restart step after a host write)
+
+**Acceptance Criteria**:
+
+1. WHEN a step reads a host write THEN its size SHALL restart at a tenth of the last accepted step, floored at the minimum step (was 10⁻³).
+2. WHERE the step controller's growth clamp is 1.5 it SHALL stay 1.5: the measured alternative, 2.0 (ngspice doubles), moves the printed bytes of the `tran_corner` twin (`6.150041e-6` against the golden `6.150198e-6` at 1 µs), and parity values and twin bytes never move (D5).
+
+**Independent Test**: `cargo test -p piperine-solver --test host_set`; `cargo test -p piperine-cli --test twins`.
+
+---
+
 ### P2: The analog time stays exact over a long run
 
 **User Story**: As a host that runs an hour of simulated time at the default 1 fs resolution, I want every tick to be told apart from its neighbours, so that a step of a few ticks is not a zero-length step and no stopgap floor moves an event.
@@ -295,9 +312,10 @@ A mixed-signal transient of the buck converter takes about 6 million accepted st
 | TP-09 | P1: nothing else moves | Tasks | In Tasks |
 | TP-10 | P3: the documents say what is true | Tasks | In Tasks |
 | TP-11 | P2: the analog time stays exact over a long run | Tasks | In Tasks |
+| TP-13 | P2: the step after a host write restarts where ngspice's does | Tasks | In Tasks |
 | TP-12 | P3: the counts say the rule they were taken under | Tasks | In Tasks |
 
-**Coverage:** 12 total, 12 mapped to tasks, 0 unmapped.
+**Coverage:** 13 total, 13 mapped to tasks, 0 unmapped.
 
 ---
 

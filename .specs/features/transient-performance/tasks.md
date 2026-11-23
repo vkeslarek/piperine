@@ -28,6 +28,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run grid**: `cargo test -p piperine-solver --test parity_baseline`
 **Run epoch**: `cargo test -p piperine-solver --test protocol_epoch`
 **Run options**: `cargo test -p piperine-api --test options an_hour`
+**Run hostset**: `cargo test -p piperine-solver --test host_set`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 
@@ -856,6 +857,12 @@ Proof: run epoch | test a_run_under_2_52_ticks_never_moves_its_epoch ... ok
 **C53** - An hour at 1 fs lands every clock edge to the `f64` resolution and every crossing within its `etol` or `ttol` plus a tick (TP-11, AC 4; T25)
 Proof: run options | test an_hour_long_transient_runs_at_the_default_resolution ... ok
 
+**C54** - The step that reads a host write restarts at a tenth of the last step (TP-13, AC 1; T26)
+Proof: run hostset | test a_scheduled_host_write_lands_and_restarts_small ... ok
+
+**C55** - The twins print the bytes they printed before the move, with the growth clamp unchanged (TP-13, AC 2; T26)
+Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
+
 ---
 
 ## Handoff
@@ -1018,6 +1025,18 @@ Execution is strictly sequential - there is no intra-phase parallelism.
 - **Gate**: Build line, `cargo test -p piperine-solver`, the integrated targets, the parity targets with ngspice present.
 
 **Requirement**: TP-11
+
+**Tests**: unit, integration
+**Gate**: full
+
+### T26: The restart fraction after a host write
+
+**Added 2026-11-22 (user: "O 1 e 2 poderiam ser mudados. Pois o ngspice já é bem preciso e economiza tempo. Pode colocar para rodar e testar se não quebra nada. Faz escolha de defaults mais razoáveis").** The step that reads a host write restarted at 10⁻³ of the last step (`Restart::IntegratorSmall`); it restarts at a tenth (`HOST_RESTART_FRACTION`, the same tenth the landing restart takes). The growth clamp was to become 2.0; measured, it moves the `tran_corner` twin's bytes, so it stays 1.5 (D5).
+
+- **What**: `HOST_RESTART_FRACTION` 0.1 in `analyses/transient.rs`; §15.2 rule 6 and Appendix C.2 say a tenth; `host_set.rs` asserts it.
+- **Measured**: power stage, release: 30 920 to 27 547 steps, 0.844 s to 0.726 s; buck unchanged (210 188 steps, `vout` 0.000136 mV); twins, parity, Book targets unchanged. With growth 2.0 as well, 25 670 steps (dev profile), and the twin byte moves.
+
+**Requirement**: TP-13
 
 **Tests**: unit, integration
 **Gate**: full

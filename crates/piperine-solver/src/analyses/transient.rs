@@ -909,7 +909,7 @@ impl<'a> TransientSolver<'a> {
             self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options.step_limits())
         };
         if sets_just_applied {
-            dt = (1e-3 * dt_actual).max(self.options.dt_min);
+            dt = (Self::HOST_RESTART_FRACTION * dt_actual).max(self.options.dt_min);
         }
         dt
     }
@@ -1870,7 +1870,7 @@ impl TransientSolver<'_> {
             }
             Restart::IntegratorSmall => {
                 self.system.prev_h = 0.0;
-                run.st.dt = (1e-3 * run.last_dt).max(self.options.dt_min);
+                run.st.dt = (Self::HOST_RESTART_FRACTION * run.last_dt).max(self.options.dt_min);
                 run.st.sets_just_applied = true;
             }
         }
@@ -1879,6 +1879,10 @@ impl TransientSolver<'_> {
     /// The step after a jump is at most this fraction of the last step and of the gap to the next
     /// scheduled time.
     const JUMP_FRACTION: f64 = 0.1;
+
+    /// The step that reads a host write restarts at this fraction of the last step, floored at
+    /// `dt_min` (ngspice's first step after a breakpoint is about a sixth of the one before it, and the same tenth the landing restart takes).
+    const HOST_RESTART_FRACTION: f64 = 0.1;
 
     pub(crate) fn device_mark(&self) -> DeviceMark {
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
