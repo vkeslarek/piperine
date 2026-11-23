@@ -23,6 +23,8 @@ pub(super) struct Structure {
     /// The nodes of the body in the order the IR numbers them: its own ports, then its own signals,
     /// then the signals of the hoisted frames (`hoist.rs`), each with the plan placement reads.
     pub(super) nodes: Vec<(BodyNode, NodePlan)>,
+    /// The windows of arrays of carriers each child binds: (child index, one entry per carrier port).
+    pub(super) child_windows: Vec<(u32, Vec<Option<piperine_ir::CarrierWindow>>)>,
     /// The arrays of nodes of the body, in declaration order (`carrier_arrays.rs`).
     pub(super) node_arrays: Vec<piperine_ir::NodeArray>,
     /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
@@ -249,6 +251,9 @@ impl Elaboration<'_, '_> {
         }
         for (child, carriers) in structure.child_carriers {
             self.ir.bind_child_carriers(body, child, carriers);
+        }
+        for (child, windows) in structure.child_windows {
+            self.ir.bind_child_windows(body, child, windows);
         }
         for (child, param, value) in structure.child_params {
             self.ir.child_param(body, child, param, value);

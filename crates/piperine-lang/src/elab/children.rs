@@ -180,11 +180,22 @@ impl Elaboration<'_, '_> {
         let mut ok = true;
         let mut terminals = Vec::new();
         let mut carriers = Vec::new();
+        let mut windows = Vec::new();
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         for (port, arg) in ports.iter().zip(args) {
+            if self.types.node_array(*port).is_some() {
+                match self.node_array_terminals(scope, arg.value) {
+                    Some(nodes) => terminals.extend(nodes),
+                    None => ok = false,
+                }
+                continue;
+            }
             if self.types.carrier(*port).is_some() {
                 match self.lower_carrier_arg(scope, &name, *port, arg.value) {
-                    Some(carrier) => carriers.push(Some(carrier)),
+                    Some((carrier, window)) => {
+                        carriers.push(Some(carrier));
+                        windows.push(window);
+                    }
                     None => ok = false,
                 }
                 continue;
@@ -234,22 +245,32 @@ impl Elaboration<'_, '_> {
         if !carriers.is_empty() {
             self.structure.child_carriers.push((index, carriers.clone()));
         }
+        // the part of an array of carriers each port is given (`elements.rs`)
+        if windows.iter().any(Option::is_some) {
+            self.structure.child_windows.push((index, windows));
+        }
         Some((child, ChildPlan { name, module, body, terminals, carriers, given, call }))
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement
     /// `instance` is bound to: the carrier it names, or for an expression at an `in` port the
     /// carrier of its anonymous definition (§8.2.9). `None` after a diagnostic.
-    fn lower_carrier_arg(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<u32> {
+    fn lower_carrier_arg(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
         let node = self.design.expr_node(arg).clone();
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
             && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl))
         {
-            return Some(*index);
+            return Some((*index, None));
+        }
+        // an element `x[k]` or a sub-array `g[r]` of an array of carriers: the carrier and its window
+        if let ExprKind::Index { .. } = &node.kind
+            && let Some(found) = self.carrier_window(scope, arg)
+        {
+            return found;
         }
         match &self.design.decl_data(port).kind {
-            DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.anonymous_definition(scope, instance, port, arg),
+            DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.anonymous_definition(scope, instance, port, arg).map(|carrier| (carrier, None)),
             // The checker refuses an expression at an `out` port first (`E0314`).
             _ => {
                 self.unsupported(scope.file, node.span, "an expression at an `out` carrier port");

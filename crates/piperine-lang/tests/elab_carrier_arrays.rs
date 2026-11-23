@@ -188,3 +188,36 @@ fn an_element_definition_is_one_drive() {
     let found = Elab::run("module Top(in a: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[at] = a; }", "Top").expect_err("no fold");
     assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("bits[at]")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
+
+#[test]
+fn arrays_and_elements_bind_windows_of_child_ports() {
+    // CV-23 AC 2: an array to an array port is one net on both sides (no window); an element `x[k]` to a scalar port
+    // binds the window of that element, a sub-array `g[r]` of a nested array the run of its row; a node array gives
+    // the child its nodes; the net table names one net per array and one node per element
+    let src = "module Reg(in d: [Bit; 4], out q: [Bit; 4]) { q[0] = d[0]; q[1] = d[1]; q[2] = d[2]; q[3] = d[3]; }\n\
+               module Cell(in d: Bit, out q: Bit) { q = d; }\n\
+               module Ladder(a: [Electrical; 4]) { }\n\
+               module Top(in x: [Bit; 4]) {\n\
+               signal y: [Bit; 4];\n\
+               signal g: [[Bit; 4]; 2];\n\
+               signal h: [[Bit; 4]; 2];\n\
+               signal z: [Bit; 2];\n\
+               signal bl: [Electrical; 4];\n\
+               let whole = Reg(x, y);\n\
+               let row = Reg(g[1], h[0]);\n\
+               let one = Cell(x[2], z[1]);\n\
+               let rungs = Ladder(bl);\n}";
+    let ir = Elab::ir(src, "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    let windows: Vec<Vec<Option<piperine_ir::CarrierWindow>>> = (0..top.children().len()).map(|k| top.child_windows(k).to_vec()).collect();
+    let win = |first: u64, length: Option<u64>| Some(piperine_ir::CarrierWindow { first, length });
+    assert_eq!(windows[0], Vec::<Option<piperine_ir::CarrierWindow>>::new(), "a whole array to an array port needs no window");
+    assert_eq!(windows[1], vec![win(4, Some(4)), win(0, Some(4))], "`g[1]` is the run of elements 4 to 7, `h[0]` the run 0 to 3");
+    assert_eq!(windows[2], vec![win(2, None), win(1, None)], "`x[2]` and `z[1]` are one element each");
+    // one net per array, named by the array; one node per element
+    assert!(ir.nets().any(|n| n.path() == "Top.g") && ir.nets().all(|n| !n.path().starts_with("Top.g[")), "one net for the whole array");
+    assert!(ir.nodes().any(|n| n.path() == "Top.bl[2]"), "one node per element");
+    // the ladder's four nodes are the parent's four
+    let rungs = ir.instance_at("Top.rungs").expect("the ladder");
+    assert_eq!(rungs.bindings().len(), 4);
+}

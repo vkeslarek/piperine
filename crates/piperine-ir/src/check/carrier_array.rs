@@ -85,6 +85,10 @@ impl Checker<'_> {
     /// naming an array carrier of the parent and a run (or one element) inside it.
     pub(super) fn child_windows(&mut self, item: &str, body: &BodyData) {
         for (ci, windows) in body.child_windows.iter().enumerate() {
+            // a child given no window (the list is empty) binds whole arrays and scalars only
+            if windows.is_empty() {
+                continue;
+            }
             let Some(child) = body.children.get(ci) else {
                 self.report(item.to_string(), body.origin.clone(), format!("windows of child {ci}, out of range ({} children)", body.children.len()));
                 continue;

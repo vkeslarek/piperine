@@ -538,8 +538,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `arrays_and_elements_bind_windows_of_child_ports` passes under `**Run elabarr**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `arrays_and_elements_bind_windows_of_child_ports` passes under `**Run elabarr**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -853,6 +853,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T79 notes (amendment to QC4):** `P0002` is a code no source may spell (`spec_codes.rs::no_source_spells_p0002`, PI-06), so an index that must fold and does not is the mismatch `E0180` naming the expression as written (`Elaboration::not_folded`, `elab/elements.rs`), as a non-constant array length is; every later task that says `P0002 naming the index` means this. `elab/elements.rs`: `element_lookup` (a `Lookup::{No, Failed, Found}`; a handle bound to an element is that element), `ElementRef`, reads/prev/changed; `events.rs` gives an element event head `EventSource::ElementChanged` with `element_rise_guard`/`element_fall_guard`; a run-time `x[i].changed()` read is `Expr::ElementChanged`; `carrier_read` of an array carrier is typed `[T; K]`. `types/handles.rs::handle_argument` now types an element argument.
 **T80 notes:** not in `unroll.rs` (the loop variable is already a constant in `Scope::unrolled`): `lower_terminal` (analog.rs) takes `bl[k]` through `Elaboration::node_element` (elements.rs), which folds each index over the frame's bindings overlaid with the unrolling, the row-major element after the array's first node.
 **T81 notes:** `elab/element_commits.rs`: `place_target` (root carrier by `drive_target`, the first indexes one per level of the array's dims name the flat element through `flat_element`, the rest are `Projection`s typed through the struct/tuple/array levels); `PlaceTarget::commit_target`. `reactions.rs::lower_commit` and `drives.rs::lower_definitions` use it; a definition's element must fold (E0180 `not_folded`), it is `Drive.element`. The test files of this phase define no free function (`Fixture`/`Read`/`Writes` own their helpers).
+**T82 notes:** `children.rs` gives a node-array port its K terminals (`node_array_terminals`) and a carrier port its carrier and window (`carrier_window`: an element `x[k]` is `CarrierWindow { first, length: None }`, a sub-array `g[r]` the run `(r*C, C)`); `Structure::child_windows` -> `IrBuilder::bind_child_windows`. `Ir::check` skips a child with an empty window list. The net table is unchanged: one net per array carrier, one node per element, by the existing paths.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

@@ -169,10 +169,11 @@ impl Elaboration<'_, '_> {
 }
 
 impl Elaboration<'_, '_> {
-    /// The node `bl[k]` of an array of nodes names (`g[r][c]` of a nested one): its terminal, the first node of the
-    /// array plus the row-major element. `Some(None)` when `arg` is no element of an array of nodes; `None` after a
-    /// diagnostic: the index does not fold after unrolling (QC4), or is past the end (`E0104`).
-    pub(super) fn node_element(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<piperine_ir::Terminal>> {
+    /// The nodes the argument `arg` names in an array of nodes: the run of consecutive nodes `(first, length)` of the whole
+    /// array, of a sub-array `g[r]` of a nested one, or of one element (`length` 1, `whole` false). `Some(None)` when `arg`
+    /// names no array of nodes; `None` after a diagnostic: an index that does not fold after unrolling (QC4, `E0180`
+    /// naming it), or a constant past the end (`E0104`).
+    fn node_run(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, u64, bool)>> {
         let mut at = self.peel_parens(arg);
         let mut indexes = Vec::new();
         while let ExprKind::Index { expr: inner, index } = self.design.expr_node(at).kind.clone() {
@@ -185,8 +186,8 @@ impl Elaboration<'_, '_> {
         let Some(shape) = self.frames.get(scope.frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else { return Some(None) };
         let span = self.design.expr_node(arg).span;
         let Some(piperine_ir::Terminal::Node(first)) = self.frame_node(scope.frame, decl) else { return Some(None) };
-        if indexes.len() != shape.dims.len() {
-            self.unsupported(scope.file, span, "an array of nodes, or a part of a nested one, as a node argument: name an element");
+        if indexes.len() > shape.dims.len() {
+            self.unsupported(scope.file, span, "an index of an array of nodes past its levels");
             return None;
         }
         let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
@@ -197,7 +198,7 @@ impl Elaboration<'_, '_> {
                 _ => None,
             };
             let Some(at) = folded else {
-                self.not_folded(scope, self.design.expr_node(*index).span, "the index of an array of nodes in `analog`");
+                self.not_folded(scope, self.design.expr_node(*index).span, "the index of an array of nodes");
                 return None;
             };
             if at >= *length {
@@ -207,6 +208,71 @@ impl Elaboration<'_, '_> {
             }
             flat = flat * length + at;
         }
-        Some(Some(piperine_ir::Terminal::Node(first + flat as u32)))
+        let below: u64 = shape.dims[indexes.len()..].iter().product();
+        Some(Some((first + (flat * below) as u32, below, indexes.len() == shape.dims.len())))
+    }
+
+    /// The node `bl[k]` of an array of nodes names (`g[r][c]` of a nested one): its terminal. `Some(None)` when `arg` is no
+    /// element of an array of nodes; `None` after a diagnostic (`node_run`).
+    pub(super) fn node_element(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<piperine_ir::Terminal>> {
+        match self.node_run(scope, arg)? {
+            Some((first, _, true)) => Some(Some(piperine_ir::Terminal::Node(first))),
+            Some(_) => {
+                self.unsupported(scope.file, self.design.expr_node(arg).span, "an array of nodes, or a part of a nested one, as a node argument: name an element");
+                None
+            }
+            None => Some(None),
+        }
+    }
+
+    /// The terminals an argument at an array port of nodes gives the child: the nodes of the whole array or of a
+    /// sub-array, one terminal each. `None` after a diagnostic.
+    pub(super) fn node_array_terminals(&mut self, scope: &Scope, arg: ExprId) -> Option<Vec<piperine_ir::Terminal>> {
+        match self.node_run(scope, arg)? {
+            Some((first, length, false)) => Some((0..length as u32).map(|k| piperine_ir::Terminal::Node(first + k)).collect()),
+            _ => {
+                self.unsupported(scope.file, self.design.expr_node(arg).span, "an argument at an array port of nodes that is no array of nodes");
+                None
+            }
+        }
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// The array carrier an argument at a carrier port names through `x[k]` or a sub-array `g[r]`, and the window of it
+    /// the child's port is given: one element (`length` `None`) or the run of a sub-array. The outer `None` when `arg`
+    /// is no part of an array of carriers; `Some(None)` after a diagnostic (an index that does not fold is `E0180`
+    /// naming it, a constant past the end `E0104`).
+    pub(super) fn carrier_window(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, Option<piperine_ir::CarrierWindow>)>> {
+        let mut at = self.peel_parens(arg);
+        let mut indexes = Vec::new();
+        while let ExprKind::Index { expr: inner, index } = self.design.expr_node(at).kind.clone() {
+            indexes.push(index);
+            at = self.peel_parens(inner);
+        }
+        indexes.reverse();
+        let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return None };
+        let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return None };
+        let array = self.types.carrier_array(decl).cloned()?;
+        let carrier = self.frame_carrier(scope.frame, decl)?;
+        let span = self.design.expr_node(arg).span;
+        let shape = ArrayShape::of(&array)?;
+        if indexes.len() > shape.dims.len() {
+            self.unsupported(scope.file, span, "an index of an array of carriers past its levels");
+            return Some(None);
+        }
+        let prefix = ArrayShape { dims: shape.dims[..indexes.len()].to_vec() };
+        let mut inner_scope = Self::sub_scope(scope);
+        let Some(found) = self.flat_element(&mut inner_scope, carrier, &prefix, &indexes, span) else { return Some(None) };
+        let Some(first) = found.constant else {
+            self.not_folded(scope, span, "the element of a connection");
+            return Some(None);
+        };
+        let below: u64 = shape.dims[indexes.len()..].iter().product();
+        let window = match indexes.len() == shape.dims.len() {
+            true => piperine_ir::CarrierWindow { first, length: None },
+            false => piperine_ir::CarrierWindow { first: first * below, length: Some(below) },
+        };
+        Some(Some((carrier, Some(window))))
     }
 }
