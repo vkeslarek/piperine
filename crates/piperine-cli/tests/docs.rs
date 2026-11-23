@@ -150,7 +150,7 @@ fn gaps_drops_what_host_ii_closed() {
     // (L39, which stayed, is closed by `params-and-io`: `gaps_no_longer_lists_x5_l20_l39_h12`)
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
     assert!(row("H1").contains("`Session::drive`") && row("H1").contains("`force` and `release`"), "H1 says what is delivered and what is left");
-    assert!(row("H3").contains("`ttol`") && row("H3").contains("`tnom`"), "H3 lists what is left of the options");
+    assert!(row("H3").contains("`ttol`"), "H3 lists what is left of the options");
     assert!(row("H4").contains("`piperine info`"), "H4 names the delivered metadata");
 }
 

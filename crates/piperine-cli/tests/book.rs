@@ -569,7 +569,6 @@ fn the_chapter_shows_the_session_options() {
         ("vntol", "--vntol"),
         ("trtol", "--trtol"),
         ("temp", "--temp"),
-        ("tnom", "--tnom"),
         ("resolution", "--resolution"),
         ("maxrounds", "--maxrounds"),
         ("maxmicro", "--maxmicro"),

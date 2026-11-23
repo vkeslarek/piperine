@@ -82,9 +82,9 @@ Rules every task follows:
 
 **Done when**:
 
-- [ ] no `tnom` key or flag exists and a run table naming it is `P0010`
-- [ ] every spice-faithful model has its own `tnom` param and the parity twins pass unchanged
-- [ ] Gate check passes: Build, the touched crates' tests, `Run twins`, `Run parop`
+- [x] no `tnom` key or flag exists and a run table naming it is `P0010`
+- [x] every spice-faithful model has its own `tnom` param and the parity twins pass unchanged
+- [x] Gate check passes: Build, the touched crates' tests, `Run twins`, `Run parop`
 
 **Tests**: integration
 **Gate**: full

@@ -47,9 +47,6 @@ enum ArgKind {
     Real { value: &'static str },
     /// `--<id> <value>`, a whole number.
     Count { value: &'static str },
-    /// `--<id> <value>`, a real number checked when the run is built, so a value that is no number
-    /// is a `P0010` naming the flag, not a usage error.
-    Checked { value: &'static str },
     /// `--<id> <value>`, given any number of times.
     Texts { value: &'static str },
     /// `--<id> <path>=<real>`, given any number of times.
@@ -163,7 +160,6 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "vntol", kind: ArgKind::Real { value: "VOLTS" }, help: "the absolute tolerance of a potential" },
             ArgRow { id: "trtol", kind: ArgKind::Real { value: "VALUE" }, help: "the factor on the truncation error a transient accepts" },
             ArgRow { id: "temp", kind: ArgKind::Real { value: "CELSIUS" }, help: "the temperature of the run, in degrees Celsius" },
-            ArgRow { id: "tnom", kind: ArgKind::Checked { value: "CELSIUS" }, help: "the nominal temperature of the models' parameters, in degrees Celsius (default 27)" },
             ArgRow { id: "resolution", kind: ArgKind::Real { value: "SECONDS" }, help: "the tick of the digital engine, in seconds" },
             ArgRow { id: "maxrounds", kind: ArgKind::Count { value: "N" }, help: "the bound on the rounds of an operating point" },
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
@@ -277,7 +273,6 @@ impl Cli {
             ArgKind::Text { value } => arg.long(row.id).value_name(value).action(ArgAction::Set),
             ArgKind::Path { value } => arg.long(row.id).value_name(value).value_parser(PathBufValueParser::new()).action(ArgAction::Set),
             ArgKind::Real { value } => arg.long(row.id).value_name(value).value_parser(Values::real).allow_negative_numbers(true).action(ArgAction::Set),
-            ArgKind::Checked { value } => arg.long(row.id).value_name(value).allow_negative_numbers(true).action(ArgAction::Set),
             ArgKind::Count { value } => arg.long(row.id).value_name(value).value_parser(Values::count).action(ArgAction::Set),
             ArgKind::Texts { value } => arg.long(row.id).value_name(value).action(ArgAction::Append),
             ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::path_real).action(ArgAction::Append),
@@ -320,7 +315,6 @@ impl Cli {
             vntol: real("vntol"),
             trtol: real("trtol"),
             temp: real("temp"),
-            tnom: text("tnom").and_then(|value| value.parse().ok()),
             resolution: real("resolution"),
             maxrounds: count("maxrounds"),
             maxmicro: count("maxmicro"),
@@ -336,12 +330,9 @@ impl Cli {
     }
 
     /// The fault (`P0010`) of the first flag of `m` checked when the run is built whose value is no
-    /// number, naming it: a `--simparam` entry, else `--tnom`.
+    /// number, naming it: a `--simparam` entry.
     fn refusal(m: &clap::ArgMatches) -> Option<String> {
-        Cli::simparam_entries(m).1.or_else(|| {
-            let value = m.get_one::<String>("tnom")?;
-            Values::real(value).err().map(|why| format!("`--tnom {value}`: {why}"))
-        })
+        Cli::simparam_entries(m).1
     }
 
     /// The `--param` entries of `m`, in the order given.
@@ -445,7 +436,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
-            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab", "tnom", "simparam",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab", "simparam",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -459,7 +450,7 @@ mod tests {
             "piperine", "run", "x", "--bench", "b.msl", "--top", "Top", "--analysis", "transient", "--stop", "1e-3", "--max-step", "1e-6", "--print-step", "1e-5", "--sweep", "v1.dc", "--from", "-1", "--to", "5",
             "--step", "0.5", "--per-decade", "10", "--points", "20", "--print", "a", "--print", "b", "--stream", "s1", "--stream", "s2", "--param", "r1.r=2000", "--param", "c1.c=1e-9", "--backend", "interp",
             "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
-            "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--tnom", "50", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
+            "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
             "--nodeset", "Top.b=0", "--input", "v1", "--output", "Top.out", "--wrt", "r1.r", "--wrt", "r2.r", "--period", "1e-3", "--tstab", "5e-3",
             "--simparam", "gain=2", "--simparam", "bias=0.5",
         ];
@@ -492,7 +483,6 @@ mod tests {
             vntol: Some(2e-6),
             trtol: Some(5.0),
             temp: Some(-40.0),
-            tnom: Some(50.0),
             resolution: Some(1e-12),
             maxrounds: Some(30),
             maxmicro: Some(500),

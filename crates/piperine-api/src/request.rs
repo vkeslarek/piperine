@@ -96,9 +96,6 @@ pub struct Options {
     pub trtol: Option<f64>,
     /// The temperature of the run in degrees Celsius.
     pub temp: Option<f64>,
-    /// The nominal temperature of the models' parameters in degrees Celsius (ngspice `tnom`); the
-    /// solver's 27 when not given.
-    pub tnom: Option<f64>,
     /// The session's tick length in seconds.
     pub resolution: Option<f64>,
     /// The bound on the rounds of an operating point.
@@ -153,8 +150,6 @@ pub struct Overrides {
     pub vntol: Option<f64>,
     pub trtol: Option<f64>,
     pub temp: Option<f64>,
-    /// `--tnom`: the nominal temperature in degrees Celsius.
-    pub tnom: Option<f64>,
     pub resolution: Option<f64>,
     pub maxrounds: Option<u32>,
     pub maxmicro: Option<u32>,
@@ -251,7 +246,6 @@ struct Keys {
     vntol: Option<Given<f64>>,
     trtol: Option<Given<f64>>,
     temp: Option<Given<f64>>,
-    tnom: Option<Given<f64>>,
     resolution: Option<Given<f64>>,
     maxrounds: Option<Given<u32>>,
     maxmicro: Option<Given<u32>>,
@@ -266,7 +260,7 @@ struct Keys {
 }
 
 /// The names `simparam` may not set: each has its own key (a solver option or the temperatures).
-const OPTION_NAMES: [&str; 6] = ["reltol", "abstol", "vntol", "trtol", "temp", "tnom"];
+const OPTION_NAMES: [&str; 5] = ["reltol", "abstol", "vntol", "trtol", "temp"];
 
 /// The lowest temperature, degrees Celsius: `temp` must be above it.
 const ABSOLUTE_ZERO: f64 = -273.15;
@@ -276,10 +270,10 @@ type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
 /// HII-01.
-const RUN_KEYS: [&str; 37] = [
+const RUN_KEYS: [&str; 36] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
     "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
-    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab", "tnom", "simparam",
+    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab", "simparam",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
@@ -425,7 +419,6 @@ impl Source {
             "vntol" => keys.vntol = Some(real()?),
             "trtol" => keys.trtol = Some(real()?),
             "temp" => keys.temp = Some(real()?),
-            "tnom" => keys.tnom = Some(real()?),
             "resolution" => keys.resolution = Some(real()?),
             "maxrounds" => keys.maxrounds = Some(count()?),
             "maxmicro" => keys.maxmicro = Some(count()?),
@@ -491,7 +484,6 @@ impl Keys {
         over(&mut self.vntol, &o.vntol);
         over(&mut self.trtol, &o.trtol);
         over(&mut self.temp, &o.temp);
-        over(&mut self.tnom, &o.tnom);
         over(&mut self.resolution, &o.resolution);
         over(&mut self.maxrounds, &o.maxrounds);
         over(&mut self.maxmicro, &o.maxmicro);
@@ -608,7 +600,7 @@ impl Keys {
         for (key, given) in [("reltol", &self.reltol), ("abstol", &self.abstol), ("vntol", &self.vntol), ("trtol", &self.trtol), ("resolution", &self.resolution)] {
             positive(key, given)?;
         }
-        for (key, given) in [("temp", &self.temp), ("tnom", &self.tnom)] {
+        for (key, given) in [("temp", &self.temp)] {
             if let Some(Given { value, at }) = given {
                 if !(*value > ABSOLUTE_ZERO) {
                     let message = format!("run `{name}`: `{key}` must be greater than {ABSOLUTE_ZERO} (degrees Celsius), found {value}");
@@ -744,7 +736,6 @@ impl Keys {
                 vntol: self.vntol.as_ref().map(|g| g.value),
                 trtol: self.trtol.as_ref().map(|g| g.value),
                 temp: self.temp.as_ref().map(|g| g.value),
-                tnom: self.tnom.as_ref().map(|g| g.value),
                 resolution: self.resolution.as_ref().map(|g| g.value),
                 maxrounds: self.maxrounds.as_ref().map(|g| g.value),
                 maxmicro: self.maxmicro.as_ref().map(|g| g.value),
@@ -1080,7 +1071,6 @@ points = 5
             vntol: Some(2e-6),
             trtol: Some(5.0),
             temp: Some(75.0),
-            tnom: None,
             resolution: Some(1e-12),
             maxrounds: Some(30),
             maxmicro: Some(500),

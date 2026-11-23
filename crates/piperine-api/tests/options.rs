@@ -264,53 +264,6 @@ fn max_steps_defaults_to_two_million() {
     assert_eq!(piperine_solver::prelude::TransientAnalysisOptions::new(1.0, 1e-3).max_steps, 2_000_000);
 }
 
-#[test]
-fn tnom_key_and_flag_default_to_27() {
-    // AO-08 AC 1: `tnom` is Celsius in the run and Kelvin in the solver; with none given the
-    // nominal temperature is 27 C = 300.15 K, and `tnom = 50` is 323.15 K, whatever `temp` says.
-    let default = open(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(default.context().tolerances.tnom, 300.15);
-    let flag = open(&with_parts(THERMOMETER), Overrides { tnom: Some(50.0), temp: Some(75.0), ..op(&["a"]) }).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(flag.context().tolerances.tnom, 323.15);
-    assert_eq!(flag.context().tolerances.temperature, 348.15, "`temp` is untouched by `tnom`");
-}
-
-#[test]
-fn the_tnom_key_of_a_run_table_reaches_the_session_context() {
-    // AO-08 AC 1: the key `tnom = 50` of a run table, read from the manifest, gives the session
-    // 323.15 K, and a table without the key keeps 27 C = 300.15 K.
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bench.msl");
-    std::fs::write(&file, with_parts(THERMOMETER)).expect("write");
-    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let named = Overrides { bench: Some(file.clone()), top: Some("Top".into()), backend: Some("interp".into()), ..Overrides::default() };
-    for (keys, kelvin) in [("tnom = 50\n", 323.15), ("", 300.15)] {
-        let table = Manifest::run(&format!("print = [\"a\"]\n{keys}")).unwrap_or_else(|f| panic!("{f:?}"));
-        assert_eq!(table.options.tnom, (!keys.is_empty()).then_some(50.0));
-        let spec = table.merged(&named).unwrap_or_else(|f| panic!("{f}"));
-        let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
-        assert_eq!(session.context().tolerances.tnom, kelvin, "{keys}");
-    }
-}
-
-#[test]
-fn tnom_at_or_below_absolute_zero_is_p0010() {
-    // AO-08 AC 2: a `tnom` not above -273.15 C is a P0010 naming the key, from the flag and from the table.
-    for value in [-273.15, -300.0] {
-        let dir = tempfile::tempdir().expect("tmp");
-        let file = dir.path().join("bench.msl");
-        std::fs::write(&file, with_parts(THERMOMETER)).expect("write");
-        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = Overrides { tnom: Some(value), top: Some("Top".into()), ..op(&["a"]) };
-        let fault = project.request(None, &overrides).err().unwrap_or_else(|| panic!("tnom = {value} was accepted"));
-        let message = format!("{fault:?}");
-        assert!(message.contains("P0010") && message.contains("`tnom`"), "{message}");
-        let faults = Manifest::run(&format!("tnom = {value}\n")).expect_err("the key is refused too");
-        let message = format!("{faults:?}");
-        assert!(message.contains("P0010") && message.contains("`tnom`"), "the key {value}: {message}");
-    }
-}
-
 /// A manifest with one run `[run.a]`, as the host reads it.
 struct Manifest;
 
@@ -338,9 +291,9 @@ fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
 
 #[test]
 fn a_simparam_entry_naming_an_option_is_p0010() {
-    // AO-07 AC 5 (D13): `reltol`, `abstol`, `vntol`, `trtol`, `temp` and `tnom` have their own
+    // AO-07 AC 5 (D13): `reltol`, `abstol`, `vntol`, `trtol` and `temp` have their own
     // keys, so a `simparam` entry of one of those names is a P0010 naming it, from the table or a flag.
-    for name in ["reltol", "abstol", "vntol", "trtol", "temp", "tnom"] {
+    for name in ["reltol", "abstol", "vntol", "trtol", "temp"] {
         let faults = Manifest::run(&format!("simparam = {{ {name} = 1 }}\n")).expect_err(name);
         assert!(format!("{faults:?}").contains("P0010") && format!("{faults:?}").contains(name), "{name}: {faults:?}");
         let flags = Overrides { analysis: Some("op".into()), simparam: vec![(name.into(), 1.0)], ..Overrides::default() };
