@@ -22,7 +22,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tgen**: `cargo test -p piperine-transpile --test generics`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
-**Run apisession**: `cargo test -p piperine-api --test session`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
@@ -37,6 +36,13 @@ Executors: **every task is Sonnet**. Opus verifies the feature.
 **Base and order.** Phase 18 starts after `tasks-c.md` T82 (phase C closed). The user answered DD1 to DD3 on
 2026-11-23 (design-d.md "Questions answered"): phase 20 implements `temperature()` and `multiplicity()` as run settings the
 model reads; DQ1 to DQ3 answered the same day (one multiplicity per run, the instance decides with its own param).
+**Amended (user decision 2026-11-23, DQ4):** "É, melhor voltar Option" — `simparam(name) -> Option<f64>` (no default, `E0456`
+retired), delivered by `analog-operators`' session-parameter task, not here. Refined the same day (user decision
+2026-11-23): `multiplicity()` is an ordinary stdlib function written in MSL, `pub fn multiplicity() -> Option<f64> {
+simparam("multiplicity") }`, nothing in the core (no `CORE_ROWS` row, no `Env` read, no ABI field), with
+`DEFAULT_MULTIPLICITY = 1.0` (ngspice's default `m`) beside `AMBIENT_TEMPERATURE`; the run sets it as any `simparam`
+entry (no dedicated key or flag, no `E0802`). T99 is now that stdlib task. **T99 to T101 need that `simparam` on
+`main`:** T99 checks it first and stops the batch if it is missing.
 
 Rules every task follows (the user's rules, repeated so a worker needs no other file):
 
@@ -66,7 +72,6 @@ Rules every task follows (the user's rules, repeated so a worker needs no other 
 | IR (`piperine-ir`) | integration | the new field built, checked (valid and refused), printed | `crates/piperine-ir/tests/generics.rs` | `cargo test -p piperine-ir --test generics` |
 | Interpreter refusals | integration | the run-setting reads refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
 | Source-level runs | integration | one test per run-time AC on the Rust backend, expected values computed by Rust in the test | `crates/piperine-parity/tests/{source_templates,source_implicit}.rs` | `cargo test -p piperine-parity --test source_templates` / `--test source_implicit` |
-| Host (`piperine-api`) | integration | the run's temperature and multiplicity; a bad multiplicity refused | `crates/piperine-api/tests/session.rs` | `cargo test -p piperine-api --test session` |
 | Spec text | integration | each amended sentence | `crates/piperine-lang/tests/spec_text.rs` | `cargo test -p piperine-lang --test spec_text` |
 | Book | integration | each owned row flipped or narrowed | `tests/book/*.rs`, `tests/book/inventory.tsv` | `cargo test -p piperine --test book_<chapter>` |
 | Repository records | integration | one assertion per removed `GAPS.md` row | `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-cli --test docs` |
@@ -99,7 +104,7 @@ T83 → T84 → T85 → T86 → T87 → T88
 T89 → T90 → T91 → T92 → T93
 ```
 
-### Phase 20: `temperature()` and `multiplicity()` (user decision 2026-11-23)
+### Phase 20: `temperature()` and `multiplicity()` (user decisions 2026-11-23)
 
 ```
 T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
@@ -344,7 +349,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T94: The spec: `temperature()` and `multiplicity()` are run settings the model reads
 
-**What**: Amend `docs/spec` to the user's decision of 2026-11-23 (spec.md GN-24 to GN-26 as amended): §8.5.1 to §8.5.6 are replaced by "an instance has no implicit params; `temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature and `None` otherwise; `multiplicity() -> Option<f64>` is `Some(m)` when the run sets a multiplicity and `None` otherwise; nothing scales or offsets a model: the model decides whether to use the value as its temperature all along, as an initial temperature, or to ignore it"; §14.4's `temperature()` row and a new `multiplicity()` row (environment, constant during an analysis); §22's constants gain `AMBIENT_TEMPERATURE = 300.15` (27 °C, ngspice's default), with the sentence that `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the recommended fallback, and `vt()`'s entry says it uses that fallback; §23's run request gains the `multiplicity` key beside `temp`, one per run (no per-instance setting), and §8.5 shows the instance pattern: an ordinary param `m: Option<f64>` combined in a body `let` as `m.or(multiplicity()).unwrap_or(1.0)` (not in the param's default, a const context); §8.4.2's sentence on `m` and `dtemp` in a template, the `E0375` row and §8.5's `E0317` row for `m` leave; §8.5.12 and the `"osdi"` contract row give the descriptor the run's values when set and its defaults otherwise; Appendix G.54 is marked superseded. One `spec_text` assertion per sentence.
+**What**: Amend `docs/spec` to the user's decision of 2026-11-23 (spec.md GN-24 to GN-26 as amended): §8.5.1 to §8.5.6 are replaced by "an instance has no implicit params; `temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature and `None` otherwise; `multiplicity() -> Option<f64>` is a stdlib function, `simparam("multiplicity")`: `Some(m)` when the run sets the session parameter `multiplicity`, `None` otherwise (DQ4, nothing in the core); nothing scales or offsets a model: the model decides whether to use the value as its temperature all along, as an initial temperature, or to ignore it"; §14.4's `temperature()` row (environment, constant during an analysis; `multiplicity()` is not a core row); §22's constants gain `AMBIENT_TEMPERATURE = 300.15` (27 °C, ngspice's default) and `DEFAULT_MULTIPLICITY = 1.0` (ngspice's default `m`), with the sentences that `temperature().unwrap_or(AMBIENT_TEMPERATURE)` and `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)` are the recommended fallbacks, `vt()`'s entry says it uses the temperature fallback, and §22 gains the `multiplicity()` entry (`simparam("multiplicity")`); §23's run request gains no key: the multiplicity is a `simparam` entry (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`), one per run (no per-instance setting), and §8.5 shows the instance pattern: an ordinary param `m: Option<f64>` combined in a body `let` as `m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY)` (not in the param's default, a const context); §8.4.2's sentence on `m` and `dtemp` in a template, the `E0375` row and §8.5's `E0317` row for `m` leave; §8.5.12 and the `"osdi"` contract row give the descriptor the run's values when set and its defaults otherwise; Appendix G.54 is marked superseded. One `spec_text` assertion per sentence.
 **Where**: `docs/spec/part_iii_structure.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `spec_text.rs`
@@ -363,9 +368,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ---
 
-### T95: IR reads of whether the run set them
+### T95: IR read of whether the run set its temperature
 
-**What**: `Env::TemperatureGiven` (a `bool`), `Env::Multiplicity` (an `f64`) and `Env::MultiplicityGiven` (a `bool`) are appended to `Env`, all constant during an analysis; `Env::Temperature` keeps its meaning (the run's temperature, the solver's 300.15 K when the run sets none), so `temperature()` lowers to the `Option` pair `(TemperatureGiven, Temperature)` and `multiplicity()` to `(MultiplicityGiven, Multiplicity)`; `Ir::check` types them, the IR printer shows them, the interpreter refuses the three by name (R1).
+**What**: `Env::TemperatureGiven` (a `bool`) is appended to `Env`, constant during an analysis; `Env::Temperature` keeps its meaning (the run's temperature, the solver's 300.15 K when the run sets none), so `temperature()` lowers to the `Option` pair `(TemperatureGiven, Temperature)`; `Ir::check` types it, the IR printer shows it, the interpreter refuses it by name (R1). No `Env` read for the multiplicity: the stdlib `multiplicity()` reads `simparam`'s session parameters (`analog-operators`, DQ4).
 **Where**: `crates/piperine-ir/src/model.rs`
 **Depends on**: T94
 **Reuses**: `Env`, `Typing`, the `Option` pair of explicit-unknowns
@@ -375,19 +380,19 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 **Done when**:
 
 - [ ] `run_setting_reads_are_built_checked_and_printed` passes under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` covers the three reads under `**Run interp**`
+- [ ] `each_generics_form_is_refused_by_name` covers the read under `**Run interp**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(ir): reads of whether the run set its temperature and multiplicity`
+**Commit**: `feat(ir): the read of whether the run set its temperature`
 
 ---
 
-### T96: The device reads the run's settings
+### T96: The device reads whether the run set its temperature
 
-**What**: The device ABI's environment gives the three values (appended in place at `MINOR` 0, MD-78 item 4; `abi.md` amended in the same task); the solver fills them from the run's options (`temp` given or not, `multiplicity` given or not); the transpiler prints the three reads (`rt` environment accessors). A body that reads none prints as before.
+**What**: The device ABI's environment gives whether the run set its temperature (appended in place at `MINOR` 0, MD-78 item 4; `abi.md` amended in the same task); the solver fills it from the run's options (`temp` given or not); the transpiler prints the read (an `rt` environment accessor). A body that does not read it prints as before. Nothing for the multiplicity (DQ4).
 **Where**: `crates/piperine-abi/src/raw.rs`
 **Depends on**: T95
 **Reuses**: the environment record of `piperine-abi`, `piperine-analog-solver/src/tolerances.rs`, `piperine-transpile/src/rt/`
@@ -396,42 +401,42 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_device_reads_whether_the_run_set_its_temperature_and_multiplicity` passes under `**Run tgen**`
+- [ ] `a_device_reads_whether_the_run_set_its_temperature` passes under `**Run tgen**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat(abi): the environment says whether the run set its temperature and multiplicity`
+**Commit**: `feat(abi): the environment says whether the run set its temperature`
 
 ---
 
-### T97: The checker and the elaborator: two options, every caller migrated
+### T97: The checker and the elaborator: `temperature()` an option, every caller migrated
 
-**What**: `temperature()` and `multiplicity()` are typed `Option<f64>` (`CORE_ROWS`), environment class "constant during an analysis" (allowed in `analog`, reactions, body `let`s and value inputs; a const context stays `E0188`), lowered per T95; the POM's `BuiltinKind::ImplicitParam` rows `m` and `dtemp` leave, so the names are ordinary and binding `m` at a placement is `E0320` like any unknown param. `std/constants.msl` gains `pub const AMBIENT_TEMPERATURE: f64 = 300.15;` with its doc comment (27 °C, ngspice's default, the recommended fallback of `temperature()`), and every in-tree caller of `temperature()` outside the Book and `docs/spec` (`std/analog.msl`'s `vt()` and models, the spice-faithful models under `std/`, `tests/e2e/twins/temp_res.msl`, examples, the `piperine-lang`, `piperine-api` and `piperine-parity` test sources) reads `temperature().unwrap_or(AMBIENT_TEMPERATURE)`; every twin prints the same bytes and every parity target passes with `ToleranceContract` unedited.
+**What**: `temperature()` is typed `Option<f64>` (`CORE_ROWS`), environment class "constant during an analysis" (allowed in `analog`, reactions, body `let`s and value inputs; a const context stays `E0188`), lowered per T95; no `multiplicity()` row is added (it is a stdlib function, T99); the POM's `BuiltinKind::ImplicitParam` rows `m` and `dtemp` leave, so the names are ordinary and binding `m` at a placement is `E0320` like any unknown param. `std/constants.msl` gains `pub const AMBIENT_TEMPERATURE: f64 = 300.15;` with its doc comment (27 °C, ngspice's default, the recommended fallback of `temperature()`), and every in-tree caller of `temperature()` outside the Book and `docs/spec` (`std/analog.msl`'s `vt()` and models, the spice-faithful models under `std/`, `tests/e2e/twins/temp_res.msl`, examples, the `piperine-lang`, `piperine-api` and `piperine-parity` test sources) reads `temperature().unwrap_or(AMBIENT_TEMPERATURE)`; every twin prints the same bytes and every parity target passes with `ToleranceContract` unedited.
 **Where**: `crates/piperine-lang/src/types/catalogue.rs`
 **Depends on**: T96
 **Reuses**: `CoreSig`, `elab/analog.rs`
-**Requirement**: GN-24 (AC 1, AC 2), GN-25 (AC 1, AC 2, AC 3)
+**Requirement**: GN-24 (AC 2), GN-25 (AC 1, AC 2, AC 3)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `temperature_and_multiplicity_are_options_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
-- [ ] `the_calls_lower_to_the_run_reads_and_nothing_is_scaled` passes under `**Run elabimplicit**`
+- [ ] `temperature_is_an_option_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
+- [ ] `the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled` passes under `**Run elabimplicit**`
 - [ ] `every_twin_prints_the_bytes_it_printed_before_the_move` passes under `**Run twins**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat(lang): temperature() and multiplicity() are options; callers fall back to the ambient temperature`
+**Commit**: `feat(lang): temperature() is an option; callers fall back to the ambient temperature`
 
 ---
 
 ### T98: The Book and the spec examples use the fallback
 
-**What**: Every Book listing (`docs/book/content.html`) and `docs/spec` example that reads `temperature()` writes `temperature().unwrap_or(AMBIENT_TEMPERATURE)` (or uses the `Option` as its model chooses); the Book's environment section says what `temperature()` and `multiplicity()` return and recommends the ambient fallback, ngspice's 27 °C; the Book tests of those listings (`tests/book/analog.rs`, `tests/book/solver.rs`, …) and `inventory.tsv` fingerprints follow; every row that ran still runs.
+**What**: Every Book listing (`docs/book/content.html`) and `docs/spec` example that reads `temperature()` writes `temperature().unwrap_or(AMBIENT_TEMPERATURE)` (or uses the `Option` as its model chooses); the Book's environment section says what `temperature()` and `multiplicity()` return and recommends the ambient fallback, ngspice's 27 °C, and `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)`; the Book tests of those listings (`tests/book/analog.rs`, `tests/book/solver.rs`, …) and `inventory.tsv` fingerprints follow; every row that ran still runs.
 **Where**: `docs/book/content.html`
 **Depends on**: T97
 **Reuses**: `Chapter`
@@ -451,39 +456,40 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ---
 
-### T99: The run sets its temperature and its multiplicity
+### T99: The stdlib `multiplicity()` over `simparam`
 
-**What**: The run request's `temp` (degrees Celsius, as today) makes `temperature()` `Some(temp + 273.15)`; a new `multiplicity` key (`Request::multiplicity`, `[run.<name>] multiplicity`, `--multiplicity <v>`) makes `multiplicity()` `Some(v)`; neither is given at a placement and neither changes during a run (no `set`, GN-26 AC 2); a multiplicity that is not `> 0.0` is `E0802` naming the key; there is one multiplicity per run and one temperature for every instance, with no per-instance setting (DQ1, DQ2); `tnom` is untouched (DQ3).
-**Where**: `crates/piperine-api/src/request.rs`
+**What**: First check that `analog-operators`' `simparam(name) -> Option<f64>` (no default argument) and the `simparam` table and `--simparam` flag are on `main`; if not, stop the batch and report. Then (user decision 2026-11-23, "É, melhor voltar Option", refined the same day: a stdlib function, nothing in the core) `std/analog.msl` gains `pub fn multiplicity() -> Option<f64> { simparam("multiplicity") }` beside `vt()`, and `std/constants.msl` gains `pub const DEFAULT_MULTIPLICITY: f64 = 1.0;` beside `AMBIENT_TEMPERATURE`, each with its doc comment (ngspice's default `m`; the recommended fallback `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)`). No `CORE_ROWS` row, no `Env` read, no ABI field, no `Request` field, no `--multiplicity` flag, no `E0802`: the run sets it as any `simparam` entry (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`).
+**Where**: `crates/piperine-lang/std/analog.msl`
 **Depends on**: T98
-**Reuses**: `Request`, the `temp` path of `piperine-cli`
-**Requirement**: GN-26 (AC 1, AC 2), GN-24 (AC 3)
+**Reuses**: `simparam` (`analog-operators`), `std/constants.msl`
+**Requirement**: GN-24 (AC 1, AC 3, AC 6)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `a_run_sets_its_temperature_and_multiplicity` and `a_multiplicity_that_is_not_positive_is_e0802` pass under `**Run apisession**`
+- [ ] `multiplicity_is_a_stdlib_function_over_simparam` passes under `**Run typesimplicit**`
+- [ ] `multiplicity_lowers_to_the_session_parameter` passes under `**Run elabimplicit**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(api): the run's multiplicity beside its temperature`
+**Commit**: `feat(std): multiplicity() over simparam and DEFAULT_MULTIPLICITY`
 
 ---
 
 ### T100: Temperature and multiplicity run end to end
 
-**What**: Source tests: a resistor that declares its own `m: Option<f64>` and contributes `count * v(a, b) / r` with `let count = m.or(multiplicity()).unwrap_or(1.0);` in its body (DQ1: a body `let`, since its default is a const context where `multiplicity()` is `E0188`, which the test also asserts) gives four in parallel placed with `m: Some(4.0)`, follows the run's `multiplicity: 3.0` with no `m`, prefers its own `m` over the run's, and with nothing set gives one resistor; a second resistor in the same run with no `m` reads the same run multiplicity; three models, one using the run's temperature all along, one using it as the initial temperature of a thermal state, one ignoring it, each give the value Rust computes in the test, with `temp` set and with it unset (then `None`, and the fallback model runs at 300.15 K).
+**What**: Source tests: a resistor that declares its own `m: Option<f64>` and contributes `count * v(a, b) / r` with `let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);` in its body (DQ1: a body `let`, since its default is a const context where `multiplicity()` is `E0188` through `simparam`, which the test also asserts) gives four in parallel placed with `m: Some(4.0)`, follows the run's `simparam = { multiplicity = 3.0 }` with no `m`, prefers its own `m` over the run's, and with nothing set gives one resistor; a second resistor in the same run with no `m` reads the same run multiplicity; three models, one using the run's temperature all along, one using it as the initial temperature of a thermal state, one ignoring it, each give the value Rust computes in the test, with `temp` set and with it unset (then `None`, and the fallback model runs at 300.15 K); the run's `temp` and `multiplicity` entry hold for the whole run, and there is no placement or `set` spelling of either (GN-26 AC 1, AC 2).
 **Where**: `crates/piperine-parity/tests/source_implicit.rs`
 **Depends on**: T99
-**Reuses**: `crates/piperine-parity/tests/implicit/*.msl`
-**Requirement**: GN-24 (AC 1, AC 4), GN-25 (AC 1, AC 2), GN-26 (AC 1)
+**Reuses**: `crates/piperine-parity/tests/implicit/*.msl`, the stdlib `multiplicity()` (T99)
+**Requirement**: GN-24 (AC 1, AC 4, AC 5), GN-25 (AC 1, AC 2), GN-26 (AC 1, AC 2)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel`, `multiplicity_in_a_param_default_is_e0188`, `nothing_set_reads_none` and `a_model_chooses_how_to_use_its_temperature` pass under `**Run srcimplicit**`
+- [ ] `an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel`, `multiplicity_in_a_param_default_is_e0188`, `nothing_set_reads_none`, `a_model_chooses_how_to_use_its_temperature` and `the_run_settings_hold_for_the_whole_run` pass under `**Run srcimplicit**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
@@ -495,7 +501,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T101: The Book's multiplicity row, rewritten
 
-**What**: Rewrite the modules chapter's "`m` and `dtemp`" item to the new form (a model reads `multiplicity()` and `temperature()`, the run sets them, nothing is implicit), with a listing (a resistor with its own `m: Option<f64>` combined in its body as `m.or(multiplicity()).unwrap_or(1.0)`, placed as `Resistor(a, b) { r: 1k, m: Some(4.0) }`, and a sentence that a run's `--multiplicity` reaches every instance that leaves `m` unset) and its "Run it" output; re-own claim modules~1faf8c12 to that text (`holds`, test `the_multiplicity_listing_runs_as_four_in_parallel`), and its row leaves `GAPS.md` §11 (GN-26 AC 3).
+**What**: Rewrite the modules chapter's "`m` and `dtemp`" item to the new form (a model reads `multiplicity()` and `temperature()`, the run sets them, nothing is implicit), with a listing (a resistor with its own `m: Option<f64>` combined in its body as `m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY)`, placed as `Resistor(a, b) { r: 1k, m: Some(4.0) }`, and a sentence that a run's `--simparam multiplicity=<v>` reaches every instance that leaves `m` unset) and its "Run it" output; re-own claim modules~1faf8c12 to that text (`holds`, test `the_multiplicity_listing_runs_as_four_in_parallel`), and its row leaves `GAPS.md` §11 (GN-26 AC 3).
 **Where**: `tests/book/modules.rs`
 **Depends on**: T100
 **Reuses**: `Chapter`, `Commands`
@@ -582,19 +588,20 @@ Proof: run typestraits | test a_module_impl_function_that_reads_the_solve_is_e01
 Proof: run elabtempl | test a_module_impl_function_runs_on_a_template_at_elaboration ... ok
 Proof: run srctempl | test the_swappable_mosfet_runs_each_model ... ok
 
-**C98** - `multiplicity()` returns `Some` of the run's multiplicity and `None` when the run sets none; nothing is scaled by the system. (GN-24, AC 1, AC 2; amended 2026-11-23; T97, T100)
-Proof: run typesimplicit | test temperature_and_multiplicity_are_options_of_the_run ... ok
-Proof: run elabimplicit | test the_calls_lower_to_the_run_reads_and_nothing_is_scaled ... ok
+**C98** - `multiplicity()` returns `Some` of the run's `multiplicity` session parameter and `None` when the run sets none; nothing is scaled by the system. (GN-24, AC 1, AC 2; amended twice 2026-11-23, DQ4; T97, T100)
+Proof: run elabimplicit | test the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled ... ok
 Proof: run srcimplicit | test nothing_set_reads_none ... ok
 
-**C99** - A multiplicity that is not `> 0.0` is `E0802`. (GN-24, AC 3; T99)
-Proof: run apisession | test a_multiplicity_that_is_not_positive_is_e0802 ... ok
+**C99** - `multiplicity()` is a stdlib function, `simparam("multiplicity")`, with `DEFAULT_MULTIPLICITY = 1.0` beside it: no core row, no dedicated key, flag or check, no environment read (`E0802` for it withdrawn; user decision 2026-11-23). (GN-24, AC 3, AC 6; T99)
+Proof: run typesimplicit | test multiplicity_is_a_stdlib_function_over_simparam ... ok
+Proof: run elabimplicit | test multiplicity_lowers_to_the_session_parameter ... ok
 
 **C100** - A resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body is four in parallel placed with `m: Some(4.0)` and follows the run's one multiplicity without it; reading `multiplicity()` in a param default is `E0188`. (GN-24, AC 4, AC 5; T100)
 Proof: run srcimplicit | test an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel ... ok
 Proof: run srcimplicit | test multiplicity_in_a_param_default_is_e0188 ... ok
 
 **C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100)
+Proof: run typesimplicit | test temperature_is_an_option_of_the_run ... ok
 Proof: run srcimplicit | test a_model_chooses_how_to_use_its_temperature ... ok
 Proof: run spectext | test the_recommended_fallback_is_the_ambient_temperature_in_the_spec ... ok
 Proof: run bookanalog | test the_temperature_listings_run_with_the_ambient_fallback ... ok
@@ -604,16 +611,16 @@ Proof: run typesimplicit | test m_and_dtemp_are_ordinary_names ... ok
 Proof: run spectext | test instances_have_no_implicit_params_in_the_spec ... ok
 Proof: run spectext | test temperature_and_multiplicity_are_run_settings_in_the_spec ... ok
 
-**C103** - The run sets its temperature and multiplicity before it starts, and they hold for the whole run. (GN-26, AC 1, AC 2; T99)
-Proof: run apisession | test a_run_sets_its_temperature_and_multiplicity ... ok
+**C103** - The run sets its temperature and its `multiplicity` session parameter before it starts, they hold for the whole run, and neither has a placement or `set` spelling. (GN-26, AC 1, AC 2; T100)
+Proof: run srcimplicit | test the_run_settings_hold_for_the_whole_run ... ok
 
 **C104** - The Book's multiplicity listing runs as four in parallel and its row leaves `GAPS.md` §11. (GN-26, AC 3; T101)
 Proof: run bookmodules | test the_multiplicity_listing_runs_as_four_in_parallel ... ok
 
-**C105** - The interpreter refuses the run-setting reads by name; a template leaves no IR form; the device reads what the run set. (GN-29, AC 1; T95, T96, T87)
+**C105** - The interpreter refuses the temperature-given read by name; a template leaves no IR form; the device reads whether the run set its temperature. (GN-29, AC 1; T95, T96, T87)
 Proof: run interp | test each_generics_form_is_refused_by_name ... ok
 Proof: run irgen | test run_setting_reads_are_built_checked_and_printed ... ok
-Proof: run tgen | test a_device_reads_whether_the_run_set_its_temperature_and_multiplicity ... ok
+Proof: run tgen | test a_device_reads_whether_the_run_set_its_temperature ... ok
 
 **C106** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T102)
 Proof: run docs | test gaps_drops_what_generics_phase_d_closed ... ok
@@ -636,7 +643,7 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 
 The phase's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6. User, 2026-11-23: DD2 (a) and DD3 (a) approved; DD1 rejected — "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; then "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the old one, docs recommend the ambient fallback (ngspice's 27 °C); `multiplicity() -> Option<f64>`. DQ1 to DQ3 answered the same day: "Um por run e a instância decide no seu próprio parâmetro"; one temperature for every instance; `tnom` untouched.
+**Settled mid-build:** none yet. Planning amendment (user decision 2026-11-23, DQ4, "É, melhor voltar Option"): `simparam(name) -> Option<f64>` (built by `analog-operators`), and, refined the same day (user decision 2026-11-23), `multiplicity()` is a stdlib MSL function over it (`pub fn multiplicity() -> Option<f64> { simparam("multiplicity") }`) with `DEFAULT_MULTIPLICITY = 1.0`: nothing in the core, no `multiplicity` key/flag, no `E0802`, no `Env::Multiplicity`/`MultiplicityGiven`, no ABI field; the pattern is `let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`; T99 is the stdlib task; phase D stays 20 tasks. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6. User, 2026-11-23: DD2 (a) and DD3 (a) approved; DD1 rejected — "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; then "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the old one, docs recommend the ambient fallback (ngspice's 27 °C); `multiplicity() -> Option<f64>`. DQ1 to DQ3 answered the same day: "Um por run e a instância decide no seu próprio parâmetro"; one temperature for every instance; `tnom` untouched.
 **Dispatched:** none yet.
 **Walked:** none yet.
 
@@ -656,4 +663,4 @@ Phase 20:  T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T10
 | ----- | ------ | ----- | ----- |
 | B14 | 18 | T83 to T88 | after phase C closes (T82) |
 | B15 | 19 | T89 to T93 | the swappable MOSFET; modules#10 and cheatsheet#8 handed to `resolved-nets-bundles` (DD2) |
-| B16 | 20 | T94 to T102 | `temperature()` and `multiplicity()` as run settings (user decision 2026-11-23); closes L29 and L32 |
+| B16 | 20 | T94 to T102 | `temperature()` (core) and `multiplicity()` (stdlib over `simparam`) as run settings (user decisions 2026-11-23, DQ4); T99 to T101 need `analog-operators`' `simparam -> Option<f64>` on `main`; closes L29 and L32 |

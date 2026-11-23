@@ -276,13 +276,16 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 **Amended (user decision 2026-11-23).** The approved GN-24 to GN-26 (implicit params `m` and `dtemp` bound at a placement, effective values down the path, automatic scaling of flows, probes and noise, a host `set` of them) are withdrawn. The user, 2026-11-23: "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the existing `f64` one, and the docs recommend falling back to the ambient temperature, ngspice's default 27 °C; `multiplicity() -> Option<f64>`, real as ngspice `m` and VAMS `$mfactor`. Answered the same day (design-d.md DQ1 to DQ3): one multiplicity per run, and an instance that wants its own declares an ordinary param and combines it in its body ("Um por run e a instância decide no seu próprio parâmetro"); one temperature for every instance; `tnom` untouched.
 
-**Acceptance Criteria** (GN-24, `multiplicity()`; user decision 2026-11-23):
+**Amended again (user decision 2026-11-23, second amendment).** `simparam(name) -> Option<f64>` (user, 2026-11-23: "É, melhor voltar Option"): `Some(v)` when the run sets the session parameter `name`, `None` otherwise, no default argument, `E0456` retired; delivered by `analog-operators` (its session-parameter task), not by this feature. Refined the same day (user decision 2026-11-23, accepted from the coordinator): `multiplicity()` stays, but as an ordinary stdlib function written in MSL over `simparam`, nothing in the core: `pub fn multiplicity() -> Option<f64> { simparam("multiplicity") }`, with a stdlib constant `DEFAULT_MULTIPLICITY = 1.0` (ngspice's default `m`) beside `AMBIENT_TEMPERATURE`; the docs recommend `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)`. The run sets the multiplicity as any session parameter (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`), with no dedicated key or flag and no check of its own (`E0802` for a multiplicity is withdrawn), and no IR or ABI environment read carries it.
 
-1. WHEN a module calls `multiplicity()` THEN the system SHALL return `Some(m)`, `m` the multiplicity the run set, and `None` when the run set none.
+**Acceptance Criteria** (GN-24, `multiplicity()`; user decision 2026-11-23, amended the same day):
+
+1. WHEN a module calls `multiplicity()` THEN the system SHALL return `Some(m)`, `m` the value of the run's session parameter `multiplicity`, and `None` when the run set none.
 2. The system SHALL NOT scale any contribution, probe, noise, carrier or event by a multiplicity: the model decides how to use the value.
-3. IF the run sets a multiplicity that is not `> 0.0` THEN the system SHALL refuse the request with `E0802` naming it.
-4. WHEN a resistor declares its own param `m: Option<f64>`, combines it in its body (`let count = m.or(multiplicity()).unwrap_or(1.0);`, a body `let`, since a param default is a const context that cannot read `multiplicity()`) and contributes `count * v(a, b) / r` THEN placed with `m: Some(4.0)` it SHALL give the solution of four such resistors in parallel, and with no `m` it SHALL follow the run's multiplicity.
+3. The system SHALL define `multiplicity()` in the stdlib as `simparam("multiplicity")`, with no core row, no dedicated run key, flag or check, and no environment read of its own (user decision 2026-11-23).
+4. WHEN a resistor declares its own param `m: Option<f64>`, combines it in its body (`let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`, a body `let`, since a param default is a const context that cannot read `simparam`) and contributes `count * v(a, b) / r` THEN placed with `m: Some(4.0)` it SHALL give the solution of four such resistors in parallel, and with no `m` it SHALL follow the run's `multiplicity` session parameter, and one resistor when the run sets none.
 5. The run SHALL set one multiplicity for the whole run; the system SHALL offer no per-instance multiplicity setting (user, 2026-11-23: "Um por run e a instância decide no seu próprio parâmetro").
+6. The spec, the Book and the stdlib SHALL recommend `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)`, `DEFAULT_MULTIPLICITY = 1.0` (ngspice's default `m`).
 
 **Acceptance Criteria** (GN-25, `temperature()`; user decision 2026-11-23):
 
@@ -293,11 +296,11 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 **Acceptance Criteria** (GN-26, the run sets them; user decision 2026-11-23):
 
-1. WHEN a run request sets its temperature (`temp`) or its multiplicity (`multiplicity`) THEN the system SHALL give those values to `temperature()` and `multiplicity()` for the whole run.
+1. WHEN a run request sets its temperature (`temp`) or its session parameter `multiplicity` (`simparam = { multiplicity = v }`, `--simparam multiplicity=v`) THEN the system SHALL give those values to `temperature()` and `multiplicity()` for the whole run.
 2. The system SHALL offer no way to set either at a placement or to change either during a run.
 3. WHEN the Book's multiplicity listing (rewritten to this form: the resistor's own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`) runs THEN it SHALL give four resistors in parallel, the Book row `modules~1faf8c12` SHALL move from refused to `holds` in `tests/book/inventory.tsv`, and its row SHALL leave `GAPS.md` section 11.
 
-**Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`, against four in parallel, and with no `m` following the run's multiplicity; models that use the run's temperature all along, as an initial value, or ignore it, with the temperature set and unset.
+**Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`, against four in parallel, and with no `m` following the run's `multiplicity` session parameter; models that use the run's temperature all along, as an initial value, or ignore it, with the temperature set and unset.
 
 ---
 
@@ -382,7 +385,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | GN-01, GN-02, GN-03, GN-04, GN-05 |
 | L4 (part) | generic enums (and generic structs) | GN-06 |
 | L8 | `impl` on a nature; a function that takes a carrier or a node and probes it | GN-10, GN-11, GN-12 |
-| L29 | `m` and `dtemp`: binding and reading (closed by the run settings `temperature()` and `multiplicity()`, user decision 2026-11-23) | GN-24, GN-25, GN-26 as amended |
+| L29 | `m` and `dtemp`: binding and reading (closed by the run settings `temperature()` and the stdlib `multiplicity()` over `simparam`, user decision 2026-11-23, amended the same day) | GN-24, GN-25, GN-26 as amended |
 | L30 | generic modules, const generics, `Short<N>` and the stdlib modules on them | GN-13, GN-14, GN-15, GN-16 |
 | L31 | generation `for` and `if` in a body and in a `digital` block | GN-17, GN-18, GN-19, GN-20 |
 | L32 | templates, placement through a template or a function, `Fn(P)` bounds | GN-21, GN-22, GN-23 |
