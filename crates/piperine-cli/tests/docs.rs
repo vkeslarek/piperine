@@ -441,11 +441,11 @@ fn gaps_rows_carry_no_unknown_control_clause() {
     // EU-19 (replaces `gaps_carries_the_unknown_index_merge_to_composite_values`): with no merge,
     // L3, L5 and L24 do not carry the loop bound or the index merge any more (L3 and L5 left with composite-values).
     let gaps = read("GAPS.md");
-    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
-    // L24 left with composite-values phase C
-    for id in [] as [&str; 0] {
-        assert!(!row(id).contains("merges every element it may name") && !row(id).contains("US-04"), "{id} carries the index merge");
+    // L24 left with composite-values phase C: it is no row, and no row carries the merge clause
+    for id in ["L3", "L5", "L24"] {
+        assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {id} |"))), "{id} is still a row");
     }
+    assert!(!gaps.contains("merges every element it may name") && !gaps.contains("US-04"), "a GAPS row carries the index merge");
 }
 
 #[test]
