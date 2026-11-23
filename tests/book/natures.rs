@@ -81,10 +81,17 @@ fn signals_of_every_family_are_refused_for_the_logic_and_the_net() {
     let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
     // `Logic<4>` is the library's four-state value since `explicit-unknowns` phase B, `Option<u8>` a carried type since
-    // composite-values phase B and `[Bit; 8]` an array of carriers since phase C (CV-23): with a nature of the name `Sda` in scope
-    // the one refusal left is the `logic("10xx")` literal of the four-state line (resolved-nets owns it); the stand-alone block
-    // adds the missing `Sda` (E0161), the model's own nature of the chapter
-    assert_eq!(given, vec![("P0001".to_string(), "this literal in a carrier's initial value is not supported yet".to_string())], "the arrays of carriers run: {given:?}");
+    // composite-values phase B, `[Bit; 8]` an array of carriers since phase C (CV-23) and the `logic("10xx")` literal a
+    // carrier's initial value since phase C's fix round (the constant evaluator reads `logic` of a literal pattern):
+    // with a nature of the name `Sda` in scope every line of the list elaborates and the design runs. What the stand-in
+    // run reports is the listing's own floating nodes (`mid` and `vout` are connected to nothing, so the operating point
+    // has no equation for `vout`: `E0503`, a singular Jacobian), not a language refusal; the one thing the block still
+    // lacks to run on its own is the nature `Sda`, the model's own nature of the chapter (E0161 below, resolved-nets)
+    assert_eq!(
+        given,
+        vec![("E0503".to_string(), "the op analysis failed: Newton: E0503: the Jacobian is singular (SymbolicSingular { index: 0 }): node of Top.vout".to_string())],
+        "every line of the list elaborates; the run stops at the floating node `vout`: {given:?}"
+    );
     Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "E0161", "cannot find `Sda` in this scope");
 }
 

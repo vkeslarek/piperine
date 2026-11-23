@@ -103,6 +103,23 @@ fn an_array_of_length_zero_is_an_empty_array() {
 }
 
 #[test]
+fn a_logic_literal_is_a_carriers_initial_value() {
+    // §22.1.4 rule 2, §5.1.5: `signal bus: Bit<Logic<4>> = logic("10xx")` starts at the two planes the pattern names, the
+    // way `logic` reads in a reaction; an array of them starts every element at it
+    let ir = Elab::ir("module Top() { signal bus: Bit<Logic<4>> = logic(\"10xx\"); signal each: [Bit<Logic<2>>; 3] = [logic(\"1z\"); 3]; }", "Top");
+    let carriers = Read { ir: &ir }.carriers("Top");
+    let planes = |name: &str| match carriers.iter().find(|c| c.0 == name).and_then(|c| c.3) {
+        Some(Constant::Aggregate(id)) => ir.aggregate(id).parts.clone(),
+        other => panic!("`{name}` starts at an aggregate: {other:?}"),
+    };
+    // §22.1.1: a level is `(binary, value)`: `0` is `(1, 0)`, `1` is `(1, 1)`, X is `(0, 0)`, Z is `(0, 1)`; the pattern lists the
+    // highest level first, so `10xx` has binary `0b1100` and value `0b1000`
+    assert_eq!(planes("bus"), [Constant::Int(0b1100), Constant::Int(0b1000)]);
+    assert_eq!(carriers.iter().find(|c| c.0 == "each").map(|c| c.1), Some(Some(3)));
+    assert!(matches!(carriers.iter().find(|c| c.0 == "each").and_then(|c| c.3), Some(Constant::Aggregate(_))));
+}
+
+#[test]
 fn element_reads_and_events_lower_per_element() {
     // CV-24: `x[i]` is one element read (constant or run-time index), the whole `x` an array of the values,
     // `x[k].prev()` the element's previous value, `x[i].changed()` the element's change as a `bool`, and

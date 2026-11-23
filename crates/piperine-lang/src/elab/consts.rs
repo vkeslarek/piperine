@@ -715,6 +715,9 @@ impl<'d, 't> ConstEval<'d, 't> {
         if let Some(Callee::Intrinsic(parser @ (Intrinsic::ParseTable | Intrinsic::ParseHex))) = self.types.callee(expr) {
             return self.parse_array(expr, parser, args, bindings);
         }
+        if let Some(Callee::Intrinsic(Intrinsic::Logic)) = self.types.callee(expr) {
+            return self.logic_literal(expr, args);
+        }
         let function = match self.types.callee(expr) {
             Some(Callee::Function(function)) => FnValue::Named(function),
             _ => match self.called_function_value(expr) {
