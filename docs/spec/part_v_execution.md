@@ -260,11 +260,8 @@ that arrives there: that step is tested for truncation error like any other and 
 the set. The set is a host commit due at `(t, 0)`: it applies after the step to `t` is
 accepted, like any other change at `t`, so the reactions of `(t, n)` and the settle phase of
 `t` read it. The first step after `t` reads it. That step is tested with the first-order estimate of rule 6, restarts
-the integrator, and its size restarts at a tenth of the last step (Appendix C.2). A `set` of a
-param whose change moves the operating point (the solver's `OperatingPoint` invalidation strength, Appendix C.2)
-also retakes the step to `t` with the new value; the retaken step's solution replaces the
-solution at `t`. It is a transient step that reads the change, so the set still has no solve
-of its own.
+the integrator, and its size restarts at a tenth of the last step (Appendix C.2). The step is a
+transient step that reads the change, so the set has no solve of its own.
 
 **Dynamic semantics.** The following hold with no further rule.
 

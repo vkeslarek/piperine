@@ -2422,3 +2422,14 @@ fn part_v_a_host_set_due_at_t_is_a_commit_at_t_0() {
         assert!(!s.contains(stale), "Part V still says \"{stale}\"");
     }
 }
+
+#[test]
+fn no_spec_text_retakes_a_step_for_an_operating_point_invalidation() {
+    // F16: the solver has no invalidation strength and its only retake is the crossing retake of
+    // §15.2 rule 4; neither Part V nor Appendix C.2 describes another.
+    for file in ["part_v_execution.md", "appendix_c_implementation.md"] {
+        let text = flat(&spec(file));
+        assert!(!text.contains("invalidation"), "{file} describes an invalidation strength the solver does not have");
+        assert!(!text.contains("also retakes the step to `t` with the new value"), "{file} retakes a step for a `set`");
+    }
+}
