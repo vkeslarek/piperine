@@ -315,7 +315,7 @@ impl<'d> ImplTable<'d> {
                 _ => ImplTarget::Other,
             },
             Some(Resolution::Builtin(id)) => match (id.info().name, id.width()) {
-                ("fN", Some(64)) => ImplTarget::Primitive(Ty::F64),
+                ("fN", Some(w)) => Ty::float(u32::from(w)).map_or(ImplTarget::Other, ImplTarget::Primitive),
                 ("bool", _) => ImplTarget::Primitive(Ty::Bool),
                 ("str", _) => ImplTarget::Primitive(Ty::Str),
                 ("uN", Some(width)) => u32::try_from(width).map_or(ImplTarget::Other, |width| ImplTarget::Primitive(Ty::UInt(width))),

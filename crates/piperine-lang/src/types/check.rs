@@ -397,7 +397,7 @@ impl<'d> Checker<'d> {
         match &node.kind {
             TypeKind::Path(path) => match self.design.type_resolution(ty) {
                 Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                    ("fN", Some(64)) => Some(Ty::F64),
+                    ("fN", Some(w)) => Ty::float(u32::from(w)),
                     ("bool", _) => Some(Ty::Bool),
                     // §1.2.9: `str` is a value type, the type of a string.
                     ("str", _) => Some(Ty::Str),
@@ -488,13 +488,9 @@ impl<'d> Checker<'d> {
         match family {
             "UInt" => self.integer_type(file, span, Ty::UInt, width, &written),
             "Int" => self.integer_type(file, span, Ty::Int, width, &written),
-            _ => match width {
-                64 => Some(Ty::F64),
-                16 | 32 | 128 => {
-                    self.unsupported(file, span, &format!("type `{written}` (`{family}` of width {width}; the subset's one float is `f64`)"));
-                    None
-                }
-                _ => {
+            _ => match u32::try_from(width).ok().and_then(Ty::float) {
+                Some(float) => Some(float),
+                None => {
                     let message = format!("`{written}`: a float width is one of 16, 32, 64 and 128");
                     self.report(file, Diagnostic::new("E0103", message, span, "float width outside {16, 32, 64, 128}"));
                     None
@@ -503,8 +499,8 @@ impl<'d> Checker<'d> {
         }
     }
 
-    /// An integer type of width `width`, written `written`: 1..=64 is in the subset, a wider one
-    /// is `P0001` naming it, a width below 1 is `E0103` (§1 rule 5).
+    /// An integer type of width `width`, written `written`: any width from 1 to 2^32 - 1 (§1 rule 5; the
+    /// limit is an implementation limit, Appendix C.2). A width below 1 or past the limit is `E0103`.
     pub(super) fn integer_type(&mut self, file: FileId, span: Span, make: fn(u32) -> Ty, width: u128, written: &str) -> Option<Ty> {
         match width {
             0 => {
@@ -512,9 +508,10 @@ impl<'d> Checker<'d> {
                 self.report(file, Diagnostic::new("E0103", message, span, "integer width below 1"));
                 None
             }
-            1..=64 => Some(make(width as u32)),
+            1..=0xFFFF_FFFF => Some(make(width as u32)),
             _ => {
-                self.unsupported(file, span, &format!("integer type `{written}`"));
+                let message = format!("`{written}`: an integer width is at most 2^32 - 1 (Appendix C.2)");
+                self.report(file, Diagnostic::new("E0103", message, span, "integer width past the implementation limit"));
                 None
             }
         }

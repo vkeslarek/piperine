@@ -49,6 +49,8 @@ impl Elaboration<'_, '_> {
                 "false" => Ok(Constant::Bool(false)),
                 _ => Err("a `bool` is `true` or `false`".to_string()),
             },
+            Ty::UInt(width) | Ty::Int(width) if *width > 64 => Err(format!("{} is wider than 64 bits: its param is set from its exact value, not from this text", ty.name(self.design))),
+            Ty::F32 | Ty::F16 | Ty::F128 => Err(format!("{} is not an `f64`: its param is set from its exact value, not from this text", ty.name(self.design))),
             Ty::UInt(_) | Ty::Int(_) => {
                 let (low, high) = Self::integer_range(ty);
                 let value = LiteralText::integer(text).ok_or_else(|| format!("it is not an integer literal of {}, from {low} to {high}", ty.name(self.design)))?;

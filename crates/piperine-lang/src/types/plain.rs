@@ -29,7 +29,7 @@ impl Checker<'_> {
     /// Whether every leaf of `ty` is a plain scalar, or `str` when `text` is allowed.
     fn is_plain(&mut self, ty: &Ty, text: bool) -> bool {
         match ty {
-            Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Unit => true,
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Unit => true,
             Ty::Str => text,
             Ty::Tuple(items) => items.iter().all(|item| self.is_plain(item, text)),
             Ty::Array(element, _) | Ty::Option(element) => self.is_plain(element, text),

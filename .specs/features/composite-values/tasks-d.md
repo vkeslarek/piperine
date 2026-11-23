@@ -661,11 +661,11 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `every_float_and_integer_width_type_checks` passes under `**Run typesw**`
-- [ ] `a_width_outside_the_rules_is_e0103` passes under `**Run typesw**`
-- [ ] `a_literal_out_of_its_type_is_e0909` passes under `**Run typesw**`
-- [ ] `an_f32_where_an_f64_is_required_is_a_mismatch` passes under `**Run typesw**`
-- [ ] Gate check passes: Task (`piperine-lang`), then the Batch gate
+- [x] `every_float_and_integer_width_type_checks` passes under `**Run typesw**`
+- [x] `a_width_outside_the_rules_is_e0103` passes under `**Run typesw**`
+- [x] `a_literal_out_of_its_type_is_e0909` passes under `**Run typesw**`
+- [x] `an_f32_where_an_f64_is_required_is_a_mismatch` passes under `**Run typesw**`
+- [x] Gate check passes: Task (`piperine-lang`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T115: Ty gains F32, F16, F128 (is_float, is_other_float, is_numeric, Ty::float(width)); types/widths.rs holds FloatText (the float suffix of an integer-spelled literal such as 2f32), the bare float literal test and the E0909 check of a float literal in its own format through piperine-numbers' DecimalText (piperine-lang now depends on piperine-numbers). An unsuffixed float literal takes the expected float type, a literal operand is typed after the other operand (literal_last), arithmetic and unary minus pass an expected non-f64 float down. integer_type accepts 1..=2^32-1 and E0103 names Appendix C.2's limit; Float<N> maps 16/32/64/128; the H.2 rows key every float, the H.1 rows every integer. Exhaustiveness over 126-bit types is Opaque (cover.rs, patterns.rs shifted 1i128 << n). A width that is a const expression (UInt<{ A + 1 }>) already folded through const_term, so VD1 needed no change. The types_aggregates, types_integers, types_subset and types_values rows that asserted f32/u128/Float<N> are P0001 left (the design's 'may move' row) and are rows of every_float_and_integer_width_type_checks; --param text for f32/f16/f128 and wide integers is refused by name until T123. docs: E0103's row and Appendix C.2 name the 2^32-1 limit. Default per spec: a carrier of f32 with no initial value is E0187 (no number has a Default, H.8).
 - T114: Ty::UInt and Ty::Int hold u32 (a pure widening: the lexer's 1..=128 suffixes and the checker's 1..=64 widths are unchanged in this commit, so no behaviour moved; the whole piperine-lang suite passes on it: see the batch run at the end of D4). Checked alone on the T111 to T113 tree by cargo build -p piperine-lang.
 - T113: rt/numbers.rs compiles the leaf crate's own files into piperine-transpile through #[path] (no second copy), and rt::NUMBER_FILES embeds the same files with include_str! as rt/numbers/<file>.rs; Runtime::files_for(RuntimeForms { digital, numbers }) adds rt/numbers.rs, the files and rt/widths.rs only when Transpiler::number_widths() (f16, f128 or an integer over 64 bits anywhere in the IR) holds, so Runtime::files(bool) and every golden/cache key stay as they were. rt/widths.rs: Div/Rem/clamp/rem_euclid of the wide integers and clamp of Float16/Float128 raise rt::Panic, Carried for f32/Float16/Float128/WideUInt/WideInt (bytes of the plan's layout, levels of the §2 table), Default impls, and Convert (float_to_float, integer_to_float, float_to_integer, integer_to_integer over the FloatRepr and IntegerRepr traits, each over NumberConversion). The in-crate test a_type_rust_lacks_is_refused_by_name now keeps only the width-0 rows (its UInt<65> rows are the design's 'type prints' move; the printed forms are T116's test).
 - T112: plan/src/widths.rs (NumberLayout) holds the leaf, count and size of each new scalar and the constant bytes of FloatBits and Wide; f32 is the F32 leaf (static layout), f16 the existing U16 layout, f128 a static {v: U64 x2} (size 16, align 8); an integer over 64 bits has no static layout (CarrierLayout::of is None) and is one composite leaf of count ceil(N/64), so CompositeLeaf gained a count field. abi.md P3 states that the IR type is the metadata. Source landed with T111's commit because interp needs plan to build; this commit holds the test and abi.md.

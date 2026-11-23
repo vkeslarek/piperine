@@ -122,10 +122,13 @@ impl ValueTypes<'_> {
     pub(super) fn of(&self, ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
+            Ty::F32 => Some(ValueType::F32),
+            Ty::F16 => Some(ValueType::F16),
+            Ty::F128 => Some(ValueType::F128),
             Ty::Bool => Some(ValueType::Bool),
             Ty::Unit => Some(ValueType::Unit),
-            Ty::UInt(n) => Some(ValueType::UInt(u32::from(*n))),
-            Ty::Int(n) => Some(ValueType::Int(u32::from(*n))),
+            Ty::UInt(n) => Some(ValueType::UInt(*n)),
+            Ty::Int(n) => Some(ValueType::Int(*n)),
             Ty::Fn(params, ret) => {
                 let params: Option<Vec<ValueType>> = params.iter().map(|p| self.of(p)).collect();
                 Some(ValueType::Fn(params?, Box::new(self.of(ret)?)))

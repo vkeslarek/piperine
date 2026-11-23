@@ -16,6 +16,7 @@ serde.workspace = true
 # The elaborator (`elab`) writes the Piperine IR; the IR crate is a leaf, so the edge adds nothing
 # to the front end it sits behind.
 piperine-ir = { path = "../piperine-ir" }
+piperine-numbers = { path = "../piperine-numbers" }
 # `Design::from_json` reads the serialized form.
 serde_json = "1"
 

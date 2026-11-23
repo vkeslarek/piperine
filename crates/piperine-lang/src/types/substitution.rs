@@ -77,7 +77,7 @@ impl Substitution {
                 ConstTerm::Value(n @ 1..=64) => Ty::UInt(n as u32),
                 replaced => Ty::GenericInteger { signed: *signed, width: replaced },
             },
-            Ty::F64 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
         }
     }
 

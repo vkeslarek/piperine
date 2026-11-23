@@ -128,32 +128,6 @@ fn a_literal_out_of_range_is_e0909() {
 }
 
 #[test]
-fn an_unsupported_width_or_float_is_named() {
-    // DIG-01 AC 9: an integer wider than 64 bits and every float but `f64` is `P0001` naming the
-    // type, at the type as written: in a parameter, a result and a `let` (`ir-rust` F-B8 for
-    // `Float<16>` and `Float<128>`, which the IR cannot hold).
-    for (items, body, written) in [
-        ("fn f(x: u128) -> f64 { 1.0 }", "let y = f(1);", "u128"),
-        ("fn f() -> UInt<65> { 1 }", "let y = f();", "UInt<65>"),
-        ("", "let y: Int<100> = 1;", "Int<100>"),
-        ("", "let y: f32 = 1.0;", "f32"),
-        ("fn f(x: f16) -> f64 { 1.0 }", "let y = f(1.0);", "f16"),
-        ("fn f() -> f128 { 1.0 }", "let y = f();", "f128"),
-        ("", "let y: Float<16> = 1.0;", "Float<16>"),
-        ("fn f(x: Float<128>) -> f64 { 1.0 }", "let y = f(1.0);", "Float<128>"),
-    ] {
-        let (src, d) = diagnostics(items, body);
-        assert_eq!(codes(&d), ["P0001"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert!(d[0].diagnostic.message.contains(&format!("`{written}`")), "{src}: {}", d[0].diagnostic.message);
-        assert_eq!(snippet(&src, &d[0]), written, "{src}");
-    }
-
-    // `Float<64>` is `f64`.
-    let ok = source("", "let y: Float<64> = 1.0; let z: f64 = y;");
-    checked(&design_of(&ok), &ok);
-}
-
-#[test]
 fn a_width_below_one_is_e0103() {
     // Part I error table: `E0103`, an integer width that is not `>= 1`, or a float width outside
     // {16, 32, 64, 128}.
