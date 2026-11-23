@@ -176,7 +176,7 @@ fn a_run_time_element_index_out_of_range_names_carrier_index_instance_and_instan
     // CV-25 AC 5, §1 rule 11: `small[n + 4] <- true` at the first edge (0.05 ns, tick 50000 of one femtosecond) is element 4
     // of 4: the analysis fails naming the carrier, the index, the instance and the instant
     let fault = RUN.the_fault("arrays.msl", "ReachBench");
-    for part in ["small", "4", "ReachBench.reach", "tick 50000"] {
+    for part in ["small: the element 4 is out of range for an array of 4 carriers", "ReachBench.reach", "tick 50000"] {
         assert!(fault.contains(part), "the fault names `{part}`: {fault}");
     }
 }

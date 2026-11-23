@@ -820,4 +820,13 @@ fn gaps_drops_what_composite_values_phase_c_closed() {
     assert!(gaps.contains("QC3 — an array of carriers as a function parameter"), "section 5 has the QC3 spec hole");
     let book = gaps.split("## 11. The Book against the binary").nth(1).expect("section 11");
     assert!(!book.contains("the arrays of carriers of `MemoryBank`") && !book.contains("(an array of carriers, L24)"), "section 11 still names the array of carriers");
+    // the counts follow: the loud count in the header is the number of `L` rows the tables hold
+    let rows = gaps.lines().filter(|line| line.strip_prefix("| L").is_some_and(|rest| rest.split_once(" |").is_some_and(|(id, _)| id.chars().all(|c| c.is_ascii_digit())))).count();
+    assert!(gaps.contains(&format!("2 broken, {rows} loud (L1 to L71")), "the header counts the {rows} loud rows");
+    // section 9: the digital row says the arrays of carriers run; the cluster table says phase C closed L24
+    assert!(gaps.contains("arrays of carriers, element and field commits run (composite-values phase C)"), "section 9 says the arrays of carriers run");
+    assert!(gaps.contains("phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows"), "the cluster row says phase C closed L24");
+    // H9: E0803 is reachable by a param an array length reads, the thing QC2 delivered
+    let h9 = gaps.lines().find(|line| line.starts_with("| H9 |")).expect("the row H9");
+    assert!(h9.contains("reachable by a param an array length reads") && h9.contains("QC2"), "H9 states what QC2 delivered: {h9}");
 }
