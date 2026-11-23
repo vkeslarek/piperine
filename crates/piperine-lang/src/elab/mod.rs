@@ -29,7 +29,7 @@ mod files; mod override_text; mod table_model; mod tables;
 mod elaborator; mod analog;
 mod functions;
 mod handles; mod hoist;
-mod host_sources;
+mod host_sources; mod levels;
 mod inflow; mod instances;
 mod intrinsics;
 mod iterators;

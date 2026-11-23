@@ -221,6 +221,14 @@ impl<'d, 't> ConstEval<'d, 't> {
                     None => Ty::Array(element, Length::Generic(ConstTerm::Expr(*expr))),
                 }
             }
+            // `[bool; T::WIDTH]` of an instance is the level count of the type `T` is given (§2)
+            Ty::Array(element, Length::Generic(ConstTerm::Width(parameter))) => {
+                let element = Box::new(self.folded_lengths(element));
+                match self.parameter_width(*parameter) {
+                    Some(levels) => Ty::Array(element, Length::Fixed(u64::from(levels))),
+                    None => Ty::Array(element, Length::Generic(ConstTerm::Width(*parameter))),
+                }
+            }
             Ty::Array(element, length) => Ty::Array(Box::new(self.folded_lengths(element)), length.clone()),
             Ty::Tuple(items) => Ty::Tuple(items.iter().map(|item| self.folded_lengths(item)).collect()),
             Ty::Option(inner) => Ty::Option(Box::new(self.folded_lengths(inner))),
@@ -418,6 +426,11 @@ impl<'d, 't> ConstEval<'d, 't> {
             return None;
         }
         let Resolution::Decl(parameter) = owner.res else { return None };
+        self.parameter_width(parameter)
+    }
+
+    /// The level count of the type the substitution gives the type parameter `parameter`.
+    pub(super) fn parameter_width(&self, parameter: DeclId) -> Option<u32> {
         match self.substitution.get(parameter)? {
             GenericValue::Type(ty) => ty.levels(self.design),
             _ => None,

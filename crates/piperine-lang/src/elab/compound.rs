@@ -384,6 +384,8 @@ impl Elaboration<'_, '_> {
                 let [arg] = args.as_slice() else { return unsupported(self) };
                 self.lower_cast(scope, expr, arg.value)
             }
+            // `T::decode(levels)` of a `T: Repr` parameter: the value the levels give, per instance (`levels.rs`).
+            ExprKind::Call { callee, args, .. } if self.types.callee(expr).is_none() && let Some(decoded) = self.lower_parameter_decode(scope, expr, *callee, args, &origin) => decoded,
             // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
             // A field of `Option` type: the two halves of the packed value, each unpacked from the

@@ -298,6 +298,17 @@ fn a_hand_written_repr_carries_its_own_layout() {
 }
 
 #[test]
+fn a_hand_written_repr_runs_through_a_repr_bound() {
+    // GN-01 AC 1 with GN-05: `x.encode()[2]` and `T::decode(x.encode())` under `T: Repr` call the type's own `encode` and
+    // `decode`: level 2 of the one-hot `C` is high and of `A` is low, `D` and `Count { n: 3 }` come back as they went in
+    let (third, other) = (Phase::C.encode()[2], Phase::A.encode()[2]);
+    let back = Phase::decode(Phase::D.encode()).map_or(0, |phase| u8::from(phase == Phase::D));
+    // the model's Gray `decode` inverts its `encode`, so the code of 3 reads back as 3
+    let count = Count { n: 3 }.n;
+    RUN.assert_commits("repr.msl", &["e0", "e1", "e2", "e3"], &[CarrierBytes::byte(u8::from(third)), CarrierBytes::byte(u8::from(other)), CarrierBytes::byte(back), CarrierBytes::byte(count)]);
+}
+
+#[test]
 fn a_decode_returning_none_is_returned_to_the_caller() {
     // GN-05 AC 2 (§2 rule 9 as MD-78 amends it): `decode` of no high level is `None`, of the third level `Some(C)`
     let none = Phase::decode([false; 4]).map_or(0, |_| 1);
@@ -321,6 +332,14 @@ struct Pt {
 }
 
 /// `fn pick<T>(flag: bool, a: T, b: T) -> T` of the model.
+impl RustOracle {
+    /// `fn round_trip<T: Repr>(x: T) -> T` at `u8`: the levels of `x`, least significant first, read back.
+    fn levels_round_trip(x: u8) -> u8 {
+        let levels: Vec<bool> = (0..u8::BITS).map(|k| (x >> k) & 1 == 1).collect();
+        levels.iter().enumerate().fold(0, |value, (k, level)| value | (u8::from(*level) << k))
+    }
+}
+
 impl RustOracle {
     /// `fn larger<T: PartialOrd>(a: T, b: T) -> T` of the model.
     fn larger<T: PartialOrd>(a: T, b: T) -> T {
@@ -369,16 +388,20 @@ fn generic_functions_run_with_explicit_and_inferred_arguments() {
 #[test]
 fn a_function_bounded_by_an_h8_trait_or_repr_runs_per_instance() {
     // GN-01 AC 1: `larger<T: PartialOrd>` at `u8` and `f64` (the `<` of each type), `width<T: Repr>()` reads `T::WIDTH` at
-    // `u8`, `bool` and `f64` (`x.encode()` on a value of `T` is not lowered yet: GAPS L70)
+    // `u8`, `bool` and `f64` (`lowest_level` reads `x.encode()[0]`, the least significant level first, and `round_trip` is `T::decode(x.encode())`)
     RUN.assert_commits(
         "functions.msl",
-        &["r12", "r13", "r14", "r15", "r16"],
+        &["r12", "r13", "r14", "r15", "r16", "r17", "r18", "r19", "r20"],
         &[
             CarrierBytes::byte(RustOracle::larger(3u8, 200u8)),
             CarrierBytes::real(RustOracle::larger(1.5, -0.5)),
             CarrierBytes::byte(u8::BITS as u8),
             CarrierBytes::byte(1),
             CarrierBytes::byte(u64::BITS as u8),
+            CarrierBytes::byte(u8::from(5u8 & 1 == 1)),
+            CarrierBytes::byte(u8::from(4u8 & 1 == 1)),
+            CarrierBytes::byte(RustOracle::levels_round_trip(200)),
+            CarrierBytes::byte(1),
         ],
     );
 }

@@ -80,7 +80,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The folded `WIDTH` of the `impl Repr` `owner`.
-    fn hand_written_width(&self, owner: DeclId) -> Option<u32> {
+    pub(super) fn hand_written_width(&self, owner: DeclId) -> Option<u32> {
         let width = self.impls.item(owner, "WIDTH")?;
         let DeclKind::Const(data) = &self.design.decl_data(width).kind else { return None };
         u32::try_from(self.types.integer_constant(data.value?)?).ok()

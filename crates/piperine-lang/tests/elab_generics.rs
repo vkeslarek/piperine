@@ -257,3 +257,13 @@ fn a_logic_call_in_a_function_tail_is_refused_by_name() {
         assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("generic `extern` function")), "{position}\n{found:?}");
     }
 }
+
+#[test]
+fn encode_and_decode_of_a_derived_layout_are_refused_naming_the_call() {
+    // fix round 2, finding 14: under `T: Repr`, `x.encode()` and `T::decode(levels)` run at `bool`, integers and hand-written
+    // types; a layout the IR cannot pack (`f64`, a derived struct) is `P0001` naming the call, never dropped
+    let encode = ExternCalls::found("fn low<T: Repr>(x: T) -> bool { x.encode()[0] }\nmodule Top(in clk: Bit, out d: Bit = false) { }\ndigital for Top { on clk.rise() { d <- low(1.5); } }\n");
+    assert!(encode.iter().any(|(code, message)| code == "P0001" && message.contains("`encode`")), "{encode:?}");
+    let decode = ExternCalls::found("fn back<T: Repr>(x: T) -> T { T::decode(x.encode()).unwrap() }\nmodule Top(in clk: Bit, out d: Bit<f64> = 0.0) { }\ndigital for Top { on clk.rise() { d <- back(1.5); } }\n");
+    assert!(decode.iter().any(|(code, message)| code == "P0001" && message.contains("`encode`") || message.contains("`decode`")), "{decode:?}");
+}

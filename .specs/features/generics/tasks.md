@@ -1275,6 +1275,8 @@ T49 → T50 → T51 → T52
 **C1** - A generic function with trait, `Repr`, project-trait, `Fn` and const parameters runs with explicit and inferred arguments as Rust gives. (GN-01, AC 1; T40)
 Proof: run srcgen | test generic_functions_run_with_explicit_and_inferred_arguments ... ok
 Proof: run srcgen | test a_function_bounded_by_an_h8_trait_or_repr_runs_per_instance ... ok
+Proof: run srcgen | test a_hand_written_repr_runs_through_a_repr_bound ... ok
+Proof: run elabgen | test encode_and_decode_of_a_derived_layout_are_refused_naming_the_call ... ok
 
 **C2** - A capturing closure, a plain closure and a function name each pass for an `F: Fn(f64) -> f64` parameter and are called positionally. (GN-01, AC 2; T37)
 Proof: run srcgen | test a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound ... ok
@@ -1437,6 +1439,10 @@ Proof: run tgen | test instance_names_compile_and_nested_arguments_spell_apart .
 **C49** - A call of a generic `extern "intrinsic"` function types through the generic path (`E0181` for a parameter nothing gives, `E0187` for a missing bound) and elaboration refuses it by name, never as "generic function". (GN-01, AC 1; fix round, finding 10)
 Proof: run typesgen | test a_call_of_a_generic_extern_intrinsic_types_through_the_generic_path ... ok
 
+**C50** - A call whose lowering is unsupported is never dropped from a reaction, `analog` or a body `let`, whatever the position in the function that holds it (tail, `if` arm, block tail, `match` arm). (GN-29; fix round 2, finding 12)
+Proof: run elabgen | test a_generic_extern_call_is_never_dropped_in_any_position ... ok
+Proof: run elabgen | test a_logic_call_in_a_function_tail_is_refused_by_name ... ok
+
 ---
 
 ## Handoff
@@ -1493,4 +1499,4 @@ Execution is strictly sequential - there is no intra-phase parallelism. A single
 
 **Later batch boundaries (not tasked here):** phases C, D and E (GN-13 to GN-28, ROADMAP item 11) run after `composite-values` phase C, from `design-c.md`/`design-d.md`/`design-e.md` and their tasks files (design.md "Phases C, D and E").
 
-**Phases C, D and E must be tasked and delivered before spec-closure (coordinator, 2026-11-23).** They are not tasked here only because this file stops at phase B; the feature is not closed, and `validate_verification.py` must not be run, until `design-c.md`, `design-d.md` and `design-e.md` and their tasks files exist and are done. Items that wait on them sit under the phase the spec's Phases table gives them. **Phase C** (GN-13 to GN-20, GN-32): generic modules, generation and the const-context array repeat that reads a const generic argument (`consts/composite.rs`, GN-14) (L30, L31, S3 for generic modules, GN-13 to GN-20), and a generic type with a hand-written `Repr` and a carrier of a hand-written type with no initial value (GN-32, GAPS L69, `P0001` by name today; formerly GN-05 AC 3 and AC 4). **Phase D** (GN-21 to GN-26): templates, placement through a template or a function and `Fn(P)` bounds (L32, GN-21 to GN-23), and `m` and `dtemp` bound in a param block and read as names (L29: GN-24 and GN-25 carry the behavior, GN-26 AC 3 owns the Book row `modules~1faf8c12`; owner `generics`, handed over by `params-and-io`). **Phase E** (GN-27, GN-28): the L58 stdlib group.
+**Phases C, D and E must be tasked and delivered before spec-closure (coordinator, 2026-11-23).** They are not tasked here only because this file stops at phase B; the feature is not closed, and `validate_verification.py` must not be run, until `design-c.md`, `design-d.md` and `design-e.md` and their tasks files exist and are done. Items that wait on them sit under the phase the spec's Phases table gives them. **Phase C** (GN-13 to GN-20, GN-32): generic modules, generation and the const-context array repeat that reads a const generic argument (`consts/composite.rs`, GN-14) (L30, L31, S3 for generic modules, GN-13 to GN-20), and a generic type with a hand-written `Repr` and a carrier of a hand-written type with no initial value (GN-32, GAPS L69, `P0001` by name today; formerly GN-05 AC 3 and AC 4), and the residual of GN-01 AC 1: `x.encode()` and `T::decode(levels)` under `T: Repr` at `f64` and derived layouts (GAPS L70, `P0001` naming the call). **Phase D** (GN-21 to GN-26): templates, placement through a template or a function and `Fn(P)` bounds (L32, GN-21 to GN-23), and `m` and `dtemp` bound in a param block and read as names (L29: GN-24 and GN-25 carry the behavior, GN-26 AC 3 owns the Book row `modules~1faf8c12`; owner `generics`, handed over by `params-and-io`). **Phase E** (GN-27, GN-28): the L58 stdlib group.

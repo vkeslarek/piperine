@@ -143,17 +143,17 @@ impl Elaboration<'_, '_> {
     /// The type the checker gave `expr`, with the generic parameters of the instance being lowered
     /// replaced by their arguments: the one read of the type table of an expression (`ConstEval::typed`).
     pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
-        self.consts.typed(expr)
+        self.consts.typed(expr).map(|ty| self.with_hand_written_widths(&ty))
     }
 
     /// The type of the binding `binding` under the substitution.
     pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
-        self.consts.typed_local(binding)
+        self.consts.typed_local(binding).map(|ty| self.with_hand_written_widths(&ty))
     }
 
     /// The type the type node `ty` writes, under the substitution.
     pub(super) fn typed_written(&self, ty: crate::pom::TypeId) -> Option<Ty> {
-        self.consts.typed_written(ty)
+        self.consts.typed_written(ty).map(|ty| self.with_hand_written_widths(&ty))
     }
 
     /// The IR method a numeric row of Appendix H lowers to; `None` for the rows that lower
@@ -373,8 +373,12 @@ impl Elaboration<'_, '_> {
                 let builtin = self.types.builtin(expr)?;
                 self.lower_builtin_read(scope, expr, builtin, *recv, ty, origin)
             }
-            ExprKind::MethodCall { recv, args, .. } => {
+            ExprKind::MethodCall { recv, args, method: method_name, .. } => {
                 let Some(method) = self.types.method(expr) else {
+                    // `x.encode()` of a `T: Repr` parameter has no method row: its levels are written out per instance
+                    if args.is_empty() && let Some(levels) = self.lower_parameter_encode(scope, expr, *recv, &method_name.text, origin.clone()) {
+                        return levels;
+                    }
                     self.unsupported(file, node.span, "a method outside the catalogue");
                     return None;
                 };
