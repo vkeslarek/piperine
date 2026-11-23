@@ -119,7 +119,7 @@ impl Checker<'_> {
     /// same nature and value) is passed on as it is (§3.1.5); anything else is the plain mismatch.
     pub(super) fn handle_argument(&mut self, expr: ExprId, expected: &Ty) {
         let passed = match &self.design.expr_node(expr).kind {
-            ExprKind::Path(_) | ExprKind::Paren(_) => self.carrier_named(expr),
+            ExprKind::Path(_) | ExprKind::Paren(_) | ExprKind::Index { .. } => self.carrier_named(expr),
             _ => None,
         };
         match passed {
