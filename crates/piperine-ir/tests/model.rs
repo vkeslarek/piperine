@@ -219,7 +219,7 @@ impl Reach {
                     Reach::expr(ir, *a, out);
                 }
             }
-            Stmt::Emit { fields, .. } => {
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => {
                 for f in fields {
                     if let piperine_ir::EmitField::Value { value, .. } = f {
                         Reach::expr(ir, *value, out);
