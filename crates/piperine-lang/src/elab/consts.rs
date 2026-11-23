@@ -426,7 +426,13 @@ impl<'d, 't> ConstEval<'d, 't> {
                 other => other,
             }),
             // a const parameter of the generic item being instantiated is bound to its argument (generics T33)
-            DeclKind::GenericParam(_) => bindings.get(decl).ok_or(ConstFault::UnboundParam { expr, param: decl }),
+            // a const parameter of the instance being evaluated is the argument the call gave it (§3.8.3)
+            DeclKind::GenericParam(_) => match (bindings.get(decl), self.substitution.get(decl)) {
+                (Some(bound), _) => Ok(bound),
+                (None, Some(GenericValue::Const(ConstTerm::Value(count)))) => Ok(Constant::Int(*count)),
+                (None, Some(GenericValue::Const(ConstTerm::Bool(flag)))) => Ok(Constant::Bool(*flag)),
+                _ => Err(ConstFault::UnboundParam { expr, param: decl }),
+            },
             DeclKind::Param(_) => match bindings.get(decl) {
                 // a composite param is an IR constant, which this evaluator's composites are not (`composite.rs`)
                 Some(Constant::Aggregate(_)) => match bindings.tree(decl).cloned() {
@@ -688,7 +694,34 @@ impl<'d, 't> ConstEval<'d, 't> {
                 None => Argument { value: Some(self.fold(*arg, bindings)?), function: None },
             });
         }
-        self.apply_value(expr, function, arguments, bindings)
+        // a call of a generic function evaluates its body for the arguments the checker recorded, read under the
+        // instance being evaluated: its const parameters are values in the body (GN-01, GN-14)
+        let outer = match self.types.instantiation(expr).cloned() {
+            Some(instantiation) => {
+                let substitution = self.instantiation_substitution(&instantiation);
+                Some(self.set_substitution(substitution))
+            }
+            None => None,
+        };
+        let result = self.apply_value(expr, function, arguments, bindings);
+        if let Some(outer) = outer {
+            self.set_substitution(outer);
+        }
+        result
+    }
+
+    /// What the parameters of the item of `instantiation` are replaced by: each argument under the substitution of the
+    /// instance being evaluated, a const expression folded to its value.
+    fn instantiation_substitution(&self, instantiation: &crate::types::Instantiation) -> crate::types::Substitution {
+        let arguments: Vec<GenericValue> = instantiation
+            .arguments
+            .iter()
+            .map(|argument| match self.substitution.apply_value(argument) {
+                GenericValue::Const(ConstTerm::Expr(expr)) => self.integer(expr).and_then(|count| i128::try_from(count).ok()).map_or(GenericValue::Const(ConstTerm::Expr(expr)), |count| GenericValue::Const(ConstTerm::Value(count))),
+                other => other,
+            })
+            .collect();
+        crate::types::Substitution::of(&crate::types::GenericSignature::of(self.design, instantiation.item), &arguments)
     }
 
     /// The body of the function `function` evaluated for `arguments`; a function reads no param of

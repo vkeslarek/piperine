@@ -350,3 +350,10 @@ fn a_const_generic_of_zero_runs_its_loops_zero_times() {
     let empty: [f64; 0] = [];
     RUN.assert_commits("functions.msl", &["r6", "r7", "r8"], &[CarrierBytes::byte(count::<0>()), CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total(empty) + 7.0)]);
 }
+
+#[test]
+fn a_const_context_reads_the_const_generic_arguments() {
+    // GN-14 (the const evaluator): a `const` that calls a generic function with a const argument runs its loops and its
+    // array repeats `[x; N]` for that argument: `count::<3>()` is 6 and `filled::<4>()`, four elements of 1.5, sums to 6.0
+    RUN.assert_commits("functions.msl", &["r10", "r11"], &[CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total([1.5; 4]))]);
+}

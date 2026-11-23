@@ -169,7 +169,7 @@ impl ConstEval<'_, '_> {
 
     /// `[x; N]`: `x` evaluated once, `N` copies of it.
     pub(super) fn repeat_value(&mut self, expr: ExprId, element: ExprId, length: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
-        let count = match self.types.integer_constant(length) {
+        let count = match self.integer(length) {
             Some(count) => count as usize,
             None => match self.fold(length, bindings)? {
                 Constant::Int(count) if count >= 0 => count as usize,
@@ -370,7 +370,7 @@ impl ConstEval<'_, '_> {
             match bound {
                 None => Ok(default),
                 // a bound written as a literal or a const name has no type of its own (§1.2.5, as an array length)
-                Some(bound) if let Some(at) = this.types.integer_constant(bound) => Ok(at as usize),
+                Some(bound) if let Some(at) = this.integer(bound) => Ok(at as usize),
                 Some(bound) => match this.fold(bound, bindings)? {
                     Constant::Int(at) if at >= 0 => Ok(at as usize),
                     _ => Err(ConstFault::Unsupported { expr, what: "a range index bound that is not a non-negative integer".to_string() }),
