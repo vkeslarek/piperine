@@ -17,7 +17,7 @@ impl Elaboration<'_, '_> {
     /// the IR's composite constants.
     pub(in crate::elab) fn composite_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let tree = self.consts.tree(expr, bindings)?;
-        let Some(ty) = self.types.ty(expr).and_then(|t| self.stored_type(t)) else {
+        let Some(ty) = self.typed(expr).and_then(|t| self.stored_type(&t)) else {
             return Err(ConstFault::Unsupported { expr, what: "a composite value of a type that has no value type".to_string() });
         };
         self.import_tree(expr, &tree, &ty)
@@ -107,7 +107,7 @@ impl Elaboration<'_, '_> {
     /// The constant of `expr`, a value of type `T` bound to a param of type `Option<T>`: `Some` of it (§3.2.3, PI-03 AC 2).
     pub(in crate::elab) fn implicit_some_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let payload = self.consts.tree(expr, bindings)?;
-        let Some(held) = self.types.ty(expr).and_then(|ty| self.stored_type(ty)) else {
+        let Some(held) = self.typed(expr).and_then(|ty| self.stored_type(&ty)) else {
             return Err(ConstFault::Unsupported { expr, what: "an implicit `Some` of a value with no value type".to_string() });
         };
         self.import_tree(expr, &ConstTree::Composite { kind: CompositeKind::Option, parts: vec![payload] }, &ValueType::Option(Box::new(held)))

@@ -335,7 +335,7 @@ impl Elaboration<'_, '_> {
             None
         };
         // an `Option` param of the parent passed on (`{ rs: rs }`): its two halves, packed again
-        if payload.is_none() && matches!(self.types.ty(expr), Some(crate::types::Ty::Option(_))) {
+        if payload.is_none() && matches!(self.typed(expr).as_ref(), Some(crate::types::Ty::Option(_))) {
             let pair = self.lower_option(scope, expr)?;
             let origin = self.expr_origin(expr);
             let held = self.type_of(pair.val);

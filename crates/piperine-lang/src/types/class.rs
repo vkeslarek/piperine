@@ -8,7 +8,7 @@ use super::check::Context;
 /// up (§3).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct FunctionClass {
-    /// Reads `now()`, `freq()`, `gmin()`, `source_scale()`, `temperature()` or `analysis(..)`.
+    /// Reads `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(..)`.
     pub(super) solve_reading: bool,
     /// Reaches `emit!`.
     pub(super) emitting: bool,

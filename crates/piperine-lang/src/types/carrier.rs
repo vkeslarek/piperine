@@ -10,7 +10,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode
 
 use super::check::Checker;
 use super::nature_rules::NatureRules;
-use super::{Builtin, Ty};
+use super::{Builtin, Nominal, Ty};
 
 impl Checker<'_> {
     /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
@@ -70,6 +70,7 @@ impl Checker<'_> {
         if let Resolution::Decl(d) = self.design.type_resolution(ty)
             && matches!(self.design.decl_data(d).kind, DeclKind::Enum(_))
             && !self.derives(d, "Repr")
+            && self.impls.hand_written_repr(&Ty::enumeration(d)).is_none()
         {
             let name = self.design.decl_data(d).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             self.no_repr(file, node.span, &format!("enum `{name}`"));
@@ -82,12 +83,16 @@ impl Checker<'_> {
                 self.coded(file, "E0441", node.span, message, "an `Event` is not carried");
                 None
             }
-            Ty::Enum(e) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
+            Ty::Enum(Nominal { decl: e, .. }) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
                 let name = self.design.decl_data(*e).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if self.repr_levels(v).is_some() => Some(value),
+            // a type parameter bound by `Repr` is a type with one (`fn f<T: Repr>(a: Bit<T>)`, §3.8.6)
+            v if self.repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.bounds_of(*param).contains(&super::Bound::Repr)) => {
+                self.reach_hand_written_repr(v);
+                Some(value)
+            }
             other => {
                 let name = other.name(self.design);
                 self.no_repr(file, node.span, &name);
@@ -153,6 +158,8 @@ impl Checker<'_> {
                 let ty = match &self.design.decl_data(decl).kind {
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
+                    // a handle is the carrier the caller passes (§3.1.5)
+                    DeclKind::FnParam(_) => return self.handle_type(decl).map(|t| (decl, t)),
                     _ => return None,
                 };
                 self.port_type(ty).map(|t| (decl, t))
@@ -225,6 +232,7 @@ impl Checker<'_> {
                 ("isize", _) => Some(Ty::Int(64)),
                 _ => None,
             },
+            Resolution::Decl(decl) if self.parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
             _ => None,
@@ -244,6 +252,9 @@ impl Checker<'_> {
         }
         let file = self.file_of_expr(expr);
         let owner_type = self.path_owner_type(file, node.span, owner.res)?;
+        if let Ty::Param(param) = owner_type {
+            return self.parameter_width(param, file, node.span);
+        }
         let levels = self.repr_levels(&owner_type)?;
         self.widths.insert(expr, levels);
         Some(Ty::UInt(32))

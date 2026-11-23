@@ -2298,6 +2298,48 @@ fn part_v_convergence_tests_both_rows_against_the_smaller_abstol() {
 }
 
 #[test]
+fn part_i_3_8_names_the_rules_of_a_parameter_list() {
+    // GN-01, GN-06: §3.8.3 and §3.8.4 are held by the checker, so the table that lists `E0187` names them
+    let text = flat(&spec("part_i_values.md"));
+    let row = &text[text.find("| `E0187` |").expect("the E0187 row")..];
+    let row = &row[..row.find(" | elaboration |").expect("the row ends")];
+    assert!(row.contains("a generic parameter list in which a parameter without a default follows one with a default"), "{row}");
+    assert!(row.contains("a const parameter is neither an integer nor `bool` (§3.8.3, §3.8.4)"), "{row}");
+    let errors = flat(&section(&spec("part_i_values.md"), "### 3.8 "));
+    assert!(errors.contains("a bound that names no trait (`E0161`)"), "{errors}");
+}
+
+#[test]
+fn rule_9_splits_definition_and_instantiation_errors() {
+    // GN-07 AC 4, Q1 (c): §3 rule 9 says which errors belong to a generic body's definition and which to an instantiation
+    let text = flat(&spec("part_i_values.md"));
+    let rule = &text[text.find("- **§3 rule 9.**").expect("rule 9")..text.find("- **§3 rule 10.**").expect("rule 10")];
+    for fact in [
+        "The body is also checked once at its definition, with each type parameter opaque",
+        "a method or an operator that none of the bounds of a parameter gives (`E0161` for a method, `E0180` for an operator)",
+        "a generic argument that does not satisfy its bound (`E0187`)",
+        "reported by `piperine check` with nothing instantiating the function",
+        "the value of a const argument, the `where` (`E0127`), array lengths built from const parameters and a const expression that fails (`E0104`) are errors of an instantiation",
+    ] {
+        assert!(rule.contains(fact), "§3 rule 9 lacks \"{fact}\": {rule}");
+    }
+}
+
+#[test]
+fn an_inherent_impl_on_a_nature_may_be_written_in_any_crate() {
+    // GN-10, design D10: §3.7.7 puts an inherent `impl` in the crate of its type, a rule for value types; §3.1 says a
+    // nature's inherent `impl` may be written in any crate, and a trait `impl` keeps the orphan rule
+    let text = flat(&spec("part_i_values.md").replace("\n> ", "\n"));
+    for fact in [
+        "An inherent `impl` on a nature may be written in any crate",
+        "`impl Thermal { fn celsius(self) -> f64 { temp(self) - 273.15 } }` is a legal item of a user crate although `Thermal` is a `std` nature",
+        "A trait `impl` on a nature keeps the orphan rule of [§3.7.7](#37-traits)",
+    ] {
+        assert!(text.contains(fact), "§3.1 lacks \"{fact}\"");
+    }
+}
+
+#[test]
 fn part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate() {
     // TP-05 AC 6: §15.2 rule 6 states the estimate and the retake.
     let rule = flat(&section(&spec("part_v_execution.md"), "### 15.2 "));
@@ -2471,4 +2513,25 @@ fn part_v_the_event_time_steps_are_the_ones_that_exist() {
     let s = flat(&spec("part_v_execution.md"));
     assert!(s.contains("steps 2, 3.1, 3.2, 3.3 and 3.4 run, in the same order. Steps 1 and 4 do not"), "the event-time steps");
     assert!(!s.contains("3.5"), "Part V names a step 3.5, which the procedure does not have");
+}
+
+#[test]
+fn a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes() {
+    // GN-12 AC 2, D13 as amended: the §3 class table lists behavior positions only, and the amendment says a definition
+    // is `E0336` (the code §8.2.5 gives it) while `E0122` is the const contexts'
+    let text = flat(&spec("part_i_values.md"));
+    let rule = &text[text.find("- **§3 rule 0.**").expect("rule 0")..text.find("- **§3 rule 1.**").expect("rule 1")];
+    for fact in ["A definition (`f = clock();`) is not a behavior position", "a call of a solve-reading function there is `E0336`", "`E0122` is for the const contexts"] {
+        assert!(rule.contains(fact), "§3 rule 0 lacks \"{fact}\": {rule}");
+    }
+}
+
+#[test]
+fn a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules() {
+    // fix round 2, finding 13: §3.1.6 says a read of a discrete handle is a value, so storing or returning it keeps no handle
+    let text = flat(&spec("part_i_values.md"));
+    let rule = &text[text.find("- **§3.1.6**").expect("rule 3.1.6")..text.find("- **§3.1.7**").expect("rule 3.1.7")];
+    for fact in ["a discrete handle used where a value is expected", "stores or returns that value and is no `E0133`", "`E0133` is for a handle kept as a handle"] {
+        assert!(rule.contains(fact), "§3.1.6 lacks \"{fact}\": {rule}");
+    }
 }

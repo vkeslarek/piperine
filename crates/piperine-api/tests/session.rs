@@ -92,6 +92,26 @@ impl Counting {
 }
 
 #[test]
+fn a_run_fails_on_an_unreached_error_with_the_check_diagnostic() {
+    // GN-09 AC 1: `broken` is called by nothing and the top is clean, yet `open` fails with the
+    // diagnostic `Types::check_model` (and so `piperine check`) gives
+    let text = format!("{DEVICES}\n{}\nfn broken(x: f64) -> bool {{ x + 1.0 }}\n", portless("Only"));
+    let (_dir, file) = lone(&text);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &flags("op", "interp", None)).unwrap_or_else(|f| panic!("{f}"));
+    let design = project.design(&spec).unwrap_or_else(|f| panic!("{f}"));
+    let expected = piperine_lang::types::Types::check_model(&design).expect_err("the model check fails");
+    match Session::open(&project, &spec, &unused()) {
+        Err(Failure::Diagnostics { stage: "typeck", found, .. }) => {
+            assert_eq!(found, expected);
+            assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
+        }
+        Err(other) => panic!("a typeck failure, found {other}"),
+        Ok(s) => panic!("a session with top {}", s.top()),
+    }
+}
+
+#[test]
 fn the_top_key_names_the_module() {
     // CLI-04 AC 1: two modules without ports; `top` picks one
     let text = format!("{DEVICES}\n{}\n{}", portless("A"), portless("B"));

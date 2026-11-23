@@ -155,7 +155,7 @@ impl Lowerer<'_> {
     }
 
     pub(crate) fn expr(&mut self, e: &ast::Expr) -> ExprId {
-        crate::stack::deep(|| self.expr_inner(e))
+        crate::stack::Stack::deep(|| self.expr_inner(e))
     }
 
     fn expr_inner(&mut self, e: &ast::Expr) -> ExprId {

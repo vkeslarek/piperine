@@ -30,10 +30,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Write};
 
-use crate::ids::{AggregateId, ExprId, StmtId, TypeId};
+use crate::ids::{AggregateId, ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
-    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal, TypeData, TypeKind,
+    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, ReprForm, Terminal, TypeData, TypeKind,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -269,7 +269,15 @@ impl<'a> Printer<'a> {
         let derived: Vec<&str> = flags.iter().filter(|(_, on)| *on).map(|(name, _)| *name).collect();
         let derive = if derived.is_empty() { String::new() } else { format!("  derive {}", derived.join(", ")) };
         let at = self.at(&data.origin);
-        self.line(0, &format!("type t{index} = {shape}  path {}{derive}{at}", Printer::name(&data.path)));
+        let instance = data.instance.as_ref().map(|instance| format!("  instance of {}", instance.item)).unwrap_or_default();
+        let repr = match data.repr {
+            ReprForm::Derived => String::new(),
+            ReprForm::HandWritten { width, encode, decode } => {
+                let name = |id: FunctionId| self.ir.functions.get(id.index()).map_or_else(|| format!("<bad function {}>", id.0), |f| Printer::name(&f.name));
+                format!("  repr hand-written {width} levels, encode {}, decode {}", name(encode), name(decode))
+            }
+        };
+        self.line(0, &format!("type t{index} = {shape}  path {}{derive}{instance}{repr}{at}", Printer::name(&data.path)));
     }
 
     /// A constant as source: a scalar as `Display` writes it, a composite value spelled out through
@@ -543,7 +551,8 @@ impl<'a> Printer<'a> {
     fn function(&mut self, function: &FunctionData) {
         let params: Vec<String> = function.params.iter().map(|p| format!("{}: {}", Printer::name(&p.name), p.ty)).collect();
         let at = self.at(&function.origin);
-        self.line(0, &format!("fn {}({}) -> {}{at}", Printer::name(&function.name), params.join(", "), function.ret));
+        let instance = function.instance.as_ref().map(|instance| format!("  // instance of {}", instance.item)).unwrap_or_default();
+        self.line(0, &format!("fn {}({}) -> {}{at}{instance}", Printer::name(&function.name), params.join(", "), function.ret));
         self.locals(1, &function.locals);
         let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[], streams: &[] };
         let body = function.body;

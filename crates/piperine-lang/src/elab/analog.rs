@@ -323,6 +323,8 @@ impl Elaboration<'_, '_> {
             return None;
         };
         match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
+            // a handle is the node the caller passed (`handles.rs`)
+            Resolution::Decl(decl) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_terminal(scope, bound),
             Resolution::Decl(decl) => match self.frame_node(scope.frame, decl) {
                 Some(terminal) => Some(terminal),
                 None => {

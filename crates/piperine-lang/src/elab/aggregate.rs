@@ -17,7 +17,7 @@ use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::patterns::{PatternTest, Subject};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
-use crate::types::Ty;
+use crate::types::{Nominal, Ty};
 
 /// What a struct expression or a call builds: a struct of the arena, or one variant of an enum.
 #[derive(Clone, Copy)]
@@ -67,8 +67,8 @@ impl Elaboration<'_, '_> {
     /// `Name { field: value, .. }` of a struct or an enum variant: its fields in declaration order,
     /// evaluated in the order written (§1.3.11). `None` after a diagnostic.
     pub(super) fn lower_struct_expr(&mut self, scope: &mut Scope, expr: ExprId, path: crate::pom::PathId, fields: &[FieldInit], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let owner = match self.types.ty(expr) {
-            Some(Ty::Struct(decl)) => *decl,
+        let owner = match self.typed(expr) {
+            Some(Ty::Struct(Nominal { decl, .. })) => decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => {
@@ -181,7 +181,7 @@ impl Elaboration<'_, '_> {
 
     /// `recv.name`, the field of a struct or the component of a tuple, as a value of type `ty`.
     pub(super) fn lower_field_value(&mut self, scope: &mut Scope, recv: ExprId, name: &str, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let index = self.field_index(self.types.ty(recv)?, name)?;
+        let index = self.field_index(&self.typed(recv)?, name)?;
         let base = self.lower_expr(scope, recv)?;
         Some(self.emit(Expr::Field { expr: base, index }, ty, origin))
     }
@@ -191,7 +191,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn field_index(&self, ty: &Ty, name: &str) -> Option<u32> {
         match ty {
             Ty::Tuple(_) => name.parse().ok(),
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields = self.types.fields(*decl)?;
                 match name.parse::<u32>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),
@@ -209,7 +209,7 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(peeled).clone();
         match &node.kind {
             ExprKind::Field { expr, name, .. } => {
-                let index = self.field_index(self.types.ty(*expr)?, &name.text);
+                let index = self.field_index(&self.typed(*expr)?, &name.text);
                 let Some(index) = index else {
                     self.unsupported(scope.file, node.span, "an assignment to a field of a type that has none");
                     return None;
@@ -273,7 +273,7 @@ impl Elaboration<'_, '_> {
 
     /// The value of the constant `expr` as a count. `None` after a diagnostic.
     fn const_count(&mut self, scope: &Scope, expr: ExprId) -> Option<u64> {
-        match self.types.integer_constant(expr).and_then(|count| u64::try_from(count).ok()) {
+        match self.consts.integer(expr).and_then(|count| u64::try_from(count).ok()) {
             Some(count) => Some(count),
             None => {
                 self.unsupported(scope.file, self.design.expr_node(expr).span, "a length or a bound that is not an integer constant");

@@ -29,8 +29,8 @@ const ROWS: &[Row] = &[
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "generation if", source: "module Top(a: E) { if true { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
-    Row { construct: "struct with an impl (its methods are never reached)", source: "struct S { a: f64 }\nimpl S { fn get(self) -> f64 { 1.0 } }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; let x = s.get(); }", names: "method `get`" },
-    Row { construct: "generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let x = g(1.0); }", names: "generic function" },
+    // `struct with an impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
+    Row { construct: "generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; }", names: "generic function" },
     Row { construct: "generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: E) { let g = G(a); }", names: "generic module" },
     Row { construct: "const generic", source: "module G<const N: usize>() { }\nmodule Top() { let g = G(); }", names: "generic module" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
@@ -46,7 +46,7 @@ const ROWS: &[Row] = &[
     Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
     Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
-    Row { construct: "trait", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top() { }\nanalog for Top { let y = 1.0.get(); }", names: "method `get`" },
+    // `trait` left this table when generics T25 typed a trait's methods (`types_traits::methods_associated_functions_and_constants_type_check`).
 ];
 
 fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {

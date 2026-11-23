@@ -1,0 +1,49 @@
+//! Generic structs and enums and the methods of their `impl`s (GN-06): each instance is its own type, and every
+//! construct of a composite value runs on it; the expected values are computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr)]
+struct Pair<T> { a: T, b: T }
+impl<T> Pair<T> {
+    fn swapped(self) -> Pair<T> { Pair { a: self.b, b: self.a } }
+}
+enum Slot<T> { Empty, Full(T) }
+struct Window<T: PartialOrd> { lo: T, hi: T }
+impl<T> Window<T> {
+    fn holds(self, x: T) -> bool { self.lo <= x && x <= self.hi }
+}
+
+fn sum(p: Pair<f64>) -> f64 { p.a + p.b }
+fn load(s: Slot<f64>) -> f64 { match s { Slot::Empty => -1.0, Slot::Full(v) => v } }
+fn tolerance(v: f64) -> u8 { let w = Window { lo: 3.0, hi: 3.6 }; if w.holds(v) { 1 } else { 0 } }
+
+fn swapped_real() -> f64 { Pair { a: 1.0, b: 2.0 }.swapped().a }
+fn swapped_byte() -> u8 { Pair { a: 3u8, b: 4u8 }.swapped().b }
+fn summed() -> f64 { sum(Pair { a: 1.5, b: 2.5 }) }
+fn full() -> f64 { load(Slot::Full(2.5)) }
+fn empty() -> f64 { load(Slot::Empty) }
+fn nested() -> f64 { Pair { a: Pair { a: 1.0, b: 2.0 }, b: Pair { a: 3.0, b: 4.0 } }.b.a }
+
+module Rows(in clk: Bit, out m0: Bit<f64> = 0.0, out m1: Bit<u8> = 0, out m2: Bit<f64> = 0.0, out m3: Bit<f64> = 0.0, out m4: Bit<f64> = 0.0, out m5: Bit<f64> = 0.0, out m6: Bit<u8> = 0, out m7: Bit<u8> = 0, out m8: Bit<Pair<u8>> = Pair { a: 0u8, b: 0u8 }) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- swapped_real();
+        m1 <- swapped_byte();
+        m2 <- summed();
+        m3 <- full();
+        m4 <- empty();
+        m5 <- nested();
+        m6 <- tolerance(3.3);
+        m7 <- tolerance(4.0);
+        m8 <- Pair { a: 3u8, b: 4u8 };
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<f64>; signal m1: Bit<u8>; signal m2: Bit<f64>; signal m3: Bit<f64>; signal m4: Bit<f64>; signal m5: Bit<f64>; signal m6: Bit<u8>; signal m7: Bit<u8>; signal m8: Bit<Pair<u8>>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, m2, m3, m4, m5, m6, m7, m8);
+}

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use piperine_lang::msl::{Diagnostic, Span};
 use piperine_lang::pom::{CrateGraph, CrateId, Design};
+use piperine_lang::types::Types;
 use piperine_project::{Options, PackageError, PackageGraph, find_project_root, resolve};
 
 use crate::failure::Failure;
@@ -29,7 +30,8 @@ pub struct Checked {
     pub crates: usize,
     /// The runs of the manifest whose top was type-checked and elaborated.
     pub runs: usize,
-    /// Whether any top was type-checked: false for a package with no run (CLI-14 AC 4).
+    /// Whether the package was type-checked: every item of every crate for a package with no run
+    /// (S3, GN-08), the top of each run otherwise.
     pub typed: bool,
 }
 
@@ -129,16 +131,16 @@ impl Project {
 
     /// Every stage before a backend, for the whole project (CLI-14): the run table, then for
     /// each run the request, the design, its top, the type check and the elaboration. A package
-    /// with no run is parsed and resolved only; a lone file is checked as a run of its own
+    /// with no run is parsed, resolved and type-checked whole (every item of every crate); a lone file is checked as a run of its own
     /// (an operating point) so that the top rule of a session applies. No backend is invoked.
     /// Every failure of every run is collected.
     pub fn check(&self) -> Result<Checked, Vec<Failure>> {
-        let done = |runs: usize, typed: bool| Checked { package: self.name.clone(), crates: self.packages.as_ref().map_or(2, |p| p.graph.crates().len() + 1), runs, typed };
+        let done = |runs: usize| Checked { package: self.name.clone(), crates: self.packages.as_ref().map_or(2, |p| p.graph.crates().len() + 1), runs, typed: true };
         let mut failures = self.faults();
         if self.lone.is_some() {
             let probe = RunSpec::from_flags(&self.name, &Overrides { analysis: Some("op".into()), ..Overrides::default() }).and_then(|spec| Session::elaborate(self, &spec).map(|_| ()));
             failures.extend(probe.err());
-            return if failures.is_empty() { Ok(done(0, true)) } else { Err(failures) };
+            return if failures.is_empty() { Ok(done(0)) } else { Err(failures) };
         }
         if self.runs.is_empty() && failures.is_empty() {
             if let Some(packages) = &self.packages {
@@ -146,15 +148,18 @@ impl Project {
                 if !design.diagnostics().is_empty() {
                     let found = design.diagnostics().to_vec();
                     failures.push(Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
+                } else if let Err(found) = Types::check_model(&design) {
+                    // a library has no top to reach: every item is typed (S3, GN-08)
+                    failures.push(Failure::Diagnostics { stage: "typeck", design: Box::new(design), found });
                 }
             }
-            return if failures.is_empty() { Ok(done(0, false)) } else { Err(failures) };
+            return if failures.is_empty() { Ok(done(0)) } else { Err(failures) };
         }
         for run in &self.runs {
             let checked = self.request(Some(&run.name), &Overrides::default()).and_then(|spec| Session::elaborate(self, &spec).map(|_| ()));
             failures.extend(checked.err());
         }
-        if failures.is_empty() { Ok(done(self.runs.len(), true)) } else { Err(failures) }
+        if failures.is_empty() { Ok(done(self.runs.len())) } else { Err(failures) }
     }
 
     /// The run `name` (the only run when `name` is `None`) with `overrides` applied, validated;

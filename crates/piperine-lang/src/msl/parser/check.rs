@@ -340,7 +340,7 @@ fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
 }
 
 fn expr(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {
-    crate::stack::deep(|| expr_inner(e, ctx, out))
+    crate::stack::Stack::deep(|| expr_inner(e, ctx, out))
 }
 
 fn expr_inner(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {

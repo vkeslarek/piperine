@@ -219,7 +219,7 @@ fn binding_m_and_dtemp_is_refused_as_an_unknown_param() {
     // modules~1faf8c12: "Every instance has these two implicit params, and you bind them like any other:
     // Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel": the binding is `E0320`
     // today, `no param m` (L29); the Book's meaning is four resistors in parallel. The row is `refused`,
-    // owned by `params-and-io`, which implements `m`
+    // owned by `generics` phase D (GN-24, GN-25), which implements `m`
     let faulty = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
     assert_eq!(faulty.first("E0320").message, "no param `m` in `Resistor`");
     let dtemp = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, dtemp: 5.0 };\n"), "Top");
@@ -306,7 +306,11 @@ fn e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked()
     // is not raised
     let chapter = Chapter::read();
     let zero = "module Empty() { signal vin: Electrical; pub signal vout: Electrical; pub let lad = Ladder::<0>(vin, vout) { r: 1k, c: 1n }; }\n";
-    let model = chapter.wrapped("empty.msl", "", "modules#1", zero);
+    // the whole-model check (S3) refuses the listing's own `LadderTop` for the same placement, so the model is
+    // the listing up to it: the `Empty` placement is the one refusal
+    let block = chapter.text("modules#1");
+    let (listing, _) = block.split_once("module LadderTop()").expect("modules#1 ends with LadderTop");
+    let model = Model::written("empty.msl", &format!("{listing}\n{zero}"));
     let given = Refusal::of(model.run(Faulty::operating_point_of("Empty")), "modules~4bcb9f1d");
     assert_eq!(given, [("P0001".to_string(), "generic module is not supported yet".to_string())]);
 }

@@ -36,7 +36,7 @@ impl Elaboration<'_, '_> {
     /// The constant the text `text` is for the param `param`, read by the param's type; the reason it is none otherwise.
     pub(super) fn constant_of_text(&mut self, param: DeclId, text: &str) -> Result<Constant, String> {
         let DeclKind::Param(declared) = &self.design.decl_data(param).kind else { return Err("it is no param".to_string()) };
-        let ty = self.types.written(declared.ty).ok_or_else(|| "its type has no text".to_string())?;
+        let ty = self.typed_written(declared.ty).ok_or_else(|| "its type has no text".to_string())?;
         self.constant_as(&ty, text.trim())
     }
 
@@ -54,7 +54,7 @@ impl Elaboration<'_, '_> {
                 let value = LiteralText::integer(text).ok_or_else(|| format!("it is not an integer literal of {}, from {low} to {high}", ty.name(self.design)))?;
                 if (low..=high).contains(&value) { Ok(Constant::Int(value)) } else { Err(format!("it is outside the range of {}, from {low} to {high}", ty.name(self.design))) }
             }
-            Ty::Enum(decl) => self.variant_constant(ty, *decl, text),
+            Ty::Enum(nominal) => self.variant_constant(ty, nominal.decl, text),
             Ty::Option(inner) => {
                 let stored = self.stored_type(ty).ok_or_else(|| "its type has no value in the IR".to_string())?;
                 let parts = match (text, text.strip_prefix("Some(").and_then(|rest| rest.strip_suffix(')'))) {

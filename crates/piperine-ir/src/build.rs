@@ -7,8 +7,8 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
-    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, TypeData, ValueType,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -317,8 +317,22 @@ impl IrBuilder {
             ret: spec.ret,
             locals: spec.locals,
             body: spec.body,
+            instance: None,
         });
         FunctionId(self.functions.len() as u32 - 1)
+    }
+
+    /// Records that `function` is `instance` of a generic item (GN-02); the function's name must
+    /// be the instance's (`Ir::check`). Set after `function` so that a function as written needs
+    /// no extra field in its `FunctionSpec`.
+    pub fn mark_instance(&mut self, function: FunctionId, instance: GenericInstance) {
+        self.functions[function.index()].instance = Some(instance);
+    }
+
+    /// Sets how `ty` crosses the device ABI. Set after the type and its `encode` and `decode`
+    /// functions exist: a hand-written `Repr` names functions that mention the type (GN-05).
+    pub fn set_repr(&mut self, ty: TypeId, repr: ReprForm) {
+        self.types[ty.index()].repr = repr;
     }
 
     /// The function already added under `name`, if any.

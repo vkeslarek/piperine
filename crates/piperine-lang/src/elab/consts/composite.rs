@@ -23,7 +23,7 @@ use super::super::compound::EnumLayout;
 use super::control::{Argument, FnValue};
 use super::{Bindings, ConstEval, ConstFault};
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatId, PatKind, Resolution};
-use crate::types::{Method, Ty};
+use crate::types::{Method, Length, Nominal, Ty};
 
 /// What a composite value is made of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +95,20 @@ impl ConstEval<'_, '_> {
         }
     }
 
+    /// The levels word the function `encode` of a hand-written `Repr` gives for the value `init` folds to: level `k`
+    /// is bit `k` (GN-05). The word is what a carrier of such a type is initialized with.
+    pub(in crate::elab) fn encoded_word(&mut self, init: ExprId, encode: DeclId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(init, bindings)?;
+        let levels = self.apply_function(init, encode, vec![Argument { value: Some(value), function: None }])?;
+        let (_, parts) = self.parts_of(init, levels, "the levels of an `encode`")?;
+        let mut word: i128 = 0;
+        for (level, part) in parts.iter().enumerate() {
+            let Constant::Bool(high) = part else { return Err(ConstFault::Unsupported { expr: init, what: "an `encode` that gives a level that is not a `bool`".to_string() }) };
+            word |= i128::from(*high) << level;
+        }
+        Ok(Constant::Int(word))
+    }
+
     /// The composite `value` names and its parts copied out, or a fault naming `expr`.
     fn parts_of(&self, expr: ExprId, value: Constant, what: &str) -> Result<(CompositeKind, Vec<Constant>), ConstFault> {
         match self.composite_of(value) {
@@ -155,7 +169,7 @@ impl ConstEval<'_, '_> {
 
     /// `[x; N]`: `x` evaluated once, `N` copies of it.
     pub(super) fn repeat_value(&mut self, expr: ExprId, element: ExprId, length: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
-        let count = match self.types.integer_constant(length) {
+        let count = match self.integer(length) {
             Some(count) => count as usize,
             None => match self.fold(length, bindings)? {
                 Constant::Int(count) if count >= 0 => count as usize,
@@ -169,8 +183,8 @@ impl ConstEval<'_, '_> {
     /// `Name { field: value, .. }` of a struct or an enum variant: its fields in declaration order,
     /// evaluated in the order written (§1.3.11).
     pub(super) fn struct_value(&mut self, expr: ExprId, path: crate::pom::PathId, inits: &[FieldInit], bindings: &Bindings) -> Result<Constant, ConstFault> {
-        let owner = match self.types.ty(expr) {
-            Some(Ty::Struct(decl)) => *decl,
+        let owner = match self.typed(expr) {
+            Some(Ty::Struct(Nominal { decl, .. })) => decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => return Err(ConstFault::Unsupported { expr, what: "a struct expression that names neither a struct nor a variant".to_string() }),
@@ -294,11 +308,11 @@ impl ConstEval<'_, '_> {
                 let parts = items.iter().map(|item| self.default_value(expr, item)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Tuple, parts))
             }
-            Ty::Array(element, count) => {
+            Ty::Array(element, Length::Fixed(count)) => {
                 let part = self.default_value(expr, element)?;
                 Ok(self.make(CompositeKind::Array, vec![part; *count as usize]))
             }
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields: Vec<Ty> = self.types.fields(*decl).map(|fields| fields.iter().map(|f| f.ty.clone()).collect()).unwrap_or_default();
                 let parts = fields.iter().map(|field| self.default_value(expr, field)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Struct, parts))
@@ -319,10 +333,10 @@ impl ConstEval<'_, '_> {
 
     /// The position of the field `name` of the tuple or struct `recv` is.
     fn field_position(&self, recv: ExprId, name: &str) -> Option<usize> {
-        match self.types.ty(recv)? {
+        match self.typed(recv)? {
             Ty::Tuple(_) => name.parse().ok(),
-            Ty::Struct(decl) => {
-                let fields = self.types.fields(*decl)?;
+            Ty::Struct(Nominal { decl, .. }) => {
+                let fields = self.types.fields(decl)?;
                 match name.parse::<usize>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),
                     _ => fields.iter().position(|f| f.name.as_deref() == Some(name)),
@@ -356,7 +370,7 @@ impl ConstEval<'_, '_> {
             match bound {
                 None => Ok(default),
                 // a bound written as a literal or a const name has no type of its own (§1.2.5, as an array length)
-                Some(bound) if let Some(at) = this.types.integer_constant(bound) => Ok(at as usize),
+                Some(bound) if let Some(at) = this.integer(bound) => Ok(at as usize),
                 Some(bound) => match this.fold(bound, bindings)? {
                     Constant::Int(at) if at >= 0 => Ok(at as usize),
                     _ => Err(ConstFault::Unsupported { expr, what: "a range index bound that is not a non-negative integer".to_string() }),
@@ -853,7 +867,7 @@ impl ConstEval<'_, '_> {
     /// `sum()`: the elements added with `+` from the first, starting from zero (H.7 rule 9).
     fn sum(&mut self, expr: ExprId, receiver: Constant) -> Result<Constant, ConstFault> {
         let elements = self.elements_of(expr, receiver)?;
-        let zero = match self.types.ty(expr) {
+        let zero = match self.typed(expr) {
             Some(Ty::F64) => Constant::Real(Real::new(0.0)),
             _ => Constant::Int(0),
         };
@@ -889,7 +903,7 @@ impl ConstEval<'_, '_> {
     /// `expect`, `unwrap_or`, `unwrap_or_else`, `map`, `and_then` and `or` over a composite
     /// `Option`; `None` for any other method.
     pub(super) fn option_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
-        if !matches!(method, Method::IsSome | Method::IsNone | Method::Unwrap | Method::Expect | Method::UnwrapOr | Method::UnwrapOrElse | Method::Map | Method::AndThen | Method::Or) || !matches!(self.types.ty(recv), Some(Ty::Option(_))) {
+        if !matches!(method, Method::IsSome | Method::IsNone | Method::Unwrap | Method::Expect | Method::UnwrapOr | Method::UnwrapOrElse | Method::Map | Method::AndThen | Method::Or) || !matches!(self.typed(recv), Some(Ty::Option(_))) {
             return None;
         }
         Some(self.run_option_row(expr, method, recv, args, bindings))

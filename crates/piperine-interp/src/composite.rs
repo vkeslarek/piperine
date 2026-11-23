@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
+use piperine_ir::{Body, EventSource, Expr, ExprId, FunctionId, Stmt, StmtId};
 
 /// The composite-values forms one body evaluates, found by walking everything it evaluates: its
 /// `analog` block, drives, events, reactions, `where` checks, derivative sites and child param
@@ -14,6 +14,8 @@ pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
     met: [bool; 23],
+    /// The functions the body calls or names, in the order the walk first met them.
+    reached: Vec<FunctionId>,
 }
 
 impl<'a> CompositeForms<'a> {
@@ -46,9 +48,16 @@ impl<'a> CompositeForms<'a> {
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 23] };
+        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
+    }
+
+    /// The functions `body` evaluates (called or named, transitively), each once.
+    pub(crate) fn reached_functions(body: Body<'a>) -> Vec<FunctionId> {
+        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
+        forms.walk();
+        forms.reached
     }
 
     /// Every statement and expression the body evaluates, each visited once.
@@ -100,6 +109,7 @@ impl<'a> CompositeForms<'a> {
             if let Expr::Call { function, .. } | Expr::FunctionRef(function) = kind
                 && seen_functions.insert(*function)
             {
+                self.reached.push(*function);
                 exprs.push(ir.function(*function).body());
             }
             exprs.extend(kind.operands());

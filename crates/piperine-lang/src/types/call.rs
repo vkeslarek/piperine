@@ -41,10 +41,16 @@ impl Checker<'_> {
         if let Some(found) = self.default_call(expr, *callee, args.len()) {
             return found;
         }
+        if let Some(found) = self.parameter_decode(expr, *callee, args) {
+            return found;
+        }
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
             CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
+            // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
+            // reads the call as a placement because a module parameter has the same bound
+            CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.call_through_bound(expr, parameter, args),
             CallClass::Instance { module: None, .. } => {
                 self.unsupported(file, node.span, "placement through a template value or a function");
                 return None;
@@ -85,7 +91,22 @@ impl Checker<'_> {
         self.reach(function);
         self.refuse_outside_class(expr, function);
         self.emitting_call(expr, function);
+        self.check_call_class(expr, function);
+        if self.is_trait_function(function) {
+            return self.trait_path_call(expr, function, args);
+        }
+        if self.design.decl_data(function).generics_span.is_some() {
+            return self.generic_call(expr, callee, function, args);
+        }
         let (params, ret) = self.signature(function)?;
+        self.finish_call(expr, callee, function, params, ret, args, true)
+    }
+
+    /// The typing of a call of `function` once its parameter types and result are known (a generic
+    /// function's are the substituted ones): the callee recorded, the arguments bound to the
+    /// parameters, the result the call's type. `pointers` holds a closure that captures out of a
+    /// parameter of function type, which is a function pointer; a parameter bounded by `Fn` is not one.
+    pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg], pointers: bool) -> Option<Ty> {
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -103,7 +124,7 @@ impl Checker<'_> {
         // a parameter of function type is a function pointer: a closure that captures is refused
         let slots = self.bindings.get(&expr).cloned().unwrap_or_default();
         for (slot, param) in slots.iter().zip(&params) {
-            if let (Some(arg), Ty::Fn(..)) = (slot, param) {
+            if let (true, Some(arg), Ty::Fn(..)) = (pointers, slot, param) {
                 self.refuse_capturing_pointer(*arg);
             }
         }
@@ -258,6 +279,8 @@ impl Checker<'_> {
         let builtin = match res {
             Resolution::Decl(f) => match self.stdlib_builtin(*f) {
                 Some(builtin) => Some(builtin),
+                // a method the project writes in an `impl` or a trait is typed from its signature
+                None if self.is_project_method(*f) => None,
                 None => {
                     let replaced = matches!(name, "rise" | "fall");
                     let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
@@ -290,15 +313,37 @@ impl Checker<'_> {
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
             return self.edge_read(expr, edge, *recv, args);
         }
+        // §3.1.7: a method of a carrier is the carrier's own (above), then the `impl`s of its nature, then the value's
+        if let Some(carrier @ Ty::Carrier { .. }) = self.carrier_named(*recv)
+            && let Some(function) = self.method_of(&carrier, name)
+        {
+            self.infer(*recv)?;
+            return self.method_call_of(expr, *recv, &carrier, function, args);
+        }
         let recv_ty = self.infer(*recv)?;
+        // §3 rule 9: a value of a type parameter has the methods its bounds give
+        if let Ty::Param(param) = recv_ty {
+            return self.parameter_method(param, name, method.span, args, file, (expr, *recv));
+        }
+        // §3.1.7: the methods of a struct or an enum are the project's
+        if matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_))
+            && let Some(function) = self.method_of(&recv_ty, name)
+        {
+            return self.method_call_of(expr, *recv, &recv_ty, function, args);
+        }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
             miss => {
+                if let Some(function) = self.method_of(&recv_ty, name) {
+                    return self.method_call_of(expr, *recv, &recv_ty, function, args);
+                }
                 let type_name = recv_ty.name(self.design);
                 // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
-                let copy_method = name == "clone" && !self.project_methods.contains(name);
-                if copy_method || (matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name)) {
+                let copy_method = name == "clone" && !self.project_defines(name);
+                // a struct or an enum has the project's methods and no others (§3.1.7), so a miss is absent
+                let own_only = matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_));
+                if copy_method || own_only || (matches!(miss, Lookup::Absent) && !self.project_defines(name) && !CARRIER_METHODS.contains(&name)) {
                     let message = format!("no method `{name}` on `{type_name}`");
                     let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
                     let help = if copy_method {

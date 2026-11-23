@@ -32,8 +32,7 @@ impl CheckCommand {
         };
         match checked {
             Ok(checked) => {
-                let note = if checked.typed { "" } else { "; type checking needs a run" };
-                let line = format!("ok: {} ({} crates, {} runs{note})", checked.package, checked.crates, checked.runs);
+                let line = format!("ok: {} ({} crates, {} runs)", checked.package, checked.crates, checked.runs);
                 let mut out = out.borrow_mut();
                 let wrote = writeln!(out, "{line}").and_then(|()| out.flush());
                 match wrote {

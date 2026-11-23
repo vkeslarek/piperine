@@ -67,6 +67,10 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "a `let` inside a definition");
             return None;
         }
+        if lowered.is_none() && self.diagnostics.is_empty() {
+            let span = self.design.expr_node(value).span;
+            self.refuse_silent_failure(scope.file, span, "a drive value");
+        }
         let delay = match delay {
             Some(d) => Some(d?),
             None => None,

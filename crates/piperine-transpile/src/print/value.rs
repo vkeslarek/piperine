@@ -81,6 +81,9 @@ pub struct ValuePrinter<'a> {
     /// Whether each local of the owner was declared `let mut`, by index: only that local prints
     /// `let mut` and is the target of an assignment (§1.5.12).
     pub(super) mutable: Vec<bool>,
+    /// Whether each local of the owner is a temporary the elaborator made (its IR name holds a `$`, which no
+    /// written identifier can), by index: such a local may go unread (a `match` temporary whose arm binds nothing).
+    synthesized: Vec<bool>,
     /// The result type of the function being printed; `None` for any other owner. A `return`
     /// lifts its value to it.
     pub(super) returns: Option<ValueType>,
@@ -153,6 +156,7 @@ impl<'a> ValuePrinter<'a> {
             locals: Self::names(f.locals(), &[]),
             local_types: f.locals().iter().map(|l| l.ty.clone()).collect(),
             mutable: f.locals().iter().map(|l| l.mutable).collect(),
+            synthesized: f.locals().iter().map(Self::is_synthesized).collect(),
             returns: Some(f.ret().clone()),
             function: Some(function),
             loops: Cell::new(0),
@@ -179,6 +183,7 @@ impl<'a> ValuePrinter<'a> {
             locals: Vec::new(),
             local_types: Vec::new(),
             mutable: Vec::new(),
+            synthesized: Vec::new(),
             returns: None,
             function: None,
             loops: Cell::new(0),
@@ -208,6 +213,7 @@ impl<'a> ValuePrinter<'a> {
             locals: Self::names(body.locals(), &reserved),
             local_types: body.locals().iter().map(|l| l.ty.clone()).collect(),
             mutable: body.locals().iter().map(|l| l.mutable).collect(),
+            synthesized: body.locals().iter().map(Self::is_synthesized).collect(),
             returns: None,
             function: None,
             loops: Cell::new(0),
@@ -248,6 +254,7 @@ impl<'a> ValuePrinter<'a> {
             locals: Self::names(&reaction.locals, &reserved),
             local_types: reaction.locals.iter().map(|l| l.ty.clone()).collect(),
             mutable: reaction.locals.iter().map(|l| l.mutable).collect(),
+            synthesized: reaction.locals.iter().map(Self::is_synthesized).collect(),
             origin: reaction.origin.clone(),
             commits: true,
             ..base
@@ -720,7 +727,10 @@ impl<'a> ValuePrinter<'a> {
                 let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
                 // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
                 // generic call leaves it open
-                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
+                // a scalar result alone, with arguments that hold no real (a method of an enum that returns an `f64`),
+                // leaves `R` open where the call is an argument of a generic function, so the call names it
+                let result_alone = !params.is_empty() && !params.iter().any(|p| items.holds_real(&p.ty));
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !result_alone && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
                 let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
@@ -994,6 +1004,11 @@ impl<'a> ValuePrinter<'a> {
         Ok(lines.join("\n"))
     }
 
+    /// Whether `local` is a temporary of the elaborator rather than a name the author wrote.
+    fn is_synthesized(local: &Local) -> bool {
+        local.name.contains('$')
+    }
+
     /// `e` as a statement: an `if` closes with its brace; anything else takes a `;`.
     pub(super) fn expression_statement(&self, e: ExprId) -> Result<String, Error> {
         let piece = self.piece(e)?;
@@ -1010,7 +1025,14 @@ impl<'a> ValuePrinter<'a> {
                 };
                 let init = self.expr(*init)?;
                 // a deferred `let x;` starts at a placeholder its first assignment overwrites
-                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments, unused_variables)] let mut" } else { "let" };
+                // a temporary the elaborator makes for a `match` (`match$0.val`) is unread when its arm binds nothing (`Some(_)`)
+                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) {
+                    "#[allow(unused_assignments, unused_variables)] let mut"
+                } else if self.synthesized.get(*local as usize).copied().unwrap_or(false) {
+                    "#[allow(unused_variables)] let"
+                } else {
+                    "let"
+                };
                 // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
                 let annotation = match self.local_types.get(*local as usize) {
                     Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),

@@ -77,7 +77,7 @@ impl Elaboration<'_, '_> {
     /// EU-06 AC 1), so an instance that binds nothing reads the absent case. Any other type has no
     /// default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`), so the param is required.
     fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
-        let written = self.types.written(ty)?;
+        let written = self.typed_written(ty)?;
         if !matches!(written, crate::types::Ty::Option(_)) {
             return None;
         }
@@ -167,7 +167,7 @@ impl Elaboration<'_, '_> {
     /// The type a param of the declared type `ty` holds: one value, an `Option` kept whole as `ValueType::Option`
     /// (its pin is `{ some, v }`, explicit-unknowns P5), unpacked into its halves where a read needs them.
     fn lower_param_type(&mut self, file: crate::pom::FileId, ty: crate::pom::TypeId) -> Option<ValueType> {
-        let stored = self.types.written(ty).and_then(|t| self.stored_type(&t));
+        let stored = self.typed_written(ty).and_then(|t| self.stored_type(&t));
         if stored.is_none() {
             let span = self.design.type_node(ty).span;
             self.unsupported(file, span, "a param of a type that has no value in the IR");

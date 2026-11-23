@@ -73,6 +73,14 @@ impl Design {
             DeclKind::Field(f) => Some(f.ty),
             DeclKind::Const(c) => Some(c.ty),
             DeclKind::FnParam(FnParamData::Named { ty }) => Some(*ty),
+            // `self` of a function in an `impl` has the type the `impl` is written for (§3.1.5)
+            DeclKind::FnParam(FnParamData::SelfValue) => {
+                let function = self.decl_data(id).parent?;
+                match &self.decl_data(self.decl_data(function).parent?).kind {
+                    DeclKind::Impl(owner) => Some(owner.self_ty),
+                    _ => None,
+                }
+            }
             DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => Some(*ty),
             _ => None,
         }

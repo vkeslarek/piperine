@@ -22,16 +22,16 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 27 loud (L1 to L68 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
+**Counts.** 1 silent, 2 broken, 25 loud (L1 to L70 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3 (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L68 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`; L68 split from L58) |
-| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
+| §3 Silent (read this first) | S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |
+| §4 Loud | L1–L70 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58) |
+| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
@@ -74,18 +74,16 @@ change of the IR or the ABI.
 
 ## 3. Silent — accepted, then wrong or ignored
 
-### S3. The type checker checks only what a run's top reaches — size M
+### S3. The type checker does not check a generic module's body — size S
 
-- **What.** `Types::check` walks the reachable set from the top (`types/check.rs:147`). A
-  function or module nothing reaches is resolved and never typed:
-  `fn broken(x: f64) -> bool { x + 1.0 }` and a module that calls `ddx` pass `piperine check`
-  (`ok: u (2 crates, 0 runs)`). A library package with no run is never type-checked. An unreached
-  `const X: &str = include_str!("missing.txt")` is accepted: `E0610`, `E0612` and `E0613` are
-  raised nowhere.
-- **Impact.** `check` is green for a library that cannot compile. §0.3 puts every static check
-  in elaboration, of the whole model.
-- Generic items need an instantiation to check (X6); the others do not.
-
+- **What.** `Types::check_model` types every module, function, `const` and `impl` function of
+  every crate but `std`, reached from a top or not, and `piperine check`, `build` and `run` fail
+  alike on an error in any of them. A generic function, and a method of a generic `impl`, are
+  checked once at the definition against their bounds (Q1 (c), X6 decided). A generic module is the
+  one item it leaves out: reaching it is `P0001`, so `module Hold<T: Repr>(..) { .. }` with an error
+  in its body passes `piperine check` when nothing places it. Phase C of `generics` (GN-13)
+  checks it.
+- **Impact.** `check` is green for a library whose generic module cannot compile.
 ---
 
 ## 4. Loud — refused, though the spec allows it
@@ -99,10 +97,6 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L4 | generic enums (`enum Tagged<T> { .. }`; §2: every other enum, a payload enum, `#[repr(uN)]`, explicit discriminants and an enum of one variant, is a value type, and the one a carrier holds derives `Repr`) | §2 rules 2, 5 | `generic enum` | `generics` GN-06 |
-| L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
-| L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
-| L9 | a capturing closure passed to a user `fn` parameter (it needs an `Fn` bound: `generics` GN-01) | §3 rule 3 | `P0001` naming the form | with L7 |
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
 
@@ -154,7 +148,7 @@ Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, couple
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | with L8 |
+| L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | `unknown-semantics-events`: a function that returns `Event` has no lowering, and neither has `changed()` (an `Event`) on a parameter generic over a nature; `prev()` on one is written `fn f<T: Repr>(a: Bit<T>) -> T { a.prev() }`, which runs |
 
 Works, by probe: commits with and without `after`, transport per statement (a pulse from two
 commits), `at(0.0)` at `(0, 1)` and a negative `at` never, `every`, `cross` located within 0.1 ps
@@ -167,7 +161,9 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
 | L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`; `cast` and `same` run today as the checker's own intrinsics (`types::intrinsic`, `cast` is an `Option<B>`, `None` for a tag that names no variant), refused only for a `cast` to a tuple or an array that holds an enum, until `explicit-unknowns` phase B (T48, after `generics` A) removes the intrinsics and compiles them from `std/values.msl`. **Resolved nets (L21):** `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
-| L68 | `Logic<N>`, `logic` and `matches_bits` (§22.1.4, §22.2): the four-state value of a net that resolves, and the two functions that build and test one: `Logic` has no generic parameter yet and `logic` and `matches_bits` are `P0001` until it has | §22.1, §22.2 | `P0001` naming `logic` or `matches_bits`; `Logic<4>` is `P0001` | `explicit-unknowns` phase B (T44 to T48), after `generics` phase A (L30) |
+| L68 | `Logic<N>`, `logic` and `matches_bits` (§22.1.4, §22.2): the four-state value of a net that resolves, and the two functions that build and test one: `Logic` has no generic parameter yet and `logic` and `matches_bits` are `P0001` until it has | §22.1, §22.2 | `P0001`: "a call of the generic `extern` function `logic`" (or `matches_bits`) is not supported yet; `Logic<4>` is `P0001` | `explicit-unknowns` phase B (T44 to T48), after `generics` phase A (L30) |
+| L69 | a hand-written `Repr` (§2 rule 2) on a generic type (`impl<T: Repr> Repr for Pair<T>`), and a carrier of a hand-written type that has a `Default` and no initial value (§3.3.4: the levels of the default need `encode` run on it) | §2 rules 2, 4; §3.3.4 | `P0001`: "a hand-written Repr on a generic type"; "a carrier of a type with a hand-written Repr and no initial value" | `generics` GN-32 (phase C) |
+| L70 | `x.encode()` and `T::decode(levels)` under `T: Repr` at `f64`, at a derived struct, enum, tuple or array, and `decode` into a signed integer (they run at `bool`, integers up to 64 bits for `encode`, unsigned integers up to 64 bits for `decode`, and hand-written `Repr` types): the levels of these layouts need an IR bit-pack form the IR does not have | §2, H.8 `Repr` | `P0001`: "`encode` on a value of a type whose layout is derived"; "`decode` into a signed integer or a type whose layout is derived" | `generics` phase C, first task (residual of GN-01 AC 1) |
 | L59 | the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L60 | the stdlib `slew` does not limit an ideal (jump) step: §15.2 rule 4 fires a jump's crossing after the solve, so the output passes the jump in one step. Fix = retake the step when a jump-crossing flips a carrier read by `analog` (owner `analog-operators`, AO-13; found by `analog-structure` AS-09 AC 6, which covers a step with a finite edge) | §15.2 rule 4, §22.2.10 | none: the output follows the jump | M |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
@@ -216,8 +212,6 @@ G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value
 - **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
   `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
   source.
-- **X6 — what `check` owes a library.** Is a generic body checked once against its bounds, or per
-  instantiation only (§3 rule 9 reads as the latter)? S3 depends on the answer.
 
 ---
 
@@ -305,12 +299,12 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 60 % | floats other than `f64`, widths over 64, generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
-| I §3–§3.3 functions, calls, uncertainty and absence | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites and the level reads run |
-| I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
+| I §3–§3.3 functions, calls, uncertainty and absence | 70 % | functions that return `Event` (L53); generic functions, `impl`, traits and handles, then loops, recursion, closures, function values, arrays, composites and the level reads run |
+| I §3.4–§3.6 files, crates, packages | 97 % | the check of an unreached generic module (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
-| III §8–§8.2 modules, ports, params, the body | 60 % | generics, generation, params that are not `f64` or `bool` |
+| III §8–§8.2 modules, ports, params, the body | 60 % | generic modules, generation, params that are not `f64` or `bool` |
 | III §8.3 instances in expressions | 70 % | generic results, the stdlib `idt` and `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
@@ -329,12 +323,12 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (29 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (24 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list, and `E0702` is on it since `logic` is refused `P0001` until T45 raises it again. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` by the elaborator.
-`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0203 E0225 E0313 E0322 E0340 E0342
+`E0123 E0124 E0203 E0225 E0313 E0322 E0340 E0342
 E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456
 E0702 E0807 E0808 E0809`
 
@@ -356,10 +350,10 @@ E0702 E0807 E0808 E0809`
 | `set` and params | H5, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
-| Composite values | L24 and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
-| Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
+| Composite values | L24 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
+| Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6) | L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
-| Unknown semantics | L53, L8 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B is `Logic<N>`, L68) | L |
+| Unknown semantics | L53 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B is `Logic<N>`, L68) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
@@ -379,16 +373,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| types#7 | L7 | `generics` | reached from a top, `mean` is `P0001` (a generic function over the length of an array); `smoothed`, over the `const` table `TAPS`, runs |
-| types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
-| types#17 | L7 | `generics` | reached from a top, `range_of` runs (an enum without `Repr` is a value; its range pattern is accepted) and `mean` is `P0001` (a generic function over an array) |
-| generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |
-| generics~872b633d | L7 | `generics` | a default body of a trait does not run: the method `reads_high` on `Family` is `P0001` |
-| generics#2 | L7 | `generics` | reached from a top, `pick`, `larger` and `overdrive` are `P0001`: a generic function |
-| generics#4 | L7 | `generics` | reached from a top, `in_tolerance` is `P0001`: a struct expression of the generic struct `Window` |
-| generics#5 | L7 | `generics` | reached from a top, `dot` and `mean_of` are `P0001`: a generic function with a const parameter, over an array type |
-| generics#9 | L9 | `generics` | reached from a top, `mid_ramp` is `P0001` (a generic function with an `Fn` bound); `clean`, a call of a function value, runs |
-| values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
+| values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: this call as an event is not supported yet (the handle `a.rise()` now types; the function that returns an `Event` does not lower) |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |

@@ -12,7 +12,7 @@ mod checked;
 
 use checked::CheckedSource;
 
-use piperine_lang::types::{Ty, Types};
+use piperine_lang::types::{GenericValue, Nominal, Ty, Types};
 
 #[test]
 fn every_struct_form_is_a_value_type() {
@@ -21,21 +21,24 @@ fn every_struct_form_is_a_value_type() {
     let items = "struct Named { x: f64, y: u8 }\nstruct Pair(f64, bool);\nstruct Marker;\n\
                  fn f(a: Named, b: Pair, c: Marker, d: (f64, u8), e: [f64; 3], i: (u8,), j: [[bool; 2]; 4]) -> f64 { 1.0 }";
     let src = CheckedSource::source(items, "let h = f;");
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "a"), Ty::Struct(CheckedSource::type_decl(&src, "Named")));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "b"), Ty::Struct(CheckedSource::type_decl(&src, "Pair")));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "c"), Ty::Struct(CheckedSource::type_decl(&src, "Marker")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "a"), Ty::structure(CheckedSource::type_decl(&src, "Named")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "b"), Ty::structure(CheckedSource::type_decl(&src, "Pair")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "c"), Ty::structure(CheckedSource::type_decl(&src, "Marker")));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "d"), Ty::Tuple(vec![Ty::F64, Ty::UInt(8)]));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "e"), Ty::Array(Box::new(Ty::F64), 3), "§1.2.5: the length is part of the type");
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "e"), Ty::array(Ty::F64, 3), "§1.2.5: the length is part of the type");
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "i"), Ty::Tuple(vec![Ty::UInt(8)]), "a tuple of one field is written `(T,)`");
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "j"), Ty::Array(Box::new(Ty::Array(Box::new(Ty::Bool), 2)), 4));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "j"), Ty::array(Ty::array(Ty::Bool, 2), 4));
     // §1.3.1: two structs with the same fields are different types, and a length folds from a `const`
     let src = CheckedSource::source("struct A { x: f64 }\nstruct B { x: f64 }\nconst N: usize = 2 + 1;\nfn f(a: A, v: [u8; N]) {}", "let h = f;");
-    assert_ne!(CheckedSource::binding_or_parameter_type(&src, "a"), Ty::Struct(CheckedSource::type_decl(&src, "B")));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "v"), Ty::Array(Box::new(Ty::UInt(8)), 3));
+    assert_ne!(CheckedSource::binding_or_parameter_type(&src, "a"), Ty::structure(CheckedSource::type_decl(&src, "B")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "v"), Ty::array(Ty::UInt(8), 3));
     // §1.4.8: tuples and arrays are equal by their parts, structs by their declaration
     CheckedSource::assert_clean(&CheckedSource::source("fn same(a: (f64, [u8; 2])) -> (f64, [u8; 2]) { a }", "let h = same;"));
-    // a generic struct stays outside the subset (`generics`)
-    CheckedSource::assert_refused(&CheckedSource::source("struct G<T> { t: f64 }\nfn f(g: G<f64>) {}", "let h = f;"), "P0001", "generic struct `G`");
+    // §3.8: a generic struct is written with its arguments, and the type holds them (generics T17, which
+    // replaces the `P0001` this line pinned)
+    let src = CheckedSource::source("struct G<T> { t: f64 }\nfn f(g: G<f64>) {}", "let h = f;");
+    let generic = Ty::Struct(Nominal { decl: CheckedSource::type_decl(&src, "G"), arguments: vec![GenericValue::Type(Ty::F64)] });
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "g"), generic);
     // §1.2.5: the length of an array type is a constant
     CheckedSource::assert_refused(&CheckedSource::source("const F: f64 = 1.0;\nfn f(v: [u8; F]) {}", "let h = f;"), "E0188", "constant");
 }
@@ -69,9 +72,9 @@ fn struct_expressions_and_field_reads_type_check() {
                 let l = Line { from: P { x: 0.0, y: 1 }, to: p }; \
                 let a: f64 = p.x; let b: u8 = l.to.y; let c: bool = q.1; let d: f64 = q.0;";
     let src = CheckedSource::source(items, body);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "p"), Ty::Struct(CheckedSource::type_decl(&src, "P")));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "q"), Ty::Struct(CheckedSource::type_decl(&src, "Pair")));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "m"), Ty::Struct(CheckedSource::type_decl(&src, "Marker")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "p"), Ty::structure(CheckedSource::type_decl(&src, "P")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "q"), Ty::structure(CheckedSource::type_decl(&src, "Pair")));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "m"), Ty::structure(CheckedSource::type_decl(&src, "Marker")));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "a"), Ty::F64);
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "b"), Ty::UInt(8), "nested reads give the innermost field");
     // a tuple field of a tuple value
@@ -137,7 +140,7 @@ fn payload_enums_build_and_match() {
                  fn size(t: Tx) -> u8 { match t { Tx::Idle => 0, Tx::Data(b) => b, Tx::Frame { n, last: true } => n as u8, Tx::Frame { n, .. } => 1 } }";
     let src = CheckedSource::source(items, "let va = Tx::Idle; let vb = Tx::Data(3); let vc = Tx::Frame { n: 2, last: false }; let s = size(vc);");
     for name in ["va", "vb", "vc"] {
-        assert_eq!(CheckedSource::binding_or_parameter_type(&src, name), Ty::Enum(CheckedSource::type_decl(&src, "Tx")), "{name}");
+        assert_eq!(CheckedSource::binding_or_parameter_type(&src, name), Ty::enumeration(CheckedSource::type_decl(&src, "Tx")), "{name}");
     }
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "s"), Ty::UInt(8));
     // §1.8.6: a variant left out is named, with its fields as wildcards
@@ -189,10 +192,10 @@ fn arrays_and_indexing_type_check() {
     let body = "let arr = [1.0, 2.0, 3.0]; let r = [0u8; 4]; let i: u16 = 2; let x = arr[i]; let y: f64 = arr[0]; \
                 let m = [[1u8, 2], [3, 4]]; m[1][0] = 9; let p = pick(m);";
     let src = CheckedSource::source(items, body);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "arr"), Ty::Array(Box::new(Ty::F64), 3));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "r"), Ty::Array(Box::new(Ty::UInt(8)), 4));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "arr"), Ty::array(Ty::F64, 3));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "r"), Ty::array(Ty::UInt(8), 4));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "x"), Ty::F64);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "m"), Ty::Array(Box::new(Ty::Array(Box::new(Ty::UInt(8)), 2)), 2));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "m"), Ty::array(Ty::array(Ty::UInt(8), 2), 2));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "p"), Ty::UInt(8));
     CheckedSource::assert_refused(&CheckedSource::source("", "let a = [1.0, true];"), "E0180", "expected `f64`, found `bool`");
     CheckedSource::assert_refused(&CheckedSource::source("", "let a = [1.0, 2.0]; let x = a[1.5];"), "E0180", "an integer type");
@@ -233,7 +236,7 @@ fn derived_traits_give_comparison_and_default() {
         assert_eq!(CheckedSource::binding_or_parameter_type(&CheckedSource::source(items, body), name), Ty::Bool, "{name}");
     }
     let src = CheckedSource::source(items, body);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "slot"), Ty::Struct(CheckedSource::type_decl(&src, "Slot")), "`T::default()` has the type `T`");
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "slot"), Ty::structure(CheckedSource::type_decl(&src, "Slot")), "`T::default()` has the type `T`");
     // H.8 rule 7: the default of an `Option` is `None` (no number has a default: `types_explicit`)
     let defaults = "let a: Option<u8> = Option::<u8>::default();";
     CheckedSource::assert_clean(&CheckedSource::source("", defaults));

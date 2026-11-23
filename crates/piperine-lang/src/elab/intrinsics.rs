@@ -15,7 +15,7 @@ use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::pom::ExprId;
-use crate::types::{Intrinsic, Ty};
+use crate::types::{Intrinsic, Nominal, Ty};
 
 impl Elaboration<'_, '_> {
     /// A call of `same`, whose call expression is `expr` and its arguments `args`; a `cast` is an
@@ -43,7 +43,7 @@ impl Elaboration<'_, '_> {
     /// `B` (it lists the tags of its variants). `None` after a diagnostic.
     pub(super) fn lower_cast(&mut self, scope: &mut Scope, expr: ExprId, value: ExprId) -> Option<Pair> {
         let origin = self.expr_origin(expr);
-        let Some(Ty::Option(to)) = self.types.ty(expr).cloned() else {
+        let Some(Ty::Option(to)) = self.typed(expr) else {
             self.unsupported(scope.file, self.design.expr_node(expr).span, "a `cast` the checker did not type as an `Option`");
             return None;
         };
@@ -52,7 +52,7 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let tags = match &*to {
-            Ty::Enum(decl) => self.types.enum_tag(*decl).map(|t| t.discriminants.clone()),
+            Ty::Enum(Nominal { decl, .. }) => self.types.enum_tag(*decl).map(|t| t.discriminants.clone()),
             _ => None,
         };
         let operand = self.lower_expr(scope, value)?;

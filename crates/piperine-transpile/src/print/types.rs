@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Derives, FieldsForm, Ir, TypeData, TypeId, TypeKind, ValueType, VariantData};
+use piperine_ir::{Derives, FieldsForm, FunctionId, Ir, ReprForm, TypeData, TypeId, TypeKind, ValueType, VariantData};
 
 use crate::Error;
 use crate::print::{RealLift, Text, ValuePrinter};
@@ -33,7 +33,7 @@ impl<'a> TypeItems<'a> {
     pub fn new(ir: &'a Ir) -> TypeItems<'a> {
         let mut names: Vec<String> = Vec::with_capacity(ir.types().len());
         for (index, data) in ir.types().iter().enumerate() {
-            let plain = Text::ident(&data.name);
+            let plain = if data.instance.is_some() { Text::instance_type(&data.name) } else { Text::ident(&data.name) };
             let name = if names.contains(&plain) { Text::generated(&format!("{}_{index}", data.name)) } else { plain };
             names.push(name);
         }
@@ -169,7 +169,7 @@ impl<'a> TypeItems<'a> {
             text.push('\n');
             text.push_str(&RealLift::new(self.ir, self).item(id)?);
         }
-        if data.derives.repr || self.pinned.contains(&id.index()) {
+        if data.derives.repr || !data.repr.is_derived() || self.pinned.contains(&id.index()) {
             text.push('\n');
             text.push_str(&self.carried_impls(id)?);
         } else if self.optional.contains(&id.index()) && !(data.derives.default && matches!(data.kind, TypeKind::Struct { .. })) {
@@ -264,9 +264,10 @@ impl TypeItems<'_> {
         t.line(&format!("impl rt::pin::Carried for {head} {{"));
         let mut written = Ok(());
         t.indented(|t| {
-            written = match &data.kind {
-                TypeKind::Struct { form, fields } => self.struct_carried(t, &printer, id, *form, fields),
-                TypeKind::Enum { tag_levels, variants } => self.enum_carried(t, &printer, id, *tag_levels, variants),
+            written = match (&data.repr, &data.kind) {
+                (ReprForm::HandWritten { width, encode, decode }, _) => self.hand_written_carried(t, id, *width, *encode, *decode),
+                (ReprForm::Derived, TypeKind::Struct { form, fields }) => self.struct_carried(t, &printer, id, *form, fields),
+                (ReprForm::Derived, TypeKind::Enum { tag_levels, variants }) => self.enum_carried(t, &printer, id, *tag_levels, variants),
             };
         });
         written?;
@@ -305,6 +306,69 @@ impl TypeItems<'_> {
     /// `<ty as rt::pin::Carried>::<what>` summed over `types`, `0` for none.
     fn sum(types: &[String], what: &str) -> String {
         if types.is_empty() { "0".to_string() } else { types.iter().map(|ty| format!("<{ty} as rt::pin::Carried>::{what}")).collect::<Vec<_>>().join(" + ") }
+    }
+
+    /// The associated items of the `Carried` of a type whose `Repr` the author wrote (§2, GN-05):
+    /// the value is `width` levels, written by the IR function `encode` (the value to `[bool; width]`)
+    /// and read by `decode` (`[bool; width]` to `Option`). The pin holds the levels as an unsigned
+    /// integer, level `k` being bit `k`. A `None` from `decode` is returned to the caller: it is
+    /// `try_from_levels`'s result, and `decode` and `from_levels`, which cannot fail, give the
+    /// type's default as an enum does for a tag that names no variant. No flag moves with the levels.
+    fn hand_written_carried(&self, t: &mut Text, id: TypeId, width: u32, encode: FunctionId, decode: FunctionId) -> Result<(), Error> {
+        let data = self.ir.type_data(id);
+        let unsupported = |form: String| Error::Unsupported { form, path: format!("type {}", data.path), origin: data.origin.clone() };
+        if !(1..=64).contains(&width) {
+            return Err(unsupported(format!("the type {}, whose hand-written Repr has {width} levels outside 1..=64", data.path)));
+        }
+        let head = self.head(id);
+        let bytes = Self::tag_bytes(width);
+        let call = |function: FunctionId, argument: &str| -> Result<String, Error> {
+            let callee = self.ir.function(function);
+            if !ValuePrinter::env_reads(self.ir, function).is_empty() {
+                return Err(unsupported(format!("the function {}, which reads the environment, in the hand-written Repr of {}", callee.name(), data.path)));
+            }
+            let generic = if ValuePrinter::is_generic(self.ir, function) { "::<f64>" } else { "" };
+            Ok(format!("{}{generic}({argument})", Text::ident(callee.name())))
+        };
+        let (encoded, decoded) = (call(encode, "self")?, call(decode, "levels")?);
+        t.line(&format!("const WIDTH: usize = {bytes};"));
+        t.line(&format!("const LEVELS: u32 = {width};"));
+        t.line("fn encode(self, out: &mut [u8]) {");
+        t.indented(|t| {
+            t.line("let word = rt::pin::Carried::to_levels(self).low();");
+            t.line(&format!("out[..{bytes}].copy_from_slice(&word.to_le_bytes()[..{bytes}]);"));
+        });
+        t.line("}");
+        t.line(&format!("fn decode(bytes: &[u8]) -> {head} {{"));
+        t.indented(|t| {
+            t.line("let mut raw = [0u8; 8];");
+            t.line(&format!("raw[..{bytes}].copy_from_slice(&bytes[..{bytes}]);"));
+            t.line(&format!("rt::pin::Carried::from_levels(&rt::pin::LevelWords::of(u64::from_le_bytes(raw), {width}))"));
+        });
+        t.line("}");
+        t.line("fn to_levels(self) -> rt::pin::LevelWords {");
+        t.indented(|t| {
+            t.line(&format!("let levels = {encoded};"));
+            t.line("let mut word = 0u64;");
+            t.line("for (k, level) in levels.iter().enumerate() {");
+            t.indented(|t| t.line("word |= u64::from(*level) << k;"));
+            t.line("}");
+            t.line(&format!("rt::pin::LevelWords::of(word, {width})"));
+        });
+        t.line("}");
+        t.line(&format!("fn from_levels(words: &rt::pin::LevelWords) -> {head} {{"));
+        t.indented(|t| t.line("rt::pin::Carried::try_from_levels(words).unwrap_or_default()"));
+        t.line("}");
+        t.line(&format!("fn try_from_levels(words: &rt::pin::LevelWords) -> Option<{head}> {{"));
+        t.indented(|t| {
+            t.line(&format!("let mut levels = [false; {width}];"));
+            t.line("for (k, level) in levels.iter_mut().enumerate() {");
+            t.indented(|t| t.line("*level = words.get(k as u32);"));
+            t.line("}");
+            t.line(&decoded);
+        });
+        t.line("}");
+        Ok(())
     }
 
     /// The associated items of a struct's `Carried`: the fields concatenated, the first lowest.

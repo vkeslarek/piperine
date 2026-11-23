@@ -7,7 +7,7 @@
 use piperine_abi::layout::layout_eq;
 use piperine_abi::raw::leaf;
 use piperine_ir::{
-    AggregateData, BodySpec, Constant, Derives, FieldsForm, InstanceSpec, Ir, IrBuilder, Origin, Real, TypeData, TypeId, TypeKind, ValueType, VariantData,
+    AggregateData, BodySpec, Constant, Derives, Expr, FieldsForm, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Origin, Real, ReprForm, TypeData, TypeId, TypeKind, ValueType, VariantData,
 };
 use piperine_plan::{CompositeLayout, PinLayout};
 
@@ -37,6 +37,8 @@ impl Types {
             origin: Types::origin(),
             kind: TypeKind::Struct { form: FieldsForm::Named, fields: vec![("a".into(), ValueType::F64), ("b".into(), ValueType::Bool)] },
             derives: Types::derives(),
+            instance: None,
+            repr: Default::default(),
         });
         let variant = |name: &str, discriminant, form, fields: Vec<(String, ValueType)>| VariantData { name: name.into(), discriminant, form, fields };
         let tx = b.type_data(TypeData {
@@ -52,14 +54,18 @@ impl Types {
                 ],
             },
             derives: Types::derives(),
+            instance: None,
+            repr: Default::default(),
         });
-        let marker = b.type_data(TypeData { name: "Marker".into(), path: "m::Marker".into(), origin: Types::origin(), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![] }, derives: Types::derives() });
+        let marker = b.type_data(TypeData { name: "Marker".into(), path: "m::Marker".into(), origin: Types::origin(), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![] }, derives: Types::derives(), instance: None, repr: Default::default() });
         let single = b.type_data(TypeData {
             name: "Only".into(),
             path: "m::Only".into(),
             origin: Types::origin(),
             kind: TypeKind::Enum { tag_levels: 0, variants: vec![variant("One", 0, FieldsForm::Named, vec![("n".into(), ValueType::UInt(8))])] },
             derives: Types::derives(),
+            instance: None,
+            repr: Default::default(),
         });
         Types { pair, tx, marker, single }
     }
@@ -184,4 +190,59 @@ fn a_constant_is_the_bytes_the_layout_names() {
     assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Struct(t.pair), pair_value), Some(expected));
     assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(t.tx), data_value), Some(vec![1, 5]), "tag 1 (Data), n = 5");
     assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(t.tx), pair_value), None, "a struct constant is no enum value");
+}
+
+/// Types whose `Repr` the author wrote: the layout reads the declared width, never the functions.
+struct Written;
+
+impl Written {
+    /// `enum OneHot` of four unit variants with `impl Repr` of `width` levels, and
+    /// `struct Cell { h: OneHot, n: bool }`; the ids of the two.
+    fn design(width: u32) -> (Ir, TypeId, TypeId) {
+        let ids = std::cell::Cell::new((TypeId(0), TypeId(0)));
+        let (ir, _) = Design::of(|b, _| {
+            let variants = (0..4).map(|n| VariantData { name: format!("S{n}"), discriminant: n, form: FieldsForm::Unit, fields: vec![] }).collect();
+            let one_hot = b.type_data(TypeData {
+                name: "OneHot".into(),
+                path: "OneHot".into(),
+                origin: Types::origin(),
+                kind: TypeKind::Enum { tag_levels: 2, variants },
+                derives: Types::derives(),
+                instance: None,
+                repr: ReprForm::Derived,
+            });
+            let levels = ValueType::Array(Box::new(ValueType::Bool), u64::from(width));
+            let body = b.expr(Expr::Bool(false), ValueType::Bool, Types::origin());
+            let (x, l) = (Local { name: "x".into(), ty: ValueType::Enum(one_hot), mutable: false }, Local { name: "l".into(), ty: levels.clone(), mutable: false });
+            let encode = b.function(FunctionSpec { name: "OneHot::encode".into(), origin: Types::origin(), params: vec![x.clone()], ret: levels.clone(), locals: vec![x], body });
+            let decode = b.function(FunctionSpec { name: "OneHot::decode".into(), origin: Types::origin(), params: vec![l.clone()], ret: ValueType::Option(Box::new(ValueType::Enum(one_hot))), locals: vec![l], body });
+            b.set_repr(one_hot, ReprForm::HandWritten { width, encode, decode });
+            let fields = vec![("h".to_string(), ValueType::Enum(one_hot)), ("n".to_string(), ValueType::Bool)];
+            let cell = b.type_data(TypeData { name: "Cell".into(), path: "Cell".into(), origin: Types::origin(), kind: TypeKind::Struct { form: FieldsForm::Named, fields }, derives: Types::derives(), instance: None, repr: ReprForm::Derived });
+            ids.set((one_hot, cell));
+        });
+        let (one_hot, cell) = ids.get();
+        (ir, one_hot, cell)
+    }
+}
+
+#[test]
+fn a_hand_written_repr_is_one_leaf_of_its_width() {
+    // §2: the encoding is the type's, so a one-hot enum of four variants over 4 levels is one leaf
+    // of the narrowest unsigned integer that holds 4 levels, not a tag; 12 levels need two bytes;
+    // as a field it sits among the fields of its struct; two pins of one net get equal layouts
+    let (ir, one_hot, cell) = Written::design(4);
+    assert_eq!(Leaves::of(&ir, &ValueType::Enum(one_hot)), (Leaves::named(&[("", leaf::U8, 0)]), 1), "4 levels: one u8 leaf, the value itself");
+    assert_eq!(Leaves::of(&ir, &ValueType::Struct(cell)), (Leaves::named(&[("h", leaf::U8, 0), ("n", leaf::BOOL, 1)]), 2), "a field of a struct");
+    let (wide, wide_type, _) = Written::design(12);
+    assert_eq!(Leaves::of(&wide, &ValueType::Enum(wide_type)), (Leaves::named(&[("", leaf::U16, 0)]), 2), "12 levels: a u16 leaf");
+    let (huge, huge_type, _) = Written::design(65);
+    assert!(CompositeLayout::of(&huge, &ValueType::Enum(huge_type)).is_none(), "the ABI's leaves end at 64 bits");
+    // a constant of such a type is its levels word (the elaborator ran `encode`): bit `k` is level `k`
+    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(one_hot), Constant::Int(0b0100)), Some(vec![4]), "the levels word is the value");
+    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(one_hot), Constant::Int(16)), None, "a word over the 4 levels is no value");
+    let ty = ValueType::Enum(one_hot);
+    let (a, b) = (PinLayout::in_ir(&ir, &ty).expect("a layout"), PinLayout::in_ir(&ir, &ty).expect("a layout"));
+    let (fa, fb) = (a.fields(), b.fields());
+    assert!(layout_eq(&a.layout(&fa), &b.layout(&fb)), "equal layouts for one hand-written type");
 }

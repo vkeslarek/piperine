@@ -418,6 +418,12 @@ impl Elaboration<'_, '_> {
         }
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(bound) = scope.handles.get(&decl).copied()
+        {
+            return self.carrier_of(scope, bound);
+        }
+        if let ExprKind::Path(path) = &node.kind
+            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
             && let Some(index) = self.frame_carrier(scope.frame, decl)
         {
             return Some(index);

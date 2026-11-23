@@ -9,10 +9,12 @@
 //! §2 rule 5), then the widest payload, each variant's fields overlapping at the payload's start
 //! as `Variant.field`; an `Option<T>` is a `BOOL` presence byte `some` then `T`'s leaves as
 //! `value`. The layout is a function of the IR type alone, so two pins of one net get equal
-//! layouts (abi.md P4).
+//! layouts (abi.md P4). A type whose `Repr` the author wrote (`ReprForm::HandWritten`, §2: the
+//! encoding is the type's) is one leaf of its `width` levels, the narrowest unsigned integer that
+//! holds them, whatever its fields are.
 
 use piperine_abi::raw::{Field, Str, leaf};
-use piperine_ir::{Constant, Ir, TypeKind, ValueType};
+use piperine_ir::{Constant, Ir, ReprForm, TypeKind, ValueType};
 
 /// One scalar leaf of a composite value.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,6 +111,20 @@ impl TagWidth {
     }
 }
 
+/// The types whose `Repr` the author wrote.
+struct HandWritten;
+
+impl HandWritten {
+    /// The `width` of the hand-written `Repr` of `ty`, `None` for any other type.
+    fn width(ir: &Ir, ty: &ValueType) -> Option<u32> {
+        let (ValueType::Struct(id) | ValueType::Enum(id)) = ty else { return None };
+        match ir.type_data(*id).repr {
+            ReprForm::HandWritten { width, .. } => Some(width),
+            ReprForm::Derived => None,
+        }
+    }
+}
+
 /// The dotted name of a part of a value: the prefix, a dot, the part, with an empty side dropped.
 struct LeafName;
 
@@ -139,6 +155,14 @@ struct LeafWalk<'ir> {
 impl LeafWalk<'_> {
     /// Places the leaves of `ty` named under `name`; `None` for a type no pin holds.
     fn place(&mut self, ty: &ValueType, name: &str) -> Option<()> {
+        if let Some(width) = HandWritten::width(self.ir, ty) {
+            // the ABI's leaves end at 64 bits: a wider encoding is a type no pin holds
+            if width > 64 {
+                return None;
+            }
+            self.integer(width, false, name);
+            return Some(());
+        }
         match ty {
             ValueType::Bool => self.scalar(leaf::BOOL, 1, name),
             ValueType::F64 => self.scalar(leaf::F64, 8, name),
@@ -227,6 +251,14 @@ impl ConstantBytes<'_> {
     /// Writes `value` held as `ty` at `*at` and moves `*at` past its bytes; `None` when `value`
     /// is not a value of `ty`.
     fn write(&mut self, ty: &ValueType, value: Constant, at: &mut usize) -> Option<()> {
+        // a hand-written `Repr` is a constant only as its levels word, which the elaborator computed by running `encode`
+        if let Some(width) = HandWritten::width(self.ir, ty) {
+            let Constant::Int(levels) = value else { return None };
+            if width > 64 || levels < 0 || levels >= 1i128 << width {
+                return None;
+            }
+            return self.put(&levels.to_le_bytes()[..TagWidth::bytes_of_bits(width) as usize], at);
+        }
         match (ty, value) {
             (ValueType::Bool, Constant::Bool(b)) => self.put(&[u8::from(b)], at),
             (ValueType::F64, Constant::Real(r)) => self.put(&r.get().to_le_bytes(), at),

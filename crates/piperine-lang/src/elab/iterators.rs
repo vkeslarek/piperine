@@ -132,7 +132,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn sequence(&mut self, scope: &Scope, expr: ExprId) -> Option<Sequence> {
         let expr = self.peel_parens(expr);
         let node = self.design.expr_node(expr).clone();
-        if matches!(self.types.ty(expr), Some(Ty::Array(..))) {
+        if matches!(self.typed(expr), Some(Ty::Array(..))) {
             return Some(Sequence { source: Source::Array(expr), adaptors: Vec::new() });
         }
         match &node.kind {
@@ -173,7 +173,7 @@ impl Elaboration<'_, '_> {
 
     /// `let name = <iterator or range>;` binds no value: the name stands for the chain.
     pub(super) fn is_sequence_binding(&self, binding: crate::pom::DeclId) -> bool {
-        matches!(self.types.local(binding), Some(Ty::Iterator { .. } | Ty::Range { .. }))
+        matches!(self.typed_local(binding), Some(Ty::Iterator { .. } | Ty::Range { .. }))
     }
 
     /// Evaluates the source of `sequence` and its adaptors' state into `prelude`: the array and the

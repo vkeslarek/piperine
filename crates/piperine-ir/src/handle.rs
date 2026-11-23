@@ -3,8 +3,8 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, TypeKind, ValueType, AggregateData,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
@@ -29,6 +29,11 @@ impl Ir {
     /// (§2 rule 5), `UInt<tag_levels>`, so carried bytes are the tag's; any other type is itself.
     pub fn carried(&self, ty: &ValueType) -> ValueType {
         match ty {
+            // an enum whose `Repr` the author wrote is its levels word (GN-05)
+            ValueType::Enum(id) if matches!(self.types[id.index()].repr, ReprForm::HandWritten { width, .. } if width <= 64) => match self.types[id.index()].repr {
+                ReprForm::HandWritten { width, .. } => ValueType::UInt(width),
+                ReprForm::Derived => ty.clone(),
+            },
             ValueType::Enum(id) => match &self.types[id.index()].kind {
                 TypeKind::Enum { tag_levels, variants } if *tag_levels > 0 && variants.iter().all(|v| v.fields.is_empty()) => ValueType::UInt(*tag_levels),
                 _ => ty.clone(),
@@ -459,6 +464,11 @@ impl<'a> Function<'a> {
 
     pub fn body(&self) -> ExprId {
         self.data().body
+    }
+
+    /// The generic item this function instantiates, `None` for a function as written.
+    pub fn instance(&self) -> Option<&'a GenericInstance> {
+        self.data().instance.as_ref()
     }
 }
 

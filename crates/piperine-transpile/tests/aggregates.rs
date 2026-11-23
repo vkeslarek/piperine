@@ -32,7 +32,7 @@ impl Fixtures {
 
     /// A struct or enum entry of the arena at `line`.
     fn entry(b: &mut IrBuilder, name: &str, line: u32, kind: TypeKind, derives: Derives) -> TypeId {
-        b.type_data(TypeData { name: name.into(), path: format!("m::{name}"), origin: Self::origin(line), kind, derives })
+        b.type_data(TypeData { name: name.into(), path: format!("m::{name}"), origin: Self::origin(line), kind, derives, instance: None, repr: Default::default() })
     }
 
     fn variant(name: &str, discriminant: i128, form: FieldsForm, fields: &[(&str, ValueType)]) -> VariantData {

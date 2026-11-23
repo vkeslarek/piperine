@@ -38,8 +38,8 @@ use piperine_ir::{Constant, Real};
 use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
-use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
-use crate::types::{Callee, Intrinsic, Method, Ty, Types};
+use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, TypeId, UnOp};
+use crate::types::{Callee, ConstTerm, GenericValue, Intrinsic, Length, Method, Nominal, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
 use control::{Argument, FnValue};
@@ -174,11 +174,86 @@ pub struct ConstEval<'d, 't> {
     files: IncludedFiles,
     /// The composite values the evaluation holds (`composite.rs`).
     composites: Vec<Composite>,
+    /// What the generic parameters of the function instance being lowered are replaced by (generics
+    /// T32): empty outside an instance. Every read of the type table goes through it.
+    substitution: crate::types::Substitution,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
+    /// What the generic parameters of the instance being lowered are replaced by.
+    pub(super) fn substitution(&self) -> &crate::types::Substitution {
+        &self.substitution
+    }
+
+    /// Reads the generic parameters as `substitution` replaces them from here on; the previous one comes back.
+    pub(super) fn set_substitution(&mut self, substitution: crate::types::Substitution) -> crate::types::Substitution {
+        std::mem::replace(&mut self.substitution, substitution)
+    }
+
+    /// `ty` under the substitution of the instance being lowered, an array length written as an expression over the
+    /// const parameters (`[f64; N + 1]`) folded to the number it is for these arguments (§3.8.3); one that does not
+    /// fold stays generic, and the obligation of the instantiation reports it.
+    fn resolved(&self, ty: &Ty) -> Ty {
+        self.folded_lengths(&self.substitution.apply(ty))
+    }
+
+    /// The value of the integer const expression `expr` of the instance being lowered: its const parameters are
+    /// the substitution's arguments. `None` when it does not fold.
+    pub(super) fn integer(&self, expr: ExprId) -> Option<u128> {
+        let values: BTreeMap<DeclId, u128> = self
+            .substitution
+            .entries()
+            .filter_map(|(parameter, value)| match value {
+                GenericValue::Const(ConstTerm::Value(count)) => u128::try_from(*count).ok().map(|count| (parameter, count)),
+                _ => None,
+            })
+            .collect();
+        self.types.fold_with(expr, values)
+    }
+
+    /// `ty` with the lengths that are const expressions folded over the const arguments of the substitution.
+    fn folded_lengths(&self, ty: &Ty) -> Ty {
+        match ty {
+            Ty::Array(element, Length::Generic(ConstTerm::Expr(expr))) => {
+                let element = Box::new(self.folded_lengths(element));
+                match self.integer(*expr).and_then(|count| u64::try_from(count).ok()) {
+                    Some(count) => Ty::Array(element, Length::Fixed(count)),
+                    None => Ty::Array(element, Length::Generic(ConstTerm::Expr(*expr))),
+                }
+            }
+            // `[bool; T::WIDTH]` of an instance is the level count of the type `T` is given (§2)
+            Ty::Array(element, Length::Generic(ConstTerm::Width(parameter))) => {
+                let element = Box::new(self.folded_lengths(element));
+                match self.parameter_width(*parameter) {
+                    Some(levels) => Ty::Array(element, Length::Fixed(u64::from(levels))),
+                    None => Ty::Array(element, Length::Generic(ConstTerm::Width(*parameter))),
+                }
+            }
+            Ty::Array(element, length) => Ty::Array(Box::new(self.folded_lengths(element)), length.clone()),
+            Ty::Tuple(items) => Ty::Tuple(items.iter().map(|item| self.folded_lengths(item)).collect()),
+            Ty::Option(inner) => Ty::Option(Box::new(self.folded_lengths(inner))),
+            Ty::Fn(params, ret) => Ty::Fn(params.iter().map(|param| self.folded_lengths(param)).collect(), Box::new(self.folded_lengths(ret))),
+            other => other.clone(),
+        }
+    }
+
+    /// The type the checker gave `expr` under the substitution of the instance being lowered.
+    pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
+        self.types.ty(expr).map(|ty| self.resolved(ty))
+    }
+
+    /// The type of the binding `binding` under the substitution.
+    pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
+        self.types.local(binding).map(|ty| self.resolved(ty))
+    }
+
+    /// The type the type node `ty` writes under the substitution.
+    pub(super) fn typed_written(&self, ty: TypeId) -> Option<Ty> {
+        self.types.written(ty).map(|ty| self.resolved(ty))
+    }
+
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -315,7 +390,7 @@ impl<'d, 't> ConstEval<'d, 't> {
 
     /// The integer type the checker gave `expr`, as the width and sign the evaluator wraps to.
     fn width(&self, expr: ExprId) -> Option<Width> {
-        self.types.ty(expr).and_then(Width::of)
+        self.typed(expr).and_then(|ty| Width::of(&ty))
     }
 
     /// A literal as the constant it is: a number of its type's width, a bool, a real.
@@ -341,11 +416,32 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
     }
 
+    /// The level count of `T::WIDTH` inside an instance: `T` is a type parameter the substitution replaces by a
+    /// type with a `Repr` (§2). `None` when `expr` is no such path or `T` has no argument here.
+    pub(super) fn parameter_levels(&self, expr: ExprId) -> Option<u32> {
+        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
+        let segments = &self.design.path_node(*path).segments;
+        let [owner, member] = segments.as_slice() else { return None };
+        if member.name.text != "WIDTH" {
+            return None;
+        }
+        let Resolution::Decl(parameter) = owner.res else { return None };
+        self.parameter_width(parameter)
+    }
+
+    /// The level count of the type the substitution gives the type parameter `parameter`.
+    pub(super) fn parameter_width(&self, parameter: DeclId) -> Option<u32> {
+        match self.substitution.get(parameter)? {
+            GenericValue::Type(ty) => ty.levels(self.design),
+            _ => None,
+        }
+    }
+
     /// A name as the constant it is bound to (a `const`, a param, a binding of the call), or the
     /// level count of a `T::WIDTH`; a built-in name is dynamic.
     fn path(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         // `T::WIDTH`: the level count of `T`, which the checker recorded (§2, §22.1)
-        if let Some(levels) = self.types.width(expr) {
+        if let Some(levels) = self.types.width(expr).or_else(|| self.parameter_levels(expr)) {
             return Ok(Constant::Int(i128::from(levels)));
         }
         let ExprKind::Path(path) = &self.design.expr_node(expr).kind else {
@@ -362,6 +458,14 @@ impl<'d, 't> ConstEval<'d, 't> {
                 ConstFault::NoValue { decl } if self.is_trait_item(decl) => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
                 other => other,
             }),
+            // a const parameter of the generic item being instantiated is bound to its argument (generics T33)
+            // a const parameter of the instance being evaluated is the argument the call gave it (§3.8.3)
+            DeclKind::GenericParam(_) => match (bindings.get(decl), self.substitution.get(decl)) {
+                (Some(bound), _) => Ok(bound),
+                (None, Some(GenericValue::Const(ConstTerm::Value(count)))) => Ok(Constant::Int(*count)),
+                (None, Some(GenericValue::Const(ConstTerm::Bool(flag)))) => Ok(Constant::Bool(*flag)),
+                _ => Err(ConstFault::UnboundParam { expr, param: decl }),
+            },
             DeclKind::Param(_) => match bindings.get(decl) {
                 // a composite param is an IR constant, which this evaluator's composites are not (`composite.rs`)
                 Some(Constant::Aggregate(_)) => match bindings.tree(decl).cloned() {
@@ -578,17 +682,17 @@ impl<'d, 't> ConstEval<'d, 't> {
             },
             other => other,
         };
-        let value = match (self.types.ty(operand), value) {
-            (Some(Ty::Enum(decl)), Constant::Int(position)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.get(position as usize)) {
+        let value = match (self.typed(operand), value) {
+            (Some(Ty::Enum(Nominal { decl, .. })), Constant::Int(position)) => match self.types.enum_tag(decl).and_then(|t| t.discriminants.get(position as usize)) {
                 Some(discriminant) => Constant::Int(*discriminant),
                 None => return Err(ConstFault::Unsupported { expr, what: "a cast of a variant outside its enum".to_string() }),
             },
             (_, value) => value,
         };
-        let converted = match (self.types.ty(expr), value) {
+        let converted = match (self.typed(expr), value) {
             (Some(Ty::F64), Constant::Int(v)) => Constant::Real(Real::new(v as f64)),
             (Some(Ty::F64), Constant::Real(r)) => Constant::Real(r),
-            (Some(to), value) => match (Width::of(to), value) {
+            (Some(to), value) => match (Width::of(&to), value) {
                 (Some(width), Constant::Int(v)) => width.wrap(v),
                 (Some(width), Constant::Real(r)) => width.saturate(r.get()),
                 (Some(width), Constant::Bool(b)) => width.wrap(i128::from(b)),
@@ -626,7 +730,35 @@ impl<'d, 't> ConstEval<'d, 't> {
                 None => Argument { value: Some(self.fold(*arg, bindings)?), function: None },
             });
         }
-        self.apply_value(expr, function, arguments, bindings)
+        // a call of a generic function evaluates its body for the arguments the checker recorded, read under the
+        // instance being evaluated: its const parameters are values in the body (GN-01, GN-14)
+        let outer = match self.types.instantiation(expr).cloned() {
+            Some(instantiation) => {
+                // a type argument can nest as deep as the instantiation chain does (D7): the walk over it has its own stack
+                let substitution = crate::stack::Stack::wide(|| self.instantiation_substitution(&instantiation));
+                Some(self.set_substitution(substitution))
+            }
+            None => None,
+        };
+        let result = self.apply_value(expr, function, arguments, bindings);
+        if let Some(outer) = outer {
+            self.set_substitution(outer);
+        }
+        result
+    }
+
+    /// What the parameters of the item of `instantiation` are replaced by: each argument under the substitution of the
+    /// instance being evaluated, a const expression folded to its value.
+    fn instantiation_substitution(&self, instantiation: &crate::types::Instantiation) -> crate::types::Substitution {
+        let arguments: Vec<GenericValue> = instantiation
+            .arguments
+            .iter()
+            .map(|argument| match self.substitution.apply_value(argument) {
+                GenericValue::Const(ConstTerm::Expr(expr)) => self.integer(expr).and_then(|count| i128::try_from(count).ok()).map_or(GenericValue::Const(ConstTerm::Expr(expr)), |count| GenericValue::Const(ConstTerm::Value(count))),
+                other => other,
+            })
+            .collect();
+        crate::types::Substitution::of(&crate::types::GenericSignature::of(self.design, instantiation.item), &arguments)
     }
 
     /// The body of the function `function` evaluated for `arguments`; a function reads no param of
@@ -652,7 +784,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
         let outer = std::mem::replace(&mut self.locals, frame);
         let outer_functions = std::mem::replace(&mut self.fn_values, functions);
-        let result = crate::stack::deep(|| self.exec_block(expr, &body.stmts, &Bindings::new()));
+        let result = crate::stack::Stack::deep(|| self.exec_block(expr, &body.stmts, &Bindings::new()));
         self.depth -= 1;
         self.locals = outer;
         self.fn_values = outer_functions;
@@ -662,6 +794,17 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A method call: a row of the Appendix H catalogue applied to
     /// its receiver and arguments.
     fn method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
+        // a method of the project: the function's body over the receiver, then the arguments (generics T35)
+        if let Some(Callee::Method(function)) = self.types.callee(expr) {
+            let mut arguments = Vec::new();
+            for operand in std::iter::once(&recv).chain(args) {
+                arguments.push(match self.fn_value_of(*operand) {
+                    Some(function) => Argument { value: None, function: Some(function) },
+                    None => Argument { value: Some(self.fold(*operand, bindings)?), function: None },
+                });
+            }
+            return self.apply_value(expr, FnValue::Named(function), arguments, bindings);
+        }
         if let Some(method) = self.types.method(expr) {
             // the rows over arrays, ranges, iterators and `Option`s take closures and composites (`composite.rs`)
             if let Some(result) = self.sequence_row(expr, method, recv, args, bindings) {

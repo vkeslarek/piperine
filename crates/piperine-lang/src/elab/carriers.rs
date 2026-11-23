@@ -15,7 +15,7 @@ use super::body::NodePlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
-use crate::types::Ty;
+use crate::types::{Length, Nominal, Ty};
 
 /// What a body holds besides its analog block, in the order the IR numbers it.
 #[derive(Default)]
@@ -134,9 +134,21 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => {
-                let value = self.carrier_init(expr, frame)?;
-                Some(self.ir_constant(value, &ty))
+            Some(expr) => match self.hand_written_encode(decl) {
+                Some(encode) => Some(self.encoded_init(expr, encode, frame)?),
+                None => {
+                    let value = self.carrier_init(expr, frame)?;
+                    Some(self.ir_constant(value, &ty))
+                }
+            },
+            // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C
+            // (GAPS L69). A type with no `Default` has none to start at: the carrier takes its value from what drives it
+            None if self.hand_written_encode(decl).is_some() && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) => {
+                if self.default_initial_value(decl, &ty).is_some() {
+                    self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
+                    return None;
+                }
+                None
             }
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
@@ -151,7 +163,7 @@ impl Elaboration<'_, '_> {
     fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
         match folded {
             Ok(value) => Some(value),
             Err(fault) => {
@@ -176,11 +188,11 @@ impl Elaboration<'_, '_> {
         let (variant, parts) = match (ty, stored) {
             (Ty::Option(_), ValueType::Option(_)) => (None, Vec::new()),
             (Ty::Tuple(items), ValueType::Tuple(held)) => (None, items.iter().zip(held).map(|(item, held)| self.default_constant(item, held)).collect::<Option<Vec<_>>>()?),
-            (Ty::Array(element, length), ValueType::Array(held, _)) => {
+            (Ty::Array(element, Length::Fixed(length)), ValueType::Array(held, _)) => {
                 let one = self.default_constant(element, held)?;
                 (None, vec![one; usize::try_from(*length).ok()?])
             }
-            (Ty::Struct(struct_decl), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
+            (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
                 let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
                 let held = self.type_arena.field_types(*id).to_vec();
                 (None, fields.iter().zip(&held).map(|(field, held)| self.default_constant(field, held)).collect::<Option<Vec<_>>>()?)

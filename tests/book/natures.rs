@@ -127,7 +127,7 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
     let chapter = Chapter::read();
     let placing = "module Top(in clk: Bit) { signal b: Stream<u8>; signal d: Stream<u8>; let s = Slice::<u8>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    assert!(given.contains(&("P0001".to_string(), "generic struct `Stream` is not supported yet".to_string())), "{given:?}");
+    assert!(given.contains(&("P0001".to_string(), "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet".to_string())), "{given:?}");
     assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
     let generic = "module Top(in clk: Bit) { signal c: Bit; let s = Slice::<u8>(c, gnd, gnd); }\n";
     Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", generic).run(OperatingPoint::of_top()), "natures#8", "P0001", "generic module is not supported yet");

@@ -228,7 +228,11 @@ fn a_function_has_the_class_its_body_gives() {
     // does." The pure, `now()` and `emit!` classes run; an `Event` function is `P0001` (GAPS.md L53)
     let chapter = Chapter::read();
     let top = Reaction::source("emit!(\"d\", i = diode_current(0.6, 1e-14, 0.026), t = clock(), x = 1);").replace("module Top() { }", "fn clock() -> f64 { now() }\nfn say() { emit!(\"say\", x = 1.0); }\nmodule Top() { }").replace("emit!(\"d\"", "say(); emit!(\"d\"");
-    let ran = Transient::ran(&chapter.wrapped("functions.msl", "", "values#8", &top), "Top", 2e-6);
+    // the whole-model check (S3) refuses `handshake` where nothing reaches it, so the run is of the block
+    // up to it: the `Event` function is the refused part, and the second model below shows it
+    let block = chapter.text("values#8");
+    let (functions, _) = block.split_once("/// A request that is acknowledged").expect("values#8 lists handshake last");
+    let ran = Transient::ran(&Model::written("functions.msl", &format!("{functions}\n{top}")), "Top", 2e-6);
     let d = &ran.stream("d")[0];
     let formula = 1e-14 * ((0.6f64 / 0.026).exp() - 1.0);
     assert!(matches!(Fields::of(d, "i"), Field::Real(i) if (i - formula).abs() < 1e-9 * formula), "diode_current: {:?}", Fields::of(d, "i"));
@@ -236,7 +240,7 @@ fn a_function_has_the_class_its_body_gives() {
     assert_eq!(ran.stream("say").len(), 1, "a function that calls emit! writes where emit! does");
     let reaching = "module Top(in req: Bit, in ack: Bit) { }\ndigital for Top { on handshake(req, ack) { emit!(\"h\", t = now()); } }\n";
     let refused = chapter.wrapped("handshake.msl", "", "values#8", reaching).run(Transient::of("Top", 2e-6));
-    Refusal::expect(refused, "values#8", "P0001", "method `rise` on this receiver is not supported yet");
+    Refusal::expect(refused, "values#8", "P0001", "this call as an event is not supported yet");
 }
 
 #[test]

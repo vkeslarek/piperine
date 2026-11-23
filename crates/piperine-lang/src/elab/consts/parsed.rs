@@ -10,7 +10,7 @@ use super::composite::CompositeKind;
 use super::{Bindings, ConstEval, ConstFault, Width};
 use crate::elab::tables::{HexText, TableFault, TableText};
 use crate::pom::{ConstData, DeclKind, ExprId, ExprKind, Resolution};
-use crate::types::{Intrinsic, Ty};
+use crate::types::{Intrinsic, Length, Ty};
 
 impl ConstEval<'_, '_> {
     /// `parse_table(text)` or `parse_hex(text)` at `expr`, the array its type says: `E0614` when the text does not
@@ -19,11 +19,14 @@ impl ConstEval<'_, '_> {
         let [text_expr] = args else {
             return Err(ConstFault::Unsupported { expr, what: "a parser called with other than one text".to_string() });
         };
-        let Some(Ty::Array(element, length)) = self.types.ty(expr).cloned() else {
+        let Some(Ty::Array(element, length)) = self.typed(expr) else {
             return Err(ConstFault::Unsupported { expr, what: "a parser whose array type the checker did not give".to_string() });
         };
         let (source, text) = self.text_of(*text_expr, bindings)?;
-        let count = usize::try_from(length).map_err(|_| ConstFault::Unsupported { expr, what: "an array too long to parse".to_string() })?;
+        let count = match length {
+            Length::Fixed(length) => usize::try_from(length).map_err(|_| ConstFault::Unsupported { expr, what: "an array too long to parse".to_string() })?,
+            Length::Generic(_) => return Err(ConstFault::Unsupported { expr, what: "a parsed array whose length is a generic argument".to_string() }),
+        };
         let table = |fault: TableFault| ConstFault::Table { expr, code: fault.code, message: fault.message };
         let elements: Vec<Constant> = match (intrinsic, &*element) {
             (Intrinsic::ParseTable, Ty::F64) => TableText::new(&source, &text).rows(1, count).map_err(table)?.into_iter().map(|row| Constant::Real(Real::new(row[0]))).collect(),

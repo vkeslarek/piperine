@@ -8,6 +8,16 @@
 | - | -------- | ------- | -------------- |
 | Q1 (X6) | What does `piperine check` owe a generic item: is its body checked once against its bounds, or only per instantiation? §3 rule 9 says "instantiated at elaboration. An error inside an instantiation is an elaboration error", which reads as the latter; §0.4 says generics are Rust's, which check against bounds. S3 depends on the answer | (a) **Once, against the bounds (Rust).** A generic body is type-checked at its definition with each type parameter opaque: it may use only what its bounds give (`T: Repr` gives `WIDTH`, `level`, `encode`, `decode`; `T: PartialOrd` gives `<`). A library's error is reported where it is written, even if nothing instantiates it. Const-generic arithmetic (`[f64; N + 1]` against `[f64; D]`) must then be reasoned about symbolically, which Rust itself leaves unstable. (b) **Per instantiation only (templates).** A generic body is resolved at its definition and type-checked only when instantiated. Simpler. A library's generic item with an error passes `check` until a user instantiates it, and the error is reported at the user's use. (c) **Both, split as Rust's stable compiler does.** Types, methods and trait use are checked once against the bounds at the definition; const-generic arithmetic, array-length equality and every `where` are checked per instantiation | (c). A library is checked where it is written, as Rust users expect, without symbolic const arithmetic. §3 rule 9 gains one sentence saying which errors belong to the definition and which to an instantiation. The stdlib must then state every bound its bodies use (e.g. `tri<T: Repr>` comparing `Option<T>` needs `T: PartialEq`); the audit is part of phase A |
 
+## Decision (user, 2026-11-22): a module type takes trait impls — "looks like a Mosfet, behaves like a Mosfet"
+
+From an exercise on swapping transistor models (BSIM3, BSIM4, MOS1 behind one circuit). `Fn(Electrical, Electrical, Electrical, Electrical)` alone lets any four-terminal module fit a MOSFET slot, which the user wants to avoid, and the user refused new concepts for it (no `interface`, no named signature types: "Tudo isso é conceitos a mais em uma linguagem que já é razoavelmente complexa"). The user chose, verbatim: "Gostei do 2. Diz basicamente: Looks like a Mosfet, behaves like a Mosfet".
+
+- A template's type is its module's name (§8.4 rule 3), so a trait may be implemented for it: `trait Mosfet { fn polarity() -> Polarity; }`, `impl Mosfet for Bsim4 { .. }`. This extends "traits are capabilities" (MD-78, natures take trait impls) to modules; no new keyword.
+- A slot is bounded by both: `module DiffPair<N: Mosfet + Fn(Electrical, Electrical, Electrical, Electrical)>(.., nmos: N = nch(180n, 2u))`. `Fn(P)` checks the shape (§8.4.5); the trait is nominal (only a module that declares `impl Mosfet` fits).
+- Each model is its own module with its own card (`Bsim4 { card: Bsim4Card, l, w }`); binning stays an ordinary function returning a template (§8.4.7).
+- What an `impl` on a module may do (user, 2026-11-22: "Ok, pode registrar"): the `impl` is on the template, an elaboration value (§8.4.6, §8.4.9), so its functions are pure functions of the bound params. `self` is the template: `fn vth(self) -> f64 { self.card.vth0 }`. They may read params, compute and return values or another template (binning); they may NOT read nodes, quantities or time — an instance's state stays reachable through `inst.name` on its `pub` items (§8.4.8). Called at elaboration (`let vgs = nmos.vth() + 0.2;`). An inherent `impl Bsim4 { fn .. }` with no trait is allowed too, like on any type.
+- To do when this feature reaches templates (GN-21/GN-23): amend the spec (§3.7 which `impl Tr for` targets are allowed: add a module type; §8.4: a bound may combine a trait and `Fn(P)`), plan the tasks, and a Book example (the swappable MOSFET). The `ngspice-models` idea uses this pattern for its device models.
+
 ## Problem Statement
 
 Generic items are refused with `P0001` (`GAPS.md` L7, L30): generic functions, `self` methods, `impl` on value types, user traits, generic modules and const generics. With them go handles (L8), generation `for`/`if` (L31), templates and `Fn(P)` bounds (L32), and the implicit params `m` and `dtemp` (L29). The prelude's own `Short<N>` is refused, and with it a third of the stdlib (L58: `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`). Separately, the type checker checks only what a run's top reaches (S3): a library with no run is never type-checked, so `piperine check` is green for code that cannot compile. The user asked for every gap closed, those that limit the language's expressiveness first.
@@ -29,7 +39,7 @@ Five sub-features, each designed and tasked on its own (`design-<phase>.md`, `ta
 | ----- | ---- | --- | ------------ | ---- |
 | A | Generic items and the whole-model check | L7, L4 (generic enums), S3, X6 | GN-01 to GN-09 | L, about 35 tasks |
 | B | Handles | L8 | GN-10 to GN-12 | M, about 12 tasks |
-| C | Generic modules and generation | L30, L31 | GN-13 to GN-20 | L, about 32 tasks |
+| C | Generic modules and generation | L30, L31, L69 | GN-13 to GN-20, GN-32 | L, about 32 tasks |
 | D | Templates and implicit params | L32, L29 | GN-21 to GN-26 | M, about 20 tasks |
 | E | The stdlib built on generics | L58 (generics group) | GN-27 to GN-28 | M, about 15 tasks |
 | all | Cross-cutting | — | GN-29 to GN-31 | carried by each phase |
@@ -111,7 +121,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 1. WHEN an `impl` on a struct or an enum declares methods with `self`, associated functions (`Point::new`) and associated constants THEN the system SHALL accept method-call syntax, `Self`, and `Type::name` paths with Rust's meaning.
 2. IF an `impl` is written on a module THEN the system SHALL refuse it with `E0130`.
-3. IF a method is named `changed`, `prev`, `others`, `inflow` or `level` THEN the system SHALL refuse it with `E0131`.
+3. IF a method is named `changed`, `prev`, `others` or `inflow` THEN the system SHALL refuse it with `E0131`.
 
 **Acceptance Criteria** (GN-04, user traits):
 
@@ -119,12 +129,12 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 2. WHEN a generic body calls a method of a bound (`x.known()` under `T: Known`) THEN the system SHALL call the instantiation's implementation.
 3. WHEN a crate declares a blanket `impl<T: Bound> Trait for T` THEN the system SHALL apply it to every type that satisfies the bound.
 4. IF two `impl`s of one trait apply to one type, or an `impl` leaves a method without a default unimplemented THEN the system SHALL refuse it naming the trait and the type.
-5. IF `impl Trait for` names a nature or a bundle THEN the system SHALL refuse it with `E0134`.
+5. IF `impl Trait for` names a bundle THEN the system SHALL refuse it with `E0134`; a nature takes trait impls (traits are capabilities, MD-78).
 
 **Acceptance Criteria** (GN-05, hand-written `Repr`):
 
 1. WHEN a project writes `impl Repr for T` with `WIDTH`, `encode` and `decode` (a one-hot or Gray encoding) THEN the system SHALL carry `Bit<T>` with that layout.
-2. WHEN a hand-written `decode` returns `None` THEN the system SHALL read the value as unknown (§2 rule 9).
+2. WHEN a hand-written `decode` returns `None` THEN the system SHALL return the `None` to the caller (§2 rule 9 as MD-78 amends it).
 
 **Acceptance Criteria** (GN-06, generic value types):
 
@@ -342,6 +352,11 @@ The forms each item is expected to need beyond this feature, from its source in 
 1. WHEN a phase closes a `GAPS.md` id THEN the same commit SHALL remove it, update `§9 Coverage`, and move each L58 item it unblocks to the id of what still blocks it.
 2. WHEN a phase lets a gallery fence (Appendices D to F) or a Book example check that was refused before THEN the system SHALL hold it to the checker in the existing gallery or Book test.
 
+**Acceptance Criteria** (GN-32, hand-written `Repr` on generic types and initial values; phase C; added by implementer 2026-11-23, approved by the user 2026-11-23; moved out of GN-05, whose approved text is AC 1 and AC 2):
+
+1. WHEN a project writes `impl<T: Repr> Repr for Pair<T>` for a generic type THEN the system SHALL carry each instance with the layout of that `impl` (until phase C each such use is `P0001` naming the form, GAPS L69).
+2. WHEN a carrier of a hand-written type has a `Default` and no initial value THEN the system SHALL start it at the levels `encode` gives for that default (until phase C `P0001` naming the form, GAPS L69).
+
 **Independent Test**: `cargo test` with the twins' goldens; the interpreter's refusal test; `GAPS.md` in each closing commit.
 
 ---
@@ -410,8 +425,9 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-29 | P1: every phase keeps the rest intact | - | Pending |
 | GN-30 | P1: every phase keeps the rest intact | - | Pending |
 | GN-31 | P1: every phase keeps the rest intact | - | Pending |
+| GN-32 | P1: generic functions, methods and traits (C) | - | Pending |
 
-**Coverage:** 31 total, 0 mapped to tasks (spec only).
+**Coverage:** 32 total, 0 mapped to tasks (spec only).
 
 ---
 

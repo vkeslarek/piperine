@@ -225,7 +225,7 @@ impl Elaboration<'_, '_> {
         let mut found = Vec::new();
         for index in 0..self.design.expr_count() {
             let expr = ExprId(index as u32);
-            if self.types.ty(expr).is_none() {
+            if self.typed(expr).is_none() {
                 continue;
             }
             let ExprKind::Field { res: Resolution::Decl(item), .. } = &self.design.expr_node(expr).kind else { continue };

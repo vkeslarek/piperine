@@ -328,7 +328,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `E0126`: the recursion of `function` cannot be expanded; `why` says what stops it.
-    fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
+    pub(super) fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
         let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("the recursion of `{name}` reached from `analog` cannot be unrolled: {why} (§3 rule 12)");
         self.report(scope.file, Diagnostic::new("E0126", message, span, "recursion does not fold"));
@@ -360,7 +360,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
-        if params.iter().any(|p| matches!(self.types.local(*p), Some(Ty::Option(_)))) {
+        if params.iter().any(|p| matches!(self.typed_local(*p), Some(Ty::Option(_)))) {
             self.unsupported(scope.file, span, "a recursion reached from `analog` with an `Option` parameter");
             return None;
         }
@@ -385,7 +385,7 @@ impl Elaboration<'_, '_> {
             stmts.push(self.stmt(Stmt::Let { local, init }));
         }
         scope.expanding.push(Expansion { function, decisions: scope.decisions });
-        let lowered = crate::stack::deep(|| self.lower_statements(scope, &body.stmts));
+        let lowered = crate::stack::Stack::deep(|| self.lower_statements(scope, &body.stmts));
         scope.expanding.pop();
         scope.local_index = saved_locals;
         scope.unrolled = saved_unrolled;

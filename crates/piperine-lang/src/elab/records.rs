@@ -38,8 +38,10 @@ impl Elaboration<'_, '_> {
     /// Whether a call of `function` is inlined where it stands: it reaches `emit!` (§19 rule 10) or
     /// takes a `str`, a text that exists at elaboration only (§1.2.9).
     pub(super) fn is_inlined(&self, function: DeclId) -> bool {
-        let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.types.local(*c), Some(Ty::Str)));
-        self.types.emits(function).is_some() || takes_text
+        let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
+        let is_extern = matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some());
+        // an `extern` function has no body to inline; its call is the call of a generic `extern` function, refused by name
+        !is_extern && (self.types.emits(function).is_some() || takes_text || self.takes_handle(function))
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.
@@ -55,7 +57,7 @@ impl Elaboration<'_, '_> {
         let mut lowered = Vec::new();
         let mut ok = true;
         for field in fields {
-            if matches!(self.types.ty(field.value), Some(Ty::Str)) {
+            if matches!(self.typed(field.value), Some(Ty::Str)) {
                 match self.text_of(scope, field.value) {
                     Some(text) => lowered.push(EmitField::Text { name: field.name.text.clone(), text }),
                     // A file with no text was reported as `E0612` or `E0613` by `read_included_files`.
@@ -69,7 +71,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             // an `Option` field is its presence and its payload, packed as one value (§19 rule 11, D8)
-            let lowered_value = match self.types.ty(field.value).cloned() {
+            let lowered_value = match self.typed(field.value) {
                 Some(Ty::Option(payload)) => match self.value_type(&payload) {
                     Some(payload) => self.lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
                     None => {
@@ -167,6 +169,11 @@ impl Elaboration<'_, '_> {
     /// in the reaction where the call stands (§19 rule 10), and whose value is the function's.
     /// `None` after a diagnostic.
     pub(super) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
+        if self.takes_handle(function) && self.reaches_recursion(function) {
+            let span = self.design.decl_data(function).span;
+            self.unfoldable_recursion(scope, function, span, "a recursion through a function that takes a handle is not inlined");
+            return None;
+        }
         let (stmts, value) = self.inline_emitting_parts(scope, function, args)?;
         let ty = value.map_or(ValueType::Unit, |v| self.type_of(v));
         Some(self.emit(Expr::Block { stmts, value }, ty, origin))
@@ -188,14 +195,22 @@ impl Elaboration<'_, '_> {
     pub(super) fn bind_inlined_arguments(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, BlockNode)> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
-        let body = f.body.clone()?;
+        let Some(body) = f.body.clone() else {
+            // an `extern` function has no body to inline: its call is refused by name, never dropped
+            self.unsupported(scope.file, data.span, "a call of a function with no body (an `extern` function) that must be inlined");
+            return None;
+        };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
         let mut out = Vec::new();
         let mut ok = true;
         for (param, arg) in params.iter().zip(args) {
             let param_name = self.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            if matches!(self.types.ty(*arg), Some(Ty::Str)) {
+            if self.types.handle(*param) {
+                scope.handles.insert(*param, self.handle_argument_target(scope, *arg));
+                continue;
+            }
+            if matches!(self.typed(*arg), Some(Ty::Str)) {
                 match self.text_of(scope, *arg) {
                     Some(text) => {
                         scope.texts.insert(*param, text);

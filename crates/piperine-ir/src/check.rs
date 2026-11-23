@@ -25,10 +25,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::contributions::Contributions;
-use crate::ids::{ExprId, FunctionId, StmtId};
+use crate::ids::{ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
     BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
-    TypeKind, ValueType,
+    FunctionData, ReprForm, TypeData, TypeKind, ValueType,
 };
 use crate::typing::Typing;
 
@@ -168,6 +168,11 @@ impl<'a> Checker<'a> {
         match (ty, value) {
             (_, Constant::Aggregate(id)) => self.ir.aggregates.get(id.index()).is_some_and(|data| data.ty == *ty),
             (ValueType::Bool, Constant::Bool(_)) | (ValueType::F64, Constant::Real(_)) => true,
+            // a type with a hand-written `Repr` is initialized by its levels, the word `encode` gives (GN-05)
+            (ValueType::Struct(id) | ValueType::Enum(id), Constant::Int(levels)) => match self.ir.types.get(id.index()).map(|data| data.repr) {
+                Some(ReprForm::HandWritten { width, .. }) => width < 128 && (0..1i128 << width).contains(&levels),
+                _ => false,
+            },
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
             }
@@ -344,6 +349,11 @@ impl<'a> Checker<'a> {
         for function in &ir.functions {
             let item = format!("function {}", function.name);
             self.expr_id(&item, &function.origin, function.body);
+            if let Some(instance) = &function.instance
+                && !instance.names(&function.name)
+            {
+                self.report(item, function.origin.clone(), format!("a generic instance of `{}` is named `{}`, not `{}`", instance.item, instance.name(), function.name));
+            }
         }
         for (i, data) in ir.exprs.iter().enumerate() {
             let item = format!("expr {i}");
@@ -830,6 +840,45 @@ impl<'a> Checker<'a> {
             if let Some(what) = self.malformed(&ty) {
                 self.report(item, origin, what);
             }
+        }
+        for (index, data) in ir.types.iter().enumerate() {
+            self.type_instance(data);
+            self.hand_written_repr(index, data);
+        }
+    }
+
+    /// A type that is a generic instance is named `item<arguments>`.
+    fn type_instance(&mut self, data: &TypeData) {
+        if let Some(instance) = &data.instance
+            && data.name != instance.type_name()
+        {
+            self.report(format!("type {}", data.name), data.origin.clone(), format!("a generic instance of `{}` is named `{}`, not `{}`", instance.item, instance.type_name(), data.name));
+        }
+    }
+
+    /// A hand-written `Repr` (GN-05): `encode` takes the type and returns `[bool; width]`, `decode`
+    /// takes `[bool; width]` and returns `Option` of the type, and `width` is at least one level.
+    fn hand_written_repr(&mut self, index: usize, data: &TypeData) {
+        let ReprForm::HandWritten { width, encode, decode } = data.repr else { return };
+        let item = format!("type {}", data.name);
+        let own = match data.kind {
+            TypeKind::Struct { .. } => ValueType::Struct(TypeId(index as u32)),
+            TypeKind::Enum { .. } => ValueType::Enum(TypeId(index as u32)),
+        };
+        let levels = ValueType::Array(Box::new(ValueType::Bool), u64::from(width));
+        if width == 0 {
+            self.report(item.clone(), data.origin.clone(), "a hand-written Repr has at least one level".to_string());
+        }
+        let (Some(encode), Some(decode)) = (self.ir.functions.get(encode.index()), self.ir.functions.get(decode.index())) else {
+            self.report(item, data.origin.clone(), "a hand-written Repr names a function outside the arena".to_string());
+            return;
+        };
+        let takes = |function: &FunctionData, ty: &ValueType| function.params.len() == 1 && function.params[0].ty == *ty;
+        if !takes(encode, &own) || encode.ret != levels {
+            self.report(item.clone(), data.origin.clone(), format!("the encode of a hand-written Repr takes {own} and returns {levels}, `{}` does not", encode.name));
+        }
+        if !takes(decode, &levels) || decode.ret != ValueType::Option(Box::new(own.clone())) {
+            self.report(item, data.origin.clone(), format!("the decode of a hand-written Repr takes {levels} and returns Option<{own}>, `{}` does not", decode.name));
         }
     }
 

@@ -8,7 +8,7 @@ use crate::pom::{DeclId, DeclKind, FieldPatNode, FileId, PatId, PatKind, PathId,
 use super::check::Checker;
 use super::cover::Covers;
 use super::patterns::{Bound, Matched};
-use super::Ty;
+use super::{Length, Ty};
 
 /// How the covers of one pattern's fields make the cover of the whole: a tuple, a struct and an
 /// array are a product of their fields, a variant is a constructor over its own.
@@ -48,7 +48,7 @@ impl Checker<'_> {
     /// `P(a, b)` and `Tx::Data(a)` (§1.6.5): a tuple struct or a variant with positional fields.
     pub(super) fn constructor_pattern(&mut self, file: FileId, span: Span, path: PathId, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
         let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
-        let layout = self.fields_of(owner)?;
+        let layout = self.instance_layout(owner, scrut)?;
         if layout.iter().any(|f| f.name.is_some()) {
             self.mismatch_text(file, span, "a pattern with the fields' names", "a positional pattern");
             return None;
@@ -63,7 +63,7 @@ impl Checker<'_> {
     /// needs `..`, else `E0184`.
     pub(super) fn struct_pattern(&mut self, file: FileId, span: Span, path: PathId, fields: &[FieldPatNode], rest: bool, scrut: &Ty) -> Option<Matched> {
         let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
-        let layout = self.fields_of(owner)?;
+        let layout = self.instance_layout(owner, scrut)?;
         let mut columns: Vec<Option<&FieldPatNode>> = vec![None; layout.len()];
         for field in fields {
             let at = match field.res {
@@ -112,7 +112,7 @@ impl Checker<'_> {
     /// `[a, b]`, `[first, .., last]` and `[head, rest @ ..]` (§1.6.7): over an array, with `..`
     /// standing for the elements between.
     pub(super) fn array_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
-        let Ty::Array(element, length) = scrut else { return self.not_an_array(file, span, scrut) };
+        let Ty::Array(element, Length::Fixed(length)) = scrut else { return self.not_an_array(file, span, scrut) };
         let element = (**element).clone();
         let arity = usize::try_from(*length).ok()?;
         let rest_at = pats.iter().position(|p| self.is_rest_pattern(*p));
@@ -129,7 +129,7 @@ impl Checker<'_> {
                 columns.extend(pats[..i].iter().map(|p| Some(*p)));
                 columns.extend(std::iter::repeat_n(None, arity - fixed));
                 columns.extend(pats[i + 1..].iter().map(|p| Some(*p)));
-                matched.extend(self.rest_binding(pats[i], &Ty::Array(Box::new(element.clone()), (arity - fixed) as u64)));
+                matched.extend(self.rest_binding(pats[i], &Ty::array(element.clone(), (arity - fixed) as u64)));
             }
         }
         if columns.len() != arity {
@@ -245,7 +245,12 @@ impl Checker<'_> {
             return None;
         };
         let (ty, owner) = self.constructed_type(target, file, span)?;
-        if ty != *scrut {
+        // a generic type's pattern is of its declaration, whatever arguments the scrutinee has
+        let same_type = match (&ty, scrut) {
+            (Ty::Struct(open), Ty::Struct(given)) | (Ty::Enum(open), Ty::Enum(given)) => open.decl == given.decl,
+            _ => ty == *scrut,
+        };
+        if !same_type {
             self.mismatch(file, span, scrut, &ty);
             return None;
         }

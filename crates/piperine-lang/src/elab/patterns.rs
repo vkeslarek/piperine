@@ -412,7 +412,7 @@ impl Elaboration<'_, '_> {
     /// first; an `Option` to its flag and payload locals, or, with `share_option`, kept as the two
     /// expressions of its pair.
     pub(super) fn subject_of(&mut self, scope: &mut Scope, scrutinee: ExprId, share_option: bool) -> Option<(Subject, Vec<LoweredStmt>)> {
-        let option = matches!(self.types.ty(scrutinee), Some(Ty::Option(_)));
+        let option = matches!(self.typed(scrutinee), Some(Ty::Option(_)));
         if option && scope.no_locals {
             return Some((Subject::RereadPair(scrutinee), Vec::new()));
         }

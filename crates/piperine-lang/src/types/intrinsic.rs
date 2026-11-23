@@ -7,7 +7,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode};
 
 use super::check::Checker;
-use super::{Callee, Ty};
+use super::{Callee, Nominal, Ty};
 
 /// A function of §22.1 the checker types by its contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +186,7 @@ impl Checker<'_> {
     /// Whether `ty` holds an enum below a tuple or an array (`in_sequence`: already below one).
     fn sequence_holds_enum(&self, ty: &Ty, in_sequence: bool) -> bool {
         match ty {
-            Ty::Enum(decl) => {
+            Ty::Enum(Nominal { decl, .. }) => {
                 in_sequence
                     || self.design.decl_data(*decl).children.iter().any(|variant| {
                         self.types_of_fields(*variant).iter().any(|field| self.sequence_holds_enum(field, false))
@@ -194,7 +194,7 @@ impl Checker<'_> {
             }
             Ty::Tuple(items) => items.iter().any(|item| self.sequence_holds_enum(item, true)),
             Ty::Array(element, _) => self.sequence_holds_enum(element, true),
-            Ty::Struct(decl) => self.types_of_fields(*decl).iter().any(|field| self.sequence_holds_enum(field, in_sequence)),
+            Ty::Struct(Nominal { decl, .. }) => self.types_of_fields(*decl).iter().any(|field| self.sequence_holds_enum(field, in_sequence)),
             _ => false,
         }
     }

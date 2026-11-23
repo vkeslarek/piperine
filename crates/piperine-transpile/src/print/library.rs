@@ -371,6 +371,16 @@ impl LibraryPrinter {
         let mut exprs = Self::roots(ir, running.iter().map(|(b, _)| *b));
         exprs.extend(derived.bindings().iter().map(|b| b.expr));
         let mut found = BTreeSet::new();
+        // the `encode` and `decode` of a hand-written `Repr` are called by the type's own `Carried` impl (GN-05)
+        for data in ir.types() {
+            if let piperine_ir::ReprForm::HandWritten { encode, decode, .. } = data.repr {
+                for function in [encode, decode] {
+                    if found.insert(function.index()) {
+                        exprs.push(ir.function(function).body());
+                    }
+                }
+            }
+        }
         while let Some(e) = exprs.pop() {
             match ir.expr(e) {
                 Expr::Call { function, args } => {

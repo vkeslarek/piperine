@@ -390,7 +390,7 @@ impl ConstEval<'_, '_> {
                 let outer_functions = std::mem::replace(&mut self.fn_values, functions);
                 let bound = self.bind_parameters(expr, &params, arguments, bindings);
                 let result = match bound {
-                    Ok(()) => crate::stack::deep(|| self.exec(body, bindings)),
+                    Ok(()) => crate::stack::Stack::deep(|| self.exec(body, bindings)),
                     Err(fault) => Err(fault),
                 };
                 self.depth -= 1;

@@ -544,7 +544,12 @@ fn a_const_reading_a_run_value_is_e0188() {
     // `const`; a `const` without a value outside a trait is the same code. A `const` that calls a function reading the
     // environment, which only a run gives, was `E0188` here: since params-and-io T36 (PI-12 AC 3, §3) that call is
     // `E0122` at the checker, naming the function and its class (`types_values`), and the evaluator is not reached.
-    let src = reaching("fn h() -> f64 { temperature() }\nconst K: f64 = h();", &["K"]);
+    // (`temperature()` is constant during an analysis, so a function that reads only it is pure: generics D13 amended,
+    // the §3 table; a `const` over it is the evaluator's `E0188`, as before)
+    let pure = reaching("fn h() -> f64 { temperature() }\nconst K: f64 = h();", &["K"]);
+    let err = Elab::run(&pure, "Top").expect_err("a const reading the environment");
+    assert_eq!(Elab::codes(&err), ["E0188"], "{pure}");
+    let src = reaching("fn h() -> f64 { now() }\nconst K: f64 = h();", &["K"]);
     let err = Elab::run(&src, "Top").expect_err("a const calling a solve-reading function");
     assert_eq!(Elab::codes(&err), ["E0122"], "{src}");
     assert!(err[0].diagnostic.message.contains("`h`") && err[0].diagnostic.message.contains("solve-reading"), "{}", err[0].diagnostic.message);

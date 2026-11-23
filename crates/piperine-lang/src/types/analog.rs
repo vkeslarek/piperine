@@ -79,7 +79,10 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if matches!(self.context, Context::Function | Context::Const) {
+        // a function probes through a handle (§3 rule 7, §3.1.5); a probe of anything else is out of place
+        let operands: Vec<ExprId> = args.iter().map(|arg| arg.value).collect();
+        let through_handles = self.context == Context::Function && self.probes_only_handles(&operands);
+        if matches!(self.context, Context::Function | Context::Const) && !through_handles {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
@@ -91,6 +94,8 @@ impl Checker<'_> {
             match self.infer(arg.value) {
                 Some(Ty::Node(n)) => natures.push(n),
                 Some(Ty::AnyNode) => {}
+                // a handle generic over a nature: its nature is the instantiation's, known there
+                Some(generic) if self.is_nature_parameter(&generic) => {}
                 Some(other) => {
                     let span = self.design.expr_node(arg.value).span;
                     self.mismatch_text(file, span, "a node", &other.name(self.design));

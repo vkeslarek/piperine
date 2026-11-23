@@ -20,9 +20,9 @@ const NODE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1
 
 const ROWS: &[Row] = &[
     Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "an array of" },
-    Row { construct: "a user trait and impl", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let y = 1.0.get(); } }", names: "method `get`" },
+    // `a user trait and impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     Row { construct: "a generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: Electrical) { let g = G(a); }", names: "generic module" },
-    Row { construct: "a generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = g(1.0); } }", names: "generic function" },
+    Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).

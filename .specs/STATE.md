@@ -1850,6 +1850,25 @@ protocol over its two sides) and MD-74's rule for `settle`, and supersedes nothi
    tenth of the last step instead of 10⁻³ (`HOST_RESTART_FRACTION`); the power stage takes 27 547 steps instead of
    30 920 (release). The step controller's growth clamp stays 1.5: 2.0 moves the `tran_corner` twin's bytes (D5).
 
+### MD-81: generics are monomorphized at elaboration; handle functions are inlined
+
+`generics` (2026-11-23; the number follows MD-80, `transient-performance`; a collision at merge is renumbered by whoever
+merges second). It extends MD-64 (IR functions are pure values) and supersedes nothing.
+
+1. **Monomorphization.** The checker types a generic body once, with each type parameter opaque, and records each use's
+   arguments (`Types::instantiation`); the elaborator makes one IR function or one IR type per distinct instance, named by
+   its turbofish spelling (`swap::<f64>`, `Pair<f64>`), and the POM keeps the generic item as written.
+2. **Static dispatch.** A call through a bound runs the `impl` of the receiver's concrete type, chosen among the `impl`s of the
+   trait by the arguments the bound writes (`C: Convert<f64>`); a closure or a function name passed for an `Fn` bound is a
+   function value, not inlined (design D9 amended).
+3. **Handles.** A function with a handle parameter (a node or a carrier of a nature, `self` of an `impl` on a nature,
+   `fn f<N: Nature>`) is inlined at each call, never an IR function: the handle is bound to the caller's node or carrier, a
+   probe lowers to its terminals and a read to the carrier's value; a handle returned, stored or written through is `E0133`
+   and a recursion through one is `E0126`.
+4. **Hand-written `Repr`.** `encode` and `decode` are IR functions named on the type; a carrier's initial value is the levels
+   word `encode` gives for the folded initializer (design D18).
+5. **`check`.** `piperine check` types every item of every non-std crate; a generic module's body waits for phase C (S3).
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

@@ -246,7 +246,7 @@ impl ContributionWalk<'_, '_, '_> {
 
     /// The contributions inside `expr`: in a block, an `if` or a `match` it is.
     fn expression(&mut self, expr: ExprId) {
-        crate::stack::deep(|| match self.elaboration.design.expr_node(expr).kind.clone() {
+        crate::stack::Stack::deep(|| match self.elaboration.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.expression(inner),
             ExprKind::Block(block) => self.statements(&block.stmts),
             // A condition over the key params folds: only the arm it selects is written (`lower.rs`).
