@@ -102,6 +102,10 @@ fn an_array_of_length_zero_is_an_empty_array() {
     let ir = Elab::ir("module Top() { signal bl: [Electrical; 0]; signal none: [Bit<u8>; 0]; }", "Top");
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(body.empty_arrays().iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["bl", "none"], "each empty array by name, nodes first");
+    // an empty array of a hoisted placement is recorded under the placement's prefix (finding 20)
+    let ir = Elab::ir("module Hoist() -> f64 { signal e: [Bit<u8>; 0]; 1.0 }\nmodule Top() { let p = Hoist(); }", "Top");
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    assert_eq!(body.empty_arrays().iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["p.e"], "the hoisted array under its placement");
     let found = Elab::run("module Top() { signal bl: [Electrical; 0]; }\nanalog for Top { let x = v(bl[0]); }", "Top").expect_err("no node");
     assert!(found.iter().any(|d| d.diagnostic.code == "E0104"), "{:?}", Elab::codes(&found));
 }
@@ -189,8 +193,16 @@ fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
     let ir = Elab::ir(src, "Top");
     assert!(ir.bodies().any(|b| b.name().starts_with("Wide~n=")), "the variant of n = 5 is a body");
     assert_eq!(ir.bodies().filter(|b| b.name().starts_with("Wide")).count(), 2, "the default n = 3 is a body of its own");
+    // each variant reads its own folded length, by value: the node array `bl`, and the whole read of the port `d`
+    let read = Read { ir: &ir };
+    let printed = ir.print_structural();
+    for (body, length) in [("Wide~n=5", 5u32), ("Wide~n=3", 3)] {
+        let (_, arrays) = read.nodes(body);
+        assert_eq!(arrays.iter().find(|a| a.0 == "bl").map(|a| a.2), Some(length), "the node array `bl` of {body}");
+        assert!(printed.contains(&format!("local w: [u8; {length}]")) && printed.contains(&format!("local ones: [u8; {length}]")), "the locals of {body} have length {length}:\n{printed}");
+    }
     let found = Elab::run(&src.replace("[1; n]", "[1; m]"), "Top").expect_err("a length that reads no param");
-    assert!(!found.is_empty(), "a repeat count that reads nothing is an error: {:?}", Elab::codes(&found));
+    assert_eq!(Elab::codes(&found), ["E0180"], "a repeat count that reads nothing is refused by its code");
 }
 
 #[test]
