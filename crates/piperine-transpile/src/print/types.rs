@@ -23,6 +23,9 @@ pub struct TypeItems<'a> {
     optional: BTreeSet<usize>,
     /// The arena entries a composite param holds that hold a real: each has a `lift` (`lift.rs`).
     lifted: BTreeSet<usize>,
+    /// The arena entries a composite param holds, with or without `Repr`: a param is never carried (§8.1.15) but its pin holds the
+    /// value's bytes, so each is printed with `Clone, Copy, PartialEq` and its `Carried` form (a value is copied, §1.4.6).
+    pinned: BTreeSet<usize>,
 }
 
 impl<'a> TypeItems<'a> {
@@ -46,7 +49,8 @@ impl<'a> TypeItems<'a> {
                 Self::collect_aggregates(ir, &param.ty, &mut lifted);
             }
         }
-        let mut items = TypeItems { ir, names, optional, lifted };
+        let pinned = lifted.clone();
+        let mut items = TypeItems { ir, names, optional, lifted, pinned };
         let held = std::mem::take(&mut items.lifted);
         items.lifted = held.into_iter().filter(|index| items.holds_real(&Self::as_value(ir, TypeId(*index as u32)))).collect();
         items
@@ -114,7 +118,7 @@ impl<'a> TypeItems<'a> {
         let kind = if matches!(data.kind, TypeKind::Struct { .. }) { "a struct" } else { "an enum" };
         t.line(&format!("/// MSL `{}`, {kind}, written at {}:{}:{}.", data.path, data.origin.file, data.origin.line, data.origin.col));
         t.line("#[allow(dead_code)]");
-        if let Some(derive) = Self::derive_line(&data.derives) {
+        if let Some(derive) = Self::derive_line(&self.derives_of(id)) {
             t.line(&derive);
         }
         let name = self.name(id);
@@ -159,7 +163,7 @@ impl<'a> TypeItems<'a> {
             text.push('\n');
             text.push_str(&RealLift::new(self.ir, self).item(id)?);
         }
-        if data.derives.repr {
+        if data.derives.repr || self.pinned.contains(&id.index()) {
             text.push('\n');
             text.push_str(&self.carried_impls(id)?);
         } else if self.optional.contains(&id.index()) && !(data.derives.default && matches!(data.kind, TypeKind::Struct { .. })) {
@@ -168,6 +172,18 @@ impl<'a> TypeItems<'a> {
             text.push_str(&self.default_impl(id, &ValuePrinter::of_type(self.ir, data, true))?);
         }
         Ok(text)
+    }
+
+    /// The derives type `id` is printed with: its own, and `Clone, Copy, PartialEq` when a param pin holds it (a type needs no `Repr`
+    /// to be a param, §8.1.15, so the derives its pin needs do not come from the source).
+    fn derives_of(&self, id: TypeId) -> Derives {
+        let mut derives = self.ir.type_data(id).derives;
+        if self.pinned.contains(&id.index()) {
+            derives.clone = true;
+            derives.copy = true;
+            derives.partial_eq = true;
+        }
+        derives
     }
 
     /// The printed name and Rust type of each field.
@@ -230,7 +246,7 @@ impl TypeItems<'_> {
     /// `Default` unless the source derives one (a pin whose tag names no variant decodes as the default; `try_from_levels` is `None`).
     fn carried_impls(&self, id: TypeId) -> Result<String, Error> {
         let data = self.ir.type_data(id);
-        let derives = &data.derives;
+        let derives = &self.derives_of(id);
         if !(derives.clone && derives.copy && derives.partial_eq) {
             return Err(Error::Unsupported { form: format!("the type {}, which derives Repr without Clone, Copy and PartialEq", data.path), path: format!("type {}", data.path), origin: data.origin.clone() });
         }

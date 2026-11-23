@@ -148,3 +148,14 @@ module IsSomeSomeBench() { signal o: Electrical; let supply = Supply(o); let loa
 module IsSomeNoneBench() { signal o: Electrical; let supply = Supply(o); let load = IsSomeLoad(o); }
 module IfLetSomeBench() { signal o: Electrical; let supply = Supply(o); let load = IfLetLoad { rs: 3k }(o); }
 module IfLetNoneBench() { signal o: Electrical; let supply = Supply(o); let load = IfLetLoad(o); }
+
+// -- §8.1.15: a param's type is a value type: no `Repr`, and no read of it by `analog`
+
+/// A struct that derives nothing, holding a real and an integer.
+struct Rating2 { n: u8, g: f64 }
+
+/// Holds a `Rating2` param that nothing reads, beside a plain 1 kOhm load.
+module HeldRating(p: Electrical) { rating: Rating2 = Rating2 { n: 1, g: 2.0 }; }
+analog for HeldRating { i(p, gnd) +> v(p) / 1k; }
+
+module HeldRatingBench() { signal o: Electrical; let supply = Supply(o); let load = HeldRating(o); }

@@ -134,3 +134,10 @@ fn every_read_of_an_option_param_gives_the_bound_case() {
         ToleranceContract::DC_VOLTAGE.assert(&Point::new(form, "v(o) none", Coordinate::OperatingPoint), 0.5, operating_point(&format!("{form}NoneBench")));
     }
 }
+
+#[test]
+fn a_composite_param_needs_no_repr_and_no_read_by_analog() {
+    // §8.1.15 ("a param's type is a value type"; only a carried type needs `Repr`, §1): a struct that derives nothing, holding an `f64`,
+    // is a param no `analog` block reads, and the design compiles and runs: v(o) = 1 kOhm / 2 kOhm = 1/2.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("held rating", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("HeldRatingBench"));
+}

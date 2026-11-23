@@ -71,7 +71,7 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
             format!("/// MSL `{}` at the real `S`: each `f64` leaf is `S::constant(leaf)`.", data.path),
             "#[allow(dead_code)]".to_string(),
             format!("impl {name}<f64> {{"),
-            format!("    pub fn lift<S: Real>(self) -> {name}<S> {{"),
+            format!("    pub fn lift<S: rt::Real>(self) -> {name}<S> {{"),
         ];
         match &data.kind {
             TypeKind::Struct { form, fields } => {

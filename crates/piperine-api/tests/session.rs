@@ -504,7 +504,7 @@ fn a_leaf_text_is_read_by_the_leafs_type() {
     // composite-values D13 with D24: a leaf of a composite param takes the literal syntax of its type: a `bool` leaf `true` or `false`
     // (`1` is E0802), an integer leaf an integer literal (`0x3`), a real leaf a number.
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let source = "#[derive(Repr, PartialEq)]\nstruct Cfg { en: bool, n: u8, g: f64 }\nmodule Top() { cfg: Cfg = Cfg { en: false, n: 1, g: 1.0 }; signal a: Electrical; }\nanalog for Top { v(a, gnd) +> cfg.g; }\n";
+    let source = "struct Cfg { en: bool, n: u8, g: f64 }\nmodule Top() { cfg: Cfg = Cfg { en: false, n: 1, g: 1.0 }; signal a: Electrical; }\nanalog for Top { v(a, gnd) +> 0.0; }\n";
     let cache = tempfile::tempdir().expect("a cache");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let with = |entry: &str, text: &str| {
