@@ -12,9 +12,9 @@ fn bump(x: u8) -> u8 { let y = x; y += 1; y }
 fn read_twice(x: u8) -> u8 { let a = x; let b = x; a + b }
 fn shifted_sum(n: u8) -> u8 { let total = 0u8; for i in 0..n { i += 10; total += i; } total }
 
-module Rows(in clk: Bit, out f: Bit<f64>, out g: Bit<u8>, out local_n: Bit<u8>, out in_arm: Bit<u8>, out in_if: Bit<u8>,
-            out loop_sum: Bit<u8>, out loop_again: Bit<u8>, out kept: Bit<u8>, out latest: Bit<u8>,
-            out caller: Bit<u8>, out callee: Bit<u8>, out twice: Bit<u8>, out copied: Bit<u8>) {}
+module Rows(in clk: Bit, out f: Bit<f64> = 0.0, out g: Bit<u8> = 0, out local_n: Bit<u8> = 0, out in_arm: Bit<u8> = 0, out in_if: Bit<u8> = 0,
+            out loop_sum: Bit<u8> = 0, out loop_again: Bit<u8> = 0, out kept: Bit<u8> = 0, out latest: Bit<u8> = 0,
+            out caller: Bit<u8> = 0, out callee: Bit<u8> = 0, out twice: Bit<u8> = 0, out copied: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         f <- real_ops(2.0);

@@ -109,6 +109,11 @@ fn embedded_std_has_no_diagnostics() {
     assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
 }
 
+/// Member slots of `std` that the POM leaves `Unresolved` because the receiver is a carrier whose value has the
+/// method (STD-06 AC 4: a known receiver with no linking rule stays `Unresolved`; the type checker finds the method
+/// of the carried value). Part VII writes `base.unwrap_or(start)` over a `Bit<Option<f64>>` (§22.2.9).
+const UNRESOLVED_METHODS_OF_A_CARRIED_VALUE: [&str; 2] = ["analog::idtmod: `base.unwrap_or(start)`", "analog::idtmod: `base.unwrap_or(start)`"];
+
 #[test]
 fn std_has_no_unresolved_member() {
     let design = embedded();
@@ -120,7 +125,13 @@ fn std_has_no_unresolved_member() {
             }
         }
     }
-    assert!(unresolved.is_empty(), "member slots left Unresolved in std: {unresolved:?}");
+    let mut allowed: Vec<String> = UNRESOLVED_METHODS_OF_A_CARRIED_VALUE.iter().map(|m| m.to_string()).collect();
+    allowed.sort();
+    let mut listed = unresolved.clone();
+    listed.sort();
+    let unexpected: Vec<&String> = unresolved.iter().filter(|u| !UNRESOLVED_METHODS_OF_A_CARRIED_VALUE.contains(&u.as_str())).collect();
+    assert!(unexpected.is_empty(), "member slots left Unresolved in std: {unexpected:?}");
+    assert_eq!(listed, allowed, "every allowed slot is still unresolved: drop the stale entry");
 }
 
 #[test]
@@ -177,17 +188,6 @@ fn bit_rise_resolves_into_std_values() {
     assert!(rise.krate().is_std());
     assert_eq!(rise.file().name(), "values.msl");
     assert!(rise.declared_in().and_then(|d| d.as_impl()).is_some(), "rise is a function of an `impl`");
-}
-
-#[test]
-fn known_resolves_into_std_values() {
-    let design = Design::builder().source("top.msl", "module M(in d: Bit<u8>) { let k = d.known(); }\n").build();
-    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let known = called_decl(&design, "d.known()");
-    assert_eq!(known.name(), Some("known"));
-    assert!(known.krate().is_std());
-    assert_eq!(known.file().name(), "values.msl");
-    assert_eq!(known.declared_in().and_then(|d| d.name()), Some("Known"));
 }
 
 /// The expressions of a declaration, with the design they belong to.
@@ -580,7 +580,7 @@ fn engine_table() -> BTreeSet<String> {
 
 /// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
 /// from the files and empties the list). `Logic` of `nets` is the earlier struct, replaced by `values::Logic`.
-const STD_BEHIND_THE_INDEX: [(&str, &str); 7] = [("values", "Known"), ("values", "merge"), ("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
+const STD_BEHIND_THE_INDEX: [(&str, &str); 5] = [("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
 
 /// Index items of §22 that `std` does not declare yet: the specification states the explicit model
 /// (explicit-unknowns, MD-78) before the files hold it. Each leaves with its task (T23 for `Driven`,

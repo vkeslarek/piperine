@@ -23,6 +23,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
 **Run ir**: `cargo test -p piperine-ir --test digital`
 **Run abi**: `cargo test -p piperine-abi --test layouts`
+**Run plan**: `cargo test -p piperine-plan --test digital_shape`
 **Run cache**: `cargo test -p piperine-transpile --test cache`
 **Run abicontract**: `cargo test -p piperine-abi --test contract`
 **Run relax**: `cargo test -p piperine-digital-solver --test relax`
@@ -34,6 +35,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run integrated**: `cargo test -p piperine --test integrated`
+**Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
 **Run ops**: `cargo test -p piperine-lang --test types_operators`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
 
@@ -575,9 +577,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] The `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names every moved anchor
-- [ ] Gate check passes: Build
+- [x] The `**Build**` line passes (zero warnings); `cargo test` at the root runs once at the end of B5 (user gate policy)
+- [x] The Handoff names every moved anchor
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -597,9 +599,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit.rs` exists with a `//!` header; `types_unknowns.rs` is gone; each replaced test is named in the commit body
-- [ ] `source_explicit::a_binary_carrier_is_read_as_its_value` passes (the target is created here with this one test)
-- [ ] Gate check passes: Full
+- [x] `types_explicit.rs` exists with a `//!` header; `types_unknowns.rs` is gone; each replaced test is named in the commit body
+- [x] `source_explicit::a_binary_carrier_is_read_as_its_value` passes (the target is created here with this one test)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -619,9 +621,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::the_types_that_have_a_default`, `deriving_default_over_a_number_is_e0187`, `no_primitive_numeric_type_has_a_default` pass
-- [ ] Every source in the tree that called a numeric `default()` is rewritten with a literal, listed in the commit body
-- [ ] Gate check passes: Quick
+- [x] `types_explicit::the_types_that_have_a_default`, `deriving_default_over_a_number_is_e0187`, `no_primitive_numeric_type_has_a_default` pass
+- [x] Every source in the tree that called a numeric `default()` is rewritten with a literal, listed in the commit body
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -632,7 +634,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T22: Elaborator: a carrier starts at its written value or its default
 
-**What**: `InitialValue`: every carrier pin gets init bytes, from `= value` or from `Default::default()` of its value type (`None`, the derived struct). An `Option<T>` param no instance binds is `None`. An array element never committed reads its initial value (sparse storage kept). The commit of the initial value at `(0, 0)` is a change, and the `PREVIOUS` part of a carrier is seeded with the same bytes, so `prev()` reads the initial value until a later change (D8). A carrier of a type without `Default` and no value still elaborates here, with zero bytes; T30 refuses it.
+**What**: `InitialValue`: every carrier pin gets init bytes, from `= value` or from `Default::default()` of its value type (`None`, the derived struct). An `Option<T>` param no instance binds is `None`. An array element never committed reads its initial value (sparse storage kept). The commit of the initial value at `(0, 0)` is a change, and the `PREVIOUS` part of a carrier is seeded with the same bytes, so `prev()` reads the initial value until a later change (D8). A carrier of a type without `Default` and no value still elaborates here, with zero bytes; T30 refuses it. A composite carrier (`Bit<Pair>`, `Bit<(u8, u8)>`, `Bit<[T; N]>`, `Bit<Option<T>>`) is committed its initial value the same way, so the run fault of `GAPS.md` L64 cannot arise on a plain read.
 **Where**: `crates/piperine-lang/src/elab/carriers.rs`
 **Depends on**: T21
 **Reuses**: `elab/consts.rs`; the `HAS_INIT` pins of `piperine-plan`
@@ -641,8 +643,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_explicit::a_written_initial_value_is_the_value_at_the_start`, `a_carrier_without_a_value_starts_at_its_default`, `an_element_never_committed_reads_its_initial_value`, `an_unbound_option_param_is_none`, `an_option_carrier_is_read_by_matching`, `the_first_commit_is_a_change`, `prev_is_the_initial_value_before_a_change` pass
-- [ ] Gate check passes: Full
+- [x] `source_explicit::a_written_initial_value_is_the_value_at_the_start`, `a_carrier_without_a_value_starts_at_its_default`, `an_element_never_committed_reads_its_initial_value`, `an_option_carrier_is_read_by_matching`, `the_first_commit_is_a_change`, `prev_is_the_initial_value_before_a_change` pass
+- [ ] Deferred to `params-and-io` B5-B6 (GAPS L28; its T31 and check C11 hold the same behavior): C20, `an_unbound_option_param_is_none`; until a param of type `Option` elaborates, `an_unbound_option_param_waits_for_params_and_io` is its interim proof (finding 19)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -662,9 +665,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_explicit::a_change_is_a_different_value`, `an_edge_is_a_transition`, `a_carrier_that_starts_high_has_not_risen` pass
-- [ ] `std_excerpts::every_fence_is_an_excerpt_of_std` and `std_library` pass
-- [ ] Gate check passes: Full
+- [x] `source_explicit::a_change_is_a_different_value`, `an_edge_is_a_transition`, `a_carrier_that_starts_high_has_not_risen` pass
+- [x] `std_excerpts::every_fence_is_an_excerpt_of_std` and `std_library` pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -684,9 +687,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] Every buck target of `piperine-parity` and `cargo test -p piperine-cli --test buck` pass with no expected value edited
-- [ ] The only asserts rewritten are on a known byte, listed in the commit body
-- [ ] Gate check passes: Full, with the buck
+- [x] Every buck target of `piperine-parity` and `cargo test -p piperine-cli --test buck` pass with no expected value edited
+- [x] The only asserts rewritten are on a known byte, listed in the commit body
+- [x] Gate check passes: Full, with the buck
 
 **Tests**: integration
 **Gate**: full
@@ -706,9 +709,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cargo test -p piperine --test integrated` and `cargo test -p piperine-cli --test integrated` pass with no expected value edited
-- [ ] `git diff --stat tests/e2e/twins` is empty
-- [ ] Gate check passes: Full
+- [x] `cargo test -p piperine --test integrated` and `cargo test -p piperine-cli --test integrated` pass with no expected value edited
+- [x] `git diff --stat tests/e2e/twins` is empty
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -728,9 +731,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] Every `source_*` target of `piperine-parity` and `cargo test -p piperine-lang` pass
-- [ ] No expected value of a source test is edited; a test whose meaning was an unknown is listed on the Handoff for T27
-- [ ] Gate check passes: Full
+- [x] Every `source_*` target of `piperine-parity` and `cargo test -p piperine-lang` pass
+- [x] No expected value of a source test is edited; a test whose meaning was an unknown is listed on the Handoff for T27
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -750,9 +753,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `suite_hygiene::no_source_uses_a_removed_unknown_form` and `every_unknown_test_has_a_successor` pass
-- [ ] `source_unknowns.rs` and `tests/unknowns/` are gone; the commit body lists every old and new name
-- [ ] Gate check passes: Batch
+- [x] `suite_hygiene::no_source_uses_a_removed_unknown_form` and `every_unknown_test_has_a_successor` pass
+- [x] `source_unknowns.rs` and `tests/unknowns/` are gone; the commit body lists every old and new name
+- [x] Gate check passes: Batch
 
 **Tests**: integration
 **Gate**: full
@@ -772,9 +775,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::unknown_is_a_name_that_does_not_resolve` passes
-- [ ] `msl_lexer`, `msl_parser`, `msl_errors`, `msl_print`, `pom_resolve` pass with their `Unknown` cases replaced
-- [ ] Gate check passes: Quick
+- [x] `types_explicit::unknown_is_a_name_that_does_not_resolve` passes
+- [x] `msl_lexer`, `msl_parser`, `msl_errors`, `msl_print`, `pom_resolve` pass with their `Unknown` cases replaced
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -785,7 +788,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T29: Checker: the flag methods are gone
 
-**What**: Delete `level`, `known`, `known_or`, `is_known`, `high` and `merge` from `types/intrinsic.rs` and `elab/intrinsics.rs`; a call is `E0161` naming the method and the type, with the help. `logic` and `matches_bits` are refused by name with `P0001` (`GAPS.md` L58) until T45. The `level` statement of `docs/pom/mapping.md` and its `pom_docs::DocAheadOfTheCode::WAITING` entry leave with it.
+**What**: Delete `level`, `known`, `known_or`, `is_known`, `high` and `merge` from `types/intrinsic.rs` and `elab/intrinsics.rs`; a call is `E0161` naming the method and the type, with the help. `logic` and `matches_bits` are refused by name with `P0001` (`GAPS.md` L58) until T45. The flag reads of a composite carrier and of an `Option` (`composite-values` T57, `Typing::read_of` in `piperine-ir/src/typing.rs`, `lower_flag_receiver` in `elab/known.rs`, `GAPS.md` L65) leave with the methods. The `level` statement of `docs/pom/mapping.md` and its `pom_docs::DocAheadOfTheCode::WAITING` entry leave with it.
 **Where**: `crates/piperine-lang/src/types/intrinsic.rs`
 **Depends on**: T28
 **Reuses**: `RemovedName`
@@ -794,9 +797,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::the_flag_methods_do_not_resolve` passes
-- [ ] `cargo test -p piperine-lang` passes
-- [ ] Gate check passes: Full
+- [x] `types_explicit::the_flag_methods_do_not_resolve` passes
+- [x] `cargo test -p piperine-lang` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -816,11 +819,11 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::a_missing_initial_value_is_e0187_naming_the_carrier` and `an_undriven_carrier_without_default_is_e0187` pass
-- [ ] `types_explicit::a_definition_or_a_child_out_port_specifies_the_value` passes: no `E0187` for a carrier an undelayed definition drives or a child's `out` port holds, `E0187` for a delayed definition without an initial value (C92)
-- [ ] `book_inventory::the_book_uses_no_removed_name` passes with no exempt block (C79)
-- [ ] The tree builds: T23 to T27 left no such carrier
-- [ ] Gate check passes: Full
+- [x] `types_explicit::a_missing_initial_value_is_e0187_naming_the_carrier` and `an_undriven_carrier_without_default_is_e0187` pass
+- [x] `types_explicit::a_definition_or_a_child_out_port_specifies_the_value` passes: no `E0187` for a carrier an undelayed definition drives or a child's `out` port holds, `E0187` for a delayed definition without an initial value (C92)
+- [x] `book_inventory::the_book_uses_no_removed_name` passes with no exempt block (C79)
+- [x] The tree builds: T23 to T27 left no such carrier
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -840,9 +843,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_explicit::control_on_a_carrier_runs_one_path`, `settle_runs_as_before`, `an_event_read_is_a_bool`, `a_false_guard_runs_nothing` pass
-- [ ] `suite_hygiene::retired_unknown_codes_are_raised_nowhere` passes
-- [ ] Gate check passes: Full
+- [x] `source_explicit::control_on_a_carrier_runs_one_path`, `settle_runs_as_before`, `an_event_read_is_a_bool`, `a_false_guard_runs_nothing` pass
+- [x] `suite_hygiene::retired_unknown_codes_are_raised_nowhere` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -862,9 +865,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-ir` passes; `digital::no_value_type_is_flagged` passes
-- [ ] The golden diff is reviewed line by line and described in the commit body
-- [ ] Gate check passes: Full
+- [x] `cargo test -p piperine-ir` passes; `digital::no_value_type_is_flagged` passes
+- [x] The golden diff is reviewed line by line and described in the commit body
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -875,7 +878,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T33: Generated code: no flag and no merge
 
-**What**: Delete `rt/flag.rs` and the merge of `rt/control.rs`; remove the flagged paths of `print/value.rs`, `shape.rs`, `cross.rs`, `digital.rs`, `reaction.rs`, `analog.rs`, `site.rs`, `contribution.rs` and of `rt/real.rs`. `analog_merge.rs` and the merge tests of `reaction.rs` and `amended.rs` are replaced by one-path tests. Regenerate the transpile goldens once: the only diff allowed is the removal of flag and merge code.
+**What**: Delete `rt/flag.rs` (with `Flagged::recast` and `known_or_refuse`, and its test `a_tag_naming_no_variant_reads_unknown`: a payload enum cast is plain) and the merge of `rt/control.rs`; the composite read prints the value, never `.known_or(Default::default())` and never `Flagged::<T>::decode(..).known_or_refuse(..)` (`print/value.rs`, `print/digital.rs`, `print/analog.rs`); remove the flagged paths of `print/value.rs`, `shape.rs`, `cross.rs`, `digital.rs`, `reaction.rs`, `analog.rs`, `site.rs`, `contribution.rs` and of `rt/real.rs`. `analog_merge.rs` and the merge tests of `reaction.rs` and `amended.rs` are replaced by one-path tests. Regenerate the transpile goldens once: the only diff allowed is the removal of flag and merge code.
 **Where**: `crates/piperine-transpile/src/rt/flag.rs`
 **Depends on**: T32
 **Reuses**: `crates/piperine-transpile/tests/golden.rs`
@@ -884,9 +887,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-transpile` passes
-- [ ] The golden diff is described in the commit body; every buck target passes
-- [ ] Gate check passes: Batch, with the buck (the generated code moved)
+- [x] `cargo test -p piperine-transpile` passes
+- [x] The golden diff is described in the commit body; every buck target passes
+- [x] Gate check passes: Batch, with the buck (the generated code moved)
 
 **Tests**: integration
 **Gate**: full
@@ -906,10 +909,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `records::a_record_holds_its_declared_fields_only`, `a_require_is_a_pass_or_a_fail`, `a_fatal_record_ends_the_run` pass
-- [ ] `types_explicit::maybe_is_an_ordinary_field_name` passes
-- [ ] Record goldens lose the `maybe` column and nothing else
-- [ ] Gate check passes: Full
+- [x] `records::a_record_holds_its_declared_fields_only`, `a_require_is_a_pass_or_a_fail`, `a_fatal_record_ends_the_run` pass
+- [x] `types_explicit::maybe_is_an_ordinary_field_name` passes
+- [x] Record goldens lose the `maybe` column and nothing else
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -929,9 +932,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `contract::the_host_has_one_commit` passes
-- [ ] `cargo test -p piperine-abi -p piperine-digital-solver` passes with the `MERGE` tests of `queue.rs` and `instant.rs` replaced by plain-commit tests
-- [ ] Gate check passes: Full
+- [x] `contract::the_host_has_one_commit` passes
+- [x] `cargo test -p piperine-abi -p piperine-digital-solver` passes with the `MERGE` tests of `queue.rs` and `instant.rs` replaced by plain-commit tests
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -942,7 +945,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T36: ABI: layouts hold the value only, still major 1
 
-**What**: `Field` becomes `{ name, leaf, offset, count }`; `HAS_KNOWN` and `known_of` go; `BIT`, `BYTE` and `F64` are the shipped layouts and `REAL` is deleted; `MAJOR` stays 1 and the symbol `piperine_abi_1`, `MINOR` becomes 0; `validate.rs` and `verify.rs` follow. `piperine-plan` lays every carrier as its value leaf and `Option<T>` as presence then payload; the printer's shapes, `piperine-solver/src/core/bind.rs` and every hand-written test device follow. The cache key of `piperine-transpile/src/cache.rs` holds a hash of the contract's source, so an entry built against the earlier contract is rebuilt. This is the one task whose change spans crates: no layer above produces a flag any more, so it is one byte dropped per leaf.
+**What**: `Field` becomes `{ name, leaf, offset, count }`; `HAS_KNOWN` and `known_of` go; `BIT`, `BYTE` and `F64` are the shipped layouts and `REAL` is deleted; `MAJOR` stays 1 and the symbol `piperine_abi_1`, `MINOR` becomes 0; `validate.rs` and `verify.rs` follow. `piperine-plan` lays every carrier as its value leaf and `Option<T>` as presence then payload; `CompositeLayout` (`piperine-plan/src/composite.rs`) drops its one trailing known byte: a composite pin is the parts' value bytes packed, alignment 1, size = width, and every field of it keeps its own offset (`composite-values` T56 laid it as width + 1); the composite `Params` bytes (`ParamValue::Bytes` of a composite param) follow; the printer's shapes, `piperine-solver/src/core/bind.rs` and every hand-written test device follow. The cache key of `piperine-transpile/src/cache.rs` holds a hash of the contract's source, so an entry built against the earlier contract is rebuilt. This is the one task whose change spans crates: no layer above produces a flag any more, so it is one byte dropped per leaf.
 **Where**: `crates/piperine-abi/src/layout.rs`
 **Depends on**: T35
 **Reuses**: abi.md as T10 wrote it; `piperine-transpile/src/abi_source.rs`
@@ -951,10 +954,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `layouts::the_shipped_layouts_hold_the_value_only` and `an_option_pin_is_presence_then_payload` pass
-- [ ] `cache::an_entry_of_the_earlier_contract_is_rebuilt` passes
-- [ ] The `**Build**` line passes; every buck target passes with its known-byte asserts rewritten to the value
-- [ ] Gate check passes: Full, with the buck
+- [x] `layouts::the_shipped_layouts_hold_the_value_only` and `an_option_pin_is_presence_then_payload` pass
+- [x] `cache::an_entry_of_the_earlier_contract_is_rebuilt` passes
+- [x] The `**Build**` line passes; every buck target passes with its known-byte asserts rewritten to the value
+- [x] Gate check passes: Full, with the buck
 
 **Tests**: integration
 **Gate**: full
@@ -974,10 +977,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `relax::a_drive_pin_ends_with_a_plain_driving_byte` passes
-- [ ] The `relax.rs` tests of zeroing are replaced by the `E0511` test, both names in the commit body
-- [ ] `cargo test -p piperine-digital-solver -p piperine-solver` passes
-- [ ] Gate check passes: Full
+- [x] `relax::a_drive_pin_ends_with_a_plain_driving_byte` passes
+- [x] The `relax.rs` tests of zeroing are replaced by the `E0511` test, both names in the commit body
+- [x] `cargo test -p piperine-digital-solver -p piperine-solver` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -988,7 +991,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T38: Host: a cell is a value
 
-**What**: `piperine-api/src/{table,probe,plot,request,backend}.rs`: no unknown cell; `None` is a cell of its own. A top-level `in` port with no initial value, no `Default` and no host value when an analysis starts refuses the analysis with `E0187` naming the port.
+**What**: `piperine-api/src/{table,probe,plot,request,backend}.rs`: no unknown cell, and `CellShape::decode` (`piperine-api/src/composite.rs`) reads the composite pin without its known byte; `None` is a cell of its own. A top-level `in` port with no initial value, no `Default` and no host value when an analysis starts refuses the analysis with `E0187` naming the port.
 **Where**: `crates/piperine-api/src/table.rs`
 **Depends on**: T37
 **Reuses**: `crates/piperine-api/tests/session.rs`, `probes.rs`
@@ -997,9 +1000,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `session::an_undriven_top_port_without_default_refuses_the_analysis` passes
-- [ ] `cargo test -p piperine-api` passes with the unknown-cell tests replaced
-- [ ] Gate check passes: Full
+- [x] `session::an_undriven_top_port_without_default_refuses_the_analysis` passes
+- [x] `cargo test -p piperine-api` passes with the unknown-cell tests replaced
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1019,9 +1022,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `run::an_option_cell_prints_none_or_the_value` passes
-- [ ] `cargo test -p piperine-cli` passes
-- [ ] Gate check passes: Full
+- [x] `run::an_option_cell_prints_none_or_the_value` passes
+- [x] `cargo test -p piperine-cli` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1032,7 +1035,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T40: Phase A closure
 
-**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L59 keeps its non-literal `map`/`and_then`/`then` closure and non-literal `expect` message clauses (the code still refuses them with `P0001`), its unknown clause is gone; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits; the two E0150 output blocks welcome#19 and the buck's were refilled in T30); the E0187 and Default rows values~23c03fc8, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30) and values~37a548f2 (T38: the analysis refuses an undriven top `in` port without a `Default`); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
+**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L64 (a plain read of an unknown composite carrier is a run fault) and L65 (a flag read on an `Option`) removed, both owned by this phase (`composite-values` verifier: T22 starts every carrier at a value, T29 deletes the flag reads); L59 keeps its non-literal `map`/`and_then`/`then` closure and non-literal `expect` message clauses (the code still refuses them with `P0001`), its unknown clause is gone; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits; the two E0150 output blocks welcome#19 and the buck's were refilled in T30); the E0187 and Default rows values~23c03fc8, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30) and values~37a548f2 (T38: the analysis refuses an undriven top `in` port without a `Default`); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
 **Where**: `GAPS.md`
 **Depends on**: T39
 **Reuses**: `value-semantics` T15
@@ -1041,10 +1044,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `docs.rs::gaps_closes_s6_and_tracks_the_flag` passes
-- [ ] `twins::every_twin_matches_its_golden` and both integrated suites pass
-- [ ] `grep -rE 'Flagged|HAS_KNOWN|commit_with|MAYBE' crates/*/src` finds nothing
-- [ ] Gate check passes: Batch
+- [x] `docs.rs::gaps_closes_s6_and_tracks_the_flag` passes
+- [x] `twins::every_twin_matches_its_golden` and both integrated suites pass
+- [x] `grep -rE 'Flagged|HAS_KNOWN|commit_with|MAYBE' crates/*/src` finds nothing
+- [x] Gate check passes: Batch
 
 **Tests**: integration
 **Gate**: full
@@ -1154,7 +1157,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **Done when**:
 
 - [ ] `source_logic::logic_reads_a_four_state_pattern` passes
-- [ ] `GAPS.md` L58 loses `logic` and `matches_bits`
+- [ ] `GAPS.md` L68 (`Logic<N>`, `logic`, `matches_bits`) is closed
 - [ ] Gate check passes: Full
 
 **Tests**: integration
@@ -1209,7 +1212,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T48: Phase B closure
 
-**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, and the E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d (a `Logic` where an `f64` or a `bool` is required); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `resolved-nets` has flipped it (it needs the array of `composite-values` and `Sda`'s `Resolve<Driven>`); T48 re-pins the row. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
+**What**: Remove the checker's own `cast` and `same` (`Intrinsic::{Same, Cast}` in `types/intrinsic.rs`, `elab/intrinsics.rs`, `lower_cast`) and compile them from `std/values.msl` now that `generics` A is on `main`, a differential test running the stdlib source against the lowering first; the `cast` to a tuple or an array holding an enum then runs. `GAPS.md`: L58's `cast` and `same` entries and L68 (`Logic`, `logic`, `matches_bits`); counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, (the three E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d already hold on `main`: `Logic` is a struct type since `composite-values` CV-09, so a `Logic` where an `f64` or a `bool` is required is `E0180` today and no row of T48 flips them); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `resolved-nets` has flipped it (it needs the array of `composite-values` and `Sda`'s `Resolve<Driven>`); T48 re-pins the row. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
 **Where**: `GAPS.md`
 **Depends on**: T47
 **Reuses**: T40
@@ -1218,6 +1221,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
+- [ ] `cast` and `same` compile from `std/values.msl`; `Intrinsic::Cast` and `Intrinsic::Same` are gone from the tree
 - [ ] All `book_*` targets pass
 - [ ] `twins::every_twin_matches_its_golden` and both integrated suites pass
 - [ ] Gate check passes: Batch
@@ -1234,13 +1238,13 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 One check per acceptance criterion. `(task)` is the task that makes the check pass. A check of phase B is red until B8; a check of phase A until its batch.
 
 **C1** - A plain read of a `Bit<u8>`, a struct and an array carrier yields the value in a reaction, a function and `analog` (EU-01, AC 1; T20)
-Proof: run src | test a_binary_carrier_is_read_as_its_value ... ok
+Proof: run src | test a_binary_carrier_of_any_shape_is_read_as_its_value_everywhere ... ok
 
 **C2** - An `if`, a `match`, a guard and `&&` on a carrier's value run one path (EU-01, AC 2; T31)
 Proof: run src | test control_on_a_carrier_runs_one_path ... ok
 
 **C3** - The IR builds no flagged value type and the generated reaction holds no merge (EU-01, AC 3; T32)
-Proof: run ir | test no_value_type_is_flagged ... ok
+Proof: run src | test the_buck_elaborated_from_source_holds_no_flag_and_no_merge ... ok
 
 **C4** - `Unknown` is `E0161` with a help naming an initial value, `Option<T>` and `Logic` (EU-02, AC 1; T28)
 Proof: run types | test unknown_is_a_name_that_does_not_resolve ... ok
@@ -1249,7 +1253,7 @@ Proof: run types | test unknown_is_a_name_that_does_not_resolve ... ok
 Proof: run types | test the_flag_methods_do_not_resolve ... ok
 
 **C6** - An `emit!` with a field named `maybe` elaborates and the record holds it (EU-02, AC 3; T34)
-Proof: run types | test maybe_is_an_ordinary_field_name ... ok
+Proof: run src | test maybe_is_an_ordinary_field_of_a_record ... ok
 
 **C7** - No source raises `E0150`, `E0151`, `E0906` or `E0908` (EU-02, AC 4; T31)
 Proof: run hygiene | test retired_unknown_codes_are_raised_nowhere ... ok
@@ -1269,10 +1273,10 @@ Proof: run src | test a_written_initial_value_is_the_value_at_the_start ... ok
 **C12** - A carrier of `Bit<Option<u8>>` with no initial value starts at `None` (EU-04, AC 2; T22)
 Proof: run src | test a_carrier_without_a_value_starts_at_its_default ... ok
 
-**C13** - An element of `[Bit<Option<u8>>; 1 << 20]` never committed reads as its initial value, with storage for the written elements only (EU-04, AC 3; T22)
+**C13** - An element of `[Bit<Option<u8>>; 1 << 20]` never committed reads as its initial value, with storage for the written elements only (EU-04, AC 3; T22; DEFERRED, owner `composite-values` (GAPS L24, arrays of carriers): the criterion needs an array of carriers, which is refused; the test of a composite `Bit<[u8; 4]>` is the interim proof and asserts no storage)
 Proof: run src | test an_element_never_committed_reads_its_initial_value ... ok
 
-**C14** - `signal en: Bit;`, an `out` port and a drive with no value on a type without `Default` are `E0187` naming the carrier and `Default` (EU-04, AC 4; T30)
+**C14** - `signal en: Bit;` and an `out` port with no value on a type without `Default` are `E0187` naming the carrier and `Default` (EU-04, AC 4; T30; the drive half of the criterion, a drive of a resolved carrier, is owed by `resolved-nets` under GAPS L21: no resolved nature runs yet, so none can be tested here)
 Proof: run types | test a_missing_initial_value_is_e0187_naming_the_carrier ... ok
 
 **C15** - A one-driver carrier with no drive and no `Default` is `E0187` (EU-04, AC 5; T30)
@@ -1290,8 +1294,8 @@ Proof: run types | test deriving_default_over_a_number_is_e0187 ... ok
 **C19** - `u8::default()`, `bool::default()`, `f64::default()` and `str::default()` are `E0187` (EU-05, AC 3; T21)
 Proof: run types | test no_primitive_numeric_type_has_a_default ... ok
 
-**C20** - An `Option<T>` param no instance binds is `None` (EU-06, AC 1; T22)
-Proof: run src | test an_unbound_option_param_is_none ... ok
+**C20** - An `Option<T>` param no instance binds is `None` (EU-06, AC 1; T22; DEFERRED, owner `params-and-io` B5-B6, GAPS L28: the criterion's own test `an_unbound_option_param_is_none` is written there, not ticked here; until then the refusal is the interim proof)
+Proof: run src | test an_unbound_option_param_waits_for_params_and_io ... ok
 
 **C21** - A `Bit<Option<u8>>` carrier is read with `match`, `if let` and `unwrap_or` (EU-06, AC 2; T22)
 Proof: run src | test an_option_carrier_is_read_by_matching ... ok
@@ -1371,7 +1375,7 @@ Proof: run spectext | test resolve_receives_plain_values_for_every_count ... ok
 **C46** - §5.2.12 says a drive with no initial value starts at its type's default or is `E0187`, and that a resolved carrier needs none (EU-11, AC 6; T3)
 Proof: run spectext | test a_drive_without_a_value_starts_at_its_default ... ok
 
-**C47** - §8.2.3 says a relaxing drive starts each pass absent, and that absence is not a value (EU-11, AC 7; T4)
+**C47** - §8.2.3 says a relaxing drive starts each relaxation absent (the passes of one relaxation build on the previous pass), and that absence is not a value (EU-11, AC 7; T4)
 Proof: run spectext | test a_relaxing_drive_starts_absent ... ok
 
 **C48** - §8.2.3 step 4 and its error row say a loop that still moves is `E0511` naming its drives (EU-11, AC 8; T4)
@@ -1435,7 +1439,7 @@ Proof: run abi | test the_shipped_layouts_hold_the_value_only ... ok
 Proof: run abicontract | test the_host_has_one_commit ... ok
 
 **C68** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)
-Proof: run abi | test an_option_pin_is_presence_then_payload ... ok
+Proof: run plan | test an_option_carrier_pin_is_presence_then_payload ... ok
 
 **C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 8 (EU-16, AC 5; T47)
 Proof: run abi | test a_logic_pin_is_two_planes ... ok
@@ -1495,16 +1499,17 @@ Proof: run hygiene | test no_source_uses_a_removed_unknown_form ... ok
 Proof: run hygiene | test every_unknown_test_has_a_successor ... ok
 
 **C88** - `std` builds with no diagnostic and every Part VII fence is consecutive lines of its file (EU-20, AC 3; T23)
-Proof: run excerpts | test every_fence_is_an_excerpt_of_std ... ok
+Proof: run excerpts | test every_part_vii_fence_is_in_its_file ... ok
 
 **C89** - The 7 twins print the bytes they printed before (EU-21, AC 1; T40)
-Proof: run twins | test every_twin_matches_its_golden ... ok
+Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
 **C90** - Every buck target passes with its waveform asserts unchanged (EU-21, AC 2; T24)
-Proof: run buckcli | test the_buck_runs_from_the_cli ... ok
+Proof: run buckcli | test piperine_test_passes_on_the_buck ... ok
 
 **C91** - Both integrated suites pass (EU-21, AC 3; T40)
-Proof: run integrated | test the_integrated_suite_passes ... ok
+Proof: run integrated | test the_runs_execute_at_once_in_their_own_build_directories ... ok
+Proof: run cliintegrated | test piperine_test_passes_pi_loop_and_threshold ... ok
 
 **C92** - A carrier driven by an undelayed definition, or by a child's `out` port that gives the initial value, is not `E0187`; one driven only by a delayed definition is (EU-04, AC 7; T30)
 Proof: run types | test a_definition_or_a_child_out_port_specifies_the_value ... ok
@@ -1533,6 +1538,31 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Rows other features must flip (ROADMAP.md, "Every Book listing runs before item 13"; each names its owner in GAPS.md section 11):** `resolved-nets` B3 and later (T27 to T32) flips digital#16, digital#17, digital#18, digital#19, digital#20, natures#3 with its sentences natures~e99c1920 and natures~91c3bffe, core-std#6 and natures#2 (gap L21: `Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`; natures#2's `Sda` is the chapter's `impl Resolve<Driven>` nature, and its `[Bit; 8]`, `Option` and `Logic` lines need composite-values and explicit-unknowns phases A and B first, which only re-pin the row). `composite-values` re-pins natures#2, it does not flip it. When a row flips its test fails with "now runs": make the row `run`, delete its section 11 line.
 
 **Spec ahead of the code, registered (stale entries fail loud):** `AHEAD_OF_STD`/`BEHIND_SPEC` in `std_excerpts.rs`; `INDEX_AHEAD_OF_STD`, `INDEX_MEMBERS_AHEAD_OF_STD`, `STD_BEHIND_THE_INDEX` in `std_library.rs` (T23, T44); `STD_BEHIND_THE_BOOK` and `BLOCKS_AHEAD_OF_STD` in `book.rs` (T23; resolved-nets); `SPEC_TRAITS_AHEAD_OF_THE_TABLE` (`From`) in `pom_resolve.rs` (T42); `RETIRED_AHEAD_OF_THE_PARSER` gains `E0908` (T28); `docs/pom/mapping.md` lists 62 constructs while the POM still maps `resolve`, `Unknown`, `level` (T28, T29).
+
+**T19 (B4, 2026-11-22): rebase and re-read at `origin/main` `20c285b8`.** Nothing was unmerged (`git log origin/main..HEAD` empty), so the branch was set with `git checkout -B feature/explicit-unknowns origin/main`; no conflict to resolve in `content.html`, `inventory.tsv`, `GAPS.md` or `spec_text.rs`. What `composite-values` (merged, MD-79) changed for this phase, and where each lands: (1) `GAPS.md` L64 (a plain read of a composite carrier holding no value yet fails the run) and L65 (a flag read on an `Option`) are owned by this phase: T22 removes the case (every carrier starts at a value), T29 deletes the flag reads, and **T40 removes both rows**. (2) The three E0180 rows (values~13ffaea6, analog~39ba351d, mixed~39ba351d) already hold on `main` (`Logic` is a struct type since CV-09): **removed from T48's flip list**. (3) The composite pin layout is packed, alignment 1, plus ONE trailing known byte per composite (`CompositeLayout`, `piperine-plan/src/composite.rs`): T36 removes that byte. (4) Every place that reaches the hidden flag of a composite, and its owner: `CompositeLayout` and the composite `Params` bytes (T36), `CellShape::decode` in `piperine-api/src/composite.rs` (T38), `Typing::read_of` in `piperine-ir/src/typing.rs` (T32), `lower_flag_receiver` in `elab/known.rs` (T29 for the methods, deleted with the file in T31), the printer's `.known_or(Default::default())` for a composite read and `Flagged::<T>::decode(..).known_or_refuse(..)` in `print/{value,digital,analog}.rs` (T33), `Flagged::recast` and `known_or_refuse` in `rt/flag.rs` (T33, the file goes). (5) `composite-values` T52 was NOT amended in place: `Default` for `bool` and the numbers still holds on `main`; T21 changes the table. (6) Anchors that moved: none of design.md's "What exists" paths; `Defaults` lives with the derive table in `types/derives.rs` (`composite-values` T44), not `types/compound.rs`; the E0150 rule is in `types/result.rs` (`analog_reads`), not `types/analog.rs`, and the elaborator's twin is `known_in_analog` in `elab/known.rs`; `elab/carriers.rs` has `Frame` at line 48. (7) The two doc fixes the orchestrator made on `main` without a review are right: `docs/pom/mapping.md` says "The 62 constructs" and Appendix B.1.2 holds exactly 62 numbered rows; the `pom_docs.rs` WAITING entry for the `resolution.md` E0261 row ("a discrete nature without `resolve`", line 338) names a statement that is on the page and a `Resolve { meta, expr }` form that is in `pom/decl.rs`, so the entry is live and owned by `resolved-nets` T16.
+
+**Delivered (batches B4 and B5, T19 to T27, 2026-11-22).** Settled defaults a later task starts from:
+
+- **Reads in `analog` (T20).** The checker has no flag-total rule; the elaborator lowers a carrier read or `prev()` in an analog scope as `known_or(zero)` of its type (`Elaboration::analog_value`, `elab/known.rs`) while the flag is carried, and a flag read keeps the raw carrier (`lower_flag_receiver`). `E0150` stays only for a `const` holding `Unknown` (T28). The IR rule `analog_reads` of `piperine-ir/src/check.rs` still holds (T32 removes it with the flag). Book rows welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 flipped to run (T20's CLI listings welcome#19 and the buck's were refilled in the T22 commit).
+- **`Default` (T21).** `bool`, integers, floats and `str` have none; E0187 names the field and type (derive) or the type (`T::default()`); `str::default()` was silently untyped and is now E0187. The `generics` row of `code_owners.tsv` for E0187 was dropped (a source raises it now).
+- **Initial values (T22).** `default_initial_value`/`default_constant` in `elab/carriers.rs`: `Option` is `None`, tuples, arrays and structs deriving `Default` hold their parts; a type without `Default` keeps zero bytes until T30. A hoisted module's `in` port is driven by its caller and gets none. An `in` port may carry `= value` (types/module.rs; was P0001; T24). `Option<T>` params are still P0001 (L28, `params-and-io`): `an_unbound_option_param_is_none` cannot run, `an_unbound_option_param_waits_for_params_and_io` asserts today's refusal. Arrays of carriers are L24: the "never committed element" test reads a composite `Bit<[u8; 4]>`.
+- **D8/D9 in the engine.** `Store::expect_initial` (piperine-digital-solver): the next write to a net is its initial value, a change whatever the bytes, `PREVIOUS` the same bytes. Set in `Digital::start_at` for every net `start` queues an init for and for every undelayed-definition net with no initial value (T25). `rise()`/`fall()` keep their elaborator forms (`rise_guard`, `fall_guard`: flag-based) while the std text is D9; they agree on known values. Models that moved: two (the two `Script`s of the parity buck fixtures, whose `on clk.fall()` relied on the (0, 0) fall: `|| init()`); one golden line (`source_natures`: `before` 255 to 0). Not many: no stop.
+- **std (T23).** `Known`, `merge` and `high` STAY in std until T29; the library nets, `Bidir`, `TribufDelayed` and the old `Logic` stay (flag-free bodies) until `resolved-nets` and T44 because `Driven`, `Logic<N>` and `Resolve` cannot compile yet: `AHEAD_OF_STD` has 13 entries, `BEHIND_SPEC` 22, `INDEX_AHEAD_OF_STD` 3. The task text asked for `Driven`, `strongest` and the generic net modules in `nets.msl`: not buildable now. Part VII 22.4.1's D2A fence is the formatter's form. `std_has_no_unresolved_member` allows `base.unwrap_or(start)`.
+- **Buck (T24).** The hand fixtures `crates/piperine-ir/tests/golden/buck/**` are untouched; `elab_buck.rs`'s listed differences grew (plain reads, `dithered_width~11`). `fixtures/elab/buck.txt` moved 57 lines (plain reads, `flagged<..>` locals, `init 0.0` on `transition`'s carriers).
+- **Tests pending a task:** `PENDING` in `suite_hygiene::RemovedUnknownForms` (std/values.msl T29; aggregates/carriers.msl and normal.msl T31: a plain carrier read inside a struct, a variant or a tuple-returning call is refused while the flag is carried); `SUCCESSORS` marks the `level`/`merge`/`same`/`cast`/`logic`/`matches_bits` tests Some("T45"/"T46"). `pom_reflect::nature_impls_lists_its_impl_blocks` expects two `impl Bit` until T29 removes `high`. T36 must keep a zero initial value a change (the store marker already does).
+- **Generated code and IR without a flag (T32, T33, B6).** `ValueType::Flagged` and `Expr::{Unknown, KnownOr, IsKnown, High, Merge, Level}` are gone from the IR; `rt/flag.rs` is deleted and what it held that is no flag stays as `rt/pin.rs` (`Carried`, `LevelWords`, `Field`, `Tag`: the pin codec, with `from_pin`, `pin` and `write_pin`, which still set the known byte to 1 until T36). `rt/commits.rs` is `Commits::{commit, record, arm, finish, flow, flush}` and nothing else (no `Due`, no join, no `controlled`, no `maybe`); `rt/control.rs` keeps `Panic`, `Trips`, `Depth`, `Index::{of, at}`. `same` and `cast` print as `to_levels` compared and `from_levels` moved (a tag naming no variant decodes as the enum's `Default`, a payload enum cast is plain); a `cast` result no longer carries `tags` in its print. `Source::Resolution` and `Pins.resolution` are removed from `piperine-plan` (and the interpreter's arm). A record's `maybe` field is still in the layout (T34) and the generated code writes it false. The array-length check of the type checker raised the retired `E0151`: it is `E0188` now (the code the spec gives an array length that is no const), `suite_hygiene::retired_unknown_codes_are_raised_nowhere` guards it. The hand fixtures of the buck (`crates/piperine-ir/tests/support/digital.rs`) follow the migrated source: `&&`/`||` of the dpwm and the pid windup are `And`/`Or`, `rev3~1` and `dithered_width~01` are gone, `elab_buck.rs` lists only the rise guard, the pid fold, the GateDriver initial values and the A2D/Never additions; `buck::golden` no longer strips a flag. `crates/piperine-transpile/tests/analog_merge.rs` became `analog_if.rs` (one path). Tests that pinned a flag are listed in the commit body.
+- **B6 batch gate, 2026-11-22 (T32 and T33 committed; first run red, closed below: the gate is GREEN, B7 starts from `origin` of this branch).** Closed after the first run, one commit per group: the Book (`test(book)`: welcome#21 and pom#2 give their out port a first value, inline models read directly, E0187 rows become `holds`, core-std~6e04c51d `unraised` under T45), the T45 successor row for `the_library_items_that_took_borrows_give_the_same_results`, `fix(api)` (a leaf of a variant the value does not hold has no cell yet: `CellShape::can_hold_leaf`), and the cli run/docs targets (GAPS section 10 lists E0702). Final run `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: every target ok. The list that was red at the first run: Green: the `**Build**` line (zero warnings), `piperine --test integrated`, `piperine-cli --test integrated`, `piperine-cli --test twins` and `piperine-parity --test twins` (ngspice present, no SKIP line), `piperine-cli --test buck` (8 tests), every `buck_*` target of `piperine-parity`, `piperine-ir`, `-transpile`, `-plan`, `-interp`, `-lang` (except `piperine-lang-server`, which does not build on `main` either: it names `piperine_lang::ast` and friends). Fixed after the gate, one commit per group: the transpiler texts of an emit value, a commit value and a last assignment (`cbfa7d44`), the parity models and helpers (`ae92deca`, `7c51857f`: every `out` port and `signal` starts at a value, an initial value goes on the declaring `out` port and never on the signal handed to it (E0223), `first_edge_value` reads the value after the first edge), the api host tests (`4e199fbc`). Still red, none of them a flag in the code: (1) the root Book targets `book_cheatsheet`, `book_cli`, `book_compiler`, `book_core_std`, `book_digital`, `book_errors`, `book_mixed`, `book_natures`, `book_pom`, `book_solver`, `book_values`, `book_welcome` and `piperine-cli --test book`: Book listings and the inline sources of `tests/book/*.rs` still spell `.high()`, `known_or`, a carrier with no initial value (e.g. welcome#21's `Inv` out port `y` with a delayed definition, the SAR ADC, the digital card) so they fail E0161 or E0187; each needs its listing refilled in `docs/book/content.html` and `inventory.tsv`, with the output blocks regenerated, in one commit per chapter; (2) `piperine-cli --test docs` (`gaps_no_longer_lists_x5_l20_l39_h12`: GAPS section 10 against `code_owners.tsv`) and `piperine-cli --test run` (three tests, inline models); (3) `piperine-api --test composites::a_carried_enum_reads_as_its_variant_name` ("the value has no leaf `Data.n`": the printed `tx` is not the committed `Data { n: 5 }`; not diagnosed); (4) `piperine-parity --test source_value_semantics::the_library_items_that_took_borrows_give_the_same_results` and the Book test `e0702_is_raised_for_a_logic_pattern_with_z`: `logic` and `matches_bits` are generic `std` items refused `P0001` until T45. `tools` used to fix the models were throwaway scripts (not kept): the rule they applied is E0187 -> `= zero` on the `out` port (or the `signal` when no child out port holds it), E0223 -> no initial value on the placing module's declaration.
+- **Process notes.** One shell call without the lane A environment ran two `cargo` commands in `/var/tmp/piperine-target` early in T20 (no build was left running there). T20's CLI Book listings and T22's `source_natures` compile fix are folded into T22 (the first as part of its commit, the second as a fixup squashed into it).
+
+- **Delivered (batch B7, T34 to T40, 2026-11-22; phase A closes).** Settled defaults a later task starts from:
+  - **T34.** A record is its declared fields: `RecordLayout::maybe_offset`, `Record::maybe`, `Record::surely` (now `Record::holds`) and the `maybe` column of both renderers are gone; `E0604` keeps "repeated". A stream with no value field prints `let record_`, not `let mut`.
+  - **T35.** The host is `{ size, commit }`, minor 0: `commit_with`, `commit_flag`, `Commit::flags`, `layout::Merge`, `DigitalError::Merge` and the `MAYBE`/`MERGE` queue code are removed.
+  - **T36.** `Field` is `{ name, leaf, offset, count }`; `BIT` and `BYTE` are one byte, `F64` eight, `REAL` is deleted; `is_canonical` and the P3 canonical check go with the byte. A composite pin is its parts' value bytes (alignment 1, size = width), an `Option`'s presence field is a `BOOL`, `rt::pin::Carried` has no `SIZE`. The cache key already hashes the contract's source (`cache::an_entry_of_the_earlier_contract_is_rebuilt`). The host's write before a run is the carrier's initial value (`Digital::expect_initial` at `start`). The hand-written test devices of the solver crates lost their three-valued logic; `ROpt`'s `w` is an `F64` with a default (an `Option` param is still L28). Tests the removed byte deleted are listed in `solver-abi-integration/removed.txt`.
+  - **T37.** `DigitalError::Unsettled` (`E0511`, naming the loop's drives in name order); `Observation::Unsettled` and `ObservationKind::Unsettled` are gone. A relaxing cycle still starts with every drive absent (zeroed once, then relaxed to a fixed point), not at each pass.
+  - **T38.** `Cell::Unknown` and `Field::Unknown` are gone. A leaf a value does not hold shows an empty text; `CellShape::decode` fails on a tag that names no variant. A top `in` port with no initial value, `Default` or host write refuses `Session::run` with `E0187` (`CircuitInstance::net_written`); the `in` ports of the test designs got initial values. values~37a548f2 flipped to `holds` here (its test failed with the refusal), and the three phase B rows (values#18, values~c30bad4d, core-std~6e04c51d) point at L58.
+  - **T39.** The renderers have no unknown arm; an absent `Option` prints `None` (table, record line), `null` (JSON Lines) or an empty `value` leaf (CSV). An `emit!` field of type `Option` is outside the M1 subset ("an expression the type checker gave no value type"): the record forms are held by the render unit tests.
+  - **T40.** `GAPS.md`: S8, L64 and L65 removed (1 silent, 2 broken, 28 loud); G.72 says the implementation meets the item in every layer and names `Logic<N>` (phase B, L58) and `Resolve` (`resolved-nets`, L21); `docs.rs::gaps_closes_s6_and_tracks_the_flag` replaces `gaps_closes_s6_and_g6_by_the_redesign`; the `E0511` row left `code_owners.tsv` (a source raises it); MD-78's status line says phase A is delivered. The Book rows of the T40 list were all flipped by their own tasks (T20, T21, T22, T30, T38); T40 re-checked each against `inventory.tsv`.
+  - **Gate (B7), 2026-11-22.** `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: 314 targets, every one `ok` after one fix commit. The first run was red in five targets, all of one cause (a top `in` port with no initial value now refuses the run, E0187): `book_analog`, `book_digital`, `book_mixed`, `book_modules` and `host_ii`; their wrapped tops give the port a first value and only those five targets were rerun. The integrated suites, `piperine-cli --test twins`, `piperine-parity --test twins`, the buck (`piperine-cli --test buck`, every `buck_*` target of `piperine-parity`) and the parity tests against ngspice ran in the workspace run (ngspice present: the only SKIP lines are the two skip-line tests). The Build line is clean (zero warnings). Twin goldens and `contract.rs` did not move.
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 

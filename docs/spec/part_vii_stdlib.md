@@ -1565,7 +1565,16 @@ Discrete carriers and nodes never connect, and no converter is inserted implicit
 pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0;
     tr: f64 = 20p;
-    let ramp = transition(if d { 1.0 } else { 0.0 }, 0.0, tr, tr);
+    let ramp = transition(
+        if d {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        tr,
+        tr,
+    );
 }
 
 analog for D2A {

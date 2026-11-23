@@ -263,7 +263,7 @@ fn the_supervisor_follows_its_state_table() {
         .collect();
     let records: Vec<(i64, Vec<u8>)> = decoded.iter().map(|(t, b, _)| (*t, b.clone())).collect();
     assert_eq!(records.iter().map(|(t, _)| *t).collect::<Vec<_>>(), entries, "one record per hiccup entry");
-    assert!(records.iter().all(|(_, b)| b[0] == 1 && b[1] == 1), "severity Warning, known: {records:?}");
+    assert!(records.iter().all(|(_, b)| b[0] == 1), "severity Warning: {records:?}");
     let texts: Vec<Vec<(String, String)>> = decoded.into_iter().map(|(_, _, t)| t).collect();
     let message = vec![("msg".to_string(), "buck: fault, entering hiccup".to_string())];
     assert_eq!(texts, vec![message.clone(), message], "the text of each record");

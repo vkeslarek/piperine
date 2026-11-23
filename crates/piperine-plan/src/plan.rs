@@ -136,10 +136,6 @@ pub enum Source {
     /// The `CHANGED` byte of the event pin of event `k`: whether the event fired in this
     /// microstep (`Expr::Fired`, abi.md §4.1).
     Fired(u32),
-    /// The `GLOBAL` `RESOLUTION` pin: the session's tick length in seconds. A reaction that
-    /// decides on a value that may be unknown reads it, to key its commits by the instant they
-    /// come due (§3.3.3, abi.md C1).
-    Resolution,
     /// The `CHANGED` byte of the `GLOBAL` `SETTLE` pin: whether the settle phase of this
     /// instant is running (§15 step 4). The event function of each `settle` event reads it
     /// (§13 rule 17).
@@ -311,9 +307,6 @@ pub struct Pins {
     pub tolerances: Vec<(Option<u32>, Option<u32>)>,
     /// The `CAP` watch of each `bound_step` site, as `(site, watch)`, after the `CROSS` watches.
     pub caps: Vec<(u32, u32)>,
-    /// The `GLOBAL` `RESOLUTION` pin, after the tolerance pins, when a reaction of the body
-    /// decides on a value that may be unknown.
-    pub resolution: Option<u32>,
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
     pub derivative_abstols: Vec<Option<u32>>,
@@ -422,7 +415,7 @@ impl BodyPlan {
             .iter()
             .map(|p| match p.default {
                 Some(Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
-                Some(Constant::Bool(b)) => vec![u8::from(b), 1],
+                Some(Constant::Bool(b)) => vec![u8::from(b)],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
                 // A composite param has the layout and bytes of a composite carrier (`composite.rs`).
@@ -541,7 +534,6 @@ impl BodyPlan {
         let rearms = Digital::rearm_pins(&mut s, body);
         let records = Digital::record_pins(&mut s, body);
         let tolerances = Digital::tolerance_pins(&mut s, body);
-        let resolution = Digital::resolution_pin(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
@@ -564,7 +556,6 @@ impl BodyPlan {
             records,
             tolerances,
             caps,
-            resolution,
             derivative_abstols,
             settle,
         };
@@ -804,7 +795,6 @@ impl BodyPlan {
             Source::Freq => value(cell::AMBIENT, ambient::FREQ),
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
-            Source::Resolution => value(cell::PIN, pins.resolution.unwrap_or(GROUND)),
             Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
         }
     }

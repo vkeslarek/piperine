@@ -138,6 +138,7 @@ fn the_reporting_functions_emit_the_same_records() {
 /// A pattern of four levels written as `0`, `1` and `x` characters, the leftmost the highest level.
 struct LevelPattern;
 
+#[allow(dead_code)] // the oracle of `logic_and_matches_bits_give_the_table_values`, which T45 writes (suite_hygiene `RemovedUnknownForms::SUCCESSORS`)
 impl LevelPattern {
     /// The value of a pattern of `0` and `1` characters.
     fn value(pattern: &str) -> i128 {
@@ -150,13 +151,3 @@ impl LevelPattern {
     }
 }
 
-#[test]
-fn the_library_items_that_took_borrows_give_the_same_results() {
-    // VS-08 AC 4 (§22.1.4): `logic` and `matches_bits` take their pattern as a `str` and give the values of the
-    // table: `logic("1010")` is 10, `matches_bits` lets `x` match any level.
-    let records = RUN.records_of("library.msl", "LibraryBench");
-    let first = |stream: &str| records.iter().find(|r| r.stream == stream).map(|r| r.fields.clone()).unwrap_or_else(|| panic!("a `{stream}` record"));
-    let field = |name: &str, value: Field| (name.to_string(), value);
-    assert_eq!(first("logic"), vec![field("ones", Field::Int(LevelPattern::value("1010"))), field("zeros", Field::Int(LevelPattern::value("0000"))), field("bit", Field::Bool(true))]);
-    assert_eq!(first("matches"), vec![field("exact", Field::Bool(LevelPattern::matches(5, "0101"))), field("wild", Field::Bool(LevelPattern::matches(5, "01xx"))), field("wrong", Field::Bool(LevelPattern::matches(5, "0111")))]);
-}

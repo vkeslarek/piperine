@@ -36,7 +36,7 @@ impl TextTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use piperine_api::Cell;
+    use piperine_api::{Cell, CompositeCell};
 
     fn laid_out(table: &Table) -> String {
         let mut out = Vec::new();
@@ -55,19 +55,19 @@ mod tests {
             ],
         };
         assert_eq!(laid_out(&op), "signal     value\nStep.vin   1.000000e0\nStep.vout  1.000000e0\n");
-        // a column wider in its header than in its cells, an unknown, and a last column whose
+        // a column wider in its header than in its cells, an absent `Option`, and a last column whose
         // cells are shorter than its header: no line ends in a space
         let tran = Table {
             columns: vec!["time".into(), "Step.vout".into(), "ok".into()],
             rows: vec![
-                vec![Cell::Real(0.0), Cell::Unknown, Cell::Bool(true)],
+                vec![Cell::Real(0.0), Cell::Composite(Box::new(CompositeCell::Option(None))), Cell::Bool(true)],
                 vec![Cell::Real(1e-6), Cell::Real(0.5), Cell::Int(7)],
             ],
         };
         let text = laid_out(&tran);
         let want = [
             "time         Step.vout    ok",
-            "0.000000e0   x            true",
+            "0.000000e0   None         true",
             "1.000000e-6  5.000000e-1  7",
             "",
         ];

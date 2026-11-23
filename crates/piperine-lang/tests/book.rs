@@ -204,9 +204,8 @@ fn the_chapter_has_a_part_per_namespace() {
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
 
-/// Prelude exports the Book no longer names because the explicit model removed them (`Known`, `merge`,
-/// `Wire`, `Tri`, `tri`, `SumNet`) while `std` still declares them; owned by explicit-unknowns T23.
-const STD_BEHIND_THE_BOOK: [&str; 6] = ["Known", "merge", "tri", "Tri", "SumNet", "Wire"];
+/// Prelude exports the Book no longer names because the explicit model removed them (`Wire`, `Tri`, `tri`, `SumNet`) while `std` still declares them; owned by explicit-unknowns T23.
+const STD_BEHIND_THE_BOOK: [&str; 4] = ["tri", "Tri", "SumNet", "Wire"];
 
 #[test]
 fn the_chapter_names_every_prelude_export() {

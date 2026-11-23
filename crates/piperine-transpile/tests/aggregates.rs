@@ -159,7 +159,6 @@ impl Library {
     fn ir() -> Ir {
         let mut b = IrBuilder::new();
         let (u8t, boolean) = (Ty::u(8), ValueType::Bool);
-        let flagged_u8 = Ty::flagged(u8t.clone());
         let pair_fields = vec![("a".to_string(), ValueType::F64), ("b".to_string(), ValueType::Bool)];
         let pair = Fixtures::entry(&mut b, "Pair", 1, TypeKind::Struct { form: FieldsForm::Named, fields: pair_fields }, Derives { clone: true, copy: true, default: true, ..Derives::default() });
         let level = vec![Fixtures::variant("Low", 0, FieldsForm::Unit, &[]), Fixtures::variant("High", 1, FieldsForm::Unit, &[])];
@@ -169,7 +168,6 @@ impl Library {
         let (pair_t, level_t, tx_t) = (ValueType::Struct(pair), ValueType::Enum(level), ValueType::Enum(tx));
         let array3 = ValueType::Array(Box::new(u8t.clone()), 3);
         let array4 = ValueType::Array(Box::new(u8t.clone()), 4);
-        let flagged3 = ValueType::Array(Box::new(flagged_u8.clone()), 3);
         let tuple = ValueType::Tuple(vec![u8t.clone(), boolean.clone()]);
         let option_real = ValueType::Option(Box::new(ValueType::F64));
 
@@ -254,19 +252,6 @@ impl Library {
         let body = Library::e(&mut b, Expr::Field { expr: t, index: 0 }, u8t.clone(), 71);
         Library::define(&mut b, "first", 71, vec![Library::local("t", tuple.clone(), false)], 1, u8t.clone(), body);
 
-        // aggregates.msl:80  fn pick_any(a: [Bit<u8>; 3], i: Bit<u8>) -> Bit<u8> { a[i] }
-        let (a, i) = (Library::e(&mut b, Expr::Local(0), flagged3.clone(), 80), Library::e(&mut b, Expr::Local(1), flagged_u8.clone(), 80));
-        let body = Library::e(&mut b, Expr::Index { expr: a, index: i }, flagged_u8.clone(), 80);
-        Library::define(&mut b, "pick_any", 80, vec![Library::local("a", flagged3.clone(), false), Library::local("i", flagged_u8.clone(), false)], 2, flagged_u8.clone(), body);
-        // aggregates.msl:82  fn store_any(a: [Bit<u8>; 3], i: Bit<u8>, v: Bit<u8>) -> [Bit<u8>; 3] { let mut c = a; c[i] = v; c }
-        let a = Dx::new(&mut b, FILE, 83, 5).local(0, flagged3.clone());
-        let declare = Dx::new(&mut b, FILE, 83, 5).let_(3, a);
-        let (i, v) = (Library::e(&mut b, Expr::Local(1), flagged_u8.clone(), 84), Library::e(&mut b, Expr::Local(2), flagged_u8.clone(), 84));
-        let set = Library::store(&mut b, 3, vec![Projection::Index(i)], v);
-        let result = Dx::new(&mut b, FILE, 85, 5).local(3, flagged3.clone());
-        let body = Dx::new(&mut b, FILE, 85, 5).block(vec![declare, set], Some(result), flagged3.clone());
-        let locals = vec![Library::local("a", flagged3.clone(), false), Library::local("i", flagged_u8.clone(), false), Library::local("v", flagged_u8.clone(), false), Library::local("c", flagged3.clone(), true)];
-        Library::define(&mut b, "store_any", 82, locals, 3, flagged3.clone(), body);
         Alone::finish(b)
     }
 }
@@ -285,7 +270,7 @@ impl RustReference {
 fn aggregate_expressions_compile_and_run() {
     // CV-13, CV-20: construction, field and element reads and writes, an array's length, a variant
     // test and field, an option from its pair and back, `default`, comparison of aggregates the
-    // derives allow, and an index that may be unknown; each is compared with the same Rust.
+    // derives allow; each is compared with the same Rust.
     let ir = Library::ir();
     let mut texts = TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"));
     texts.extend(ir.functions().map(|f| ValuePrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
@@ -296,8 +281,6 @@ fn aggregate_expressions_compile_and_run() {
         "a[rt::Index::of(rt::UInt::<8>::new(1).get() as i128, a.len(), \"aggregates.msl:14:12\")] = rt::UInt::<8>::new(5);",
         "a.len()",
         "matches!(t, Tx::Data { .. })",
-        "rt::Index::read(&a, ",
-        "rt::Index::write(&mut c, ",
     ] {
         assert!(text.contains(line), "the text holds `{line}`:\n{text}");
     }
@@ -305,12 +288,6 @@ fn aggregate_expressions_compile_and_run() {
     let u = |v: u64| format!("rt::UInt::<8>::new({v})");
     let main = format!(
         "\
-fn flag(v: Option<u64>) -> String {{
-    match v {{ Some(v) => v.to_string(), None => \"?\".to_string() }}
-}}
-fn show(v: rt::Flagged<rt::UInt<8>>) -> String {{
-    flag(if v.is_known() {{ Some(v.known_or(Default::default()).get()) }} else {{ None }})
-}}
 fn main() {{
     let a = [{u10}, {u20}, {u30}];
     println!(\"pick {{}} {{}} {{}}\", pick(a, {u0}).get(), pick(a, {u1}).get(), pick(a, {u2}).get());
@@ -326,14 +303,6 @@ fn main() {{
     let z = zero::<f64>();
     let m = make(4.0);
     println!(\"build {{}} {{}} {{}} {{}} {{}} {{}}\", z.a, z.b, m.a, m.b, first(pairup({u9})).get(), pairup({u9}).1);
-    let k = |v: u64| rt::Flagged::known(rt::UInt::<8>::new(v));
-    let unknown = rt::Flagged::<rt::UInt<8>>::unknown();
-    let e = [k(1), k(1), k(2)];
-    println!(\"any {{}} {{}} {{}}\", show(pick_any(e, k(2))), show(pick_any(e, unknown)), show(pick_any([k(3), k(3), k(3)], unknown)));
-    let s = store_any(e, unknown, k(1));
-    println!(\"store {{}} {{}} {{}}\", show(s[0]), show(s[1]), show(s[2]));
-    let s = store_any(e, k(2), k(9));
-    println!(\"store {{}} {{}} {{}}\", show(s[0]), show(s[1]), show(s[2]));
     let caught = std::panic::catch_unwind(|| pick(a, {u3}));
     println!(\"{{}}\", caught.err().expect(\"the index panics\").downcast_ref::<String>().expect(\"text\"));
 }}
@@ -359,9 +328,6 @@ fn main() {{
         format!("option {} {} {} {}", true, false, 2.5f64, 0.0f64),
         format!("compare {} {} {} {}", 0 < 1, 1 < 1, (1u8, true) == (1u8, true), (1u8, true) == (2u8, true)),
         format!("build {} {} {} {} {} {}", 0.0f64, false, 4.0f64, true, 9, true),
-        "any 2 ? 3".to_string(),
-        "store 1 1 ?".to_string(),
-        "store 1 1 9".to_string(),
         "aggregates.msl:10:1: the index 3 is out of range for a length of 3".to_string(),
     ];
     assert_eq!(out.lines().collect::<Vec<_>>(), expected);
@@ -405,24 +371,22 @@ impl Carried {
 #[test]
 fn every_composite_value_crosses_the_abi_unchanged() {
     // CV-17 AC 2, §2: for every value of a small derived type, the pin bytes the writer wrote decode
-    // to the value, the levels move through `from_levels` unchanged, an unknown value is all-zero
-    // bytes, and a tag naming no variant reads unknown (§2 rule 9)
+    // to the value, the levels move through `from_levels` unchanged, and a tag naming no variant
+    // decodes as the default (a payload enum cast is plain)
     let texts = Carried::texts();
     let text = texts.join("\n");
-    assert!(text.contains("impl rt::flag::Carried for Tx {") && text.contains("impl rt::flag::Carried for Sample<f64> {"), "{text}");
+    assert!(text.contains("impl rt::pin::Carried for Tx {") && text.contains("impl rt::pin::Carried for Sample<f64> {"), "{text}");
     let main = "\
-use rt::flag::{Carried, Flagged};
+use rt::pin::Carried;
 
 fn cross<T: Carried + std::fmt::Debug>(values: &[T]) -> usize {
     for &v in values {
-        let bytes = Flagged::known(v).encode();
-        assert_eq!(bytes.len(), T::SIZE);
-        assert_eq!(Flagged::<T>::decode(&bytes), Flagged::known(v), \"{v:?} through the bytes\");
+        let bytes = v.pin();
+        assert_eq!(bytes.len(), T::WIDTH);
+        assert_eq!(T::from_pin(&bytes), v, \"{v:?} through the bytes\");
         assert_eq!(T::from_levels(&v.to_levels()), v, \"{v:?} through the levels\");
         assert_eq!(v.to_levels().len(), T::LEVELS);
     }
-    assert!(Flagged::<T>::unknown().encode().iter().all(|b| *b == 0), \"an unknown value is all-zero bytes\");
-    assert_eq!(Flagged::<T>::decode(&vec![0; T::SIZE]), Flagged::unknown());
     values.len()
 }
 
@@ -442,8 +406,8 @@ fn main() {
     println!(\"tx {} {} {}\", Tx::Data { n: rt::UInt::<3>::new(5) }.to_levels().low(), Tx::Stop.to_levels().low(), Tx::Start.to_levels().low());
     println!(\"frame {}\", Frame { state: Tx::Data { n: rt::UInt::<3>::new(5) }, ok: true }.to_levels().low());
     println!(\"bits {} pair {}\", Bits { a: true, n: rt::UInt::<2>::new(3) }.to_levels().low(), Pair(rt::UInt::<2>::new(1), true).to_levels().low());
-    // a tag that names no variant reads unknown (rule 9): tag 3 of `Three`
-    println!(\"three {} {}\", Flagged::<Three>::decode(&[3, 1]).is_known(), Flagged::<Three>::decode(&[2, 1]).is_known());
+    // a tag that names no variant decodes as the default, the first variant: tag 3 of `Three`
+    println!(\"three {} {}\", Three::decode(&[3, 1]) == Three::A, Three::decode(&[2, 1]) == Three::C);
 }
 ";
     let out = Probe::run(&texts, main);
@@ -457,7 +421,7 @@ fn main() {
         &format!("tx {} 3 1", 2 | (5 << 2)),
         &format!("frame {}", (2 | (5 << 2)) | (1 << 5)),
         &format!("bits {} pair {}", 1 | (3 << 1), 1 | (1 << 2)),
-        "three false true",
+        "three true true",
     ];
     assert_eq!(out.lines().collect::<Vec<_>>(), expected);
 }
@@ -468,7 +432,7 @@ fn narrow_payloads_pad_with_false_levels() {
     // padding is ignored by `decode`; the payload of a payload-less variant is all false
     let texts = Carried::texts();
     let main = "\
-use rt::flag::{Carried, Flagged};
+use rt::pin::Carried;
 
 fn main() {
     // `Tx` has a 3-level payload: `Idle` and `Stop` carry none, so their levels 2 to 4 are false
@@ -477,10 +441,10 @@ fn main() {
     let stop = Tx::Stop.to_levels();
     println!(\"stop {} {}\", stop.low(), (2..5).any(|k| stop.get(k)));
     // the bytes: tag 3 then a zero payload byte; garbage in the padding changes nothing
-    println!(\"bytes {:?} {:?}\", Flagged::known(Tx::Stop).encode(), Flagged::known(Tx::Idle).encode());
+    println!(\"bytes {:?} {:?}\", Tx::Stop.pin(), Tx::Idle.pin());
     println!(\"ignored {} {}\", Tx::decode(&[3, 0xFF]) == Tx::Stop, Tx::decode(&[0, 0b101]) == Tx::Idle);
     // the levels: a pattern with the tag of `Idle` and payload levels set is `Idle`, and `Start` too
-    println!(\"levels {} {}\", Tx::from_levels(&rt::flag::LevelWords::of(0b11100, 5)) == Tx::Idle, Tx::from_levels(&rt::flag::LevelWords::of(0b10101, 5)) == Tx::Start);
+    println!(\"levels {} {}\", Tx::from_levels(&rt::pin::LevelWords::of(0b11100, 5)) == Tx::Idle, Tx::from_levels(&rt::pin::LevelWords::of(0b10101, 5)) == Tx::Start);
     // the widest variant keeps its payload: `Data { n: 7 }` has every payload level true
     println!(\"widest {}\", Tx::Data { n: rt::UInt::<3>::new(7) }.to_levels().low());
 }
@@ -489,7 +453,7 @@ fn main() {
     let expected = [
         "idle 5 0 false",
         "stop 3 false",
-        "bytes [3, 0, 1] [0, 0, 1]",
+        "bytes [3, 0] [0, 0]",
         "ignored true true",
         "levels true true",
         &format!("widest {}", 2 | (7 << 2)),

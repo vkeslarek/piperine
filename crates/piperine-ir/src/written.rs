@@ -1,6 +1,5 @@
-//! The locals a piece of code writes (`Ir::written_locals`): what a merged `if` or a loop under
-//! unknown control hands back as a tuple, since an effect of a path is each local it writes
-//! (§3.3.3).
+//! The locals a piece of code writes (`Ir::written_locals`): the effect of a statement or a closure
+//! body is each local it assigns, which the analog printer reads to keep a statement a later read needs.
 
 use std::collections::BTreeSet;
 

@@ -2,15 +2,14 @@
 //! tree (`ConstTree`) becomes a `Constant::Aggregate` of the builder's arena, its parts typed by the
 //! IR type the checker gave the expression.
 //!
-//! A part that is unknown has no constant (a `Constant` is known), so a composite with one is
-//! [`ConstFault::Unknown`]. A unit variant of an enum with no field is held as its tag, so where the
+//! A unit variant of an enum with no field is held as its tag, so where the
 //! type is that enum it becomes the variant of the arena entry, as `types.rs` makes one.
 
 use piperine_ir::{AggregateData, Constant, Expr, ExprId as LoweredExpr, Origin, Real, ValueType};
 
 use super::super::elaborator::Elaboration;
 use super::super::lower::Scope;
-use super::{Bindings, CompositeKind, ConstFault, ConstTree, Folded};
+use super::{Bindings, CompositeKind, ConstFault, ConstTree};
 use crate::pom::ExprId;
 
 impl Elaboration<'_, '_> {
@@ -36,7 +35,7 @@ impl Elaboration<'_, '_> {
     /// The constant `value` of the IR's arena as the tree the evaluator reads: the reverse of
     /// `import_tree`. A unit variant of an enum with no field is its tag.
     fn imported_tree(&self, value: Constant) -> ConstTree {
-        let Constant::Aggregate(id) = value else { return ConstTree::Scalar(Folded::Known(value)) };
+        let Constant::Aggregate(id) = value else { return ConstTree::Scalar(value) };
         let data = self.ir.aggregate_at(id);
         let parts: Vec<ConstTree> = data.parts.iter().map(|part| self.imported_tree(*part)).collect();
         let kind = match (&data.ty, data.variant) {
@@ -45,7 +44,7 @@ impl Elaboration<'_, '_> {
             (ValueType::Option(_), _) => CompositeKind::Option,
             (ValueType::Enum(type_id), Some(position)) => {
                 if self.type_arena.is_unit_only(*type_id) {
-                    return ConstTree::Scalar(Folded::Known(Constant::Int(i128::from(position))));
+                    return ConstTree::Scalar(Constant::Int(i128::from(position)));
                 }
                 CompositeKind::Variant(position)
             }
@@ -67,21 +66,20 @@ impl Elaboration<'_, '_> {
         };
         let lowered = self.tree_expr(&tree, &ty, &origin);
         if lowered.is_none() {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `const` composite with a part that may be unknown, or of a type with no constant form");
+            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `const` composite of a type with no constant form");
         }
         lowered
     }
 
-    /// `tree` as the expression of type `ty` that builds it. `None` for a part that is unknown or a
-    /// range.
+    /// `tree` as the expression of type `ty` that builds it. `None` for a range or a type with no
+    /// constant form.
     fn tree_expr(&mut self, tree: &ConstTree, ty: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
         match (tree, ty) {
-            (ConstTree::Scalar(Folded::Unknown), _) => None,
-            (ConstTree::Scalar(Folded::Known(Constant::Int(position))), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: *position as u32, fields: Vec::new() }, ty.clone(), origin.clone())),
-            (ConstTree::Scalar(Folded::Known(Constant::Real(value))), _) => Some(self.emit(Expr::Real(Real::new(value.get())), ValueType::F64, origin.clone())),
-            (ConstTree::Scalar(Folded::Known(Constant::Bool(value))), _) => Some(self.emit(Expr::Bool(*value), ValueType::Bool, origin.clone())),
-            (ConstTree::Scalar(Folded::Known(Constant::Int(value))), _) => Some(self.emit(Expr::Int(*value), ty.clone(), origin.clone())),
-            (ConstTree::Scalar(Folded::Known(Constant::Aggregate(_))), _) => None,
+            (ConstTree::Scalar(Constant::Int(position)), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: *position as u32, fields: Vec::new() }, ty.clone(), origin.clone())),
+            (ConstTree::Scalar(Constant::Real(value)), _) => Some(self.emit(Expr::Real(Real::new(value.get())), ValueType::F64, origin.clone())),
+            (ConstTree::Scalar(Constant::Bool(value)), _) => Some(self.emit(Expr::Bool(*value), ValueType::Bool, origin.clone())),
+            (ConstTree::Scalar(Constant::Int(value)), _) => Some(self.emit(Expr::Int(*value), ty.clone(), origin.clone())),
+            (ConstTree::Scalar(Constant::Aggregate(_)), _) => None,
             (ConstTree::Composite { kind, parts }, _) => {
                 let wanted = match (kind, ty) {
                     (CompositeKind::Tuple, ValueType::Tuple(types)) => types.clone(),
@@ -109,10 +107,9 @@ impl Elaboration<'_, '_> {
     /// `tree` as a constant of type `ty`.
     fn import_tree(&mut self, expr: ExprId, tree: &ConstTree, ty: &ValueType) -> Result<Constant, ConstFault> {
         match (tree, ty) {
-            (ConstTree::Scalar(Folded::Unknown), _) => Err(ConstFault::Unknown { expr }),
             // a unit variant of an enum with no field: its tag is the position of the variant
-            (ConstTree::Scalar(Folded::Known(Constant::Int(position))), ValueType::Enum(_)) => Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ty.clone(), variant: Some(*position as u32), parts: Vec::new() }))),
-            (ConstTree::Scalar(Folded::Known(value)), _) => Ok(*value),
+            (ConstTree::Scalar(Constant::Int(position)), ValueType::Enum(_)) => Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ty.clone(), variant: Some(*position as u32), parts: Vec::new() }))),
+            (ConstTree::Scalar(value), _) => Ok(*value),
             (ConstTree::Composite { kind, parts }, _) => {
                 let (variant, wanted) = match (kind, ty) {
                     (CompositeKind::Tuple, ValueType::Tuple(types)) => (None, types.clone()),

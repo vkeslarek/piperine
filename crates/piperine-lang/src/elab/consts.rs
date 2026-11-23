@@ -8,14 +8,10 @@
 //! integer division or remainder by zero, a shift by a negative amount and a `clamp` with its
 //! bounds crossed are panics (§1 rule 11): `E0104` at elaboration.
 //!
-//! A value may be unknown (§3.3): [`Folded`] is a known [`Constant`] or `Unknown`, and the
-//! operators fold it by the rules of the compiled code (`rt::Flagged`, §3.3.2): all-or-nothing
-//! for arithmetic, comparison and `^`, per level for `&`, `|`, `&&` and `||` (a known all-false
-//! operand decides `&`, a known all-true operand decides `|`), a shift of an unknown value by `N`
-//! or more is known 0. An `if` on an unknown condition is the merge of its arms (§3.3.3), a panic
-//! on one of them making it unknown (§1 rule 13). [`ConstEval::value`] gives a [`Constant`], so a
-//! result that is unknown is [`ConstFault::Unknown`]; [`ConstEval::folded`] gives the result as
-//! it is, for a caller that accepts an unknown.
+//! A value either has a constant at elaboration or it does not: every value is a value (§3.3.1),
+//! so there is no third state. Where a read finds none (a probe, a carrier, an environment
+//! function, a function-valued argument read as a number) the fault says so at that read
+//! ([`ConstFault::Dynamic`], `E0321` at the position that needed a constant).
 //!
 //! A `const` item is evaluated once and remembered. A param is read through the caller's
 //! [`Bindings`]; a read with no binding, an environment function, a probe or a node is *not
@@ -42,7 +38,7 @@ use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
-use crate::types::{Builtin, Callee, Intrinsic, Method, Ty, Types};
+use crate::types::{Callee, Method, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
 use control::{Argument, FnValue};
@@ -105,35 +101,6 @@ impl Bindings {
     }
 }
 
-/// What an expression folds to: a known value, or `Unknown` (§3.3). One flag per value, as the
-/// compiled code has it (G6, provisional): the per-level spec (`unknown-semantics-per-level`)
-/// adds a partial form here.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Folded {
-    /// A known value.
-    Known(Constant),
-    /// Every level unknown.
-    Unknown,
-}
-
-impl Folded {
-    /// Whether `self` and `other` are the same value, a NaN being the same as itself (§3.3.9).
-    fn same(self, other: Folded) -> bool {
-        match (self, other) {
-            (Folded::Unknown, Folded::Unknown) => true,
-            (Folded::Known(Constant::Real(a)), Folded::Known(Constant::Real(b))) => a.get().to_bits() == b.get().to_bits(),
-            (Folded::Known(a), Folded::Known(b)) => a == b,
-            _ => false,
-        }
-    }
-
-    /// The merge of two paths (§3.3.3, §22.1.2): equal known values are kept, anything else is
-    /// unknown.
-    fn merge(self, other: Folded) -> Folded {
-        if matches!(self, Folded::Known(_)) && self.same(other) { self } else { Folded::Unknown }
-    }
-}
-
 /// Why an expression has no constant value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstFault {
@@ -149,9 +116,6 @@ pub enum ConstFault {
     /// A panic of the evaluation (§1 rule 11): an integer division or remainder by zero, a shift
     /// by a negative amount, a `clamp` whose bounds are crossed. `E0104` at elaboration.
     Panic { expr: ExprId, what: String },
-    /// The value is unknown (§3.3) where a known one is required: the caller says what it
-    /// decides (`E0151` when it fixes structure, §3.3.8).
-    Unknown { expr: ExprId },
     /// The initializer of the `const` item `constant` reads, at `expr`, something only a run gives
     /// (`what`): the `const` is not a const expression (§3.9.2, `E0188`).
     NotConstant { expr: ExprId, constant: DeclId, what: String },
@@ -180,7 +144,7 @@ impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -190,16 +154,16 @@ impl ConstFault {
 pub struct ConstEval<'d, 't> {
     design: &'d Design,
     types: &'t Types<'d>,
-    consts: BTreeMap<DeclId, Folded>,
+    consts: BTreeMap<DeclId, Constant>,
     evaluations: usize,
-    locals: BTreeMap<DeclId, Folded>,
+    locals: BTreeMap<DeclId, Constant>,
     depth: usize,
     /// The module-body `let`s being evaluated, innermost last: a read of one of them is a cycle.
     open_lets: Vec<DeclId>,
     /// The function each local that holds one stands for (`control.rs`).
     fn_values: BTreeMap<DeclId, FnValue>,
     /// The value a `break` or `return` on its way to its target carries; `None` for none.
-    leaving: Option<Folded>,
+    leaving: Option<Constant>,
     /// The `const` items being folded, innermost last: a read of one of them is a cycle (§3.9.2).
     open_constants: Vec<DeclId>,
     /// The files `include_str!` has read, each once (§20 rule 3).
@@ -243,20 +207,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.files.text(source.as_deref(), &path).map_err(|fault| ConstFault::File { expr, fault })
     }
 
-    /// The value of a `const` item, folded the first time it is asked for. A `const` that is
-    /// unknown is [`ConstFault::Unknown`] on its initializer.
+    /// The value of a `const` item, folded the first time it is asked for.
     pub fn constant(&mut self, decl: DeclId) -> Result<Constant, ConstFault> {
-        match self.folded_constant(decl)? {
-            Folded::Known(value) => Ok(value),
-            Folded::Unknown => match &self.design.decl_data(decl).kind {
-                DeclKind::Const(ConstData { value: Some(expr), .. }) => Err(ConstFault::Unknown { expr: *expr }),
-                _ => Err(ConstFault::NoValue { decl }),
-            },
-        }
-    }
-
-    /// What a `const` item folds to, `Unknown` included, folded the first time it is asked for.
-    pub fn folded_constant(&mut self, decl: DeclId) -> Result<Folded, ConstFault> {
         let value = self.fold_constant(decl)?;
         if self.composite_of(value).is_some() {
             return Err(match &self.design.decl_data(decl).kind {
@@ -268,7 +220,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     /// What a `const` item folds to, a composite included, folded the first time it is asked for.
-    fn fold_constant(&mut self, decl: DeclId) -> Result<Folded, ConstFault> {
+    fn fold_constant(&mut self, decl: DeclId) -> Result<Constant, ConstFault> {
         if let Some(value) = self.consts.get(&decl) {
             return Ok(*value);
         }
@@ -292,40 +244,23 @@ impl<'d, 't> ConstEval<'d, 't> {
         Ok(value)
     }
 
-    /// The value of `expr` with the params of `bindings` bound; an unknown result is
-    /// [`ConstFault::Unknown`].
-    pub fn value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
-        match self.folded(expr, bindings)? {
-            Folded::Known(value) => Ok(value),
-            Folded::Unknown => Err(ConstFault::Unknown { expr }),
-        }
-    }
-
-    /// The value of `expr` over `bindings`, a composite included: the evaluator's own recursion.
-    fn known(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
-        match self.fold(expr, bindings)? {
-            Folded::Known(value) => Ok(value),
-            Folded::Unknown => Err(ConstFault::Unknown { expr }),
-        }
-    }
-
     /// `value` as a scalar: a composite is refused, because its handle names an entry of this
     /// evaluator and means nothing outside it (`tree` gives a composite out).
-    fn scalar(&self, expr: ExprId, value: Folded) -> Result<Folded, ConstFault> {
+    fn scalar(&self, expr: ExprId, value: Constant) -> Result<Constant, ConstFault> {
         match self.composite_of(value) {
             Some(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where a scalar is required".to_string() }),
             None => Ok(value),
         }
     }
 
-    /// What `expr` folds to with the params of `bindings` bound, `Unknown` included.
-    pub fn folded(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    /// The value of `expr` with the params of `bindings` bound.
+    pub fn value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let value = self.fold(expr, bindings)?;
         self.scalar(expr, value)
     }
 
     /// What `expr` folds to, a composite included: the evaluator's own recursion.
-    fn fold(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn fold(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let kind = self.design.expr_node(expr).kind.clone();
         match &kind {
             ExprKind::Lit(lit) => self.literal(expr, &lit.kind),
@@ -379,10 +314,9 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.types.ty(expr).and_then(Width::of)
     }
 
-    /// A literal as the constant it is: a number of its type's width, a bool, a real. `Unknown`
-    /// folds to `Folded::Unknown`.
-    fn literal(&self, expr: ExprId, kind: &LitKind) -> Result<Folded, ConstFault> {
-        let known = |value: Constant| Ok(Folded::Known(value));
+    /// A literal as the constant it is: a number of its type's width, a bool, a real.
+    fn literal(&self, expr: ExprId, kind: &LitKind) -> Result<Constant, ConstFault> {
+        let known = |value: Constant| Ok(value);
         match kind {
             LitKind::Float { value, .. } => known(Constant::Real(Real::new(*value))),
             LitKind::Bool(b) => known(Constant::Bool(*b)),
@@ -399,17 +333,16 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Some(width), Some(value)) => known(width.wrap(value as i128)),
                 _ => Err(ConstFault::Unsupported { expr, what: "an integer literal".to_string() }),
             },
-            LitKind::Unknown => Ok(Folded::Unknown),
             LitKind::Str { .. } => Err(ConstFault::Unsupported { expr, what: "this literal".to_string() }),
         }
     }
 
     /// A name as the constant it is bound to (a `const`, a param, a binding of the call), or the
     /// level count of a `T::WIDTH`; a built-in name is dynamic.
-    fn path(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn path(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         // `T::WIDTH`: the level count of `T`, which the checker recorded (§2, §22.1)
         if let Some(levels) = self.types.width(expr) {
-            return Ok(Folded::Known(Constant::Int(i128::from(levels))));
+            return Ok(Constant::Int(i128::from(levels)));
         }
         let ExprKind::Path(path) = &self.design.expr_node(expr).kind else {
             return Err(ConstFault::Unsupported { expr, what: "a name".to_string() });
@@ -431,24 +364,24 @@ impl<'d, 't> ConstEval<'d, 't> {
                     Some(tree) => Ok(self.adopt(&tree)),
                     None => Err(ConstFault::Unsupported { expr, what: "a composite param in a const expression".to_string() }),
                 },
-                Some(value) => Ok(Folded::Known(value)),
+                Some(value) => Ok(value),
                 None => Err(ConstFault::UnboundParam { expr, param: decl }),
             },
             // A unit struct, and a unit variant of an enum with fields, are held with their parts (`composite.rs`).
             DeclKind::Struct(_) | DeclKind::Variant(_) if let Some(value) = self.unit_value(decl) => Ok(value),
             // A unit variant is its tag (§2 rule 5).
-            DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(|tag| Folded::Known(Constant::Int(tag))).ok_or(ConstFault::Unsupported { expr, what: "a variant outside its enum".to_string() }),
+            DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(|tag| Constant::Int(tag)).ok_or(ConstFault::Unsupported { expr, what: "a variant outside its enum".to_string() }),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match (self.locals.get(&decl).copied(), bindings.get(decl)) {
                 (Some(value), _) => Ok(value),
                 // the loop variable of an unrolled analog loop, or the parameter of an unrolled
                 // recursion, bound to its constant for this iteration or call (`unroll.rs`)
                 (None, Some(Constant::Aggregate(_))) => Err(ConstFault::Unsupported { expr, what: "a composite value bound from outside the evaluation".to_string() }),
-                (None, Some(value)) => Ok(Folded::Known(value)),
+                (None, Some(value)) => Ok(value),
                 (None, None) => self.body_let(expr, decl, bindings),
             },
             // A value input the caller binds to a constant (`structural.rs`, a selector through an input).
             DeclKind::Port(_) if let Some(Constant::Aggregate(_)) = bindings.get(decl) => Err(ConstFault::Unsupported { expr, what: "a composite value input in a const expression".to_string() }),
-            DeclKind::Port(_) if let Some(value) = bindings.get(decl) => Ok(Folded::Known(value)),
+            DeclKind::Port(_) if let Some(value) = bindings.get(decl) => Ok(value),
             DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(decl).is_some() => Err(ConstFault::Dynamic { expr, what: "a carrier".to_string() }),
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
             _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
@@ -464,7 +397,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// over the same params (§8.1.19), so a param value may name a `let` that computes it. A `let`
     /// that reads a carrier, a probe, the environment or the result of an instance has no constant
     /// value: the fault names the `let`. A `let` that reads itself is one too.
-    fn body_let(&mut self, expr: ExprId, decl: DeclId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn body_let(&mut self, expr: ExprId, decl: DeclId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let Some(value) = Self::body_let_value(self.design, decl) else {
             return Err(ConstFault::Dynamic { expr, what: "a name with no value yet".to_string() });
         };
@@ -509,74 +442,38 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
     }
 
-    /// A unary operator over `operand`: unknown when the operand is (§3.3.2), else wrapped to the
-    /// width of an integer result.
-    fn unary(&mut self, expr: ExprId, op: UnOp, operand: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
-        // §3.3.2: an operator of an unknown value is unknown
-        let Folded::Known(value) = self.fold(operand, bindings)? else {
-            return Ok(Folded::Unknown);
-        };
+    /// A unary operator over `operand`, wrapped to the width of an integer result.
+    fn unary(&mut self, expr: ExprId, op: UnOp, operand: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(operand, bindings)?;
         if let (Constant::Int(v), Some(width)) = (value, self.width(expr)) {
             return match op {
-                UnOp::Neg => Ok(Folded::Known(width.wrap(v.wrapping_neg()))),
-                UnOp::Not => Ok(Folded::Known(width.wrap(!v))),
+                UnOp::Neg => Ok(width.wrap(v.wrapping_neg())),
+                UnOp::Not => Ok(width.wrap(!v)),
             };
         }
         match op {
-            UnOp::Neg => Ok(Folded::Known(Constant::Real(Real::new(-Self::real(operand, value)?)))),
-            UnOp::Not => Ok(Folded::Known(Constant::Bool(!Self::boolean(operand, value)?))),
+            UnOp::Neg => Ok(Constant::Real(Real::new(-Self::real(operand, value)?))),
+            UnOp::Not => Ok(Constant::Bool(!Self::boolean(operand, value)?)),
         }
     }
 
-    /// A binary operator over `lhs` and `rhs`: `&&` and `||` stop at a known left operand that
-    /// decides; an unknown operand makes the result unknown unless the operator decides (§3.3.2).
-    fn binary(&mut self, expr: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    /// A binary operator over `lhs` and `rhs`: `&&` and `||` stop at a left operand that decides.
+    fn binary(&mut self, expr: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let left = self.fold(lhs, bindings)?;
-        // `&&` and `||` short-circuit on a known left operand, as in the source: the right side is
-        // not read.
-        if let Folded::Known(known) = left {
-            match op {
-                BinOp::And if !Self::boolean(lhs, known)? => return Ok(Folded::Known(Constant::Bool(false))),
-                BinOp::Or if Self::boolean(lhs, known)? => return Ok(Folded::Known(Constant::Bool(true))),
-                _ => {}
-            }
+        // `&&` and `||` short-circuit on the left operand, as in the source: the right side is not read.
+        match op {
+            BinOp::And if !Self::boolean(lhs, left)? => return Ok(Constant::Bool(false)),
+            BinOp::Or if Self::boolean(lhs, left)? => return Ok(Constant::Bool(true)),
+            _ => {}
         }
         let right = self.fold(rhs, bindings)?;
         if self.composite_of(left).is_some() || self.composite_of(right).is_some() {
             return self.composite_binary(expr, op, left, right);
         }
-        match (left, right) {
-            (Folded::Known(a), Folded::Known(b)) => self.known_binary(expr, op, (lhs, a), (rhs, b)).map(Folded::Known),
-            _ => Ok(self.unknown_binary(expr, op, left, right)),
-        }
+        self.known_binary(expr, op, (lhs, left), (rhs, right))
     }
 
-    /// An operator with an unknown operand (§3.3.2): the result is unknown, and the operation is
-    /// not evaluated on it (an unknown divisor is no division by zero), except where a known
-    /// operand decides it level by level. A known all-false operand decides `&` and `&&`, a
-    /// known all-true operand decides `|` and `||` (§3.3.12), and an unknown value shifted by a
-    /// known `N` or more is known 0 (§3.3.11), a signed `>>` excepted: it fills with the unknown
-    /// sign.
-    fn unknown_binary(&self, expr: ExprId, op: BinOp, left: Folded, right: Folded) -> Folded {
-        let width = self.width(expr);
-        let decided = |known: Folded| match (op, known) {
-            (BinOp::And | BinOp::BitAnd, Folded::Known(Constant::Bool(false))) => Some(Constant::Bool(false)),
-            (BinOp::Or | BinOp::BitOr, Folded::Known(Constant::Bool(true))) => Some(Constant::Bool(true)),
-            (BinOp::BitAnd, Folded::Known(Constant::Int(0))) => Some(Constant::Int(0)),
-            (BinOp::BitOr, Folded::Known(Constant::Int(ones))) if width.is_some_and(|w| w.wrap(-1) == Constant::Int(ones)) => Some(Constant::Int(ones)),
-            _ => None,
-        };
-        if let Some(value) = decided(left).or_else(|| decided(right)) {
-            return Folded::Known(value);
-        }
-        match (op, left, right, width) {
-            (BinOp::Shl, Folded::Unknown, Folded::Known(Constant::Int(n)), Some(w)) if n >= i128::from(w.bits) => Folded::Known(Constant::Int(0)),
-            (BinOp::Shr, Folded::Unknown, Folded::Known(Constant::Int(n)), Some(w)) if !w.signed && n >= i128::from(w.bits) => Folded::Known(Constant::Int(0)),
-            _ => Folded::Unknown,
-        }
-    }
-
-    /// An operator over two known operands, `(expression, value)` each.
+    /// An operator over two operands, `(expression, value)` each.
     fn known_binary(&self, expr: ExprId, op: BinOp, (lhs, left): (ExprId, Constant), (rhs, right): (ExprId, Constant)) -> Result<Constant, ConstFault> {
         if let (Constant::Int(a), Constant::Int(b)) = (left, right) {
             return self.integer_binary(expr, op, a, b);
@@ -667,13 +564,11 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// `operand as T`: among the integer types by truncation and sign extension (§1 rule 1),
     /// from `f64` saturating with NaN as 0 (G4), from `bool` as 0 or 1; to `f64` exactly as the
     /// compiled code converts.
-    fn cast(&mut self, expr: ExprId, operand: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let Folded::Known(value) = self.fold(operand, bindings)? else {
-            return Ok(Folded::Unknown);
-        };
+    fn cast(&mut self, expr: ExprId, operand: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(operand, bindings)?;
         // An enum value is folded to its variant's position (held with its parts when a variant has fields); `as` reads its discriminant (§1.3.7).
         let value = match value {
-            Constant::Aggregate(_) => match self.composite_of(Folded::Known(value)).map(|c| c.kind) {
+            Constant::Aggregate(_) => match self.composite_of(value).map(|c| c.kind) {
                 Some(CompositeKind::Variant(position)) => Constant::Int(i128::from(position)),
                 _ => return Err(ConstFault::Unsupported { expr, what: "a cast of a composite value".to_string() }),
             },
@@ -697,15 +592,12 @@ impl<'d, 't> ConstEval<'d, 't> {
             },
             (None, _) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
         };
-        Ok(Folded::Known(converted))
+        Ok(converted)
     }
 
     /// A call of a function of the reachable set, or of a function a local holds: its body
     /// evaluated over its arguments. Every other callee needs a run.
-    fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
-        if self.types.callee(expr) == Some(Callee::Intrinsic(Intrinsic::Logic)) {
-            return self.logic(expr, args);
-        }
+    fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let function = match self.types.callee(expr) {
             Some(Callee::Function(function)) => FnValue::Named(function),
             _ => match self.called_function_value(expr) {
@@ -723,8 +615,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         let mut arguments = Vec::new();
         for arg in args {
             arguments.push(match self.fn_value_of(*arg) {
-                Some(function) => Argument { value: Folded::Unknown, function: Some(function) },
-                None => Argument { value: self.fold(*arg, bindings)?, function: None },
+                Some(function) => Argument { value: None, function: Some(function) },
+                None => Argument { value: Some(self.fold(*arg, bindings)?), function: None },
             });
         }
         self.apply_value(expr, function, arguments, bindings)
@@ -732,7 +624,7 @@ impl<'d, 't> ConstEval<'d, 't> {
 
     /// The body of the function `function` evaluated for `arguments`; a function reads no param of
     /// the caller.
-    fn apply_function(&mut self, expr: ExprId, function: DeclId, arguments: Vec<Argument>) -> Result<Folded, ConstFault> {
+    fn apply_function(&mut self, expr: ExprId, function: DeclId, arguments: Vec<Argument>) -> Result<Constant, ConstFault> {
         let data = self.design.decl_data(function);
         let DeclKind::Fn(f) = &data.kind else {
             return Err(ConstFault::Unsupported { expr, what: "a call of a name that is not a function".to_string() });
@@ -744,7 +636,9 @@ impl<'d, 't> ConstEval<'d, 't> {
         let params = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
         let (mut frame, mut functions) = (BTreeMap::new(), BTreeMap::new());
         for (param, argument) in params.zip(arguments) {
-            frame.insert(param, argument.value);
+            if let Some(value) = argument.value {
+                frame.insert(param, value);
+            }
             if let Some(function) = argument.function {
                 functions.insert(param, function);
             }
@@ -758,43 +652,9 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.returned(expr, result)
     }
 
-    /// `logic::<T>("..")` (§22.1.4): the value whose level `k` is the pattern's character `WIDTH - 1
-    /// - k`, a literal `0` or `1`. A pattern with an `x` is `Unknown` (one flag per value, G6
-    /// provisional: the per-level spec gives it its partial form), and so is a tag no variant of an
-    /// enum target has (§22.1.3 rule 2). The checker reported a pattern that is not a literal of
-    /// `T::WIDTH` characters of `0`, `1` and `x` (`E0702`).
-    fn logic(&self, expr: ExprId, args: &[ExprId]) -> Result<Folded, ConstFault> {
-        let pattern = args.first().and_then(|a| match &self.design.expr_node(*a).kind {
-            ExprKind::Lit(lit) => lit.str_value(),
-            _ => None,
-        });
-        let Some(pattern) = pattern else {
-            return Err(ConstFault::Unsupported { expr, what: "a `logic` pattern that is not a string literal".to_string() });
-        };
-        if pattern.contains('x') {
-            return Ok(Folded::Unknown);
-        }
-        let bits = pattern.chars().fold(0u64, |bits, level| (bits << 1) | u64::from(level == '1'));
-        let known = |value: Constant| Ok(Folded::Known(value));
-        match self.types.ty(expr) {
-            Some(Ty::Bool) => known(Constant::Bool(bits != 0)),
-            Some(Ty::F64) => known(Constant::Real(Real::new(f64::from_bits(bits)))),
-            // the levels are a tag: the variant with that discriminant, else no variant (unknown)
-            Some(Ty::Enum(decl)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.iter().position(|d| *d == i128::from(bits))) {
-                Some(position) => known(Constant::Int(position as i128)),
-                None => Ok(Folded::Unknown),
-            },
-            Some(ty) => match Width::of(ty) {
-                Some(width) => known(width.wrap(i128::from(bits))),
-                None => Err(ConstFault::Unsupported { expr, what: "a `logic` of a type with no levels".to_string() }),
-            },
-            None => Err(ConstFault::Unsupported { expr, what: "a `logic` the checker did not type".to_string() }),
-        }
-    }
-
-    /// A method call: a read of a flag (§3.3.4), or a row of the Appendix H catalogue applied to
-    /// its receiver and arguments, which is unknown when one of them is (§3.3.2).
-    fn method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+    /// A method call: a row of the Appendix H catalogue applied to
+    /// its receiver and arguments.
+    fn method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         if let Some(method) = self.types.method(expr) {
             // the rows over arrays, ranges, iterators and `Option`s take closures and composites (`composite.rs`)
             if let Some(result) = self.sequence_row(expr, method, recv, args, bindings) {
@@ -809,34 +669,17 @@ impl<'d, 't> ConstEval<'d, 't> {
         for arg in args {
             values.push(self.fold(*arg, bindings));
         }
-        if let Some(builtin) = self.types.builtin(expr) {
-            return Self::flag_read(expr, builtin, receiver?, values.into_iter().next().transpose()?);
+        if self.types.builtin(expr).is_some() {
+            return Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() });
         }
         let Some(method) = self.types.method(expr) else {
             return Err(ConstFault::Unsupported { expr, what: "a method outside the catalogue".to_string() });
         };
         let (receiver, values) = (receiver?, values.into_iter().collect::<Result<Vec<_>, _>>()?);
-        let known: Option<Vec<Constant>> = values.iter().map(|v| if let Folded::Known(c) = v { Some(*c) } else { None }).collect();
-        match (receiver, known) {
-            (Folded::Known(receiver), Some(values)) => self.known_method(expr, recv, args, method, receiver, values).map(Folded::Known),
-            _ => Ok(Folded::Unknown),
-        }
+        self.known_method(expr, recv, args, method, receiver, values)
     }
 
-    /// `known_or`, `is_known` and `high` of a folded value: known whatever the value holds
-    /// (§3.3.4). `known_or` gives its default, which may itself be unknown, for an unknown value
-    /// (§22.1.1 rule 4). The rest of the flag reads (`known`, `level`) are not folded.
-    fn flag_read(expr: ExprId, builtin: Builtin, receiver: Folded, argument: Option<Folded>) -> Result<Folded, ConstFault> {
-        match (builtin, receiver, argument) {
-            (Builtin::KnownOr, Folded::Known(_), _) => Ok(receiver),
-            (Builtin::KnownOr, Folded::Unknown, Some(default)) => Ok(default),
-            (Builtin::IsKnown, _, _) => Ok(Folded::Known(Constant::Bool(matches!(receiver, Folded::Known(_))))),
-            (Builtin::High, _, _) => Ok(Folded::Known(Constant::Bool(receiver == Folded::Known(Constant::Bool(true))))),
-            _ => Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() }),
-        }
-    }
-
-    /// A catalogue row applied to known values.
+    /// A catalogue row applied to constants.
     fn known_method(&self, expr: ExprId, recv: ExprId, args: &[ExprId], method: Method, receiver: Constant, values: Vec<Constant>) -> Result<Constant, ConstFault> {
         let crossed = || Err(ConstFault::Panic { expr, what: "a `clamp` whose lower bound is above its upper bound".to_string() });
         if let Constant::Int(x) = receiver {
@@ -890,7 +733,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             // `f64::clamp` panics on crossed or NaN bounds, as the compiled code does.
             (Method::Clamp, [lo, hi]) if lo.is_nan() || hi.is_nan() || lo > hi => return crossed(),
             (Method::Clamp, [lo, hi]) => x.clamp(*lo, *hi),
-            // Folded from msl-digital T27 on, with the `Option` pair.
+            // Constant from msl-digital T27 on, with the `Option` pair.
             _ => return Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() }),
         };
         Ok(Constant::Real(Real::new(result)))

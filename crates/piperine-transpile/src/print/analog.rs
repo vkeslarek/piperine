@@ -116,7 +116,6 @@ impl<'a> AnalogPrinter<'a> {
             Source::Static => Text::generated("is_static"),
             Source::Time => Text::generated("time"),
             Source::Fired(k) => Text::generated(&format!("event{k}_fired")),
-            Source::Resolution => Text::generated("resolution"),
             Source::Settle => Text::generated("settle_changed"),
             Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
             Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
@@ -279,10 +278,9 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 // a function used as a value reads the environment its closure passes on
                 Expr::FunctionRef(function) => sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source)),
-                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
-                Expr::KnownOr { value, default } => stack.extend([*value, *default]),
+                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack.push(*expr),
                 Expr::Unwrap { is, value, .. } => stack.extend([*is, *value]),
-                Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => stack.extend([*a, *b]),
+                Expr::Same { a, b } => stack.extend([*a, *b]),
                 Expr::LevelCast { expr, .. } => stack.push(*expr),
                 Expr::Method { receiver, args, .. } => stack.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
@@ -305,7 +303,7 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Fired(_) => {}
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) => {}
                 Expr::Derivative(k) => {
                     sources.insert(Source::Derivative(*k));
                 }
@@ -355,7 +353,7 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// The type of read `s` in a generic block: `R`, `bool` (a `bool` param, `analysis(Static)`),
-    /// an integer, or for a carrier the `rt::Flagged<T>` its pin decodes to.
+    /// an integer, or for a carrier the `T` its pin decodes to.
     pub(crate) fn block_type(&self, s: Source) -> Result<String, Error> {
         match s {
             Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
@@ -363,7 +361,7 @@ impl<'a> AnalogPrinter<'a> {
                 _ => Ok("R".to_string()),
             },
             Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
-                Some(carrier) => Ok(format!("rt::Flagged<{}>", self.values.pin_type(&carrier.ty)?)),
+                Some(carrier) => self.values.pin_type(&carrier.ty),
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             Source::Static | Source::Analysis(_) => Ok("bool".to_string()),
@@ -373,23 +371,24 @@ impl<'a> AnalogPrinter<'a> {
 
     /// The `let` that binds read `i` of a function from its lens `cx`: a real as an `f64`, a
     /// `bool` param as a `bool`, an integer param decoded (an unwritten one is 0), a carrier's
-    /// pin decoded into a value that may be unknown.
+    /// pin decoded into its value.
     pub(crate) fn decode(&self, cx: &str, i: usize, s: Source) -> Result<String, Error> {
         let name = self.read_name(s);
         Ok(match s {
             Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
-                Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => format!(
-                    "let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or({});",
-                    self.values.pin_type(ty)?,
-                    ValuePrinter::zero(ty)
-                ),
-                // a composite param is the bytes of a composite pin; one nothing wrote is refused by name
-                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or_refuse({name:?});", RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty)),
+                Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
+                    format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})")))
+                }
+                // a composite param is the bytes of a composite pin
+                Some(ty) if ty.is_composite() => {
+                    let concrete = RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty);
+                    format!("let {name} = {};", ValuePrinter::pin_value(&concrete, &format!("{cx}.bytes({i})")))
+                }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
-                Some(carrier) => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", self.values.pin_type(&carrier.ty)?),
+                Some(carrier) => format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(&carrier.ty)?, &format!("{cx}.bytes({i})"))),
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`

@@ -19,7 +19,7 @@ fn in_while() -> u8 {
     n
 }
 
-module Rows(in clk: Bit, out f0: Bit<u8>, out f1: Bit<u8>, out f2: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>) {}
+module Rows(in clk: Bit, out f0: Bit<u8> = 0, out f1: Bit<u8> = 0, out f2: Bit<u8> = 0, out r0: Bit<u8> = 0, out r1: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         f0 <- in_if(Pair { a: 3, b: false });

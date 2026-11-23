@@ -89,9 +89,7 @@ impl Interpreted {
                 Source::Time => None,
                 // `freq()` and `analysis(..)`: not a frame cell; the walk refuses the read by name.
                 Source::Freq | Source::Analysis(_) | Source::Fired(_) => None,
-                // the tick length of a reaction that decides on an unknown: no body with a
-                // reaction runs here (R1)
-                Source::Resolution => None,
+                // the tick length of a reaction: no body with a reaction runs here (R1)
                 // the settle pin of a `settle` event: refused by name (§13 rule 17)
                 Source::Settle => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
@@ -237,7 +235,7 @@ impl Interpreted {
         Ok(())
     }
 
-    /// The `where` of param `p`: the condition over the params it reads, written as a known `BIT`.
+    /// The `where` of param `p`: the condition over the params it reads, written as a `BIT`.
     fn check(&self, f: &FunctionPlan, p: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let body = self.body();
         let Some(condition) = body.params().get(p as usize).and_then(|x| x.check) else {

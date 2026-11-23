@@ -104,7 +104,6 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("changed", BuiltinKind::Method, "§14.9"),
     row("prev", BuiltinKind::Method, "§14.12"),
     row("others", BuiltinKind::Method, "§14.12"),
-    row("level", BuiltinKind::Method, "§14.12"),
     row("inflow", BuiltinKind::Method, "§14.1"),
 ];
 

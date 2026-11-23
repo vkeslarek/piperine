@@ -226,6 +226,7 @@ impl Digital {
                 continue;
             }
             self.call += 1;
+            self.store.expect_initial(NetId(i as u32));
             let pending = Pending {
                 net: NetId(i as u32),
                 offset: 0,
@@ -235,9 +236,16 @@ impl Digital {
                 made: (tick, 0),
                 call: self.call,
                 due: (tick, 0),
-                flags: 0,
             };
             self.queue.push(pending, false);
+        }
+        // A carrier with no initial value that an undelayed definition drives holds the definition's value from the
+        // start (part III 8.2.21): its first write is its initial value, so it is no change from a value it never held
+        for (i, net) in self.plan.nets.iter().enumerate() {
+            let defined = matches!(self.plan.analysis().writer(NetId(i as u32)), NetWriter::Function { .. });
+            if net.init.is_empty() && !net.param && defined && net.kind == NetKind::Discrete {
+                self.store.expect_initial(NetId(i as u32));
+            }
         }
         for net in self.plan.analysis().start_nets().to_vec() {
             self.fire(net, tick)?;
@@ -281,6 +289,13 @@ impl Digital {
         self.store.seed(net, bytes);
     }
 
+    /// Marks the carrier `net` as holding no value yet, so the host's write that starts the run is
+    /// its initial value (§5.3, D8): a change whatever the bytes, `PREVIOUS` the same bytes. Only
+    /// before the first instant.
+    pub fn expect_initial(&mut self, net: NetId) {
+        self.store.expect_initial(net);
+    }
+
     /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6); while the instant `at` is
     /// suspended for the host's waiters, due at the microstep it continues at (R7).
     ///
@@ -312,7 +327,6 @@ impl Digital {
                 Some((tick, microstep)) if tick == at => (at, microstep),
                 _ => (at, 0),
             },
-            flags: 0,
         };
         self.queue.push(pending, false);
         Ok(())

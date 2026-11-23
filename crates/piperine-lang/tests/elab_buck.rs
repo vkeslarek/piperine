@@ -4,6 +4,9 @@
 //! this file, one constant each; `Buck` elaborates with no diagnostic, an empty `check()` and the
 //! structural print pinned in `tests/fixtures/elab/buck.txt`.
 
+#[allow(dead_code)]
+#[path = "support/buck.rs"]
+mod buck;
 #[path = "support/elab.rs"]
 #[allow(dead_code)]
 mod support;
@@ -26,8 +29,7 @@ fn buck_ir() -> Ir {
 }
 
 fn fixture(name: &str) -> String {
-    let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    buck::golden(name)
 }
 
 /// The lines of the item of a print whose header line is `header` (`body Osc`, `fn name(..`): the
@@ -39,16 +41,17 @@ fn item(print: &str, header: &str) -> Vec<String> {
 }
 
 /// The first difference listed in `tasks.md` T37 (ruling 2, A7): the fixtures guard a `rise` with
-/// `c.high()`; the source gives the stdlib's two-condition form over the previous value.
+/// a read of `c`; the source gives the stdlib's form over the previous value (`!c.prev() && c`, D9).
 fn stdlib_rise_guard(carrier: &str) -> (String, String) {
-    (
-        format!("guard {carrier}.high()"),
-        format!("guard ((!{carrier}.prev().high()) & ((!{carrier}.is_known()) | {carrier}.known_or(false)))"),
-    )
+    (format!("guard {carrier}"), format!("guard ((!{carrier}.prev()) && {carrier})"))
 }
 
 /// The second: `Pid` folds `DUTY_MAX as i32` where the fixture writes the cast (DIG-08 AC 2).
 const PID_FOLD: (&str, &str) = ("(2880u12 as i32)", "2880i32");
+
+/// The one difference of `GateDriver`: its delayed definitions give no value to its `out` ports, so each writes its
+/// initial value (explicit-unknowns T30, §3.3.4) and the fixture, the earlier transcription, has none.
+const GATE_DRIVER_INITIAL_VALUES: [(&str, &str); 2] = [("carrier hs_gate: bool out", "carrier hs_gate: bool out init false"), ("carrier ls_gate: bool out", "carrier ls_gate: bool out init false")];
 
 /// Replace `from` by `to` in `lines`, which must hold `from` exactly once: a listed difference is
 /// one place, never a blanket rewrite.
@@ -68,17 +71,18 @@ fn assert_same(case: &str, expected: &[String], actual: &[String]) {
 
 #[test]
 fn six_slice_bodies_equal_their_hand_built_fixtures() {
-    // DIG-14 AC 1, C128. Osc and GateDriver print exactly; the others differ by the rise guard
+    // DIG-14 AC 1, C128. Osc prints exactly and GateDriver by its two initial values; the others differ by the rise guard
     // (SetpointReg `wr`, RefRamp `tick`, Adc `sample`, Pid `tick`) and Pid also by the fold.
     let ir = buck_ir();
     let print = ir.print_structural();
+    let pid = vec![stdlib_rise_guard("tick"), pair(PID_FOLD)];
     let cases: [(&str, &str, Vec<(String, String)>); 6] = [
         ("osc", "Osc", vec![]),
-        ("gate_driver", "GateDriver", vec![]),
+        ("gate_driver", "GateDriver", GATE_DRIVER_INITIAL_VALUES.map(pair).to_vec()),
         ("setpoint_reg", "SetpointReg", vec![stdlib_rise_guard("wr")]),
         ("ref_ramp", "RefRamp", vec![stdlib_rise_guard("tick")]),
         ("adc", "Adc", vec![stdlib_rise_guard("sample")]),
-        ("pid", "Pid", vec![stdlib_rise_guard("tick"), pair(PID_FOLD)]),
+        ("pid", "Pid", pid),
     ];
     for (file, body, differences) in cases {
         let header = format!("body {body}");
@@ -120,10 +124,9 @@ fn dpwm_and_a2d_differ_only_as_listed() {
     let elaborated = item(&print, "body Dpwm");
     let expected = replace_once(&item(&fixture("dpwm"), "body Dpwm"), &stdlib_rise_guard("clk"));
     assert_same("Dpwm", &expected, &without(&elaborated, &dpwm_extras));
-    // Its two functions are the fixture's, exactly.
-    for header in ["fn \"dithered_width~01\"", "fn \"rev3~1\""] {
-        assert_same(header, &item(&fixture("dpwm"), header), &item(&print, header));
-    }
+    // Its two functions are the fixture's.
+    assert_same("dithered_width", &item(&fixture("dpwm"), "fn dithered_width"), &item(&print, "fn dithered_width"));
+    assert_same("rev3", &item(&fixture("dpwm"), "fn rev3"), &item(&print, "fn rev3"));
 
     // A2D (the fixture `comparator`) adds the `init` of each `above`: two signals and an event for
     // each, numbered after the cross, so the second cross is E2 where the fixture has E1. Each

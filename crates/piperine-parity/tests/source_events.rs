@@ -97,12 +97,9 @@ impl Run {
         (o.time * 1e15).round() as i64
     }
 
-    /// The bytes of a known `Bit<f64>`: the value, its known byte and the padding of the 16-byte carrier.
+    /// The bytes of a `Bit<f64>`: its eight value bytes.
     fn known_real(value: f64) -> Vec<u8> {
-        let mut bytes = value.to_le_bytes().to_vec();
-        bytes.push(1);
-        bytes.resize(16, 0);
-        bytes
+        value.to_le_bytes().to_vec()
     }
 
     /// Whether two lists of instants in ticks are the same instants: an accepted step is the analog

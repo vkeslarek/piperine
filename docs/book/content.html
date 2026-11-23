@@ -286,21 +286,18 @@ digital for Delayed {
 
 <pre data-lang="sh">piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6</pre>
 
-<pre data-lang="text" data-cli-output="piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6" data-cli-project="rc" data-cli-stream="stderr" data-cli-lines="1-3">E0150
+<pre data-lang="text" data-cli-output="piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6" data-cli-project="rc">run delayed: transient, top Delayed, backend rust
+@1.999933e-6 Delayed tau t=1.999933e-6 vout=6.321206e-1
 
-  × an `analog` block reads the discrete carrier `fired` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)
-    ╭─[delayed.msl:11:36]
- 10 │ digital for StepSource { on at(t0) { fired &lt;- true; } }
- 11 │ analog for StepSource { v(p) +&gt; if fired { v1 } else { 0.0 }; }
-    ·                                    ──┬──
-    ·                                      ╰── a discrete carrier read in `analog`
- 12 │ 
-    ╰────
-  help: read it through `known()`, `known_or(d)`, or `high()` for a `Bit`
+time         Delayed.vin  Delayed.vout
+0.000000e0   0.000000e0   0.000000e0
+1.000000e-6  0.000000e0   0.000000e0
+2.000000e-6  1.000000e0   6.321445e-1
+3.000000e-6  1.000000e0   8.646873e-1
+4.000000e-6  1.000000e0   9.502263e-1
+5.000000e-6  1.000000e0   9.816912e-1</pre>
 
-error: typeck failed with 1 diagnostic(s)</pre>
-
-<p>The listing above is what the command prints today: it refuses the file, because the front end still refuses a plain read of <code>fired</code> in <code>analog</code> (error E0150), which the language now allows. When the read is accepted, the run gives the table of the benches before it. One time constant after the step: <code>vout</code> is 1&nbsp;−&nbsp;1/<em>e</em> to the digit, at 0.07&nbsp;ns before 2&nbsp;µs. To keep the run, give it a table in <code>Piperine.toml</code>; every flag has a key of the same name:</p>
+<p>The first line under the header is the record the bench wrote: one time constant after the step, <code>vout</code> is 1&nbsp;−&nbsp;1/<em>e</em> to the digit, at 0.07&nbsp;ns before 2&nbsp;µs. The table that follows is the benches' table, one row per microsecond. To keep the run, give it a table in <code>Piperine.toml</code>; every flag has a key of the same name:</p>
 
 <pre data-lang="toml">[run.delayed]
 bench = "benches/delayed.msl"
@@ -332,7 +329,7 @@ print_step = 1e-6</pre>
 
 <p>The third one, the definition, is how you write logic with no state. Here is a digital inverter with a propagation delay. It has no behavior block at all: its one line drives the output from the input, <code>tpd</code> seconds later.</p>
 
-<pre data-lang="msl">module Inv(in a: Bit, out y: Bit) {
+<pre data-lang="msl">module Inv(in a: Bit, out y: Bit = false) {
     tpd: f64 = 10p where tpd > 0.0;
     y = !a after tpd;
 }</pre>
@@ -1869,10 +1866,16 @@ module AdderTop(in b: Bit<Option<u8>>) {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Add the two modules to <code>monitor.msl</code>. The file now has two candidates for the top, so name the one you want. Its <code>in</code> port is left undriven, which is the bug under study. That is, once an <code>Option</code> can be carried on a signal. Today the command refuses the file and runs nothing:</p>
+  <p>Add the two modules to <code>monitor.msl</code>. The file now has two candidates for the top, so name the one you want. Its <code>in</code> port is left undriven, which is the bug under study.</p>
 <pre data-lang="sh">piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent</pre>
-<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent" data-cli-stream="stderr" data-cli-lines="1-2">compiling run `monitor` (top AdderTop) with rustc
-error: E0105: a model panicked under known control in `AdderTop.add` at tick 500000000: `b` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first</pre>
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent">run monitor: transient, top AdderTop, backend rust
+@5.000000e-7 AdderTop.add absent t=5.000000e-7 a=3
+@1.500000e-6 AdderTop.add absent t=1.500000e-6 a=3
+@2.500000e-6 AdderTop.add absent t=2.500000e-6 a=3
+
+time         AdderTop.b  AdderTop.clk  AdderTop.sum  AdderTop.add.a
+0.000000e0   None        false         0             3
+3.000000e-6  None        false         0             3</pre>
   <p>Count the record lines from <code>AdderTop.add</code> when it runs: one at each rising edge, three in all.</p>
 </div>
 
@@ -1950,7 +1953,29 @@ P0001
  65 │     signal clk: Bit;
     ╰────
 
-error: typeck failed with 4 diagnostic(s)</pre>
+P0001
+
+  × generic function is not supported yet
+    ╭─[values.msl:16:1]
+ 15 │ 
+ 16 │ pub extern "intrinsic" fn logic&lt;T: Repr&gt;(pattern: str) -&gt; T;
+    · ──────────────────────────────┬─────────────────────────────
+    ·                               ╰── generic function is outside the M1 subset
+ 17 │ 
+    ╰────
+
+P0001
+
+  × generic parameter used as a type is not supported yet
+    ╭─[values.msl:16:59]
+ 15 │ 
+ 16 │ pub extern "intrinsic" fn logic&lt;T: Repr&gt;(pattern: str) -&gt; T;
+    ·                                                           ┬
+    ·                                                           ╰── generic parameter used as a type is outside the M1 subset
+ 17 │ 
+    ╰────
+
+error: typeck failed with 6 diagnostic(s)</pre>
   <p>When it runs, each rising edge writes one record, <code>eq=x same=false sure=false</code>, three in all. Today the library type <code>Logic</code> is refused by name.</p>
 </div>
 
@@ -3716,24 +3741,1228 @@ module Buck() {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the converter, with the <code>digital for Buck</code> check, as <code>buck.msl</code>. Its switch reads the bit <code>ctl</code> in <code>analog</code> directly, which the front end still refuses with error E0150, as the listing at the end of this box shows; when the read is accepted, the commands below run. First watch the loop start, one record per switching period:</p>
+  <p>Save the converter, with the <code>digital for Buck</code> check, as <code>buck.msl</code>. Its switch reads the bit <code>ctl</code> in <code>analog</code> directly, with no gate. First watch the loop start, one record per switching period; the listing at the end of this box is the first lines of what the command prints:</p>
 <pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop</pre>
   <p>Read the <code>duty</code> field down the lines: it stays at 0 while the output falls from the 11.8&nbsp;V of the operating point, then climbs and settles near 0.28, while the <code>Buck.vout</code> column of the table starts at 11.8 and falls to 3.3. Then draw it, and keep the records for a script:</p>
 <pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --plot startup.svg --records loop.jsonl</pre>
   <p>The plot draws the rows of the run. This command has no <code>--print-step</code>, so there is a row for every accepted step and the switching ripple is visible on <code>vout</code>; add <code>--print-step 1e-3</code> and the plot would draw only the table's rows, one per millisecond. With the check in the file, every time point after 10&nbsp;ms is tested, and the run completes with every <code>regulated</code> record passing. Leave the <code>digital for Buck</code> block out and the converter runs the same, loop records and all, with nothing to check it.</p>
-<pre data-lang="text" data-cli-output="piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop" data-cli-stream="stderr" data-cli-lines="1-3">E0150
+<pre data-lang="text" data-cli-output="piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop" data-cli-lines="1-12">run buck: transient, top Buck, backend rust
+@0.000000e0 Buck.ctl loop t=0.000000e0 vout=3.959974e-5 err=3.299960e0 duty=3.299960e-3
+@1.000000e-5 Buck.ctl loop t=1.000000e-5 vout=1.155572e1 err=-8.255722e0 duty=0.000000e0
+@2.000000e-5 Buck.ctl loop t=2.000000e-5 vout=1.078700e1 err=-7.486996e0 duty=0.000000e0
+@3.000000e-5 Buck.ctl loop t=3.000000e-5 vout=9.575207e0 err=-6.275207e0 duty=0.000000e0
+@4.000000e-5 Buck.ctl loop t=4.000000e-5 vout=7.997353e0 err=-4.697353e0 duty=0.000000e0
+@5.000000e-5 Buck.ctl loop t=5.000000e-5 vout=6.143067e0 err=-2.843067e0 duty=0.000000e0
+@6.000000e-5 Buck.ctl loop t=6.000000e-5 vout=4.109546e0 err=-8.095455e-1 duty=0.000000e0
+@7.000000e-5 Buck.ctl loop t=7.000000e-5 vout=1.997190e0 err=1.302810e0 duty=1.302810e-3
+@8.000000e-5 Buck.ctl loop t=8.000000e-5 vout=-9.498383e-2 err=3.394984e0 duty=4.697794e-3
+@9.000000e-5 Buck.ctl loop t=9.000000e-5 vout=-2.072450e0 err=5.372450e0 duty=1.007024e-2
+@1.000000e-4 Buck.ctl loop t=1.000000e-4 vout=-3.849695e0 err=7.149695e0 duty=1.721994e-2
+@1.100000e-4 Buck.ctl loop t=1.100000e-4 vout=-5.353819e0 err=8.653819e0 duty=2.587376e-2
+@1.200000e-4 Buck.ctl loop t=1.200000e-4 vout=-6.527071e0 err=9.827071e0 duty=3.570083e-2
+@1.300000e-4 Buck.ctl loop t=1.300000e-4 vout=-7.328895e0 err=1.062889e1 duty=4.632972e-2
+@1.400000e-4 Buck.ctl loop t=1.400000e-4 vout=-7.737059e0 err=1.103706e1 duty=5.736678e-2
+@1.500000e-4 Buck.ctl loop t=1.500000e-4 vout=-7.747867e0 err=1.104787e1 duty=6.841465e-2
+@1.600000e-4 Buck.ctl loop t=1.600000e-4 vout=-7.375532e0 err=1.067553e1 duty=7.909018e-2
+@1.700000e-4 Buck.ctl loop t=1.700000e-4 vout=-6.650977e0 err=9.950977e0 duty=8.904116e-2
+@1.800000e-4 Buck.ctl loop t=1.800000e-4 vout=-5.619605e0 err=8.919605e0 duty=9.796076e-2
+@1.900000e-4 Buck.ctl loop t=1.900000e-4 vout=-4.338687e0 err=7.638687e0 duty=1.055994e-1
+@2.000000e-4 Buck.ctl loop t=2.000000e-4 vout=-2.874398e0 err=6.174398e0 duty=1.117738e-1
+@2.100000e-4 Buck.ctl loop t=2.100000e-4 vout=-1.298442e0 err=4.598442e0 duty=1.163723e-1
+@2.200000e-4 Buck.ctl loop t=2.200000e-4 vout=3.154670e-1 err=2.984533e0 duty=1.193568e-1
+@2.300000e-4 Buck.ctl loop t=2.300000e-4 vout=1.894706e0 err=1.405294e0 duty=1.207621e-1
+@2.400000e-4 Buck.ctl loop t=2.400000e-4 vout=3.371191e0 err=-7.119103e-2 duty=1.206909e-1
+@2.500000e-4 Buck.ctl loop t=2.500000e-4 vout=4.684214e0 err=-1.384214e0 duty=1.193067e-1
+@2.600000e-4 Buck.ctl loop t=2.600000e-4 vout=5.782805e0 err=-2.482805e0 duty=1.168239e-1
+@2.700000e-4 Buck.ctl loop t=2.700000e-4 vout=6.627637e0 err=-3.327637e0 duty=1.134963e-1
+@2.800000e-4 Buck.ctl loop t=2.800000e-4 vout=7.192295e0 err=-3.892295e0 duty=1.096040e-1
+@2.900000e-4 Buck.ctl loop t=2.900000e-4 vout=7.463941e0 err=-4.163941e0 duty=1.054400e-1
+@3.000000e-4 Buck.ctl loop t=3.000000e-4 vout=7.443349e0 err=-4.143349e0 duty=1.012967e-1
+@3.100000e-4 Buck.ctl loop t=3.100000e-4 vout=7.144279e0 err=-3.844279e0 duty=9.745241e-2
+@3.200000e-4 Buck.ctl loop t=3.200000e-4 vout=6.592500e0 err=-3.292500e0 duty=9.415991e-2
+@3.300000e-4 Buck.ctl loop t=3.300000e-4 vout=5.823994e0 err=-2.523994e0 duty=9.163591e-2
+@3.400000e-4 Buck.ctl loop t=3.400000e-4 vout=4.882942e0 err=-1.582942e0 duty=9.005297e-2
+@3.500000e-4 Buck.ctl loop t=3.500000e-4 vout=3.819557e0 err=-5.195568e-1 duty=8.953341e-2
+@3.600000e-4 Buck.ctl loop t=3.600000e-4 vout=2.687307e0 err=6.126929e-1 duty=9.014611e-2
+@3.700000e-4 Buck.ctl loop t=3.700000e-4 vout=1.540856e0 err=1.759144e0 duty=9.190525e-2
+@3.800000e-4 Buck.ctl loop t=3.800000e-4 vout=4.330390e-1 err=2.866961e0 duty=9.477221e-2
+@3.900000e-4 Buck.ctl loop t=3.900000e-4 vout=-5.871721e-1 err=3.887172e0 duty=9.865939e-2
+@4.000000e-4 Buck.ctl loop t=4.000000e-4 vout=-1.476491e0 err=4.776491e0 duty=1.034359e-1
+@4.100000e-4 Buck.ctl loop t=4.100000e-4 vout=-2.199437e0 err=5.499437e0 duty=1.089353e-1
+@4.200000e-4 Buck.ctl loop t=4.200000e-4 vout=-2.729455e0 err=6.029455e0 duty=1.149648e-1
+@4.300000e-4 Buck.ctl loop t=4.300000e-4 vout=-3.049555e0 err=6.349555e0 duty=1.213143e-1
+@4.400000e-4 Buck.ctl loop t=4.400000e-4 vout=-3.152991e0 err=6.452991e0 duty=1.277673e-1
+@4.500000e-4 Buck.ctl loop t=4.500000e-4 vout=-3.042936e0 err=6.342936e0 duty=1.341103e-1
+@4.600000e-4 Buck.ctl loop t=4.600000e-4 vout=-2.731983e0 err=6.031983e0 duty=1.401422e-1
+@4.700000e-4 Buck.ctl loop t=4.700000e-4 vout=-2.241265e0 err=5.541265e0 duty=1.456835e-1
+@4.800000e-4 Buck.ctl loop t=4.800000e-4 vout=-1.599075e0 err=4.899075e0 duty=1.505826e-1
+@4.900000e-4 Buck.ctl loop t=4.900000e-4 vout=-8.393594e-1 err=4.139359e0 duty=1.547219e-1
+@5.000000e-4 Buck.ctl loop t=5.000000e-4 vout=2.411469e-5 err=3.299976e0 duty=1.580219e-1
+@5.100000e-4 Buck.ctl loop t=5.100000e-4 vout=8.792612e-1 err=2.420739e0 duty=1.604426e-1
+@5.200000e-4 Buck.ctl loop t=5.200000e-4 vout=1.758224e0 err=1.541776e0 duty=1.619844e-1
+@5.300000e-4 Buck.ctl loop t=5.300000e-4 vout=2.598481e0 err=7.015188e-1 duty=1.626859e-1
+@5.400000e-4 Buck.ctl loop t=5.400000e-4 vout=3.364839e0 err=-6.483888e-2 duty=1.626211e-1
+@5.500000e-4 Buck.ctl loop t=5.500000e-4 vout=4.026885e0 err=-7.268851e-1 duty=1.618942e-1
+@5.600000e-4 Buck.ctl loop t=5.600000e-4 vout=4.560049e0 err=-1.260049e0 duty=1.606342e-1
+@5.700000e-4 Buck.ctl loop t=5.700000e-4 vout=4.946466e0 err=-1.646466e0 duty=1.589877e-1
+@5.800000e-4 Buck.ctl loop t=5.800000e-4 vout=5.175595e0 err=-1.875595e0 duty=1.571121e-1
+@5.900000e-4 Buck.ctl loop t=5.900000e-4 vout=5.244333e0 err=-1.944333e0 duty=1.551678e-1
+@6.000000e-4 Buck.ctl loop t=6.000000e-4 vout=5.156879e0 err=-1.856879e0 duty=1.533109e-1
+@6.100000e-4 Buck.ctl loop t=6.100000e-4 vout=4.924164e0 err=-1.624164e0 duty=1.516867e-1
+@6.200000e-4 Buck.ctl loop t=6.200000e-4 vout=4.563265e0 err=-1.263265e0 duty=1.504235e-1
+@6.300000e-4 Buck.ctl loop t=6.300000e-4 vout=4.096276e0 err=-7.962760e-1 duty=1.496272e-1
+@6.400000e-4 Buck.ctl loop t=6.400000e-4 vout=3.549118e0 err=-2.491175e-1 duty=1.493781e-1
+@6.500000e-4 Buck.ctl loop t=6.500000e-4 vout=2.950209e0 err=3.497906e-1 duty=1.497279e-1
+@6.600000e-4 Buck.ctl loop t=6.600000e-4 vout=2.329258e0 err=9.707418e-1 duty=1.506986e-1
+@6.700000e-4 Buck.ctl loop t=6.700000e-4 vout=1.715559e0 err=1.584441e0 duty=1.522830e-1
+@6.800000e-4 Buck.ctl loop t=6.800000e-4 vout=1.137068e0 err=2.162932e0 duty=1.544460e-1
+@6.900000e-4 Buck.ctl loop t=6.900000e-4 vout=6.189178e-1 err=2.681082e0 duty=1.571271e-1
+@7.000000e-4 Buck.ctl loop t=7.000000e-4 vout=1.825683e-1 err=3.117432e0 duty=1.602445e-1
+@7.100000e-4 Buck.ctl loop t=7.100000e-4 vout=-1.551218e-1 err=3.455122e0 duty=1.636996e-1
+@7.200000e-4 Buck.ctl loop t=7.200000e-4 vout=-3.822375e-1 err=3.682238e0 duty=1.673819e-1
+@7.300000e-4 Buck.ctl loop t=7.300000e-4 vout=-4.924268e-1 err=3.792427e0 duty=1.711743e-1
+@7.400000e-4 Buck.ctl loop t=7.400000e-4 vout=-4.848256e-1 err=3.784826e0 duty=1.749591e-1
+@7.500000e-4 Buck.ctl loop t=7.500000e-4 vout=-3.639320e-1 err=3.663932e0 duty=1.786230e-1
+@7.600000e-4 Buck.ctl loop t=7.600000e-4 vout=-1.389341e-1 err=3.438934e0 duty=1.820620e-1
+@7.700000e-4 Buck.ctl loop t=7.700000e-4 vout=1.764501e-1 err=3.123550e0 duty=1.851855e-1
+@7.800000e-4 Buck.ctl loop t=7.800000e-4 vout=5.651086e-1 err=2.734891e0 duty=1.879204e-1
+@7.900000e-4 Buck.ctl loop t=7.900000e-4 vout=1.007435e0 err=2.292565e0 duty=1.902130e-1
+@8.000000e-4 Buck.ctl loop t=8.000000e-4 vout=1.481978e0 err=1.818022e0 duty=1.920310e-1
+@8.100000e-4 Buck.ctl loop t=8.100000e-4 vout=1.966925e0 err=1.333075e0 duty=1.933641e-1
+@8.200000e-4 Buck.ctl loop t=8.200000e-4 vout=2.440811e0 err=8.591891e-1 duty=1.942233e-1
+@8.300000e-4 Buck.ctl loop t=8.300000e-4 vout=2.883402e0 err=4.165979e-1 duty=1.946399e-1
+@8.400000e-4 Buck.ctl loop t=8.400000e-4 vout=3.276837e0 err=2.316300e-2 duty=1.946630e-1
+@8.500000e-4 Buck.ctl loop t=8.500000e-4 vout=3.606078e0 err=-3.060785e-1 duty=1.943569e-1
+@8.600000e-4 Buck.ctl loop t=8.600000e-4 vout=3.859601e0 err=-5.596010e-1 duty=1.937973e-1
+@8.700000e-4 Buck.ctl loop t=8.700000e-4 vout=4.029688e0 err=-7.296880e-1 duty=1.930677e-1
+@8.800000e-4 Buck.ctl loop t=8.800000e-4 vout=4.112647e0 err=-8.126473e-1 duty=1.922550e-1
+@8.900000e-4 Buck.ctl loop t=8.900000e-4 vout=4.108864e0 err=-8.088637e-1 duty=1.914461e-1
+@9.000000e-4 Buck.ctl loop t=9.000000e-4 vout=4.022565e0 err=-7.225648e-1 duty=1.907236e-1
+@9.100000e-4 Buck.ctl loop t=9.100000e-4 vout=3.861408e0 err=-5.614076e-1 duty=1.901622e-1
+@9.200000e-4 Buck.ctl loop t=9.200000e-4 vout=3.636237e0 err=-3.362374e-1 duty=1.898259e-1
+@9.300000e-4 Buck.ctl loop t=9.300000e-4 vout=3.360245e0 err=-6.024462e-2 duty=1.897657e-1
+@9.400000e-4 Buck.ctl loop t=9.400000e-4 vout=3.048284e0 err=2.517156e-1 duty=1.900174e-1
+@9.500000e-4 Buck.ctl loop t=9.500000e-4 vout=2.716360e0 err=5.836400e-1 duty=1.906010e-1
+@9.600000e-4 Buck.ctl loop t=9.600000e-4 vout=2.380549e0 err=9.194506e-1 duty=1.915205e-1
+@9.700000e-4 Buck.ctl loop t=9.700000e-4 vout=2.056556e0 err=1.243444e0 duty=1.927639e-1
+@9.800000e-4 Buck.ctl loop t=9.800000e-4 vout=1.758996e0 err=1.541004e0 duty=1.943049e-1
+@9.900000e-4 Buck.ctl loop t=9.900000e-4 vout=1.500540e0 err=1.799460e0 duty=1.961044e-1
+@1.000000e-3 Buck.ctl loop t=1.000000e-3 vout=1.291656e0 err=2.008344e0 duty=1.981128e-1
+@1.010000e-3 Buck.ctl loop t=1.010000e-3 vout=1.140092e0 err=2.159908e0 duty=2.002727e-1
+@1.020000e-3 Buck.ctl loop t=1.020000e-3 vout=1.050901e0 err=2.249099e0 duty=2.025218e-1
+@1.030000e-3 Buck.ctl loop t=1.030000e-3 vout=1.026059e0 err=2.273941e0 duty=2.047957e-1
+@1.040000e-3 Buck.ctl loop t=1.040000e-3 vout=1.064430e0 err=2.235570e0 duty=2.070313e-1
+@1.050000e-3 Buck.ctl loop t=1.050000e-3 vout=1.162356e0 err=2.137644e0 duty=2.091689e-1
+@1.060000e-3 Buck.ctl loop t=1.060000e-3 vout=1.313368e0 err=1.986632e0 duty=2.111555e-1
+@1.070000e-3 Buck.ctl loop t=1.070000e-3 vout=1.509128e0 err=1.790872e0 duty=2.129464e-1
+@1.080000e-3 Buck.ctl loop t=1.080000e-3 vout=1.739522e0 err=1.560478e0 duty=2.145069e-1
+@1.090000e-3 Buck.ctl loop t=1.090000e-3 vout=1.993255e0 err=1.306745e0 duty=2.158136e-1
+@1.100000e-3 Buck.ctl loop t=1.100000e-3 vout=2.258564e0 err=1.041436e0 duty=2.168551e-1
+@1.110000e-3 Buck.ctl loop t=1.110000e-3 vout=2.523512e0 err=7.764878e-1 duty=2.176316e-1
+@1.120000e-3 Buck.ctl loop t=1.120000e-3 vout=2.776650e0 err=5.233497e-1 duty=2.181549e-1
+@1.130000e-3 Buck.ctl loop t=1.130000e-3 vout=3.007587e0 err=2.924134e-1 duty=2.184473e-1
+@1.140000e-3 Buck.ctl loop t=1.140000e-3 vout=3.207336e0 err=9.266446e-2 duty=2.185400e-1
+@1.150000e-3 Buck.ctl loop t=1.150000e-3 vout=3.368659e0 err=-6.865901e-2 duty=2.184713e-1
+@1.160000e-3 Buck.ctl loop t=1.160000e-3 vout=3.486255e0 err=-1.862549e-1 duty=2.182851e-1
+@1.170000e-3 Buck.ctl loop t=1.170000e-3 vout=3.557100e0 err=-2.570999e-1 duty=2.180280e-1
+@1.180000e-3 Buck.ctl loop t=1.180000e-3 vout=3.580269e0 err=-2.802695e-1 duty=2.177477e-1
+@1.190000e-3 Buck.ctl loop t=1.190000e-3 vout=3.557041e0 err=-2.570406e-1 duty=2.174907e-1
+@1.200000e-3 Buck.ctl loop t=1.200000e-3 vout=3.490725e0 err=-1.907250e-1 duty=2.172999e-1
+@1.210000e-3 Buck.ctl loop t=1.210000e-3 vout=3.386306e0 err=-8.630645e-2 duty=2.172136e-1
+@1.220000e-3 Buck.ctl loop t=1.220000e-3 vout=3.250442e0 err=4.955808e-2 duty=2.172632e-1
+@1.230000e-3 Buck.ctl loop t=1.230000e-3 vout=3.090861e0 err=2.091389e-1 duty=2.174723e-1
+@1.240000e-3 Buck.ctl loop t=1.240000e-3 vout=2.916018e0 err=3.839823e-1 duty=2.178563e-1
+@1.250000e-3 Buck.ctl loop t=1.250000e-3 vout=2.734751e0 err=5.652492e-1 duty=2.184216e-1
+@1.260000e-3 Buck.ctl loop t=1.260000e-3 vout=2.555778e0 err=7.442223e-1 duty=2.191658e-1
+@1.270000e-3 Buck.ctl loop t=1.270000e-3 vout=2.387304e0 err=9.126956e-1 duty=2.200785e-1
+@1.280000e-3 Buck.ctl loop t=1.280000e-3 vout=2.236846e0 err=1.063154e0 duty=2.211416e-1
+@1.290000e-3 Buck.ctl loop t=1.290000e-3 vout=2.110655e0 err=1.189345e0 duty=2.223310e-1
+@1.300000e-3 Buck.ctl loop t=1.300000e-3 vout=2.013822e0 err=1.286178e0 duty=2.236172e-1
+@1.310000e-3 Buck.ctl loop t=1.310000e-3 vout=1.949826e0 err=1.350174e0 duty=2.249673e-1
+@1.320000e-3 Buck.ctl loop t=1.320000e-3 vout=1.920552e0 err=1.379448e0 duty=2.263468e-1
+@1.330000e-3 Buck.ctl loop t=1.330000e-3 vout=1.926228e0 err=1.373772e0 duty=2.277206e-1
+@1.340000e-3 Buck.ctl loop t=1.340000e-3 vout=1.965570e0 err=1.334430e0 duty=2.290550e-1
+@1.350000e-3 Buck.ctl loop t=1.350000e-3 vout=2.035781e0 err=1.264219e0 duty=2.303192e-1
+@1.360000e-3 Buck.ctl loop t=1.360000e-3 vout=2.132758e0 err=1.167242e0 duty=2.314864e-1
+@1.370000e-3 Buck.ctl loop t=1.370000e-3 vout=2.251404e0 err=1.048596e0 duty=2.325350e-1
+@1.380000e-3 Buck.ctl loop t=1.380000e-3 vout=2.385829e0 err=9.141715e-1 duty=2.334492e-1
+@1.390000e-3 Buck.ctl loop t=1.390000e-3 vout=2.529711e0 err=7.702890e-1 duty=2.342195e-1
+@1.400000e-3 Buck.ctl loop t=1.400000e-3 vout=2.676543e0 err=6.234572e-1 duty=2.348430e-1
+@1.410000e-3 Buck.ctl loop t=1.410000e-3 vout=2.819994e0 err=4.800060e-1 duty=2.353230e-1
+@1.420000e-3 Buck.ctl loop t=1.420000e-3 vout=2.954101e0 err=3.458990e-1 duty=2.356689e-1
+@1.430000e-3 Buck.ctl loop t=1.430000e-3 vout=3.073527e0 err=2.264726e-1 duty=2.358953e-1
+@1.440000e-3 Buck.ctl loop t=1.440000e-3 vout=3.173805e0 err=1.261953e-1 duty=2.360215e-1
+@1.450000e-3 Buck.ctl loop t=1.450000e-3 vout=3.251513e0 err=4.848715e-2 duty=2.360700e-1
+@1.460000e-3 Buck.ctl loop t=1.460000e-3 vout=3.304375e0 err=-4.375023e-3 duty=2.360656e-1
+@1.470000e-3 Buck.ctl loop t=1.470000e-3 vout=3.331313e0 err=-3.131318e-2 duty=2.360343e-1
+@1.480000e-3 Buck.ctl loop t=1.480000e-3 vout=3.332448e0 err=-3.244799e-2 duty=2.360019e-1
+@1.490000e-3 Buck.ctl loop t=1.490000e-3 vout=3.309045e0 err=-9.044955e-3 duty=2.359928e-1
+@1.500000e-3 Buck.ctl loop t=1.500000e-3 vout=3.263439e0 err=3.656090e-2 duty=2.360294e-1
+@1.510000e-3 Buck.ctl loop t=1.510000e-3 vout=3.198729e0 err=1.012711e-1 duty=2.361307e-1
+@1.520000e-3 Buck.ctl loop t=1.520000e-3 vout=3.118885e0 err=1.811151e-1 duty=2.363118e-1
+@1.530000e-3 Buck.ctl loop t=1.530000e-3 vout=3.028387e0 err=2.716133e-1 duty=2.365834e-1
+@1.540000e-3 Buck.ctl loop t=1.540000e-3 vout=2.931953e0 err=3.680467e-1 duty=2.369514e-1
+@1.550000e-3 Buck.ctl loop t=1.550000e-3 vout=2.834394e0 err=4.656056e-1 duty=2.374170e-1
+@1.560000e-3 Buck.ctl loop t=1.560000e-3 vout=2.740412e0 err=5.595878e-1 duty=2.379766e-1
+@1.570000e-3 Buck.ctl loop t=1.570000e-3 vout=2.654240e0 err=6.457600e-1 duty=2.386224e-1
+@1.580000e-3 Buck.ctl loop t=1.580000e-3 vout=2.579691e0 err=7.203094e-1 duty=2.393427e-1
+@1.590000e-3 Buck.ctl loop t=1.590000e-3 vout=2.519887e0 err=7.801133e-1 duty=2.401228e-1
+@1.600000e-3 Buck.ctl loop t=1.600000e-3 vout=2.477143e0 err=8.228573e-1 duty=2.409457e-1
+@1.610000e-3 Buck.ctl loop t=1.610000e-3 vout=2.452928e0 err=8.470722e-1 duty=2.417927e-1
+@1.620000e-3 Buck.ctl loop t=1.620000e-3 vout=2.447808e0 err=8.521920e-1 duty=2.426449e-1
+@1.630000e-3 Buck.ctl loop t=1.630000e-3 vout=2.461479e0 err=8.385205e-1 duty=2.434835e-1
+@1.640000e-3 Buck.ctl loop t=1.640000e-3 vout=2.492811e0 err=8.071889e-1 duty=2.442907e-1
+@1.650000e-3 Buck.ctl loop t=1.650000e-3 vout=2.539907e0 err=7.600929e-1 duty=2.450507e-1
+@1.660000e-3 Buck.ctl loop t=1.660000e-3 vout=2.600239e0 err=6.997607e-1 duty=2.457505e-1
+@1.670000e-3 Buck.ctl loop t=1.670000e-3 vout=2.670837e0 err=6.291628e-1 duty=2.463797e-1
+@1.680000e-3 Buck.ctl loop t=1.680000e-3 vout=2.748375e0 err=5.516248e-1 duty=2.469313e-1
+@1.690000e-3 Buck.ctl loop t=1.690000e-3 vout=2.829205e0 err=4.707946e-1 duty=2.474021e-1
+@1.700000e-3 Buck.ctl loop t=1.700000e-3 vout=2.909937e0 err=3.900634e-1 duty=2.477921e-1
+@1.710000e-3 Buck.ctl loop t=1.710000e-3 vout=2.987057e0 err=3.129434e-1 duty=2.481051e-1
+@1.720000e-3 Buck.ctl loop t=1.720000e-3 vout=3.057558e0 err=2.424417e-1 duty=2.483475e-1
+@1.730000e-3 Buck.ctl loop t=1.730000e-3 vout=3.118791e0 err=1.812085e-1 duty=2.485287e-1
+@1.740000e-3 Buck.ctl loop t=1.740000e-3 vout=3.168546e0 err=1.314541e-1 duty=2.486602e-1
+@1.750000e-3 Buck.ctl loop t=1.750000e-3 vout=3.205264e0 err=9.473621e-2 duty=2.487549e-1
+@1.760000e-3 Buck.ctl loop t=1.760000e-3 vout=3.228030e0 err=7.196983e-2 duty=2.488269e-1
+@1.770000e-3 Buck.ctl loop t=1.770000e-3 vout=3.236588e0 err=6.341191e-2 duty=2.488903e-1
+@1.780000e-3 Buck.ctl loop t=1.780000e-3 vout=3.231323e0 err=6.867661e-2 duty=2.489590e-1
+@1.790000e-3 Buck.ctl loop t=1.790000e-3 vout=3.213222e0 err=8.677848e-2 duty=2.490458e-1
+@1.800000e-3 Buck.ctl loop t=1.800000e-3 vout=3.183832e0 err=1.161676e-1 duty=2.491619e-1
+@1.810000e-3 Buck.ctl loop t=1.810000e-3 vout=3.144969e0 err=1.550309e-1 duty=2.493170e-1
+@1.820000e-3 Buck.ctl loop t=1.820000e-3 vout=3.099109e0 err=2.008908e-1 duty=2.495179e-1
+@1.830000e-3 Buck.ctl loop t=1.830000e-3 vout=3.048648e0 err=2.513518e-1 duty=2.497692e-1
+@1.840000e-3 Buck.ctl loop t=1.840000e-3 vout=2.996268e0 err=3.037317e-1 duty=2.500729e-1
+@1.850000e-3 Buck.ctl loop t=1.850000e-3 vout=2.944579e0 err=3.554207e-1 duty=2.504284e-1
+@1.860000e-3 Buck.ctl loop t=1.860000e-3 vout=2.896027e0 err=4.039731e-1 duty=2.508323e-1
+@1.870000e-3 Buck.ctl loop t=1.870000e-3 vout=2.852824e0 err=4.471762e-1 duty=2.512795e-1
+@1.880000e-3 Buck.ctl loop t=1.880000e-3 vout=2.816960e0 err=4.830402e-1 duty=2.517626e-1
+@1.890000e-3 Buck.ctl loop t=1.890000e-3 vout=2.789855e0 err=5.101449e-1 duty=2.522727e-1
+@1.900000e-3 Buck.ctl loop t=1.900000e-3 vout=2.772500e0 err=5.274998e-1 duty=2.528002e-1
+@1.910000e-3 Buck.ctl loop t=1.910000e-3 vout=2.765351e0 err=5.346487e-1 duty=2.533348e-1
+@1.920000e-3 Buck.ctl loop t=1.920000e-3 vout=2.768557e0 err=5.314429e-1 duty=2.538663e-1
+@1.930000e-3 Buck.ctl loop t=1.930000e-3 vout=2.781732e0 err=5.182684e-1 duty=2.543846e-1
+@1.940000e-3 Buck.ctl loop t=1.940000e-3 vout=2.804101e0 err=4.958993e-1 duty=2.548805e-1
+@1.950000e-3 Buck.ctl loop t=1.950000e-3 vout=2.834365e0 err=4.656355e-1 duty=2.553461e-1
+@1.960000e-3 Buck.ctl loop t=1.960000e-3 vout=2.871066e0 err=4.289341e-1 duty=2.557750e-1
+@1.970000e-3 Buck.ctl loop t=1.970000e-3 vout=2.912446e0 err=3.875536e-1 duty=2.561626e-1
+@1.980000e-3 Buck.ctl loop t=1.980000e-3 vout=2.956706e0 err=3.432940e-1 duty=2.565059e-1
+@1.990000e-3 Buck.ctl loop t=1.990000e-3 vout=3.001818e0 err=2.981816e-1 duty=2.568041e-1
+@2.000000e-3 Buck.ctl loop t=2.000000e-3 vout=3.045884e0 err=2.541160e-1 duty=2.570582e-1
+@2.010000e-3 Buck.ctl loop t=2.010000e-3 vout=3.087125e0 err=2.128752e-1 duty=2.572710e-1
+@2.020000e-3 Buck.ctl loop t=2.020000e-3 vout=3.123959e0 err=1.760409e-1 duty=2.574471e-1
+@2.030000e-3 Buck.ctl loop t=2.030000e-3 vout=3.155064e0 err=1.449362e-1 duty=2.575920e-1
+@2.040000e-3 Buck.ctl loop t=2.040000e-3 vout=3.179424e0 err=1.205762e-1 duty=2.577126e-1
+@2.050000e-3 Buck.ctl loop t=2.050000e-3 vout=3.196364e0 err=1.036357e-1 duty=2.578162e-1
+@2.060000e-3 Buck.ctl loop t=2.060000e-3 vout=3.205568e0 err=9.443230e-2 duty=2.579107e-1
+@2.070000e-3 Buck.ctl loop t=2.070000e-3 vout=3.207073e0 err=9.292699e-2 duty=2.580036e-1
+@2.080000e-3 Buck.ctl loop t=2.080000e-3 vout=3.201260e0 err=9.874001e-2 duty=2.581023e-1
+@2.090000e-3 Buck.ctl loop t=2.090000e-3 vout=3.188818e0 err=1.111815e-1 duty=2.582135e-1
+@2.100000e-3 Buck.ctl loop t=2.100000e-3 vout=3.170734e0 err=1.292659e-1 duty=2.583428e-1
+@2.110000e-3 Buck.ctl loop t=2.110000e-3 vout=3.148050e0 err=1.519505e-1 duty=2.584947e-1
+@2.120000e-3 Buck.ctl loop t=2.120000e-3 vout=3.122301e0 err=1.776985e-1 duty=2.586724e-1
+@2.130000e-3 Buck.ctl loop t=2.130000e-3 vout=3.094781e0 err=2.052191e-1 duty=2.588777e-1
+@2.140000e-3 Buck.ctl loop t=2.140000e-3 vout=3.066875e0 err=2.331245e-1 duty=2.591108e-1
+@2.150000e-3 Buck.ctl loop t=2.150000e-3 vout=3.040011e0 err=2.599888e-1 duty=2.593708e-1
+@2.160000e-3 Buck.ctl loop t=2.160000e-3 vout=3.015467e0 err=2.845333e-1 duty=2.596553e-1
+@2.170000e-3 Buck.ctl loop t=2.170000e-3 vout=2.994406e0 err=3.055938e-1 duty=2.599609e-1
+@2.180000e-3 Buck.ctl loop t=2.180000e-3 vout=2.977750e0 err=3.222496e-1 duty=2.602831e-1
+@2.190000e-3 Buck.ctl loop t=2.190000e-3 vout=2.966037e0 err=3.339626e-1 duty=2.606171e-1
+@2.200000e-3 Buck.ctl loop t=2.200000e-3 vout=2.959949e0 err=3.400506e-1 duty=2.609572e-1
+@2.210000e-3 Buck.ctl loop t=2.210000e-3 vout=2.959428e0 err=3.405717e-1 duty=2.612977e-1
+@2.220000e-3 Buck.ctl loop t=2.220000e-3 vout=2.964469e0 err=3.355313e-1 duty=2.616333e-1
+@2.230000e-3 Buck.ctl loop t=2.230000e-3 vout=2.974768e0 err=3.252322e-1 duty=2.619585e-1
+@2.240000e-3 Buck.ctl loop t=2.240000e-3 vout=2.989802e0 err=3.101982e-1 duty=2.622687e-1
+@2.250000e-3 Buck.ctl loop t=2.250000e-3 vout=3.008732e0 err=2.912681e-1 duty=2.625600e-1
+@2.260000e-3 Buck.ctl loop t=2.260000e-3 vout=3.030714e0 err=2.692864e-1 duty=2.628292e-1
+@2.270000e-3 Buck.ctl loop t=2.270000e-3 vout=3.054767e0 err=2.452329e-1 duty=2.630745e-1
+@2.280000e-3 Buck.ctl loop t=2.280000e-3 vout=3.079834e0 err=2.201662e-1 duty=2.632946e-1
+@2.290000e-3 Buck.ctl loop t=2.290000e-3 vout=3.104885e0 err=1.951149e-1 duty=2.634898e-1
+@2.300000e-3 Buck.ctl loop t=2.300000e-3 vout=3.128865e0 err=1.711352e-1 duty=2.636609e-1
+@2.310000e-3 Buck.ctl loop t=2.310000e-3 vout=3.150849e0 err=1.491513e-1 duty=2.638100e-1
+@2.320000e-3 Buck.ctl loop t=2.320000e-3 vout=3.170038e0 err=1.299623e-1 duty=2.639400e-1
+@2.330000e-3 Buck.ctl loop t=2.330000e-3 vout=3.185789e0 err=1.142111e-1 duty=2.640542e-1
+@2.340000e-3 Buck.ctl loop t=2.340000e-3 vout=3.197638e0 err=1.023624e-1 duty=2.641566e-1
+@2.350000e-3 Buck.ctl loop t=2.350000e-3 vout=3.205311e0 err=9.468912e-2 duty=2.642513e-1
+@2.360000e-3 Buck.ctl loop t=2.360000e-3 vout=3.208732e0 err=9.126781e-2 duty=2.643425e-1
+@2.370000e-3 Buck.ctl loop t=2.370000e-3 vout=3.208017e0 err=9.198311e-2 duty=2.644345e-1
+@2.380000e-3 Buck.ctl loop t=2.380000e-3 vout=3.203459e0 err=9.654068e-2 duty=2.645311e-1
+@2.390000e-3 Buck.ctl loop t=2.390000e-3 vout=3.195512e0 err=1.044875e-1 duty=2.646355e-1
+@2.400000e-3 Buck.ctl loop t=2.400000e-3 vout=3.184761e0 err=1.152386e-1 duty=2.647508e-1
+@2.410000e-3 Buck.ctl loop t=2.410000e-3 vout=3.171924e0 err=1.280759e-1 duty=2.648789e-1
+@2.420000e-3 Buck.ctl loop t=2.420000e-3 vout=3.157687e0 err=1.423133e-1 duty=2.650212e-1
+@2.430000e-3 Buck.ctl loop t=2.430000e-3 vout=3.142782e0 err=1.572177e-1 duty=2.651784e-1
+@2.440000e-3 Buck.ctl loop t=2.440000e-3 vout=3.128185e0 err=1.718146e-1 duty=2.653502e-1
+@2.450000e-3 Buck.ctl loop t=2.450000e-3 vout=3.114412e0 err=1.855878e-1 duty=2.655358e-1
+@2.460000e-3 Buck.ctl loop t=2.460000e-3 vout=3.102330e0 err=1.976701e-1 duty=2.657335e-1
+@2.470000e-3 Buck.ctl loop t=2.470000e-3 vout=3.092275e0 err=2.077249e-1 duty=2.659412e-1
+@2.480000e-3 Buck.ctl loop t=2.480000e-3 vout=3.084852e0 err=2.151476e-1 duty=2.661563e-1
+@2.490000e-3 Buck.ctl loop t=2.490000e-3 vout=3.080347e0 err=2.196527e-1 duty=2.663760e-1
+@2.500000e-3 Buck.ctl loop t=2.500000e-3 vout=3.078923e0 err=2.210772e-1 duty=2.665971e-1
+@2.510000e-3 Buck.ctl loop t=2.510000e-3 vout=3.080624e0 err=2.193765e-1 duty=2.668164e-1
+@2.520000e-3 Buck.ctl loop t=2.520000e-3 vout=3.085329e0 err=2.146708e-1 duty=2.670311e-1
+@2.530000e-3 Buck.ctl loop t=2.530000e-3 vout=3.092761e0 err=2.072386e-1 duty=2.672384e-1
+@2.540000e-3 Buck.ctl loop t=2.540000e-3 vout=3.102557e0 err=1.974427e-1 duty=2.674358e-1
+@2.550000e-3 Buck.ctl loop t=2.550000e-3 vout=3.114262e0 err=1.857381e-1 duty=2.676215e-1
+@2.560000e-3 Buck.ctl loop t=2.560000e-3 vout=3.127353e0 err=1.726472e-1 duty=2.677942e-1
+@2.570000e-3 Buck.ctl loop t=2.570000e-3 vout=3.141265e0 err=1.587346e-1 duty=2.679529e-1
+@2.580000e-3 Buck.ctl loop t=2.580000e-3 vout=3.155421e0 err=1.445795e-1 duty=2.680975e-1
+@2.590000e-3 Buck.ctl loop t=2.590000e-3 vout=3.169250e0 err=1.307495e-1 duty=2.682282e-1
+@2.600000e-3 Buck.ctl loop t=2.600000e-3 vout=3.182224e0 err=1.177759e-1 duty=2.683460e-1
+@2.610000e-3 Buck.ctl loop t=2.610000e-3 vout=3.193869e0 err=1.061307e-1 duty=2.684522e-1
+@2.620000e-3 Buck.ctl loop t=2.620000e-3 vout=3.203791e0 err=9.620892e-2 duty=2.685484e-1
+@2.630000e-3 Buck.ctl loop t=2.630000e-3 vout=3.211687e0 err=8.831324e-2 duty=2.686367e-1
+@2.640000e-3 Buck.ctl loop t=2.640000e-3 vout=3.217355e0 err=8.264452e-2 duty=2.687193e-1
+@2.650000e-3 Buck.ctl loop t=2.650000e-3 vout=3.220703e0 err=7.929691e-2 duty=2.687986e-1
+@2.660000e-3 Buck.ctl loop t=2.660000e-3 vout=3.221742e0 err=7.825785e-2 duty=2.688769e-1
+@2.670000e-3 Buck.ctl loop t=2.670000e-3 vout=3.220587e0 err=7.941300e-2 duty=2.689563e-1
+@2.680000e-3 Buck.ctl loop t=2.680000e-3 vout=3.217445e0 err=8.255540e-2 duty=2.690388e-1
+@2.690000e-3 Buck.ctl loop t=2.690000e-3 vout=3.212602e0 err=8.739844e-2 duty=2.691262e-1
+@2.700000e-3 Buck.ctl loop t=2.700000e-3 vout=3.206408e0 err=9.359189e-2 duty=2.692198e-1
+@2.710000e-3 Buck.ctl loop t=2.710000e-3 vout=3.199260e0 err=1.007401e-1 duty=2.693206e-1
+@2.720000e-3 Buck.ctl loop t=2.720000e-3 vout=3.191579e0 err=1.084214e-1 duty=2.694290e-1
+@2.730000e-3 Buck.ctl loop t=2.730000e-3 vout=3.183792e0 err=1.162082e-1 duty=2.695452e-1
+@2.740000e-3 Buck.ctl loop t=2.740000e-3 vout=3.176314e0 err=1.236860e-1 duty=2.696689e-1
+@2.750000e-3 Buck.ctl loop t=2.750000e-3 vout=3.169528e0 err=1.304717e-1 duty=2.697994e-1
+@2.760000e-3 Buck.ctl loop t=2.760000e-3 vout=3.163771e0 err=1.362292e-1 duty=2.699356e-1
+@2.770000e-3 Buck.ctl loop t=2.770000e-3 vout=3.159317e0 err=1.406827e-1 duty=2.700763e-1
+@2.780000e-3 Buck.ctl loop t=2.780000e-3 vout=3.156374e0 err=1.436263e-1 duty=2.702199e-1
+@2.790000e-3 Buck.ctl loop t=2.790000e-3 vout=3.155069e0 err=1.449308e-1 duty=2.703648e-1
+@2.800000e-3 Buck.ctl loop t=2.800000e-3 vout=3.155454e0 err=1.445458e-1 duty=2.705094e-1
+@2.810000e-3 Buck.ctl loop t=2.810000e-3 vout=3.157501e0 err=1.424994e-1 duty=2.706519e-1
+@2.820000e-3 Buck.ctl loop t=2.820000e-3 vout=3.161107e0 err=1.388934e-1 duty=2.707908e-1
+@2.830000e-3 Buck.ctl loop t=2.830000e-3 vout=3.166104e0 err=1.338957e-1 duty=2.709247e-1
+@2.840000e-3 Buck.ctl loop t=2.840000e-3 vout=3.172270e0 err=1.277303e-1 duty=2.710524e-1
+@2.850000e-3 Buck.ctl loop t=2.850000e-3 vout=3.179335e0 err=1.206652e-1 duty=2.711731e-1
+@2.860000e-3 Buck.ctl loop t=2.860000e-3 vout=3.187002e0 err=1.129981e-1 duty=2.712861e-1
+@2.870000e-3 Buck.ctl loop t=2.870000e-3 vout=3.194957e0 err=1.050425e-1 duty=2.713911e-1
+@2.880000e-3 Buck.ctl loop t=2.880000e-3 vout=3.202887e0 err=9.711273e-2 duty=2.714882e-1
+@2.890000e-3 Buck.ctl loop t=2.890000e-3 vout=3.210490e0 err=8.950980e-2 duty=2.715777e-1
+@2.900000e-3 Buck.ctl loop t=2.900000e-3 vout=3.217491e0 err=8.250873e-2 duty=2.716602e-1
+@2.910000e-3 Buck.ctl loop t=2.910000e-3 vout=3.223653e0 err=7.634711e-2 duty=2.717366e-1
+@2.920000e-3 Buck.ctl loop t=2.920000e-3 vout=3.228784e0 err=7.121609e-2 duty=2.718078e-1
+@2.930000e-3 Buck.ctl loop t=2.930000e-3 vout=3.232746e0 err=6.725366e-2 duty=2.718750e-1
+@2.940000e-3 Buck.ctl loop t=2.940000e-3 vout=3.235459e0 err=6.454063e-2 duty=2.719396e-1
+@2.950000e-3 Buck.ctl loop t=2.950000e-3 vout=3.236901e0 err=6.309933e-2 duty=2.720027e-1
+@2.960000e-3 Buck.ctl loop t=2.960000e-3 vout=3.237105e0 err=6.289495e-2 duty=2.720656e-1
+@2.970000e-3 Buck.ctl loop t=2.970000e-3 vout=3.236161e0 err=6.383940e-2 duty=2.721294e-1
+@2.980000e-3 Buck.ctl loop t=2.980000e-3 vout=3.234203e0 err=6.579738e-2 duty=2.721952e-1
+@2.990000e-3 Buck.ctl loop t=2.990000e-3 vout=3.231406e0 err=6.859433e-2 duty=2.722638e-1
+@3.000000e-3 Buck.ctl loop t=3.000000e-3 vout=3.227974e0 err=7.202579e-2 duty=2.723358e-1
+@3.010000e-3 Buck.ctl loop t=3.010000e-3 vout=3.224132e0 err=7.586773e-2 duty=2.724117e-1
+@3.020000e-3 Buck.ctl loop t=3.020000e-3 vout=3.220113e0 err=7.988737e-2 duty=2.724916e-1
+@3.030000e-3 Buck.ctl loop t=3.030000e-3 vout=3.216146e0 err=8.385388e-2 duty=2.725754e-1
+@3.040000e-3 Buck.ctl loop t=3.040000e-3 vout=3.212451e0 err=8.754866e-2 duty=2.726630e-1
+@3.050000e-3 Buck.ctl loop t=3.050000e-3 vout=3.209225e0 err=9.077454e-2 duty=2.727538e-1
+@3.060000e-3 Buck.ctl loop t=3.060000e-3 vout=3.206636e0 err=9.336378e-2 duty=2.728471e-1
+@3.070000e-3 Buck.ctl loop t=3.070000e-3 vout=3.204816e0 err=9.518433e-2 duty=2.729423e-1
+@3.080000e-3 Buck.ctl loop t=3.080000e-3 vout=3.203856e0 err=9.614431e-2 duty=2.730385e-1
+@3.090000e-3 Buck.ctl loop t=3.090000e-3 vout=3.203806e0 err=9.619446e-2 duty=2.731347e-1
+@3.100000e-3 Buck.ctl loop t=3.100000e-3 vout=3.204671e0 err=9.532865e-2 duty=2.732300e-1
+@3.110000e-3 Buck.ctl loop t=3.110000e-3 vout=3.206418e0 err=9.358239e-2 duty=2.733236e-1
+@3.120000e-3 Buck.ctl loop t=3.120000e-3 vout=3.208970e0 err=9.102956e-2 duty=2.734146e-1
+@3.130000e-3 Buck.ctl loop t=3.130000e-3 vout=3.212222e0 err=8.777757e-2 duty=2.735024e-1
+@3.140000e-3 Buck.ctl loop t=3.140000e-3 vout=3.216039e0 err=8.396119e-2 duty=2.735863e-1
+@3.150000e-3 Buck.ctl loop t=3.150000e-3 vout=3.220265e0 err=7.973542e-2 duty=2.736661e-1
+@3.160000e-3 Buck.ctl loop t=3.160000e-3 vout=3.224732e0 err=7.526776e-2 duty=2.737413e-1
+@3.170000e-3 Buck.ctl loop t=3.170000e-3 vout=3.229270e0 err=7.073022e-2 duty=2.738121e-1
+@3.180000e-3 Buck.ctl loop t=3.180000e-3 vout=3.233709e0 err=6.629143e-2 duty=2.738784e-1
+@3.190000e-3 Buck.ctl loop t=3.190000e-3 vout=3.237891e0 err=6.210924e-2 duty=2.739405e-1
+@3.200000e-3 Buck.ctl loop t=3.200000e-3 vout=3.241676e0 err=5.832413e-2 duty=2.739988e-1
+@3.210000e-3 Buck.ctl loop t=3.210000e-3 vout=3.244946e0 err=5.505358e-2 duty=2.740538e-1
+@3.220000e-3 Buck.ctl loop t=3.220000e-3 vout=3.247612e0 err=5.238779e-2 duty=2.741062e-1
+@3.230000e-3 Buck.ctl loop t=3.230000e-3 vout=3.249613e0 err=5.038672e-2 duty=2.741566e-1
+@3.240000e-3 Buck.ctl loop t=3.240000e-3 vout=3.250921e0 err=4.907863e-2 duty=2.742057e-1
+@3.250000e-3 Buck.ctl loop t=3.250000e-3 vout=3.251540e0 err=4.846010e-2 duty=2.742542e-1
+@3.260000e-3 Buck.ctl loop t=3.260000e-3 vout=3.251503e0 err=4.849743e-2 duty=2.743027e-1
+@3.270000e-3 Buck.ctl loop t=3.270000e-3 vout=3.250871e0 err=4.912939e-2 duty=2.743518e-1
+@3.280000e-3 Buck.ctl loop t=3.280000e-3 vout=3.249729e0 err=5.027106e-2 duty=2.744021e-1
+@3.290000e-3 Buck.ctl loop t=3.290000e-3 vout=3.248181e0 err=5.181855e-2 duty=2.744539e-1
+@3.300000e-3 Buck.ctl loop t=3.300000e-3 vout=3.246346e0 err=5.365441e-2 duty=2.745075e-1
+@3.310000e-3 Buck.ctl loop t=3.310000e-3 vout=3.244347e0 err=5.565342e-2 duty=2.745632e-1
+@3.320000e-3 Buck.ctl loop t=3.320000e-3 vout=3.242311e0 err=5.768851e-2 duty=2.746209e-1
+@3.330000e-3 Buck.ctl loop t=3.330000e-3 vout=3.240364e0 err=5.963647e-2 duty=2.746805e-1
+@3.340000e-3 Buck.ctl loop t=3.340000e-3 vout=3.238617e0 err=6.138333e-2 duty=2.747419e-1
+@3.350000e-3 Buck.ctl loop t=3.350000e-3 vout=3.237171e0 err=6.282905e-2 duty=2.748047e-1
+@3.360000e-3 Buck.ctl loop t=3.360000e-3 vout=3.236109e0 err=6.389144e-2 duty=2.748686e-1
+@3.370000e-3 Buck.ctl loop t=3.370000e-3 vout=3.235491e0 err=6.450907e-2 duty=2.749331e-1
+@3.380000e-3 Buck.ctl loop t=3.380000e-3 vout=3.235357e0 err=6.464324e-2 duty=2.749978e-1
+@3.390000e-3 Buck.ctl loop t=3.390000e-3 vout=3.235721e0 err=6.427872e-2 duty=2.750620e-1
+@3.400000e-3 Buck.ctl loop t=3.400000e-3 vout=3.236576e0 err=6.342353e-2 duty=2.751255e-1
+@3.410000e-3 Buck.ctl loop t=3.410000e-3 vout=3.237892e0 err=6.210761e-2 duty=2.751876e-1
+@3.420000e-3 Buck.ctl loop t=3.420000e-3 vout=3.239619e0 err=6.038061e-2 duty=2.752480e-1
+@3.430000e-3 Buck.ctl loop t=3.430000e-3 vout=3.241691e0 err=5.830887e-2 duty=2.753063e-1
+@3.440000e-3 Buck.ctl loop t=3.440000e-3 vout=3.244028e0 err=5.597177e-2 duty=2.753622e-1
+@3.450000e-3 Buck.ctl loop t=3.450000e-3 vout=3.246542e0 err=5.345768e-2 duty=2.754157e-1
+@3.460000e-3 Buck.ctl loop t=3.460000e-3 vout=3.249140e0 err=5.085962e-2 duty=2.754666e-1
+@3.470000e-3 Buck.ctl loop t=3.470000e-3 vout=3.251729e0 err=4.827093e-2 duty=2.755148e-1
+@3.480000e-3 Buck.ctl loop t=3.480000e-3 vout=3.254219e0 err=4.578107e-2 duty=2.755606e-1
+@3.490000e-3 Buck.ctl loop t=3.490000e-3 vout=3.256528e0 err=4.347179e-2 duty=2.756041e-1
+@3.500000e-3 Buck.ctl loop t=3.500000e-3 vout=3.258586e0 err=4.141379e-2 duty=2.756455e-1
+@3.510000e-3 Buck.ctl loop t=3.510000e-3 vout=3.260336e0 err=3.966397e-2 duty=2.756852e-1
+@3.520000e-3 Buck.ctl loop t=3.520000e-3 vout=3.261737e0 err=3.826349e-2 duty=2.757234e-1
+@3.530000e-3 Buck.ctl loop t=3.530000e-3 vout=3.262763e0 err=3.723652e-2 duty=2.757607e-1
+@3.540000e-3 Buck.ctl loop t=3.540000e-3 vout=3.263410e0 err=3.658988e-2 duty=2.757972e-1
+@3.550000e-3 Buck.ctl loop t=3.550000e-3 vout=3.263687e0 err=3.631339e-2 duty=2.758336e-1
+@3.560000e-3 Buck.ctl loop t=3.560000e-3 vout=3.263619e0 err=3.638103e-2 duty=2.758699e-1
+@3.570000e-3 Buck.ctl loop t=3.570000e-3 vout=3.263247e0 err=3.675275e-2 duty=2.759067e-1
+@3.580000e-3 Buck.ctl loop t=3.580000e-3 vout=3.262623e0 err=3.737679e-2 duty=2.759441e-1
+@3.590000e-3 Buck.ctl loop t=3.590000e-3 vout=3.261808e0 err=3.819249e-2 duty=2.759823e-1
+@3.600000e-3 Buck.ctl loop t=3.600000e-3 vout=3.260867e0 err=3.913332e-2 duty=2.760214e-1
+@3.610000e-3 Buck.ctl loop t=3.610000e-3 vout=3.259870e0 err=4.013014e-2 duty=2.760615e-1
+@3.620000e-3 Buck.ctl loop t=3.620000e-3 vout=3.258886e0 err=4.111433e-2 duty=2.761026e-1
+@3.630000e-3 Buck.ctl loop t=3.630000e-3 vout=3.257979e0 err=4.202087e-2 duty=2.761447e-1
+@3.640000e-3 Buck.ctl loop t=3.640000e-3 vout=3.257209e0 err=4.279108e-2 duty=2.761875e-1
+@3.650000e-3 Buck.ctl loop t=3.650000e-3 vout=3.256625e0 err=4.337500e-2 duty=2.762308e-1
+@3.660000e-3 Buck.ctl loop t=3.660000e-3 vout=3.256267e0 err=4.373323e-2 duty=2.762746e-1
+@3.670000e-3 Buck.ctl loop t=3.670000e-3 vout=3.256162e0 err=4.383832e-2 duty=2.763184e-1
+@3.680000e-3 Buck.ctl loop t=3.680000e-3 vout=3.256325e0 err=4.367545e-2 duty=2.763621e-1
+@3.690000e-3 Buck.ctl loop t=3.690000e-3 vout=3.256757e0 err=4.324261e-2 duty=2.764053e-1
+@3.700000e-3 Buck.ctl loop t=3.700000e-3 vout=3.257450e0 err=4.255018e-2 duty=2.764479e-1
+@3.710000e-3 Buck.ctl loop t=3.710000e-3 vout=3.258380e0 err=4.161995e-2 duty=2.764895e-1
+@3.720000e-3 Buck.ctl loop t=3.720000e-3 vout=3.259516e0 err=4.048368e-2 duty=2.765300e-1
+@3.730000e-3 Buck.ctl loop t=3.730000e-3 vout=3.260819e0 err=3.918129e-2 duty=2.765692e-1
+@3.740000e-3 Buck.ctl loop t=3.740000e-3 vout=3.262241e0 err=3.775872e-2 duty=2.766069e-1
+@3.750000e-3 Buck.ctl loop t=3.750000e-3 vout=3.263734e0 err=3.626567e-2 duty=2.766432e-1
+@3.760000e-3 Buck.ctl loop t=3.760000e-3 vout=3.265247e0 err=3.475321e-2 duty=2.766779e-1
+@3.770000e-3 Buck.ctl loop t=3.770000e-3 vout=3.266729e0 err=3.327142e-2 duty=2.767112e-1
+@3.780000e-3 Buck.ctl loop t=3.780000e-3 vout=3.268133e0 err=3.186722e-2 duty=2.767431e-1
+@3.790000e-3 Buck.ctl loop t=3.790000e-3 vout=3.269418e0 err=3.058237e-2 duty=2.767737e-1
+@3.800000e-3 Buck.ctl loop t=3.800000e-3 vout=3.270548e0 err=2.945185e-2 duty=2.768031e-1
+@3.810000e-3 Buck.ctl loop t=3.810000e-3 vout=3.271497e0 err=2.850254e-2 duty=2.768316e-1
+@3.820000e-3 Buck.ctl loop t=3.820000e-3 vout=3.272248e0 err=2.775232e-2 duty=2.768594e-1
+@3.830000e-3 Buck.ctl loop t=3.830000e-3 vout=3.272790e0 err=2.720971e-2 duty=2.768866e-1
+@3.840000e-3 Buck.ctl loop t=3.840000e-3 vout=3.273126e0 err=2.687377e-2 duty=2.769134e-1
+@3.850000e-3 Buck.ctl loop t=3.850000e-3 vout=3.273265e0 err=2.673461e-2 duty=2.769402e-1
+@3.860000e-3 Buck.ctl loop t=3.860000e-3 vout=3.273226e0 err=2.677427e-2 duty=2.769670e-1
+@3.870000e-3 Buck.ctl loop t=3.870000e-3 vout=3.273032e0 err=2.696752e-2 duty=2.769939e-1
+@3.880000e-3 Buck.ctl loop t=3.880000e-3 vout=3.272717e0 err=2.728349e-2 duty=2.770212e-1
+@3.890000e-3 Buck.ctl loop t=3.890000e-3 vout=3.272313e0 err=2.768729e-2 duty=2.770489e-1
+@3.900000e-3 Buck.ctl loop t=3.900000e-3 vout=3.271858e0 err=2.814166e-2 duty=2.770770e-1
+@3.910000e-3 Buck.ctl loop t=3.910000e-3 vout=3.271391e0 err=2.860881e-2 duty=2.771056e-1
+@3.920000e-3 Buck.ctl loop t=3.920000e-3 vout=3.270948e0 err=2.905207e-2 duty=2.771347e-1
+@3.930000e-3 Buck.ctl loop t=3.930000e-3 vout=3.270563e0 err=2.943749e-2 duty=2.771641e-1
+@3.940000e-3 Buck.ctl loop t=3.940000e-3 vout=3.270265e0 err=2.973528e-2 duty=2.771939e-1
+@3.950000e-3 Buck.ctl loop t=3.950000e-3 vout=3.270079e0 err=2.992093e-2 duty=2.772238e-1
+@3.960000e-3 Buck.ctl loop t=3.960000e-3 vout=3.270024e0 err=2.997610e-2 duty=2.772538e-1
+@3.970000e-3 Buck.ctl loop t=3.970000e-3 vout=3.270111e0 err=2.988921e-2 duty=2.772837e-1
+@3.980000e-3 Buck.ctl loop t=3.980000e-3 vout=3.270344e0 err=2.965567e-2 duty=2.773133e-1
+@3.990000e-3 Buck.ctl loop t=3.990000e-3 vout=3.270722e0 err=2.927779e-2 duty=2.773426e-1
+@4.000000e-3 Buck.ctl loop t=4.000000e-3 vout=3.271236e0 err=2.876439e-2 duty=2.773713e-1
+@4.010000e-3 Buck.ctl loop t=4.010000e-3 vout=3.271870e0 err=2.813019e-2 duty=2.773995e-1
+@4.020000e-3 Buck.ctl loop t=4.020000e-3 vout=3.272605e0 err=2.739484e-2 duty=2.774269e-1
+@4.030000e-3 Buck.ctl loop t=4.030000e-3 vout=3.273418e0 err=2.658189e-2 duty=2.774535e-1
+@4.040000e-3 Buck.ctl loop t=4.040000e-3 vout=3.274282e0 err=2.571759e-2 duty=2.774792e-1
+@4.050000e-3 Buck.ctl loop t=4.050000e-3 vout=3.275170e0 err=2.482954e-2 duty=2.775040e-1
+@4.060000e-3 Buck.ctl loop t=4.060000e-3 vout=3.276055e0 err=2.394546e-2 duty=2.775279e-1
+@4.070000e-3 Buck.ctl loop t=4.070000e-3 vout=3.276908e0 err=2.309194e-2 duty=2.775510e-1
+@4.080000e-3 Buck.ctl loop t=4.080000e-3 vout=3.277707e0 err=2.229327e-2 duty=2.775733e-1
+@4.090000e-3 Buck.ctl loop t=4.090000e-3 vout=3.278430e0 err=2.157044e-2 duty=2.775949e-1
+@4.100000e-3 Buck.ctl loop t=4.100000e-3 vout=3.279060e0 err=2.094037e-2 duty=2.776158e-1
+@4.110000e-3 Buck.ctl loop t=4.110000e-3 vout=3.279585e0 err=2.041530e-2 duty=2.776363e-1
+@4.120000e-3 Buck.ctl loop t=4.120000e-3 vout=3.279998e0 err=2.000241e-2 duty=2.776563e-1
+@4.130000e-3 Buck.ctl loop t=4.130000e-3 vout=3.280296e0 err=1.970373e-2 duty=2.776760e-1
+@4.140000e-3 Buck.ctl loop t=4.140000e-3 vout=3.280484e0 err=1.951626e-2 duty=2.776955e-1
+@4.150000e-3 Buck.ctl loop t=4.150000e-3 vout=3.280568e0 err=1.943225e-2 duty=2.777149e-1
+@4.160000e-3 Buck.ctl loop t=4.160000e-3 vout=3.280560e0 err=1.943982e-2 duty=2.777344e-1
+@4.170000e-3 Buck.ctl loop t=4.170000e-3 vout=3.280476e0 err=1.952358e-2 duty=2.777539e-1
+@4.180000e-3 Buck.ctl loop t=4.180000e-3 vout=3.280334e0 err=1.966552e-2 duty=2.777735e-1
+@4.190000e-3 Buck.ctl loop t=4.190000e-3 vout=3.280154e0 err=1.984587e-2 duty=2.777934e-1
+@4.200000e-3 Buck.ctl loop t=4.200000e-3 vout=3.279956e0 err=2.004407e-2 duty=2.778134e-1
+@4.210000e-3 Buck.ctl loop t=4.210000e-3 vout=3.279760e0 err=2.023975e-2 duty=2.778337e-1
+@4.220000e-3 Buck.ctl loop t=4.220000e-3 vout=3.279586e0 err=2.041356e-2 duty=2.778541e-1
+@4.230000e-3 Buck.ctl loop t=4.230000e-3 vout=3.279452e0 err=2.054809e-2 duty=2.778746e-1
+@4.240000e-3 Buck.ctl loop t=4.240000e-3 vout=3.279372e0 err=2.062846e-2 duty=2.778953e-1
+@4.250000e-3 Buck.ctl loop t=4.250000e-3 vout=3.279357e0 err=2.064297e-2 duty=2.779159e-1
+@4.260000e-3 Buck.ctl loop t=4.260000e-3 vout=3.279417e0 err=2.058345e-2 duty=2.779365e-1
+@4.270000e-3 Buck.ctl loop t=4.270000e-3 vout=3.279555e0 err=2.044548e-2 duty=2.779569e-1
+@4.280000e-3 Buck.ctl loop t=4.280000e-3 vout=3.279772e0 err=2.022846e-2 duty=2.779772e-1
+@4.290000e-3 Buck.ctl loop t=4.290000e-3 vout=3.280065e0 err=1.993545e-2 duty=2.779971e-1
+@4.300000e-3 Buck.ctl loop t=4.300000e-3 vout=3.280427e0 err=1.957291e-2 duty=2.780167e-1
+@4.310000e-3 Buck.ctl loop t=4.310000e-3 vout=3.280850e0 err=1.915025e-2 duty=2.780358e-1
+@4.320000e-3 Buck.ctl loop t=4.320000e-3 vout=3.281321e0 err=1.867931e-2 duty=2.780545e-1
+@4.330000e-3 Buck.ctl loop t=4.330000e-3 vout=3.281826e0 err=1.817372e-2 duty=2.780727e-1
+@4.340000e-3 Buck.ctl loop t=4.340000e-3 vout=3.282352e0 err=1.764821e-2 duty=2.780903e-1
+@4.350000e-3 Buck.ctl loop t=4.350000e-3 vout=3.282882e0 err=1.711793e-2 duty=2.781074e-1
+@4.360000e-3 Buck.ctl loop t=4.360000e-3 vout=3.283402e0 err=1.659773e-2 duty=2.781240e-1
+@4.370000e-3 Buck.ctl loop t=4.370000e-3 vout=3.283898e0 err=1.610152e-2 duty=2.781401e-1
+@4.380000e-3 Buck.ctl loop t=4.380000e-3 vout=3.284358e0 err=1.564168e-2 duty=2.781558e-1
+@4.390000e-3 Buck.ctl loop t=4.390000e-3 vout=3.284771e0 err=1.522856e-2 duty=2.781710e-1
+@4.400000e-3 Buck.ctl loop t=4.400000e-3 vout=3.285130e0 err=1.487013e-2 duty=2.781859e-1
+@4.410000e-3 Buck.ctl loop t=4.410000e-3 vout=3.285428e0 err=1.457168e-2 duty=2.782005e-1
+@4.420000e-3 Buck.ctl loop t=4.420000e-3 vout=3.285664e0 err=1.433570e-2 duty=2.782148e-1
+@4.430000e-3 Buck.ctl loop t=4.430000e-3 vout=3.285838e0 err=1.416190e-2 duty=2.782289e-1
+@4.440000e-3 Buck.ctl loop t=4.440000e-3 vout=3.285953e0 err=1.404732e-2 duty=2.782430e-1
+@4.450000e-3 Buck.ctl loop t=4.450000e-3 vout=3.286013e0 err=1.398657e-2 duty=2.782570e-1
+@4.460000e-3 Buck.ctl loop t=4.460000e-3 vout=3.286028e0 err=1.397217e-2 duty=2.782710e-1
+@4.470000e-3 Buck.ctl loop t=4.470000e-3 vout=3.286005e0 err=1.399496e-2 duty=2.782850e-1
+@4.480000e-3 Buck.ctl loop t=4.480000e-3 vout=3.285955e0 err=1.404458e-2 duty=2.782990e-1
+@4.490000e-3 Buck.ctl loop t=4.490000e-3 vout=3.285890e0 err=1.410999e-2 duty=2.783131e-1
+@4.500000e-3 Buck.ctl loop t=4.500000e-3 vout=3.285820e0 err=1.417997e-2 duty=2.783273e-1
+@4.510000e-3 Buck.ctl loop t=4.510000e-3 vout=3.285756e0 err=1.424367e-2 duty=2.783415e-1
+@4.520000e-3 Buck.ctl loop t=4.520000e-3 vout=3.285709e0 err=1.429101e-2 duty=2.783558e-1
+@4.530000e-3 Buck.ctl loop t=4.530000e-3 vout=3.285687e0 err=1.431316e-2 duty=2.783701e-1
+@4.540000e-3 Buck.ctl loop t=4.540000e-3 vout=3.285697e0 err=1.430285e-2 duty=2.783844e-1
+@4.550000e-3 Buck.ctl loop t=4.550000e-3 vout=3.285745e0 err=1.425465e-2 duty=2.783987e-1
+@4.560000e-3 Buck.ctl loop t=4.560000e-3 vout=3.285835e0 err=1.416512e-2 duty=2.784129e-1
+@4.570000e-3 Buck.ctl loop t=4.570000e-3 vout=3.285967e0 err=1.403290e-2 duty=2.784269e-1
+@4.580000e-3 Buck.ctl loop t=4.580000e-3 vout=3.286141e0 err=1.385866e-2 duty=2.784407e-1
+@4.590000e-3 Buck.ctl loop t=4.590000e-3 vout=3.286355e0 err=1.364501e-2 duty=2.784544e-1
+@4.600000e-3 Buck.ctl loop t=4.600000e-3 vout=3.286604e0 err=1.339632e-2 duty=2.784678e-1
+@4.610000e-3 Buck.ctl loop t=4.610000e-3 vout=3.286882e0 err=1.311839e-2 duty=2.784809e-1
+@4.620000e-3 Buck.ctl loop t=4.620000e-3 vout=3.287182e0 err=1.281820e-2 duty=2.784937e-1
+@4.630000e-3 Buck.ctl loop t=4.630000e-3 vout=3.287496e0 err=1.250351e-2 duty=2.785062e-1
+@4.640000e-3 Buck.ctl loop t=4.640000e-3 vout=3.287818e0 err=1.218250e-2 duty=2.785184e-1
+@4.650000e-3 Buck.ctl loop t=4.650000e-3 vout=3.288137e0 err=1.186337e-2 duty=2.785303e-1
+@4.660000e-3 Buck.ctl loop t=4.660000e-3 vout=3.288446e0 err=1.155399e-2 duty=2.785418e-1
+@4.670000e-3 Buck.ctl loop t=4.670000e-3 vout=3.288738e0 err=1.126154e-2 duty=2.785531e-1
+@4.680000e-3 Buck.ctl loop t=4.680000e-3 vout=3.289008e0 err=1.099223e-2 duty=2.785641e-1
+@4.690000e-3 Buck.ctl loop t=4.690000e-3 vout=3.289249e0 err=1.075108e-2 duty=2.785748e-1
+@4.700000e-3 Buck.ctl loop t=4.700000e-3 vout=3.289458e0 err=1.054168e-2 duty=2.785854e-1
+@4.710000e-3 Buck.ctl loop t=4.710000e-3 vout=3.289634e0 err=1.036617e-2 duty=2.785957e-1
+@4.720000e-3 Buck.ctl loop t=4.720000e-3 vout=3.289775e0 err=1.022512e-2 duty=2.786060e-1
+@4.730000e-3 Buck.ctl loop t=4.730000e-3 vout=3.289882e0 err=1.011764e-2 duty=2.786161e-1
+@4.740000e-3 Buck.ctl loop t=4.740000e-3 vout=3.289959e0 err=1.004143e-2 duty=2.786261e-1
+@4.750000e-3 Buck.ctl loop t=4.750000e-3 vout=3.290007e0 err=9.992943e-3 duty=2.786361e-1
+@4.760000e-3 Buck.ctl loop t=4.760000e-3 vout=3.290032e0 err=9.967628e-3 duty=2.786461e-1
+@4.770000e-3 Buck.ctl loop t=4.770000e-3 vout=3.290040e0 err=9.960130e-3 duty=2.786560e-1
+@4.780000e-3 Buck.ctl loop t=4.780000e-3 vout=3.290035e0 err=9.964587e-3 duty=2.786660e-1
+@4.790000e-3 Buck.ctl loop t=4.790000e-3 vout=3.290025e0 err=9.974903e-3 duty=2.786760e-1
+@4.800000e-3 Buck.ctl loop t=4.800000e-3 vout=3.290015e0 err=9.985031e-3 duty=2.786860e-1
+@4.810000e-3 Buck.ctl loop t=4.810000e-3 vout=3.290011e0 err=9.989239e-3 duty=2.786960e-1
+@4.820000e-3 Buck.ctl loop t=4.820000e-3 vout=3.290018e0 err=9.982355e-3 duty=2.787059e-1
+@4.830000e-3 Buck.ctl loop t=4.830000e-3 vout=3.290040e0 err=9.959973e-3 duty=2.787159e-1
+@4.840000e-3 Buck.ctl loop t=4.840000e-3 vout=3.290081e0 err=9.918619e-3 duty=2.787258e-1
+@4.850000e-3 Buck.ctl loop t=4.850000e-3 vout=3.290144e0 err=9.855868e-3 duty=2.787357e-1
+@4.860000e-3 Buck.ctl loop t=4.860000e-3 vout=3.290230e0 err=9.770409e-3 duty=2.787454e-1
+@4.870000e-3 Buck.ctl loop t=4.870000e-3 vout=3.290338e0 err=9.662055e-3 duty=2.787551e-1
+@4.880000e-3 Buck.ctl loop t=4.880000e-3 vout=3.290468e0 err=9.531713e-3 duty=2.787646e-1
+@4.890000e-3 Buck.ctl loop t=4.890000e-3 vout=3.290619e0 err=9.381289e-3 duty=2.787740e-1
+@4.900000e-3 Buck.ctl loop t=4.900000e-3 vout=3.290786e0 err=9.213570e-3 duty=2.787832e-1
+@4.910000e-3 Buck.ctl loop t=4.910000e-3 vout=3.290968e0 err=9.032058e-3 duty=2.787923e-1
+@4.920000e-3 Buck.ctl loop t=4.920000e-3 vout=3.291159e0 err=8.840784e-3 duty=2.788011e-1
+@4.930000e-3 Buck.ctl loop t=4.930000e-3 vout=3.291356e0 err=8.644111e-3 duty=2.788098e-1
+@4.940000e-3 Buck.ctl loop t=4.940000e-3 vout=3.291553e0 err=8.446517e-3 duty=2.788182e-1
+@4.950000e-3 Buck.ctl loop t=4.950000e-3 vout=3.291748e0 err=8.252399e-3 duty=2.788265e-1
+@4.960000e-3 Buck.ctl loop t=4.960000e-3 vout=3.291934e0 err=8.065869e-3 duty=2.788345e-1
+@4.970000e-3 Buck.ctl loop t=4.970000e-3 vout=3.292109e0 err=7.890589e-3 duty=2.788424e-1
+@4.980000e-3 Buck.ctl loop t=4.980000e-3 vout=3.292270e0 err=7.729622e-3 duty=2.788501e-1
+@4.990000e-3 Buck.ctl loop t=4.990000e-3 vout=3.292415e0 err=7.585318e-3 duty=2.788577e-1
+@5.000000e-3 Buck.ctl loop t=5.000000e-3 vout=3.292541e0 err=7.459238e-3 duty=2.788652e-1
+@5.010000e-3 Buck.ctl loop t=5.010000e-3 vout=3.292648e0 err=7.352116e-3 duty=2.788725e-1
+@5.020000e-3 Buck.ctl loop t=5.020000e-3 vout=3.292736e0 err=7.263858e-3 duty=2.788798e-1
+@5.030000e-3 Buck.ctl loop t=5.030000e-3 vout=3.292806e0 err=7.193579e-3 duty=2.788870e-1
+@5.040000e-3 Buck.ctl loop t=5.040000e-3 vout=3.292860e0 err=7.139676e-3 duty=2.788941e-1
+@5.050000e-3 Buck.ctl loop t=5.050000e-3 vout=3.292900e0 err=7.099925e-3 duty=2.789012e-1
+@5.060000e-3 Buck.ctl loop t=5.060000e-3 vout=3.292928e0 err=7.071608e-3 duty=2.789083e-1
+@5.070000e-3 Buck.ctl loop t=5.070000e-3 vout=3.292948e0 err=7.051651e-3 duty=2.789154e-1
+@5.080000e-3 Buck.ctl loop t=5.080000e-3 vout=3.292963e0 err=7.036777e-3 duty=2.789224e-1
+@5.090000e-3 Buck.ctl loop t=5.090000e-3 vout=3.292976e0 err=7.023659e-3 duty=2.789294e-1
+@5.100000e-3 Buck.ctl loop t=5.100000e-3 vout=3.292991e0 err=7.009072e-3 duty=2.789364e-1
+@5.110000e-3 Buck.ctl loop t=5.110000e-3 vout=3.293010e0 err=6.990031e-3 duty=2.789434e-1
+@5.120000e-3 Buck.ctl loop t=5.120000e-3 vout=3.293036e0 err=6.963914e-3 duty=2.789504e-1
+@5.130000e-3 Buck.ctl loop t=5.130000e-3 vout=3.293071e0 err=6.928564e-3 duty=2.789573e-1
+@5.140000e-3 Buck.ctl loop t=5.140000e-3 vout=3.293118e0 err=6.882367e-3 duty=2.789642e-1
+@5.150000e-3 Buck.ctl loop t=5.150000e-3 vout=3.293176e0 err=6.824302e-3 duty=2.789710e-1
+@5.160000e-3 Buck.ctl loop t=5.160000e-3 vout=3.293246e0 err=6.753960e-3 duty=2.789778e-1
+@5.170000e-3 Buck.ctl loop t=5.170000e-3 vout=3.293328e0 err=6.671540e-3 duty=2.789844e-1
+@5.180000e-3 Buck.ctl loop t=5.180000e-3 vout=3.293422e0 err=6.577813e-3 duty=2.789910e-1
+@5.190000e-3 Buck.ctl loop t=5.190000e-3 vout=3.293526e0 err=6.474062e-3 duty=2.789975e-1
+@5.200000e-3 Buck.ctl loop t=5.200000e-3 vout=3.293638e0 err=6.362011e-3 duty=2.790039e-1
+@5.210000e-3 Buck.ctl loop t=5.210000e-3 vout=3.293756e0 err=6.243720e-3 duty=2.790101e-1
+@5.220000e-3 Buck.ctl loop t=5.220000e-3 vout=3.293879e0 err=6.121485e-3 duty=2.790162e-1
+@5.230000e-3 Buck.ctl loop t=5.230000e-3 vout=3.294002e0 err=5.997726e-3 duty=2.790222e-1
+@5.240000e-3 Buck.ctl loop t=5.240000e-3 vout=3.294125e0 err=5.874868e-3 duty=2.790281e-1
+@5.250000e-3 Buck.ctl loop t=5.250000e-3 vout=3.294245e0 err=5.755237e-3 duty=2.790338e-1
+@5.260000e-3 Buck.ctl loop t=5.260000e-3 vout=3.294359e0 err=5.640959e-3 duty=2.790395e-1
+@5.270000e-3 Buck.ctl loop t=5.270000e-3 vout=3.294466e0 err=5.533868e-3 duty=2.790450e-1
+@5.280000e-3 Buck.ctl loop t=5.280000e-3 vout=3.294565e0 err=5.435443e-3 duty=2.790505e-1
+@5.290000e-3 Buck.ctl loop t=5.290000e-3 vout=3.294653e0 err=5.346750e-3 duty=2.790558e-1
+@5.300000e-3 Buck.ctl loop t=5.300000e-3 vout=3.294732e0 err=5.268411e-3 duty=2.790611e-1
+@5.310000e-3 Buck.ctl loop t=5.310000e-3 vout=3.294799e0 err=5.200597e-3 duty=2.790663e-1
+@5.320000e-3 Buck.ctl loop t=5.320000e-3 vout=3.294857e0 err=5.143036e-3 duty=2.790714e-1
+@5.330000e-3 Buck.ctl loop t=5.330000e-3 vout=3.294905e0 err=5.095042e-3 duty=2.790765e-1
+@5.340000e-3 Buck.ctl loop t=5.340000e-3 vout=3.294944e0 err=5.055564e-3 duty=2.790816e-1
+@5.350000e-3 Buck.ctl loop t=5.350000e-3 vout=3.294977e0 err=5.023245e-3 duty=2.790866e-1
+@5.360000e-3 Buck.ctl loop t=5.360000e-3 vout=3.295004e0 err=4.996496e-3 duty=2.790916e-1
+@5.370000e-3 Buck.ctl loop t=5.370000e-3 vout=3.295026e0 err=4.973578e-3 duty=2.790966e-1
+@5.380000e-3 Buck.ctl loop t=5.380000e-3 vout=3.295047e0 err=4.952679e-3 duty=2.791015e-1
+@5.390000e-3 Buck.ctl loop t=5.390000e-3 vout=3.295068e0 err=4.932005e-3 duty=2.791064e-1
+@5.400000e-3 Buck.ctl loop t=5.400000e-3 vout=3.295090e0 err=4.909855e-3 duty=2.791114e-1
+@5.410000e-3 Buck.ctl loop t=5.410000e-3 vout=3.295115e0 err=4.884694e-3 duty=2.791162e-1
+@5.420000e-3 Buck.ctl loop t=5.420000e-3 vout=3.295145e0 err=4.855212e-3 duty=2.791211e-1
+@5.430000e-3 Buck.ctl loop t=5.430000e-3 vout=3.295180e0 err=4.820379e-3 duty=2.791259e-1
+@5.440000e-3 Buck.ctl loop t=5.440000e-3 vout=3.295221e0 err=4.779473e-3 duty=2.791307e-1
+@5.450000e-3 Buck.ctl loop t=5.450000e-3 vout=3.295268e0 err=4.732103e-3 duty=2.791354e-1
+@5.460000e-3 Buck.ctl loop t=5.460000e-3 vout=3.295322e0 err=4.678211e-3 duty=2.791401e-1
+@5.470000e-3 Buck.ctl loop t=5.470000e-3 vout=3.295382e0 err=4.618063e-3 duty=2.791447e-1
+@5.480000e-3 Buck.ctl loop t=5.480000e-3 vout=3.295448e0 err=4.552222e-3 duty=2.791493e-1
+@5.490000e-3 Buck.ctl loop t=5.490000e-3 vout=3.295518e0 err=4.481510e-3 duty=2.791538e-1
+@5.500000e-3 Buck.ctl loop t=5.500000e-3 vout=3.295593e0 err=4.406962e-3 duty=2.791582e-1
+@5.510000e-3 Buck.ctl loop t=5.510000e-3 vout=3.295670e0 err=4.329770e-3 duty=2.791625e-1
+@5.520000e-3 Buck.ctl loop t=5.520000e-3 vout=3.295749e0 err=4.251224e-3 duty=2.791667e-1
+@5.530000e-3 Buck.ctl loop t=5.530000e-3 vout=3.295827e0 err=4.172647e-3 duty=2.791709e-1
+@5.540000e-3 Buck.ctl loop t=5.540000e-3 vout=3.295905e0 err=4.095340e-3 duty=2.791750e-1
+@5.550000e-3 Buck.ctl loop t=5.550000e-3 vout=3.295979e0 err=4.020518e-3 duty=2.791790e-1
+@5.560000e-3 Buck.ctl loop t=5.560000e-3 vout=3.296051e0 err=3.949263e-3 duty=2.791830e-1
+@5.570000e-3 Buck.ctl loop t=5.570000e-3 vout=3.296118e0 err=3.882478e-3 duty=2.791869e-1
+@5.580000e-3 Buck.ctl loop t=5.580000e-3 vout=3.296179e0 err=3.820858e-3 duty=2.791907e-1
+@5.590000e-3 Buck.ctl loop t=5.590000e-3 vout=3.296235e0 err=3.764862e-3 duty=2.791944e-1
+@5.600000e-3 Buck.ctl loop t=5.600000e-3 vout=3.296285e0 err=3.714703e-3 duty=2.791982e-1
+@5.610000e-3 Buck.ctl loop t=5.610000e-3 vout=3.296330e0 err=3.670352e-3 duty=2.792018e-1
+@5.620000e-3 Buck.ctl loop t=5.620000e-3 vout=3.296368e0 err=3.631544e-3 duty=2.792055e-1
+@5.630000e-3 Buck.ctl loop t=5.630000e-3 vout=3.296402e0 err=3.597799e-3 duty=2.792091e-1
+@5.640000e-3 Buck.ctl loop t=5.640000e-3 vout=3.296432e0 err=3.568457e-3 duty=2.792126e-1
+@5.650000e-3 Buck.ctl loop t=5.650000e-3 vout=3.296457e0 err=3.542710e-3 duty=2.792162e-1
+@5.660000e-3 Buck.ctl loop t=5.660000e-3 vout=3.296480e0 err=3.519643e-3 duty=2.792197e-1
+@5.670000e-3 Buck.ctl loop t=5.670000e-3 vout=3.296502e0 err=3.498285e-3 duty=2.792232e-1
+@5.680000e-3 Buck.ctl loop t=5.680000e-3 vout=3.296522e0 err=3.477646e-3 duty=2.792267e-1
+@5.690000e-3 Buck.ctl loop t=5.690000e-3 vout=3.296543e0 err=3.456769e-3 duty=2.792301e-1
+@5.700000e-3 Buck.ctl loop t=5.700000e-3 vout=3.296565e0 err=3.434767e-3 duty=2.792336e-1
+@5.710000e-3 Buck.ctl loop t=5.710000e-3 vout=3.296589e0 err=3.410861e-3 duty=2.792370e-1
+@5.720000e-3 Buck.ctl loop t=5.720000e-3 vout=3.296616e0 err=3.384410e-3 duty=2.792404e-1
+@5.730000e-3 Buck.ctl loop t=5.730000e-3 vout=3.296645e0 err=3.354934e-3 duty=2.792437e-1
+@5.740000e-3 Buck.ctl loop t=5.740000e-3 vout=3.296678e0 err=3.322129e-3 duty=2.792470e-1
+@5.750000e-3 Buck.ctl loop t=5.750000e-3 vout=3.296714e0 err=3.285871e-3 duty=2.792503e-1
+@5.760000e-3 Buck.ctl loop t=5.760000e-3 vout=3.296754e0 err=3.246217e-3 duty=2.792536e-1
+@5.770000e-3 Buck.ctl loop t=5.770000e-3 vout=3.296797e0 err=3.203394e-3 duty=2.792568e-1
+@5.780000e-3 Buck.ctl loop t=5.780000e-3 vout=3.296842e0 err=3.157781e-3 duty=2.792599e-1
+@5.790000e-3 Buck.ctl loop t=5.790000e-3 vout=3.296890e0 err=3.109885e-3 duty=2.792630e-1
+@5.800000e-3 Buck.ctl loop t=5.800000e-3 vout=3.296940e0 err=3.060316e-3 duty=2.792661e-1
+@5.810000e-3 Buck.ctl loop t=5.810000e-3 vout=3.296990e0 err=3.009751e-3 duty=2.792691e-1
+@5.820000e-3 Buck.ctl loop t=5.820000e-3 vout=3.297041e0 err=2.958906e-3 duty=2.792721e-1
+@5.830000e-3 Buck.ctl loop t=5.830000e-3 vout=3.297092e0 err=2.908498e-3 duty=2.792750e-1
+@5.840000e-3 Buck.ctl loop t=5.840000e-3 vout=3.297141e0 err=2.859212e-3 duty=2.792778e-1
+@5.850000e-3 Buck.ctl loop t=5.850000e-3 vout=3.297188e0 err=2.811678e-3 duty=2.792806e-1
+@5.860000e-3 Buck.ctl loop t=5.860000e-3 vout=3.297234e0 err=2.766436e-3 duty=2.792834e-1
+@5.870000e-3 Buck.ctl loop t=5.870000e-3 vout=3.297276e0 err=2.723922e-3 duty=2.792861e-1
+@5.880000e-3 Buck.ctl loop t=5.880000e-3 vout=3.297316e0 err=2.684450e-3 duty=2.792888e-1
+@5.890000e-3 Buck.ctl loop t=5.890000e-3 vout=3.297352e0 err=2.648203e-3 duty=2.792915e-1
+@5.900000e-3 Buck.ctl loop t=5.900000e-3 vout=3.297385e0 err=2.615229e-3 duty=2.792941e-1
+@5.910000e-3 Buck.ctl loop t=5.910000e-3 vout=3.297415e0 err=2.585445e-3 duty=2.792967e-1
+@5.920000e-3 Buck.ctl loop t=5.920000e-3 vout=3.297441e0 err=2.558646e-3 duty=2.792992e-1
+@5.930000e-3 Buck.ctl loop t=5.930000e-3 vout=3.297465e0 err=2.534518e-3 duty=2.793018e-1
+@5.940000e-3 Buck.ctl loop t=5.940000e-3 vout=3.297487e0 err=2.512659e-3 duty=2.793043e-1
+@5.950000e-3 Buck.ctl loop t=5.950000e-3 vout=3.297507e0 err=2.492595e-3 duty=2.793068e-1
+@5.960000e-3 Buck.ctl loop t=5.960000e-3 vout=3.297526e0 err=2.473808e-3 duty=2.793092e-1
+@5.970000e-3 Buck.ctl loop t=5.970000e-3 vout=3.297544e0 err=2.455762e-3 duty=2.793117e-1
+@5.980000e-3 Buck.ctl loop t=5.980000e-3 vout=3.297562e0 err=2.437921e-3 duty=2.793141e-1
+@5.990000e-3 Buck.ctl loop t=5.990000e-3 vout=3.297580e0 err=2.419782e-3 duty=2.793166e-1
+@6.000000e-3 Buck.ctl loop t=6.000000e-3 vout=3.297599e0 err=2.400887e-3 duty=2.793190e-1
+@6.010000e-3 Buck.ctl loop t=6.010000e-3 vout=3.297619e0 err=2.380846e-3 duty=2.793213e-1
+@6.020000e-3 Buck.ctl loop t=6.020000e-3 vout=3.297641e0 err=2.359354e-3 duty=2.793237e-1
+@6.030000e-3 Buck.ctl loop t=6.030000e-3 vout=3.297664e0 err=2.336195e-3 duty=2.793260e-1
+@6.040000e-3 Buck.ctl loop t=6.040000e-3 vout=3.297689e0 err=2.311250e-3 duty=2.793283e-1
+@6.050000e-3 Buck.ctl loop t=6.050000e-3 vout=3.297715e0 err=2.284503e-3 duty=2.793306e-1
+@6.060000e-3 Buck.ctl loop t=6.060000e-3 vout=3.297744e0 err=2.256031e-3 duty=2.793329e-1
+@6.070000e-3 Buck.ctl loop t=6.070000e-3 vout=3.297774e0 err=2.225998e-3 duty=2.793351e-1
+@6.080000e-3 Buck.ctl loop t=6.080000e-3 vout=3.297805e0 err=2.194647e-3 duty=2.793373e-1
+@6.090000e-3 Buck.ctl loop t=6.090000e-3 vout=3.297838e0 err=2.162284e-3 duty=2.793395e-1
+@6.100000e-3 Buck.ctl loop t=6.100000e-3 vout=3.297871e0 err=2.129259e-3 duty=2.793416e-1
+@6.110000e-3 Buck.ctl loop t=6.110000e-3 vout=3.297904e0 err=2.095954e-3 duty=2.793437e-1
+@6.120000e-3 Buck.ctl loop t=6.120000e-3 vout=3.297937e0 err=2.062760e-3 duty=2.793458e-1
+@6.130000e-3 Buck.ctl loop t=6.130000e-3 vout=3.297970e0 err=2.030060e-3 duty=2.793478e-1
+@6.140000e-3 Buck.ctl loop t=6.140000e-3 vout=3.298002e0 err=1.998213e-3 duty=2.793498e-1
+@6.150000e-3 Buck.ctl loop t=6.150000e-3 vout=3.298032e0 err=1.967538e-3 duty=2.793518e-1
+@6.160000e-3 Buck.ctl loop t=6.160000e-3 vout=3.298062e0 err=1.938301e-3 duty=2.793537e-1
+@6.170000e-3 Buck.ctl loop t=6.170000e-3 vout=3.298089e0 err=1.910706e-3 duty=2.793556e-1
+@6.180000e-3 Buck.ctl loop t=6.180000e-3 vout=3.298115e0 err=1.884889e-3 duty=2.793575e-1
+@6.190000e-3 Buck.ctl loop t=6.190000e-3 vout=3.298139e0 err=1.860911e-3 duty=2.793593e-1
+@6.200000e-3 Buck.ctl loop t=6.200000e-3 vout=3.298161e0 err=1.838761e-3 duty=2.793612e-1
+@6.210000e-3 Buck.ctl loop t=6.210000e-3 vout=3.298182e0 err=1.818361e-3 duty=2.793630e-1
+@6.220000e-3 Buck.ctl loop t=6.220000e-3 vout=3.298200e0 err=1.799565e-3 duty=2.793648e-1
+@6.230000e-3 Buck.ctl loop t=6.230000e-3 vout=3.298218e0 err=1.782179e-3 duty=2.793666e-1
+@6.240000e-3 Buck.ctl loop t=6.240000e-3 vout=3.298234e0 err=1.765960e-3 duty=2.793683e-1
+@6.250000e-3 Buck.ctl loop t=6.250000e-3 vout=3.298249e0 err=1.750636e-3 duty=2.793701e-1
+@6.260000e-3 Buck.ctl loop t=6.260000e-3 vout=3.298264e0 err=1.735919e-3 duty=2.793718e-1
+@6.270000e-3 Buck.ctl loop t=6.270000e-3 vout=3.298278e0 err=1.721514e-3 duty=2.793736e-1
+@6.280000e-3 Buck.ctl loop t=6.280000e-3 vout=3.298293e0 err=1.707136e-3 duty=2.793753e-1
+@6.290000e-3 Buck.ctl loop t=6.290000e-3 vout=3.298307e0 err=1.692522e-3 duty=2.793770e-1
+@6.300000e-3 Buck.ctl loop t=6.300000e-3 vout=3.298323e0 err=1.677439e-3 duty=2.793786e-1
+@6.310000e-3 Buck.ctl loop t=6.310000e-3 vout=3.298338e0 err=1.661697e-3 duty=2.793803e-1
+@6.320000e-3 Buck.ctl loop t=6.320000e-3 vout=3.298355e0 err=1.645152e-3 duty=2.793819e-1
+@6.330000e-3 Buck.ctl loop t=6.330000e-3 vout=3.298372e0 err=1.627713e-3 duty=2.793836e-1
+@6.340000e-3 Buck.ctl loop t=6.340000e-3 vout=3.298391e0 err=1.609342e-3 duty=2.793852e-1
+@6.350000e-3 Buck.ctl loop t=6.350000e-3 vout=3.298410e0 err=1.590056e-3 duty=2.793868e-1
+@6.360000e-3 Buck.ctl loop t=6.360000e-3 vout=3.298430e0 err=1.569920e-3 duty=2.793883e-1
+@6.370000e-3 Buck.ctl loop t=6.370000e-3 vout=3.298451e0 err=1.549046e-3 duty=2.793899e-1
+@6.380000e-3 Buck.ctl loop t=6.380000e-3 vout=3.298472e0 err=1.527583e-3 duty=2.793914e-1
+@6.390000e-3 Buck.ctl loop t=6.390000e-3 vout=3.298494e0 err=1.505711e-3 duty=2.793929e-1
+@6.400000e-3 Buck.ctl loop t=6.400000e-3 vout=3.298516e0 err=1.483630e-3 duty=2.793944e-1
+@6.410000e-3 Buck.ctl loop t=6.410000e-3 vout=3.298538e0 err=1.461550e-3 duty=2.793959e-1
+@6.420000e-3 Buck.ctl loop t=6.420000e-3 vout=3.298560e0 err=1.439682e-3 duty=2.793973e-1
+@6.430000e-3 Buck.ctl loop t=6.430000e-3 vout=3.298582e0 err=1.418230e-3 duty=2.793987e-1
+@6.440000e-3 Buck.ctl loop t=6.440000e-3 vout=3.298603e0 err=1.397378e-3 duty=2.794001e-1
+@6.450000e-3 Buck.ctl loop t=6.450000e-3 vout=3.298623e0 err=1.377286e-3 duty=2.794015e-1
+@6.460000e-3 Buck.ctl loop t=6.460000e-3 vout=3.298642e0 err=1.358081e-3 duty=2.794029e-1
+@6.470000e-3 Buck.ctl loop t=6.470000e-3 vout=3.298660e0 err=1.339857e-3 duty=2.794042e-1
+@6.480000e-3 Buck.ctl loop t=6.480000e-3 vout=3.298677e0 err=1.322665e-3 duty=2.794055e-1
+@6.490000e-3 Buck.ctl loop t=6.490000e-3 vout=3.298693e0 err=1.306519e-3 duty=2.794068e-1
+@6.500000e-3 Buck.ctl loop t=6.500000e-3 vout=3.298709e0 err=1.291394e-3 duty=2.794081e-1
+@6.510000e-3 Buck.ctl loop t=6.510000e-3 vout=3.298723e0 err=1.277229e-3 duty=2.794094e-1
+@6.520000e-3 Buck.ctl loop t=6.520000e-3 vout=3.298736e0 err=1.263928e-3 duty=2.794107e-1
+@6.530000e-3 Buck.ctl loop t=6.530000e-3 vout=3.298749e0 err=1.251372e-3 duty=2.794119e-1
+@6.540000e-3 Buck.ctl loop t=6.540000e-3 vout=3.298761e0 err=1.239420e-3 duty=2.794131e-1
+@6.550000e-3 Buck.ctl loop t=6.550000e-3 vout=3.298772e0 err=1.227917e-3 duty=2.794144e-1
+@6.560000e-3 Buck.ctl loop t=6.560000e-3 vout=3.298783e0 err=1.216704e-3 duty=2.794156e-1
+@6.570000e-3 Buck.ctl loop t=6.570000e-3 vout=3.298794e0 err=1.205621e-3 duty=2.794168e-1
+@6.580000e-3 Buck.ctl loop t=6.580000e-3 vout=3.298805e0 err=1.194518e-3 duty=2.794180e-1
+@6.590000e-3 Buck.ctl loop t=6.590000e-3 vout=3.298817e0 err=1.183258e-3 duty=2.794192e-1
+@6.600000e-3 Buck.ctl loop t=6.600000e-3 vout=3.298828e0 err=1.171727e-3 duty=2.794203e-1
+@6.610000e-3 Buck.ctl loop t=6.610000e-3 vout=3.298840e0 err=1.159831e-3 duty=2.794215e-1
+@6.620000e-3 Buck.ctl loop t=6.620000e-3 vout=3.298852e0 err=1.147507e-3 duty=2.794227e-1
+@6.630000e-3 Buck.ctl loop t=6.630000e-3 vout=3.298865e0 err=1.134719e-3 duty=2.794238e-1
+@6.640000e-3 Buck.ctl loop t=6.640000e-3 vout=3.298879e0 err=1.121460e-3 duty=2.794249e-1
+@6.650000e-3 Buck.ctl loop t=6.650000e-3 vout=3.298892e0 err=1.107754e-3 duty=2.794260e-1
+@6.660000e-3 Buck.ctl loop t=6.660000e-3 vout=3.298906e0 err=1.093648e-3 duty=2.794271e-1
+@6.670000e-3 Buck.ctl loop t=6.670000e-3 vout=3.298921e0 err=1.079213e-3 duty=2.794282e-1
+@6.680000e-3 Buck.ctl loop t=6.680000e-3 vout=3.298935e0 err=1.064539e-3 duty=2.794293e-1
+@6.690000e-3 Buck.ctl loop t=6.690000e-3 vout=3.298950e0 err=1.049730e-3 duty=2.794303e-1
+@6.700000e-3 Buck.ctl loop t=6.700000e-3 vout=3.298965e0 err=1.034897e-3 duty=2.794313e-1
+@6.710000e-3 Buck.ctl loop t=6.710000e-3 vout=3.298980e0 err=1.020157e-3 duty=2.794324e-1
+@6.720000e-3 Buck.ctl loop t=6.720000e-3 vout=3.298994e0 err=1.005621e-3 duty=2.794334e-1
+@6.730000e-3 Buck.ctl loop t=6.730000e-3 vout=3.299009e0 err=9.913950e-4 duty=2.794344e-1
+@6.740000e-3 Buck.ctl loop t=6.740000e-3 vout=3.299022e0 err=9.775735e-4 duty=2.794353e-1
+@6.750000e-3 Buck.ctl loop t=6.750000e-3 vout=3.299036e0 err=9.642343e-4 duty=2.794363e-1
+@6.760000e-3 Buck.ctl loop t=6.760000e-3 vout=3.299049e0 err=9.514373e-4 duty=2.794373e-1
+@6.770000e-3 Buck.ctl loop t=6.770000e-3 vout=3.299061e0 err=9.392216e-4 duty=2.794382e-1
+@6.780000e-3 Buck.ctl loop t=6.780000e-3 vout=3.299072e0 err=9.276050e-4 duty=2.794391e-1
+@6.790000e-3 Buck.ctl loop t=6.790000e-3 vout=3.299083e0 err=9.165837e-4 duty=2.794400e-1
+@6.800000e-3 Buck.ctl loop t=6.800000e-3 vout=3.299094e0 err=9.061332e-4 duty=2.794409e-1
+@6.810000e-3 Buck.ctl loop t=6.810000e-3 vout=3.299104e0 err=8.962107e-4 duty=2.794418e-1
+@6.820000e-3 Buck.ctl loop t=6.820000e-3 vout=3.299113e0 err=8.867569e-4 duty=2.794427e-1
+@6.830000e-3 Buck.ctl loop t=6.830000e-3 vout=3.299122e0 err=8.777000e-4 duty=2.794436e-1
+@6.840000e-3 Buck.ctl loop t=6.840000e-3 vout=3.299131e0 err=8.689587e-4 duty=2.794445e-1
+@6.850000e-3 Buck.ctl loop t=6.850000e-3 vout=3.299140e0 err=8.604467e-4 duty=2.794453e-1
+@6.860000e-3 Buck.ctl loop t=6.860000e-3 vout=3.299148e0 err=8.520763e-4 duty=2.794462e-1
+@6.870000e-3 Buck.ctl loop t=6.870000e-3 vout=3.299156e0 err=8.437625e-4 duty=2.794470e-1
+@6.880000e-3 Buck.ctl loop t=6.880000e-3 vout=3.299165e0 err=8.354266e-4 duty=2.794479e-1
+@6.890000e-3 Buck.ctl loop t=6.890000e-3 vout=3.299173e0 err=8.269993e-4 duty=2.794487e-1
+@6.900000e-3 Buck.ctl loop t=6.900000e-3 vout=3.299182e0 err=8.184235e-4 duty=2.794495e-1
+@6.910000e-3 Buck.ctl loop t=6.910000e-3 vout=3.299190e0 err=8.096561e-4 duty=2.794503e-1
+@6.920000e-3 Buck.ctl loop t=6.920000e-3 vout=3.299199e0 err=8.006697e-4 duty=2.794511e-1
+@6.930000e-3 Buck.ctl loop t=6.930000e-3 vout=3.299209e0 err=7.914525e-4 duty=2.794519e-1
+@6.940000e-3 Buck.ctl loop t=6.940000e-3 vout=3.299218e0 err=7.820088e-4 duty=2.794527e-1
+@6.950000e-3 Buck.ctl loop t=6.950000e-3 vout=3.299228e0 err=7.723576e-4 duty=2.794535e-1
+@6.960000e-3 Buck.ctl loop t=6.960000e-3 vout=3.299237e0 err=7.625315e-4 duty=2.794542e-1
+@6.970000e-3 Buck.ctl loop t=6.970000e-3 vout=3.299247e0 err=7.525740e-4 duty=2.794550e-1
+@6.980000e-3 Buck.ctl loop t=6.980000e-3 vout=3.299257e0 err=7.425381e-4 duty=2.794557e-1
+@6.990000e-3 Buck.ctl loop t=6.990000e-3 vout=3.299268e0 err=7.324823e-4 duty=2.794565e-1
+@7.000000e-3 Buck.ctl loop t=7.000000e-3 vout=3.299278e0 err=7.224686e-4 duty=2.794572e-1
+@7.010000e-3 Buck.ctl loop t=7.010000e-3 vout=3.299287e0 err=7.125592e-4 duty=2.794579e-1
+@7.020000e-3 Buck.ctl loop t=7.020000e-3 vout=3.299297e0 err=7.028135e-4 duty=2.794586e-1
+@7.030000e-3 Buck.ctl loop t=7.030000e-3 vout=3.299307e0 err=6.932859e-4 duty=2.794593e-1
+@7.040000e-3 Buck.ctl loop t=7.040000e-3 vout=3.299316e0 err=6.840231e-4 duty=2.794600e-1
+@7.050000e-3 Buck.ctl loop t=7.050000e-3 vout=3.299325e0 err=6.750626e-4 duty=2.794606e-1
+@7.060000e-3 Buck.ctl loop t=7.060000e-3 vout=3.299334e0 err=6.664313e-4 duty=2.794613e-1
+@7.070000e-3 Buck.ctl loop t=7.070000e-3 vout=3.299342e0 err=6.581442e-4 duty=2.794620e-1
+@7.080000e-3 Buck.ctl loop t=7.080000e-3 vout=3.299350e0 err=6.502049e-4 duty=2.794626e-1
+@7.090000e-3 Buck.ctl loop t=7.090000e-3 vout=3.299357e0 err=6.426055e-4 duty=2.794633e-1
+@7.100000e-3 Buck.ctl loop t=7.100000e-3 vout=3.299365e0 err=6.353271e-4 duty=2.794639e-1
+@7.110000e-3 Buck.ctl loop t=7.110000e-3 vout=3.299372e0 err=6.283416e-4 duty=2.794645e-1
+@7.120000e-3 Buck.ctl loop t=7.120000e-3 vout=3.299378e0 err=6.216128e-4 duty=2.794651e-1
+@7.130000e-3 Buck.ctl loop t=7.130000e-3 vout=3.299385e0 err=6.150984e-4 duty=2.794658e-1
+@7.140000e-3 Buck.ctl loop t=7.140000e-3 vout=3.299391e0 err=6.087524e-4 duty=2.794664e-1
+@7.150000e-3 Buck.ctl loop t=7.150000e-3 vout=3.299397e0 err=6.025269e-4 duty=2.794670e-1
+@7.160000e-3 Buck.ctl loop t=7.160000e-3 vout=3.299404e0 err=5.963744e-4 duty=2.794676e-1
+@7.170000e-3 Buck.ctl loop t=7.170000e-3 vout=3.299410e0 err=5.902499e-4 duty=2.794682e-1
+@7.180000e-3 Buck.ctl loop t=7.180000e-3 vout=3.299416e0 err=5.841126e-4 duty=2.794687e-1
+@7.190000e-3 Buck.ctl loop t=7.190000e-3 vout=3.299422e0 err=5.779279e-4 duty=2.794693e-1
+@7.200000e-3 Buck.ctl loop t=7.200000e-3 vout=3.299428e0 err=5.716681e-4 duty=2.794699e-1
+@7.210000e-3 Buck.ctl loop t=7.210000e-3 vout=3.299435e0 err=5.653137e-4 duty=2.794705e-1
+@7.220000e-3 Buck.ctl loop t=7.220000e-3 vout=3.299441e0 err=5.588539e-4 duty=2.794710e-1
+@7.230000e-3 Buck.ctl loop t=7.230000e-3 vout=3.299448e0 err=5.522865e-4 duty=2.794716e-1
+@7.240000e-3 Buck.ctl loop t=7.240000e-3 vout=3.299454e0 err=5.456176e-4 duty=2.794721e-1
+@7.250000e-3 Buck.ctl loop t=7.250000e-3 vout=3.299461e0 err=5.388612e-4 duty=2.794727e-1
+@7.260000e-3 Buck.ctl loop t=7.260000e-3 vout=3.299468e0 err=5.320380e-4 duty=2.794732e-1
+@7.270000e-3 Buck.ctl loop t=7.270000e-3 vout=3.299475e0 err=5.251742e-4 duty=2.794737e-1
+@7.280000e-3 Buck.ctl loop t=7.280000e-3 vout=3.299482e0 err=5.183001e-4 duty=2.794742e-1
+@7.290000e-3 Buck.ctl loop t=7.290000e-3 vout=3.299489e0 err=5.114487e-4 duty=2.794747e-1
+@7.300000e-3 Buck.ctl loop t=7.300000e-3 vout=3.299495e0 err=5.046535e-4 duty=2.794752e-1
+@7.310000e-3 Buck.ctl loop t=7.310000e-3 vout=3.299502e0 err=4.979479e-4 duty=2.794757e-1
+@7.320000e-3 Buck.ctl loop t=7.320000e-3 vout=3.299509e0 err=4.913626e-4 duty=2.794762e-1
+@7.330000e-3 Buck.ctl loop t=7.330000e-3 vout=3.299515e0 err=4.849252e-4 duty=2.794767e-1
+@7.340000e-3 Buck.ctl loop t=7.340000e-3 vout=3.299521e0 err=4.786585e-4 duty=2.794772e-1
+@7.350000e-3 Buck.ctl loop t=7.350000e-3 vout=3.299527e0 err=4.725799e-4 duty=2.794777e-1
+@7.360000e-3 Buck.ctl loop t=7.360000e-3 vout=3.299533e0 err=4.667006e-4 duty=2.794781e-1
+@7.370000e-3 Buck.ctl loop t=7.370000e-3 vout=3.299539e0 err=4.610257e-4 duty=2.794786e-1
+@7.380000e-3 Buck.ctl loop t=7.380000e-3 vout=3.299544e0 err=4.555536e-4 duty=2.794791e-1
+@7.390000e-3 Buck.ctl loop t=7.390000e-3 vout=3.299550e0 err=4.502768e-4 duty=2.794795e-1
+@7.400000e-3 Buck.ctl loop t=7.400000e-3 vout=3.299555e0 err=4.451822e-4 duty=2.794800e-1
+@7.410000e-3 Buck.ctl loop t=7.410000e-3 vout=3.299560e0 err=4.402521e-4 duty=2.794804e-1
+@7.420000e-3 Buck.ctl loop t=7.420000e-3 vout=3.299565e0 err=4.354647e-4 duty=2.794808e-1
+@7.430000e-3 Buck.ctl loop t=7.430000e-3 vout=3.299569e0 err=4.307958e-4 duty=2.794813e-1
+@7.440000e-3 Buck.ctl loop t=7.440000e-3 vout=3.299574e0 err=4.262194e-4 duty=2.794817e-1
+@7.450000e-3 Buck.ctl loop t=7.450000e-3 vout=3.299578e0 err=4.217093e-4 duty=2.794821e-1
+@7.460000e-3 Buck.ctl loop t=7.460000e-3 vout=3.299583e0 err=4.172400e-4 duty=2.794825e-1
+@7.470000e-3 Buck.ctl loop t=7.470000e-3 vout=3.299587e0 err=4.127879e-4 duty=2.794829e-1
+@7.480000e-3 Buck.ctl loop t=7.480000e-3 vout=3.299592e0 err=4.083322e-4 duty=2.794833e-1
+@7.490000e-3 Buck.ctl loop t=7.490000e-3 vout=3.299596e0 err=4.038556e-4 duty=2.794837e-1
+@7.500000e-3 Buck.ctl loop t=7.500000e-3 vout=3.299601e0 err=3.993453e-4 duty=2.794841e-1
+@7.510000e-3 Buck.ctl loop t=7.510000e-3 vout=3.299605e0 err=3.947927e-4 duty=2.794845e-1
+@7.520000e-3 Buck.ctl loop t=7.520000e-3 vout=3.299610e0 err=3.901941e-4 duty=2.794849e-1
+@7.530000e-3 Buck.ctl loop t=7.530000e-3 vout=3.299614e0 err=3.855505e-4 duty=2.794853e-1
+@7.540000e-3 Buck.ctl loop t=7.540000e-3 vout=3.299619e0 err=3.808673e-4 duty=2.794857e-1
+@7.550000e-3 Buck.ctl loop t=7.550000e-3 vout=3.299624e0 err=3.761538e-4 duty=2.794861e-1
+@7.560000e-3 Buck.ctl loop t=7.560000e-3 vout=3.299629e0 err=3.714229e-4 duty=2.794864e-1
+@7.570000e-3 Buck.ctl loop t=7.570000e-3 vout=3.299633e0 err=3.666899e-4 duty=2.794868e-1
+@7.580000e-3 Buck.ctl loop t=7.580000e-3 vout=3.299638e0 err=3.619718e-4 duty=2.794872e-1
+@7.590000e-3 Buck.ctl loop t=7.590000e-3 vout=3.299643e0 err=3.572869e-4 duty=2.794875e-1
+@7.600000e-3 Buck.ctl loop t=7.600000e-3 vout=3.299647e0 err=3.526533e-4 duty=2.794879e-1
+@7.610000e-3 Buck.ctl loop t=7.610000e-3 vout=3.299652e0 err=3.480883e-4 duty=2.794882e-1
+@7.620000e-3 Buck.ctl loop t=7.620000e-3 vout=3.299656e0 err=3.436078e-4 duty=2.794886e-1
+@7.630000e-3 Buck.ctl loop t=7.630000e-3 vout=3.299661e0 err=3.392255e-4 duty=2.794889e-1
+@7.640000e-3 Buck.ctl loop t=7.640000e-3 vout=3.299665e0 err=3.349522e-4 duty=2.794893e-1
+@7.650000e-3 Buck.ctl loop t=7.650000e-3 vout=3.299669e0 err=3.307956e-4 duty=2.794896e-1
+@7.660000e-3 Buck.ctl loop t=7.660000e-3 vout=3.299673e0 err=3.267599e-4 duty=2.794899e-1
+@7.670000e-3 Buck.ctl loop t=7.670000e-3 vout=3.299677e0 err=3.228461e-4 duty=2.794902e-1
+@7.680000e-3 Buck.ctl loop t=7.680000e-3 vout=3.299681e0 err=3.190515e-4 duty=2.794906e-1
+@7.690000e-3 Buck.ctl loop t=7.690000e-3 vout=3.299685e0 err=3.153702e-4 duty=2.794909e-1
+@7.700000e-3 Buck.ctl loop t=7.700000e-3 vout=3.299688e0 err=3.117938e-4 duty=2.794912e-1
+@7.710000e-3 Buck.ctl loop t=7.710000e-3 vout=3.299692e0 err=3.083112e-4 duty=2.794915e-1
+@7.720000e-3 Buck.ctl loop t=7.720000e-3 vout=3.299695e0 err=3.049099e-4 duty=2.794918e-1
+@7.730000e-3 Buck.ctl loop t=7.730000e-3 vout=3.299698e0 err=3.015758e-4 duty=2.794921e-1
+@7.740000e-3 Buck.ctl loop t=7.740000e-3 vout=3.299702e0 err=2.982946e-4 duty=2.794924e-1
+@7.750000e-3 Buck.ctl loop t=7.750000e-3 vout=3.299705e0 err=2.950521e-4 duty=2.794927e-1
+@7.760000e-3 Buck.ctl loop t=7.760000e-3 vout=3.299708e0 err=2.918347e-4 duty=2.794930e-1
+@7.770000e-3 Buck.ctl loop t=7.770000e-3 vout=3.299711e0 err=2.886302e-4 duty=2.794933e-1
+@7.780000e-3 Buck.ctl loop t=7.780000e-3 vout=3.299715e0 err=2.854279e-4 duty=2.794936e-1
+@7.790000e-3 Buck.ctl loop t=7.790000e-3 vout=3.299718e0 err=2.822197e-4 duty=2.794938e-1
+@7.800000e-3 Buck.ctl loop t=7.800000e-3 vout=3.299721e0 err=2.789994e-4 duty=2.794941e-1
+@7.810000e-3 Buck.ctl loop t=7.810000e-3 vout=3.299724e0 err=2.757637e-4 duty=2.794944e-1
+@7.820000e-3 Buck.ctl loop t=7.820000e-3 vout=3.299727e0 err=2.725118e-4 duty=2.794947e-1
+@7.830000e-3 Buck.ctl loop t=7.830000e-3 vout=3.299731e0 err=2.692453e-4 duty=2.794949e-1
+@7.840000e-3 Buck.ctl loop t=7.840000e-3 vout=3.299734e0 err=2.659682e-4 duty=2.794952e-1
+@7.850000e-3 Buck.ctl loop t=7.850000e-3 vout=3.299737e0 err=2.626865e-4 duty=2.794955e-1
+@7.860000e-3 Buck.ctl loop t=7.860000e-3 vout=3.299741e0 err=2.594076e-4 duty=2.794957e-1
+@7.870000e-3 Buck.ctl loop t=7.870000e-3 vout=3.299744e0 err=2.561405e-4 duty=2.794960e-1
+@7.880000e-3 Buck.ctl loop t=7.880000e-3 vout=3.299747e0 err=2.528947e-4 duty=2.794962e-1
+@7.890000e-3 Buck.ctl loop t=7.890000e-3 vout=3.299750e0 err=2.496801e-4 duty=2.794965e-1
+@7.900000e-3 Buck.ctl loop t=7.900000e-3 vout=3.299753e0 err=2.465062e-4 duty=2.794967e-1
+@7.910000e-3 Buck.ctl loop t=7.910000e-3 vout=3.299757e0 err=2.433821e-4 duty=2.794970e-1
+@7.920000e-3 Buck.ctl loop t=7.920000e-3 vout=3.299760e0 err=2.403157e-4 duty=2.794972e-1
+@7.930000e-3 Buck.ctl loop t=7.930000e-3 vout=3.299763e0 err=2.373136e-4 duty=2.794974e-1
+@7.940000e-3 Buck.ctl loop t=7.940000e-3 vout=3.299766e0 err=2.343809e-4 duty=2.794977e-1
+@7.950000e-3 Buck.ctl loop t=7.950000e-3 vout=3.299768e0 err=2.315207e-4 duty=2.794979e-1
+@7.960000e-3 Buck.ctl loop t=7.960000e-3 vout=3.299771e0 err=2.287342e-4 duty=2.794981e-1
+@7.970000e-3 Buck.ctl loop t=7.970000e-3 vout=3.299774e0 err=2.260209e-4 duty=2.794984e-1
+@7.980000e-3 Buck.ctl loop t=7.980000e-3 vout=3.299777e0 err=2.233784e-4 duty=2.794986e-1
+@7.990000e-3 Buck.ctl loop t=7.990000e-3 vout=3.299779e0 err=2.208026e-4 duty=2.794988e-1
+@8.000000e-3 Buck.ctl loop t=8.000000e-3 vout=3.299782e0 err=2.182882e-4 duty=2.794990e-1
+@8.010000e-3 Buck.ctl loop t=8.010000e-3 vout=3.299784e0 err=2.158286e-4 duty=2.794992e-1
+@8.020000e-3 Buck.ctl loop t=8.020000e-3 vout=3.299787e0 err=2.134163e-4 duty=2.794995e-1
+@8.030000e-3 Buck.ctl loop t=8.030000e-3 vout=3.299789e0 err=2.110437e-4 duty=2.794997e-1
+@8.040000e-3 Buck.ctl loop t=8.040000e-3 vout=3.299791e0 err=2.087028e-4 duty=2.794999e-1
+@8.050000e-3 Buck.ctl loop t=8.050000e-3 vout=3.299794e0 err=2.063859e-4 duty=2.795001e-1
+@8.060000e-3 Buck.ctl loop t=8.060000e-3 vout=3.299796e0 err=2.040858e-4 duty=2.795003e-1
+@8.070000e-3 Buck.ctl loop t=8.070000e-3 vout=3.299798e0 err=2.017963e-4 duty=2.795005e-1
+@8.080000e-3 Buck.ctl loop t=8.080000e-3 vout=3.299800e0 err=1.995121e-4 duty=2.795007e-1
+@8.090000e-3 Buck.ctl loop t=8.090000e-3 vout=3.299803e0 err=1.972293e-4 duty=2.795009e-1
+@8.100000e-3 Buck.ctl loop t=8.100000e-3 vout=3.299805e0 err=1.949451e-4 duty=2.795011e-1
+@8.110000e-3 Buck.ctl loop t=8.110000e-3 vout=3.299807e0 err=1.926585e-4 duty=2.795013e-1
+@8.120000e-3 Buck.ctl loop t=8.120000e-3 vout=3.299810e0 err=1.903694e-4 duty=2.795015e-1
+@8.130000e-3 Buck.ctl loop t=8.130000e-3 vout=3.299812e0 err=1.880795e-4 duty=2.795017e-1
+@8.140000e-3 Buck.ctl loop t=8.140000e-3 vout=3.299814e0 err=1.857913e-4 duty=2.795018e-1
+@8.150000e-3 Buck.ctl loop t=8.150000e-3 vout=3.299816e0 err=1.835085e-4 duty=2.795020e-1
+@8.160000e-3 Buck.ctl loop t=8.160000e-3 vout=3.299819e0 err=1.812354e-4 duty=2.795022e-1
+@8.170000e-3 Buck.ctl loop t=8.170000e-3 vout=3.299821e0 err=1.789772e-4 duty=2.795024e-1
+@8.180000e-3 Buck.ctl loop t=8.180000e-3 vout=3.299823e0 err=1.767389e-4 duty=2.795026e-1
+@8.190000e-3 Buck.ctl loop t=8.190000e-3 vout=3.299825e0 err=1.745259e-4 duty=2.795027e-1
+@8.200000e-3 Buck.ctl loop t=8.200000e-3 vout=3.299828e0 err=1.723433e-4 duty=2.795029e-1
+@8.210000e-3 Buck.ctl loop t=8.210000e-3 vout=3.299830e0 err=1.701955e-4 duty=2.795031e-1
+@8.220000e-3 Buck.ctl loop t=8.220000e-3 vout=3.299832e0 err=1.680865e-4 duty=2.795032e-1
+@8.230000e-3 Buck.ctl loop t=8.230000e-3 vout=3.299834e0 err=1.660193e-4 duty=2.795034e-1
+@8.240000e-3 Buck.ctl loop t=8.240000e-3 vout=3.299836e0 err=1.639963e-4 duty=2.795036e-1
+@8.250000e-3 Buck.ctl loop t=8.250000e-3 vout=3.299838e0 err=1.620185e-4 duty=2.795037e-1
+@8.260000e-3 Buck.ctl loop t=8.260000e-3 vout=3.299840e0 err=1.600860e-4 duty=2.795039e-1
+@8.270000e-3 Buck.ctl loop t=8.270000e-3 vout=3.299842e0 err=1.581981e-4 duty=2.795041e-1
+@8.280000e-3 Buck.ctl loop t=8.280000e-3 vout=3.299844e0 err=1.563528e-4 duty=2.795042e-1
+@8.290000e-3 Buck.ctl loop t=8.290000e-3 vout=3.299845e0 err=1.545474e-4 duty=2.795044e-1
+@8.300000e-3 Buck.ctl loop t=8.300000e-3 vout=3.299847e0 err=1.527787e-4 duty=2.795045e-1
+@8.310000e-3 Buck.ctl loop t=8.310000e-3 vout=3.299849e0 err=1.510429e-4 duty=2.795047e-1
+@8.320000e-3 Buck.ctl loop t=8.320000e-3 vout=3.299851e0 err=1.493355e-4 duty=2.795048e-1
+@8.330000e-3 Buck.ctl loop t=8.330000e-3 vout=3.299852e0 err=1.476524e-4 duty=2.795050e-1
+@8.340000e-3 Buck.ctl loop t=8.340000e-3 vout=3.299854e0 err=1.459892e-4 duty=2.795051e-1
+@8.350000e-3 Buck.ctl loop t=8.350000e-3 vout=3.299856e0 err=1.443417e-4 duty=2.795053e-1
+@8.360000e-3 Buck.ctl loop t=8.360000e-3 vout=3.299857e0 err=1.427063e-4 duty=2.795054e-1
+@8.370000e-3 Buck.ctl loop t=8.370000e-3 vout=3.299859e0 err=1.410796e-4 duty=2.795055e-1
+@8.380000e-3 Buck.ctl loop t=8.380000e-3 vout=3.299861e0 err=1.394592e-4 duty=2.795057e-1
+@8.390000e-3 Buck.ctl loop t=8.390000e-3 vout=3.299862e0 err=1.378432e-4 duty=2.795058e-1
+@8.400000e-3 Buck.ctl loop t=8.400000e-3 vout=3.299864e0 err=1.362305e-4 duty=2.795060e-1
+@8.410000e-3 Buck.ctl loop t=8.410000e-3 vout=3.299865e0 err=1.346208e-4 duty=2.795061e-1
+@8.420000e-3 Buck.ctl loop t=8.420000e-3 vout=3.299867e0 err=1.330144e-4 duty=2.795062e-1
+@8.430000e-3 Buck.ctl loop t=8.430000e-3 vout=3.299869e0 err=1.314124e-4 duty=2.795064e-1
+@8.440000e-3 Buck.ctl loop t=8.440000e-3 vout=3.299870e0 err=1.298165e-4 duty=2.795065e-1
+@8.450000e-3 Buck.ctl loop t=8.450000e-3 vout=3.299872e0 err=1.282289e-4 duty=2.795066e-1
+@8.460000e-3 Buck.ctl loop t=8.460000e-3 vout=3.299873e0 err=1.266521e-4 duty=2.795067e-1
+@8.470000e-3 Buck.ctl loop t=8.470000e-3 vout=3.299875e0 err=1.250888e-4 duty=2.795069e-1
+@8.480000e-3 Buck.ctl loop t=8.480000e-3 vout=3.299876e0 err=1.235419e-4 duty=2.795070e-1
+@8.490000e-3 Buck.ctl loop t=8.490000e-3 vout=3.299878e0 err=1.220140e-4 duty=2.795071e-1
+@8.500000e-3 Buck.ctl loop t=8.500000e-3 vout=3.299879e0 err=1.205079e-4 duty=2.795072e-1
+@8.510000e-3 Buck.ctl loop t=8.510000e-3 vout=3.299881e0 err=1.190257e-4 duty=2.795073e-1
+@8.520000e-3 Buck.ctl loop t=8.520000e-3 vout=3.299882e0 err=1.175693e-4 duty=2.795075e-1
+@8.530000e-3 Buck.ctl loop t=8.530000e-3 vout=3.299884e0 err=1.161402e-4 duty=2.795076e-1
+@8.540000e-3 Buck.ctl loop t=8.540000e-3 vout=3.299885e0 err=1.147393e-4 duty=2.795077e-1
+@8.550000e-3 Buck.ctl loop t=8.550000e-3 vout=3.299887e0 err=1.133667e-4 duty=2.795078e-1
+@8.560000e-3 Buck.ctl loop t=8.560000e-3 vout=3.299888e0 err=1.120223e-4 duty=2.795079e-1
+@8.570000e-3 Buck.ctl loop t=8.570000e-3 vout=3.299889e0 err=1.107053e-4 duty=2.795080e-1
+@8.580000e-3 Buck.ctl loop t=8.580000e-3 vout=3.299891e0 err=1.094145e-4 duty=2.795081e-1
+@8.590000e-3 Buck.ctl loop t=8.590000e-3 vout=3.299892e0 err=1.081481e-4 duty=2.795082e-1
+@8.600000e-3 Buck.ctl loop t=8.600000e-3 vout=3.299893e0 err=1.069041e-4 duty=2.795084e-1
+@8.610000e-3 Buck.ctl loop t=8.610000e-3 vout=3.299894e0 err=1.056803e-4 duty=2.795085e-1
+@8.620000e-3 Buck.ctl loop t=8.620000e-3 vout=3.299896e0 err=1.044742e-4 duty=2.795086e-1
+@8.630000e-3 Buck.ctl loop t=8.630000e-3 vout=3.299897e0 err=1.032835e-4 duty=2.795087e-1
+@8.640000e-3 Buck.ctl loop t=8.640000e-3 vout=3.299898e0 err=1.021058e-4 duty=2.795088e-1
+@8.650000e-3 Buck.ctl loop t=8.650000e-3 vout=3.299899e0 err=1.009389e-4 duty=2.795089e-1
+@8.660000e-3 Buck.ctl loop t=8.660000e-3 vout=3.299900e0 err=9.978092e-5 duty=2.795090e-1
+@8.670000e-3 Buck.ctl loop t=8.670000e-3 vout=3.299901e0 err=9.863015e-5 duty=2.795091e-1
+@8.680000e-3 Buck.ctl loop t=8.680000e-3 vout=3.299903e0 err=9.748539e-5 duty=2.795092e-1
+@8.690000e-3 Buck.ctl loop t=8.690000e-3 vout=3.299904e0 err=9.634579e-5 duty=2.795093e-1
+@8.700000e-3 Buck.ctl loop t=8.700000e-3 vout=3.299905e0 err=9.521095e-5 duty=2.795094e-1
+@8.710000e-3 Buck.ctl loop t=8.710000e-3 vout=3.299906e0 err=9.408084e-5 duty=2.795095e-1
+@8.720000e-3 Buck.ctl loop t=8.720000e-3 vout=3.299907e0 err=9.295583e-5 duty=2.795095e-1
+@8.730000e-3 Buck.ctl loop t=8.730000e-3 vout=3.299908e0 err=9.183663e-5 duty=2.795096e-1
+@8.740000e-3 Buck.ctl loop t=8.740000e-3 vout=3.299909e0 err=9.072424e-5 duty=2.795097e-1
+@8.750000e-3 Buck.ctl loop t=8.750000e-3 vout=3.299910e0 err=8.961995e-5 duty=2.795098e-1
+@8.760000e-3 Buck.ctl loop t=8.760000e-3 vout=3.299911e0 err=8.852511e-5 duty=2.795099e-1
+@8.770000e-3 Buck.ctl loop t=8.770000e-3 vout=3.299913e0 err=8.744124e-5 duty=2.795100e-1
+@8.780000e-3 Buck.ctl loop t=8.780000e-3 vout=3.299914e0 err=8.636983e-5 duty=2.795101e-1
+@8.790000e-3 Buck.ctl loop t=8.790000e-3 vout=3.299915e0 err=8.531233e-5 duty=2.795102e-1
+@8.800000e-3 Buck.ctl loop t=8.800000e-3 vout=3.299916e0 err=8.427002e-5 duty=2.795103e-1
+@8.810000e-3 Buck.ctl loop t=8.810000e-3 vout=3.299917e0 err=8.324400e-5 duty=2.795103e-1
+@8.820000e-3 Buck.ctl loop t=8.820000e-3 vout=3.299918e0 err=8.223516e-5 duty=2.795104e-1
+@8.830000e-3 Buck.ctl loop t=8.830000e-3 vout=3.299919e0 err=8.124405e-5 duty=2.795105e-1
+@8.840000e-3 Buck.ctl loop t=8.840000e-3 vout=3.299920e0 err=8.027097e-5 duty=2.795106e-1
+@8.850000e-3 Buck.ctl loop t=8.850000e-3 vout=3.299921e0 err=7.931591e-5 duty=2.795107e-1
+@8.860000e-3 Buck.ctl loop t=8.860000e-3 vout=3.299922e0 err=7.837856e-5 duty=2.795107e-1
+@8.870000e-3 Buck.ctl loop t=8.870000e-3 vout=3.299923e0 err=7.745831e-5 duty=2.795108e-1
+@8.880000e-3 Buck.ctl loop t=8.880000e-3 vout=3.299923e0 err=7.655436e-5 duty=2.795109e-1
+@8.890000e-3 Buck.ctl loop t=8.890000e-3 vout=3.299924e0 err=7.566565e-5 duty=2.795110e-1
+@8.900000e-3 Buck.ctl loop t=8.900000e-3 vout=3.299925e0 err=7.479097e-5 duty=2.795110e-1
+@8.910000e-3 Buck.ctl loop t=8.910000e-3 vout=3.299926e0 err=7.392904e-5 duty=2.795111e-1
+@8.920000e-3 Buck.ctl loop t=8.920000e-3 vout=3.299927e0 err=7.307852e-5 duty=2.795112e-1
+@8.930000e-3 Buck.ctl loop t=8.930000e-3 vout=3.299928e0 err=7.223808e-5 duty=2.795113e-1
+@8.940000e-3 Buck.ctl loop t=8.940000e-3 vout=3.299929e0 err=7.140645e-5 duty=2.795113e-1
+@8.950000e-3 Buck.ctl loop t=8.950000e-3 vout=3.299929e0 err=7.058247e-5 duty=2.795114e-1
+@8.960000e-3 Buck.ctl loop t=8.960000e-3 vout=3.299930e0 err=6.976512e-5 duty=2.795115e-1
+@8.970000e-3 Buck.ctl loop t=8.970000e-3 vout=3.299931e0 err=6.895362e-5 duty=2.795115e-1
+@8.980000e-3 Buck.ctl loop t=8.980000e-3 vout=3.299932e0 err=6.814737e-5 duty=2.795116e-1
+@8.990000e-3 Buck.ctl loop t=8.990000e-3 vout=3.299933e0 err=6.734598e-5 duty=2.795117e-1
+@9.000000e-3 Buck.ctl loop t=9.000000e-3 vout=3.299933e0 err=6.654931e-5 duty=2.795117e-1
+@9.010000e-3 Buck.ctl loop t=9.010000e-3 vout=3.299934e0 err=6.575742e-5 duty=2.795118e-1
+@9.020000e-3 Buck.ctl loop t=9.020000e-3 vout=3.299935e0 err=6.497058e-5 duty=2.795119e-1
+@9.030000e-3 Buck.ctl loop t=9.030000e-3 vout=3.299936e0 err=6.418922e-5 duty=2.795119e-1
+@9.040000e-3 Buck.ctl loop t=9.040000e-3 vout=3.299937e0 err=6.341393e-5 duty=2.795120e-1
+@9.050000e-3 Buck.ctl loop t=9.050000e-3 vout=3.299937e0 err=6.264541e-5 duty=2.795121e-1
+@9.060000e-3 Buck.ctl loop t=9.060000e-3 vout=3.299938e0 err=6.188447e-5 duty=2.795121e-1
+@9.070000e-3 Buck.ctl loop t=9.070000e-3 vout=3.299939e0 err=6.113189e-5 duty=2.795122e-1
+@9.080000e-3 Buck.ctl loop t=9.080000e-3 vout=3.299940e0 err=6.038846e-5 duty=2.795122e-1
+@9.090000e-3 Buck.ctl loop t=9.090000e-3 vout=3.299940e0 err=5.965492e-5 duty=2.795123e-1
+@9.100000e-3 Buck.ctl loop t=9.100000e-3 vout=3.299941e0 err=5.893187e-5 duty=2.795124e-1
+@9.110000e-3 Buck.ctl loop t=9.110000e-3 vout=3.299942e0 err=5.821985e-5 duty=2.795124e-1
+@9.120000e-3 Buck.ctl loop t=9.120000e-3 vout=3.299942e0 err=5.751923e-5 duty=2.795125e-1
+@9.130000e-3 Buck.ctl loop t=9.130000e-3 vout=3.299943e0 err=5.683025e-5 duty=2.795125e-1
+@9.140000e-3 Buck.ctl loop t=9.140000e-3 vout=3.299944e0 err=5.615293e-5 duty=2.795126e-1
+@9.150000e-3 Buck.ctl loop t=9.150000e-3 vout=3.299945e0 err=5.548717e-5 duty=2.795126e-1
+@9.160000e-3 Buck.ctl loop t=9.160000e-3 vout=3.299945e0 err=5.483270e-5 duty=2.795127e-1
+@9.170000e-3 Buck.ctl loop t=9.170000e-3 vout=3.299946e0 err=5.418913e-5 duty=2.795128e-1
+@9.180000e-3 Buck.ctl loop t=9.180000e-3 vout=3.299946e0 err=5.355590e-5 duty=2.795128e-1
+@9.190000e-3 Buck.ctl loop t=9.190000e-3 vout=3.299947e0 err=5.293238e-5 duty=2.795129e-1
+@9.200000e-3 Buck.ctl loop t=9.200000e-3 vout=3.299948e0 err=5.231784e-5 duty=2.795129e-1
+@9.210000e-3 Buck.ctl loop t=9.210000e-3 vout=3.299948e0 err=5.171158e-5 duty=2.795130e-1
+@9.220000e-3 Buck.ctl loop t=9.220000e-3 vout=3.299949e0 err=5.111278e-5 duty=2.795130e-1
+@9.230000e-3 Buck.ctl loop t=9.230000e-3 vout=3.299949e0 err=5.052073e-5 duty=2.795131e-1
+@9.240000e-3 Buck.ctl loop t=9.240000e-3 vout=3.299950e0 err=4.993474e-5 duty=2.795131e-1
+@9.250000e-3 Buck.ctl loop t=9.250000e-3 vout=3.299951e0 err=4.935423e-5 duty=2.795132e-1
+@9.260000e-3 Buck.ctl loop t=9.260000e-3 vout=3.299951e0 err=4.877867e-5 duty=2.795132e-1
+@9.270000e-3 Buck.ctl loop t=9.270000e-3 vout=3.299952e0 err=4.820765e-5 duty=2.795133e-1
+@9.280000e-3 Buck.ctl loop t=9.280000e-3 vout=3.299952e0 err=4.764088e-5 duty=2.795133e-1
+@9.290000e-3 Buck.ctl loop t=9.290000e-3 vout=3.299953e0 err=4.707823e-5 duty=2.795134e-1
+@9.300000e-3 Buck.ctl loop t=9.300000e-3 vout=3.299953e0 err=4.651967e-5 duty=2.795134e-1
+@9.310000e-3 Buck.ctl loop t=9.310000e-3 vout=3.299954e0 err=4.596527e-5 duty=2.795135e-1
+@9.320000e-3 Buck.ctl loop t=9.320000e-3 vout=3.299955e0 err=4.541521e-5 duty=2.795135e-1
+@9.330000e-3 Buck.ctl loop t=9.330000e-3 vout=3.299955e0 err=4.486977e-5 duty=2.795135e-1
+@9.340000e-3 Buck.ctl loop t=9.340000e-3 vout=3.299956e0 err=4.432928e-5 duty=2.795136e-1
+@9.350000e-3 Buck.ctl loop t=9.350000e-3 vout=3.299956e0 err=4.379414e-5 duty=2.795136e-1
+@9.360000e-3 Buck.ctl loop t=9.360000e-3 vout=3.299957e0 err=4.326476e-5 duty=2.795137e-1
+@9.370000e-3 Buck.ctl loop t=9.370000e-3 vout=3.299957e0 err=4.274159e-5 duty=2.795137e-1
+@9.380000e-3 Buck.ctl loop t=9.380000e-3 vout=3.299958e0 err=4.222499e-5 duty=2.795138e-1
+@9.390000e-3 Buck.ctl loop t=9.390000e-3 vout=3.299958e0 err=4.171534e-5 duty=2.795138e-1
+@9.400000e-3 Buck.ctl loop t=9.400000e-3 vout=3.299959e0 err=4.121292e-5 duty=2.795138e-1
+@9.410000e-3 Buck.ctl loop t=9.410000e-3 vout=3.299959e0 err=4.071798e-5 duty=2.795139e-1
+@9.420000e-3 Buck.ctl loop t=9.420000e-3 vout=3.299960e0 err=4.023062e-5 duty=2.795139e-1
+@9.430000e-3 Buck.ctl loop t=9.430000e-3 vout=3.299960e0 err=3.975090e-5 duty=2.795140e-1
+@9.440000e-3 Buck.ctl loop t=9.440000e-3 vout=3.299961e0 err=3.927880e-5 duty=2.795140e-1
+@9.450000e-3 Buck.ctl loop t=9.450000e-3 vout=3.299961e0 err=3.881420e-5 duty=2.795140e-1
+@9.460000e-3 Buck.ctl loop t=9.460000e-3 vout=3.299962e0 err=3.835688e-5 duty=2.795141e-1
+@9.470000e-3 Buck.ctl loop t=9.470000e-3 vout=3.299962e0 err=3.790656e-5 duty=2.795141e-1
+@9.480000e-3 Buck.ctl loop t=9.480000e-3 vout=3.299963e0 err=3.746290e-5 duty=2.795142e-1
+@9.490000e-3 Buck.ctl loop t=9.490000e-3 vout=3.299963e0 err=3.702549e-5 duty=2.795142e-1
+@9.500000e-3 Buck.ctl loop t=9.500000e-3 vout=3.299963e0 err=3.659393e-5 duty=2.795142e-1
+@9.510000e-3 Buck.ctl loop t=9.510000e-3 vout=3.299964e0 err=3.616780e-5 duty=2.795143e-1
+@9.520000e-3 Buck.ctl loop t=9.520000e-3 vout=3.299964e0 err=3.574671e-5 duty=2.795143e-1
+@9.530000e-3 Buck.ctl loop t=9.530000e-3 vout=3.299965e0 err=3.533025e-5 duty=2.795143e-1
+@9.540000e-3 Buck.ctl loop t=9.540000e-3 vout=3.299965e0 err=3.491807e-5 duty=2.795144e-1
+@9.550000e-3 Buck.ctl loop t=9.550000e-3 vout=3.299965e0 err=3.450984e-5 duty=2.795144e-1
+@9.560000e-3 Buck.ctl loop t=9.560000e-3 vout=3.299966e0 err=3.410533e-5 duty=2.795144e-1
+@9.570000e-3 Buck.ctl loop t=9.570000e-3 vout=3.299966e0 err=3.370429e-5 duty=2.795145e-1
+@9.580000e-3 Buck.ctl loop t=9.580000e-3 vout=3.299967e0 err=3.330658e-5 duty=2.795145e-1
+@9.590000e-3 Buck.ctl loop t=9.590000e-3 vout=3.299967e0 err=3.291215e-5 duty=2.795145e-1
+@9.600000e-3 Buck.ctl loop t=9.600000e-3 vout=3.299967e0 err=3.252100e-5 duty=2.795146e-1
+@9.610000e-3 Buck.ctl loop t=9.610000e-3 vout=3.299968e0 err=3.213321e-5 duty=2.795146e-1
+@9.620000e-3 Buck.ctl loop t=9.620000e-3 vout=3.299968e0 err=3.174891e-5 duty=2.795146e-1
+@9.630000e-3 Buck.ctl loop t=9.630000e-3 vout=3.299969e0 err=3.136824e-5 duty=2.795147e-1
+@9.640000e-3 Buck.ctl loop t=9.640000e-3 vout=3.299969e0 err=3.099141e-5 duty=2.795147e-1
+@9.650000e-3 Buck.ctl loop t=9.650000e-3 vout=3.299969e0 err=3.061864e-5 duty=2.795147e-1
+@9.660000e-3 Buck.ctl loop t=9.660000e-3 vout=3.299970e0 err=3.025010e-5 duty=2.795148e-1
+@9.670000e-3 Buck.ctl loop t=9.670000e-3 vout=3.299970e0 err=2.988602e-5 duty=2.795148e-1
+@9.680000e-3 Buck.ctl loop t=9.680000e-3 vout=3.299970e0 err=2.952657e-5 duty=2.795148e-1
+@9.690000e-3 Buck.ctl loop t=9.690000e-3 vout=3.299971e0 err=2.917195e-5 duty=2.795148e-1
+@9.700000e-3 Buck.ctl loop t=9.700000e-3 vout=3.299971e0 err=2.882226e-5 duty=2.795149e-1
+@9.710000e-3 Buck.ctl loop t=9.710000e-3 vout=3.299972e0 err=2.847761e-5 duty=2.795149e-1
+@9.720000e-3 Buck.ctl loop t=9.720000e-3 vout=3.299972e0 err=2.813802e-5 duty=2.795149e-1
+@9.730000e-3 Buck.ctl loop t=9.730000e-3 vout=3.299972e0 err=2.780350e-5 duty=2.795150e-1
+@9.740000e-3 Buck.ctl loop t=9.740000e-3 vout=3.299973e0 err=2.747400e-5 duty=2.795150e-1
+@9.750000e-3 Buck.ctl loop t=9.750000e-3 vout=3.299973e0 err=2.714941e-5 duty=2.795150e-1
+@9.760000e-3 Buck.ctl loop t=9.760000e-3 vout=3.299973e0 err=2.682955e-5 duty=2.795150e-1
+@9.770000e-3 Buck.ctl loop t=9.770000e-3 vout=3.299973e0 err=2.651426e-5 duty=2.795151e-1
+@9.780000e-3 Buck.ctl loop t=9.780000e-3 vout=3.299974e0 err=2.620334e-5 duty=2.795151e-1
+@9.790000e-3 Buck.ctl loop t=9.790000e-3 vout=3.299974e0 err=2.589656e-5 duty=2.795151e-1
+@9.800000e-3 Buck.ctl loop t=9.800000e-3 vout=3.299974e0 err=2.559368e-5 duty=2.795151e-1
+@9.810000e-3 Buck.ctl loop t=9.810000e-3 vout=3.299975e0 err=2.529447e-5 duty=2.795152e-1
+@9.820000e-3 Buck.ctl loop t=9.820000e-3 vout=3.299975e0 err=2.499870e-5 duty=2.795152e-1
+@9.830000e-3 Buck.ctl loop t=9.830000e-3 vout=3.299975e0 err=2.470613e-5 duty=2.795152e-1
+@9.840000e-3 Buck.ctl loop t=9.840000e-3 vout=3.299976e0 err=2.441659e-5 duty=2.795152e-1
+@9.850000e-3 Buck.ctl loop t=9.850000e-3 vout=3.299976e0 err=2.412991e-5 duty=2.795153e-1
+@9.860000e-3 Buck.ctl loop t=9.860000e-3 vout=3.299976e0 err=2.384598e-5 duty=2.795153e-1
+@9.870000e-3 Buck.ctl loop t=9.870000e-3 vout=3.299976e0 err=2.356468e-5 duty=2.795153e-1
+@9.880000e-3 Buck.ctl loop t=9.880000e-3 vout=3.299977e0 err=2.328596e-5 duty=2.795153e-1
+@9.890000e-3 Buck.ctl loop t=9.890000e-3 vout=3.299977e0 err=2.300981e-5 duty=2.795154e-1
+@9.900000e-3 Buck.ctl loop t=9.900000e-3 vout=3.299977e0 err=2.273624e-5 duty=2.795154e-1
+@9.910000e-3 Buck.ctl loop t=9.910000e-3 vout=3.299978e0 err=2.246525e-5 duty=2.795154e-1
+@9.920000e-3 Buck.ctl loop t=9.920000e-3 vout=3.299978e0 err=2.219692e-5 duty=2.795154e-1
+@9.930000e-3 Buck.ctl loop t=9.930000e-3 vout=3.299978e0 err=2.193135e-5 duty=2.795155e-1
+@9.940000e-3 Buck.ctl loop t=9.940000e-3 vout=3.299978e0 err=2.166861e-5 duty=2.795155e-1
+@9.950000e-3 Buck.ctl loop t=9.950000e-3 vout=3.299979e0 err=2.140881e-5 duty=2.795155e-1
+@9.960000e-3 Buck.ctl loop t=9.960000e-3 vout=3.299979e0 err=2.115203e-5 duty=2.795155e-1
+@9.970000e-3 Buck.ctl loop t=9.970000e-3 vout=3.299979e0 err=2.089839e-5 duty=2.795155e-1
+@9.980000e-3 Buck.ctl loop t=9.980000e-3 vout=3.299979e0 err=2.064798e-5 duty=2.795156e-1
+@9.990000e-3 Buck.ctl loop t=9.990000e-3 vout=3.299980e0 err=2.040085e-5 duty=2.795156e-1
+@1.000000e-2 Buck.ctl loop t=1.000000e-2 vout=3.299980e0 err=2.015706e-5 duty=2.795156e-1
+@1.001000e-2 Buck.ctl loop t=1.001000e-2 vout=3.299980e0 err=1.991666e-5 duty=2.795156e-1
+@1.002000e-2 Buck.ctl loop t=1.002000e-2 vout=3.299980e0 err=1.967966e-5 duty=2.795156e-1
+@1.003000e-2 Buck.ctl loop t=1.003000e-2 vout=3.299981e0 err=1.944605e-5 duty=2.795157e-1
+@1.004000e-2 Buck.ctl loop t=1.004000e-2 vout=3.299981e0 err=1.921575e-5 duty=2.795157e-1
+@1.005000e-2 Buck.ctl loop t=1.005000e-2 vout=3.299981e0 err=1.898869e-5 duty=2.795157e-1
+@1.006000e-2 Buck.ctl loop t=1.006000e-2 vout=3.299981e0 err=1.876478e-5 duty=2.795157e-1
+@1.007000e-2 Buck.ctl loop t=1.007000e-2 vout=3.299981e0 err=1.854393e-5 duty=2.795157e-1
+@1.008000e-2 Buck.ctl loop t=1.008000e-2 vout=3.299982e0 err=1.832602e-5 duty=2.795158e-1
+@1.009000e-2 Buck.ctl loop t=1.009000e-2 vout=3.299982e0 err=1.811090e-5 duty=2.795158e-1
+@1.010000e-2 Buck.ctl loop t=1.010000e-2 vout=3.299982e0 err=1.789846e-5 duty=2.795158e-1
+@1.011000e-2 Buck.ctl loop t=1.011000e-2 vout=3.299982e0 err=1.768855e-5 duty=2.795158e-1
+@1.012000e-2 Buck.ctl loop t=1.012000e-2 vout=3.299983e0 err=1.748105e-5 duty=2.795158e-1
+@1.013000e-2 Buck.ctl loop t=1.013000e-2 vout=3.299983e0 err=1.727582e-5 duty=2.795158e-1
+@1.014000e-2 Buck.ctl loop t=1.014000e-2 vout=3.299983e0 err=1.707279e-5 duty=2.795159e-1
+@1.015000e-2 Buck.ctl loop t=1.015000e-2 vout=3.299983e0 err=1.687185e-5 duty=2.795159e-1
+@1.016000e-2 Buck.ctl loop t=1.016000e-2 vout=3.299983e0 err=1.667292e-5 duty=2.795159e-1
+@1.017000e-2 Buck.ctl loop t=1.017000e-2 vout=3.299984e0 err=1.647593e-5 duty=2.795159e-1
+@1.018000e-2 Buck.ctl loop t=1.018000e-2 vout=3.299984e0 err=1.628087e-5 duty=2.795159e-1
+@1.019000e-2 Buck.ctl loop t=1.019000e-2 vout=3.299984e0 err=1.608773e-5 duty=2.795159e-1
+@1.020000e-2 Buck.ctl loop t=1.020000e-2 vout=3.299984e0 err=1.589649e-5 duty=2.795160e-1
+@1.021000e-2 Buck.ctl loop t=1.021000e-2 vout=3.299984e0 err=1.570719e-5 duty=2.795160e-1
+@1.022000e-2 Buck.ctl loop t=1.022000e-2 vout=3.299984e0 err=1.551984e-5 duty=2.795160e-1
+@1.023000e-2 Buck.ctl loop t=1.023000e-2 vout=3.299985e0 err=1.533450e-5 duty=2.795160e-1
+@1.024000e-2 Buck.ctl loop t=1.024000e-2 vout=3.299985e0 err=1.515119e-5 duty=2.795160e-1
+@1.025000e-2 Buck.ctl loop t=1.025000e-2 vout=3.299985e0 err=1.496998e-5 duty=2.795160e-1
+@1.026000e-2 Buck.ctl loop t=1.026000e-2 vout=3.299985e0 err=1.479091e-5 duty=2.795160e-1
+@1.027000e-2 Buck.ctl loop t=1.027000e-2 vout=3.299985e0 err=1.461402e-5 duty=2.795161e-1
+@1.028000e-2 Buck.ctl loop t=1.028000e-2 vout=3.299986e0 err=1.443937e-5 duty=2.795161e-1
+@1.029000e-2 Buck.ctl loop t=1.029000e-2 vout=3.299986e0 err=1.426699e-5 duty=2.795161e-1
+@1.030000e-2 Buck.ctl loop t=1.030000e-2 vout=3.299986e0 err=1.409690e-5 duty=2.795161e-1
+@1.031000e-2 Buck.ctl loop t=1.031000e-2 vout=3.299986e0 err=1.392910e-5 duty=2.795161e-1
+@1.032000e-2 Buck.ctl loop t=1.032000e-2 vout=3.299986e0 err=1.376360e-5 duty=2.795161e-1
+@1.033000e-2 Buck.ctl loop t=1.033000e-2 vout=3.299986e0 err=1.360037e-5 duty=2.795161e-1
+@1.034000e-2 Buck.ctl loop t=1.034000e-2 vout=3.299987e0 err=1.343936e-5 duty=2.795162e-1
+@1.035000e-2 Buck.ctl loop t=1.035000e-2 vout=3.299987e0 err=1.328055e-5 duty=2.795162e-1
+@1.036000e-2 Buck.ctl loop t=1.036000e-2 vout=3.299987e0 err=1.312387e-5 duty=2.795162e-1
+@1.037000e-2 Buck.ctl loop t=1.037000e-2 vout=3.299987e0 err=1.296927e-5 duty=2.795162e-1
+@1.038000e-2 Buck.ctl loop t=1.038000e-2 vout=3.299987e0 err=1.281665e-5 duty=2.795162e-1
+@1.039000e-2 Buck.ctl loop t=1.039000e-2 vout=3.299987e0 err=1.266594e-5 duty=2.795162e-1
+@1.040000e-2 Buck.ctl loop t=1.040000e-2 vout=3.299987e0 err=1.251706e-5 duty=2.795162e-1
+@1.041000e-2 Buck.ctl loop t=1.041000e-2 vout=3.299988e0 err=1.236991e-5 duty=2.795163e-1
+@1.042000e-2 Buck.ctl loop t=1.042000e-2 vout=3.299988e0 err=1.222443e-5 duty=2.795163e-1
+@1.043000e-2 Buck.ctl loop t=1.043000e-2 vout=3.299988e0 err=1.208055e-5 duty=2.795163e-1
+@1.044000e-2 Buck.ctl loop t=1.044000e-2 vout=3.299988e0 err=1.193820e-5 duty=2.795163e-1
+@1.045000e-2 Buck.ctl loop t=1.045000e-2 vout=3.299988e0 err=1.179735e-5 duty=2.795163e-1
+@1.046000e-2 Buck.ctl loop t=1.046000e-2 vout=3.299988e0 err=1.165796e-5 duty=2.795163e-1
+@1.047000e-2 Buck.ctl loop t=1.047000e-2 vout=3.299988e0 err=1.152000e-5 duty=2.795163e-1
+@1.048000e-2 Buck.ctl loop t=1.048000e-2 vout=3.299989e0 err=1.138344e-5 duty=2.795163e-1
+@1.049000e-2 Buck.ctl loop t=1.049000e-2 vout=3.299989e0 err=1.124827e-5 duty=2.795163e-1
+@1.050000e-2 Buck.ctl loop t=1.050000e-2 vout=3.299989e0 err=1.111451e-5 duty=2.795164e-1
+@1.051000e-2 Buck.ctl loop t=1.051000e-2 vout=3.299989e0 err=1.098220e-5 duty=2.795164e-1
+@1.052000e-2 Buck.ctl loop t=1.052000e-2 vout=3.299989e0 err=1.085133e-5 duty=2.795164e-1
+@1.053000e-2 Buck.ctl loop t=1.053000e-2 vout=3.299989e0 err=1.072190e-5 duty=2.795164e-1
+@1.054000e-2 Buck.ctl loop t=1.054000e-2 vout=3.299989e0 err=1.059394e-5 duty=2.795164e-1
+@1.055000e-2 Buck.ctl loop t=1.055000e-2 vout=3.299990e0 err=1.046748e-5 duty=2.795164e-1
+@1.056000e-2 Buck.ctl loop t=1.056000e-2 vout=3.299990e0 err=1.034253e-5 duty=2.795164e-1
+@1.057000e-2 Buck.ctl loop t=1.057000e-2 vout=3.299990e0 err=1.021911e-5 duty=2.795164e-1
+@1.058000e-2 Buck.ctl loop t=1.058000e-2 vout=3.299990e0 err=1.009726e-5 duty=2.795164e-1
+@1.059000e-2 Buck.ctl loop t=1.059000e-2 vout=3.299990e0 err=9.976989e-6 duty=2.795165e-1
+@1.060000e-2 Buck.ctl loop t=1.060000e-2 vout=3.299990e0 err=9.858292e-6 duty=2.795165e-1
+@1.061000e-2 Buck.ctl loop t=1.061000e-2 vout=3.299990e0 err=9.741182e-6 duty=2.795165e-1
+@1.062000e-2 Buck.ctl loop t=1.062000e-2 vout=3.299990e0 err=9.625631e-6 duty=2.795165e-1
+@1.063000e-2 Buck.ctl loop t=1.063000e-2 vout=3.299990e0 err=9.511619e-6 duty=2.795165e-1
+@1.064000e-2 Buck.ctl loop t=1.064000e-2 vout=3.299991e0 err=9.399126e-6 duty=2.795165e-1
+@1.065000e-2 Buck.ctl loop t=1.065000e-2 vout=3.299991e0 err=9.288117e-6 duty=2.795165e-1
+@1.066000e-2 Buck.ctl loop t=1.066000e-2 vout=3.299991e0 err=9.178546e-6 duty=2.795165e-1
+@1.067000e-2 Buck.ctl loop t=1.067000e-2 vout=3.299991e0 err=9.070359e-6 duty=2.795165e-1
+@1.068000e-2 Buck.ctl loop t=1.068000e-2 vout=3.299991e0 err=8.963495e-6 duty=2.795165e-1
+@1.069000e-2 Buck.ctl loop t=1.069000e-2 vout=3.299991e0 err=8.857927e-6 duty=2.795165e-1
+@1.070000e-2 Buck.ctl loop t=1.070000e-2 vout=3.299991e0 err=8.753601e-6 duty=2.795166e-1
+@1.071000e-2 Buck.ctl loop t=1.071000e-2 vout=3.299991e0 err=8.650489e-6 duty=2.795166e-1
+@1.072000e-2 Buck.ctl loop t=1.072000e-2 vout=3.299991e0 err=8.548537e-6 duty=2.795166e-1
+@1.073000e-2 Buck.ctl loop t=1.073000e-2 vout=3.299992e0 err=8.447720e-6 duty=2.795166e-1
+@1.074000e-2 Buck.ctl loop t=1.074000e-2 vout=3.299992e0 err=8.347991e-6 duty=2.795166e-1
+@1.075000e-2 Buck.ctl loop t=1.075000e-2 vout=3.299992e0 err=8.249335e-6 duty=2.795166e-1
+@1.076000e-2 Buck.ctl loop t=1.076000e-2 vout=3.299992e0 err=8.151719e-6 duty=2.795166e-1
+@1.077000e-2 Buck.ctl loop t=1.077000e-2 vout=3.299992e0 err=8.055140e-6 duty=2.795166e-1
+@1.078000e-2 Buck.ctl loop t=1.078000e-2 vout=3.299992e0 err=7.959580e-6 duty=2.795166e-1
+@1.079000e-2 Buck.ctl loop t=1.079000e-2 vout=3.299992e0 err=7.865052e-6 duty=2.795166e-1
+@1.080000e-2 Buck.ctl loop t=1.080000e-2 vout=3.299992e0 err=7.771551e-6 duty=2.795166e-1
+@1.081000e-2 Buck.ctl loop t=1.081000e-2 vout=3.299992e0 err=7.679066e-6 duty=2.795166e-1
+@1.082000e-2 Buck.ctl loop t=1.082000e-2 vout=3.299992e0 err=7.587593e-6 duty=2.795166e-1
+@1.083000e-2 Buck.ctl loop t=1.083000e-2 vout=3.299993e0 err=7.497174e-6 duty=2.795167e-1
+@1.084000e-2 Buck.ctl loop t=1.084000e-2 vout=3.299993e0 err=7.407832e-6 duty=2.795167e-1
+@1.085000e-2 Buck.ctl loop t=1.085000e-2 vout=3.299993e0 err=7.319538e-6 duty=2.795167e-1
+@1.086000e-2 Buck.ctl loop t=1.086000e-2 vout=3.299993e0 err=7.232298e-6 duty=2.795167e-1
+@1.087000e-2 Buck.ctl loop t=1.087000e-2 vout=3.299993e0 err=7.146136e-6 duty=2.795167e-1
+@1.088000e-2 Buck.ctl loop t=1.088000e-2 vout=3.299993e0 err=7.061040e-6 duty=2.795167e-1
+@1.089000e-2 Buck.ctl loop t=1.089000e-2 vout=3.299993e0 err=6.977030e-6 duty=2.795167e-1
+@1.090000e-2 Buck.ctl loop t=1.090000e-2 vout=3.299993e0 err=6.894103e-6 duty=2.795167e-1
+@1.091000e-2 Buck.ctl loop t=1.091000e-2 vout=3.299993e0 err=6.812250e-6 duty=2.795167e-1
+@1.092000e-2 Buck.ctl loop t=1.092000e-2 vout=3.299993e0 err=6.731462e-6 duty=2.795167e-1
+@1.093000e-2 Buck.ctl loop t=1.093000e-2 vout=3.299993e0 err=6.651740e-6 duty=2.795167e-1
+@1.094000e-2 Buck.ctl loop t=1.094000e-2 vout=3.299993e0 err=6.573049e-6 duty=2.795167e-1
+@1.095000e-2 Buck.ctl loop t=1.095000e-2 vout=3.299994e0 err=6.495351e-6 duty=2.795167e-1
+@1.096000e-2 Buck.ctl loop t=1.096000e-2 vout=3.299994e0 err=6.418654e-6 duty=2.795167e-1
+@1.097000e-2 Buck.ctl loop t=1.097000e-2 vout=3.299994e0 err=6.342913e-6 duty=2.795168e-1
+@1.098000e-2 Buck.ctl loop t=1.098000e-2 vout=3.299994e0 err=6.268104e-6 duty=2.795168e-1
+@1.099000e-2 Buck.ctl loop t=1.099000e-2 vout=3.299994e0 err=6.194192e-6 duty=2.795168e-1
+@1.100000e-2 Buck.ctl loop t=1.100000e-2 vout=3.299994e0 err=6.121143e-6 duty=2.795168e-1
+@1.101000e-2 Buck.ctl loop t=1.101000e-2 vout=3.299994e0 err=6.048938e-6 duty=2.795168e-1
+@1.102000e-2 Buck.ctl loop t=1.102000e-2 vout=3.299994e0 err=5.977573e-6 duty=2.795168e-1
+@1.103000e-2 Buck.ctl loop t=1.103000e-2 vout=3.299994e0 err=5.907024e-6 duty=2.795168e-1
+@1.104000e-2 Buck.ctl loop t=1.104000e-2 vout=3.299994e0 err=5.837268e-6 duty=2.795168e-1
+@1.105000e-2 Buck.ctl loop t=1.105000e-2 vout=3.299994e0 err=5.768262e-6 duty=2.795168e-1
+@1.106000e-2 Buck.ctl loop t=1.106000e-2 vout=3.299994e0 err=5.700011e-6 duty=2.795168e-1
+@1.107000e-2 Buck.ctl loop t=1.107000e-2 vout=3.299994e0 err=5.632512e-6 duty=2.795168e-1
+@1.108000e-2 Buck.ctl loop t=1.108000e-2 vout=3.299994e0 err=5.565730e-6 duty=2.795168e-1
+@1.109000e-2 Buck.ctl loop t=1.109000e-2 vout=3.299995e0 err=5.499676e-6 duty=2.795168e-1
+@1.110000e-2 Buck.ctl loop t=1.110000e-2 vout=3.299995e0 err=5.434358e-6 duty=2.795168e-1
+@1.111000e-2 Buck.ctl loop t=1.111000e-2 vout=3.299995e0 err=5.369750e-6 duty=2.795168e-1
+@1.112000e-2 Buck.ctl loop t=1.112000e-2 vout=3.299995e0 err=5.305871e-6 duty=2.795168e-1
+@1.113000e-2 Buck.ctl loop t=1.113000e-2 vout=3.299995e0 err=5.242738e-6 duty=2.795168e-1
+@1.114000e-2 Buck.ctl loop t=1.114000e-2 vout=3.299995e0 err=5.180332e-6 duty=2.795169e-1
+@1.115000e-2 Buck.ctl loop t=1.115000e-2 vout=3.299995e0 err=5.118641e-6 duty=2.795169e-1
+@1.116000e-2 Buck.ctl loop t=1.116000e-2 vout=3.299995e0 err=5.057675e-6 duty=2.795169e-1
+@1.117000e-2 Buck.ctl loop t=1.117000e-2 vout=3.299995e0 err=4.997464e-6 duty=2.795169e-1
+@1.118000e-2 Buck.ctl loop t=1.118000e-2 vout=3.299995e0 err=4.938017e-6 duty=2.795169e-1
+@1.119000e-2 Buck.ctl loop t=1.119000e-2 vout=3.299995e0 err=4.879308e-6 duty=2.795169e-1
+@1.120000e-2 Buck.ctl loop t=1.120000e-2 vout=3.299995e0 err=4.821319e-6 duty=2.795169e-1
+@1.121000e-2 Buck.ctl loop t=1.121000e-2 vout=3.299995e0 err=4.764051e-6 duty=2.795169e-1
+@1.122000e-2 Buck.ctl loop t=1.122000e-2 vout=3.299995e0 err=4.707529e-6 duty=2.795169e-1
+@1.123000e-2 Buck.ctl loop t=1.123000e-2 vout=3.299995e0 err=4.651755e-6 duty=2.795169e-1
+@1.124000e-2 Buck.ctl loop t=1.124000e-2 vout=3.299995e0 err=4.596699e-6 duty=2.795169e-1
+@1.125000e-2 Buck.ctl loop t=1.125000e-2 vout=3.299995e0 err=4.542339e-6 duty=2.795169e-1
+@1.126000e-2 Buck.ctl loop t=1.126000e-2 vout=3.299996e0 err=4.488675e-6 duty=2.795169e-1
+@1.127000e-2 Buck.ctl loop t=1.127000e-2 vout=3.299996e0 err=4.435690e-6 duty=2.795169e-1
+@1.128000e-2 Buck.ctl loop t=1.128000e-2 vout=3.299996e0 err=4.383338e-6 duty=2.795169e-1
+@1.129000e-2 Buck.ctl loop t=1.129000e-2 vout=3.299996e0 err=4.331626e-6 duty=2.795169e-1
+@1.130000e-2 Buck.ctl loop t=1.130000e-2 vout=3.299996e0 err=4.280519e-6 duty=2.795169e-1
+@1.131000e-2 Buck.ctl loop t=1.131000e-2 vout=3.299996e0 err=4.229982e-6 duty=2.795169e-1
+@1.132000e-2 Buck.ctl loop t=1.132000e-2 vout=3.299996e0 err=4.180011e-6 duty=2.795169e-1
+@1.133000e-2 Buck.ctl loop t=1.133000e-2 vout=3.299996e0 err=4.130589e-6 duty=2.795169e-1
+@1.134000e-2 Buck.ctl loop t=1.134000e-2 vout=3.299996e0 err=4.081715e-6 duty=2.795169e-1
+@1.135000e-2 Buck.ctl loop t=1.135000e-2 vout=3.299996e0 err=4.033377e-6 duty=2.795169e-1
+@1.136000e-2 Buck.ctl loop t=1.136000e-2 vout=3.299996e0 err=3.985580e-6 duty=2.795169e-1
+@1.137000e-2 Buck.ctl loop t=1.137000e-2 vout=3.299996e0 err=3.938317e-6 duty=2.795170e-1
+@1.138000e-2 Buck.ctl loop t=1.138000e-2 vout=3.299996e0 err=3.891597e-6 duty=2.795170e-1
+@1.139000e-2 Buck.ctl loop t=1.139000e-2 vout=3.299996e0 err=3.845418e-6 duty=2.795170e-1
+@1.140000e-2 Buck.ctl loop t=1.140000e-2 vout=3.299996e0 err=3.799755e-6 duty=2.795170e-1
+@1.141000e-2 Buck.ctl loop t=1.141000e-2 vout=3.299996e0 err=3.754598e-6 duty=2.795170e-1
+@1.142000e-2 Buck.ctl loop t=1.142000e-2 vout=3.299996e0 err=3.709970e-6 duty=2.795170e-1
+@1.143000e-2 Buck.ctl loop t=1.143000e-2 vout=3.299996e0 err=3.665881e-6 duty=2.795170e-1
+@1.144000e-2 Buck.ctl loop t=1.144000e-2 vout=3.299996e0 err=3.622319e-6 duty=2.795170e-1
+@1.145000e-2 Buck.ctl loop t=1.145000e-2 vout=3.299996e0 err=3.579286e-6 duty=2.795170e-1
+@1.146000e-2 Buck.ctl loop t=1.146000e-2 vout=3.299996e0 err=3.536774e-6 duty=2.795170e-1
+@1.147000e-2 Buck.ctl loop t=1.147000e-2 vout=3.299997e0 err=3.494793e-6 duty=2.795170e-1
+@1.148000e-2 Buck.ctl loop t=1.148000e-2 vout=3.299997e0 err=3.453340e-6 duty=2.795170e-1
+@1.149000e-2 Buck.ctl loop t=1.149000e-2 vout=3.299997e0 err=3.412392e-6 duty=2.795170e-1
+@1.150000e-2 Buck.ctl loop t=1.150000e-2 vout=3.299997e0 err=3.371940e-6 duty=2.795170e-1
+@1.151000e-2 Buck.ctl loop t=1.151000e-2 vout=3.299997e0 err=3.331969e-6 duty=2.795170e-1
+@1.152000e-2 Buck.ctl loop t=1.152000e-2 vout=3.299997e0 err=3.292482e-6 duty=2.795170e-1
+@1.153000e-2 Buck.ctl loop t=1.153000e-2 vout=3.299997e0 err=3.253475e-6 duty=2.795170e-1
+@1.154000e-2 Buck.ctl loop t=1.154000e-2 vout=3.299997e0 err=3.214921e-6 duty=2.795170e-1
+@1.155000e-2 Buck.ctl loop t=1.155000e-2 vout=3.299997e0 err=3.176814e-6 duty=2.795170e-1
+@1.156000e-2 Buck.ctl loop t=1.156000e-2 vout=3.299997e0 err=3.139182e-6 duty=2.795170e-1
+@1.157000e-2 Buck.ctl loop t=1.157000e-2 vout=3.299997e0 err=3.102003e-6 duty=2.795170e-1
+@1.158000e-2 Buck.ctl loop t=1.158000e-2 vout=3.299997e0 err=3.065264e-6 duty=2.795170e-1
+@1.159000e-2 Buck.ctl loop t=1.159000e-2 vout=3.299997e0 err=3.028945e-6 duty=2.795170e-1
+@1.160000e-2 Buck.ctl loop t=1.160000e-2 vout=3.299997e0 err=2.993047e-6 duty=2.795170e-1
+@1.161000e-2 Buck.ctl loop t=1.161000e-2 vout=3.299997e0 err=2.957567e-6 duty=2.795170e-1
+@1.162000e-2 Buck.ctl loop t=1.162000e-2 vout=3.299997e0 err=2.922521e-6 duty=2.795170e-1
+@1.163000e-2 Buck.ctl loop t=1.163000e-2 vout=3.299997e0 err=2.887883e-6 duty=2.795170e-1
+@1.164000e-2 Buck.ctl loop t=1.164000e-2 vout=3.299997e0 err=2.853669e-6 duty=2.795170e-1
+@1.165000e-2 Buck.ctl loop t=1.165000e-2 vout=3.299997e0 err=2.819869e-6 duty=2.795170e-1
+@1.166000e-2 Buck.ctl loop t=1.166000e-2 vout=3.299997e0 err=2.786478e-6 duty=2.795170e-1
+@1.167000e-2 Buck.ctl loop t=1.167000e-2 vout=3.299997e0 err=2.753486e-6 duty=2.795171e-1
+@1.168000e-2 Buck.ctl loop t=1.168000e-2 vout=3.299997e0 err=2.720867e-6 duty=2.795171e-1
+@1.169000e-2 Buck.ctl loop t=1.169000e-2 vout=3.299997e0 err=2.688619e-6 duty=2.795171e-1
+@1.170000e-2 Buck.ctl loop t=1.170000e-2 vout=3.299997e0 err=2.656735e-6 duty=2.795171e-1
+@1.171000e-2 Buck.ctl loop t=1.171000e-2 vout=3.299997e0 err=2.625234e-6 duty=2.795171e-1
+@1.172000e-2 Buck.ctl loop t=1.172000e-2 vout=3.299997e0 err=2.594129e-6 duty=2.795171e-1
+@1.173000e-2 Buck.ctl loop t=1.173000e-2 vout=3.299997e0 err=2.563415e-6 duty=2.795171e-1
+@1.174000e-2 Buck.ctl loop t=1.174000e-2 vout=3.299997e0 err=2.533070e-6 duty=2.795171e-1
+@1.175000e-2 Buck.ctl loop t=1.175000e-2 vout=3.299997e0 err=2.503097e-6 duty=2.795171e-1
+@1.176000e-2 Buck.ctl loop t=1.176000e-2 vout=3.299998e0 err=2.473492e-6 duty=2.795171e-1
+@1.177000e-2 Buck.ctl loop t=1.177000e-2 vout=3.299998e0 err=2.444240e-6 duty=2.795171e-1
+@1.178000e-2 Buck.ctl loop t=1.178000e-2 vout=3.299998e0 err=2.415307e-6 duty=2.795171e-1
+@1.179000e-2 Buck.ctl loop t=1.179000e-2 vout=3.299998e0 err=2.386688e-6 duty=2.795171e-1
+@1.180000e-2 Buck.ctl loop t=1.180000e-2 vout=3.299998e0 err=2.358376e-6 duty=2.795171e-1
+@1.181000e-2 Buck.ctl loop t=1.181000e-2 vout=3.299998e0 err=2.330390e-6 duty=2.795171e-1
+@1.182000e-2 Buck.ctl loop t=1.182000e-2 vout=3.299998e0 err=2.302748e-6 duty=2.795171e-1
+@1.183000e-2 Buck.ctl loop t=1.183000e-2 vout=3.299998e0 err=2.275415e-6 duty=2.795171e-1
+@1.184000e-2 Buck.ctl loop t=1.184000e-2 vout=3.299998e0 err=2.248404e-6 duty=2.795171e-1
+@1.185000e-2 Buck.ctl loop t=1.185000e-2 vout=3.299998e0 err=2.221703e-6 duty=2.795171e-1
+@1.186000e-2 Buck.ctl loop t=1.186000e-2 vout=3.299998e0 err=2.195314e-6 duty=2.795171e-1
+@1.187000e-2 Buck.ctl loop t=1.187000e-2 vout=3.299998e0 err=2.169236e-6 duty=2.795171e-1
+@1.188000e-2 Buck.ctl loop t=1.188000e-2 vout=3.299998e0 err=2.143456e-6 duty=2.795171e-1
+@1.189000e-2 Buck.ctl loop t=1.189000e-2 vout=3.299998e0 err=2.117985e-6 duty=2.795171e-1
+@1.190000e-2 Buck.ctl loop t=1.190000e-2 vout=3.299998e0 err=2.092837e-6 duty=2.795171e-1
+@1.191000e-2 Buck.ctl loop t=1.191000e-2 vout=3.299998e0 err=2.068009e-6 duty=2.795171e-1
+@1.192000e-2 Buck.ctl loop t=1.192000e-2 vout=3.299998e0 err=2.043483e-6 duty=2.795171e-1
+@1.193000e-2 Buck.ctl loop t=1.193000e-2 vout=3.299998e0 err=2.019269e-6 duty=2.795171e-1
+@1.194000e-2 Buck.ctl loop t=1.194000e-2 vout=3.299998e0 err=1.995375e-6 duty=2.795171e-1
+@1.195000e-2 Buck.ctl loop t=1.195000e-2 vout=3.299998e0 err=1.971795e-6 duty=2.795171e-1
+@1.196000e-2 Buck.ctl loop t=1.196000e-2 vout=3.299998e0 err=1.948510e-6 duty=2.795171e-1
+@1.197000e-2 Buck.ctl loop t=1.197000e-2 vout=3.299998e0 err=1.925488e-6 duty=2.795171e-1
+@1.198000e-2 Buck.ctl loop t=1.198000e-2 vout=3.299998e0 err=1.902726e-6 duty=2.795171e-1
+@1.199000e-2 Buck.ctl loop t=1.199000e-2 vout=3.299998e0 err=1.880223e-6 duty=2.795171e-1
+@1.200000e-2 Buck.ctl loop t=1.200000e-2 vout=3.299998e0 err=1.857966e-6 duty=2.795171e-1
 
-  × an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)
-    ╭─[buck.msl:15:46]
- 14 │ module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 50m; roff: f64 = 1M; }
- 15 │ analog for RSwitch { i(a, b) +&gt; v(a, b) / if ctl { ron } else { roff }; }
-    ·                                              ─┬─
-    ·                                               ╰── a discrete carrier read in `analog`
- 16 │ 
-    ╰────
-  help: read it through `known()`, `known_or(d)`, or `high()` for a `Bit`
-
-error: typeck failed with 1 diagnostic(s)</pre>
+time         Buck.vout
+0.000000e0   1.182089e1
+1.000000e-3  1.291656e0
+2.000000e-3  3.045884e0
+3.000000e-3  3.227974e0
+4.000000e-3  3.271236e0
+5.000000e-3  3.292541e0
+6.000000e-3  3.297599e0
+7.000000e-3  3.299278e0
+8.000000e-3  3.299782e0
+9.000000e-3  3.299933e0
+1.000000e-2  3.299980e0
+1.100000e-2  3.299994e0
+1.200000e-2  3.299998e0</pre>
 </div>
 
 <div class="callout good">
@@ -7823,7 +9052,7 @@ print = ["vout"]</pre>
 <p>Take <code>Front</code>, a comparator with hysteresis that drives a flip-flop:</p>
 
 <pre data-lang="msl">/// A comparator with hysteresis that drives a flip-flop.
-module Front(vin: Electrical, in clk: Bit, out q: Bit) {
+module Front(vin: Electrical, in clk: Bit, out q: Bit = false) {
     vth: f64 = 0.6;
     hyst: f64 = 50m;
     signal above_th: Bit = false;        // state: a signal
@@ -8542,7 +9771,7 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
     [b0_flow_]
 }</pre>
 
-<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> on a value that may be unknown runs both arms and merges what they commit.</p>
+<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> runs one arm, the one its condition selects, and only that arm commits.</p>
 
 <h3>What comes next</h3>
 

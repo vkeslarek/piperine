@@ -41,7 +41,7 @@ impl Fixture {
     /// place the subset takes a `str` (the `msg` of a `sim` record), so the `const` is reached.
     fn reading(name: &str, file: &str) -> String {
         format!(
-            "const {name}: str = include_str!(\"{file}\");\nmodule Cell(in clk: Bit) {{ }}\ndigital for Cell {{ on clk.rise() {{ emit!(\"sim\", msg = {name}); }} }}\nmodule Top() {{ signal clk: Bit; let c = Cell(clk); }}\n"
+            "const {name}: str = include_str!(\"{file}\");\nmodule Cell(in clk: Bit) {{ }}\ndigital for Cell {{ on clk.rise() {{ emit!(\"sim\", msg = {name}); }} }}\nmodule Top() {{ signal clk: Bit = false; let c = Cell(clk); }}\n"
         )
     }
 }

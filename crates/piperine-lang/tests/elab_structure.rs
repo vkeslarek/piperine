@@ -17,7 +17,7 @@ struct Device;
 impl Device {
     /// The source text of the device and its top.
     fn source(analog: &str) -> String {
-        format!("module M(p: Electrical, n: Electrical, in en: Bit) {{ k: f64 = 1.0; }}\nanalog for M {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal e: Bit; let m = M {{ }}(s, gnd, e); }}")
+        format!("module M(p: Electrical, n: Electrical, in en: Bit) {{ k: f64 = 1.0; }}\nanalog for M {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal e: Bit = false; let m = M {{ }}(s, gnd, e); }}")
     }
 
     /// The IR of `analog`, which must elaborate.
@@ -68,17 +68,17 @@ fn a_selector_on_a_carrier_or_the_environment_keeps_the_flow_unknown() {
     // potential contribution under no condition is a potential branch; a flow-only branch has no
     // unknown whatever selects it.
     for (selector, kinds) in [
-        ("if en.known_or(false) { v(p, n) +> 1.0; }", [BranchKind::Switch]),
+        ("if en { v(p, n) +> 1.0; }", [BranchKind::Switch]),
         ("if now() > 1u { v(p, n) +> 1.0; }", [BranchKind::Switch]),
         ("if analysis(Static) { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }", [BranchKind::Switch]),
         ("v(p, n) +> 1.0;", [BranchKind::Potential]),
-        ("if en.known_or(false) { i(p, n) +> 1.0; }", [BranchKind::Flow]),
+        ("if en { i(p, n) +> 1.0; }", [BranchKind::Flow]),
     ] {
         let ir = Device::ir(selector);
         assert_eq!(Device::kinds(&ir), kinds, "{selector}");
     }
     // The contributions keep their place: under the arm of the condition, not at the top.
-    let ir = Device::ir("if en.known_or(false) { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }");
+    let ir = Device::ir("if en { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }");
     let body = ir.bodies().find(|b| b.name() == "M").expect("M");
     let found: Vec<(QuantityRole, bool)> = body.contributions().iter().map(|c| (c.quantity, c.conditions[0].holds)).collect();
     assert_eq!(found, [(QuantityRole::Potential, true), (QuantityRole::Flow, false)]);
@@ -113,7 +113,7 @@ fn a_probe_in_the_selector_of_a_potential_capable_branch_is_e0414() {
         "if v(p) > 0.5 { v(p, n) +> 1.0; }",
         "v(p, n) +> 1.0; if v(p) > 0.5 { i(p, n) +> 1.0; }",
         "let hot = v(p) > 0.5; if hot { v(p, n) +> 1.0; }",
-        "if en.known_or(false) { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
+        "if en { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
     ] {
         let (codes, at, message) = refusal(analog);
         assert_eq!(codes, ["E0414"], "{analog}");
@@ -304,7 +304,7 @@ fn rows(ir: &Ir) -> Vec<(QuantityRole, Vec<(piperine_ir::Operator, bool)>)> {
 
 /// A device `M(p, n, in clk: Bit, out r: Bit<f64>)` with `items` in its body and `analog` as its `analog` block.
 fn charge_device(items: &str, analog: &str, digital: &str) -> String {
-    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
+    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit = false; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn an_enum_param_is_refused_by_name_until_params_and_io() {
         let design = Elab::design(&src);
         let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the enum param is refused");
         assert_eq!(Elab::codes(&found), ["P0001"], "{param}");
-        assert!(found[0].diagnostic.message.contains(&format!("param of type `enum `{named}``")), "{param}: {}", found[0].diagnostic.message);
+        assert!(found[0].diagnostic.message.contains(&format!("param of type `{named}`")), "{param}: {}", found[0].diagnostic.message);
     }
 }
 
@@ -503,9 +503,9 @@ fn a_param_value_let_may_read_another_let() {
 fn a_param_value_let_that_reads_a_probe_is_e0321() {
     // AS-12 AC 3 (§8.1.19): a `let` used as a param value that reads a probe, a carrier or the environment
     // has no value at elaboration: `E0321` at the use, naming the `let`.
-    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k.known_or(0.0);", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
+    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k;", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
         let lag = "module Lag(x: f64) -> f64 { signal y: State; potential(y) }\nanalog for Lag { flow(y) +> ddt(potential(y)) + potential(y) - x; }\n";
-        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
+        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64> = 0.0; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
         let err = Elab::run(&src, "Top").expect_err("the value has no constant");
         assert_eq!(Elab::codes(&err), ["E0321"], "{let_}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         let message = &err[0].diagnostic.message;

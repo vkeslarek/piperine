@@ -180,15 +180,19 @@ fn a_compiler_code_says_what_the_chapter_says() {
 }
 
 #[test]
-fn a_digital_if_on_an_unknown_value_runs_both_arms_and_merges_what_they_commit() {
+fn a_digital_if_runs_the_arm_its_condition_selects_and_only_that_arm_commits() {
     // compiler chapter, "Digital code reads the same way: a reaction is a function whose commits go out
-    // together when it ends, and an if on a value that may be unknown runs both arms and merges what they
-    // commit." (`d` is unknown: one arm commits `true` to `q`, the other commits nothing, so `q` is
-    // `true` merged with its prior `false` and reads unknown; the run does not stop)
-    let source = "module Top() { signal d: Bit; signal q: Bit = false; }\ndigital for Top { on at(1u) { if d { q <- true; } } }\n";
-    let ran = Model::written("m.msl", source).run(Faulty::transient_of_top(3e-6, None)).unwrap_or_else(|failure| panic!("{failure:#}"));
-    let column = ran.table.columns.iter().position(|name| name == "Top.q").expect("the table shows q");
-    assert_eq!(ran.table.rows.last().expect("a last row")[column], Cell::Unknown, "q merges its two arms");
+    // together when it ends, and an if runs one arm, the one its condition selects, and only that arm
+    // commits." (`d` is false: the arm that commits `true` to `q` does not run, so `q` keeps the `false`
+    // it started at; with `d` true the arm runs and `q` reads true)
+    let run = |first: &str| {
+        let source = format!("module Top() {{ signal d: Bit = {first}; signal q: Bit = false; }}\ndigital for Top {{ on at(1u) {{ if d {{ q <- true; }} }} }}\n");
+        let ran = Model::written("m.msl", &source).run(Faulty::transient_of_top(3e-6, None)).unwrap_or_else(|failure| panic!("{failure:#}"));
+        let column = ran.table.columns.iter().position(|name| name == "Top.q").expect("the table shows q");
+        ran.table.rows.last().expect("a last row")[column].clone()
+    };
+    assert_eq!(run("false"), Cell::Bool(false), "the arm did not run");
+    assert_eq!(run("true"), Cell::Bool(true), "the arm ran");
 }
 
 #[test]

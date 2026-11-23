@@ -97,8 +97,6 @@ pub enum Token {
     /// `r#word` for one of the seven added keywords: the word, no prefix.
     RawIdent(String),
     Kw(Kw),
-    /// The `Unknown` literal (A.3).
-    Unknown,
     /// An integer literal; the text, type suffix included, is kept.
     Int(String),
     /// A float literal: the value (SI suffix applied) and the original text.
@@ -126,7 +124,6 @@ impl std::fmt::Display for Token {
             Token::Ident(s) => write!(f, "identifier `{s}`"),
             Token::RawIdent(s) => write!(f, "identifier `r#{s}`"),
             Token::Kw(k) => write!(f, "`{}`", k.as_str()),
-            Token::Unknown => f.write_str("`Unknown`"),
             Token::Int(s) => write!(f, "`{s}`"),
             Token::Float { raw, .. } => write!(f, "`{raw}`"),
             Token::Str { .. } => f.write_str("string literal"),
@@ -439,8 +436,6 @@ pub fn lex_bytes(bytes: &[u8]) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
 fn classify_ident(text: &str) -> Token {
     if text == "_" {
         Token::Punct(Punct::Underscore)
-    } else if text == "Unknown" {
-        Token::Unknown
     } else if let Some(k) = Kw::from_str(text) {
         Token::Kw(k)
     } else {

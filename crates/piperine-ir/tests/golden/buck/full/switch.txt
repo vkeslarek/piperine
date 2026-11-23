@@ -9,7 +9,7 @@ body Switch  @switch.msl:1:1
   carrier g: bool in  @switch.msl:1:52
   branch b0 (p, n) flow
   analog
-    b0.flow +> direct (probe(p, n) * if g.high() { (1.0 / ron) } else { (1.0 / roff) })
+    b0.flow +> direct (probe(p, n) * if g { (1.0 / ron) } else { (1.0 / roff) })
 body Top  @top.msl:1:1
 instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
 arenas
@@ -24,14 +24,13 @@ arenas
   e4: f64 = param 1  @switch.msl:3:25
   e5: bool = gt e4 e3  @switch.msl:3:25
   e6: f64 = probe n0 n1  @switch.msl:5:21
-  e7: flagged<bool> = carrier 0  @switch.msl:5:21
-  e8: bool = high e7  @switch.msl:5:21
-  e9: f64 = real 1.0  @switch.msl:5:21
-  e10: f64 = param 0  @switch.msl:5:21
-  e11: f64 = div e9 e10  @switch.msl:5:21
-  e12: f64 = real 1.0  @switch.msl:5:21
-  e13: f64 = param 1  @switch.msl:5:21
-  e14: f64 = div e12 e13  @switch.msl:5:21
-  e15: f64 = if e8 e11 e14  @switch.msl:5:21
-  e16: f64 = mul e6 e15  @switch.msl:5:21
-  s0: contribute b0 flow (direct e16)
+  e7: bool = carrier 0  @switch.msl:5:21
+  e8: f64 = real 1.0  @switch.msl:5:21
+  e9: f64 = param 0  @switch.msl:5:21
+  e10: f64 = div e8 e9  @switch.msl:5:21
+  e11: f64 = real 1.0  @switch.msl:5:21
+  e12: f64 = param 1  @switch.msl:5:21
+  e13: f64 = div e11 e12  @switch.msl:5:21
+  e14: f64 = if e7 e10 e13  @switch.msl:5:21
+  e15: f64 = mul e6 e14  @switch.msl:5:21
+  s0: contribute b0 flow (direct e15)

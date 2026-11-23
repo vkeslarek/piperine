@@ -9,7 +9,7 @@ body Adc  @sense.msl:19:1
   carrier sample: bool in  @sense.msl:19:33
   carrier code: u10 out init 0  @sense.msl:19:52
   carrier done: bool out init false  @sense.msl:19:76
-  event E0 changed sample guard sample.high()  @sense.msl:28:8
+  event E0 changed sample guard sample  @sense.msl:28:8
   reaction R0 on (E0)  @sense.msl:28:5
     local q: u10
     let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)
@@ -21,7 +21,7 @@ instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
 arenas
   top 0
   body 0: where (e2, e5, e8)  natures (0)  branches ()  children ()  analog -
-  body 0 discrete: drives ()  events ((changed c0 e10))  reactions ((on (0) (s0, s1, s2, s3)))
+  body 0 discrete: drives ()  events ((changed c0 e9))  reactions ((on (0) (s0, s1, s2, s3)))
   body 1: where ()  natures ()  branches ()  children ()  analog -
   instance 0: name Top  body 1  parent -  children ()  nodes ()
   e0: f64 = real 0.0  @sense.msl:21:25
@@ -33,29 +33,28 @@ arenas
   e6: f64 = real 0.0  @sense.msl:25:26
   e7: f64 = param 2  @sense.msl:25:26
   e8: bool = gt e7 e6  @sense.msl:25:26
-  e9: flagged<bool> = carrier 0  @sense.msl:28:8
-  e10: bool = high e9  @sense.msl:28:8
-  e11: f64 = probe n0 gnd  @sense.msl:29:17
-  e12: f64 = param 0  @sense.msl:29:17
-  e13: f64 = div e11 e12  @sense.msl:29:17
-  e14: f64 = real 1024.0  @sense.msl:29:17
-  e15: f64 = mul e13 e14  @sense.msl:29:17
-  e16: f64 = real 0.5  @sense.msl:29:17
-  e17: f64 = add e15 e16  @sense.msl:29:17
-  e18: f64 = floor e17 ()  @sense.msl:29:17
-  e19: f64 = real 0.0  @sense.msl:29:17
-  e20: f64 = real 1023.0  @sense.msl:29:17
-  e21: f64 = clamp e18 (e19, e20)  @sense.msl:29:17
-  e22: u10 = cast e21 to u10  @sense.msl:29:17
-  e23: u10 = local 0  @sense.msl:30:9
-  e24: f64 = param 1  @sense.msl:30:9
-  e25: bool = bool true  @sense.msl:31:9
-  e26: f64 = param 1  @sense.msl:31:9
-  e27: bool = bool false  @sense.msl:32:9
-  e28: f64 = param 1  @sense.msl:32:9
-  e29: f64 = param 2  @sense.msl:32:9
-  e30: f64 = add e28 e29  @sense.msl:32:9
-  s0: let 0 e22
-  s1: commit c1 e23 e24
-  s2: commit c2 e25 e26
-  s3: commit c2 e27 e30
+  e9: bool = carrier 0  @sense.msl:28:8
+  e10: f64 = probe n0 gnd  @sense.msl:29:17
+  e11: f64 = param 0  @sense.msl:29:17
+  e12: f64 = div e10 e11  @sense.msl:29:17
+  e13: f64 = real 1024.0  @sense.msl:29:17
+  e14: f64 = mul e12 e13  @sense.msl:29:17
+  e15: f64 = real 0.5  @sense.msl:29:17
+  e16: f64 = add e14 e15  @sense.msl:29:17
+  e17: f64 = floor e16 ()  @sense.msl:29:17
+  e18: f64 = real 0.0  @sense.msl:29:17
+  e19: f64 = real 1023.0  @sense.msl:29:17
+  e20: f64 = clamp e17 (e18, e19)  @sense.msl:29:17
+  e21: u10 = cast e20 to u10  @sense.msl:29:17
+  e22: u10 = local 0  @sense.msl:30:9
+  e23: f64 = param 1  @sense.msl:30:9
+  e24: bool = bool true  @sense.msl:31:9
+  e25: f64 = param 1  @sense.msl:31:9
+  e26: bool = bool false  @sense.msl:32:9
+  e27: f64 = param 1  @sense.msl:32:9
+  e28: f64 = param 2  @sense.msl:32:9
+  e29: f64 = add e27 e28  @sense.msl:32:9
+  s0: let 0 e21
+  s1: commit c1 e22 e23
+  s2: commit c2 e24 e25
+  s3: commit c2 e26 e29

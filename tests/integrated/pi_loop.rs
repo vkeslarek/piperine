@@ -99,7 +99,7 @@ impl Samples {
 
     /// The integer column `name`, indexed by row.
     fn column(ran: &CompletedRun, name: &str) -> Vec<i64> {
-        PrintedColumn::integers(&ran.table, name).into_iter().enumerate().map(|(row, (_, value))| value.unwrap_or_else(|| panic!("`{name}` is unknown at row {row}")) as i64).collect()
+        PrintedColumn::integers(&ran.table, name).into_iter().map(|(_, value)| value as i64).collect()
     }
 
     /// The `loop` records, in delivery order.
@@ -146,7 +146,7 @@ fn the_code_stays_within_three_of_128_after_50_us() {
     // IT-08 AC 2: every code committed after 50 us is within 128 +- 3
     let ran = Suite::get().ran(PiLoopScenario::RUN);
     let code = PrintedColumn::integers(&ran.table, "code");
-    let settled: Vec<i64> = code.iter().filter(|(time, _)| *time >= Samples::SETTLED).map(|(_, value)| value.expect("a known code") as i64).collect();
+    let settled: Vec<i64> = code.iter().filter(|(time, _)| *time >= Samples::SETTLED).map(|(_, value)| *value as i64).collect();
     let (lowest, highest) = (settled.iter().min().expect("rows after 50 us"), settled.iter().max().expect("rows after 50 us"));
     println!("pi_loop: codes after 50 us range {lowest} to {highest}, bound 125 to 131");
     assert!(settled.iter().all(|code| (PiController::TARGET - 3..=PiController::TARGET + 3).contains(code)), "codes after 50 us: {lowest} to {highest}");

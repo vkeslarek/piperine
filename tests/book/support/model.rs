@@ -140,17 +140,6 @@ impl Model {
         self
     }
 
-    /// The model with the file `file` rewritten for the front end as it stands: the Book reads a discrete
-    /// carrier in `analog` with no gate (explicit-unknowns, S8) and the front end still wants one, so a test that
-    /// runs the Book's physics on today's binary adds the gate the earlier text had (`Earlier::gate`) and asserts
-    /// the refusal of the Book's own text beside it.
-    pub fn earlier(self, file: &str) -> Model {
-        let base = self.base();
-        let gated = Earlier::gate(&self.text_of(file));
-        Self::write(&base, file, &gated);
-        self
-    }
-
     /// The model whose `run` runs the run `name` of its package, as `piperine run <name>` does.
     pub fn of_run(mut self, name: &str) -> Model {
         self.named = Some(name.to_string());
@@ -239,25 +228,5 @@ impl Ran {
     /// The records of the stream `stream`, in order.
     pub fn stream(&self, stream: &str) -> Vec<&Record> {
         self.records.iter().filter(|record| record.stream == stream).collect()
-    }
-}
-
-/// The gates the earlier front end still asks of an `analog` read of a discrete carrier. Each pair is a
-/// spelling of the Book and the spelling that front end accepts; the Book's text never holds the right-hand one.
-pub struct Earlier;
-
-impl Earlier {
-    /// The Book spelling and the earlier spelling of each read.
-    const READS: [(&'static str, &'static str); 5] = [
-        (" if fired {", " if fired.high() {"),
-        (" if ctl {", " if ctl.high() {"),
-        (" if bit {", " if bit.high() {"),
-        ("if d { 1.0 } else { 0.0 }", "if d.high() { 1.0 } else { 0.0 }"),
-        ("+> held;", "+> held.known_or(0.0);"),
-    ];
-
-    /// `text` with every gate the earlier front end asks for.
-    pub fn gate(text: &str) -> String {
-        Self::READS.iter().fold(text.to_string(), |text, (book, earlier)| text.replace(book, earlier))
     }
 }

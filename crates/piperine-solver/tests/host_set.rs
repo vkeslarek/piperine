@@ -292,7 +292,7 @@ fn a_structural_set_during_a_run_is_refused() {
         assert!(err.contains("STRUCTURAL"), "{err}");
     }
     let bound = circuit.bound().unwrap();
-    assert!(bound.digital.read(w_net).iter().all(|b| *b == 0), "nothing changed: `w` is still not given");
+    assert_eq!(bound.digital.read(w_net), 1.0e-3f64.to_le_bytes(), "nothing changed: `w` still holds its default");
     assert!(bound.host_writes.is_empty());
 }
 

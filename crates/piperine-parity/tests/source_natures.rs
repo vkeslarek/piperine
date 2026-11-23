@@ -136,9 +136,9 @@ impl Model {
             .collect()
     }
 
-    /// The value of a known `Byte` as the net holds it: the value byte, then its known byte.
+    /// The value of a `Byte` as the net holds it: the value byte.
     fn known_byte(value: u8) -> Vec<u8> {
-        vec![value, 1]
+        vec![value]
     }
 }
 
@@ -173,10 +173,11 @@ fn a_counter_over_a_project_byte_nature_commits_and_records() {
     let doubled: Vec<Vec<u8>> = transient(&seen, "ConnectedBench.twice").into_iter().map(|(_, bytes)| bytes).collect();
     assert_eq!(doubled, (1..=6).map(|k| Model::known_byte(2 * k)).collect::<Vec<_>>(), "a definition follows its operand");
     // §5.3: `changed()` fires at each change of `count`: at `(0, 0)` for its first commit `0`, whose
-    // `prev()` is all unknown (§5.3.8, read as 255), then at every rise for `k`, with `prev()` the
+    // `prev()` is the initial value, `0` (§5.3.5, D8: the first commit seeds `PREVIOUS` with its own
+    // bytes; the earlier model read it as all unknown, 255), then at every rise for `k`, with `prev()` the
     // value before that change, `k - 1`.
     let changes = Model::records(&built, &seen, "changes");
-    let expected: Vec<Vec<(String, i128)>> = (0..=6).map(|count| vec![("count".to_string(), count), ("before".to_string(), if count == 0 { 255 } else { count - 1 })]).collect();
+    let expected: Vec<Vec<(String, i128)>> = (0..=6i128).map(|count| vec![("count".to_string(), count), ("before".to_string(), (count - 1).max(0))]).collect();
     assert_eq!(changes, expected, "one `changed()` per change, with `prev()` the value before it");
 }
 

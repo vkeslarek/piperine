@@ -64,3 +64,9 @@ pub fn analog(file: &str, name: &str) -> String {
 pub fn module_with_analog(file: &str, name: &str) -> String {
     format!("{}\n{}", item(file, &format!("pub module {name}(")), analog(file, name))
 }
+
+/// The hand fixture `name`: the structural print of the buck's body, `crates/piperine-ir/tests/golden/buck`.
+pub fn golden(name: &str) -> String {
+    let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}

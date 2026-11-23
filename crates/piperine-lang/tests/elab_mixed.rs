@@ -42,9 +42,8 @@ fn reach(ir: &Ir, root: ExprId) -> Vec<ExprId> {
     while let Some(e) = stack.pop() {
         out.push(e);
         match ir.expr(e) {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack.push(*expr),
             Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
-            Expr::KnownOr { value, default } => stack.extend([*value, *default]),
             Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
             Expr::Method { receiver, args, .. } => stack.extend(std::iter::once(*receiver).chain(args.iter().copied())),
             Expr::Call { args, .. } | Expr::Math { args, .. } => stack.extend(args.iter().copied()),
@@ -106,30 +105,28 @@ fn a_flow_probe_of_a_branch_without_a_potential_contribution_is_p0001() {
 #[test]
 fn analog_reads_a_hoisted_result() {
     // DIG-13 AC 6 (elaboration half), C126: `PowerSwitch`'s `analog` block reads `gate`, the
-    // hoisted result of `transition` (the carriers `gate.*` through `known_or`, `now()` and
+    // hoisted result of `transition` (the carriers `gate.*`, `now()` and
     // `analysis(Static)`), and contributes `gch * v(d, s) - body_diode(v(s, d), vf, rd)` with
     // `ddt(coss * v(d, s))` (power.msl).
-    let ir = Elab::ir(&power(&["PowerSwitch"], "module Top() { signal d: Electrical; signal s: Electrical; signal g: Bit; let p = PowerSwitch(d, s, g); }"), "Top");
+    let ir = Elab::ir(&power(&["PowerSwitch"], "module Top() { signal d: Electrical; signal s: Electrical; signal g: Bit = false; let p = PowerSwitch(d, s, g); }"), "Top");
     let ps = body(&ir, "PowerSwitch");
     let lines = analog_lines(&ir, "PowerSwitch");
     assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("let gch = ((if static() { gate.x.known_or(0.0) } else {"), "{}", lines[0]);
+    assert!(lines[0].starts_with("let gch = ((if static() { gate.x } else {"), "{}", lines[0]);
     assert_eq!(lines[1], "b0.flow +> direct ((gch * probe(d, s)) - body_diode(probe(s, d), vf, rd)), ddt (coss * probe(d, s))");
     let reads: Vec<Expr> = ps.analog().unwrap_or_default().iter().flat_map(|s| ir.stmt(*s).operands()).flat_map(|e| reach(&ir, e)).map(|e| ir.expr(e).clone()).collect();
     assert!(reads.contains(&Expr::Env(Env::Time)) && reads.contains(&Expr::Env(Env::Static)));
-    // A carrier is read in `analog` only as the receiver of a flag read (§3.3.5): every carrier
-    // read of the block is under `known_or`.
+    // A carrier is read in `analog` like any value (§3.3.6): the reads of the block are plain `Carrier` reads.
     let carriers = reads.iter().filter(|e| matches!(e, Expr::Carrier(_))).count();
-    let guarded = reads.iter().filter(|e| matches!(e, Expr::KnownOr { value, .. } if matches!(ir.expr(*value), Expr::Carrier(_)))).count();
-    assert!(carriers > 0 && carriers == guarded, "{carriers} reads, {guarded} under `known_or`");
+    assert!(carriers > 0, "{carriers} carrier reads");
     // `Load` reads two hoisted results in one contribution.
-    let ir = Elab::ir(&power(&["Load"], "module Top() { signal p: Electrical; signal a: Bit; signal b: Bit; let l = Load(p, a, b); }"), "Top");
+    let ir = Elab::ir(&power(&["Load"], "module Top() { signal p: Electrical; signal a: Bit = false; signal b: Bit = false; let l = Load(p, a, b); }"), "Top");
     let lines = analog_lines(&ir, "Load");
     assert_eq!(lines.len(), 1);
-    assert!(lines[0].starts_with("b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x.known_or(0.0) }"), "{}", lines[0]);
-    assert!(lines[0].contains("k_inject.x.known_or(0.0)") && lines[0].ends_with("* i_inject))"), "{}", lines[0]);
-    // A carrier read through `high()`, `now()` and `analysis(Static)` written in `analog` itself.
-    let src = "module M(p: Electrical, in g: Bit) { }\nanalog for M { i(p) +> if g.high() && !analysis(Static) { now() } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal g: Bit; let m = M(a, g); }";
+    assert!(lines[0].starts_with("b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x }"), "{}", lines[0]);
+    assert!(lines[0].contains("k_inject.x") && lines[0].ends_with("* i_inject))"), "{}", lines[0]);
+    // A carrier read, `now()` and `analysis(Static)` written in `analog` itself.
+    let src = "module M(p: Electrical, in g: Bit) { }\nanalog for M { i(p) +> if g && !analysis(Static) { now() } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal g: Bit = false; let m = M(a, g); }";
     let ir = Elab::ir(src, "Top");
-    assert_eq!(analog_lines(&ir, "M"), ["b0.flow +> direct if (g.high() && (!static())) { time() } else { 0.0 }"]);
+    assert_eq!(analog_lines(&ir, "M"), ["b0.flow +> direct if (g && (!static())) { time() } else { 0.0 }"]);
 }

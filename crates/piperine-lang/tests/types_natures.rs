@@ -59,7 +59,7 @@ fn a_project_discrete_port_without_a_direction_is_e0310() {
     // §8.1.5: a port of a discrete nature takes `in` or `out`, whoever declared the nature.
     let source = Source::new(&format!("{BYTE}module Top(a: Byte) {{ }}"));
     assert_eq!(source.codes(), ["E0310"]);
-    let source = Source::new(&format!("{BYTE}module Top(in a: Byte, out b: Byte) {{ }}"));
+    let source = Source::new(&format!("{BYTE}module Top(in a: Byte, out b: Byte = 0) {{ }}"));
     source.checked();
 }
 
@@ -67,12 +67,12 @@ fn a_project_discrete_port_without_a_direction_is_e0310() {
 fn connecting_byte_to_bit_u8_is_e0251_naming_both_natures() {
     // §6.1.3, §8.1.10: two carriers connect only when nature and value type agree; the message
     // names both natures, though `Byte` and `Bit<u8>` hold the same type.
-    let source = Source::new(&format!("{BYTE}module Sink(in x: Bit<u8>) {{ }}\nmodule Top() {{ signal b: Byte; let s = Sink(b); }}"));
+    let source = Source::new(&format!("{BYTE}module Sink(in x: Bit<u8>) {{ }}\nmodule Top() {{ signal b: Byte = 0; let s = Sink(b); }}"));
     let diagnostics = source.diagnostics();
     assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0251"]);
     let message = &diagnostics[0].diagnostic.message;
     assert!(message.contains("`Byte`") && message.contains("`Bit<u8>`") && !message.contains("Byte<"), "{message}");
-    let source = Source::new(&format!("{BYTE}module Sink(in x: Byte) {{ }}\nmodule Top() {{ signal b: Byte; let s = Sink(b); }}"));
+    let source = Source::new(&format!("{BYTE}module Sink(in x: Byte) {{ }}\nmodule Top() {{ signal b: Byte = 0; let s = Sink(b); }}"));
     source.checked();
 }
 
@@ -87,7 +87,7 @@ fn a_nature_value_without_repr_is_e0112() {
 #[test]
 fn a_second_driver_of_a_project_discrete_carrier_is_e0220() {
     // §5.2.1: a carrier of a one-driver nature has one drive, a project's nature included.
-    let source = Source::new(&format!("{BYTE}module Source(out q: Byte) {{ }}\nmodule Top() {{ signal s: Byte; let a = Source(s); let b = Source(s); }}"));
+    let source = Source::new(&format!("{BYTE}module Source(out q: Byte = 0) {{ }}\nmodule Top() {{ signal s: Byte; let a = Source(s); let b = Source(s); }}"));
     assert_eq!(source.codes(), ["E0220"]);
 }
 

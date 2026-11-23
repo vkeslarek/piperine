@@ -155,7 +155,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Node` | `gnd` (§6) |
 | `ImplicitParam` | `m` (§8.5), `dtemp` (§8.5): in scope only inside a module body and the blocks bound to a module; `builtin_implicit(name)` finds one |
 | `Member` | `Repr::WIDTH`, `Repr::encode`, `Repr::decode` (§2): reached through a generic bounded by `Repr` (`builtin_member("Repr", name)`), never as a name |
-| `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `level` (§14.12), `inflow` (§14.1) |
+| `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `inflow` (§14.1) |
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
 `f64`, `f128`). The six constants of §1 (`Q`, `K_B`, `EPS0`, `PI`, `E`, `inf`) are not rows: they are items of `std::constants`, found through the prelude like any library item. Standard-library modules such as `idt`, `transition` and `above` are *not*
@@ -252,7 +252,7 @@ slot only.
 | --- | --- | --- |
 | an instance of a known module | the module's item of that name: a port, param, signal or `let` | |
 | a value of a declared struct or bundle type (a port, signal or `let` with that annotated type) | the field | |
-| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`, `level`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type, then a blanket `impl<T: Repr> Tr for T` (or `impl<T> Tr for T`) of a trait that has the method and is in scope at the call |
+| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type, then a blanket `impl<T: Repr> Tr for T` (or `impl<T> Tr for T`) of a trait that has the method and is in scope at the call |
 | `self` in an `impl` | | a value of the impl's self type, then as above |
 | anything else | `Deferred` | `Deferred` |
 

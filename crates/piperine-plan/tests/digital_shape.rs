@@ -4,10 +4,10 @@
 //! abi.md (§3.1 P3, §4, §5, §6, §11.4, §11.5), cited at each assertion; the bodies are the
 //! hand-built buck slice of `piperine-ir/tests/support/digital.rs`.
 
-use piperine_abi::layout::{BIT, BYTE, LOW, NONE, REAL, is_canonical};
-use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, field_flag, global, kind, leaf, part, pin_flag, role};
+use piperine_abi::layout::{BIT, BYTE, F64, LOW, NONE};
+use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, global, kind, leaf, part, pin_flag, role};
 use piperine_ir::{
-    BodyId, BodySpec, CarrierRole, Constant, Event, EventSource, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Origin, Real, Stream, StreamField, ValueType,
+    BodyId, BodySpec, CarrierRole, Constant, Event, EventSource, InstanceSpec, Ir, IrBuilder, Origin, Real, Stream, StreamField, ValueType,
 };
 use piperine_digital_solver::dag::{Dag, Step};
 use piperine_digital_solver::net::{NetId, NetSpec};
@@ -118,20 +118,45 @@ impl PinView {
     }
 }
 
-/// A layout as the assertions read it: size, align and, per field, name, leaf, offset, count,
-/// flags and known offset.
-fn layout(l: &Layout<'_>) -> (u32, u32, Vec<(String, u32, u32, u32, u32, u32)>) {
-    (l.size, l.align, l.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset, f.count, f.flags, f.known)).collect())
+/// A layout as the assertions read it: size, align and, per field, name, leaf, offset and count.
+fn layout(l: &Layout<'_>) -> (u32, u32, Vec<(String, u32, u32, u32)>) {
+    (l.size, l.align, l.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset, f.count)).collect())
 }
 
-/// The layout RS-12 AC 1 gives an integer: one field `v` of `leaf` at 0, its known byte right
-/// after the value, the size rounded to the value's alignment (as `BIT`, `BYTE`, `REAL`).
-fn integer(leaf: u32, width: u32) -> (u32, u32, Vec<(String, u32, u32, u32, u32, u32)>) {
-    (2 * width, width, vec![("v".to_string(), leaf, 0, 1, field_flag::HAS_KNOWN, width)])
+/// The layout RS-12 AC 1 gives an integer: one field `v` of `leaf` at 0, the size the value's own
+/// (as `BIT`, `BYTE`, `F64`).
+fn integer(leaf: u32, width: u32) -> (u32, u32, Vec<(String, u32, u32, u32)>) {
+    (width, width, vec![("v".to_string(), leaf, 0, 1)])
 }
 
 #[test]
-fn carriers_are_discrete_pins_with_a_known_byte() {
+fn an_option_carrier_pin_is_presence_then_payload() {
+    // EU-16 AC 4 (C68), abi.md P3 and P5: the pin `piperine-plan` lays out for a carrier of `Option<u8>` is a `BOOL`
+    // presence field `some` at 0 and the payload `value` (`U8`) at 1, two bytes with no field that holds a flag; an
+    // `Option<f64>` is the presence byte then the eight bytes of the real
+    fn options(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Options", "options.msl", 1));
+        let carriers = [("o", ValueType::Option(Box::new(Ty::u(8)))), ("x", ValueType::Option(Box::new(ValueType::F64)))];
+        for (k, (name, ty)) in carriers.into_iter().enumerate() {
+            b.carrier(body, Buck::carrier(name, ty, CarrierRole::Signal, None, "options.msl", 2 + k as u32, 5));
+        }
+        body
+    }
+    let (ir, body) = Alone::design(options);
+    let plan = BodyPlan::new(ir.body(body));
+    let pins: Vec<&Pin<'_>> = plan.shape().shape().pins.iter().collect();
+    assert_eq!(pins.len(), 2, "one pin per carrier");
+    let some = ("some".to_string(), leaf::BOOL, 0, 1);
+    assert_eq!(layout(&pins[0].layout), (2, 1, vec![some.clone(), ("value".to_string(), leaf::U8, 1, 1)]), "`Option<u8>`");
+    assert_eq!(layout(&pins[1].layout), (9, 1, vec![some, ("value".to_string(), leaf::F64, 1, 1)]), "`Option<f64>`: the payload follows the presence byte");
+    for pin in pins {
+        assert_eq!(pin.kind, kind::DISCRETE, "pin {}", pin.name.as_str());
+        assert!(pin.layout.fields.iter().all(|f| f.name.as_str() == "some" || f.name.as_str() == "value"), "pin {}: the value only", pin.name.as_str());
+    }
+}
+
+#[test]
+fn carriers_are_discrete_pins_that_hold_the_value_only() {
     // A body with one carrier of each width class, built for this test: names are the type.
     fn widths(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Widths", "widths.msl", 1));
@@ -164,11 +189,11 @@ fn carriers_are_discrete_pins_with_a_known_byte() {
     let pins: Vec<&Pin<'_>> = shape.pins.iter().collect();
     assert_eq!(pins.len(), 16, "one pin per carrier, nothing else");
 
-    // RS-12 AC 1: the layouts. `BIT`, `REAL` and `BYTE` are abi.md P3's shipped layouts; the
-    // rest is the narrowest leaf that holds N bits, with its known byte.
+    // RS-12 AC 1: the layouts. `BIT`, `F64` and `BYTE` are abi.md P3's shipped layouts; the
+    // rest is the narrowest leaf that holds N bits.
     let expected = [
         layout(&BIT),
-        layout(&REAL),
+        layout(&F64),
         layout(&BYTE),
         layout(&BYTE),
         integer(leaf::U16, 2),
@@ -199,26 +224,23 @@ fn carriers_are_discrete_pins_with_a_known_byte() {
     assert!(pins[3..].iter().all(|p| p.role == role::PRIVATE));
 
     // RS-12 AC 1: an initial value gives `HAS_INIT` with its bytes; abi.md P3: the value
-    // little-endian, the known byte 1, every other byte 0. No initial value: no flag, no bytes.
+    // little-endian and nothing else. No initial value: no flag, no bytes.
     let init = |i: usize| pins[i].init.as_slice().to_vec();
-    let mut real = 1.5f64.to_le_bytes().to_vec();
-    real.extend([1, 0, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(init(1), real, "r = 1.5");
-    assert_eq!(init(2), [1, 1], "u1 = 1");
-    assert_eq!(init(3), [255, 1], "u8 = 255");
-    assert_eq!(init(4), [44, 1, 1, 0], "u9 = 300 = 0x012C");
-    assert_eq!(init(9), [255, 255, 255, 255, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0], "u64 = 2^64 - 1");
-    assert_eq!(init(10), [255, 1], "i1 = -1 in two's complement, one byte");
-    assert_eq!(init(11), [128, 1], "i8 = -128");
-    assert_eq!(init(12), [254, 255, 1, 0], "i9 = -2 in an I16");
-    assert_eq!(init(15), [0, 0, 0, 0, 0, 0, 0, 128, 1, 0, 0, 0, 0, 0, 0, 0], "i64 = -2^63");
+    assert_eq!(init(1), 1.5f64.to_le_bytes(), "r = 1.5");
+    assert_eq!(init(2), [1], "u1 = 1");
+    assert_eq!(init(3), [255], "u8 = 255");
+    assert_eq!(init(4), [44, 1], "u9 = 300 = 0x012C");
+    assert_eq!(init(9), [255, 255, 255, 255, 255, 255, 255, 255], "u64 = 2^64 - 1");
+    assert_eq!(init(10), [255], "i1 = -1 in two's complement, one byte");
+    assert_eq!(init(11), [128], "i8 = -128");
+    assert_eq!(init(12), [254, 255], "i9 = -2 in an I16");
+    assert_eq!(init(15), [0, 0, 0, 0, 0, 0, 0, 128], "i64 = -2^63");
     for (i, p) in pins.iter().enumerate() {
         let given = !p.init.is_empty();
         assert_eq!(p.flags & pin_flag::HAS_INIT != 0, given, "pin {}: HAS_INIT exactly when it has an initial value", p.name.as_str());
         assert_eq!(p.flags & !pin_flag::HAS_INIT, 0, "pin {}: no other flag", p.name.as_str());
         if given {
             assert_eq!(p.init.len(), p.layout.size as usize, "pin {}: init fills the layout", p.name.as_str());
-            assert!(is_canonical(&p.layout, p.init.as_slice()), "pin {}: canonical bytes (P3)", p.name.as_str());
         }
         assert_eq!(p.origin.as_str(), format!("widths.msl:{}:5", 2 + i), "pin {}: origin of the carrier", p.name.as_str());
     }
@@ -239,11 +261,9 @@ fn carriers_are_discrete_pins_with_a_known_byte() {
     let (ir, body) = Alone::design(Buck::dpwm);
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
-    // (the `if` of its reaction decides on a value that may be unknown, so the body also has the
-    // `GLOBAL` `RESOLUTION` pin, after every other pin: it is no carrier)
     let carrier_pins: Vec<PinView> =
         shape.pins.iter().filter(|p| p.kind == kind::DISCRETE && p.role != role::PARAM && p.role != role::GLOBAL).map(PinView::of).collect();
-    assert_eq!(shape.pins.iter().last().map(|p| (p.name.as_str(), p.role, p.global)), Some(("resolution", role::GLOBAL, global::RESOLUTION)));
+    assert!(!has_pin(shape, "resolution"), "no reaction decides on an unknown, so no `RESOLUTION` pin");
     let summary: Vec<(&str, u32, Vec<u8>)> = carrier_pins.iter().map(|p| (p.name.as_str(), p.role, p.init.clone())).collect();
     let (port, private) = (role::PORT, role::PRIVATE);
     assert_eq!(
@@ -254,16 +274,16 @@ fn carriers_are_discrete_pins_with_a_known_byte() {
             ("duty", port, vec![]),
             ("oc", port, vec![]),
             ("sink_oc", port, vec![]),
-            ("hs", port, vec![0, 1]),
-            ("ls", port, vec![0, 1]),
+            ("hs", port, vec![0]),
+            ("ls", port, vec![0]),
             ("sample", port, vec![]),
-            ("cut", port, vec![0, 1]),
-            ("count", private, vec![0, 0, 1, 0]),
-            ("width", private, vec![0, 0, 1, 0]),
-            ("frame", private, vec![0, 1]),
-            ("hs_off", private, vec![0, 0, 1, 0]),
-            ("hs_cut", private, vec![0, 1]),
-            ("ls_cut", private, vec![0, 1]),
+            ("cut", port, vec![0]),
+            ("count", private, vec![0, 0]),
+            ("width", private, vec![0, 0]),
+            ("frame", private, vec![0]),
+            ("hs_off", private, vec![0, 0]),
+            ("hs_cut", private, vec![0]),
+            ("ls_cut", private, vec![0]),
         ]
     );
 }
@@ -337,7 +357,7 @@ fn an_event_is_an_event_pin_and_its_function() {
     assert_eq!(reads, [pin(clk, part::VALUE), pin(clk, part::CHANGED)]);
     assert_eq!(writes, [pin(Find::pin(shape, "event:0"), part::CHANGED)]);
 
-    // A guard reading another carrier and a param: `on clk.changed() if en.high() && k > 0.0`
+    // A guard reading another carrier and a param: `on clk.changed() if en && k > 0.0`
     // reads the VALUE of `en` and the param `k` besides `clk`'s two cells.
     fn guarded(b: &mut IrBuilder) -> BodyId {
         let body = b.body(BodySpec { params: vec![Buck::param("k", "g.msl", 1, Some(1.0), None)], ..Buck::spec("Guarded", "g.msl", 1) });
@@ -345,11 +365,10 @@ fn an_event_is_an_event_pin_and_its_function() {
         b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 30));
         let mut x = Dx::new(b, "g.msl", 2, 22);
         let en = x.carrier(1, ValueType::Bool);
-        let high = x.high(en);
         let k = x.param(0, ValueType::F64);
         let zero = x.real(0.0);
         let positive = x.bin(piperine_ir::BinaryOp::Gt, k, zero, ValueType::Bool);
-        let guard = x.bin(piperine_ir::BinaryOp::And, high, positive, ValueType::Bool);
+        let guard = x.bin(piperine_ir::BinaryOp::And, en, positive, ValueType::Bool);
         b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin("g.msl", 2, 8) });
         body
     }
@@ -400,7 +419,7 @@ fn a_delayed_drive_is_a_pin_an_event_and_a_reaction() {
     let mut got = reads.clone();
     got.sort_by_key(|c| c.index);
     assert_eq!(got, [pin(tpd, part::VALUE), pin(now, part::VALUE)]);
-    assert_eq!(statements, [(hs_gate, 0, 2, 0, 0.0)]);
+    assert_eq!(statements, [(hs_gate, 0, 1, 0, 0.0)]);
     assert_eq!(shape.reactions.len(), 2, "one reaction per delayed drive");
     assert!(plan.reactions().iter().all(|r| r.statements.len() == 1), "one statement each");
 
@@ -420,7 +439,7 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let (on, reads, statements) = Find::reaction(shape, "reaction:0");
     assert_eq!(on, [3], "on the event pin `rise`");
     assert_eq!(reads, [pin(1, part::VALUE)], "reads `d`");
-    assert_eq!(statements, [(2, 0, 2, 0, 0.0)], "S0 {{q}}");
+    assert_eq!(statements, [(2, 0, 1, 0, 0.0)], "S0 {{q}}");
     assert_eq!(shape.reactions.get(0).map(|r| (r.origin.as_str(), r.flags)), Some(("dff.msl:2:5", 0)));
 
     // The Dpwm's `on clk.rise()` (dpwm.msl:56-70): it reads the carriers its MSL text names and
@@ -440,16 +459,14 @@ fn a_reaction_lists_its_events_reads_and_statements() {
         })
         .collect();
     read.sort_unstable();
-    // and, last of all, the `RESOLUTION` pin: the reaction's `if wrap` decides on a value that
-    // may be unknown (§3.3.3), so its commits are keyed by the instant they come due
-    let mut named = ["count", "run", "duty", "frame", "width", "hs_cut", "hs", "oc", "ls_cut", "ls", "sink_oc", "hs_off", "resolution"];
+    let mut named = ["count", "run", "duty", "frame", "width", "hs_cut", "hs", "oc", "ls_cut", "ls", "sink_oc", "hs_off"];
     named.sort_unstable();
     assert_eq!(read, named);
     let committed: Vec<&str> = statements.iter().map(|st| shape.pins.get(st.0 as usize).map_or("?", |p| p.name.as_str())).collect();
     assert_eq!(committed, ["count", "width", "hs_off", "hs_cut", "ls_cut", "hs", "ls", "frame", "cut"]);
-    // each statement covers its carrier's whole pin: `u9` is 4 bytes, `u3` and `bool` 2
+    // each statement covers its carrier's whole pin: `u9` is 2 bytes, `u3` and `bool` 1
     let lens: Vec<u32> = statements.iter().map(|st| st.2).collect();
-    assert_eq!(lens, [4, 4, 4, 2, 2, 2, 2, 2, 2]);
+    assert_eq!(lens, [2, 2, 2, 1, 1, 1, 1, 1, 1]);
     assert!(statements.iter().all(|st| st.1 == 0 && st.3 == 0));
     let carriers: Vec<Target> = plan.reactions()[0].statements.iter().map(|st| st.target).collect();
     assert_eq!(carriers, [9, 10, 12, 13, 14, 5, 6, 11, 8].map(Target::Carrier), "the plan's statements name the carriers, in the same order");
@@ -460,13 +477,8 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let shape = plan.shape().shape();
     let reference = Find::pin(shape, "reference");
     let (_, reads, statements) = Find::reaction(shape, "reaction:0");
-    // the chain decides on values that may be unknown (§3.3.3), so the reaction also reads the
-    // `RESOLUTION` pin, last
-    assert_eq!(
-        reads,
-        [pin(Find::pin(shape, "run"), part::VALUE), pin(Find::pin(shape, "target"), part::VALUE), pin(reference, part::VALUE), pin(Find::pin(shape, "resolution"), part::VALUE)]
-    );
-    assert_eq!(statements, [(reference, 0, 4, 0, 0.0); 3]);
+    assert_eq!(reads, [pin(Find::pin(shape, "run"), part::VALUE), pin(Find::pin(shape, "target"), part::VALUE), pin(reference, part::VALUE)]);
+    assert_eq!(statements, [(reference, 0, 2, 0, 0.0); 3]);
 }
 
 #[test]
@@ -485,7 +497,6 @@ fn an_if_lists_its_then_statement_before_its_else() {
         let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
         let mut x = Dx::new(b, "a.msl", 3, 9);
         let c = x.carrier(1, ValueType::Bool);
-        let c = x.high(c);
         let two = x.int(2, Ty::u(8));
         let one_ns = x.real(1e-9);
         let then = x.commit(2, two, Some(one_ns));
@@ -503,10 +514,10 @@ fn an_if_lists_its_then_statement_before_its_else() {
     let shape = plan.shape().shape();
     let later = piperine_abi::raw::statement_flag::LATER;
     let b = Find::pin(shape, "b");
-    // `b`'s `Bit<u8>` pin is 2 bytes; statement 0 is the `then` commit (1 ns), statement 1 the
+    // `b`'s `Bit<u8>` pin is 1 byte; statement 0 is the `then` commit (1 ns), statement 1 the
     // `else` commit (2 ns)
     let (_, _, statements) = Find::reaction(shape, "reaction:0");
-    assert_eq!(statements, [(b, 0, 2, later, 1e-9), (b, 0, 2, later, 2e-9)]);
+    assert_eq!(statements, [(b, 0, 1, later, 1e-9), (b, 0, 1, later, 2e-9)]);
     let mins: Vec<(Target, Option<f64>)> = plan.reactions()[0].statements.iter().map(|st| (st.target, st.min_after)).collect();
     assert_eq!(mins, [(Target::Carrier(2), Some(1e-9)), (Target::Carrier(2), Some(2e-9))]);
 }
@@ -563,7 +574,7 @@ fn only_a_literal_positive_delay_is_later() {
     assert_eq!(mins, [Some(2e-9), None, None, None, None, None]);
     // the delayed drive's reaction follows the same rule
     let (_, _, statements) = Find::reaction(shape, "drive:y");
-    assert_eq!(statements, [(Find::pin(shape, "y"), 0, 2, later, 3e-9)]);
+    assert_eq!(statements, [(Find::pin(shape, "y"), 0, 1, later, 3e-9)]);
     // the oscillator's `after 0.5 / f` reads a param: no flag
     let (ir, body) = Alone::design(Buck::osc);
     let plan = BodyPlan::new(ir.body(body));
@@ -589,7 +600,7 @@ fn a_probing_reaction_reads_the_continuous_pin() {
     assert!(plan.reactions()[0].reads.contains(&Source::Node(0)));
     // code (a `u10`: 4 bytes), done, done: the three commits in source order
     let (code, done) = (Find::pin(shape, "code"), Find::pin(shape, "done"));
-    assert_eq!(statements, [(code, 0, 4, 0, 0.0), (done, 0, 2, 0, 0.0), (done, 0, 2, 0, 0.0)]);
+    assert_eq!(statements, [(code, 0, 2, 0, 0.0), (done, 0, 1, 0, 0.0), (done, 0, 1, 0, 0.0)]);
     // a reaction that probes nothing reads no continuous pin: the flip-flop's
     let (ir, body) = Alone::design(Buck::dff);
     let plan = BodyPlan::new(ir.body(body));
@@ -637,10 +648,10 @@ fn a_cross_event_is_a_watch_with_partials() {
     assert_eq!(Find::function_names(shape), ["cross:0", "cross:1"], "no function writes an event pin: the watches do (P1)");
     assert_eq!(plan.functions()[0].mode, Mode::Cross(0));
     // reaction 0: on [up] writes [S0 {out}]; reaction 1: on [down] writes [S0 {out}]
-    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![up], vec![], vec![(d, 0, 2, 0, 0.0)]));
-    assert_eq!(Find::reaction(shape, "reaction:1"), (vec![down], vec![], vec![(d, 0, 2, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![up], vec![], vec![(d, 0, 1, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:1"), (vec![down], vec![], vec![(d, 0, 1, 0, 0.0)]));
 
-    // A guarded `cross` (`on cross(v(a)) if en.high()`): the watch fires a private event pin
+    // A guarded `cross` (`on cross(v(a)) if en`): the watch fires a private event pin
     // `cross:0`, and the event function fires the event pin when that pin fired and the guard
     // holds (R1: the non-probing part of a guard is a discrete function).
     fn guarded(b: &mut IrBuilder) -> BodyId {
@@ -653,7 +664,7 @@ fn a_cross_event_is_a_watch_with_partials() {
         let mut x = Dx::new(b, "gc.msl", 2, 12);
         let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
         let en = x.carrier(0, ValueType::Bool);
-        let guard = x.high(en);
+        let guard = en;
         b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
         body
     }
@@ -672,7 +683,7 @@ fn a_cross_event_is_a_watch_with_partials() {
 
 #[test]
 fn an_analog_read_of_a_carrier_is_a_read_of_terms() {
-    // RS-12 AC 7 on the switch (`i(p, n) +> v(p, n) * if g.high() { 1.0 / ron } else { 1.0 /
+    // RS-12 AC 7 on the switch (`i(p, n) +> v(p, n) * if g { 1.0 / ron } else { 1.0 /
     // roff }`): `terms` reads the carrier `g`'s VALUE beside the nodes and params, with no
     // partial against it (a discrete value is no differentiable read); the term stays affine.
     let (ir, body) = Alone::design(Buck::switch);
@@ -726,11 +737,11 @@ fn every_buck_slice_shape_validates() {
 }
 
 #[test]
-fn every_record_layout_ends_with_maybe() {
-    // §19 rule 1: every record carries `maybe`, whether it was reached under unknown control;
-    // §19 rule 11 reserves the name. Its layout is a `bool` carrier (abi.md P3: the value byte,
-    // then its known byte) after the stream's value fields, so the last field of the pin is
-    // `maybe` for a stream of any shape, and the value fields keep their offsets.
+fn every_record_layout_holds_its_declared_fields_only() {
+    // §19 rule 1 (EU-15 AC 1): a record layout is the stream's declared fields and no other; each
+    // is a carrier (abi.md P3: the value byte, then its known byte) at the next offset its
+    // alignment allows, the size rounded up to the largest alignment, so the last field of the
+    // pin is the stream's last field, for a stream of any shape.
     let streams: [(&str, Vec<(&str, ValueType)>); 3] = [
         ("none", vec![]),
         ("level", vec![("level", ValueType::F64)]),
@@ -756,30 +767,26 @@ fn every_record_layout_ends_with_maybe() {
     });
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
-    let known = field_flag::HAS_KNOWN;
-    // (field names, the `maybe` offset, the size, the alignment) of each stream's pin
+    // (field names, the size, the alignment) of each stream's pin
     let want = [
-        (vec!["maybe"], 0, 2, 1),
-        // `level`: a `REAL` at 0 (known 8, 16 bytes), `maybe` at 16, 18 bytes rounded to 8
-        (vec!["level", "maybe"], 16, 24, 8),
-        // `code` a `BYTE` at 0, `ok` a `BIT` at 2, `count` an `i32` at 4 (8 bytes), `maybe` at
-        // 12, 14 bytes rounded to 4
-        (vec!["code", "ok", "count", "maybe"], 12, 16, 4),
+        (vec![], 0, 1),
+        // `level`: an `F64` at 0, 8 bytes
+        (vec!["level"], 8, 8),
+        // `code` a `BYTE` at 0, `ok` a `BIT` at 1, `count` an `i32` at 4 (4 bytes), 8 bytes
+        (vec!["code", "ok", "count"], 8, 4),
     ];
-    for ((name, _), (names, maybe_at, size, align)) in streams.iter().zip(want.clone()) {
+    for ((name, _), (names, size, align)) in streams.iter().zip(want.clone()) {
         let p = shape.pins.get(Find::pin(shape, name) as usize).expect("the record pin");
-        let fields: Vec<(String, u32, u32, u32)> = p.layout.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.flags, f.known)).collect();
-        assert_eq!(fields.iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), names, "{name}: the value fields, then `maybe`");
-        let last = p.layout.fields.iter().last().expect("a layout has `maybe`");
-        assert_eq!((last.leaf, last.offset, last.count, last.flags, last.known), (leaf::BOOL, maybe_at, 1, known, maybe_at + 1), "{name}: `maybe` is a `bool` carrier");
+        let fields: Vec<String> = p.layout.fields.iter().map(|f| f.name.as_str().to_string()).collect();
+        assert_eq!(fields.iter().map(String::as_str).collect::<Vec<_>>(), names, "{name}: the declared fields and nothing after them");
         assert_eq!((p.layout.size, p.layout.align), (size, align), "{name}");
         assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
     }
-    // the plan's own layout names the same offset, and keeps the value fields apart from it
-    for (stream, (_, maybe_at, size, _)) in ir.body(body).streams().iter().zip(want) {
+    // the plan's own layout names the same size, one field per field of the stream
+    for (stream, (_, size, _)) in ir.body(body).streams().iter().zip(want) {
         let layout = RecordLayout::of(stream).expect("a layout");
-        assert_eq!((layout.maybe_offset(), layout.size), (maybe_at, size), "{}", stream.name);
-        assert_eq!(layout.fields.len(), stream.fields.len(), "{}: `maybe` is no field of the stream", stream.name);
+        assert_eq!(layout.size, size, "{}", stream.name);
+        assert_eq!(layout.fields.len(), stream.fields.len(), "{}", stream.name);
     }
 }
 
@@ -806,53 +813,24 @@ impl Merging {
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], Merging::F, 2);
     }
 
-    /// `on go.changed() && <guard> { q <- true; }` with the guard `en` (a value that may be
-    /// unknown), `en.high()` (a known `bool`) or none.
-    fn guarded(b: &mut IrBuilder, name: &str, guard: Option<bool>) -> BodyId {
+    /// `on go.changed() && <guard> { q <- true; }` with the guard `en` when `guarded`, or none.
+    fn guarded(b: &mut IrBuilder, name: &str, guarded: bool) -> BodyId {
         let body = Merging::body(b, name);
         let mut x = Dx::new(b, Merging::F, 2, 20);
         let en = x.carrier(1, ValueType::Bool);
-        let guard = guard.map(|may_be_unknown| if may_be_unknown { en } else { x.high(en) });
+        let guard = guarded.then_some(en);
         let yes = Dx::new(b, Merging::F, 3, 14).boolean(true);
         Merging::react(b, body, guard, yes);
         body
     }
 
-    /// `on go.changed() { q <- if <en> { true } else { false }; }`, the condition `en` (which may
-    /// be unknown) or `en.high()` (a known `bool`).
-    fn deciding(b: &mut IrBuilder, name: &str, may_be_unknown: bool) -> BodyId {
+    /// `on go.changed() { q <- if en { true } else { false }; }`.
+    fn deciding(b: &mut IrBuilder, name: &str) -> BodyId {
         let body = Merging::body(b, name);
         let mut x = Dx::new(b, Merging::F, 3, 14);
-        let en = x.carrier(1, ValueType::Bool);
-        let cond = if may_be_unknown { en } else { x.high(en) };
+        let cond = x.carrier(1, ValueType::Bool);
         let (yes, no) = (x.boolean(true), x.boolean(false));
-        let ty = if may_be_unknown { Ty::flagged(ValueType::Bool) } else { ValueType::Bool };
-        let value = x.if_(cond, yes, no, ty);
-        Merging::react(b, body, None, value);
-        body
-    }
-
-    /// `fn pick(en: Bit) -> Bit { if en { true } else { false } }` and
-    /// `on go.changed() { q <- pick(en); }`: the decision is in a function the reaction calls.
-    fn deciding_in_a_call(b: &mut IrBuilder, name: &str) -> BodyId {
-        let flagged = Ty::flagged(ValueType::Bool);
-        let mut x = Dx::new(b, Merging::F, 5, 5);
-        let en = x.local(0, flagged.clone());
-        let (yes, no) = (x.boolean(true), x.boolean(false));
-        let decision = x.if_(en, yes, no, flagged.clone());
-        let local = Local { name: "en".into(), ty: flagged.clone(), mutable: false };
-        let pick = b.function(FunctionSpec {
-            name: "pick".into(),
-            origin: Buck::origin(Merging::F, 5, 1),
-            params: vec![local.clone()],
-            ret: flagged.clone(),
-            locals: vec![local],
-            body: decision,
-        });
-        let body = Merging::body(b, name);
-        let mut x = Dx::new(b, Merging::F, 3, 14);
-        let en = x.carrier(1, ValueType::Bool);
-        let value = x.call(pick, vec![en], flagged);
+        let value = x.if_(cond, yes, no, ValueType::Bool);
         Merging::react(b, body, None, value);
         body
     }
@@ -864,62 +842,21 @@ fn has_pin(shape: &Shape<'_>, name: &str) -> bool {
 }
 
 #[test]
-fn a_reaction_on_a_flagged_guard_reads_the_guard_and_fired() {
-    // §13 rule 1: a guard that may be unknown makes the reaction a maybe, so it recomputes the
-    // guard from the guard's own reads (`en`) and reads whether the event of its head fired
-    // (`Source::Fired`, the `CHANGED` byte of the event pin) to know it ran for sure
-    let (ir, body) = Alone::design(|b| Merging::guarded(b, "Maybe", Some(true)));
-    let plan = BodyPlan::new(ir.body(body));
-    let shape = plan.shape().shape();
-    // and the `RESOLUTION` pin, last: the commits of the maybe run are keyed by due instant, so two
-    // commits to one carrier merge exactly (§3.3.3, §13 rule 1)
-    assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1), Source::Fired(0), Source::Resolution]);
-    let (en, event) = (Find::pin(shape, "en"), Find::pin(shape, "event:0"));
-    let resolution = Find::pin(shape, "resolution");
-    let (on, reads, _) = Find::reaction(shape, "reaction:0");
-    assert_eq!((on, reads), (vec![event], vec![pin(en, part::VALUE), pin(event, part::CHANGED), pin(resolution, part::VALUE)]));
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
-
-    // a guard that is a known `bool`, and no guard, leave the reads the reaction had: it reads
-    // what its body reads (here nothing) and nothing of the guard
-    for (name, guard) in [("Sure", Some(false)), ("Plain", None)] {
-        let (ir, body) = Alone::design(match guard {
-            Some(_) => |b| Merging::guarded(b, "Sure", Some(false)),
-            None => |b| Merging::guarded(b, "Plain", None),
-        });
+fn a_guard_or_a_decision_adds_no_read_and_no_resolution_pin() {
+    // §3.3, §13 rule 1: a value is never unknown, so a guard and a decision on a `bool` leave the reads a reaction
+    // had: what its body reads and nothing of the guard, and no `RESOLUTION` pin
+    for (name, make) in [
+        ("Sure", (|b: &mut IrBuilder| Merging::guarded(b, "Sure", true)) as fn(&mut IrBuilder) -> BodyId),
+        ("Plain", |b: &mut IrBuilder| Merging::guarded(b, "Plain", false)),
+    ] {
+        let (ir, body) = Alone::design(make);
         let plan = BodyPlan::new(ir.body(body));
         let shape = plan.shape().shape();
         assert_eq!(plan.reactions()[0].reads, [], "{name}");
         assert_eq!(Find::reaction(shape, "reaction:0").1, [], "{name}");
         assert!(!has_pin(shape, "resolution"), "{name}");
     }
-}
-
-#[test]
-fn a_reaction_with_an_unknown_decision_reads_the_resolution() {
-    // §3.3.3, abi.md C1: a reaction that decides on a value that may be unknown keys its commits
-    // by the instant they come due, which the session's tick (the `GLOBAL` `RESOLUTION` pin)
-    // decides; so it reads that pin, after what its body reads (`Source::Resolution` is
-    // appended last), and the body has the pin, after every other pin
-    let decisions: [(&str, fn(&mut IrBuilder) -> BodyId); 2] = [
-        ("direct", |b| Merging::deciding(b, "Direct", true)),
-        ("through a call", |b| Merging::deciding_in_a_call(b, "Called")),
-    ];
-    for (name, make) in decisions {
-        let (ir, body) = Alone::design(make);
-        let plan = BodyPlan::new(ir.body(body));
-        let shape = plan.shape().shape();
-        assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1), Source::Resolution], "{name}");
-        let resolution = Find::pin(shape, "resolution");
-        let p = shape.pins.get(resolution as usize).expect("the `RESOLUTION` pin");
-        assert_eq!((p.kind, p.role, p.global), (kind::DISCRETE, role::GLOBAL, global::RESOLUTION), "{name}");
-        assert_eq!(resolution as usize, shape.pins.len() - 1, "{name}: the pin follows every other pin");
-        let (_, reads, _) = Find::reaction(shape, "reaction:0");
-        assert_eq!(reads, [pin(Find::pin(shape, "en"), part::VALUE), pin(resolution, part::VALUE)], "{name}");
-        assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
-    }
-    // a decision on a known `bool` needs neither: the reads and the pins are what they were
-    let (ir, body) = Alone::design(|b| Merging::deciding(b, "Known", false));
+    let (ir, body) = Alone::design(|b| Merging::deciding(b, "Known"));
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
     assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1)]);
@@ -933,14 +870,14 @@ struct Settling;
 impl Settling {
     const F: &'static str = "settling.msl";
 
-    /// `on settle { q <- true; }`, or `on settle && ready.high() { q <- true; }` when `guarded`.
+    /// `on settle { q <- true; }`, or `on settle && ready { q <- true; }` when `guarded`.
     fn body(b: &mut IrBuilder, guarded: bool) -> BodyId {
         let body = b.body(Buck::spec("Settling", Settling::F, 1));
         b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, Settling::F, 1, 14));
         b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Settling::F, 1, 28));
         let mut x = Dx::new(b, Settling::F, 2, 20);
         let ready = x.carrier(0, ValueType::Bool);
-        let guard = guarded.then(|| x.high(ready));
+        let guard = guarded.then_some(ready);
         let event = b.event(body, Event { source: EventSource::Settle, guard, origin: Buck::origin(Settling::F, 2, 8) });
         let yes = Dx::new(b, Settling::F, 3, 14).boolean(true);
         let commit = Dx::new(b, Settling::F, 3, 9).commit(1, yes, None);

@@ -147,14 +147,14 @@ struct Slot {
     composites: Vec<CompositeParam>,
 }
 
-/// A composite param of an instance: its layout and the bytes its pin holds (the value, then the known byte).
+/// A composite param of an instance: its layout and the bytes its pin holds (its value bytes).
 #[derive(Debug, Clone)]
 struct CompositeParam {
     /// The param's name.
     name: String,
     /// The layout of its pin.
     layout: CompositeLayout,
-    /// The bytes its pin holds: the value, then the known byte.
+    /// The bytes its pin holds: its value.
     bytes: Vec<u8>,
 }
 
@@ -236,7 +236,7 @@ impl Params {
         self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v)
     }
 
-    /// The bytes of the composite param `param` of `instance`: its value, then the known byte.
+    /// The bytes of the composite param `param` of `instance`: its value.
     pub fn composite_bytes(&self, instance: &str, param: &str) -> Option<&[u8]> {
         self.slot(instance)?.composites.iter().find(|c| c.name == param).map(|c| c.bytes.as_slice())
     }

@@ -190,14 +190,13 @@ fn the_diode_with_a_trace_is_refused() {
 
 #[test]
 fn the_switch_shorts_its_nodes_while_its_control_is_high() {
-    // analog#9 (run since `analog-structure`): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`,
+    // analog#9 (run since `analog-structure`, reading `ctl` directly since `explicit-unknowns` T20): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`,
     // behind 1 kOhm from 1 V: with its control high it shorts `a` to ground (v(a) = 0), with it low it is open
     // (no flow, v(a) = 1 V)
     let chapter = Chapter::read();
     let top = |ctl: &str| format!("module Top() {{ signal s: Electrical; signal a: Electrical; signal c: Bit = {ctl}; let v1 = Vdc(s) {{ dc: 1.0 }}; let r = R(s, a) {{ r: 1k }}; let sw = Switch(a, gnd, c); }}\n");
     for (ctl, volts) in [("true", 0.0), ("false", 1.0)] {
-        Refusal::expect(chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl)).run(Commands::operating_point()), "analog#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl)).earlier("switch.msl");
+        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl));
         let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
         assert!((ran.signal("Top.a") - volts).abs() < 1e-6, "control {ctl}: v(a) = {:e}, wanted {volts}", ran.signal("Top.a"));
     }
@@ -262,9 +261,8 @@ fn the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond() {
     // time constant of ron . cs = 0.1 ns per switch": the integrator's switch `ron` is 100 and `cs` 1 pF
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
-    Refusal::expect(chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()), "modules#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).earlier("sc.msl").run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
     let param = |path: &str| match ran.metadata.params.iter().find(|param| param.path == path).unwrap_or_else(|| panic!("no param {path}")).value {
         Cell::Real(value) => value,
         ref other => panic!("{path}: a real number, found {other:?}"),
@@ -300,10 +298,12 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 }
 
 #[test]
-fn e0150_an_unknown_carrier_is_read_with_high() {
-    // analog~39a9371d: "E0150 if ctl { ... } in analog, ctl a Bit": say what unknown means: ctl.high()
-    let faulty = Faulty::elaborating("analog~39a9371d", "module Top(in ctl: Bit) { signal a: Electrical; }\nanalog for Top { if ctl { v(a) +> 1.0; } }\n", "Top");
-    assert_eq!(faulty.first("E0150").message, "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+fn a_bit_in_an_if_is_read_as_its_value() {
+    // analog~39a9371d (the former E0150 row, `if ctl { ... }` in `analog` with `ctl` a `Bit`): the read needs no gate
+    // (part I section 3.3.6), so the source runs and `v(a)` is the arm the `Bit` picks
+    let source = "module Sw(p: Electrical, in ctl: Bit) { }\nanalog for Sw { v(p) +> if ctl { 1.0 } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal c: Bit = true; let s = Sw(a, c); }\n";
+    let ran = Model::written("m.msl", source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!((ran.signal("Top.a") - 1.0).abs() < 1e-9, "a true `Bit` picks the first arm: {:e}", ran.signal("Top.a"));
 }
 
 #[test]

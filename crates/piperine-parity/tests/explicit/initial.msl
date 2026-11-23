@@ -1,0 +1,95 @@
+//! Where a carrier starts (part I §3.3.4, part II §5.1, §5.3): at the initial value written or at the
+//! `Default` of its type, committed at `(0, 0)`. A 1 GHz oscillator gives the rising edges the probes
+//! run on (0.5 ns, 1.5 ns, ...).
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Reads a carrier that holds a written value at each rising edge, and announces its changes.
+module Written(in clk: Bit, in s: Bit<u8>) {}
+digital for Written {
+    on clk.rise() { emit!("written", value = s); }
+    on s.changed() { emit!("changed", at = now(), value = s); }
+}
+
+/// A carrier with a written value.
+module WrittenBench() {
+    signal clk: Bit; signal s: Bit<u8> = 7;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Written(clk, s);
+}
+
+/// Reads the `Option<u8>` carrier `o`, which no model gives a value, at each rising edge: by
+/// `match`, by `if let` and by `unwrap_or`, and announces its changes.
+module Optional(in clk: Bit, in o: Bit<Option<u8>>) {}
+digital for Optional {
+    on clk.rise() {
+        let by_match = match o { Some(x) => x, None => 99 };
+        let by_if_let = 98;
+        if let Some(x) = o { by_if_let = x; }
+        emit!("optional", by_match = by_match, by_if_let = by_if_let, by_unwrap_or = o.unwrap_or(97));
+    }
+    on o.changed() { emit!("optional_changed", at = now()); }
+}
+
+/// A carrier of type `Option<u8>` with no initial value: it starts at `None`.
+module DefaultBench() {
+    signal clk: Bit; signal o: Bit<Option<u8>>;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Optional(clk, o);
+}
+
+/// Commits `Some(5)` to `o` at the first rising edge.
+module Setter(in clk: Bit, out o: Bit<Option<u8>>) {}
+digital for Setter { on clk.rise() { o <- Some(5); } }
+
+/// The same carrier after it is committed `Some(5)` once.
+module SetBench() {
+    signal clk: Bit; signal o: Bit<Option<u8>>;
+    let osc = Osc(clk) { f: 1G };
+    let setter = Setter(clk, o);
+    let probe = Optional(clk, o);
+}
+
+/// A carrier read through `prev()` at each rising edge, beside its value.
+module Previous(in clk: Bit, in q: Bit<u8>) {}
+digital for Previous { on clk.rise() { emit!("previous", prev = q.prev(), value = q); } }
+
+/// Commits 9 to `q` at the first rising edge.
+module Changer(in clk: Bit, out q: Bit<u8> = 4) {}
+digital for Changer { on clk.rise() { q <- 9; } }
+
+/// A carrier that holds 4 and is committed 9 at the first rising edge.
+module PreviousBench() {
+    signal clk: Bit; signal q: Bit<u8>;
+    let osc = Osc(clk) { f: 1G };
+    let changer = Changer(clk, q);
+    let probe = Previous(clk, q);
+}
+
+/// Reads the first and the last element of a composite carrier no model commits.
+module Elements(in clk: Bit, in e: Bit<[u8; 4]>) {}
+digital for Elements {
+    on clk.rise() { emit!("elements", first = e[0], last = e[3]); }
+}
+
+/// The composite carrier holds its written initial value `[5, 6, 7, 8]`, and no commit writes an element.
+module ElementsBench() {
+    signal clk: Bit; signal e: Bit<[u8; 4]> = [5, 6, 7, 8];
+    let osc = Osc(clk) { f: 1G };
+    let probe = Elements(clk, e);
+}
+
+/// A module with an `Option` param no instance binds (`GAPS.md` L28: not elaborated yet).
+module Param(in clk: Bit) { limit: Option<u8>; }
+digital for Param { on clk.rise() { emit!("param", given = limit.is_some()); } }
+
+/// The module placed with no value for `limit`.
+module ParamBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Param(clk);
+}

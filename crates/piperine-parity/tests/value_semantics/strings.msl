@@ -8,7 +8,7 @@ const NAME: str = "ab";
 fn tag(name: str, pattern: str) -> bool { name == pattern }
 fn is_named(name: str) -> bool { name == NAME }
 
-module Rows(in clk: Bit, out same: Bit, out other: Bit, out named: Bit, out held: Bit, out unlike: Bit) {}
+module Rows(in clk: Bit, out same: Bit = false, out other: Bit = false, out named: Bit = false, out held: Bit = false, out unlike: Bit = false) {}
 digital for Rows {
     on clk.rise() {
         same <- tag("a", "a");

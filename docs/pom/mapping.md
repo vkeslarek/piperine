@@ -117,7 +117,7 @@ The 62 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added
 | 61 | `pub` on body items | `DeclData::public`; `Reflect::is_pub` |
 | 62 | `where` over const generics | `FnData::where_`, `ModuleData::where_`; `Function::where_clause`, `Module::where_clause` |
 
-The specification's B.1.2 no longer lists the contextual keyword `resolve`, the literal `Unknown` and the method `level` (explicit-unknowns, D7). The implementation still has `NatureFieldNode::Resolve`, `LitKind::Unknown` and the `level` builtin until its code tasks remove them (explicit-unknowns T28 for `Unknown`, T29 for `level`, and `resolved-nets` T16 for the `resolve` field, which the trait `Resolve` replaces). `docs/pom/reflection.md` and `model.md` still describe the `resolve` field for the same reason; `pom_docs::the_pom_docs_that_wait_for_the_code_stay_honest` lists each statement and fails when its form leaves the code.
+The specification's B.1.2 no longer lists the contextual keyword `resolve`, the literal `Unknown` and the method `level` (explicit-unknowns, D7). The literal `Unknown` and the `level` builtin are gone from the code (`Unknown` is an ordinary name that resolves to nothing, `level` a method no type has); the implementation still has `NatureFieldNode::Resolve` until `resolved-nets` T16 removes it (the trait `Resolve` replaces the field). `docs/pom/reflection.md` and `model.md` still describe the `resolve` field for the same reason; `pom_docs::the_pom_docs_that_wait_for_the_code_stay_honest` lists each statement and fails when its form leaves the code.
 
 ## Rust items MSL keeps
 

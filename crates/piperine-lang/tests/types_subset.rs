@@ -104,15 +104,13 @@ fn unreached_items_are_not_reported() {
     assert!(Types::check(&design, "Top").is_err());
 }
 
-/// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
-/// flag are refused by name as well.
+/// Constructs that only resolve against the real standard library: `Bit` and `Repr` are
+/// refused by name as well.
 const STD_ROWS: &[Row] = &[
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
-    Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
+    Row { construct: "element definition", source: "module Top(out q: Bit = false) { q[0] = true; }", names: "element or field definition" },
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
-    // `level` itself is typed since `unknown-semantics` T2 (US-02); a receiver without `Repr` is still refused by name.
-    Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = Some(1.0).level(1); }", names: "method `level`" },
 ];
 
 #[test]

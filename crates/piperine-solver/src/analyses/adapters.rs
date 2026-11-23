@@ -185,6 +185,8 @@ impl DiscreteSide for DigitalSide {
             if self.digital.plan().nets[net.0 as usize].param {
                 self.digital.seed_param(*net, bytes);
             } else {
+                // a value the host gave before the run is the carrier's initial value (§5.3, D8)
+                self.digital.expect_initial(*net);
                 self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(digital_error)?;
             }
         }
@@ -302,10 +304,6 @@ impl DiscreteSide for DigitalSide {
                 }
                 DigitalObservation::Record { stream, reaction, statement, at, bytes } => {
                     (stream, at.0, ObservationKind::Record { site: Some((reaction, statement)), bytes })
-                }
-                // abi.md §9 D1: a relaxation step that still moved is one observation of its own.
-                DigitalObservation::Unsettled { nets, at } => {
-                    (nets.first().cloned().unwrap_or_default(), at.0, ObservationKind::Unsettled { nets })
                 }
             };
             let time = self.time(at);

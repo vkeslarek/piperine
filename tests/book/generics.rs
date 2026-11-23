@@ -75,8 +75,8 @@ fn the_methods_of_a_trait_are_refused_where_a_top_reaches_them() {
     // with a body, like reads_high, is a default: a type gets it as written unless it gives its own". The
     // declarations are accepted and the constant of an `impl` is read; a method is `P0001`. When it runs this
     // test fails and the rows move
-    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.reads_high(2.0, 5.0));"), "generics#1", "P0001", "method `reads_high` on `enum `Family`` is not supported yet");
-    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.switches_at(5.0));"), "generics#1", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
+    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.reads_high(2.0, 5.0));"), "generics#1", "P0001", "method `reads_high` on `Family` is not supported yet");
+    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.switches_at(5.0));"), "generics#1", "P0001", "method `switches_at` on `Family` is not supported yet");
     let chapter = Chapter::read();
     let constant = chapter.wrapped("levels.msl", "", "generics#1", &Reached::top("emit!(\"r\", n = Family::LEVELS);")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
     ValueFile::int(constant.stream("r")[0], "n", 2);
@@ -113,7 +113,7 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // of the chapter's status box, each on the smallest model (when one of them runs, this test fails and the
     // box loses it)
     for (items, statements, named) in [
-        ("trait Area { fn area(self) -> f64; }\n#[derive(PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "method `area` on `enum `Z`` is not supported yet"),
+        ("trait Area { fn area(self) -> f64; }\n#[derive(PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "method `area` on `Z` is not supported yet"),
         ("fn same<T: PartialEq>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
         ("struct Pair<T: PartialEq> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "generic struct `Pair` is not supported yet"),
         ("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());", "generic parameter used as a value is not supported yet"),

@@ -55,7 +55,7 @@ fn gain_shape(broken: bool) -> ShapeRef {
     s.reaction(ReactionSpec {
         name: "drive",
         on: vec![e],
-        writes: vec![Statement { pin: q, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: q, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.reaction(ReactionSpec { name: "stop", on: vec![e], ..ReactionSpec::default() });

@@ -109,7 +109,7 @@ fn m_dtemp_or_extern_at_a_placement_is_p0001() {
 fn a_for_loop_in_a_digital_block_lowers() {
     // Replaces `a_for_loop_in_a_digital_block_is_p0001` (composite-values T20, CV-02 AC 1): a
     // `for` over a range lowers in a reaction, as the IR's own `for`.
-    let src = "module Top(in clk: Bit, out q: Bit<u8>) { }\ndigital for Top { on clk.rise() { let s = 0u8; for k in 0..3u8 { s += k; } q <- s; } }";
+    let src = "module Top(in clk: Bit, out q: Bit<u8> = 0) { }\ndigital for Top { on clk.rise() { let s = 0u8; for k in 0..3u8 { s += k; } q <- s; } }";
     let ir = Elab::ir(src, "Top");
     assert!(ir.print_structural().contains("for k in 0u8..3u8"), "{}", ir.print_structural());
 }
@@ -117,7 +117,7 @@ fn a_for_loop_in_a_digital_block_lowers() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    let src = "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } on clk.fall() { q[0] <- false; } }";
+    let src = "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q[0] <- true; } on clk.fall() { q[0] <- false; } }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
@@ -151,7 +151,7 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         ("a nature with resolve", "module Top(c: Wire) { }", vec!["resolved nature `Wire`"]),
         // A definition is lowered from msl-digital T29 on: the form still refused in its place is
         // the element commit of DIG-07 AC 1.
-        ("an element commit", "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", vec!["element or field commit"]),
+        ("an element commit", "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", vec!["element or field commit"]),
         // `settle` lowers from unknown-semantics-events T5 on (`elab_digital::settle_lowers_to_the_settle_event_source`).
         // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it
         // (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
@@ -202,7 +202,7 @@ fn a_match_arm_guard_lowers() {
     // Replaces `a_match_arm_guard_the_checker_accepts_is_refused_by_name_until_it_is_lowered`
     // (composite-values T22, CV-04 AC 1): the arm is taken when its pattern matches and its guard
     // holds, so the guard is part of the arm's test.
-    let src = "module Top(in clk: Bit, out q: Bit<u8>) { }\ndigital for Top { on clk.rise() { let n = 3u8; q <- match n { 3 if n > 2 => 1u8, _ => 0u8 }; } }";
+    let src = "module Top(in clk: Bit, out q: Bit<u8> = 0) { }\ndigital for Top { on clk.rise() { let n = 3u8; q <- match n { 3 if n > 2 => 1u8, _ => 0u8 }; } }";
     let ir = Elab::ir(src, "Top");
     assert!(ir.print_structural().contains("n > 2"), "{}", ir.print_structural());
 }
@@ -211,7 +211,7 @@ fn a_match_arm_guard_lowers() {
 fn an_option_arm_with_a_block_body_is_refused_once() {
     // CV round 2 (a): an arm of a `match` over an `Option` that yields an `Option` and whose body is a block of more
     // than its value is lowered in two halves, `is` and `val`; the refusal is one finding, reported once.
-    let src = "fn f(o: Option<u8>) -> Option<u8> { match o { Some(v) => { let w = v + 1; Some(w) } None => None } }\nmodule Top() { signal clk: Bit; signal y: Bit<u8>; }\ndigital for Top { on clk.rise() { y <- match f(Some(1u8)) { Some(v) => v, None => 0 }; } }";
+    let src = "fn f(o: Option<u8>) -> Option<u8> { match o { Some(v) => { let w = v + 1; Some(w) } None => None } }\nmodule Top() { signal clk: Bit = false; signal y: Bit<u8> = 0; }\ndigital for Top { on clk.rise() { y <- match f(Some(1u8)) { Some(v) => v, None => 0 }; } }";
     let found = Elab::run(src, "Top").expect_err("the arm is refused");
     let refusals: Vec<&str> = found.iter().map(|d| d.diagnostic.message.as_str()).filter(|m| m.contains("this form of an `Option` value")).collect();
     assert_eq!(refusals.len(), 1, "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());

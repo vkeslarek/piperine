@@ -116,7 +116,6 @@ fn a_reaction_reads_the_accepted_solution() {
     let landing = result.iter().find(|s| (s.time() - at).abs() < 1.0e-15).expect("the probing instant is a landing");
     let bound = solver.circuit().bound().unwrap();
     let s = bound.digital.read(bound.names.nets["net:s"]).to_vec();
-    assert_eq!(s[8], 1, "the sampler ran");
     let sample = f64::from_le_bytes(s[..8].try_into().unwrap());
     assert_eq!(sample, landing.get_node(&node_id(&top)).unwrap(), "the accepted solution at its instant");
     assert!(sample > 0.5, "sin(2π·0.2) = 0.95: {sample}");
@@ -182,7 +181,7 @@ fn tol_shape() -> ShapeRef {
         partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
         ..FunctionSpec::default()
     });
-    let st = Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 };
+    let st = Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 };
     s.reaction(ReactionSpec { name: "up", origin: ORIGIN, on: vec![up], writes: vec![st], ..ReactionSpec::default() });
     s.freeze()
 }

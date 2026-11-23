@@ -42,7 +42,7 @@ pub enum Column {
     /// A discrete net holding a composite or an enum, by its id in the digital plan and its path (the
     /// net's own, whatever leaf the column shows), and how to read it.
     Shaped { id: u32, path: String, shape: CellShape, leaf: Option<String> },
-    /// A param, by the id of its net in the digital plan, with its type: the value with no known byte.
+    /// A param, by the id of its net in the digital plan, with its type: the value only.
     Param { id: u32, ty: ValueType },
     /// A param no net holds, read from the host's table over the run.
     Held { held: Held },
@@ -135,8 +135,12 @@ impl Probe {
         let value = shape.decode(bytes)?;
         match (leaf, value) {
             (None, value) => Ok(value),
-            (Some(_), Cell::Unknown) => Ok(Cell::Unknown),
-            (Some(leaf), Cell::Composite(whole)) => whole.leaf(leaf).ok_or_else(|| Failure::Backend(format!("the value has no leaf `{leaf}`"))),
+            // a leaf of a variant the value does not hold, or the `value` of an absent `Option`, is the absent cell at this row
+            (Some(leaf), Cell::Composite(whole)) => match whole.leaf(leaf) {
+                Some(cell) => Ok(cell),
+                None if shape.can_hold_leaf(leaf) => Ok(Cell::Absent),
+                None => Err(Failure::Backend(format!("the value has no leaf `{leaf}`"))),
+            },
             (Some(leaf), other) => (leaf.is_empty()).then_some(other).ok_or_else(|| Failure::Backend(format!("the value has no leaf `{leaf}`"))),
         }
     }

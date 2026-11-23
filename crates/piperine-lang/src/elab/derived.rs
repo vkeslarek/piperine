@@ -12,7 +12,6 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, St
 
 use super::compound::Pair;
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use crate::pom::{BinOp, ExprId};
 
@@ -52,10 +51,6 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_option_comparison(&mut self, scope: &mut Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (left, right) = (self.lower_option(scope, lhs)?, self.lower_option(scope, rhs)?);
         let span = self.design.expr_node(lhs).span;
-        if self.flags(&[left.is, left.val, right.is, right.val]) == Flag::Flagged {
-            self.unsupported(scope.file, span, "a comparison of `Option`s that may be unknown");
-            return None;
-        }
         let mut stmts = Vec::new();
         let operands = self.hold_operands(scope, &mut stmts, left, right, origin.clone());
         let result = match op {

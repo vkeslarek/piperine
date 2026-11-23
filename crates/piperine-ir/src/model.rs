@@ -190,7 +190,7 @@ pub enum BranchKind {
 
 /// A discrete carrier of a body: `in clk: Bit`, `out hs: Bit = false`, `signal count: Bit<u9> = 0`.
 /// Its index in the body's list is its identity; a read of it (`Expr::Carrier`) has the type
-/// `Flagged(ty)`, since it is unknown until first written (§3.3.1).
+/// `ty`: a carrier holds a value from `(0, 0)` on (§3.3.4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Carrier {
     pub name: String,
@@ -221,7 +221,7 @@ pub struct Drive {
 }
 
 /// An event of a body (§13): what fires it, and a `bool` read at the microstep that must hold
-/// for it to fire. `clk.rise()` is `Changed(clk)` guarded by `clk.high()`; `above(e)` is
+/// for it to fire. `clk.rise()` is `Changed(clk)` guarded by a read of `clk`; `above(e)` is
 /// `Cross(e)`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
@@ -238,7 +238,7 @@ pub enum EventSource {
     /// within the time tolerance `ttol` and the expression tolerance `etol`, each an `f64` that
     /// reads no probe, carrier or clock, or absent.
     Cross { e: ExprId, ttol: Option<ExprId>, etol: Option<ExprId> },
-    /// `at(t)`: simulation time `t`, an `f64` that may be unknown and reads no probe. The event
+    /// `at(t)`: simulation time `t`, an `f64` that reads no probe. The event
     /// fires once, when the clock reaches `t`; a later change of what `t` reads re-arms it.
     At(ExprId),
     /// `p.changed()` of a param `p` of the body (§5.3.1): fires when the param's pin changes, a
@@ -261,7 +261,7 @@ pub struct Reaction {
 }
 
 /// A record stream of a body (`emit!("sim", …)`): its name and the value fields its sites write.
-/// A site may leave a field out; the record then carries the field as unknown.
+/// A site that leaves a field out carries the field's `Default` (§19 rule 11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stream {
     pub name: String,
@@ -419,9 +419,7 @@ pub enum Expr {
     Param(u32),
     Unary { op: UnaryOp, expr: ExprId },
     Binary { op: BinaryOp, lhs: ExprId, rhs: ExprId },
-    /// `if cond { then } else { otherwise }`. When `cond` is `Flagged` this is the merge of
-    /// §3.3.3: an unknown condition takes both arms and the value (and every commit and record
-    /// of the arms) is the merge of what they give, level by level.
+    /// `if cond { then } else { otherwise }`: runs the arm `cond` selects.
     If { cond: ExprId, then: ExprId, otherwise: ExprId },
     Block { stmts: Vec<StmtId>, value: Option<ExprId> },
     Call { function: FunctionId, args: Vec<ExprId> },
@@ -437,24 +435,16 @@ pub enum Expr {
     Cast { expr: ExprId, to: ValueType },
     /// `receiver.method(args)`: one of the closed set of value methods.
     Method { method: Method, receiver: ExprId, args: Vec<ExprId> },
-    /// The literal `Unknown` (§3.3.1): every level unknown; its type is `Flagged`.
-    Unknown,
-    /// `value.known_or(default)` (§3.3.4): the value when known, `default` otherwise.
-    KnownOr { value: ExprId, default: ExprId },
-    /// `value.is_known()`: the known flag, itself always known.
-    IsKnown(ExprId),
-    /// `value.high()` of a `bool`: known and true.
-    High(ExprId),
-    /// A read of a carrier of the body, by index; its type is `Flagged`.
+    /// A read of a carrier of the body, by index; its type is the carrier's.
     Carrier(u32),
     /// `i(a, b)` of a branch the body drives with a potential contribution: the branch's flow,
     /// an `f64`, by branch index. The branch carries a potential contribution in the body.
     Flow { branch: u32 },
-    /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3). Its type is
-    /// `Flagged`, as a read of the carrier: unknown until the carrier has changed once.
+    /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3), of the carrier's type;
+    /// before the first change it is the initial value.
     Previous(u32),
     /// `p.prev()` of a param `p` of the body (§5.3.1): the value `p` held before its most recent
-    /// change, of the param's own type; a param is known, so it is never flagged.
+    /// change, of the param's own type.
     ParamPrevious(u32),
     /// The rate of the derivative site `k` of the body (`Body::derivatives`): an `f64`, read in
     /// the `analog` block, a body `let`, an event argument or a reaction.
@@ -466,21 +456,12 @@ pub enum Expr {
     /// holds, else a fault of the run naming `message` (Rust's `unwrap` text when absent). Its
     /// type is the value's.
     Unwrap { is: ExprId, value: ExprId, message: Option<String> },
-    /// One half of `value.level(index)` (§3.3.4), the `Option<bool>` carried as the pair
-    /// `(is, value)` that `Unwrap` reads: `part` says which. `value` is any `Repr` value (a
-    /// `bool`, an `f64` or an integer type, flagged or not); `index` is a `u32`. The result is
-    /// a `bool`, known when `index` is (§3.3.14) and flagged when it is not (§3.3.13).
-    Level { value: ExprId, index: ExprId, part: LevelPart },
-    /// `merge(a, b)` (§22.1.2): level by level, equal known levels kept and the rest unknown.
-    /// `a` and `b` have one base type; the result is that type, `Flagged`.
-    Merge { a: ExprId, b: ExprId },
-    /// `same(a, b)` (§22.1.4): every level has the same flag and, where known, the same value.
-    /// `a` and `b` have one base type; the result is a `bool`, always known.
+    /// `same(a, b)` (§22.1.4): every level has the same value. `a` and `b` have one type; the
+    /// result is a `bool`.
     Same { a: ExprId, b: ExprId },
     /// `cast::<A, B>(expr)` (§22.1.3): the levels of `expr` under type `to`, which has the same
-    /// number of levels. `tags` lists the tags `to` decodes when it is an enum: a pattern outside
-    /// them is `Unknown`, so the result is `Flagged`; with no `tags` it is flagged only when
-    /// `expr` is.
+    /// number of levels; the result is an `Option<to>`, `None` for a tag that names no variant.
+    /// `tags` lists the tags `to` decodes when it is an enum.
     LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
     /// `loop { body }` (§1.8): runs `body` until a `Break`. Its type is its breaks' value type,
     /// `()` for a `break` with no value.
@@ -537,10 +518,10 @@ impl Expr {
     /// block or a loop body (`Expr::statements`).
     pub fn operands(&self) -> Vec<ExprId> {
         match self {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => Vec::new(),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => Vec::new(),
             Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
-            Expr::Binary { lhs: a, rhs: b, .. } | Expr::KnownOr { value: a, default: b } | Expr::Unwrap { is: a, value: b, .. } | Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } => vec![*expr],
+            Expr::Binary { lhs: a, rhs: b, .. } | Expr::Unwrap { is: a, value: b, .. } | Expr::Same { a, b } => vec![*a, *b],
             Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
             Expr::Block { value, .. } => value.iter().copied().collect(),
             Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
@@ -835,9 +816,6 @@ pub enum ValueType {
     UInt(u32),
     /// `Int<N>` (`iN`): `N` bits, two's complement, arithmetic modulo `2^N`.
     Int(u32),
-    /// A value that may be unknown (§3.3): the type of a carrier read and of everything computed
-    /// from one. The inner type is `bool`, `f64` or an integer type.
-    Flagged(Box<ValueType>),
     /// A tuple `(A, B, ..)`: its fields, lowest first.
     Tuple(Vec<ValueType>),
     /// An array `[T; N]`: the element type and the length.

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use piperine_digital_solver::net::NetId;
 use piperine_interp::Interpreter;
-use piperine_ir::{BranchKind, ChildValue, Ir};
+use piperine_ir::{BranchKind, CarrierRole, ChildValue, Ir};
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
@@ -542,8 +542,9 @@ impl Session {
     /// run reach `sink` as the solver delivers them. A session runs once: the analysis takes its
     /// circuit.
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
-        if self.circuit.is_some() {
+        if let Some(circuit) = &self.circuit {
             self.sources.require_all(&self.ir)?;
+            self.require_inputs(circuit)?;
         }
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
@@ -557,6 +558,21 @@ impl Session {
         match failure.borrow_mut().take() {
             Some(broken) => Err(broken),
             None => table,
+        }
+    }
+
+    /// `E0187` naming the first `in` port of the top that holds no value when the analysis starts: no
+    /// initial value (`= value`, or the `Default` of its type) and no value the host wrote before
+    /// the run (`drive` at 0). Nothing writes such a port, so it has no value to start from.
+    fn require_inputs(&self, circuit: &CircuitInstance) -> Result<(), Failure> {
+        let top = self.ir.top();
+        let silent = top.body().carriers().iter().find(|c| c.role == CarrierRole::In && c.init.is_none() && !circuit.net_written(&format!("{}.{}", top.path(), c.name)));
+        match silent {
+            Some(port) => Err(Failure::Host {
+                code: "E0187",
+                message: format!("the `in` port `{}` of the top `{}` has no initial value, no `Default` and no value from the host: give it `= value`, or `drive` it at 0 before the run", port.name, top.path()),
+            }),
+            None => Ok(()),
         }
     }
 

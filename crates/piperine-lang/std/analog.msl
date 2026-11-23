@@ -160,7 +160,7 @@ digital for absdelta {
 
 pub module last_crossing(e: f64) -> f64 {
     signal t: Bit<f64> = -1.0;
-    t.known_or(-1.0) // a known real, so analog may read it (§3.3.5)
+    t // a plain real, so analog may read it (§3.3.6)
 }
 
 digital for last_crossing {
@@ -184,21 +184,21 @@ analog<S> for idt<S> {
 }
 
 pub module idtmod<S: Nature = State>(x: f64, ic: Option<f64>, modulus: f64, offset: Option<f64>) -> f64 {
-    signal base: Bit<f64>; // where the integral was last seated
+    signal base: Bit<Option<f64>>; // where the integral was last seated; None before the first wrap
     signal seat: Bit = false; // true for the one microstep that seats it
     let lo = offset.unwrap_or(0.0);
     let start = lo + (ic.unwrap_or(0.0) - lo).rem_euclid(modulus);
-    let acc = idt::<S>(x, base.known_or(start), reset: seat.known_or(false));
+    let acc = idt::<S>(x, base.unwrap_or(start), reset: seat);
     acc
 }
 
 digital<S> for idtmod<S> {
     on cross(acc - lo - modulus) {
-        base <- acc - modulus;
+        base <- Some(acc - modulus);
         seat <- true;
     } // over the top
     on cross(lo - acc) {
-        base <- acc + modulus;
+        base <- Some(acc + modulus);
         seat <- true;
     } // under the bottom
     on seat.rise() {
@@ -222,7 +222,7 @@ pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
 }
 
 analog for slew {
-    match mode.known_or(Slewing::Track) {
+    match mode {
         Slewing::Track => {
             pos(y) +> x;
         },
@@ -248,15 +248,15 @@ digital for slew {
 }
 
 pub module transition(in x: Bit<f64>, td: Option<f64>, tr: Option<f64>, tf: Option<f64>) -> f64 {
-    signal xd: Bit<f64>; // x after the delay
-    signal y0: Bit<f64>; // output where the current edge began
-    signal y1: Bit<f64>; // where it ends
+    signal xd: Bit<f64> = 0.0; // x after the delay
+    signal y0: Bit<f64> = 0.0; // output where the current edge began
+    signal y1: Bit<f64> = 0.0; // where it ends
     signal t0: Bit<f64> = 0.0; // when it began
     signal dt: Bit<f64> = 0.0; // its duration; 0.0 at rest
     xd = x after td.unwrap_or(0.0);
-    let (a, b, s, d) = (y0.known_or(0.0), y1.known_or(0.0), t0.known_or(0.0), dt.known_or(0.0));
+    let (a, b, s, d) = (y0, y1, t0, dt);
     let y = if analysis(Static) {
-        x.known_or(0.0)
+        x
     } else if d > 0.0 {
         a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0)
     } else {
@@ -274,19 +274,18 @@ digital for transition {
         y1 <- x;
     } // no delay to wait out, no ramp: at rest on x
     on xd.changed() && !analysis(Static) {                    // written last: wins a tie (§12.1.2)
-        if let Some(to) = xd.known() {
-            y0 <- y; y1 <- to; t0 <- now();
-            dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 };
-        }
+        let to = xd;
+        y0 <- y; y1 <- to; t0 <- now();
+        dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 };
     }
 }
 
 pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N];
     den: [f64; D]; // den[k] is the coefficient of y[n−1−k]
-    signal xs: [Bit<f64>; N]; // xs[k] = x[n−1−k]
-    signal ys: [Bit<f64>; D]; // ys[k] = y[n−1−k]
-    signal vout: Bit<f64>; // the current sample y[n]
+    signal xs: [Bit<f64>; N] = [0.0; N]; // xs[k] = x[n−1−k]
+    signal ys: [Bit<f64>; D] = [0.0; D]; // ys[k] = y[n−1−k]
+    signal vout: Bit<f64> = 0.0; // the current sample y[n]
     signal y: State;
     let sampled = analysis(Transient) && !analysis(Static);
     pos(y)
@@ -301,10 +300,10 @@ digital<N, D> for zi_nd<N, D> {
     on every(period, period) {
         let acc = num[0] * x;
         for k in 1..N {
-            acc += num[k] * xs[k - 1].known_or(0.0);
+            acc += num[k] * xs[k - 1];
         }
         for k in 0..D {
-            acc -= den[k] * ys[k].known_or(0.0);
+            acc -= den[k] * ys[k];
         }
         vout <- acc;
         xs[0] <- x;
@@ -320,7 +319,7 @@ digital<N, D> for zi_nd<N, D> {
 
 analog<N, D> for zi_nd<N, D> {
     if sampled {
-        pos(y) +> vout.known_or(0.0);
+        pos(y) +> vout;
     } else {
         let acc = 0.0;
         for k in 0..N {

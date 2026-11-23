@@ -49,12 +49,11 @@ impl Statements {
                     let Some(data) = ir.exprs.get(id.index()) else { continue };
                     match &data.kind {
                         Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                        Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+                        Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
                         Expr::Unwrap { is, value, .. } => next.extend([Step::Expr(*is), Step::Expr(*value)]),
-                        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Step::Expr(*expr)),
+                        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => next.push(Step::Expr(*expr)),
                         Expr::Binary { lhs, rhs, .. } => next.extend([Step::Expr(*lhs), Step::Expr(*rhs)]),
-                        Expr::KnownOr { value, default } => next.extend([Step::Expr(*value), Step::Expr(*default)]),
-                        Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => next.extend([Step::Expr(*a), Step::Expr(*b)]),
+                        Expr::Same { a, b } => next.extend([Step::Expr(*a), Step::Expr(*b)]),
                         Expr::LevelCast { expr, .. } => next.push(Step::Expr(*expr)),
                         Expr::If { cond, then, otherwise } => next.extend([Step::Expr(*cond), Step::Expr(*then), Step::Expr(*otherwise)]),
                         Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|a| Step::Expr(*a))),

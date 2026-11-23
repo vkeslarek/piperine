@@ -49,7 +49,7 @@ use std::sync::OnceLock;
 
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
-use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp, ValueType};
+use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
 use control::LoopFrame;
 
 /// The index of a branch in its body (`Body::branches`).
@@ -170,14 +170,6 @@ impl<'a> Body<'a> {
         self.sources_of(target).fired.iter().copied().collect()
     }
 
-    /// Whether `target` takes a decision on a value that may be unknown, through locals and
-    /// function calls: an `if` or a `while` whose condition is `Flagged`, which is also what a
-    /// `match` and a short-circuit operand over such a value lower to (§3.3.3). The commits and records of a
-    /// reaction that does are joined across the paths the decision opens.
-    pub fn decides_on_unknown(&self, target: Target) -> bool {
-        self.sources_of(target).unknown_control
-    }
-
     fn sources_of(&self, target: Target) -> &'a Sources {
         let deps = self.deps();
         let (list, i, what) = match target {
@@ -276,8 +268,6 @@ struct Sources {
     previous: BTreeSet<u32>,
     /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
     fired: BTreeSet<u32>,
-    /// Whether an `if` with a `Flagged` condition is evaluated (`Body::decides_on_unknown`).
-    unknown_control: bool,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
     derivatives: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
@@ -295,7 +285,6 @@ impl Sources {
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
-        self.unknown_control |= other.unknown_control;
         self.derivatives.extend(&other.derivatives);
         self.param_previous.extend(&other.param_previous);
     }
@@ -780,7 +769,7 @@ impl<'a> Walk<'a> {
         }
         let in_body = self.scope().in_body;
         match &ir.exprs[id.index()].kind {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => return self.done(id, Value::constant()),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) => return self.done(id, Value::constant()),
             Expr::Local(i) => {
                 let value = match self.scope().locals.get(*i as usize) {
                     Some(Some(value)) => value.clone(),
@@ -864,9 +853,8 @@ impl<'a> Walk<'a> {
                 }
                 return self.done(id, Value::of(sources, Class::Affine));
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Task::Expr(*expr)),
-            Expr::KnownOr { value, default } => next.extend([Task::Expr(*value), Task::Expr(*default)]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
             Expr::LevelCast { expr, .. } => next.push(Task::Expr(*expr)),
             Expr::Unwrap { is, value, .. } => next.extend([Task::Expr(*is), Task::Expr(*value)]),
             Expr::Method { receiver, args, .. } => {
@@ -955,7 +943,7 @@ impl<'a> Walk<'a> {
                 let l = self.pop();
                 Walk::binary(*op, l, r)
             }
-            Expr::If { cond, .. } => {
+            Expr::If { .. } => {
                 let o = self.pop();
                 let t = self.pop();
                 let c = self.pop();
@@ -963,7 +951,6 @@ impl<'a> Walk<'a> {
                 let mut sources = c.sources;
                 sources.join(&t.sources);
                 sources.join(&o.sources);
-                sources.unknown_control |= matches!(ir.exprs[cond.index()].ty, ValueType::Flagged(_));
                 Value::of(sources, class)
             }
             Expr::Block { value, .. } => match value {
@@ -983,11 +970,11 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(1 + args.len());
                 Value::nonlinear(&values)
             }
-            Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::LevelCast { .. } => {
+            Expr::Cast { .. } | Expr::LevelCast { .. } => {
                 let value = self.pop();
                 Value::nonlinear([&value])
             }
-            Expr::KnownOr { .. } | Expr::Unwrap { .. } | Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } => {
+            Expr::Unwrap { .. } | Expr::Same { .. } => {
                 let values = self.pop_n(2);
                 Value::nonlinear(&values)
             }
@@ -1027,7 +1014,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

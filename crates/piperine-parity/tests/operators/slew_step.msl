@@ -9,7 +9,7 @@ analog for Resistor { i(p, n) +> v(p, n) / r; }
 
 /// A potential that follows the carrier `level`.
 module Follower(p: Electrical, in level: Bit<f64>) {}
-analog for Follower { v(p, gnd) +> level.known_or(0.0); }
+analog for Follower { v(p, gnd) +> level; }
 
 /// Sets the carrier to 1 at 1 us: 0 before, 1 after, nothing between.
 module Stepper(out level: Bit<f64> = 0.0) {}

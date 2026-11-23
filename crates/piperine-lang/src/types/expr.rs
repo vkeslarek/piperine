@@ -74,9 +74,6 @@ impl Checker<'_> {
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Name { params }` where a module type is expected: a template value (PI-04).
                 ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
-                // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
-                // computes with known reals (§3.3.5): there it is refused by name.
-                ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && self.repr_ok(expected) && self.context != Context::Analog => Some(expected.clone()),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -459,17 +456,6 @@ impl Checker<'_> {
             LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => Some(Ty::Str),
-            LitKind::Unknown if self.context == Context::Analog => {
-                let message = "`analog` takes known reals, and the literal `Unknown` is unknown: it has no unknowns (§3.3.5)".to_string();
-                self.coded(file, "E0150", span, message, "may be unknown");
-                None
-            }
-            LitKind::Unknown => {
-                // A.6 (`E0906`): no carried type is expected here, or the expected type has no `Repr`.
-                let message = "`Unknown` has no type here: write it where a type that implements `Repr` is expected (A.6)".to_string();
-                self.coded(file, "E0906", span, message, "`Unknown` of what type?");
-                None
-            }
         }
     }
 

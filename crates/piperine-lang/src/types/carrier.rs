@@ -1,9 +1,8 @@
 //! Discrete carriers (DIG-02, DIG-04): the type of a `signal` or a port of a discrete nature (`Bit<T>` or a project's),
-//! the types a carrier may hold (`E0112`), initial values (`E0210`), the flag reads `known`,
-//! `known_or`, `is_known`, `high`, and the history read `prev` (part II §5, part I §3.3).
+//! the types a carrier may hold (`E0112`), initial values (`E0210`) and the history read `prev` (part II §5, part I §3.3).
 //!
 //! A carrier has the type `Ty::Carrier { nature, value }`; reading it gives `value`. The checker reads
-//! the four flag reads, the two edges of `Bit` and `prev` as built-ins only when the name
+//! the two edges of `Bit` and `prev` as built-ins only when the name
 //! resolved to the stdlib's own item (§3.3.7): a project item of the same name is `P0001`.
 
 use crate::msl::{Diagnostic, Span};
@@ -12,18 +11,6 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode
 use super::check::Checker;
 use super::nature_rules::NatureRules;
 use super::{Builtin, Ty};
-
-/// The methods of a value or a carrier that are flag reads, by name.
-pub(super) fn flag_builtin(name: &str) -> Option<Builtin> {
-    match name {
-        "known" => Some(Builtin::Known),
-        "known_or" => Some(Builtin::KnownOr),
-        "is_known" => Some(Builtin::IsKnown),
-        "level" => Some(Builtin::Level),
-        "high" => Some(Builtin::High),
-        _ => None,
-    }
-}
 
 impl Checker<'_> {
     /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
@@ -208,7 +195,7 @@ impl Checker<'_> {
     }
 
     /// Whether `f` is the stdlib's own item behind a built-in method (§3.3.7): a method of the
-    /// trait `Known`, or of the `impl Bit`.
+    /// `impl Bit` (`rise`, `fall`).
     pub(super) fn stdlib_builtin(&self, f: DeclId) -> Option<Builtin> {
         let data = self.design.decl_data(f);
         if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(f) {
@@ -217,33 +204,10 @@ impl Checker<'_> {
         let name = data.name.as_ref()?.text.as_str();
         let parent = data.parent.map(|p| self.design.decl_data(p))?;
         match (&parent.kind, name) {
-            (DeclKind::Trait(_), "known" | "known_or" | "is_known") if parent.name.as_ref().is_some_and(|n| n.text == "Known") => flag_builtin(name),
-            (DeclKind::Impl(_), "high") => Some(Builtin::High),
             (DeclKind::Impl(_), "rise") => Some(Builtin::Rise),
             (DeclKind::Impl(_), "fall") => Some(Builtin::Fall),
             _ => None,
         }
-    }
-
-    /// The flag read `builtin` applied to a receiver of type `recv_ty`: its result type, or
-    /// `None` when the receiver's type has no such read (`high` is the read of a `Bit`).
-    pub(super) fn flag_read(&mut self, expr: ExprId, builtin: Builtin, recv_ty: &Ty, args: &[Arg]) -> Option<Option<Ty>> {
-        if !self.repr_ok(recv_ty) || (builtin == Builtin::High && *recv_ty != Ty::Bool) {
-            return None;
-        }
-        let (params, result) = match builtin {
-            Builtin::Known => (vec![], Ty::Option(Box::new(recv_ty.clone()))),
-            Builtin::KnownOr => (vec![recv_ty.clone()], recv_ty.clone()),
-            Builtin::IsKnown | Builtin::High => (vec![], Ty::Bool),
-            // §22.1: level `k` of the value, `k: u32`; known when `k` is (§3.3.14).
-            Builtin::Level => (vec![Ty::UInt(32)], Ty::Option(Box::new(Ty::Bool))),
-            Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall | Builtin::Inflow => return None,
-        };
-        if self.apply(expr, &params, args).is_none() {
-            return Some(None);
-        }
-        self.builtins.insert(expr, builtin);
-        Some(Some(result))
     }
 
     /// The type a path's first segment names when it is the owner of an associated item
@@ -254,6 +218,7 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match (id.info().name, id.width()) {
                 ("fN", Some(64)) => Some(Ty::F64),
                 ("bool", _) => Some(Ty::Bool),
+                ("str", _) => Some(Ty::Str),
                 ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
                 ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
                 ("usize", _) => Some(Ty::UInt(64)),

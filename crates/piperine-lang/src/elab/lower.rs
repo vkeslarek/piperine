@@ -14,9 +14,8 @@ use super::compound::EnumLayout;
 use super::control::LoopFrame;
 use super::returns::FunctionResult;
 use super::variants::Half;
-use super::consts::{Bindings, Folded};
+use super::consts::Bindings;
 use super::unroll::Expansion;
-use super::known::Flag;
 use super::elaborator::Elaboration;
 use super::selectors::{ArmCondition, ContributionRecord};
 use crate::msl::Span;
@@ -82,18 +81,11 @@ pub(super) struct Scope {
     /// The initializer of each local a plain `let` bound: a condition that reads the local reads
     /// what it holds (`selectors.rs`).
     pub(super) local_inits: BTreeMap<u32, LoweredExpr>,
-    /// Whether a value of this code may be unknown (§3.3): a reaction, or a function variant with
-    /// an argument that may be. A `let mut` there is flagged, so an assignment under an unknown
-    /// decision can merge (`control.rs`).
-    pub(super) may_be_unknown: bool,
     /// The loops the code being lowered sits in, innermost last (`control.rs`).
     pub(super) loops: Vec<LoopFrame>,
     /// What a `return` of the function being lowered gives (`returns.rs`); `None` outside a function
     /// whose body returns early.
     pub(super) result: Option<FunctionResult>,
-    /// The function each local bound to a function's name stands for: a call through the local with
-    /// an argument that may be unknown calls the flagged variant of it (`closures.rs`).
-    pub(super) fn_targets: BTreeMap<DeclId, DeclId>,
     /// The constant each loop variable of the unrolled analog loops the code sits in, and each
     /// parameter of the unrolled recursive calls it sits in, stands for (`unroll.rs`).
     pub(super) unrolled: Bindings,
@@ -112,7 +104,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -239,9 +231,8 @@ impl Elaboration<'_, '_> {
             return self.lower_event_read(scope, expr);
         }
         if ty.is_integer() && self.constant_form(expr) {
-            return match self.consts.folded(expr, &Bindings::new()) {
-                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
-                Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
+            return match self.consts.value(expr, &Bindings::new()) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a constant expression");
                     None
@@ -249,7 +240,6 @@ impl Elaboration<'_, '_> {
             };
         }
         match &node.kind {
-            ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) => Some(self.unknown_expr(ty, origin)),
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
@@ -272,7 +262,6 @@ impl Elaboration<'_, '_> {
                     UnOp::Not => UnaryOp::Not,
                 };
                 let operand = self.lower_expr(scope, *operand)?;
-                let ty = self.flag(operand).wrap(ty);
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
             ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
@@ -281,7 +270,6 @@ impl Elaboration<'_, '_> {
                 // The right operand of `&&`/`||` runs only when the left does not decide: it is
                 // conditional exactly like an `if` arm.
                 let short_circuit = matches!(op, BinOp::And | BinOp::Or);
-                let right = *rhs;
                 let left = *lhs;
                 let lhs = self.lower_expr(scope, *lhs);
                 // `a && b` runs `b` when `a` holds, `a || b` when it does not.
@@ -293,21 +281,8 @@ impl Elaboration<'_, '_> {
                     scope.guards.pop();
                 }
                 let (lhs, rhs) = (lhs?, rhs?);
-                let flag = self.flags(&[lhs, rhs]);
-                let op = match (Self::binary_op(*op), flag) {
-                    // §3.3.12: over a value that may be unknown, `&&` and `||` give the table of
-                    // `&` and `|`; the IR's short-circuit forms take known operands only. A right
-                    // operand that can panic or emit must not run whatever the left gives, so it
-                    // is an `if` and the generated code merges it (§3.3.3, §1 rule 13).
-                    (op @ (BinaryOp::And | BinaryOp::Or), Flag::Flagged) => {
-                        if self.partial(right).is_some() {
-                            return Some(self.lower_short_circuit_as_if(op == BinaryOp::And, lhs, rhs, ty, origin));
-                        }
-                        if op == BinaryOp::And { BinaryOp::BitAnd } else { BinaryOp::BitOr }
-                    }
-                    (op, _) => op,
-                };
-                Some(self.emit(Expr::Binary { op, lhs, rhs }, flag.wrap(ty), origin))
+                let op = Self::binary_op(*op);
+                Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
             }
             ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, None, origin),
             // A condition that reads only key params and constants is folded: only the arm it
@@ -341,8 +316,6 @@ impl Elaboration<'_, '_> {
                 scope.decisions -= 1;
                 let (cond, then, otherwise) = (cond?, then?, otherwise?);
                 let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
-                // A condition that may be unknown is kept: the generated code decides it.
-                let ty = self.flags(&[cond, then, otherwise]).wrap(ty);
                 let whole = self.emit(Expr::If { cond, then, otherwise }, ty, origin);
                 self.note_branch(whole, cond, then, otherwise);
                 Some(whole)
@@ -367,10 +340,9 @@ impl Elaboration<'_, '_> {
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_sequence_method(scope, expr, method, *recv, &args, ty, origin)
             }
-            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
+            ExprKind::MethodCall { recv, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
-                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                self.lower_flag_read(scope, expr, builtin, *recv, &args, ty, origin)
+                self.lower_builtin_read(scope, expr, builtin, *recv, ty, origin)
             }
             ExprKind::MethodCall { recv, args, .. } => {
                 let Some(method) = self.types.method(expr) else {
@@ -390,7 +362,6 @@ impl Elaboration<'_, '_> {
                             lowered.push(self.lower_expr(scope, arg.value));
                         }
                         let (receiver, args) = (receiver?, lowered.into_iter().collect::<Option<Vec<_>>>()?);
-                        let ty = self.flags(&args).or(self.flag(receiver)).wrap(ty);
                         return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
                     }
                     // Lowered as a flag and a payload from msl-digital T27 on.
@@ -406,14 +377,11 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
-                // §3.3.2: one unknown operand makes the result unknown.
-                let ty = self.flag(recv).wrap(ty);
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Cast { expr: operand, .. } => {
                 let operand = self.lower_expr(scope, *operand)?;
-                let flagged = self.flag(operand).wrap(ty.clone());
-                Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
+                Some(self.emit(Expr::Cast { expr: operand, to: ty.clone() }, ty, origin))
             }
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
             ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
@@ -443,8 +411,7 @@ impl Elaboration<'_, '_> {
             (_, Some(Callee::Function(function))) if scope.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
-                let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
-                let (id, ret) = self.request(function, pattern, Half::Whole)?;
+                let (id, ret) = self.request(function, Half::Whole)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
@@ -455,7 +422,7 @@ impl Elaboration<'_, '_> {
                 None
             }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
-            (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
+            (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, origin),
             (_, None) if self.types.default_of(expr).is_some() => Some(self.emit(Expr::Default(ty.clone()), ty, origin)),
             (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && let Some(owner) = self.constructed_decl(*callee) => self.lower_constructor_call(scope, args, owner, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
@@ -518,7 +485,6 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, span, "a name whose type is not a value type");
             return None;
         };
-        let ty = if assignable { Self::mutable_type(scope, ty) } else { ty };
         let index = scope.locals.len() as u32;
         scope.locals.push(Local { name, ty, mutable: assignable });
         scope.local_index.insert(binding, index);
@@ -603,9 +569,6 @@ impl Elaboration<'_, '_> {
             }
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);
-                if let Some(function) = self.named_function(init) {
-                    scope.fn_targets.insert(binding, function);
-                }
                 scope.let_sources.insert(binding, init);
                 let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
                 scope.limit_name = name.map(|n| (self.peel_parens(init), n));
@@ -613,10 +576,7 @@ impl Elaboration<'_, '_> {
                 scope.limit_name = None;
                 match (local, init) {
                     (Some(local), Some(init)) => {
-                        // A local is what its initializer is: flagged when that may be unknown; a
-                        // `let mut` of code that may see unknowns is flagged whatever it starts as.
-                        let target = scope.locals[local as usize].ty.clone();
-                        let init = if scope.locals[local as usize].mutable { self.coerced_to(scope, init, &target) } else { init };
+                        // A local is what its initializer is.
                         let mutable = scope.locals[local as usize].mutable;
                         let ty = self.type_of(init);
                         scope.locals[local as usize].ty = ty;
@@ -694,11 +654,6 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The literal `Unknown` of type `ty`: a value with every level unknown, so flagged (§3.3.1).
-    pub(super) fn unknown_expr(&mut self, ty: ValueType, origin: Origin) -> LoweredExpr {
-        self.emit(Expr::Unknown, Flag::Flagged.wrap(ty), origin)
-    }
-
     /// A name: a `const` (folded), a param of the body (a read), a local.
     fn lower_path(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
@@ -711,9 +666,8 @@ impl Elaboration<'_, '_> {
         match &self.design.decl_data(decl).kind {
             // A composite `const` is written out where it is read (`consts/imported.rs`).
             DeclKind::Const(_) if self.consts.is_composite_constant(decl) => self.lower_composite_constant(scope, decl, expr, ty, origin),
-            DeclKind::Const(_) => match self.consts.folded_constant(decl) {
-                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
-                Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
+            DeclKind::Const(_) => match self.consts.constant(decl) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const`");
                     None
@@ -737,7 +691,6 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
-                // A read of a carrier may be unknown (§3.3): its type is flagged.
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),

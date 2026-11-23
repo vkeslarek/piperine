@@ -2,9 +2,8 @@ body SetpointReg
   carrier wr: bool in
   carrier data: u8 in
   carrier code: u8 out init 100
-  event E0 changed wr guard wr.high()
+  event E0 changed wr guard wr
   reaction R0 on (E0)
-    local d: u8
-    if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }
+    code <- data.min(168u8)
 body Top
 instance Top: Top  nodes ()  params ()  top

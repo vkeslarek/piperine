@@ -27,8 +27,8 @@ const ROWS: &[Row] = &[
     Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
-    Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
-    Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
+    Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
+    Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
     Row { construct: "delay", source: "module Top(p: Electrical) { }\nanalog for Top { let x = delay(v(p), 1.0); }", names: "`delay`" },
     Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
     Row { construct: "ddx", source: "module Top(p: Electrical) { }\nanalog for Top { let x = ddx(v(p), v(p)); }", names: "`ddx`" },

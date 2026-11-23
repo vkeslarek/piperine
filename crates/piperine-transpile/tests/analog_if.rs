@@ -1,22 +1,18 @@
-//! An `if` on a value that may be unknown inside an `analog` block (feature
-//! `unknown-semantics`, MSL §3.3.3, US-04 AC 10): the block is built by hand, compiled, and its
-//! terms function is called through the ABI. `analog` reads no carrier outside the flag reads
-//! (§3.3.5), and the checker refuses `Unknown` there, so the IR is the one way to reach the
-//! printer with a condition that may be unknown (the literal `Unknown`, which the IR allows).
-//! Expected currents are written from the merge rule, never from the printed source: an unknown
-//! condition runs both arms and merges them (equal values stay known, anything else is unknown),
-//! and `known_or` gives its default for an unknown merge.
+//! An `if` on a carrier inside an `analog` block (MSL §3.3.5, §3.3.6): the block is built by hand,
+//! compiled, and its terms function is called through the ABI. The carrier is read like any
+//! value, so the `if` runs the one arm its value names. Expected currents are written from that
+//! rule, never from the printed source.
 //!
 //! ```text
-//! module Gate(p: Electrical, n: Electrical) { a: f64; b: f64; }
-//! analog for Gate { i(p, n) +> v(p, n) * (if Unknown { a } else { b }).known_or(1.0); }
+//! module Gate(p: Electrical, n: Electrical) { a: f64; b: f64; signal en: Bit = false; }
+//! analog for Gate { i(p, n) +> v(p, n) * (if en { a } else { b }); }
 //! ```
 #![cfg(unix)]
 
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::{Cell, List, cell};
 use piperine_ir::{
-    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, IrBuilder, NodeRole, Operator, QuantityRole, Stmt, Terminal,
+    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, IrBuilder, NodeRole, Operator, QuantityRole, Stmt, Terminal,
     ValueType,
 };
 use piperine_plan::Modules;
@@ -34,17 +30,15 @@ use digital::{Buck, Dx};
 
 const F: &str = "gate.msl";
 
-/// The `Gate` body above, `c` its one carrier.
+/// The `Gate` body above.
 fn gate(b: &mut IrBuilder) -> BodyId {
     let el = Buck::electrical(b);
     let node = |name: &str, col: u32| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 1, col) };
     let mut x = Dx::new(b, F, 2, 30);
     let volts = x.probe(Terminal::Node(0), Terminal::Node(1));
-    let c = x.unknown(digital::Ty::flagged(ValueType::Bool));
+    let en = x.carrier(0, ValueType::Bool);
     let (a, other) = (x.param(0, ValueType::F64), x.param(1, ValueType::F64));
-    let chosen = x.if_(c, a, other, digital::Ty::flagged(ValueType::F64));
-    let fallback = x.real(1.0);
-    let conductance = x.known_or(chosen, fallback, ValueType::F64);
+    let conductance = x.if_(en, a, other, ValueType::F64);
     let value = x.bin(BinaryOp::Mul, volts, conductance, ValueType::F64);
     let stmt = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
     let body = b.body(BodySpec {
@@ -54,15 +48,7 @@ fn gate(b: &mut IrBuilder) -> BodyId {
         analog: Some(vec![stmt]),
         ..Buck::spec("Gate", F, 1)
     });
-    body
-}
-
-/// A body with one carrier and nothing to run: its digital form is what gives the design the
-/// runtime that has `rt::Flagged`, which a merge of an unknown condition needs (an `analog`-only
-/// design has `real.rs` alone, and the source never reaches the printer with an unknown there).
-fn idle(b: &mut IrBuilder) -> BodyId {
-    let body = b.body(Buck::spec("Idle", F, 9));
-    b.carrier(body, Carrier { name: "c".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Buck::origin(F, 9, 5) });
+    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(Constant::Bool(false)), origin: Buck::origin(F, 1, 50) });
     body
 }
 
@@ -70,11 +56,10 @@ fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
     (0..list.len()).map(|i| *list.get(i).expect("a readable element")).collect()
 }
 
-/// The current the gate carries at 2 V when its params are `a` and `b`.
-fn current(a: f64, b: f64) -> f64 {
+/// The current the gate carries at 2 V when its params are `a` and `b` and `en` is `enabled`.
+fn current(a: f64, b: f64, enabled: bool) -> f64 {
     let mut ir = IrBuilder::new();
     let body = gate(&mut ir);
-    idle(&mut ir);
     let ir = Alone::finish(ir);
     let cache = tempfile::tempdir().expect("a temp dir");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
@@ -93,7 +78,8 @@ fn current(a: f64, b: f64) -> f64 {
                 "p" => 2.0,
                 "n" => 0.0,
                 "a" => a,
-                _ => b,
+                "b" => b,
+                _ => return vec![u8::from(enabled), 1],
             };
             value.to_le_bytes().to_vec()
         })
@@ -107,9 +93,8 @@ fn current(a: f64, b: f64) -> f64 {
 }
 
 #[test]
-fn an_unknown_if_in_an_analog_block_merges() {
-    // the condition is unknown, so both arms run and merge: equal arms are that value, known, and
-    // arms that differ are unknown, which `known_or` gives the default 1.0
-    assert_eq!(current(3.0, 3.0), 2.0 * 3.0);
-    assert_eq!(current(3.0, 5.0), 2.0 * 1.0);
+fn an_if_in_an_analog_block_runs_the_arm_its_carrier_names() {
+    // the condition is the value of `en`: its `then` arm is `a`, its `else` arm is `b`
+    assert_eq!(current(3.0, 5.0, true), 2.0 * 3.0);
+    assert_eq!(current(3.0, 5.0, false), 2.0 * 5.0);
 }

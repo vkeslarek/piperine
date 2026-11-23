@@ -83,7 +83,7 @@ fn the_counters_read_four_rises_and_four_falls() {
         let trace = DiscreteTrace::of(&ran.table, counter);
         let last = trace.value_at(42e-6);
         println!("threshold: {label} edges counted {last:?}, expected {}", Circuit::EDGES);
-        assert_eq!(last, Some(Circuit::EDGES as i128), "the {label} counter at 42 us");
+        assert_eq!(last, Circuit::EDGES as i128, "the {label} counter at 42 us");
     }
 }
 

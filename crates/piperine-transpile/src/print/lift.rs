@@ -27,7 +27,6 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
             ValueType::Unit => "()".to_string(),
             ValueType::UInt(n) => format!("rt::UInt<{n}>"),
             ValueType::Int(n) => format!("rt::Int<{n}>"),
-            ValueType::Flagged(inner) => self.concrete_type(inner),
             ValueType::Fn(..) => "()".to_string(),
             ValueType::Tuple(parts) => {
                 let parts: Vec<String> = parts.iter().map(|part| self.concrete_type(part)).collect();
@@ -60,7 +59,7 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
                 format!("({source}).map(|element{depth}_| {inner})")
             }
             ValueType::Struct(_) | ValueType::Enum(_) => format!("({source}).lift::<{real}>()"),
-            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) | ValueType::Flagged(_) => source.to_string(),
+            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) => source.to_string(),
         }
     }
 

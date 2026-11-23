@@ -123,6 +123,14 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 > (`Top.f.num[2]`, `Top.p.x`, `Top.t.0`), before the run; the `where` of the param is checked on
 > the whole value after the write and a false one is `E0317`, a path that names no leaf `E0801`.
 
+> **Resolution.** A cell of a table is a value of its type, and a host that cannot read one fails
+> with the cause: a row with no cell for a column, a plain value in a column of composite values,
+> a real column that is not real at the next step. It never fills the cell in. Two cells have no
+> value of their own, and they are **absent**, which is not an unknown value (no level of any type
+> is missing): a leaf the type can hold and the value of this row does not (the payload of a
+> `None`, a field of another variant), and a param no placement has given a value. An absent cell
+> is an empty field in a text table and in CSV, `null` in JSON Lines, and nothing in a plot.
+
 A sketch in Python, not normative:
 
 ```python

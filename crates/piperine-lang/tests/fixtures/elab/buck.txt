@@ -29,7 +29,7 @@ body Adc
   carrier sample: bool in
   carrier code: u10 out init 0
   carrier done: bool out init false
-  event E0 changed sample guard ((!sample.prev().high()) & ((!sample.is_known()) | sample.known_or(false)))
+  event E0 changed sample guard ((!sample.prev()) && sample)
   reaction R0 on (E0)
     local q: u10
     let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)
@@ -55,11 +55,11 @@ body Buck
   node vout: Electrical signal
   node isense: Electrical signal
   node isense_n: Electrical signal
-  carrier en: bool in
-  carrier sp_wr: bool in
-  carrier sp_data: u8 in
-  carrier load_step: bool in
-  carrier inject: bool in
+  carrier en: bool in init false
+  carrier sp_wr: bool in init false
+  carrier sp_data: u8 in init 100
+  carrier load_step: bool in init false
+  carrier inject: bool in init false
   carrier pgood: bool out
   carrier fault: t1 out
   carrier mode: t0 out
@@ -117,7 +117,7 @@ body Controller
   child pid: Pid  nodes ()  params ()  carriers (done, run, reference, code, duty)
   child sup: Supervisor  nodes ()  params ()  carriers (done, en, vin_ok, cut, code, reference, at_target, run, pgood, mode, fault)
   child pwm: Dpwm  nodes ()  params ()  carriers (clk, run, duty, oc, sink_oc, hs_cmd, ls_cmd, sample, cut)
-  drive ramp.target = target_codes(setpoint.known_or(0u8))
+  drive ramp.target = target_codes(setpoint)
 body CurrentSense
   param rshunt: f64 = 0.005 where (rshunt > 0.0)
   param gain: f64 = 20.0
@@ -159,26 +159,26 @@ body Dpwm
   child no_shoot_through: Never  nodes ()  params ()  carriers (clk, no_shoot_through.bad)
   drive sample = (count == 0u9)
   drive no_shoot_through.bad = (hs & ls)
-  event E0 changed clk guard ((!clk.prev().high()) & ((!clk.is_known()) | clk.known_or(false)))
+  event E0 changed clk guard ((!clk.prev()) && clk)
   reaction R0 on (E0)
     local enabled: bool
-    local hs_next: flagged<bool>
-    local hs_trip: flagged<bool>
-    local ls_next: flagged<bool>
-    local ls_trip: flagged<bool>
-    local next: flagged<u9>
-    local off_at: flagged<u9>
-    local w: flagged<u9>
-    local wrap: flagged<bool>
+    local hs_next: bool
+    local hs_trip: bool
+    local ls_next: bool
+    local ls_trip: bool
+    local next: u9
+    local off_at: u9
+    local w: u9
+    local wrap: bool
     let wrap = (count == 399u9)
     let next = if wrap { 0u9 } else { (count + 1u9) }
-    let enabled = run.known_or(false)
-    let w = if wrap { "dithered_width~01"(duty.known_or(0u12), (frame + 1u3)) } else { width }
-    let hs_trip = ((!wrap) & (hs_cut | (hs & oc.known_or(true))))
-    let ls_trip = ((!wrap) & (ls_cut | (ls & sink_oc.known_or(true))))
-    let hs_next = ((enabled & (!hs_trip)) & (next < w))
-    let off_at = if wrap { w } else { if (hs & (!hs_next)) { next } else { hs_off } }
-    let ls_next = ((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))
+    let enabled = run
+    let w = if wrap { dithered_width(duty, (frame + 1u3)) } else { width }
+    let hs_trip = ((!wrap) && (hs_cut || (hs && oc)))
+    let ls_trip = ((!wrap) && (ls_cut || (ls && sink_oc)))
+    let hs_next = ((enabled && (!hs_trip)) && (next < w))
+    let off_at = if wrap { w } else { if (hs && (!hs_next)) { next } else { hs_off } }
+    let ls_next = ((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))
     count <- next
     width <- w
     hs_off <- off_at
@@ -191,8 +191,8 @@ body GateDriver
   param tpd: f64 = 1e-8 where (tpd > 0.0)
   carrier hs_cmd: bool in
   carrier ls_cmd: bool in
-  carrier hs_gate: bool out
-  carrier ls_gate: bool out
+  carrier hs_gate: bool out init false
+  carrier ls_gate: bool out init false
   drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd
   drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd
 body Inductor
@@ -212,21 +212,21 @@ body Load
   carrier step: bool in
   carrier inject: bool in
   carrier k_step.x: f64 signal
-  carrier k_step.xd: f64 signal
-  carrier k_step.y0: f64 signal
-  carrier k_step.y1: f64 signal
+  carrier k_step.xd: f64 signal init 0.0
+  carrier k_step.y0: f64 signal init 0.0
+  carrier k_step.y1: f64 signal init 0.0
   carrier k_step.t0: f64 signal init 0.0
   carrier k_step.dt: f64 signal init 0.0
   carrier k_inject.x: f64 signal
-  carrier k_inject.xd: f64 signal
-  carrier k_inject.y0: f64 signal
-  carrier k_inject.y1: f64 signal
+  carrier k_inject.xd: f64 signal init 0.0
+  carrier k_inject.y0: f64 signal init 0.0
+  carrier k_inject.y1: f64 signal init 0.0
   carrier k_inject.t0: f64 signal init 0.0
   carrier k_inject.dt: f64 signal init 0.0
   branch b0 (p, gnd) flow
-  drive k_step.x = if step.high() { 1.0 } else { 0.0 }
+  drive k_step.x = if step { 1.0 } else { 0.0 }
   drive k_step.xd = k_step.x after 0.0
-  drive k_inject.x = if inject.high() { 1.0 } else { 0.0 }
+  drive k_inject.x = if inject { 1.0 } else { 0.0 }
   drive k_inject.xd = k_inject.x after 0.0
   event E0 at (k_step.t0 + k_step.dt) guard (k_step.dt > 0.0)
   event E1 changed k_step.x
@@ -235,28 +235,28 @@ body Load
   event E4 changed k_inject.x
   event E5 changed k_inject.xd
   analog
-    b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } } / r_step))) - (if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } } * i_inject))
+    b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x } else { if (k_step.dt > 0.0) { (k_step.y0 + ((k_step.y1 - k_step.y0) * ((time() - k_step.t0) / k_step.dt).clamp(0.0, 1.0))) } else { k_step.y1 } } / r_step))) - (if static() { k_inject.x } else { if (k_inject.dt > 0.0) { (k_inject.y0 + ((k_inject.y1 - k_inject.y0) * ((time() - k_inject.t0) / k_inject.dt).clamp(0.0, 1.0))) } else { k_inject.y1 } } * i_inject))
   reaction R0 on (E0)
     k_step.dt <- 0.0
   reaction R1 on (E1)
     if static() { k_step.y0 <- k_step.x; k_step.y1 <- k_step.x } else { () }
   reaction R2 on (E2)
     local to: f64
-    if (!static()) { if k_step.xd.is_known() { let to = k_step.xd.known_or(0.0); k_step.y0 <- if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } }; k_step.y1 <- to; k_step.t0 <- time(); k_step.dt <- if (to > if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } }) { tr } else { if (to < if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } }) { tr } else { 0.0 } } } else { () } } else { () }
+    if (!static()) { let to = k_step.xd; k_step.y0 <- if static() { k_step.x } else { if (k_step.dt > 0.0) { (k_step.y0 + ((k_step.y1 - k_step.y0) * ((time() - k_step.t0) / k_step.dt).clamp(0.0, 1.0))) } else { k_step.y1 } }; k_step.y1 <- to; k_step.t0 <- time(); k_step.dt <- if (to > if static() { k_step.x } else { if (k_step.dt > 0.0) { (k_step.y0 + ((k_step.y1 - k_step.y0) * ((time() - k_step.t0) / k_step.dt).clamp(0.0, 1.0))) } else { k_step.y1 } }) { tr } else { if (to < if static() { k_step.x } else { if (k_step.dt > 0.0) { (k_step.y0 + ((k_step.y1 - k_step.y0) * ((time() - k_step.t0) / k_step.dt).clamp(0.0, 1.0))) } else { k_step.y1 } }) { tr } else { 0.0 } } } else { () }
   reaction R3 on (E3)
     k_inject.dt <- 0.0
   reaction R4 on (E4)
     if static() { k_inject.y0 <- k_inject.x; k_inject.y1 <- k_inject.x } else { () }
   reaction R5 on (E5)
     local to: f64
-    if (!static()) { if k_inject.xd.is_known() { let to = k_inject.xd.known_or(0.0); k_inject.y0 <- if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } }; k_inject.y1 <- to; k_inject.t0 <- time(); k_inject.dt <- if (to > if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } }) { tr } else { if (to < if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } }) { tr } else { 0.0 } } } else { () } } else { () }
+    if (!static()) { let to = k_inject.xd; k_inject.y0 <- if static() { k_inject.x } else { if (k_inject.dt > 0.0) { (k_inject.y0 + ((k_inject.y1 - k_inject.y0) * ((time() - k_inject.t0) / k_inject.dt).clamp(0.0, 1.0))) } else { k_inject.y1 } }; k_inject.y1 <- to; k_inject.t0 <- time(); k_inject.dt <- if (to > if static() { k_inject.x } else { if (k_inject.dt > 0.0) { (k_inject.y0 + ((k_inject.y1 - k_inject.y0) * ((time() - k_inject.t0) / k_inject.dt).clamp(0.0, 1.0))) } else { k_inject.y1 } }) { tr } else { if (to < if static() { k_inject.x } else { if (k_inject.dt > 0.0) { (k_inject.y0 + ((k_inject.y1 - k_inject.y0) * ((time() - k_inject.t0) / k_inject.dt).clamp(0.0, 1.0))) } else { k_inject.y1 } }) { tr } else { 0.0 } } } else { () }
 body Never
   carrier clk: bool in
   carrier bad: bool in
   stream checks (pass: bool)
-  event E0 changed clk guard ((!clk.prev().high()) & ((!clk.is_known()) | clk.known_or(false)))
+  event E0 changed clk guard ((!clk.prev()) && clk)
   reaction R0 on (E0)
-    local require.pass: flagged<bool>
+    local require.pass: bool
     let require.pass = (!bad)
     emit checks(kind = "require", name = "never", pass = require.pass)
 body Osc
@@ -274,15 +274,15 @@ body Pid
   carrier integ: i32 signal init 0
   carrier deriv: i32 signal init 0
   carrier e_prev: i16 signal init 0
-  event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
+  event E0 changed tick guard ((!tick.prev()) && tick)
   reaction R0 on (E0)
-    local d: flagged<i32>
+    local d: i32
     local e: i16
     local p: i32
-    local u: flagged<i32>
+    local u: i32
     local u_max: i32
-    local windup: flagged<bool>
-    if (!run.known_or(false)) { integ <- 0i32; deriv <- 0i32; e_prev <- 0i16; duty <- 0u12 } else { let e = ((reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)).clamp(-256i16, 255i16); let p = (64i32 * (e as i32)); let d = ((deriv >> 2i32) + (1024i32 * ((e - e_prev) as i32))); let u = (((p + integ) + d) >> 4i32); let u_max = 2880i32; let windup = (((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16))); if (!windup) { integ <- (integ + (8i32 * (e as i32))).clamp(0i32, (u_max << 4i32)) } else { () }; deriv <- d; e_prev <- e; duty <- (u.clamp(0i32, u_max) as u12) }
+    local windup: bool
+    if (!run) { integ <- 0i32; deriv <- 0i32; e_prev <- 0i16; duty <- 0u12 } else { let e = ((reference as i16) - (meas as i16)).clamp(-256i16, 255i16); let p = (64i32 * (e as i32)); let d = ((deriv >> 2i32) + (1024i32 * ((e - e_prev) as i32))); let u = (((p + integ) + d) >> 4i32); let u_max = 2880i32; let windup = (((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16))); if (!windup) { integ <- (integ + (8i32 * (e as i32))).clamp(0i32, (u_max << 4i32)) } else { () }; deriv <- d; e_prev <- e; duty <- (u.clamp(0i32, u_max) as u12) }
 body PowerStage
   param l: f64 = 4.7e-6
   param dcr: f64 = 0.015
@@ -320,20 +320,20 @@ body PowerSwitch
   node s: Electrical port
   carrier g: bool in
   carrier gate.x: f64 signal
-  carrier gate.xd: f64 signal
-  carrier gate.y0: f64 signal
-  carrier gate.y1: f64 signal
+  carrier gate.xd: f64 signal init 0.0
+  carrier gate.y0: f64 signal init 0.0
+  carrier gate.y1: f64 signal init 0.0
   carrier gate.t0: f64 signal init 0.0
   carrier gate.dt: f64 signal init 0.0
   branch b0 (d, s) flow
   local gch: f64
-  drive gate.x = if g.high() { 1.0 } else { 0.0 }
+  drive gate.x = if g { 1.0 } else { 0.0 }
   drive gate.xd = gate.x after 0.0
   event E0 at (gate.t0 + gate.dt) guard (gate.dt > 0.0)
   event E1 changed gate.x
   event E2 changed gate.xd
   analog
-    let gch = ((if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } } / ron) + ((1.0 - if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }) / roff))
+    let gch = ((if static() { gate.x } else { if (gate.dt > 0.0) { (gate.y0 + ((gate.y1 - gate.y0) * ((time() - gate.t0) / gate.dt).clamp(0.0, 1.0))) } else { gate.y1 } } / ron) + ((1.0 - if static() { gate.x } else { if (gate.dt > 0.0) { (gate.y0 + ((gate.y1 - gate.y0) * ((time() - gate.t0) / gate.dt).clamp(0.0, 1.0))) } else { gate.y1 } }) / roff))
     b0.flow +> direct ((gch * probe(d, s)) - body_diode(probe(s, d), vf, rd)), ddt (coss * probe(d, s))
   reaction R0 on (E0)
     gate.dt <- 0.0
@@ -341,7 +341,7 @@ body PowerSwitch
     if static() { gate.y0 <- gate.x; gate.y1 <- gate.x } else { () }
   reaction R2 on (E2)
     local to: f64
-    if (!static()) { if gate.xd.is_known() { let to = gate.xd.known_or(0.0); gate.y0 <- if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }; gate.y1 <- to; gate.t0 <- time(); gate.dt <- if (to > if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }) { tsw } else { if (to < if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }) { tsw } else { 0.0 } } } else { () } } else { () }
+    if (!static()) { let to = gate.xd; gate.y0 <- if static() { gate.x } else { if (gate.dt > 0.0) { (gate.y0 + ((gate.y1 - gate.y0) * ((time() - gate.t0) / gate.dt).clamp(0.0, 1.0))) } else { gate.y1 } }; gate.y1 <- to; gate.t0 <- time(); gate.dt <- if (to > if static() { gate.x } else { if (gate.dt > 0.0) { (gate.y0 + ((gate.y1 - gate.y0) * ((time() - gate.t0) / gate.dt).clamp(0.0, 1.0))) } else { gate.y1 } }) { tsw } else { if (to < if static() { gate.x } else { if (gate.dt > 0.0) { (gate.y0 + ((gate.y1 - gate.y0) * ((time() - gate.t0) / gate.dt).clamp(0.0, 1.0))) } else { gate.y1 } }) { tsw } else { 0.0 } } } else { () }
 body RefRamp
   carrier tick: bool in
   carrier run: bool in
@@ -349,9 +349,9 @@ body RefRamp
   carrier reference: u10 out init 0
   carrier at_target: bool out
   drive at_target = (reference == target)
-  event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
+  event E0 changed tick guard ((!tick.prev()) && tick)
   reaction R0 on (E0)
-    if (!run.known_or(false)) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
+    if (!run) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
 body Resistor
   param r: f64 where (r > 0.0)
   node p: Electrical port
@@ -382,10 +382,9 @@ body SetpointReg
   carrier wr: bool in
   carrier data: u8 in
   carrier code: u8 out init 100
-  event E0 changed wr guard ((!wr.prev().high()) & ((!wr.is_known()) | wr.known_or(false)))
+  event E0 changed wr guard ((!wr.prev()) && wr)
   reaction R0 on (E0)
-    local d: u8
-    if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }
+    code <- data.min(168u8)
 body Supervisor
   carrier tick: bool in
   carrier en: bool in
@@ -404,37 +403,37 @@ body Supervisor
   carrier pg_in: u7 signal init 0
   carrier pg_out: u3 signal init 0
   stream log (severity: t2)
-  drive run = ((mode == (Mode::SoftStart() : t0)) | (mode == (Mode::Regulate() : t0)))
-  event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
+  drive run = ((mode == (Mode::SoftStart() : t0)) || (mode == (Mode::Regulate() : t0)))
+  event E0 changed tick guard ((!tick.prev()) && tick)
   reaction R0 on (E0)
     local enabled: bool
-    local f: flagged<t1>
-    local fault_now.is: flagged<bool>
-    local fault_now.val: flagged<t1>
-    local in_n: flagged<u7>
+    local f: t1
+    local fault_now.is: bool
+    local fault_now.val: t1
+    local in_n: u7
     local inside: bool
     local log.severity: t2
     local m: u10
     local match$0: t0
-    local oc_n: flagged<u4>
-    local out_n: flagged<u3>
-    local ov_n: flagged<u2>
+    local oc_n: u4
+    local out_n: u3
+    local ov_n: u2
     local r: u10
-    local regulating: flagged<bool>
-    let enabled = (en.known_or(false) && vin_ok.known_or(false))
-    let m = meas.known_or(1023u10)
-    let r = reference.known_or(0u10)
-    let oc_n = if (!cut.known_or(true)) { 0u4 } else { if (oc_count < 8u4) { (oc_count + 1u4) } else { 8u4 } }
+    local regulating: bool
+    let enabled = (en && vin_ok)
+    let m = meas
+    let r = reference
+    let oc_n = if (!cut) { 0u4 } else { if (oc_count < 8u4) { (oc_count + 1u4) } else { 8u4 } }
     let ov_n = if (m <= ovp_threshold(r)) { 0u2 } else { if (ov_count < 2u2) { (ov_count + 1u2) } else { 2u2 } }
     let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }
     let fault_now.val = if (oc_n >= 8u4) { (Fault::OverCurrent() : t1) } else { if (ov_n >= 2u2) { (Fault::OverVoltage() : t1) } else { (Fault::Clear() : t1) } }
     oc_count <- oc_n
     ov_count <- ov_n
-    if (!enabled) { mode <- (Mode::Off() : t0) } else { let match$0 = mode.known_or((Mode::Off() : t0)); if matches!(match$0, Mode::Off) { mode <- (Mode::SoftStart() : t0) } else { if matches!(match$0, Mode::Hiccup) { if (retry == 0u11) { mode <- (Mode::SoftStart() : t0) } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- (Mode::Hiccup() : t0); fault <- f; retry <- 999u11; let log.severity = (Severity::Warning() : t2); emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == (Mode::SoftStart() : t0)) & at_target.known_or(false)) { mode <- (Mode::Regulate() : t0); fault <- (Fault::Clear() : t1) } else { () } } } } }
-    let regulating = (((mode == (Mode::Regulate() : t0)) & enabled) & (!fault_now.is))
+    if (!enabled) { mode <- (Mode::Off() : t0) } else { let match$0 = mode; if matches!(match$0, Mode::Off) { mode <- (Mode::SoftStart() : t0) } else { if matches!(match$0, Mode::Hiccup) { if (retry == 0u11) { mode <- (Mode::SoftStart() : t0) } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- (Mode::Hiccup() : t0); fault <- f; retry <- 999u11; let log.severity = (Severity::Warning() : t2); emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == (Mode::SoftStart() : t0)) && at_target) { mode <- (Mode::Regulate() : t0); fault <- (Fault::Clear() : t1) } else { () } } } } }
+    let regulating = (((mode == (Mode::Regulate() : t0)) && enabled) && (!fault_now.is))
     let inside = in_window(m, r)
-    let in_n = if (!(regulating & inside)) { 0u7 } else { if (pg_in < 64u7) { (pg_in + 1u7) } else { 64u7 } }
-    let out_n = if (!(regulating & (!inside))) { 0u3 } else { if (pg_out < 4u3) { (pg_out + 1u3) } else { 4u3 } }
+    let in_n = if (!(regulating && inside)) { 0u7 } else { if (pg_in < 64u7) { (pg_in + 1u7) } else { 64u7 } }
+    let out_n = if (!(regulating && (!inside))) { 0u3 } else { if (pg_out < 4u3) { (pg_out + 1u3) } else { 4u3 } }
     pg_in <- in_n
     pg_out <- out_n
     if (!regulating) { pgood <- false } else { if (in_n >= 64u7) { pgood <- true } else { if (out_n >= 4u3) { pgood <- false } else { () } } }
@@ -448,17 +447,6 @@ body Supply
   analog
     b0.potential +> direct vin
     b1.flow +> direct (probe(src, p) / rs)
-fn "dithered_width~01"(duty: u12, frame: flagged<u3>) -> flagged<u9>
-  local coarse: u9
-  local duty: u12
-  local fine: u3
-  local frame: flagged<u3>
-  let coarse = ((duty >> 3i32) as u9)
-  let fine = ((duty & 7u12) as u3)
-  if ("rev3~1"(frame) < fine) { (coarse + 1u9) } else { coarse }
-fn "rev3~1"(k: flagged<u3>) -> flagged<u3>
-  local k: flagged<u3>
-  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))
 fn body_diode(vsd: f64, vf: f64, rd: f64) -> f64
   local rd: f64
   local vf: f64
@@ -468,6 +456,14 @@ fn body_diode(vsd: f64, vf: f64, rd: f64) -> f64
   let vs = 0.025
   let x = ((vsd - vf) / vs)
   ((vs / rd) * if (x > 40.0) { x } else { ln((1.0 + exp(x))) })
+fn dithered_width(duty: u12, frame: u3) -> u9
+  local coarse: u9
+  local duty: u12
+  local fine: u3
+  local frame: u3
+  let coarse = ((duty >> 3i32) as u9)
+  let fine = ((duty & 7u12) as u3)
+  if (rev3(frame) < fine) { (coarse + 1u9) } else { coarse }
 fn in_window(meas: u10, reference: u10) -> bool
   local half: u11
   local m: u11
@@ -481,6 +477,9 @@ fn in_window(meas: u10, reference: u10) -> bool
 fn ovp_threshold(reference: u10) -> u10
   local reference: u10
   ((reference + (reference >> 3i32)) + 16u10)
+fn rev3(k: u3) -> u3
+  local k: u3
+  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))
 fn target_codes(setpoint: u8) -> u10
   local setpoint: u8
   (128u10 + ((setpoint as u10) << 2i32))
@@ -550,23 +549,23 @@ net Buck.ctl.sup.pg_in: u7  declared by Buck.ctl.sup  init 0
 net Buck.ctl.sup.pg_out: u3  declared by Buck.ctl.sup  init 0
 net Buck.ctl.sup.retry: u11  declared by Buck.ctl.sup  init 0
 net Buck.done: bool  declared by Buck
-net Buck.en: bool  declared by Buck
+net Buck.en: bool  declared by Buck  init false
 net Buck.fault: t1  declared by Buck
 net Buck.hs_cmd: bool  declared by Buck
-net Buck.inject: bool  declared by Buck
+net Buck.inject: bool  declared by Buck  init false
 net Buck.load.k_inject.dt: f64  declared by Buck.load  init 0.0
 net Buck.load.k_inject.t0: f64  declared by Buck.load  init 0.0
 net Buck.load.k_inject.x: f64  declared by Buck.load
-net Buck.load.k_inject.xd: f64  declared by Buck.load
-net Buck.load.k_inject.y0: f64  declared by Buck.load
-net Buck.load.k_inject.y1: f64  declared by Buck.load
+net Buck.load.k_inject.xd: f64  declared by Buck.load  init 0.0
+net Buck.load.k_inject.y0: f64  declared by Buck.load  init 0.0
+net Buck.load.k_inject.y1: f64  declared by Buck.load  init 0.0
 net Buck.load.k_step.dt: f64  declared by Buck.load  init 0.0
 net Buck.load.k_step.t0: f64  declared by Buck.load  init 0.0
 net Buck.load.k_step.x: f64  declared by Buck.load
-net Buck.load.k_step.xd: f64  declared by Buck.load
-net Buck.load.k_step.y0: f64  declared by Buck.load
-net Buck.load.k_step.y1: f64  declared by Buck.load
-net Buck.load_step: bool  declared by Buck
+net Buck.load.k_step.xd: f64  declared by Buck.load  init 0.0
+net Buck.load.k_step.y0: f64  declared by Buck.load  init 0.0
+net Buck.load.k_step.y1: f64  declared by Buck.load  init 0.0
+net Buck.load_step: bool  declared by Buck  init false
 net Buck.ls_cmd: bool  declared by Buck
 net Buck.meas.ocp.above$0.init$0.up: bool  declared by Buck.meas.ocp  init true
 net Buck.meas.ocp.above$1.init$0.up: bool  declared by Buck.meas.ocp  init true
@@ -580,19 +579,19 @@ net Buck.pgood: bool  declared by Buck
 net Buck.power.hs.gate.dt: f64  declared by Buck.power.hs  init 0.0
 net Buck.power.hs.gate.t0: f64  declared by Buck.power.hs  init 0.0
 net Buck.power.hs.gate.x: f64  declared by Buck.power.hs
-net Buck.power.hs.gate.xd: f64  declared by Buck.power.hs
-net Buck.power.hs.gate.y0: f64  declared by Buck.power.hs
-net Buck.power.hs.gate.y1: f64  declared by Buck.power.hs
+net Buck.power.hs.gate.xd: f64  declared by Buck.power.hs  init 0.0
+net Buck.power.hs.gate.y0: f64  declared by Buck.power.hs  init 0.0
+net Buck.power.hs.gate.y1: f64  declared by Buck.power.hs  init 0.0
 net Buck.power.hs_gate: bool  declared by Buck.power
 net Buck.power.ls.gate.dt: f64  declared by Buck.power.ls  init 0.0
 net Buck.power.ls.gate.t0: f64  declared by Buck.power.ls  init 0.0
 net Buck.power.ls.gate.x: f64  declared by Buck.power.ls
-net Buck.power.ls.gate.xd: f64  declared by Buck.power.ls
-net Buck.power.ls.gate.y0: f64  declared by Buck.power.ls
-net Buck.power.ls.gate.y1: f64  declared by Buck.power.ls
+net Buck.power.ls.gate.xd: f64  declared by Buck.power.ls  init 0.0
+net Buck.power.ls.gate.y0: f64  declared by Buck.power.ls  init 0.0
+net Buck.power.ls.gate.y1: f64  declared by Buck.power.ls  init 0.0
 net Buck.power.ls_gate: bool  declared by Buck.power
 net Buck.sample: bool  declared by Buck
 net Buck.sink_oc: bool  declared by Buck
-net Buck.sp_data: u8  declared by Buck
-net Buck.sp_wr: bool  declared by Buck
+net Buck.sp_data: u8  declared by Buck  init 100
+net Buck.sp_wr: bool  declared by Buck  init false
 net Buck.vin_ok: bool  declared by Buck

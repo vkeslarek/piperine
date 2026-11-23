@@ -2,8 +2,7 @@
 //! ..)`, and the functions that reach it (`log`, `require`). An `emit!` is allowed in a reaction
 //! and in `analog`; a `fn` that reaches it is callable only there, so a definition, a body
 //! `let` or a const context that reaches one is `E0601`. A site reached from `analog` that writes
-//! `sim` or `checks` is `E0603`. A field name is distinct in one `emit!` and is not `maybe`
-//! (`E0604`); a field has one type per stream in a module, and the type the stdlib gives it on a
+//! `sim` or `checks` is `E0603`. A field name is distinct in one `emit!` (`E0604`); a field has one type per stream in a module, and the type the stdlib gives it on a
 //! reserved stream (`E0605`); a field is a value (`E0606`).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -82,8 +81,8 @@ impl Checker<'_> {
             self.event_slot = Some(field.value);
             let found = self.infer(field.value);
             let field_name = field.name.text.clone();
-            if field_name == "maybe" || !seen.insert(field_name.clone()) {
-                let message = if field_name == "maybe" { "the field name `maybe` is reserved (§19 rule 11)".to_string() } else { format!("the field `{field_name}` is written twice in one `emit!` (§19 rule 11)") };
+            if !seen.insert(field_name.clone()) {
+                let message = format!("the field `{field_name}` is written twice in one `emit!` (§19 rule 11)");
                 self.coded(file, "E0604", field.span, message, "a field name that is not free");
                 continue;
             }

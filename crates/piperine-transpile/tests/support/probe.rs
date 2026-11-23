@@ -1,24 +1,24 @@
 //! A printed IR function compiled with the runtime and run: the program `rustc` builds from the
 //! function texts and a `main`, written into a temp dir beside the runtime files that need no ABI
-//! (`real.rs`, `int.rs`, `flag.rs`, `control.rs`). Shared by the printer tests of control flow.
+//! (`real.rs`, `int.rs`, `pin.rs`, `control.rs`). Shared by the printer tests of control flow.
 
 use std::path::Path;
 use std::process::Command;
 
 use piperine_transpile::Rustc;
-use piperine_transpile::rt::{CONTROL, FLAG, INT, REAL};
+use piperine_transpile::rt::{CONTROL, INT, PIN, REAL};
 
 /// The `rt.rs` of a probe: the runtime without `commits.rs`, which needs the ABI crate.
 const ROOT: &str = "\
 pub mod control;
-pub mod flag;
 pub mod int;
+pub mod pin;
 pub mod real;
 
 #[allow(unused_imports)]
-pub use control::{Depth, Index, Outcome, Panic, Step, Trips, Unrolled};
+pub use control::{Depth, Index, Panic, Trips};
 #[allow(unused_imports)]
-pub use flag::{Flagged, LevelWords};
+pub use pin::{Carried, LevelWords};
 #[allow(unused_imports)]
 pub use int::{Int, UInt, Unwrap};
 #[allow(unused_imports)]
@@ -36,7 +36,7 @@ impl Probe {
         let dir = tempfile::tempdir().expect("a temp dir");
         let root = dir.path();
         std::fs::create_dir_all(root.join("rt")).expect("rt dir");
-        for (path, text) in [("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/flag.rs", FLAG), ("rt/control.rs", CONTROL)] {
+        for (path, text) in [("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL)] {
             std::fs::write(root.join(path), text).expect("a runtime file");
         }
         let program = format!("mod rt;\n#[allow(unused_imports)]\nuse rt::Real;\n\n{}\n\n{main}\n", functions.join("\n\n"));

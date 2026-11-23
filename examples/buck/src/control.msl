@@ -4,15 +4,12 @@
 use crate::spec::*;
 
 /// The 8-bit output-voltage setpoint register (SPEC §7.1), written by the host: `data` is taken
-/// on a rising `wr`. A code above 168 saturates to 168 (5.0 V); a write of unknown data is
-/// ignored.
+/// on a rising `wr`. A code above 168 saturates to 168 (5.0 V).
 pub module SetpointReg(in wr: Bit, in data: Bit<u8>, out code: Bit<u8> = SETPOINT_RESET) {}
 
 digital for SetpointReg {
     on wr.rise() {
-        if let Some(d) = data.known() {
-            code <- d.min(SETPOINT_MAX);
-        }
+        code <- data.min(SETPOINT_MAX);
     }
 }
 
@@ -36,7 +33,7 @@ pub module RefRamp(
 
 digital for RefRamp {
     on tick.rise() {
-        if !run.known_or(false) {
+        if !run {
             reference <- 0;
         } else if reference < target {
             reference <- reference + 1;
@@ -75,14 +72,13 @@ pub module Pid(
 
 digital for Pid {
     on tick.rise() {
-        if !run.known_or(false) {
+        if !run {
             integ <- 0;
             deriv <- 0;
             e_prev <- 0;
             duty <- 0;
         } else {
-            // An unknown measurement reads as full scale: the loop then asks for less, never more.
-            let e = ((reference.known_or(0) as i16) - (meas.known_or(1023) as i16)).clamp(E_MIN, E_MAX);
+            let e = ((reference as i16) - (meas as i16)).clamp(E_MIN, E_MAX);
             let p = KP_Q4 * (e as i32);
             let d = (deriv >> D_POLE_SHIFT) + KD_Q4 * ((e - e_prev) as i32);
             let u = (p + integ + d) >> Q_SHIFT;

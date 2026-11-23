@@ -1,7 +1,6 @@
 //! `Ir::check`: the invariants a correct builder sequence guarantees, verified over the arenas.
 //! The digital forms add their own: a body writes only the carriers it may (never an `in`
-//! port), a carrier has a drive or commits, never both, `analog` reads a carrier only through
-//! `known_or`, `is_known` and `high` (§3.3.5), a reaction waits on events of its body, a commit
+//! port), a carrier has a drive or commits, never both, a reaction waits on events of its body, a commit
 //! sits in a reaction, a `cross` watches a real, and a carrier's initial value is a value of its
 //! type (an integer within its `N`-bit range). A contribution may stand anywhere inside the
 //! `analog` block (under an `if`, in a nested block) but in a closure, a function or a
@@ -510,12 +509,10 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
-            Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => exprs.extend([*a, *b]),
+            Expr::Same { a, b } => exprs.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => exprs.push(*expr),
-            Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
             Expr::Method { receiver, args, .. } => {
                 exprs.push(*receiver);
@@ -844,10 +841,6 @@ impl<'a> Checker<'a> {
                 ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
                     return Some(format!("type {t} has a width outside 1..=64"));
                 }
-                ValueType::Flagged(inner) if !Typing::laid_out(inner) => {
-                    return Some(format!("type {t}: only `bool`, `f64` and an integer type may be unknown"));
-                }
-                ValueType::Flagged(inner) => stack.push(inner),
                 ValueType::Fn(params, ret) => {
                     stack.extend(params);
                     stack.push(ret);
@@ -908,12 +901,11 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+                Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
-                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
+                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
-                Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
-                Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => stack_e.extend([*a, *b]),
+                Expr::Same { a, b } => stack_e.extend([*a, *b]),
                 Expr::LevelCast { expr, .. } => stack_e.push(*expr),
                 Expr::If { cond, then, otherwise } => stack_e.extend([*cond, *then, *otherwise]),
                 Expr::Block { stmts, value } => {
@@ -1033,7 +1025,6 @@ impl<'a> Checker<'a> {
         let ir = self.ir;
         for body in &ir.bodies {
             self.writes(body);
-            self.analog_reads(body);
             self.ambient_reads(body);
             let item = format!("body {}", body.name);
             for (k, reaction) in body.reactions.iter().enumerate() {
@@ -1045,7 +1036,7 @@ impl<'a> Checker<'a> {
             }
             for (k, event) in body.events.iter().enumerate() {
                 if let EventSource::Cross { e, ttol, etol } = event.source {
-                    if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
+                    if let Some(ty) = self.ty(e).filter(|t| **t != ValueType::F64) {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("a `cross` watches a real, found {ty}"));
                     }
                     for (name, tol) in [("ttol", ttol), ("etol", etol)] {
@@ -1067,7 +1058,7 @@ impl<'a> Checker<'a> {
                     }
                 }
                 if let EventSource::At(e) = event.source {
-                    if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
+                    if let Some(ty) = self.ty(e).filter(|t| **t != ValueType::F64) {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("an `at` waits for a time, an `f64`, found {ty}"));
                     }
                     for read in self.reach_calls(&[e]) {
@@ -1157,40 +1148,6 @@ impl<'a> Checker<'a> {
         for c in driven.intersection(&committed) {
             if let Some(carrier) = body.carriers.get(*c as usize) {
                 self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} has both a drive and a commit", carrier.name));
-            }
-        }
-    }
-
-    /// §3.3.5: `analog` reads a carrier only as the receiver of `known_or`, `is_known` or `high`.
-    fn analog_reads(&mut self, body: &BodyData) {
-        let Some(analog) = &body.analog else { return };
-        let (exprs, _) = self.reach(analog, &[]);
-        let ir = self.ir;
-        let mut allowed: HashSet<ExprId> = HashSet::new();
-        for e in &exprs {
-            // `level` and `same` read the flag and give a known result for a known index (§3.3.14,
-            // §22.1.4), as `known_or`, `is_known` and `high` do (§3.3.5, §3.3.6)
-            let reads: Vec<ExprId> = match &ir.exprs[e.index()].kind {
-                Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) | Expr::Level { value: read, .. } => vec![*read],
-                Expr::Same { a, b } => vec![*a, *b],
-                _ => Vec::new(),
-            };
-            for read in reads {
-                if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_) | Expr::Previous(_))) {
-                    allowed.insert(read);
-                }
-            }
-        }
-        for e in exprs {
-            let (c, read) = match ir.exprs[e.index()].kind {
-                Expr::Carrier(c) => (c, "carrier"),
-                Expr::Previous(c) => (c, "the previous value of carrier"),
-                _ => continue,
-            };
-            if !allowed.contains(&e) {
-                let name = body.carriers.get(c as usize).map_or_else(|| format!("{c}"), |c| c.name.clone());
-                let origin = self.expr_origin(e);
-                self.report(format!("body {}", body.name), origin, format!("`analog` reads {read} {name} outside `known_or`, `is_known` and `high` (§3.3.5)"));
             }
         }
     }
@@ -1522,11 +1479,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `id`, a value written to a carrier of type `want` (or a delay, `want` being `f64`), may be
-    /// known or unknown: its type is `want` or `want` flagged.
+    /// `id`, a value written to a carrier of type `want` (or a delay, `want` being `f64`): its type
+    /// is `want`.
     fn carried(&mut self, w: &Walk, id: ExprId, want: &ValueType, position: &str) {
         if let Some(got) = self.ty(id) {
-            if Typing::base(got) != want {
+            if got != want {
                 let origin = self.expr_origin(id);
                 self.wrong(w, origin, format!("{position} must be {want}, found {got}"));
             }
@@ -1649,19 +1606,6 @@ impl<'a> Checker<'a> {
                 let short = matches!(op, BinaryOp::And | BinaryOp::Or);
                 next.push(Task::Expr(*rhs, Ctx { conditional: ctx.conditional || short, ..ctx }));
             }
-            Expr::If { cond, then, otherwise } if [*cond, *then, *otherwise].iter().any(|e| self.ty(*e).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
-                if first {
-                    let want = match (self.ty(*cond), self.ty(*then), self.ty(*otherwise)) {
-                        (Some(c), Some(t), Some(o)) => Typing::if_(c, t, o),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "an `if`");
-                }
-                next.push(Task::Expr(*cond, ctx));
-                let arm = Ctx { conditional: true, ..ctx };
-                next.push(Task::Expr(*then, arm));
-                next.push(Task::Expr(*otherwise, arm));
-            }
             Expr::If { cond, then, otherwise } => {
                 if first {
                     self.want(w, *cond, &ValueType::Bool, "condition of an `if`");
@@ -1701,14 +1645,6 @@ impl<'a> Checker<'a> {
                             self.want(w, *a, &p.ty, "argument of a call");
                         }
                     }
-                }
-                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
-            }
-            Expr::Math { args, .. } if args.iter().any(|a| self.ty(*a).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
-                if first {
-                    let arg_types: Option<Vec<&ValueType>> = args.iter().map(|a| self.ty(*a)).collect();
-                    let want = arg_types.and_then(|t| Typing::math(&t));
-                    self.typed(w, &origin, ty, want, "a math function");
                 }
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
@@ -1845,44 +1781,6 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*receiver, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
-            Expr::Unknown => {
-                if first && !matches!(ty, ValueType::Flagged(_)) {
-                    self.wrong(w, origin, format!("the literal `Unknown` must have a flagged type, found {ty}"));
-                }
-            }
-            Expr::KnownOr { value, default } => {
-                if first {
-                    let want = match (self.ty(*value), self.ty(*default)) {
-                        (Some(v), Some(d)) => Typing::known_or(v, d),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "`known_or`");
-                }
-                next.push(Task::Expr(*value, ctx));
-                next.push(Task::Expr(*default, ctx));
-            }
-            Expr::Level { value, index, .. } => {
-                if first {
-                    let want = match (self.ty(*value), self.ty(*index)) {
-                        (Some(v), Some(i)) => Typing::level(v, i),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "`level`");
-                }
-                next.push(Task::Expr(*value, ctx));
-                next.push(Task::Expr(*index, ctx));
-            }
-            Expr::Merge { a, b } => {
-                if first {
-                    let want = match (self.ty(*a), self.ty(*b)) {
-                        (Some(a), Some(b)) => Typing::merge(a, b),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "`merge`");
-                }
-                next.push(Task::Expr(*a, ctx));
-                next.push(Task::Expr(*b, ctx));
-            }
             Expr::Same { a, b } => {
                 if first {
                     let want = match (self.ty(*a), self.ty(*b)) {
@@ -1894,9 +1792,9 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*a, ctx));
                 next.push(Task::Expr(*b, ctx));
             }
-            Expr::LevelCast { expr, to, tags } => {
+            Expr::LevelCast { expr, to, .. } => {
                 if first {
-                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some(), &self.ir.types));
+                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, &self.ir.types));
                     self.typed(w, &origin, ty, want, "`cast`");
                 }
                 next.push(Task::Expr(*expr, ctx));
@@ -1907,7 +1805,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "the previous value of a param outside a body".to_string());
                     } else {
                         match w.owner.params.get(*p as usize) {
-                            // A param is known: its previous value has its type, never flagged.
+                            // A param's previous value has its type.
                             Some(param) => self.own(w, &origin, ty, &param.clone()),
                             None => self.wrong(w, origin, format!("previous value of param {p}, out of range ({} params)", w.owner.params.len())),
                         }
@@ -1952,7 +1850,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "carrier read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -1964,7 +1862,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a previous-value read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
                             None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -2021,14 +1919,6 @@ impl<'a> Checker<'a> {
             }
             Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 self.aggregate_form(w, id, first, ctx, next);
-            }
-            Expr::IsKnown(value) | Expr::High(value) => {
-                if first {
-                    let high = matches!(data.kind, Expr::High(_));
-                    let what = if high { "`high`" } else { "`is_known`" };
-                    self.typed(w, &origin, ty, self.ty(*value).and_then(|v| Typing::flag_read(high, v)), what);
-                }
-                next.push(Task::Expr(*value, ctx));
             }
         }
         next.push(Task::Exit(id));

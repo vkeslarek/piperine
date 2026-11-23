@@ -6,8 +6,8 @@
 //! once for each half. Inside such a function `return Some(e)` returns `e`'s half, and `e?` is
 //! `if e.is { e.val } else { return None }`, `None` being `(false, the zero of the payload)`.
 //!
-//! A function with a `return` or a `?` has the result type of its signature, flagged where the
-//! function may see unknowns (`FunctionResult`): every return and the tail are held to it.
+//! A function with a `return` or a `?` has the result type of its signature
+//! (`FunctionResult`): every return and the tail are held to it.
 
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Stmt, StmtId, ValueType};
 
@@ -15,7 +15,6 @@ use super::control::LoopFrame;
 
 use super::compound::Pair;
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use super::variants::Half;
 use crate::msl::Span;
@@ -73,17 +72,14 @@ impl Elaboration<'_, '_> {
             (None, _) => declared.as_ref().and_then(|t| self.value_type(t)).unwrap_or(ValueType::Unit),
         };
         if self.returns_early(body) {
-            scope.result = Some(FunctionResult { ty: Self::mutable_type(scope, base), half, payload: payload.clone() });
+            scope.result = Some(FunctionResult { ty: base, half, payload: payload.clone() });
         }
         let lowered = match &payload {
             Some(_) => self.lower_half_block(scope, file, body, half)?,
             None => self.lower_block(scope, file, &body.stmts, body.span)?,
         };
         match scope.result.clone() {
-            Some(result) => {
-                let lowered = self.fit_to(lowered, &result.ty);
-                Some(self.coerced_to(scope, lowered, &result.ty))
-            }
+            Some(result) => Some(self.fit_to(lowered, &result.ty)),
             None => Some(lowered),
         }
     }
@@ -137,7 +133,7 @@ impl Elaboration<'_, '_> {
                 return None;
             };
             let pair = self.lower_option(scope, value)?;
-            return self.leave_inlined(scope, pair.is, pair.val, span, origin);
+            return self.leave_inlined(scope, pair.is, pair.val, origin);
         }
         let Some(result) = scope.result.clone() else {
             self.unsupported(scope.file, span, "a `return` outside a function that returns early");
@@ -151,21 +147,7 @@ impl Elaboration<'_, '_> {
             (Some(value), None) => Some(self.lower_expr(scope, value)?),
             (None, _) => None,
         };
-        let lowered = match lowered {
-            Some(value) => Some(self.held_to(scope, value, &result.ty, span)?),
-            None => None,
-        };
         Some(self.emit_exit(Expr::Return(lowered), origin))
-    }
-
-    /// `value` held to the type `want`: made flagged when `want` is and it is not; refused when it
-    /// may be unknown and `want` cannot hold one.
-    fn held_to(&mut self, scope: &mut Scope, value: LoweredExpr, want: &ValueType, span: Span) -> Option<LoweredExpr> {
-        if self.flag(value) == Flag::Flagged && Flag::of(want) == Flag::Plain {
-            self.unsupported(scope.file, span, "a value that may be unknown returned from a function whose result cannot hold one");
-            return None;
-        }
-        Some(self.coerced_to(scope, value, want))
     }
 
     /// `inner?` (§1.8.14), where `inner` is an `Option`: its payload, or the function returns the
@@ -189,15 +171,10 @@ impl Elaboration<'_, '_> {
                 }
             },
         };
-        let empty = self.held_to(scope, empty, &result.ty, span)?;
         let exit = self.emit_exit(Expr::Return(Some(empty)), origin.clone());
-        let base = match self.type_of(pair.val) {
-            ValueType::Flagged(inner) => *inner,
-            other => other,
-        };
+        let base = self.type_of(pair.val);
         let exit = self.fit_to(exit, &base);
-        let ty = self.flags(&[pair.is, pair.val]).wrap(base);
-        Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: exit }, ty, origin))
+        Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: exit }, base, origin))
     }
 
     /// The pair `(f.is(args), f.val(args))` of a call of a function that returns an `Option`: the
@@ -211,9 +188,8 @@ impl Elaboration<'_, '_> {
         }
         let origin = self.expr_origin(expr);
         let first = self.lower_arguments(scope, expr, function)?;
-        let pattern: Vec<Flag> = first.iter().map(|a| self.flag(*a)).collect();
-        let (presence, is_ty) = self.request(function, pattern.clone(), Half::Presence)?;
-        let (payload, val_ty) = self.request(function, pattern, Half::Payload)?;
+        let (presence, is_ty) = self.request(function, Half::Presence)?;
+        let (payload, val_ty) = self.request(function, Half::Payload)?;
         let second = self.lower_arguments(scope, expr, function)?;
         let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
         let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);
@@ -244,7 +220,7 @@ impl Elaboration<'_, '_> {
         let slots = if early { Some(self.declare_exit_slots(function, scope, span, &origin)?) } else { None };
         if let Some(frame) = &slots {
             scope.inline_exits.push(frame.clone());
-            scope.loops.push(LoopFrame { value: ValueType::Unit });
+            scope.loops.push(LoopFrame);
         }
         let lowered = self.lower_statements(scope, &body.stmts[..body.stmts.len() - 1]).and_then(|(mut inner, last)| {
             // a block-like statement just before the tail (`if c { .. }`) comes back as the value of the slice
@@ -265,13 +241,12 @@ impl Elaboration<'_, '_> {
         let (is_local, val_local) = match &frame {
             Some(frame) => {
                 let mut body = inner;
-                let (is, val) = (self.held_to(scope, pair.is, &scope.locals[frame.is as usize].ty.clone(), span)?, self.held_to(scope, pair.val, &scope.locals[frame.val as usize].ty.clone(), span)?);
-                body.push(self.assign_local(frame.is, is));
-                body.push(self.assign_local(frame.val, val));
+                body.push(self.assign_local(frame.is, pair.is));
+                body.push(self.assign_local(frame.val, pair.val));
                 let leave = self.emit_exit(Expr::Break(None), origin.clone());
                 body.push(self.stmt(Stmt::Expr(leave)));
                 let looped = self.emit(Expr::Loop { body }, ValueType::Unit, origin.clone());
-                stmts.push(self.assign_flag(scope, frame.flag, false, &origin));
+                stmts.push(self.assign_flag(frame.flag, false, &origin));
                 stmts.push(self.stmt(Stmt::Expr(looped)));
                 (frame.is, frame.val)
             }
@@ -294,7 +269,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The temporaries of an inlined `Option` function that leaves early: its flag and payload, of the
-    /// types its signature gives (flagged where the code may see unknowns), and the loop flag.
+    /// types its signature gives, and the loop flag.
     fn declare_exit_slots(&mut self, function: DeclId, scope: &mut Scope, span: Span, origin: &Origin) -> Option<InlineExit> {
         let declared = match &self.design.decl_data(function).kind {
             DeclKind::Fn(f) => f.ret.and_then(|t| self.types.written(t).cloned()),
@@ -308,24 +283,20 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "a function returning an `Option` whose payload has no value in the IR");
             return None;
         };
-        let is_ty = Self::mutable_type(scope, ValueType::Bool);
-        let val_ty = Self::mutable_type(scope, payload);
-        let is = self.declare_typed(scope, "option.is", is_ty, origin)?;
-        let val = self.declare_typed(scope, "option.val", val_ty, origin)?;
-        let flag = self.declare_typed(scope, "option.left", Self::mutable_type(scope, ValueType::Bool), origin)?;
+        let is = self.declare_typed(scope, "option.is", ValueType::Bool, origin)?;
+        let val = self.declare_typed(scope, "option.val", payload, origin)?;
+        let flag = self.declare_typed(scope, "option.left", ValueType::Bool, origin)?;
         Some(InlineExit { is, val, flag, depth: scope.loops.len() + 1, flag_uses: 0, loop_flagged: false })
     }
 
     /// `return pair` or the `None` of a `?` inside an inlined `Option` function: the pair is assigned to
     /// its temporaries and the body's `loop` is left (from inside a loop of the body, through the flag
     /// its statements test). Diverges. `None` after a diagnostic.
-    fn leave_inlined(&mut self, scope: &mut Scope, is: LoweredExpr, val: LoweredExpr, span: Span, origin: Origin) -> Option<LoweredExpr> {
+    fn leave_inlined(&mut self, scope: &mut Scope, is: LoweredExpr, val: LoweredExpr, origin: Origin) -> Option<LoweredExpr> {
         let frame = scope.inline_exits.last()?.clone();
-        let is = self.held_to(scope, is, &scope.locals[frame.is as usize].ty.clone(), span)?;
-        let val = self.held_to(scope, val, &scope.locals[frame.val as usize].ty.clone(), span)?;
         let mut stmts = vec![self.assign_local(frame.is, is), self.assign_local(frame.val, val)];
         if scope.loops.len() > frame.depth {
-            stmts.push(self.assign_flag(scope, frame.flag, true, &origin));
+            stmts.push(self.assign_flag(frame.flag, true, &origin));
             if let Some(top) = scope.inline_exits.last_mut() {
                 top.flag_uses += 1;
             }
@@ -340,23 +311,16 @@ impl Elaboration<'_, '_> {
     fn lower_inlined_try(&mut self, scope: &mut Scope, inner: ExprId, span: Span, origin: Origin) -> Option<LoweredExpr> {
         let pair = self.lower_option(scope, inner)?;
         let frame = scope.inline_exits.last()?.clone();
-        let payload = match scope.locals[frame.val as usize].ty.clone() {
-            ValueType::Flagged(inner) => *inner,
-            other => other,
-        };
+        let payload = scope.locals[frame.val as usize].ty.clone();
         let none = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
         let Some(zero) = self.zero(&payload, origin.clone()) else {
             self.unsupported(scope.file, span, "`?` where the payload has no zero in the IR");
             return None;
         };
-        let exit = self.leave_inlined(scope, none, zero, span, origin.clone())?;
-        let base = match self.type_of(pair.val) {
-            ValueType::Flagged(inner) => *inner,
-            other => other,
-        };
+        let exit = self.leave_inlined(scope, none, zero, origin.clone())?;
+        let base = self.type_of(pair.val);
         let exit = self.fit_to(exit, &base);
-        let ty = self.flags(&[pair.is, pair.val]).wrap(base);
-        Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: exit }, ty, origin))
+        Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: exit }, base, origin))
     }
 
     /// After a loop of an inlined body in which a `return` ran: `if left { break }`, which leaves the next
@@ -365,25 +329,15 @@ impl Elaboration<'_, '_> {
         let flag = scope.inline_exits.last().map_or(0, |frame| frame.flag);
         let flag_ty = scope.locals[flag as usize].ty.clone();
         let read = self.emit(Expr::Local(flag), flag_ty.clone(), origin.clone());
-        // the flag is always known; a flagged local is read through `known_or`
-        let raised = match flag_ty {
-            ValueType::Flagged(_) => {
-                let default = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-                self.emit(Expr::KnownOr { value: read, default }, ValueType::Bool, origin.clone())
-            }
-            _ => read,
-        };
         let leave = self.emit_exit(Expr::Break(None), origin.clone());
         let nothing = self.emit(Expr::Unit, ValueType::Unit, origin.clone());
-        let test = self.emit(Expr::If { cond: raised, then: leave, otherwise: nothing }, ValueType::Unit, origin);
+        let test = self.emit(Expr::If { cond: read, then: leave, otherwise: nothing }, ValueType::Unit, origin);
         self.stmt(Stmt::Expr(test))
     }
 
-    /// The statement `flag = raised;`, the value held to the flag's type.
-    fn assign_flag(&mut self, scope: &mut Scope, flag: u32, raised: bool, origin: &Origin) -> StmtId {
+    /// The statement `flag = raised;`.
+    fn assign_flag(&mut self, flag: u32, raised: bool, origin: &Origin) -> StmtId {
         let value = self.emit(Expr::Bool(raised), ValueType::Bool, origin.clone());
-        let ty = scope.locals[flag as usize].ty.clone();
-        let value = self.coerced_to(scope, value, &ty);
         self.assign_local(flag, value)
     }
 
@@ -402,12 +356,7 @@ impl Elaboration<'_, '_> {
     /// A new mutable local `name` of type `ty`, declared with the zero of it in `Scope::pending`.
     /// `None` after a diagnostic.
     fn declare_typed(&mut self, scope: &mut Scope, name: &str, ty: ValueType, origin: &Origin) -> Option<u32> {
-        let base = match &ty {
-            ValueType::Flagged(inner) => (**inner).clone(),
-            other => other.clone(),
-        };
-        let zero = self.zero(&base, origin.clone())?;
-        let init = self.coerced_to(scope, zero, &ty);
+        let init = self.zero(&ty, origin.clone())?;
         let local = scope.locals.len() as u32;
         scope.locals.push(Local { name: name.to_string(), ty, mutable: true });
         let declaration = self.stmt(Stmt::Let { local, init });

@@ -10,7 +10,7 @@ fn double(x: u8) -> u8 { x * 2 }
 fn apply(f: fn(u8) -> u8, x: u8) -> u8 { f(x) }
 fn twice(f: fn(u8) -> u8, x: u8) -> u8 { f(f(x)) }
 
-module Rows(in clk: Bit, out a: Bit<u8>, out b: Bit<u8>, out c: Bit<u8>, out d: Bit<u8>, out e: Bit<u8>, out g: Bit<u8>) {}
+module Rows(in clk: Bit, out a: Bit<u8> = 0, out b: Bit<u8> = 0, out c: Bit<u8> = 0, out d: Bit<u8> = 0, out e: Bit<u8> = 0, out g: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         let add = |x: u8, y: u8| x + y;

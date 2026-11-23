@@ -60,7 +60,7 @@ fn event_expressions_are_typed() {
     // DIG-05 AC 1: `c.changed()`, `c.rise()`, `c.fall()`, `cross(e)`, `at(t)`, `a || b` and
     // `ev && guard` are an `Event`, in a body `let` and as the head of an `on`; a guard reads
     // anything a reaction reads, a probe included.
-    let src = "module Top(in clk: Bit, in en: Bit, in k: Bit<f64>, p: Electrical) {\n    let a = clk.changed();\n    let b = clk.rise();\n    let c = clk.fall();\n    let d = cross(v(p) - 0.5);\n    let e = at(1u + k.known_or(0.0) * 2.0);\n    let f = clk.rise() || clk.fall();\n    let g = clk.rise() && en.high();\n    let h = (clk.rise() || en.changed()) && v(p) > 0.2;\n}";
+    let src = "module Top(in clk: Bit, in en: Bit, in k: Bit<f64>, p: Electrical) {\n    let a = clk.changed();\n    let b = clk.rise();\n    let c = clk.fall();\n    let d = cross(v(p) - 0.5);\n    let e = at(1u + k * 2.0);\n    let f = clk.rise() || clk.fall();\n    let g = clk.rise() && en;\n    let h = (clk.rise() || en.changed()) && v(p) > 0.2;\n}";
     let design = design_of(src);
     let types = checked(&design, src);
     for name in ["a", "b", "c", "d", "e", "f", "g", "h"] {
@@ -72,10 +72,10 @@ fn event_expressions_are_typed() {
     assert_eq!(builtins.iter().filter(|b| **b == Some(Builtin::Fall)).count(), 2);
 
     // As the heads of reactions, a guard of any `bool` included.
-    let src = with_heads(&["clk.rise()", "cross(v(p) - 0.5)", "at(1.0)", "clk.rise() || en.fall()", "clk.rise() && en.high() && v(p) > 0.0"]);
+    let src = with_heads(&["clk.rise()", "cross(v(p) - 0.5)", "at(1.0)", "clk.rise() || en.fall()", "clk.rise() && en && v(p) > 0.0"]);
     let design = design_of(&src);
     let types = checked(&design, &src);
-    for head in ["clk.rise()", "cross(v(p) - 0.5)", "at(1.0)", "clk.rise() || en.fall()", "clk.rise() && en.high() && v(p) > 0.0"] {
+    for head in ["clk.rise()", "cross(v(p) - 0.5)", "at(1.0)", "clk.rise() || en.fall()", "clk.rise() && en && v(p) > 0.0"] {
         let found = exprs_reading(&design, &types, &src, head);
         assert!(!found.is_empty() && found.iter().all(|e| types.ty(*e) == Some(&Ty::Event)), "{head}: {found:?}");
     }
@@ -101,7 +101,7 @@ fn settle_is_an_event_in_every_event_position() {
     // §13 rule 10: `settle` is a core `Event` value; §13 rule 14: it combines with `&&` and `||`
     // like any event. It replaces the `P0001` "built-in `settle`" this test pinned (L52,
     // unknown-semantics-events UE-03).
-    let heads = ["settle", "settle && en.high()", "settle || clk.rise()", "clk.rise() || settle", "(settle || clk.changed()) && en.high()"];
+    let heads = ["settle", "settle && en", "settle || clk.rise()", "clk.rise() || settle", "(settle || clk.changed()) && en"];
     let src = with_heads(&heads);
     let design = design_of(&src);
     let types = checked(&design, &src);
@@ -137,7 +137,7 @@ fn settle_outside_an_event_position_is_e0441() {
 fn a_bool_head_is_e0430() {
     // DIG-05 AC 2 (§12.1.10): the head of an `on` is an `Event`. `on clk { .. }` with `clk: Bit` is
     // `E0430` at `clk`; so is any other `bool`, and any other type.
-    for head in ["clk", "en && clk", "k.known_or(1.0) > 0.0", "true", "k.known_or(1.0)"] {
+    for head in ["clk", "en && clk", "k > 0.0", "true", "k"] {
         let src = with_heads(&[head]);
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["E0430"], "{head}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
@@ -205,7 +205,7 @@ fn a_continuous_at_is_e0442() {
         assert_eq!(snippet(&src, &d[0]), at, "{body}");
     }
     // A time that reads carriers and params is discrete.
-    let src = "module Top(in k: Bit<u8>) { half: f64 = 50n; let e = at(1u + k.known_or(0) as f64 * half); }";
+    let src = "module Top(in k: Bit<u8>) { half: f64 = 50n; let e = at(1u + k as f64 * half); }";
     checked(&design_of(src), src);
 }
 
@@ -270,7 +270,7 @@ fn a_reaction_body_is_typed() {
     // (DIG-04 AC 3): `u9`.
     let src = "#[derive(Repr, PartialEq)]\nenum Phase { Idle, Run }\n\
 module Top(in clk: Bit, in go: Bit, p: Electrical, out cnt: Bit<u9> = 0, out when: Bit<f64> = 0.0, out ph: Bit<Phase> = Phase::Idle) { gap: f64 = 5n; }\n\
-digital for Top {\n    on clk.rise() && cnt > 3 {\n        let next = cnt + 1;\n        let level = v(p);\n        if go.known_or(false) { cnt <- next; } else { cnt <- 0 after gap; }\n        match ph.known_or(Phase::Idle) { Phase::Idle => { ph <- Phase::Run; } Phase::Run => { ph <- Phase::Idle after gap; } }\n        when <- now() + level;\n    }\n}";
+digital for Top {\n    on clk.rise() && cnt > 3 {\n        let next = cnt + 1;\n        let level = v(p);\n        if go { cnt <- next; } else { cnt <- 0 after gap; }\n        match ph { Phase::Idle => { ph <- Phase::Run; } Phase::Run => { ph <- Phase::Idle after gap; } }\n        when <- now() + level;\n    }\n}";
     let design = design_of(src);
     let types = checked(&design, src);
     let cnts = exprs_reading(&design, &types, src, "cnt");
@@ -333,7 +333,7 @@ fn a_delay_that_is_not_f64_is_e0433() {
     let d = diagnostics(src);
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0433".to_string()], "1"));
     // Seconds as an `f64`, a read of a carrier and a call included, type.
-    let src = "module Top(in clk: Bit, in d: Bit, in w: Bit<f64>, out q: Bit = false) { tpd: f64 = 1n; }\ndigital for Top { on clk.rise() { q <- d after 5n; q <- d after tpd + w.known_or(0.0); } }";
+    let src = "module Top(in clk: Bit, in d: Bit, in w: Bit<f64>, out q: Bit = false) { tpd: f64 = 1n; }\ndigital for Top { on clk.rise() { q <- d after 5n; q <- d after tpd + w; } }";
     checked_top(src, "Top");
 }
 
@@ -347,10 +347,10 @@ fn a_definition_and_a_commit_are_e0221() {
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0221".to_string()], "q"));
     assert_eq!(d[0].diagnostic.span().start, src.rfind("q <- d").unwrap());
     // Two commits of one carrier are one drive.
-    let src = "module Top(in clk: Bit, in d: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q <- d; q <- !d after 1n; } on clk.fall() { q <- true; } }";
+    let src = "module Top(in clk: Bit, in d: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q <- d; q <- !d after 1n; } on clk.fall() { q <- true; } }";
     checked_top(src, "Top");
     // Commits and a hand-over of one carrier.
-    let src = "module Source(out q: Bit) { }\nmodule Top(in clk: Bit, in d: Bit) { signal s: Bit; let a = Source(s); }\ndigital for Top { on clk.rise() { s <- d; } }";
+    let src = "module Source(out q: Bit = false) { }\nmodule Top(in clk: Bit, in d: Bit) { signal s: Bit; let a = Source(s); }\ndigital for Top { on clk.rise() { s <- d; } }";
     let d = diagnostics(src);
     assert_eq!(codes(&d), ["E0220"]);
     assert_eq!(d[0].diagnostic.span().start, src.find("s)").unwrap());
@@ -395,7 +395,7 @@ fn emit_is_typed_in_a_reaction() {
     // DIG-05 AC 11 (§19 rules 10 and 11): `emit!("conv", code = q, ok = true)` in a reaction has the
     // fields of a value type; `log` and `require` of the stdlib type-check when a reaction calls
     // them, the buck's `Supervisor` and the stdlib's `Never` among them; a string literal is `&str`.
-    let src = "module Top(in clk: Bit, in d: Bit<u10>) { }\ndigital for Top {\n    on clk.rise() {\n        let q = d.known_or(0);\n        emit!(\"conv\", code = q, ok = true);\n        log(Severity::Warning, \"top: fault\");\n        require(\"in_range\", q < 1000);\n    }\n}";
+    let src = "module Top(in clk: Bit, in d: Bit<u10>) { }\ndigital for Top {\n    on clk.rise() {\n        let q = d;\n        emit!(\"conv\", code = q, ok = true);\n        log(Severity::Warning, \"top: fault\");\n        require(\"in_range\", q < 1000);\n    }\n}";
     let design = design_of(src);
     let types = checked(&design, src);
     assert_eq!(types.ty(exprs_reading(&design, &types, src, "emit!(\"conv\", code = q, ok = true)")[0]), Some(&Ty::Unit));
@@ -429,9 +429,9 @@ fn emit_is_typed_in_a_reaction() {
 
 #[test]
 fn a_repeated_or_reserved_field_is_e0604() {
-    // DIG-05 AC 12 (§19 rule 11): a field name is distinct within one `emit!`, and `maybe` is
-    // reserved. The error is at the field.
-    for (fields, at) in [("a = 1.0, a = 2.0", "a = 2.0"), ("a = 1.0, b = 2.0, a = true", "a = true"), ("maybe = true", "maybe = true"), ("x = 1.0, maybe = 2.0", "maybe = 2.0")] {
+    // DIG-05 AC 12 (§19 rule 11): a field name is distinct within one `emit!`. The error is at the
+    // field.
+    for (fields, at) in [("a = 1.0, a = 2.0", "a = 2.0"), ("a = 1.0, b = 2.0, a = true", "a = true")] {
         let src = format!("module Top(in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ emit!(\"s\", {fields}); }} }}");
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["E0604"], "{fields}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
@@ -483,7 +483,7 @@ fn emit_where_it_is_not_allowed_is_e0601() {
         assert_eq!(snippet(&src, &d[0]), at, "{src}");
     }
     // A function that reaches `emit!` is callable from another one, and from a reaction.
-    let src = "fn check(ok: bool) { require(\"c\", ok); }\nfn both(ok: bool) { check(ok); }\nmodule Top(in clk: Bit, in a: Bit) { }\ndigital for Top { on clk.rise() { both(a.known_or(false)); } }";
+    let src = "fn check(ok: bool) { require(\"c\", ok); }\nfn both(ok: bool) { check(ok); }\nmodule Top(in clk: Bit, in a: Bit) { }\ndigital for Top { on clk.rise() { both(a); } }";
     checked_top(src, "Top");
 }
 
@@ -560,7 +560,7 @@ fn cross_takes_ttol_and_etol_by_position_and_by_name() {
 /// `Top` with one reaction on `head` whose body is `body`, over a `bool` carrier `q` and an `f64`
 /// carrier `x`.
 fn with_body(head: &str, body: &str) -> String {
-    format!("module Top(in clk: Bit, in en: Bit, out q: Bit, out x: Bit<f64>) {{ }}\ndigital for Top {{\non {head} {{ {body} }}\n}}")
+    format!("module Top(in clk: Bit, in en: Bit, out q: Bit = false, out x: Bit<f64> = 0.0) {{ }}\ndigital for Top {{\non {head} {{ {body} }}\n}}")
 }
 
 #[test]
@@ -593,7 +593,7 @@ fn an_event_reads_as_a_bool_in_a_reaction_body() {
 fn an_event_committed_onto_a_bool_carrier_reads_as_a_bool() {
     // UE-02 AC 5, §13 rule 2 and design D2: `on up || dn { q <- up; }` commits whether `up` fired
     // in this microstep, as the `Comparator` of §13 does. The event is read, typed `bool`.
-    let src = "module Top(in clk: Bit, in en: Bit, out q: Bit) { let up = clk.rise(); let dn = clk.fall(); }\ndigital for Top { on up || dn { q <- up; } }";
+    let src = "module Top(in clk: Bit, in en: Bit, out q: Bit = false) { let up = clk.rise(); let dn = clk.fall(); }\ndigital for Top { on up || dn { q <- up; } }";
     let design = design_of(src);
     let types = checked(&design, src);
     let committed: Vec<ExprId> = exprs_reading(&design, &types, src, "up").into_iter().filter(|e| types.event_read(*e)).collect();

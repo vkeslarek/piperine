@@ -22,8 +22,7 @@ pub module Pi(in done: Bit, in code: Bit<u8>, out duty: Bit<u8> = 0) {
 
 digital for Pi {
     on done.rise() {
-        // an unknown code reads as full scale: the loop then asks for less, never more
-        let sampled = code.known_or(255);
+        let sampled = code;
         let e = (128 as i16) - (sampled as i16);
         let u = (48 * (e as i32) + 5 * integ) >> 6;
         let windup = (u > 100 && e > 0) || (u < 0 && e < 0);

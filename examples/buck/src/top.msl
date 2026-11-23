@@ -9,6 +9,8 @@ use crate::power::{Load, PowerStage, Supply};
 
 use crate::sense::Sensing;
 
+use crate::spec::SETPOINT_RESET;
+
 use crate::supervisor::{Fault, Mode, Supervisor};
 
 /// The digital controller (SPEC §5 to §8). Its inputs are the ADC code and strobe and the three
@@ -41,7 +43,7 @@ pub module Controller(
     signal run: Bit;
     signal cut: Bit;
     let reg = SetpointReg(sp_wr, sp_data, setpoint);
-    let ramp = RefRamp(done, run, target_codes(setpoint.known_or(0)), reference, at_target);
+    let ramp = RefRamp(done, run, target_codes(setpoint), reference, at_target);
     let pid = Pid(done, run, reference, code, duty);
     let sup = Supervisor(done, en, vin_ok, cut, code, reference, at_target, run, pgood, mode, fault);
     let pwm = Dpwm(clk, run, duty, oc, sink_oc, hs_cmd, ls_cmd, sample, cut);
@@ -65,11 +67,11 @@ pub module Controller(
 /// Probe points for the host: `vin`, `vout`, `power.sw`, `power.lx` (nodes), `isense` (0.1 V/A),
 /// `ctl.reference`, `ctl.duty`, `ctl.setpoint`.
 pub module Buck(
-    in en: Bit,
-    in sp_wr: Bit,
-    in sp_data: Bit<u8>,
-    in load_step: Bit,
-    in inject: Bit,
+    in en: Bit = false,
+    in sp_wr: Bit = false,
+    in sp_data: Bit<u8> = SETPOINT_RESET,
+    in load_step: Bit = false,
+    in inject: Bit = false,
     out pgood: Bit,
     out fault: Bit<Fault>,
     out mode: Bit<Mode>,

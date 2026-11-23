@@ -28,7 +28,7 @@ use mixed::Seen;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use bytes::CarrierBytes;
 use run::SourceRun;
-use support::{build, transient};
+use support::{build, first_edge_value, transient};
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
@@ -447,16 +447,16 @@ fn an_index_out_of_range_panics_at_run_time() {
 }
 
 #[test]
-fn an_unknown_index_reads_and_writes_by_merge() {
-    // CV-13 AC 1 and US-04 AC 12 (§3.3.13): with `sel` never driven, reading `eq[sel]` over elements that are all
-    // 5 gives 5, known; over 5, 5, 6 it is unknown; writing 5 into `w[sel]` merges 5 with each element,
-    // which is 5 for the elements that held 5 and unknown for the one that held 6.
+fn an_index_reads_and_writes_the_element_it_names() {
+    // CV-13 AC 1, §3.3.5 (explicit-unknowns T27; replaces `an_unknown_index_reads_and_writes_by_merge`): an index is an
+    // integer. With `sel` holding 1, `eq[sel]` is 5 and `ne[2]` is 6; writing 7 into `w[sel]` leaves `w[0]` at 5, and
+    // into `v[sel]` makes `v[1]` 7.
     let seen = build(&RUN.project("arrays.msl"), "MergeBench").run(10e-9, 1e-9);
     let at_edge = |name: &str| -> Option<Vec<u8>> { transient(&seen, &format!("MergeBench.{name}")).into_iter().next().map(|(_, bytes)| bytes) };
-    assert_eq!(at_edge("same"), Some(CarrierBytes::byte(5)), "the elements all hold 5");
-    assert_eq!(at_edge("differ"), Some(vec![0, 0]), "5, 5, 6 merge to unknown");
-    assert_eq!(at_edge("w0"), Some(CarrierBytes::byte(5)), "merge(5, 5) is 5");
-    assert_eq!(at_edge("w1"), Some(vec![0, 0]), "merge(6, 5) is unknown");
+    assert_eq!(at_edge("same"), Some(CarrierBytes::byte(5)), "eq[1] is 5");
+    assert_eq!(at_edge("differ"), Some(CarrierBytes::byte(6)), "ne[2] is 6");
+    assert_eq!(at_edge("w0"), Some(CarrierBytes::byte(5)), "w[0] was not written");
+    assert_eq!(at_edge("w1"), Some(CarrierBytes::byte(7)), "v[1] is the element written");
 }
 
 /// The enum `Level` of `compare.msl`, in Rust with the same derives.
@@ -485,12 +485,19 @@ struct Wrap {
 }
 
 /// `struct Ordered { x: f64, y: u8 }` as `compare.msl` derives it.
-#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 struct Ordered {
     /// First field.
     x: f64,
     /// Second field.
     y: u8,
+}
+
+/// `struct Slots { a: Option<u8> }` as `compare.msl` derives it.
+#[derive(Default, PartialEq)]
+struct Slots {
+    /// The one field, `None` by default.
+    a: Option<u8>,
 }
 
 #[test]
@@ -532,9 +539,9 @@ fn derived_comparisons_and_defaults_give_rusts_results() {
         flag(Some(3u8) != none),
         flag(Wrap { inner: Some(1), tag: mid(2) } < Wrap { inner: Some(1), tag: mid(3) }),
         flag(Wrap { inner: None, tag: Level::Low } == Wrap { inner: None, tag: Level::Low }),
-        CarrierBytes::byte(Ordered::default().y),
-        flag(Ordered::default().x == 0.0),
-        flag(Ordered::default() == p(0.0, 0)),
+        CarrierBytes::byte(Slots::default().a.unwrap_or(7)),
+        flag(Slots::default().a.is_none()),
+        flag(Slots::default() == Slots { a: None }),
         flag(Option::<u8>::default() == none),
     ];
     let names = [
@@ -748,19 +755,14 @@ impl Carriers {
         transient(&self.seen, &format!("Bench.{name}"))
     }
 
-    /// The only change of `name`, which must be at the first rising edge.
+    /// The value of `name` once the first rising edge has committed.
     fn once(&self, name: &str) -> Vec<u8> {
-        let changes = self.changes(name);
-        assert_eq!(changes.len(), 1, "{name} changes once: {changes:?}");
-        assert_eq!(changes[0].0, 5 * NS / 2, "{name} changes at the first rising edge");
-        changes[0].1.clone()
+        first_edge_value(&self.seen, &format!("Bench.{name}"))
     }
 
-    /// `value`, the bytes of a known composite, as its pin holds it: the known byte after them.
+    /// `value`, the bytes of a composite, as its pin holds it: those bytes and nothing else.
     fn known(value: &[u8]) -> Vec<u8> {
-        let mut bytes = value.to_vec();
-        bytes.push(1);
-        bytes
+        value.to_vec()
     }
 }
 
@@ -802,16 +804,9 @@ fn derived_repr_layout_and_width_follow_section_2() {
     let wrap = tuple_field.then(array_field).then(option_field);
     let data = Levels::tagged(1, 3, Levels::unsigned(5, 3), 3);
     let carriers = Carriers::run();
-    assert_eq!(carriers.once("w_pair"), vec![pair.bits.len() as u8, 1], "Pair is u8 then bool: 9 levels");
-    assert_eq!(carriers.once("w_enum"), vec![data.bits.len() as u8, 1], "Tx is a 2-level tag then 3 levels of payload");
-    assert_eq!(carriers.once("w_wrap"), vec![wrap.bits.len() as u8, 1], "Wrap is (u8, bool), [u8; 3] and Option<u8>: 9 + 24 + 9");
-    // the levels of `Tx::Data { n: 5 }`, read one by one
-    let read: Vec<u8> = carriers.once("r_levels");
-    assert_eq!(read, Carriers::known(&data.bits.iter().map(|b| u8::from(*b)).collect::<Vec<_>>()), "level(k) of the enum value is level k of §2's layout");
-    // the levels of a struct: level 0 of `Pair { a: 7, b: true }` is the least significant bit of `a`, level 8 is `b`
-    let seven = Levels::unsigned(7, 8).then(Levels::unsigned(1, 1));
-    assert_eq!(carriers.once("level_a0"), vec![u8::from(seven.bits[0]), 1]);
-    assert_eq!(carriers.once("level_b"), vec![u8::from(seven.bits[8]), 1]);
+    assert_eq!(carriers.once("w_pair"), vec![pair.bits.len() as u8], "Pair is u8 then bool: 9 levels");
+    assert_eq!(carriers.once("w_enum"), vec![data.bits.len() as u8], "Tx is a 2-level tag then 3 levels of payload");
+    assert_eq!(carriers.once("w_wrap"), vec![wrap.bits.len() as u8], "Wrap is (u8, bool), [u8; 3] and Option<u8>: 9 + 24 + 9");
     // the bytes a pin holds: the parts' values in field order (the tag first), then the known byte
     assert_eq!(carriers.once("s"), Carriers::known(&[7, 1]));
     assert_eq!(carriers.once("tx"), Carriers::known(&[1, 5]), "the tag of Data, then n");
@@ -839,30 +834,9 @@ fn composite_carriers_initialize_define_commit_and_change() {
     let rise = |k: i64| 5 * NS / 2 + 5 * NS * k;
     assert_eq!(carriers.changes("u"), vec![(rise(0), Carriers::known(&[7, 0])), (rise(1), Carriers::known(&[8, 0]))]);
     assert_eq!(carriers.changes("now_a"), vec![(rise(0), CarrierBytes::byte(7)), (rise(1), CarrierBytes::byte(8))], "u.a where u changed");
-    // §5.1.8: before the first change `u.prev()` is unknown, so the model reads no field of it (a plain read of it is
-    // refused by name, `an_unknown_composite_is_refused_by_name`) and `u.prev().a` is 7 only at the second change
-    assert_eq!(carriers.changes("before_known"), vec![(rise(0), CarrierBytes::byte(0)), (rise(1), CarrierBytes::byte(1))], "u.prev().is_known(): unknown before the first change");
-    assert_eq!(carriers.changes("before_a"), vec![(rise(1), CarrierBytes::byte(7))], "u.prev().a: nothing before the first change, then 7");
-}
-
-#[test]
-fn an_unknown_composite_is_refused_by_name() {
-    // §3.3.2, §5.1.1: a composite carrier nothing drove holds no value, so a field of it is no known
-    // value; it fails the run naming the instance and the carrier, never a default.
-    let fault = RUN.the_fault("carriers.msl", "UnknownBench");
-    assert!(fault.contains("UnknownBench.read"), "the fault names the instance: {fault}");
-    assert!(fault.contains("`un`"), "the fault names the carrier: {fault}");
-    assert!(fault.contains("holds no value"), "the fault says why: {fault}");
-}
-
-#[test]
-fn an_unknown_previous_composite_is_refused_by_the_carrier() {
-    // §5.1.8: the `prev()` of a composite carrier before its first change holds no value; the fault names the
-    // carrier as the model writes it (`un.prev()`), not the printer's variable (`un_previous_`).
-    let fault = RUN.the_fault("carriers.msl", "UnknownPrevBench");
-    assert!(fault.contains("`un.prev()`"), "the fault names the carrier: {fault}");
-    assert!(!fault.contains("un_previous_"), "the fault does not name the printer's variable: {fault}");
-    assert!(fault.contains("holds no value"), "the fault says why: {fault}");
+    // §5.1.8, D8: `u.prev()` is the initial value `Pair { a: 6, .. }` until a later change: `before_a` reads 6 at the
+    // start and at the first change (no change of its own) and 7 at the second
+    assert_eq!(carriers.changes("before_a"), vec![(rise(1), CarrierBytes::byte(7))], "u.prev().a");
 }
 
 #[test]
@@ -875,15 +849,13 @@ fn committing_an_equal_composite_fires_no_change() {
 }
 
 #[test]
-fn a_tag_naming_no_variant_reads_unknown() {
-    // CV-17 AC 5 (§2 rule 9): `Tx` has the tags 0, 1 and 2. `cast::<u5, Tx>(13)` has tag 1 and n = 3,
-    // a value; `cast::<u5, Tx>(3)` has tag 3, which names no variant, so it is unknown: the net never
-    // holds a value and `is_known()` reads false.
+fn a_tag_the_cast_names_is_a_variant() {
+    // CV-17 AC 5 (§2 rule 9, explicit-unknowns T27; replaces `a_tag_naming_no_variant_reads_unknown`): `Tx` has the
+    // tags 0, 1 and 2. `cast::<u5, Tx>(13)` has tag 1 and n = 3, a value; `cast::<u5, Tx>(15)` has tag 3, which
+    // names no variant: `None` (§22.1.3), never the enum's default
     let carriers = Carriers::run();
     assert_eq!(carriers.once("good"), Carriers::known(&[1, 3]), "tag 1, n = 3");
-    assert_eq!(carriers.changes("bad"), vec![], "an unknown value commits nothing the net had not");
-    assert_eq!(carriers.once("good_known"), CarrierBytes::byte(1));
-    assert_eq!(carriers.once("bad_known"), CarrierBytes::byte(0), "a tag naming no variant reads unknown");
+    assert_eq!(carriers.once("none"), CarrierBytes::byte(1), "a tag naming no variant is `None`");
 }
 
 #[test]
@@ -949,23 +921,18 @@ fn a_record_carries_a_composite_field_and_its_type() {
     solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
     let records = out.borrow().clone();
     assert_eq!(records.len(), 2, "one record per rising edge: {records:?}");
-    // the fields in order: t (f64, 16), pair (u8, f64 + known), arr (3 u8 + known), tup (u8, bool + known),
-    // tx (tag 1 = Data, n = 5 + known), then `maybe` (bool + known): each at the next offset its alignment allows
+    // the fields in order: t (f64, 8), pair (u8, f64), arr (3 u8), tup (u8, bool),
+    // tx (tag 1 = Data, n = 5): each at the next offset its alignment allows
     let mut wanted: Vec<u8> = Vec::new();
     let pad = |bytes: &mut Vec<u8>, align: usize| bytes.resize(bytes.len().next_multiple_of(align), 0);
     // `t` is the time of the edge: read it back from the record rather than compute it
     let time = &records[0][..8];
     wanted.extend_from_slice(time);
-    wanted.push(1);
-    // an `f64` field is the 16 bytes of `REAL`: the value, the known byte, padding to its alignment
-    pad(&mut wanted, 16);
     wanted.push(7);
     wanted.extend_from_slice(&0.5f64.to_le_bytes());
-    wanted.push(1);
-    wanted.extend_from_slice(&[1, 2, 3, 1]);
-    wanted.extend_from_slice(&[9, 1, 1]);
-    wanted.extend_from_slice(&[1, 5, 1]);
-    wanted.extend_from_slice(&[0, 1]);
+    wanted.extend_from_slice(&[1, 2, 3]);
+    wanted.extend_from_slice(&[9, 1]);
+    wanted.extend_from_slice(&[1, 5]);
     pad(&mut wanted, 8);
     assert_eq!(records[0], wanted, "the record of the first edge");
     assert_eq!(f64::from_le_bytes(time.try_into().expect("eight bytes")), 2.5e-9, "t = now() at the first rising edge");

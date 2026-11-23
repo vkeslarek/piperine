@@ -9,7 +9,7 @@ use piperine_api::{Record, Streams};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier, Solver, TransientAnalysisOptions};
 
-use crate::support::{build, transient};
+use crate::support::{build, first_edge_value};
 
 /// The model files of one directory of `tests/`.
 pub struct SourceRun {
@@ -33,17 +33,12 @@ impl SourceRun {
     }
 
     /// What `Bench` of `file` committed at its first rising edge (2.5 ns of a 200 MHz oscillator): the
-    /// bytes of each carrier in `names`, which must change exactly once.
+    /// value of each carrier in `names` (a commit of the value it started at changes nothing).
     pub fn first_commits(&self, file: &str, names: &[&str]) -> Vec<Vec<u8>> {
         let seen = build(&self.project(file), "Bench").run(10e-9, 1e-9);
         names
             .iter()
-            .map(|name| {
-                let changes = transient(&seen, &format!("Bench.{name}"));
-                assert_eq!(changes.len(), 1, "{name} changes once: {changes:?}");
-                assert_eq!(changes[0].0, 5 * SourceRun::NS / 2, "{name} changes at the first rising edge");
-                changes[0].1.clone()
-            })
+            .map(|name| first_edge_value(&seen, &format!("Bench.{name}")))
             .collect()
     }
 

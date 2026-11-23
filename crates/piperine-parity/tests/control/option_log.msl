@@ -38,8 +38,8 @@ fn in_loop(n: u8) -> Option<u8> {
     None
 }
 
-module Rows(in clk: Bit, out a: Bit<u8>, out b: Bit<u8>, out c: Bit<u8>, out d: Bit, out e: Bit<u8>, out f: Bit<u8>, out g: Bit<u8>,
-            out h: Bit<u8>, out i: Bit<u8>, out j: Bit<u8>, out k: Bit<u8>, out l: Bit<u8>, out m: Bit<u8>, out n: Bit<u8>) {}
+module Rows(in clk: Bit, out a: Bit<u8> = 0, out b: Bit<u8> = 0, out c: Bit<u8> = 0, out d: Bit = false, out e: Bit<u8> = 0, out f: Bit<u8> = 0, out g: Bit<u8> = 0,
+            out h: Bit<u8> = 0, out i: Bit<u8> = 0, out j: Bit<u8> = 0, out k: Bit<u8> = 0, out l: Bit<u8> = 0, out m: Bit<u8> = 0, out n: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         a <- probe(3).unwrap_or(9);

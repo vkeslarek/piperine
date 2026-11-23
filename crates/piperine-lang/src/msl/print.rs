@@ -483,7 +483,6 @@ impl<'h> Printer<'h> {
             }
             LitKind::Str { text, raw_hashes: None } => format!("\"{}\"", enc(text)),
             LitKind::Bool(b) => b.to_string(),
-            LitKind::Unknown => "Unknown".to_string(),
         }
     }
 

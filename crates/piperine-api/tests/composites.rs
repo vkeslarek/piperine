@@ -123,7 +123,7 @@ fn a_timed_write_of_a_leaf_is_refused_by_name() {
 /// A unit enum, a struct and an enum with a payload held by carriers a reaction commits, run as a
 /// transient that sees one rising edge of `clk` at 100 ns.
 const CARRIED: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate, Fault }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
-module Top(in clk: Bit, out mode: Bit<Mode>, out pair: Bit<Pair>, out tx: Bit<Tx>) {}\n\
+module Top(in clk: Bit, out mode: Bit<Mode> = Mode::Idle, out pair: Bit<Pair> = Pair { a: 0, b: false }, out tx: Bit<Tx> = Tx::Idle) {}\n\
 digital for Top {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n    }\n}\n";
 
 /// The session of `CARRIED` printing `print`, and the last row of its table.
@@ -196,9 +196,9 @@ fn enum_names_live_in_the_ir_not_in_the_net_bytes() {
     let ir = run.session.ir();
     let mode = ir.top().body().carriers().iter().find(|c| c.name == "mode").expect("the carrier mode").ty.clone();
     let shape = CellShape::of(ir, &mode).expect("a shape");
-    assert_eq!(shape.decode(&[1, 1]).expect("decodes"), Cell::Text("Regulate".into()), "tag 1, known: the second variant");
-    assert_eq!(shape.decode(&[2, 1]).expect("decodes"), Cell::Text("Fault".into()));
-    assert_eq!(shape.decode(&[3, 1]).expect("decodes"), Cell::Unknown, "tag 3 names no variant");
+    assert_eq!(shape.decode(&[1]).expect("decodes"), Cell::Text("Regulate".into()), "tag 1: the second variant");
+    assert_eq!(shape.decode(&[2]).expect("decodes"), Cell::Text("Fault".into()));
+    assert!(shape.decode(&[3]).is_err(), "tag 3 names no variant: a failure, never a guess");
     let names: Vec<String> = match &shape {
         CellShape::Enum { variants, tag_width, .. } => {
             assert_eq!(*tag_width, 1, "the net holds a one-byte tag");

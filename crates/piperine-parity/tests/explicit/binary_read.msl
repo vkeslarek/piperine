@@ -1,0 +1,61 @@
+//! A binary carrier read as its value (part I §3.3.1, §3.3.6): a `Bit<f64>`, a `Bit`, a `Bit<u8>`, a struct
+//! and an array carrier, each read by `analog` directly and through a function, and by a reaction directly
+//! and through a function, with no read in between that asks whether the value is there.
+
+/// Forces `p` to the level `r` holds.
+module Level(p: Electrical, in r: Bit<f64>) {}
+analog for Level { v(p) +> r; }
+
+/// Forces `q` to 2 when `en` is true and to 0 when it is false.
+module Gate(q: Electrical, in en: Bit) {}
+analog for Gate { v(q) +> if en { 2.0 } else { 0.0 }; }
+
+/// A real carrier that holds 3.5 and a bit that holds true, each read by an `analog` block.
+module Bench() {
+    signal a: Electrical; signal b: Electrical;
+    signal r: Bit<f64> = 3.5; signal en: Bit = true;
+    let level = Level(a, r);
+    let gate = Gate(b, en);
+}
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+struct Gains { lo: u8, hi: u8 }
+
+fn twice(x: u8) -> u8 { x + x }
+fn spread(g: Gains) -> u8 { g.hi - g.lo }
+fn third(a: [u8; 3]) -> u8 { a[2] }
+
+/// A `Bit<u8>`, a struct and an array carrier read by `analog`: directly (`n`, `g.hi`, `a[1]`) and through a function
+/// (`twice(n)`, `spread(g)`, `third(a)`), each forced onto its own node.
+module Counts(n_node: Electrical, f_node: Electrical, g_node: Electrical, s_node: Electrical, a_node: Electrical, t_node: Electrical, in n: Bit<u8>, in g: Bit<Gains>, in a: Bit<[u8; 3]>) {}
+analog for Counts {
+    v(n_node) +> n as f64;
+    v(f_node) +> twice(n) as f64;
+    v(g_node) +> g.hi as f64;
+    v(s_node) +> spread(g) as f64;
+    v(a_node) +> a[1] as f64;
+    v(t_node) +> third(a) as f64;
+}
+
+/// The same carriers read by a reaction at each rising edge, directly and through the same functions.
+module Echo(in clk: Bit, in n: Bit<u8>, in g: Bit<Gains>, in a: Bit<[u8; 3]>) {}
+digital for Echo {
+    on clk.rise() {
+        emit!("seen", n = n, doubled = twice(n), hi = g.hi, spread = spread(g), second = a[1], third = third(a));
+    }
+}
+
+/// `n` holds 5, `g` holds 2 and 9, `a` holds 4, 6 and 8.
+module CountsBench() {
+    signal n_node: Electrical; signal f_node: Electrical; signal g_node: Electrical;
+    signal s_node: Electrical; signal a_node: Electrical; signal t_node: Electrical;
+    signal clk: Bit;
+    signal n: Bit<u8> = 5; signal g: Bit<Gains> = Gains { lo: 2, hi: 9 }; signal a: Bit<[u8; 3]> = [4, 6, 8];
+    let osc = Osc(clk) { f: 1G };
+    let counts = Counts(n_node, f_node, g_node, s_node, a_node, t_node, n, g, a);
+    let echo = Echo(clk, n, g, a);
+}

@@ -85,8 +85,7 @@ impl Checker<'_> {
                 None => ok = false,
             }
         }
-        let field_types: Vec<Ty> = typed_fields.iter().map(|f| f.ty.clone()).collect();
-        ok && self.judge_tag(decl, &variants, file, span) & self.judge_repr(decl, file, &typed_fields) & self.judge_derives(decl, file, span, &field_types)
+        ok && self.judge_tag(decl, &variants, file, span) & self.judge_repr(decl, file, &typed_fields) & self.judge_derives(decl, file, span, &typed_fields)
     }
 
     /// The tag of the enum `decl` (§2 rule 5): `#[repr(uN)]` gives `N` levels, else
@@ -158,10 +157,9 @@ impl Checker<'_> {
         Some(width)
     }
 
-    /// Whether `ty` has a `Repr` layout (§2): what the unknown literal and the flag reads
-    /// (`known_or`, `is_known`, `level`, `cast`, ..) take: a scalar, an enum, or a tuple, an array,
-    /// a struct whose parts have one. An `Option` is not among them: value code holds it as a pair, and its
-    /// flag reads stay refused.
+    /// Whether `ty` has a `Repr` layout (§2): what `cast` and `same` take: a scalar, an enum, or a
+    /// tuple, an array, a struct whose parts have one. An `Option` is not among them: value code
+    /// holds it as a presence and a payload.
     pub(super) fn repr_ok(&mut self, ty: &Ty) -> bool {
         !matches!(ty, Ty::Option(_)) && self.repr_levels(ty).is_some()
     }

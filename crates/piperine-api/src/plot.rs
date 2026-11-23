@@ -1,7 +1,7 @@
 //! `Plot`: the geometry of a plot, as numbers: what is drawn where, before any SVG text exists
 //! (CLI-22). A value maps linearly (or by its logarithm on a log axis) from the axis range onto
 //! the plot area (AC 3); each real signal is a [`Series`] of runs of points already in drawing
-//! coordinates, broken at an unknown value (AC 9); each discrete signal is a [`Lane`] under the
+//! coordinates, broken at a value that is not a finite real (AC 9); each discrete signal is a [`Lane`] under the
 //! plot area, never a series (AC 5); an `ac` run has two panels, dB over degrees, with a log
 //! frequency axis for `per_decade` (AC 6); an operating point has nothing to plot (AC 8).
 //!
@@ -52,7 +52,7 @@ pub struct Axis {
     pub ticks: Vec<Tick>,
 }
 
-/// A real signal: one run of points per stretch between unknown values, in drawing coordinates.
+/// A real signal: one run of points per stretch between values that are no finite real, in drawing coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Series {
     pub label: String,
@@ -193,7 +193,7 @@ impl Plot {
     /// in degrees. `P0010` for an operating point, which has nothing to plot.
     pub fn of(table: &Table, analysis: &Analysis) -> Result<Plot, Failure> {
         // a composite column is one series or lane per numeric leaf
-        let table = &table.expanded(false);
+        let table = &table.expanded(false)?;
         match analysis {
             Analysis::Op => Err(Failure::Host { code: "P0010", message: "an operating point has nothing to plot".into() }),
             Analysis::Ac { grid, .. } => Plot::frequency(table, matches!(grid, Grid::PerDecade(_))),
@@ -206,8 +206,7 @@ impl Plot {
 
     fn kind(table: &Table, column: usize) -> Kind {
         let discrete = table.rows.iter().any(|r| matches!(r[column], Cell::Bool(_) | Cell::Int(_)));
-        let all_unknown = !table.rows.is_empty() && table.rows.iter().all(|r| r[column] == Cell::Unknown);
-        if discrete || all_unknown { Kind::Discrete } else { Kind::Real }
+        if discrete { Kind::Discrete } else { Kind::Real }
     }
 
     /// The first column as the abscissa of every other column.
@@ -395,7 +394,7 @@ mod tests {
         // y = 20 + 382 = 402, from x = 70, 710 wide
         let table = real_table(
             &["time", "v", "b"],
-            &[&[Cell::Real(0.0), Cell::Real(0.0), Cell::Bool(false)], &[Cell::Real(1.0), Cell::Real(1.0), Cell::Bool(true)], &[Cell::Real(2.0), Cell::Real(2.0), Cell::Unknown]],
+            &[&[Cell::Real(0.0), Cell::Real(0.0), Cell::Bool(false)], &[Cell::Real(1.0), Cell::Real(1.0), Cell::Bool(true)], &[Cell::Real(2.0), Cell::Real(2.0), Cell::Bool(false)]],
         );
         let plot = Plot::of(&table, &transient()).expect("a plot");
         assert_eq!(plot.panels[0].series.iter().map(|s| s.label.as_str()).collect::<Vec<_>>(), ["v"]);
@@ -403,7 +402,7 @@ mod tests {
         assert_eq!(plot.lanes.len(), 1);
         assert_eq!(plot.lanes[0].label, "b");
         assert_eq!(plot.lanes[0].area, Rect { x: 70.0, y: 402.0, w: 710.0, h: 28.0 });
-        assert_eq!(plot.lanes[0].steps, [(0.0, Cell::Bool(false)), (1.0, Cell::Bool(true)), (2.0, Cell::Unknown)]);
+        assert_eq!(plot.lanes[0].steps, [(0.0, Cell::Bool(false)), (1.0, Cell::Bool(true)), (2.0, Cell::Bool(false))]);
     }
 
     #[test]
@@ -459,10 +458,10 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_value_breaks_the_run() {
-        // CLI-22 AC 9: v is 0, unknown, 2, 3: two runs, the first of one point, the second of two
+    fn a_non_finite_value_breaks_the_run() {
+        // CLI-22 AC 9: v is 0, NaN, 2, 3: two runs, the first of one point, the second of two
         let r = |t: f64, v: Cell| vec![Cell::Real(t), v];
-        let table = Table { columns: vec!["time".into(), "v".into()], rows: vec![r(0.0, Cell::Real(0.0)), r(1.0, Cell::Unknown), r(2.0, Cell::Real(2.0)), r(3.0, Cell::Real(3.0))] };
+        let table = Table { columns: vec!["time".into(), "v".into()], rows: vec![r(0.0, Cell::Real(0.0)), r(1.0, Cell::Real(f64::NAN)), r(2.0, Cell::Real(2.0)), r(3.0, Cell::Real(3.0))] };
         let plot = Plot::of(&table, &transient()).expect("a plot");
         let lengths: Vec<usize> = plot.panels[0].series[0].runs.iter().map(Vec::len).collect();
         assert_eq!(lengths, [1, 2]);

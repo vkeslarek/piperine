@@ -9,7 +9,7 @@ use std::sync::Arc;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, Hoisted,
-    Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
+    Inflow, InstanceSpec, Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
     StreamField, StmtId, Terminal, ValueType,
 };
 use piperine_ir::{Derives, FieldsForm, TypeData, TypeKind, VariantData};
@@ -185,12 +185,11 @@ impl Amended {
         Buck::reaction(b, body, vec![event], vec![emit], vec![], Amended::F, 32);
     }
 
-    /// `i(p, n) +> if clk.prev().high() { 1.0 } else { 0.0 };`
+    /// `i(p, n) +> if clk.prev() { 1.0 } else { 0.0 };`
     fn edge(b: &mut IrBuilder) {
         let mut x = Dx::new(b, Amended::F, 42, 10);
         let o = x.origin();
-        let prev = x.b.expr(Expr::Previous(0), ValueType::Flagged(Box::new(ValueType::Bool)), o);
-        let was_high = x.high(prev);
+        let was_high = x.b.expr(Expr::Previous(0), ValueType::Bool, o);
         let one = x.real(1.0);
         let zero = x.real(0.0);
         let value = x.if_(was_high, one, zero, ValueType::F64);
@@ -499,21 +498,12 @@ fn the_interpreter_refuses_each_new_form_by_name() {
 }
 
 #[test]
-fn the_unknown_nodes_are_refused_by_name() {
-    // The walk names `level`, `merge`, `same` and `cast` when it meets one, as the source spells
-    // them (R1, the interpreter is frozen at the M1 analog subset): `x.level(k)` of a value read
-    // from a probe, in a statement of the block that gives the contribution its value.
+fn the_level_nodes_are_refused_by_name() {
+    // The walk names `same` and `cast` when it meets one, as the source spells them (R1, the
+    // interpreter is frozen at the M1 analog subset): `same(v, v)` of a value read from a probe,
+    // in a statement of the block that gives the contribution its value.
     type Node = fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId;
-    let nodes: [(&str, Node); 5] = [
-        ("level", |x, v| {
-            let k = x.int(0, Ty::u(32));
-            x.level(v, k, LevelPart::Is, ValueType::Bool)
-        }),
-        ("level", |x, v| {
-            let k = x.int(0, Ty::u(32));
-            x.level(v, k, LevelPart::Value, ValueType::Bool)
-        }),
-        ("merge", |x, v| x.merge(v, v, Ty::flagged(ValueType::F64))),
+    let nodes: [(&str, Node); 2] = [
         ("same", |x, v| x.same(v, v)),
         ("cast", |x, v| x.level_cast(v, Ty::u(64), None, Ty::u(64))),
     ];

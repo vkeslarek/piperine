@@ -39,7 +39,7 @@ fn obs(path: &str, time: f64) -> Observation {
         path: path.into(),
         analysis: AnalysisKind::OperatingPoint,
         time,
-        kind: ObservationKind::Commit { reaction: 0, statement: 0, made: 0, due: 0, bytes: vec![1, 1] },
+        kind: ObservationKind::Commit { reaction: 0, statement: 0, made: 0, due: 0, bytes: vec![1] },
     }
 }
 
@@ -114,7 +114,7 @@ fn a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration() {
         path: "top.d1.trace".into(),
         analysis: AnalysisKind::OperatingPoint,
         time: 1.0,
-        kind: ObservationKind::Trace { iteration: 3, bytes: vec![0, 1] },
+        kind: ObservationKind::Trace { iteration: 3, bytes: vec![0] },
     };
     a.traces.push_back(vec![trace.clone()]);
     a.attempts.push_back(Attempt::Rejected);

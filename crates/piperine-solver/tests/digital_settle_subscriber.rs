@@ -61,7 +61,7 @@ fn setter_shape() -> ShapeRef {
         name: "flip",
         origin: "digital_settle_subscriber.rs",
         on: vec![go],
-        writes: vec![Statement { pin: a, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: a, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -110,7 +110,7 @@ fn lag_shape() -> ShapeRef {
         origin: "digital_settle_subscriber.rs",
         on: vec![flip],
         reads: vec![pin(a)],
-        writes: vec![Statement { pin: y, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: y, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -129,7 +129,7 @@ impl Device for LagInverter {
         Ok(())
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        let y = if cx.bytes(0) == HIGH { LOW } else if cx.bytes(0) == LOW { HIGH } else { [0, 0] };
+        let y = if cx.bytes(0) == HIGH { LOW } else { HIGH };
         cx.commit(0, &y, 0.0)?;
         Ok(Flow::Continue)
     }
@@ -170,13 +170,11 @@ impl<const AND: bool> Device for Gate<AND> {
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let (a, b) = (cx.bytes(0), cx.bytes(1));
         let y = if AND {
-            if a == LOW || b == LOW { LOW } else if a == HIGH && b == HIGH { HIGH } else { [0, 0] }
+            if a == HIGH && b == HIGH { HIGH } else { LOW }
         } else if a == HIGH || b == HIGH {
             HIGH
-        } else if a == LOW && b == LOW {
-            LOW
         } else {
-            [0, 0]
+            LOW
         };
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())

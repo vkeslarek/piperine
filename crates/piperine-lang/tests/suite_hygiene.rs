@@ -1179,3 +1179,240 @@ fn the_removed_form_walk_fails_on_a_planted_line() {
         assert!(RemovedForms::in_line(line).is_empty(), "`{line}` writes no removed form: {:?}", RemovedForms::in_line(line));
     }
 }
+
+/// The explicit model of unknowns (explicit-unknowns, EU-20): which `.msl` sources may still spell a removed name,
+/// and which test replaced each test that pinned an unknown behavior.
+struct RemovedUnknownForms;
+
+impl RemovedUnknownForms {
+    /// The spellings of the earlier flag: `Unknown`, `known_or`, `is_known`, `.known()`, `.high()`, `.level(` and `merge(`.
+    const NAMES: [&'static str; 7] = ["Unknown", "known_or", "is_known", ".known()", ".high()", ".level(", "merge("];
+
+    /// The `.msl` files of std, the examples and every test tree, as `(repo-relative path, text)`.
+    fn sources() -> Vec<(String, String)> {
+        let root = repo_root();
+        let mut found = Vec::new();
+        for base in ["crates/piperine-lang/std", "examples", "tests", "crates"] {
+            Self::collect(&root.join(base), &root, &mut found);
+        }
+        // the README shows code and teaches the model: it is held to the same walk
+        if let Ok(text) = fs::read_to_string(root.join("README.md")) {
+            found.push(("README.md".to_string(), text));
+        }
+        found
+    }
+
+    /// Every `.msl` under `dir`, skipping build output.
+    fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.file_name().is_some_and(|name| name == "target") {
+                continue;
+            }
+            if path.is_dir() {
+                Self::collect(&path, root, out);
+            } else if path.extension().is_some_and(|ext| ext == "msl") {
+                let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                if relative.contains("/fixtures/preformat/") || (relative.starts_with("crates/") && !relative.contains("/tests/") && !relative.contains("/std/")) {
+                    continue;
+                }
+                if let Ok(text) = fs::read_to_string(&path) {
+                    out.push((relative, text));
+                }
+            }
+        }
+    }
+
+    /// The removed names a source spells, outside its `//` comments.
+    fn spelled(text: &str) -> Vec<&'static str> {
+        let code: String = text.lines().map(|line| line.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        Self::NAMES.iter().copied().filter(|name| code.contains(name)).collect()
+    }
+
+    /// Each test of the explicit-unknowns range that pinned an unknown, a flag, a merge or a known byte, the test that supersedes it, and the task that writes it when it does
+    /// not exist yet (`None`: it exists).
+    const SUCCESSORS: [(&'static str, &'static str, Option<&'static str>); 124] = [
+        ("a_function_and_a_definition_merge_an_unknown_if", "control_on_a_carrier_runs_one_path", None),
+        ("an_unknown_if_runs_both_arms_without_a_fault", "control_on_a_carrier_runs_one_path", None),
+        ("both_arms_committing_commit_their_merge", "control_on_a_carrier_runs_one_path", None),
+        ("equal_known_commits_stay_known", "control_on_a_carrier_runs_one_path", None),
+        ("one_arm_committing_merges_with_the_value_then", "control_on_a_carrier_runs_one_path", None),
+        ("an_if_expression_and_an_if_statement_commit_the_same", "control_on_a_carrier_runs_one_path", None),
+        ("an_unknown_match_merges_every_arm", "control_on_a_carrier_runs_one_path", None),
+        ("a_nested_one_armed_commit_merges_with_the_path_before_it", "control_on_a_carrier_runs_one_path", None),
+        ("a_merge_commit_meets_another_reactions_commit_of_the_same_microstep", "control_on_a_carrier_runs_one_path", None),
+        ("a_panic_under_unknown_control_makes_the_merge_unknown", "control_on_a_carrier_runs_one_path", None),
+        ("definitions_lets_and_functions_merge_alike", "control_on_a_carrier_runs_one_path", None),
+        ("an_unknown_delay_under_unknown_control_commits_unknown_next", "control_on_a_carrier_runs_one_path", None),
+        ("neither_arm_committing_commits_nothing", "control_on_a_carrier_runs_one_path", None),
+        ("delays_one_tick_apart_are_one_key", "control_on_a_carrier_runs_one_path", None),
+        ("the_pfd3_reaction_keeps_state_unknown_until_a_known_commit", "control_on_a_carrier_runs_one_path", None),
+        ("an_if_whose_arms_commit_is_the_value_of_a_commit_and_of_an_emit_field", "control_on_a_carrier_runs_one_path", None),
+        ("a_maybe_finish_does_not_end_the_run", "a_finish_ends_the_run_where_its_guard_holds", None),
+        ("a_record_under_unknown_control_is_maybe", "an_emit_under_a_guard_is_a_plain_record", None),
+        ("a_record_field_keeps_its_flag", "an_emit_under_a_guard_is_a_plain_record", None),
+        ("a_maybe_check_is_judged_as_unknown", "an_emit_under_a_guard_is_a_plain_record", None),
+        ("an_unknown_guard_runs_the_reaction_as_a_maybe", "a_false_guard_runs_nothing", None),
+        ("two_commits_under_an_unknown_guard_merge_exactly", "a_false_guard_runs_nothing", None),
+        ("a_known_false_guard_does_not_run", "a_false_guard_runs_nothing", None),
+        ("an_unknown_if_in_a_cross_argument_merges", "an_if_in_a_cross_argument_picks_its_arm", None),
+        ("an_unknown_initial_value_starts_every_level_unknown", "a_carrier_without_a_value_starts_at_its_default", None),
+        ("an_unknown_initial_value_fires_no_change_at_zero", "the_first_commit_is_a_change", None),
+        ("a_const_holding_unknown_reads_unknown_everywhere", "a_binary_carrier_is_read_as_its_value", None),
+        ("committing_unknown_makes_every_level_unknown", "a_written_initial_value_is_the_value_at_the_start", None),
+        ("short_circuit_operands_follow_the_merge", "short_circuit_operands_decide_as_bools", None),
+        ("a_math_function_of_an_unknown_value_is_unknown", "a_math_function_of_a_value_is_a_value", None),
+        ("known_or_with_an_unknown_default_gives_that_default", "a_math_function_of_a_value_is_a_value", None),
+        ("a_function_that_emits_runs_in_a_value_position_of_a_reaction", "an_emitting_function_runs_in_a_value_position_of_a_reaction", None),
+        ("level_reads_each_level_of_a_known_value", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_with_a_known_index_is_known", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_out_of_range_is_a_panic_naming_k", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_with_an_unknown_index_merges_every_level", "at_gives_the_state_of_one_level", Some("T46")),
+        ("merge_of_equal_known_values_is_that_value", "and_follows_the_four_state_table", Some("T46")),
+        ("merge_of_different_values_is_unknown_and_commutative", "or_follows_the_four_state_table", Some("T46")),
+        ("merge_of_a_value_with_itself_is_that_value", "same_compares_the_four_states", Some("T46")),
+        ("same_compares_flags_and_values", "same_compares_the_four_states", Some("T46")),
+        ("cast_keeps_each_level_and_its_flag", "a_binary_value_converts_to_logic", Some("T46")),
+        ("cast_to_a_tag_with_no_variant_is_unknown", "a_logic_converts_to_an_option_of_bits", Some("T46")),
+        ("logic_builds_known_and_unknown_values", "logic_reads_a_four_state_pattern", Some("T45")),
+        ("matches_bits_follows_its_table", "logic_reads_a_four_state_pattern", Some("T45")),
+        ("the_library_items_that_took_borrows_give_the_same_results", "logic_and_matches_bits_give_the_table_values", Some("T45")),
+        ("a_bad_pattern_is_e0702", "logic_reads_a_four_state_pattern", Some("T45")),
+        ("a_flag_total_function_may_take_a_carrier_in_analog", "a_function_that_reads_its_parameter_takes_a_carrier_in_analog", None),
+        ("a_function_that_reads_its_parameter_bare_is_not_flag_total", "a_function_that_reads_its_parameter_takes_a_carrier_in_analog", None),
+        ("level_is_typed_on_every_repr_type", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_on_a_value_without_repr_is_refused", "the_flag_methods_do_not_resolve", None),
+        ("unknown_with_no_inferable_type_is_e0906", "unknown_is_a_name_that_does_not_resolve", None),
+        ("a_carrier_read_is_flagged_and_the_flag_reads_are_not", "no_value_type_is_flagged", None),
+        ("a_function_gets_one_variant_per_flag_pattern", "control_on_a_carrier_runs_one_path", None),
+        ("a_partial_right_operand_under_a_flagged_short_circuit_is_an_if", "short_circuit_operands_decide_as_bools", None),
+        ("a_short_circuit_over_a_flagged_operand_becomes_bitwise", "short_circuit_operands_decide_as_bools", None),
+        ("a_commit_with_flags_reaches_the_owner", "a_commit_reaches_the_owner", None),
+        ("a_host_without_commit_with_is_a_named_fault", "the_host_has_one_commit", None),
+        ("a_digital_if_on_an_unknown_value_runs_both_arms_and_merges_what_they_commit", "a_digital_if_runs_the_arm_its_condition_selects_and_only_that_arm_commits", None),
+        ("a_function_value_called_with_an_unknown_is_the_flagged_variant_or_p0001", "function_values_and_recursion_compile_and_run", None),
+        ("a_known_or_over_an_unwritten_input_gives_the_default", "a_carrier_without_a_value_starts_at_its_default", None),
+        ("an_unknown_condition_merges_both_arms", "an_if_commits_through_the_arm_it_takes", None),
+        ("an_unknown_delay_commits_unknown_at_the_next_microstep", "a_commit_is_made_after_the_delay_it_names", None),
+        ("level_merge_same_and_recast_compute_their_tables", "same_cast_and_math_compute_their_tables", None),
+        ("a_maybe_commit_converts_the_pending_it_would_remove", "a_plain_commit_removes_the_pending_it_transports", None),
+        ("a_maybe_replace_converts_every_pending_commit_of_the_statement", "a_replace_commit_removes_every_pending_commit_of_its_statement", None),
+        ("a_rewind_undoes_a_conversion", "a_rewind_restores_a_removal", None),
+        ("a_merge_commit_equal_to_the_value_fires_no_change", "a_commit_equal_to_the_value_fires_no_change", None),
+        ("a_merge_commit_merges_with_the_value_then", "the_last_plain_commit_of_a_microstep_is_the_value", None),
+        ("a_merge_commit_the_layout_cannot_merge_is_a_run_error_naming_the_net", "an_instant_that_never_goes_quiet_is_e0501_naming_the_nets", None),
+        ("a_moving_field_without_a_known_byte_fails", "a_moving_loop_is_e0511_not_a_value_made_up", None),
+        ("a_moving_known_field_is_zeroed_and_observed", "a_moving_loop_is_e0511_not_a_value_made_up", None),
+        ("a_non_canonical_write_is_a_fault_through_a_function_a_commit_and_the_host", "a_host_write_outside_its_net_fails_loud_and_changes_nothing", None),
+        ("a_past_or_unknown_time_does_not_fire", "a_past_time_does_not_fire", None),
+        ("a_reaction_loop_committing_after_an_unknown_decision_commits_maybe", "a_reaction_loop_commits_on_every_iteration_it_runs", None),
+        ("unknown_decisions_merge_written_locals_and_loop_exits", "known_control_prints_plain_rust_and_runs", None),
+        ("a_maybe_record_prints_maybe_and_a_known_one_does_not", "a_guarded_record_prints_when_its_guard_holds_and_no_record_carries_a_maybe", None),
+        ("a_reaction_on_a_changed_unknown_emits_the_inputs", "a_reaction_on_a_changed_carrier_emits_the_inputs", None),
+        ("e0150_an_unknown_carrier_is_read_with_high", "a_bit_in_an_if_is_read_as_its_value", None),
+        ("e0150_an_unknown_switch_control_is_read_with_high", "a_bit_control_in_a_division_is_read_as_its_value", None),
+        ("e0150_is_an_analog_read_of_a_digital_carrier", "an_analog_read_of_a_digital_carrier_is_no_error", None),
+        ("e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example", "the_read_of_the_carrier_in_the_worked_example_is_no_error", None),
+        ("e0187_is_not_raised_for_a_signal_with_no_first_value_yet", "e0187_a_signal_with_no_first_value_and_no_default_is_refused", None),
+        ("e0187_is_not_raised_yet", "e0187_a_signal_with_no_first_value_and_no_default_is_refused", None),
+        ("without_an_initial_value_the_output_sits_at_zero_volts", "e0187_a_signal_with_no_first_value_and_no_default_is_refused", None),
+        ("e0702_is_raised_for_a_logic_pattern_with_z", "logic_reads_a_four_state_pattern", Some("T45")),
+        ("the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic", "the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic", None),
+        ("an_absent_drive_is_left_out_and_an_unknown_one_is_passed", "an_absent_drive_is_left_out_and_a_present_one_is_passed_whatever_its_value", None),
+        ("an_unsettled_step_is_one_observation_naming_every_relax_net", "an_unsettled_loop_is_e0511_naming_its_drives", None),
+        ("an_unsettled_loop_reaches_the_owner_once_per_step", "an_unsettled_loop_is_e0511_naming_its_drives", None),
+        ("a_reaction_on_a_flagged_guard_reads_the_guard_and_fired", "a_guard_or_a_decision_adds_no_read_and_no_resolution_pin", None),
+        ("a_reaction_with_an_unknown_decision_reads_the_resolution", "a_guard_or_a_decision_adds_no_read_and_no_resolution_pin", None),
+        ("carriers_are_discrete_pins_with_a_known_byte", "carriers_are_discrete_pins_that_hold_the_value_only", None),
+        ("every_record_layout_ends_with_maybe", "every_record_layout_holds_its_declared_fields_only", None),
+        ("a_real_that_is_nan_merges_with_itself", "known_values_fold_by_the_level_rules", None),
+        ("unknown_folds_by_the_level_rules", "known_values_fold_by_the_level_rules", None),
+        ("analog_reading_a_maybe_unknown_value_is_e0150", "analog_has_no_refusal_of_a_flag", None),
+        ("no_analog_refusal_of_an_unknown_is_p0001", "analog_has_no_refusal_of_a_flag", None),
+        ("unknown_deciding_structure_is_e0151", "unknown_decides_no_structure_because_it_is_no_value", None),
+        ("a_row_over_an_unknown_value_is_unknown", "f64_rows_equal_rusts_bit_for_bit_in_analog_and_in_a_reaction", None),
+        ("a_tag_naming_no_variant_reads_unknown", "a_tag_the_cast_names_is_a_variant", None),
+        ("an_unknown_composite_is_refused_by_name", "composite_carriers_initialize_define_commit_and_change", None),
+        ("an_unknown_index_reads_and_writes_by_merge", "an_index_reads_and_writes_the_element_it_names", None),
+        ("an_unknown_previous_composite_is_refused_by_the_carrier", "composite_carriers_initialize_define_commit_and_change", None),
+        ("a_top_with_discrete_in_ports_runs_with_them_unknown", "a_top_with_discrete_in_ports_starts_them_at_their_initial_values", None),
+        ("an_undriven_top_input_is_unknown", "an_undriven_top_input_keeps_its_initial_value", None),
+        ("an_unknown_field_is_unknown", "a_record_holds_its_declared_fields_only", None),
+        ("maybe_is_decoded_beside_the_fields", "a_record_holds_its_declared_fields_only", None),
+        ("a_valueless_field_with_value_bytes_is_not_canonical", "the_shipped_layouts_hold_the_value_only", None),
+        ("merge_keeps_equal_known_fields_and_clears_the_rest", "the_shipped_layouts_hold_the_value_only", None),
+        ("merge_refuses_a_field_without_a_known_byte", "the_shipped_layouts_hold_the_value_only", None),
+        ("merge_works_element_by_element_over_an_array_field", "the_shipped_layouts_hold_the_value_only", None),
+        ("shipped_layouts_have_their_stated_fields", "the_shipped_layouts_hold_the_value_only", None),
+        ("an_analog_read_of_a_carrier_outside_the_flag_reads_is_e0150", "an_analog_read_of_a_carrier_is_the_value", None),
+        ("an_e0150_carries_a_help_line_naming_the_flag_reads", "an_analog_read_of_a_carrier_is_the_value", None),
+        ("gaps_closes_s6_and_g6_by_the_redesign", "gaps_closes_s6_and_tracks_the_flag", None),
+        ("known_resolves_into_std_values", "bit_rise_resolves_into_std_values", None),
+        ("the_flag_reads_are_typed", "the_flag_methods_do_not_resolve", None),
+        ("the_stdlib_d2a_reads_its_match_scrutinee_at_each_test", "the_stdlib_d2a_gives_transition_the_level_of_its_input", None),
+        ("unknown_as_value_ok_as_name_e0908", "unknown_is_an_ordinary_name", None),
+        ("the_unknown_nodes_are_refused_by_name", "the_level_nodes_are_refused_by_name", None),
+        ("analog_reads_a_carrier_through_level_and_same_only", "no_value_type_is_flagged", None),
+        ("the_unknown_nodes_type_print_and_check", "same_and_cast_type_print_and_check", None),
+        ("unknown_values_and_their_reads_print", "no_value_type_is_flagged", None),
+        ("rise_and_fall_fire_on_edges_to_and_from_unknown", "rise_and_fall_fire_on_transitions", None),
+    ];
+}
+
+#[test]
+fn no_source_uses_a_removed_unknown_form() {
+    // EU-20 AC 1 (C86): no `.msl` under std, examples, tests or crates/*/tests, and not the README, spells `Unknown`, `known_or`, `is_known`,
+    // `.known()`, `.high()`, `.level(` or `merge(` in code
+    let mut offences = Vec::new();
+    for (path, text) in RemovedUnknownForms::sources() {
+        let spelled = RemovedUnknownForms::spelled(&text);
+        if !spelled.is_empty() {
+            offences.push(format!("{path} spells {spelled:?}"));
+        }
+    }
+    assert!(offences.is_empty(), "sources that use a removed unknown form:\n  {}", offences.join("\n  "));
+}
+
+#[test]
+fn every_unknown_test_has_a_successor() {
+    // EU-20 AC 2 (C87): every test of the range that pinned an unknown, a flag, a merge or a known byte is deleted (`source_unknowns.rs` and the others the table lists), and each is named in the table with the test that replaces
+    // it; the old name is spelled by no test, the new one is a test of the tree, unless a later task writes it
+    let sources = rust_sources();
+    let defines = |name: &str| sources.iter().any(|(_, text)| text.contains(&format!("fn {name}(")));
+    let mut offences = Vec::new();
+    for (old, new, pending) in RemovedUnknownForms::SUCCESSORS {
+        if defines(old) {
+            offences.push(format!("{old} is still a test: replace it by {new}"));
+        }
+        match pending {
+            None if !defines(new) => offences.push(format!("{old}: the successor {new} is no test of the tree")),
+            Some(task) if defines(new) => offences.push(format!("{old}: {new} exists now: drop `Some(\"{task}\")` from its row")),
+            _ => {}
+        }
+    }
+    assert!(offences.is_empty(), "{}", offences.join("\n"));
+}
+
+#[test]
+fn retired_unknown_codes_are_raised_nowhere() {
+    // EU-02 AC 4 (C7): `E0150`, `E0151`, `E0906` and `E0908` are retired with the model of
+    // unknowns and never reused (§0.2), so no library source of any crate spells one as a code it
+    // raises: the string literal of a code is how every raise names it.
+    let retired = ["E0150", "E0151", "E0906", "E0908"];
+    let mut offences = Vec::new();
+    for (path, text) in library_sources() {
+        for (n, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            for code in retired {
+                if line.contains(&format!("\"{code}\"")) {
+                    offences.push(format!("{path}:{}: raises the retired {code}", n + 1));
+                }
+            }
+        }
+    }
+    assert!(offences.is_empty(), "{}", offences.join("\n"));
+}

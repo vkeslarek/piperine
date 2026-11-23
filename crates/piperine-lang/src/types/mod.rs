@@ -28,7 +28,6 @@ mod enums;
 mod event;
 mod exits;
 mod expr;
-mod flag_total;
 mod flow;
 mod intrinsic;
 mod iterators;

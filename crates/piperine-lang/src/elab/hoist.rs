@@ -15,7 +15,7 @@
 //! caller's terminal for its argument, a node `signal` to a node the body gained, a module-body
 //! `let` to its value lowered in place. The `analog` blocks of every frame are lowered after the
 //! body's own, in frame order (§8.3.16: the callee's rows read what its inputs probe in the
-//! caller, and the caller reads the callee's unknowns). A discrete `in` value input (`in x: Bit<f64>`) is a carrier of the
+//! caller). A discrete `in` value input (`in x: Bit<f64>`) is a carrier of the
 //! frame driven by the caller's expression, an anonymous definition. `cross` and `at` are core:
 //! a placement of one is an event of the enclosing body, not a frame.
 

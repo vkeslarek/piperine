@@ -129,7 +129,7 @@ impl Ty {
             Ty::UInt(n) => format!("u{n}"),
             Ty::Int(n) => format!("i{n}"),
             Ty::Enum(e) => match &design.decl_data(*e).name {
-                Some(n) => format!("enum `{}`", n.text),
+                Some(n) => n.text.clone(),
                 None => "enum".to_string(),
             },
             Ty::Option(inner) => format!("Option<{}>", inner.name(design)),

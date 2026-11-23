@@ -39,7 +39,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | --- | --- | --- | --- |
 | 1 | `explicit-unknowns` phase A (B4–B7) | No hidden known flag: values are what their type says, `Default` decides whether a carrier may start without a value (`E0187`), `analog` reads binary carriers directly, the ABI without known bytes (still major 1), `E0511`; the spec and Book amendment (B1–B3) merges to `main` first (MD-78, user 2026-11-21) | composite-values |
 | 2 | `generics` | Generic structs, enums, functions and traits, const generics, `Fn` values (L4, L7, L8, L29–L32, L58, S3, X6); tasks amended for value semantics and explicit unknowns (`impl` on natures) | explicit-unknowns A |
-| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` | generics A |
+| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` (L68: `Logic`, `logic`, `matches_bits`) | generics A |
 | 4 | `analog-operators` | B1–B3 (solver, host: noise per source, the `tnom` key and the `simparam` flag, the jump-step first-order rule, user-nature `abstol`) built and verified, to merge ahead of B4–B7; B4–B7: `simparam`, `tnom`, noise sources and the noise analysis, the `laplace`/`zi` family (L43–L45, L47, L49, U7) | composite-values |
 | 5 | `unknown-semantics-events` | B5: L51, L53, in the explicit model | generics A–B |
 | 6 | `params-and-io` | B5–B6: integer, enum and `Option` params, `E0122`, `parse_table`, `parse_hex`, `table_model` | composite-values, explicit-unknowns A |
@@ -68,7 +68,8 @@ code (user, 2026-11-18 and 2026-11-21).
 
 | Feature | What it delivers | State |
 | --- | --- | --- |
-| `transient-performance` | Faster transients (Fable diagnosis and plan): step control around events, stamps and node lists reused, no instant at an idle step; T25: the analog time as an integer tick epoch plus a small offset, replacing the long-transient stopgap | built on `feature/transient-performance`, awaiting the merge (user, 2026-11-21) |
+| `transient-performance` | Faster transients: only observable landings, the tested landing and jump steps, stamps reused, no instant at an idle step, T25's tick epoch. The buck's start went from 804 136 steps / 151.9 s to 210 188 / ~27 s | **delivered** — verified (round 4) and merged (user, 2026-11-22) |
+| `digital-performance` | A digital-only run in bounded memory, no quadratic paths, an allocation-free call, work proportional to activity; last, the whole digital circuit of a compiled unit evaluated in topological order over a flat state until it converges (Verilator-style). Measured today: 175x (counter) to 560 000x (10 000 flops) behind Verilator; memory grows with run length | spec on `feature/digital-performance` (diagnosis + bench harness); **postponed until after spec-closure and the code-clarity refactor** (user, 2026-11-22: "precisamos primeiro de um bom refactor e de todas as features funcionando") |
 | `host-iii` | `force`, `release`, waits for an event, continued transients (H1, H6) | spec |
 | `host-analyses` | S-parameters, Fourier, distortion, operating-point variables (H2) | spec |
 | `sweeps-montecarlo-optimization` | Multi-axis sweeps, Monte Carlo, optimization (H2, H7) | spec |
@@ -96,5 +97,4 @@ Logged during the unattended run; presented at the item 13 review.
 | Spec §13 | D2 |
 | Book | The clipper twin |
 | Buck example | Brown-out OVP, start-up peak iL 1.78 A, the 12 → 9 V ramp of 236 µs |
-| `transient-performance` | Decision points 1–5 of its plan |
 | Elaboration | A child's node connected to another placement (`P0001`) is a lowering gap, not a spec rule: close it, or spec it |

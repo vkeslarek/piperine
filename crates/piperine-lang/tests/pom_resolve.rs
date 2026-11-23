@@ -79,7 +79,7 @@ fn the_core_rows_are_unchanged() {
         ("gmin", Fn, "§14.4"), ("source_scale", Fn, "§14.4"),
         ("ddt", Module, "§14.5"), ("delay", Module, "§14.6"), ("limit", Module, "§14.7"), ("noise", Module, "§14.8"),
         ("cross", Module, "§14.9"), ("at", Module, "§14.9"), ("settle", Event, "§14.9"), ("bound_step", Statement, "§14.10"),
-        ("changed", Method, "§14.9"), ("prev", Method, "§14.12"), ("others", Method, "§14.12"), ("level", Method, "§14.12"), ("inflow", Method, "§14.1"),
+        ("changed", Method, "§14.9"), ("prev", Method, "§14.12"), ("others", Method, "§14.12"), ("inflow", Method, "§14.1"),
     ];
     let table: Vec<(&str, BuiltinKind, &str)> = BUILTINS.iter().map(|r| (r.name, r.kind, r.section)).collect();
     assert_eq!(table, rows.to_vec());

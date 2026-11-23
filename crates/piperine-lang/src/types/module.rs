@@ -5,6 +5,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::derives::DerivedTrait;
 use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
@@ -43,7 +44,8 @@ impl Checker<'_> {
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
                 self.infer(default);
             }
-            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out)) => {
+            // An `in` port of a top level starts at its written value too (§3.3.4, §23.1 rule 9).
+            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) => {
                 self.initial_reads(default);
                 self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
             }
@@ -279,7 +281,6 @@ impl Checker<'_> {
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
                     self.check_argument(arg.value, &value);
-                    self.analog_value_input(module, port_decl, arg.value);
                     self.definition_value_input(expr, module, port_decl, arg.value);
                 }
                 None => {
@@ -382,6 +383,34 @@ impl Checker<'_> {
             } else if self.has_initial(decl) {
                 self.coded(file, "E0223", span, format!("`{name}` has an initial value and is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
             }
+        }
+    }
+
+    /// Every carrier of this module that has a value from `(0, 0)` on (§3.3.4): a `signal` or an `out` port of a
+    /// one-driver nature with no initial value needs a value type that implements `Default`, else `E0187` at the
+    /// declaration naming the carrier and `Default` (once per declaration). The one driver may specify the value
+    /// instead: an undelayed definition of the carrier, or an `out` port of a child instance it is handed to
+    /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An `in` port is driven by its caller.
+    pub(super) fn missing_initial_values(&mut self, children: &[DeclId]) {
+        for decl in children.iter().copied() {
+            let item = self.design.decl_data(decl).clone();
+            let is_carrier = match &item.kind {
+                DeclKind::Signal(_) => true,
+                DeclKind::Port(port) => port.dir == Some(crate::msl::ast::Dir::Out),
+                _ => false,
+            };
+            let Some(Ty::Carrier { nature, value }) = self.carriers.get(&decl).cloned() else { continue };
+            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
+                continue;
+            }
+            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _)| *carrier == decl);
+            if specified_by_the_driver {
+                continue;
+            }
+            let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let found = value.name(self.design);
+            let message = format!("`{name}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
+            self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
         }
     }
 

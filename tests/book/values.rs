@@ -17,7 +17,7 @@ mod support {
     pub mod refusal;
 }
 
-use piperine::{Field, Overrides, Record};
+use piperine::{Cell, Field, Overrides, Record};
 use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
@@ -240,7 +240,7 @@ fn a_function_has_the_class_its_body_gives() {
 }
 
 #[test]
-fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
+fn the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic() {
     // values#10 (run: the window monitor of monitor.msl), values#9 is the enum of values#10; values~d0e86096
     // "This file watches a node and reports, on every clock edge, whether its voltage is under, inside or
     // over a window"; values~8ad56d03 "The source is a ramp of 1 V/µs, so the node walks through all three
@@ -248,7 +248,7 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     // 2.5 V"; values~3c87d509 "if z != zone { emit!(…) } prints only when the zone changes. zone on the
     // right still reads the old value"; values~4f830aa0 "The command prints an enum field as the name of
     // its variant, so from=Ok to=Under is a move from Ok to Under" (the command's line is held with the
-    // listing). The adder and the peek that followed it (values#14 and values#18) are refused, below.
+    // listing). The adder (values#14) runs and the peek that followed it (values#18) is refused, below.
     let chapter = Chapter::read();
     let monitor = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let zones = monitor.stream("zone");
@@ -261,15 +261,21 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     }
     let longer = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 5e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(longer.stream("zone").len(), 3, "the edges at 3.5 and 4.5 us find the zone unchanged and print nothing");
-    // values#14 and values#18 (refused, GAPS.md S8): the adder whose `b` is a `Bit<Option<u8>>` and the peek
-    // over `Bit<Logic<4>>`. The `Option` carrier has a `Repr` since composite-values, and `b` is never driven, so
-    // reading it is the run fault that names it (E0105; `explicit-unknowns` phase A starts every carrier at a
-    // value); `Logic<4>` is the library struct `Logic`, which has no generic parameter until phase B (P0001). The
-    // test fails when either starts to run, and the row then becomes `run`. values~2bbc575e "It is placed in a top that gives a the constant 3 and takes b
-    // from an in port of its own, which nothing drives, so b starts at None" and values~c30bad4d "The
-    // undriven b starts at xxxx ..." are held by the listings' refusal (S8)
-    let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6));
-    Refusal::expect(adder, "values#14", "E0105", "a model panicked under known control in `AdderTop.add` at tick 500000000: `b` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first");
+    // values#14 (run since `explicit-unknowns` T22): the adder whose `b` is a `Bit<Option<u8>>` that nothing drives,
+    // so it starts at `None` and the `match` takes the `None` arm at each of the three rising edges (values~2bbc575e
+    // "b starts at None"; the sum stays at 0 because no commit is made). values#18, the peek over `Bit<Logic<4>>`
+    // (refused, GAPS.md S8): `Logic<4>` is the library struct `Logic`, which has no generic parameter until phase B
+    // (P0001). The test fails when it starts to run, and the row then becomes `run`. values~c30bad4d "The undriven b
+    // starts at xxxx ..." is held by that listing's refusal (S8)
+    let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let absent = adder.stream("absent");
+    assert_eq!(absent.len(), 3, "one record at each rising edge: {:?}", adder.records);
+    for (record, instant) in absent.iter().zip(["5.000000e-7", "1.500000e-6", "2.500000e-6"]) {
+        assert_eq!(record.instance, "AdderTop.add");
+        Printed::holds(instant, record.time, "the clock edge");
+        assert_eq!((Fields::of(record, "t"), Fields::of(record, "a")), (&Field::Real(record.time), &Field::Int(3)), "t and a");
+    }
+    assert!((0..adder.table.rows.len()).all(|row| adder.cell(row, "AdderTop.sum") == &Cell::Int(0)), "the sum stays at 0: no commit is made");
     let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6));
     Refusal::expect(peek, "values#18", "P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet");
 }
@@ -296,28 +302,36 @@ fn the_values_chapter_teaches_the_explicit_model() {
 
 #[test]
 fn analog_reads_a_digital_carrier_directly() {
-    // values#21 (refused, GAPS.md S8): the sample-and-hold of the Book reads `held` with no gate. The
-    // earlier front end still reports E0150 for the read (replaces
-    // `analog_reads_a_digital_carrier_through_known_or`, which ran the listing with `held.known_or(0.0)`);
-    // the test fails when the read is accepted. values~267f8cfe is now the sentence "held is a real number
-    // from the first instant, so the contribution needs no gate"
+    // values#21 (run since `explicit-unknowns` T20): the sample-and-hold of the Book reads `held` with no gate
+    // (replaces `analog_reads_a_digital_carrier_through_known_or` and the refusal of the read).
+    // values~267f8cfe is the sentence "held is a real number from the first instant, so the contribution needs no gate"
     let chapter = Chapter::read();
     let after = "module Source(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; signal c: Bit = false; let s = Source(a, gnd); let h = SampleHold(a, b, c); }\ndigital for Top { on at(1u) { c <- true; } }\n";
     let model = chapter.wrapped("sample_hold.msl", "", "values#21", after);
-    Refusal::expect(model.run(Transient::of("Top", 3e-6)), "values#21", "E0150", "an `analog` block reads the discrete carrier `held` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let ran = model.run(Transient::of("Top", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let last = ran.table.rows.len() - 1;
+    assert!((ran.real(0, "Top.b") - 0.0).abs() < 1e-9, "`held` starts at 0.0 and the output with it: {:e}", ran.real(0, "Top.b"));
+    assert!((ran.real(last, "Top.b") - 1.0).abs() < 1e-9, "the output follows `held` after the sample at 1 us: {:e}", ran.real(last, "Top.b"));
 }
 
 #[test]
-fn e0187_is_not_raised_yet() {
-    // values~23c03fc8 "So signal en: Bit; is error E0187", the E0187 cell of the table (values~39ba3a1d) and values~37a548f2 (an
-    // undriven top-level in port of a type with no default) (all `unraised`, GAPS.md S8): the earlier front end
-    // starts a carrier with no value unknown, so `signal en: Bit;` elaborates and runs. The test fails when E0187
-    // is raised. (values~13ffaea6, E0180 for a `Logic`, is raised: `e0180_a_logic_is_no_f64_and_no_bool`.)
-    let source = "module Top() { signal en: Bit; }\ndigital for Top { on at(1u) { emit!(\"e\", t = now()); } }\n";
-    let ran = Transient::ran(&Model::written("no_default.msl", source), "Top", 2e-6);
-    assert_eq!(ran.stream("e").len(), 1, "a signal with no value and no default still runs: E0187 is not raised");
-    let port = Transient::ran(&Model::written("undriven.msl", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
-    assert_eq!(port.stream("p").len(), 1, "an undriven in port of a type with no default still runs");
+fn e0187_a_signal_with_no_first_value_and_no_default_is_refused() {
+    // values~23c03fc8 "So signal en: Bit; is error E0187, naming the signal and the trait Default" and the E0187
+    // cell of the table (values~39ba3a1d): a `bool` has no default, so the first value must be written
+    let faulty = Faulty::elaborating("values~23c03fc8", "module Top() { signal en: Bit; }\n", "Top");
+    assert!(faulty.first("E0187").message.starts_with("`en` has no initial value and its type `bool` does not implement `Default`"), "{}", faulty.first("E0187").message);
+    let written = Transient::ran(&Model::written("first_value.msl", "module Top() { signal en: Bit = false; }\ndigital for Top { on at(1u) { emit!(\"e\", t = now()); } }\n"), "Top", 2e-6);
+    assert_eq!(written.stream("e").len(), 1, "with its first value written the signal runs");
+}
+
+#[test]
+fn an_undriven_top_level_in_port_with_no_default_is_refused() {
+    // values~37a548f2: a top-level `in` port that nothing drives starts at its type's default (here `None`); for a type
+    // with no default, such as `Bit<u8>`, the run refuses to start (E0187) and names the port
+    let none = Transient::ran(&Model::written("undriven_none.msl", "module Top(in b: Bit<Option<u8>>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
+    assert_eq!(none.stream("p").len(), 1, "an undriven in port of type Option starts at None and runs");
+    let refused = Faulty::running("values~37a548f2", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n", Faulty::operating_point_of("Top"));
+    assert!(refused.first("E0187").message.contains("the `in` port `b` of the top `Top` has no initial value, no `Default`"), "{}", refused.first("E0187").message);
 }
 
 #[test]

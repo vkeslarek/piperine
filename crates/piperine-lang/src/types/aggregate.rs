@@ -76,8 +76,7 @@ impl Checker<'_> {
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };
-        let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
-        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &types)
+        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &fields)
     }
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.
@@ -133,7 +132,7 @@ impl Checker<'_> {
         Some(Ty::Tuple(types))
     }
 
-    /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0151`.
+    /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`.
     pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
         let Some(length) = self.fold_length(len) else {
@@ -142,7 +141,7 @@ impl Checker<'_> {
                 return None;
             }
             let what = self.expression_name(len);
-            self.coded(file, "E0151", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
+            self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
             return None;
         };
         let element = element?;

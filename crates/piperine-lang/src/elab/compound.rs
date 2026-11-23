@@ -3,19 +3,16 @@
 //!
 //! - An enum is an IR enum of the type arena (`types.rs`): a unit variant is `VariantOf`, the
 //!   constant evaluator names a unit variant by its position `k` in declaration order, and a
-//!   `match` arm over it tests `IsVariant` (or compares with the variant when the subject may be
-//!   unknown).
+//!   `match` arm over it tests `IsVariant`.
 //! - A `match` is an `if` chain over its scrutinee, read once: bound to a local unless it already
 //!   is a local, a param or a literal. In code that has no local (a drive) the scrutinee is read
 //!   again at each test: an expression of the IR has no effect, so the value is the same. Each
 //!   arm's pattern is a comparison with the scrutinee, an or-pattern the disjunction of its
-//!   alternatives (`|` when the scrutinee may be unknown, `||` when it is known); the last arm of the exhaustive `match` is the final `else`, and so is an
+//!   alternatives (`||`); the last arm of the exhaustive `match` is the final `else`, and so is an
 //!   arm that matches everything.
 //! - An `Option<T>` is never an IR type: its value is a pair, a `bool` flag `is` and a payload
-//!   `val` of `T` (`None` is `(false, zero)`, `Some(e)` is `(true, e)`, `x.known()` is
-//!   `(x.is_known(), x.known_or(zero))`). A `let` binds the pair to two locals, `o.is` and
-//!   `o.val`; any other position writes the two expressions where they are read, so
-//!   `if let Some(d) = x.known() { .. }` is `if x.is_known() { let d = x.known_or(0); .. }`.
+//!   `val` of `T` (`None` is `(false, zero)`, `Some(e)` is `(true, e)`). A `let` binds the pair to two locals, `o.is` and
+//!   `o.val`; any other position writes the two expressions where they are read.
 //!   `is_some`, `is_none`, `unwrap_or`, `if let` and `match` read the pair; `unwrap_or` of a
 //!   literal `None` or `Some` is its value.
 //! - `let (a, b) = (x, y);` is one local per component.
@@ -25,10 +22,9 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Metho
 use super::elaborator::Elaboration;
 use super::patterns::Subject;
 use super::selectors::ArmCondition;
-use super::known::Flag;
 use super::lower::Scope;
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
-use crate::types::{Builtin, Method, Ty};
+use crate::types::{Method, Ty};
 
 /// What one `match` arm asks: its test, guard included, and the names it binds.
 struct ArmTest {
@@ -78,7 +74,7 @@ impl Elaboration<'_, '_> {
         let mut tests = Vec::new();
         for before in earlier {
             if let Some(test) = self.pattern_test(scope, &subject, *before) {
-                let ty = self.flag(test).wrap(ValueType::Bool);
+                let ty = ValueType::Bool;
                 tests.push(self.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, ty, self.expr_origin(scrutinee)));
             }
         }
@@ -215,7 +211,7 @@ impl Elaboration<'_, '_> {
         tests.pop();
         while let (Some(body), Some(test)) = (bodies.pop(), tests.pop()) {
             let test = test?;
-            let ty = self.flags(&[test, body, value]).wrap(base.clone());
+            let ty = base.clone();
             value = self.emit(Expr::If { cond: test, then: body, otherwise: value }, ty, origin.clone());
         }
         Some(value)
@@ -360,6 +356,11 @@ impl Elaboration<'_, '_> {
                 let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
                 Some(Pair { is, val, literal: Some(false) })
             }
+            // `cast::<A, B>(x)` (§22.1.3): an `Option<B>`, the two halves of one level cast.
+            ExprKind::Call { args, .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Intrinsic(crate::types::Intrinsic::Cast))) => {
+                let [arg] = args.as_slice() else { return unsupported(self) };
+                self.lower_cast(scope, expr, arg.value)
+            }
             // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
             // A field of `Option` type: the two halves of the packed value, each unpacked from the
@@ -381,30 +382,6 @@ impl Elaboration<'_, '_> {
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_array_option(scope, method, *recv, &args, payload, origin)
             }
-            // `x.known()`: the two flag-total reads of `x`, each reading `x` where it stands.
-            ExprKind::MethodCall { recv, .. } if self.types.builtin(expr) == Some(Builtin::Known) => {
-                let read = self.lower_flag_receiver(scope, *recv)?;
-                let is = self.emit(Expr::IsKnown(read), ValueType::Bool, origin.clone());
-                let read = self.lower_flag_receiver(scope, *recv)?;
-                let Some(zero) = self.zero(&payload, origin.clone()) else { return unsupported(self) };
-                let val = self.emit(Expr::KnownOr { value: read, default: zero }, payload, origin);
-                Some(Pair { is, val, literal: None })
-            }
-            // `x.level(k)`: the pair `(is, value)` of the `Option<bool>` (§3.3.4), each half read
-            // from the receiver and the index where they stand. Both halves are flagged only when
-            // the index may be unknown (§3.3.13, §3.3.14).
-            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr) == Some(Builtin::Level) => {
-                let [index] = args.as_slice() else { return unsupported(self) };
-                let mut half = |this: &mut Self, part: LevelPart| {
-                    let value = this.lower_flag_receiver(scope, *recv)?;
-                    let index = this.lower_expr(scope, index.value)?;
-                    let ty = this.flag(index).wrap(ValueType::Bool);
-                    Some(this.emit(Expr::Level { value, index, part }, ty, origin.clone()))
-                };
-                let is = half(self, LevelPart::Is)?;
-                let val = half(self, LevelPart::Value)?;
-                Some(Pair { is, val, literal: None })
-            }
             // `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1), so the flag is
             // `!overflows(a, b)` and the payload is the wrapping result, each reading `a` and `b`
             // where they stand.
@@ -416,11 +393,10 @@ impl Elaboration<'_, '_> {
                 };
                 let [arg] = args.as_slice() else { return unsupported(self) };
                 let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
-                let flags = self.flags(&[a, b]);
-                let overflowed = self.emit(Expr::Method { method: overflows, receiver: a, args: vec![b] }, flags.wrap(ValueType::Bool), origin.clone());
-                let is = self.emit(Expr::Unary { op: UnaryOp::Not, expr: overflowed }, flags.wrap(ValueType::Bool), origin.clone());
+                let overflowed = self.emit(Expr::Method { method: overflows, receiver: a, args: vec![b] }, ValueType::Bool, origin.clone());
+                let is = self.emit(Expr::Unary { op: UnaryOp::Not, expr: overflowed }, ValueType::Bool, origin.clone());
                 let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
-                let val = self.emit(Expr::Binary { op, lhs: a, rhs: b }, flags.wrap(payload), origin);
+                let val = self.emit(Expr::Binary { op, lhs: a, rhs: b }, payload, origin);
                 Some(Pair { is, val, literal: None })
             }
             // `o.map(|x| e)`, `o.and_then(|x| p)`, `a.or(b)`, `c.then(|| v)`, `c.then_some(v)` (H.3, H.4).
@@ -439,8 +415,8 @@ impl Elaboration<'_, '_> {
                 scope.nesting -= 1;
                 let (then, otherwise) = (then?, otherwise?);
                 let second = self.lower_expr(scope, *cond)?;
-                let is_ty = self.flags(&[first, then.is, otherwise.is]).wrap(ValueType::Bool);
-                let val_ty = self.flags(&[second, then.val, otherwise.val]).wrap(payload);
+                let is_ty = ValueType::Bool;
+                let val_ty = payload;
                 let is = self.emit(Expr::If { cond: first, then: then.is, otherwise: otherwise.is }, is_ty, origin.clone());
                 let val = self.emit(Expr::If { cond: second, then: then.val, otherwise: otherwise.val }, val_ty, origin);
                 Some(Pair { is, val, literal: None })
@@ -499,7 +475,7 @@ impl Elaboration<'_, '_> {
         match method {
             Method::IsSome => Some(pair.is),
             Method::IsNone => {
-                let ty = self.flag(pair.is).wrap(ValueType::Bool);
+                let ty = ValueType::Bool;
                 Some(self.emit(Expr::Unary { op: UnaryOp::Not, expr: pair.is }, ty, origin))
             }
             Method::UnwrapOr => {
@@ -513,7 +489,7 @@ impl Elaboration<'_, '_> {
                         let default = self.lower_expr(scope, *default);
                         scope.nesting -= 1;
                         let default = default?;
-                        let ty = self.flags(&[pair.is, pair.val, default]).wrap(base);
+                        let ty = base;
                         Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: default }, ty, origin))
                     }
                 }
@@ -528,10 +504,6 @@ impl Elaboration<'_, '_> {
                 };
                 if method == Method::Expect && message.is_none() {
                     self.unsupported(scope.file, self.design.expr_node(recv).span, "`expect` with a message that is not a string literal");
-                    return None;
-                }
-                if self.flag(pair.is) == Flag::Flagged {
-                    self.unsupported(scope.file, self.design.expr_node(recv).span, "`unwrap` of an `Option` whose presence may be unknown");
                     return None;
                 }
                 match pair.literal {
@@ -553,7 +525,7 @@ impl Elaboration<'_, '_> {
                         let default = self.lower_expr(scope, body);
                         scope.nesting -= 1;
                         let default = default?;
-                        let ty = self.flags(&[pair.is, pair.val, default]).wrap(base);
+                        let ty = base;
                         Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: default }, ty, origin))
                     }
                 }
@@ -613,9 +585,9 @@ impl Elaboration<'_, '_> {
             Method::Or => {
                 let (a, b) = (self.lower_option(scope, recv)?, self.lower_option(scope, arg)?);
                 let yes = self.emit(Expr::Bool(true), ValueType::Bool, origin.clone());
-                let is_ty = self.flags(&[a.is, b.is]).wrap(ValueType::Bool);
+                let is_ty = ValueType::Bool;
                 let is = self.emit(Expr::If { cond: a.is, then: yes, otherwise: b.is }, is_ty, origin.clone());
-                let val_ty = self.flags(&[a.is, a.val, b.val]).wrap(payload);
+                let val_ty = payload;
                 let val = self.emit(Expr::If { cond: a.is, then: a.val, otherwise: b.val }, val_ty, origin);
                 Some(Pair { is, val, literal: None })
             }
@@ -636,7 +608,7 @@ impl Elaboration<'_, '_> {
                     self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
                     return None;
                 };
-                let val_ty = self.flags(&[is, value]).wrap(payload);
+                let val_ty = payload;
                 let val = self.emit(Expr::If { cond: is, then: value, otherwise: zero }, val_ty, origin);
                 Some(Pair { is, val, literal: None })
             }
@@ -662,7 +634,7 @@ impl Elaboration<'_, '_> {
                                 self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
                                 return None;
                             };
-                            let ty = self.flags(&[pair.is, value]).wrap(payload);
+                            let ty = payload;
                             self.emit(Expr::If { cond: pair.is, then: value, otherwise: zero }, ty, origin)
                         }
                     };
@@ -676,9 +648,9 @@ impl Elaboration<'_, '_> {
                     self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
                     return None;
                 };
-                let is_ty = self.flags(&[pair.is, is_inner]).wrap(ValueType::Bool);
+                let is_ty = ValueType::Bool;
                 let is = self.emit(Expr::If { cond: pair.is, then: is_inner, otherwise: no }, is_ty, origin.clone());
-                let val_ty = self.flags(&[pair.is, val_inner]).wrap(payload);
+                let val_ty = payload;
                 let val = self.emit(Expr::If { cond: pair.is, then: val_inner, otherwise: zero }, val_ty, origin);
                 Some(Pair { is, val, literal: None })
             }

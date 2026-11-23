@@ -38,7 +38,7 @@ fn spy_shape() -> ShapeRef {
         name: "run",
         origin: "abi_ac.rs",
         on: vec![start],
-        writes: vec![Statement { pin: log, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: log, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -56,7 +56,7 @@ impl Device for Spy {
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
         REACTIONS.fetch_add(1, Ordering::SeqCst);
-        cx.commit(0, &[1, 1], 0.0)?;
+        cx.commit(0, &[1], 0.0)?;
         Ok(Flow::Continue)
     }
 }

@@ -1,0 +1,16 @@
+//! `maybe` is an ordinary field name (part IV §19 rule 11): no record has a flag of its own, so an `emit!` may
+//! name a field `maybe` and the record carries it and its value like any other.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Emits a record of the stream `s` with the field `maybe` at each rising edge.
+module Named(in clk: Bit) {}
+digital for Named { on clk.rise() { emit!("s", maybe = true, x = 1.5); } }
+
+module Bench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 1G };
+    let named = Named(clk);
+}

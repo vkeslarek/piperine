@@ -1,7 +1,6 @@
 //! `Table`: the result of an analysis as named columns and rows of typed cells (CLI-05 AC 1, 2
 //! and 7). A discrete net is decoded by its carrier type from the bytes the solver holds: the
-//! value little-endian at its field's offset, its known byte beside it (`CarrierLayout`,
-//! contract D3); a known byte of 0 is `Cell::Unknown`.
+//! value little-endian at its field's offset and nothing else (`CarrierLayout`, contract D3).
 
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
@@ -23,11 +22,14 @@ pub enum Cell {
     Int(i128),
     /// A name, such as the signal column of an operating point.
     Text(String),
-    /// A discrete value whose known byte is clear.
-    Unknown,
     /// A tuple, an array, a struct, an enum with a payload or an `Option`: the tree of its parts
     /// (`CompositeCell`), which the formats write as a literal or as leaves.
     Composite(Box<CompositeCell>),
+    /// No value of its own, which is not an unknown one (part VIII, the absent cell): a leaf the type can
+    /// hold and the value of this row does not (the payload of a `None`, a field of another variant), or a
+    /// param no placement has given a value. An empty field in a text table and in CSV, `null` in JSON
+    /// Lines, nothing in a plot. A host never writes it where a value was there to read.
+    Absent,
 }
 
 /// Columns and rows; every row has one cell per column.
@@ -38,8 +40,7 @@ pub struct Table {
 }
 
 impl Cell {
-    /// The value of the net of a param: the bytes of the value itself, with no known byte (a
-    /// param is never unknown). A length other than the type's is a `Failure`.
+    /// The value of the net of a param: the bytes of the value itself. A length other than the type's is a `Failure`.
     pub fn decode_param(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
         let wrong = || Failure::Backend(format!("cannot decode a param of type {ty} from {} bytes", bytes.len()));
         let width = match ty {
@@ -68,19 +69,12 @@ impl Cell {
     /// The value of `bytes`, laid out as a carrier of `ty`. Bytes of another length than the
     /// layout's are a `Failure`, never a truncated value.
     pub fn decode(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
-        let ty = match ty {
-            ValueType::Flagged(inner) => inner,
-            other => other,
-        };
         let refused = |why: String| Failure::Backend(format!("cannot decode a value of type {ty}: {why}"));
         let layout = CarrierLayout::of(ty).ok_or_else(|| refused("no carrier holds it".into()))?;
         if bytes.len() != layout.size as usize {
             return Err(refused(format!("{} bytes where its layout holds {}", bytes.len(), layout.size)));
         }
         let field = layout.fields.get(0).ok_or_else(|| refused("its layout has no field".into()))?;
-        if bytes[field.known as usize] == 0 {
-            return Ok(Cell::Unknown);
-        }
         let at = field.offset as usize;
         let le = |n: usize| {
             let mut word = [0u8; 8];
@@ -113,10 +107,11 @@ impl Table {
     /// `<column>.<leaf>` (`<column>[k]` for an element, `<column>` itself for an enum's variant, whose
     /// payload leaves are `<column>.<Variant>.<field>`): the form CSV and a plot need (D13). The leaves
     /// of a column are those of every row, in the order each first appears; a row a leaf does not
-    /// exist in (another variant, an unknown value in a leaf column of a known one) shows an empty
-    /// text, an unknown value `x` in every leaf. `with_text` keeps the leaves that are text (a
+    /// exist in (another variant, the `value` of an absent `Option`) is the absent cell. A row with no cell for a
+    /// column, or a plain cell where the column holds composite values, is a `Failure`: the host fills nothing in.
+    /// `with_text` keeps the leaves that are text (a
     /// variant's name); a plot has no use for them.
-    pub fn expanded(&self, with_text: bool) -> Table {
+    pub fn expanded(&self, with_text: bool) -> Result<Table, Failure> {
         let mut columns = Vec::new();
         let mut source: Vec<(usize, Option<String>)> = Vec::new();
         for (c, name) in self.columns.iter().enumerate() {
@@ -143,20 +138,21 @@ impl Table {
         let rows = self
             .rows
             .iter()
-            .map(|row| {
+            .enumerate()
+            .map(|(r, row)| {
                 source
                     .iter()
                     .map(|(c, leaf)| match (leaf, row.get(*c)) {
-                        (None, Some(cell)) => cell.clone(),
-                        (Some(_), Some(Cell::Unknown)) => Cell::Unknown,
-                        (Some(leaf), Some(Cell::Composite(value))) => value.leaf(leaf).unwrap_or_else(|| Cell::Text(String::new())),
-                        (Some(_), _) => Cell::Text(String::new()),
-                        (None, None) => Cell::Unknown,
+                        (None, Some(cell)) => Ok(cell.clone()),
+                        (Some(leaf), Some(Cell::Composite(value))) => Ok(value.leaf(leaf).unwrap_or(Cell::Absent)),
+                        (Some(_), Some(Cell::Absent)) => Ok(Cell::Absent),
+                        (Some(_), Some(_)) => Err(Failure::Backend(format!("row {r}, column `{}` holds a plain value where the other rows hold composite ones", self.columns[*c]))),
+                        (_, None) => Err(Failure::Backend(format!("row {r} has no cell for column `{}`", self.columns[*c]))),
                     })
-                    .collect()
+                    .collect::<Result<Vec<_>, Failure>>()
             })
-            .collect();
-        Table { columns, rows }
+            .collect::<Result<Vec<_>, Failure>>()?;
+        Ok(Table { columns, rows })
     }
 
     /// The operating point: columns `signal` and `value`, one row per probe in order. `net`
@@ -357,7 +353,7 @@ impl Table {
     /// not past `stop`, from the first multiple not before `from`. The first column is the time;
     /// a real column is interpolated linearly between the two accepted steps around the time (a
     /// time that is an accepted step gives that step's value), a `bool` or integer column holds
-    /// the last step at or before it, and a value unknown at either step stays unknown. A
+    /// the last step at or before it; a real column whose next row is not real is a `Failure`. A
     /// multiple before the first step the table holds (a run that dropped its start, `from`) is
     /// not a row; one past its last step by more than rounding is a `Failure`.
     pub fn on_grid(&self, step: f64, from: f64, stop: f64) -> Result<Table, Failure> {
@@ -389,7 +385,7 @@ impl Table {
                     _ if times[lo] == at || at > last => low.clone(),
                     (Cell::Real(a), Some(next)) => match &next[column] {
                         Cell::Real(b) => Cell::Real(a + (b - a) * (at - times[lo]) / (times[lo + 1] - times[lo])),
-                        _ => Cell::Unknown,
+                        _ => return Err(Failure::Backend(format!("column `{}` is real at {} and not at the next step: it cannot be interpolated", self.columns[column], times[lo]))),
                     },
                     (other, _) => other.clone(),
                 };
@@ -457,17 +453,18 @@ mod tests {
         let grid = table.on_grid(1.0, 0.0, 2.0).expect("grid");
         assert_eq!(grid.rows[1], vec![Cell::Real(1.0), Cell::Real(9.0), Cell::Bool(false), Cell::Int(10)]);
         assert_eq!(grid.rows[2], vec![Cell::Real(2.0), Cell::Real(3.0), Cell::Bool(true), Cell::Int(20)]);
-        // an unknown stays unknown: at 0.5 between a real and an unknown, and a held unknown
+        // a real is interpolated between two steps and a bool is held: at 0.5 between 1.0 and 3.0
+        // the real is 2.0 and the bool is still false
         let table = Table {
             columns: vec!["time".into(), "v".into(), "b".into()],
             rows: vec![
-                vec![Cell::Real(0.0), Cell::Real(1.0), Cell::Unknown],
-                vec![Cell::Real(1.0), Cell::Unknown, Cell::Bool(true)],
+                vec![Cell::Real(0.0), Cell::Real(1.0), Cell::Bool(false)],
+                vec![Cell::Real(1.0), Cell::Real(3.0), Cell::Bool(true)],
             ],
         };
         let grid = table.on_grid(0.5, 0.0, 1.0).expect("grid");
-        assert_eq!(grid.rows[1], vec![Cell::Real(0.5), Cell::Unknown, Cell::Unknown]);
-        assert_eq!(grid.rows[2], vec![Cell::Real(1.0), Cell::Unknown, Cell::Bool(true)]);
+        assert_eq!(grid.rows[1], vec![Cell::Real(0.5), Cell::Real(2.0), Cell::Bool(false)]);
+        assert_eq!(grid.rows[2], vec![Cell::Real(1.0), Cell::Real(3.0), Cell::Bool(true)]);
     }
 
     #[test]
@@ -478,6 +475,39 @@ mod tests {
         assert_eq!(grid.rows, [vec![Cell::Real(0.0), Cell::Real(4.0), Cell::Bool(true), Cell::Int(1)]]);
         // a table the run cut short of `stop` is a failure, never a row held past its end
         assert!(table.on_grid(1.0, 0.0, 3.5).is_err());
+    }
+
+    /// An `Option<u8>` cell: `None`, or `Some(n)`.
+    fn option(held: Option<i128>) -> Cell {
+        Cell::Composite(Box::new(CompositeCell::Option(held.map(|n| Box::new(CompositeCell::Scalar(Cell::Int(n)))))))
+    }
+
+    #[test]
+    fn a_leaf_a_row_does_not_hold_is_the_absent_cell_and_a_missing_cell_is_a_failure() {
+        // part VIII, the absent cell: the `value` leaf of a `None` is `Cell::Absent`, never an empty text, and the
+        // leaves are those of every row; a row with no cell for a column, or a plain cell in a composite column, is
+        // a `Failure` the host does not fill in
+        let table = Table { columns: vec!["time".into(), "o".into()], rows: vec![vec![Cell::Real(0.0), option(None)], vec![Cell::Real(1.0), option(Some(7))]] };
+        let expanded = table.expanded(true).expect("every row is readable");
+        assert_eq!(expanded.columns, ["time", "o.some", "o.value"]);
+        assert_eq!(expanded.rows[0], [Cell::Real(0.0), Cell::Bool(false), Cell::Absent], "no payload in a `None`");
+        assert_eq!(expanded.rows[1], [Cell::Real(1.0), Cell::Bool(true), Cell::Int(7)]);
+
+        let short = Table { columns: table.columns.clone(), rows: vec![vec![Cell::Real(0.0), option(None)], vec![Cell::Real(1.0)]] };
+        let refused = short.expanded(true).expect_err("a row with no cell for a column");
+        assert!(refused.to_string().contains("row 1 has no cell for column `o`"), "{refused}");
+        let plain = Table { columns: table.columns.clone(), rows: vec![vec![Cell::Real(0.0), option(Some(1))], vec![Cell::Real(1.0), Cell::Int(2)]] };
+        let refused = plain.expanded(true).expect_err("a plain cell in a composite column");
+        assert!(refused.to_string().contains("plain value"), "{refused}");
+    }
+
+    #[test]
+    fn a_real_column_that_stops_being_real_cannot_be_interpolated() {
+        // a print grid between two rows needs two reals in a real column; a next row that holds another kind of cell
+        // is a `Failure`, never the held low value
+        let table = Table { columns: vec!["time".into(), "v".into()], rows: vec![vec![Cell::Real(0.0), Cell::Real(1.0)], vec![Cell::Real(1.0), Cell::Int(2)]] };
+        let refused = table.on_grid(0.5, 0.0, 1.0).expect_err("0.5 lies between a real and an integer");
+        assert!(refused.to_string().contains("column `v`") && refused.to_string().contains("cannot be interpolated"), "{refused}");
     }
 
     #[test]

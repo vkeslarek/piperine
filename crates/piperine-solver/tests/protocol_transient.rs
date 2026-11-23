@@ -9,8 +9,7 @@
 //! param write); with no unknown no attempt is made; settle runs at time
 //! points and the stop time only; a resume off the grid steps on from the
 //! tick its discrete side ran at, and a stop inside that tick is an error; on a real discrete
-//! side, a relaxation step that never settles reaches the owner as one `Unsettled` observation
-//! (spec §8.2.3 step 4).
+//! side, a loop that never settles stops the run with `E0511` (spec §8.2.3 step 4).
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
@@ -64,7 +63,7 @@ fn attempts(log: &Log) -> Vec<Call> {
 }
 
 fn boundary() -> Boundary {
-    Boundary { slot: 3, bytes: vec![1, 1] }
+    Boundary { slot: 3, bytes: vec![1] }
 }
 
 #[test]
@@ -556,7 +555,7 @@ fn the_proposal_sees_the_next_due_time() {
     assert_eq!(a.next_dues, [None, None], "nothing queued: no next time point");
 }
 
-/// The settle boundary of the commits an instant held: slot 3 will read `[1, 1]` (§15 S2).
+/// The settle boundary of the commits an instant held: slot 3 will read `[1]` (§15 S2).
 fn settle_outcome() -> Outcome {
     Outcome { settle_boundary: vec![boundary()], ..Outcome::default() }
 }
@@ -666,8 +665,8 @@ fn a_settle_commit_at_the_stop_time_is_dropped() {
     assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(_))).count(), 1, "only the stop's own landing: {order:?}");
 }
 
-/// A function that never settles on its own net: it writes the inverse of the level it reads, and
-/// high while that level is unknown. Bound with `a` and `y` on one `RELAX` net it relaxes forever.
+/// A function that never settles on its own net: it writes the inverse of the level it reads.
+/// Bound with `a` and `y` on one `RELAX` net it relaxes forever.
 ///
 /// pins: a=0 (PORT BIT); y=1 (PORT BIT, RELAX).  fn 0 "flip": reads [a] writes [y]
 struct Flipper;
@@ -699,9 +698,8 @@ impl Device for Flipper {
         Ok((Flipper, Arc::clone(FLIPPER_SHAPE.get_or_init(Flipper::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let a = cx.bytes(0);
-        let level = if a[1] != 0 { a[0] == 0 } else { true };
-        cx.out_bytes(0).copy_from_slice(&[level as u8, 1]);
+        let level = cx.bytes(0)[0] == 0;
+        cx.out_bytes(0).copy_from_slice(&[level as u8]);
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -710,9 +708,10 @@ impl Device for Flipper {
 }
 
 #[test]
-fn an_unsettled_loop_reaches_the_owner_once_per_step() {
-    // spec §8.2.3 step 4, abi.md §9 D1: the discrete side's one `Unsettled` observation of the
-    // step is one observation at the owner, naming the loop's net, not one per net and not a record.
+fn an_unsettled_loop_is_e0511_naming_its_drives() {
+    // abi.md §9 D1: a loop that still moves after the bounded passes stops the run with `E0511`,
+    // naming the loop's drives; the bytes of a layout hold only values, so there is nothing to
+    // zero
     let mut builder = CircuitBuilder::new("unsettled");
     builder.device(
         FLIPPER.get_or_init(|| module::<Flipper>("Flipper")),
@@ -720,19 +719,12 @@ fn an_unsettled_loop_reaches_the_owner_once_per_step() {
         &[],
         &[Port::Net("x".to_string()), Port::Net("x".to_string())],
     );
-    let seen = Rc::new(RefCell::new(Vec::new()));
     let mut solver = Solver::new(builder.build().expect("build"))
         .with_tran_opts(TransientAnalysisOptions::new(1.0e-7, 1.0e-8))
-        .with_sink(Box::new(Collect(Rc::clone(&seen))))
+        .with_sink(Box::new(Collect(Rc::new(RefCell::new(Vec::new())))))
         .build();
-    solver.tran().expect("transient").solve().expect("an unsettled loop is not an error");
-    let seen = seen.borrow();
-    let unsettled: Vec<&Observation> =
-        seen.iter().filter(|o| matches!(o.kind, ObservationKind::Unsettled { .. })).collect();
-    assert_eq!(unsettled.len(), 1, "one observation for the one unsettled step: {seen:?}");
-    assert_eq!(unsettled[0].kind, ObservationKind::Unsettled { nets: vec!["x".to_string()] }, "it names the loop's net");
-    let known_level = seen.iter().any(|o| o.path == "x" && matches!(&o.kind, ObservationKind::Change { bytes } if bytes[1] != 0));
-    assert!(!known_level, "the moving level was made unknown: the net never shows a known level");
+    let error = solver.tran().expect("transient").solve().expect_err("a loop that does not settle fails the run");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle; its drives: x"), "{error}");
 }
 
 /// SAI-15: the target's own device passes the partials verifier (the guard of `abi_devices.rs`).

@@ -11,7 +11,7 @@ module Lag(p: Electrical, n: Electrical, ctl: Electrical, out r: Bit<f64> = 1k) 
     r0: f64 = 1k;
 }
 digital for Lag { on settle { r <- r0 * (1.0 + v(ctl)); } }
-analog for Lag { i(p, n) +> v(p, n) / r.known_or(r0); }
+analog for Lag { i(p, n) +> v(p, n) / r; }
 
 /// The lagged resistor on a 1 V source: its resistance goes from 1 kOhm to 2 kOhm.
 module LagBench() {
@@ -22,7 +22,7 @@ module LagBench() {
 
 /// Writes the resistance it reads at each rising edge of the clock.
 module Sample(in clk: Bit, in r: Bit<f64>) {}
-digital for Sample { on clk.rise() { emit!("read", r = r.known_or(0.0)); } }
+digital for Sample { on clk.rise() { emit!("read", r = r); } }
 
 /// The lagged resistor and a clock whose rising edges (0.37 us, 1.11 us, ...) fall between the
 /// time points of a 1 us step.

@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::caller::{CallError, Commit, Handle};
 use piperine_abi::device::{Access, cell_lens};
-use piperine_abi::raw::{Cell, List, Module, Statement, cell, commit_flag, status, statement_flag};
+use piperine_abi::raw::{Cell, List, Module, Statement, cell, status, statement_flag};
 use piperine_abi::raw::{ambient, part};
-use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, LevelPart, MathFn, Origin, ValueType};
+use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, MathFn, Origin, ValueType};
 use piperine_plan::{Mode, Modules, Source};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
@@ -39,7 +39,7 @@ type Made = (u32, Vec<u8>, f64);
 /// digital for Order {
 ///     on clk.rise() {
 ///         a <- 1;
-///         if clk.high() { b <- 2; } else { b <- 3; }
+///         if clk { b <- 2; } else { b <- 3; }
 ///         c <- true after 1e-9;
 ///     }
 /// }
@@ -60,13 +60,12 @@ fn order(b: &mut IrBuilder) -> BodyId {
     let first = x.commit(1, one, None);
     x.at(5, 9);
     let clk = x.carrier(0, ValueType::Bool);
-    let high = x.high(clk);
     let two = x.int(2, Ty::u(8));
     let then = x.commit(2, two, None);
     let three = x.int(3, Ty::u(8));
     let otherwise = x.commit(2, three, None);
     let otherwise = x.block(vec![otherwise], None, ValueType::Unit);
-    let branch = x.when(high, vec![then], Some(otherwise));
+    let branch = x.when(clk, vec![then], Some(otherwise));
     let branch = x.stmt(branch);
     x.at(6, 9);
     let yes = x.boolean(true);
@@ -76,18 +75,14 @@ fn order(b: &mut IrBuilder) -> BodyId {
     body
 }
 
-/// The `Tables` body (react.msl:60): each form of §22.1 and the math of §3.3.2 on values that may
-/// be unknown, committed through one statement each.
+/// The `Tables` body (react.msl:60): `same`, `cast` and a math function, committed through one
+/// statement each.
 ///
 /// ```text
 /// on clk.rise() {
-///     lv <- a.level(0).unwrap_or(false);   // the value half of `level`
-///     lk <- a.level(0).is_some();          // the `is` half
-///     mg <- merge(a, b);
 ///     sm <- same(a, b);
 ///     cs <- cast::<u8, i8>(a);
 ///     ex <- x.exp();
-///     kf <- a.known_or(b);                 // a default that may itself be unknown
 /// }
 /// ```
 fn tables(b: &mut IrBuilder) -> BodyId {
@@ -97,13 +92,9 @@ fn tables(b: &mut IrBuilder) -> BodyId {
         ("a", Ty::u(8), CarrierRole::In, 21),
         ("b", Ty::u(8), CarrierRole::In, 22),
         ("x", ValueType::F64, CarrierRole::In, 23),
-        ("lv", ValueType::Bool, CarrierRole::Out, 24),
-        ("lk", ValueType::Bool, CarrierRole::Out, 25),
-        ("mg", Ty::u(8), CarrierRole::Out, 26),
-        ("sm", ValueType::Bool, CarrierRole::Out, 27),
-        ("cs", Ty::i(8), CarrierRole::Out, 28),
-        ("ex", ValueType::F64, CarrierRole::Out, 29),
-        ("kf", Ty::u(8), CarrierRole::Out, 30),
+        ("sm", ValueType::Bool, CarrierRole::Out, 24),
+        ("cs", Ty::i(8), CarrierRole::Out, 25),
+        ("ex", ValueType::F64, CarrierRole::Out, 26),
     ] {
         b.carrier(body, Buck::carrier(name, ty, role, None, F, 60, col));
     }
@@ -111,27 +102,19 @@ fn tables(b: &mut IrBuilder) -> BodyId {
     let mut x = Dx::new(b, F, 62, 9);
     let mut stmts = Vec::new();
     let (a, bb) = (x.carrier(1, Ty::u(8)), x.carrier(2, Ty::u(8)));
-    let zero = x.int(0, Ty::u(32));
-    let value = x.level(a, zero, LevelPart::Value, ValueType::Bool);
-    stmts.push(x.commit(4, value, None));
-    let known = x.level(a, zero, LevelPart::Is, ValueType::Bool);
-    stmts.push(x.commit(5, known, None));
-    let merged = x.merge(a, bb, Ty::flagged(Ty::u(8)));
-    stmts.push(x.commit(6, merged, None));
     let same = x.same(a, bb);
-    stmts.push(x.commit(7, same, None));
-    let recast = x.level_cast(a, Ty::i(8), None, Ty::flagged(Ty::i(8)));
-    stmts.push(x.commit(8, recast, None));
+    stmts.push(x.commit(4, same, None));
+    let recast = x.level_cast(a, Ty::i(8), None, ValueType::Option(Box::new(Ty::i(8))));
+    let recast = x.option_value(recast, Ty::i(8));
+    stmts.push(x.commit(5, recast, None));
     let v = x.carrier(3, ValueType::F64);
-    let exp = x.math(MathFn::Exp, v, Ty::flagged(ValueType::F64));
-    stmts.push(x.commit(9, exp, None));
-    let either = x.known_or(a, bb, Ty::flagged(Ty::u(8)));
-    stmts.push(x.commit(10, either, None));
+    let exp = x.math(MathFn::Exp, v, ValueType::F64);
+    stmts.push(x.commit(6, exp, None));
     Buck::reaction(b, body, vec![rise], stmts, vec![], F, 61);
     body
 }
 
-/// The `Guarded` body (react.msl:10): an `if` on an input that may be unknown.
+/// The `Guarded` body (react.msl:10): an `if` on an input.
 ///
 /// ```text
 /// on clk.rise() { r <- 9; if d { q <- true; } else { q <- false; } }   // the `if` at 12:9
@@ -163,7 +146,7 @@ fn guarded(b: &mut IrBuilder) -> BodyId {
     body
 }
 
-/// The `Late` body (react.msl:20): the delay is an input that may be unknown.
+/// The `Late` body (react.msl:20): the delay is an input.
 ///
 /// ```text
 /// on clk.rise() { q <- true after t; }
@@ -186,30 +169,6 @@ fn late(b: &mut IrBuilder) -> BodyId {
     body
 }
 
-/// The `Seven` body (react.msl:30): an input read with a default.
-///
-/// ```text
-/// on clk.rise() { out <- data.known_or(7); }
-/// ```
-fn seven(b: &mut IrBuilder) -> BodyId {
-    let body = b.body(Buck::spec("Seven", F, 30));
-    for (name, ty, role, col) in [
-        ("clk", ValueType::Bool, CarrierRole::In, 20),
-        ("data", Ty::u(8), CarrierRole::In, 30),
-        ("out", Ty::u(8), CarrierRole::Out, 40),
-    ] {
-        b.carrier(body, Buck::carrier(name, ty, role, None, F, 30, col));
-    }
-    let rise = Buck::rise(b, body, 0, F, 31, 8);
-    let mut x = Dx::new(b, F, 31, 20);
-    let data = x.carrier(1, Ty::u(8));
-    let default = x.int(7, Ty::u(8));
-    let value = x.known_or(data, default, Ty::u(8));
-    let commit = x.commit(2, value, None);
-    Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 31);
-    body
-}
-
 /// The `Divide` body (react.msl:40): a drive that divides integers.
 ///
 /// ```text
@@ -226,7 +185,7 @@ fn divide(b: &mut IrBuilder) -> BodyId {
     }
     let mut x = Dx::new(b, F, 41, 9);
     let (a, c) = (x.carrier(0, Ty::u(8)), x.carrier(1, Ty::u(8)));
-    let quotient = x.bin(BinaryOp::Div, a, c, Ty::flagged(Ty::u(8)));
+    let quotient = x.bin(BinaryOp::Div, a, c, Ty::u(8));
     let origin = Origin { file: F.to_string(), line: 41, col: 5 };
     b.drive(body, Drive { carrier: 2, value: quotient, after: None, origin });
     body
@@ -235,7 +194,7 @@ fn divide(b: &mut IrBuilder) -> BodyId {
 /// The `Settling` body (react.msl:50): a `settle` event gated by a guard (§13 rule 17).
 ///
 /// ```text
-/// on settle && ready.high() { q <- true; }
+/// on settle && ready { q <- true; }
 /// ```
 fn settling(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Settling", F, 50));
@@ -244,15 +203,14 @@ fn settling(b: &mut IrBuilder) -> BodyId {
     }
     let mut x = Dx::new(b, F, 51, 20);
     let ready = x.carrier(0, ValueType::Bool);
-    let guard = x.high(ready);
-    let settle = b.event(body, Event { source: EventSource::Settle, guard: Some(guard), origin: Buck::origin(F, 51, 8) });
+    let settle = b.event(body, Event { source: EventSource::Settle, guard: Some(ready), origin: Buck::origin(F, 51, 8) });
     let yes = Dx::new(b, F, 52, 9).boolean(true);
     let commit = Dx::new(b, F, 52, 9).commit(1, yes, None);
     Buck::reaction(b, body, vec![settle], vec![commit], vec![], F, 51);
     body
 }
 
-/// The five bodies, compiled once for the binary: rustc is the cost of every test here.
+/// The bodies, compiled once for the binary: rustc is the cost of every test here.
 struct Design {
     compiled: Compiled,
     ir: Arc<Ir>,
@@ -263,7 +221,7 @@ fn design() -> &'static Mutex<Design> {
     static DESIGN: OnceLock<Mutex<Design>> = OnceLock::new();
     DESIGN.get_or_init(|| {
         let mut b = IrBuilder::new();
-        for make in [order, guarded, late, seven, divide, tables, settling] {
+        for make in [order, guarded, late, divide, tables, settling] {
             make(&mut b);
         }
         let ir = Arc::new(Alone::finish(b));
@@ -289,41 +247,20 @@ fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
     (0..list.len()).map(|i| *list.get(i).expect("a readable element")).collect()
 }
 
-/// The bytes of a `Bit<T>` pin holding `value` (known), or unknown: its layout's size, value
-/// first, the known byte after it (abi.md P3).
-fn known(value: &[u8]) -> Vec<u8> {
-    let mut bytes = value.to_vec();
-    bytes.push(1);
-    bytes
+/// The bytes of a `Bit<T>` pin holding `value`: the value and nothing else (abi.md P3).
+fn pin_bytes(value: &[u8]) -> Vec<u8> {
+    value.to_vec()
 }
 
-/// The bytes of a `Bit<f64>` pin holding `value`: the value, the known byte, padding to 16.
-fn known_real(value: f64) -> Vec<u8> {
-    let mut bytes = value.to_le_bytes().to_vec();
-    bytes.push(1);
-    bytes.resize(16, 0);
-    bytes
-}
-
-/// An unwritten pin: every byte 0, known byte included (RS-11 AC 4).
-fn unknown(size: usize) -> Vec<u8> {
-    vec![0; size]
+/// The bytes of a `Bit<f64>` pin holding `value`: its eight bytes.
+fn real_pin_bytes(value: f64) -> Vec<u8> {
+    value.to_le_bytes().to_vec()
 }
 
 /// Runs reaction `k` of `handle` with each read cell given by the name of its pin; returns what
 /// it committed in order, or the call's error. The reads a reaction declares are found in the
 /// shape, so the test does not depend on their order.
 fn react(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Result<(), CallError>, Vec<Made>) {
-    let (result, made) = react_flagged(handle, k, given);
-    (result, made.into_iter().map(|(statement, bytes, after, _)| (statement, bytes, after)).collect())
-}
-
-/// What the reaction was asked to commit with the `commit_flag` bits it was made with (abi.md C7):
-/// statement, bytes, delay, flags.
-type MadeFlagged = (u32, Vec<u8>, f64, u32);
-
-/// `react`, each commit with its flags.
-fn react_flagged(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Result<(), CallError>, Vec<MadeFlagged>) {
     let shape = handle.shape();
     let reaction = items(&shape.reactions)[k as usize];
     let mut input: Vec<Vec<u8>> = Vec::new();
@@ -334,10 +271,10 @@ fn react_flagged(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Res
         input.push(bytes.1.clone());
     }
     let reads: Vec<&[u8]> = input.iter().map(Vec::as_slice).collect();
-    let mut made: Vec<MadeFlagged> = Vec::new();
+    let mut made: Vec<Made> = Vec::new();
     let result = handle
         .react(k, &reads, &mut |c: Commit<'_>| {
-            made.push((c.statement, c.bytes.to_vec(), c.after, c.flags));
+            made.push((c.statement, c.bytes.to_vec(), c.after));
             status::OK
         })
         .map(|_| ());
@@ -363,100 +300,60 @@ fn a_reaction_commits_in_source_order() {
     assert_eq!(later, [(false, 0.0), (false, 0.0), (false, 0.0), (true, 1e-9)]);
 
     // clk high: the `then` arm; every commit in the order the source makes them, the bytes of
-    // each carrier's pin (value, known byte 1), the delay as written
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1]))]);
+    // each carrier's pin (its value), the delay as written
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1]))]);
     result.expect("the reaction runs");
     assert_eq!(
         made,
-        [(0, known(&[1]), 0.0), (1, known(&[2]), 0.0), (3, known(&[1]), 1e-9)],
+        [(0, pin_bytes(&[1]), 0.0), (1, pin_bytes(&[2]), 0.0), (3, pin_bytes(&[1]), 1e-9)],
         "a <- 1; b <- 2 (statement 1); c <- true after 1e-9"
     );
 
     // clk low: the `else` arm is statement 2; `c` is still statement 3
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[0]))]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[0]))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[1]), 0.0), (2, known(&[3]), 0.0), (3, known(&[1]), 1e-9)]);
+    assert_eq!(made, [(0, pin_bytes(&[1]), 0.0), (2, pin_bytes(&[3]), 0.0), (3, pin_bytes(&[1]), 1e-9)]);
 }
 
 #[test]
-fn an_unknown_condition_merges_both_arms() {
-    // US-04 AC 1, §3.3.3 (this replaces RS-11 AC 5, the fault of an unknown `if`, which the spec
-    // removes): `if d { q <- true } else { q <- false }` with `d` unwritten runs both arms. Both
-    // paths commit `q` at the next microstep, so the join is one key: `merge(true, false)`,
-    // which is unknown, committed through each statement an arm used (1 and 2, so transport sees
-    // both) flagged `MAYBE`; `r <- 9`, made before the `if`, is a plain commit
-    let maybe = commit_flag::MAYBE;
+fn an_if_commits_through_the_arm_it_takes() {
+    // `if d { q <- true } else { q <- false }`: one path, the arm the condition names; `r <- 9`,
+    // made before the `if`, is statement 0
     let mut h = instance("Guarded");
-    let tick = known_real(1e-15);
-    let (result, made) = react_flagged(&mut h, 0, &[("clk", known(&[1])), ("d", unknown(2)), ("resolution", tick.clone())]);
-    result.expect("an unknown condition is no fault");
-    assert_eq!(made, [(0, known(&[9]), 0.0, 0), (1, unknown(2), 0.0, maybe), (2, unknown(2), 0.0, maybe)]);
-
-    // `d` known true commits `r <- 9` (statement 0) and `q <- true` (statement 1), no flag
-    let (result, made) = react_flagged(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1])), ("resolution", tick)]);
-    result.expect("a known condition runs");
-    assert_eq!(made, [(0, known(&[9]), 0.0, 0), (1, known(&[1]), 0.0, 0)]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("d", pin_bytes(&[1]))]);
+    result.expect("the reaction runs");
+    assert_eq!(made, [(0, pin_bytes(&[9]), 0.0), (1, pin_bytes(&[1]), 0.0)]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("d", pin_bytes(&[0]))]);
+    result.expect("the reaction runs");
+    assert_eq!(made, [(0, pin_bytes(&[9]), 0.0), (2, pin_bytes(&[0]), 0.0)], "the `else` arm is statement 2");
 }
 
 #[test]
-fn level_merge_same_and_recast_compute_their_tables() {
-    // §22.1 and §3.3.2, one commit per form, statements 0 to 6: `lv`, `lk`, `mg`, `sm`, `cs`,
-    // `ex`, `kf`. The cases are written from the rules, each cited
+fn same_cast_and_math_compute_their_tables() {
+    // §22.1.3, §22.1.4 and §3.3.2, one commit per form, statements 0 to 2: `sm`, `cs`, `ex`.
+    // a = 5 (0b101), b = 6, x = 0.0: `same` of different values is false; the cast keeps the
+    // bits, so 5 as an `i8`; `exp(0.0)` is 1.0
     let mut h = instance("Tables");
-    let run = |h: &mut Handle, a: Vec<u8>, b: Vec<u8>, x: Vec<u8>| {
-        let (result, made) = react(h, 0, &[("clk", known(&[1])), ("a", a), ("b", b), ("x", x)]);
+    let mut run = |a: u8, b: u8, x: f64| {
+        let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("a", pin_bytes(&[a])), ("b", pin_bytes(&[b])), ("x", real_pin_bytes(x))]);
         result.expect("the reaction runs");
         made.into_iter().map(|(statement, bytes, _)| (statement, bytes)).collect::<Vec<_>>()
     };
-    // a = 5 (0b101), b = 6, x = 0.0, all known. `a.level(0)` is known and is bit 0, 1 (§3.3.14);
-    // merge of two different values is unknown (§22.1.2 rule 1); `same` of different values is
-    // false (§22.1.4); the cast keeps the bits, so 5 as an `i8` (§22.1.3); `exp(0.0)` is 1.0;
-    // `known_or` of a known value is that value
-    assert_eq!(
-        run(&mut h, known(&[5]), known(&[6]), known_real(0.0)),
-        [(0, known(&[1])), (1, known(&[1])), (2, unknown(2)), (3, known(&[0])), (4, known(&[5])), (5, known_real(1.0)), (6, known(&[5]))]
-    );
-    // a unknown: every level of it is a known `None` (is = false, value = false, §3.3.4), the merge
-    // and the cast are unknown, `same` of an unknown and a known value is false, `exp` of an
-    // unknown real is unknown (§3.3.2), `known_or` gives the default, 6, with its flag
-    assert_eq!(
-        run(&mut h, unknown(2), known(&[6]), unknown(16)),
-        [(0, known(&[0])), (1, known(&[0])), (2, unknown(2)), (3, known(&[0])), (4, unknown(2)), (5, unknown(16)), (6, known(&[6]))]
-    );
-    // both unknown: two unknown values are the same (§22.1.4), and `known_or` gives an unknown
-    // default with its flag (§22.1.1 rule 4)
-    let both = run(&mut h, unknown(2), unknown(2), known_real(2.0));
-    assert_eq!(both[3], (3, known(&[1])));
-    assert_eq!(both[6], (6, unknown(2)));
+    assert_eq!(run(5, 6, 0.0), [(0, pin_bytes(&[0])), (1, pin_bytes(&[5])), (2, real_pin_bytes(1.0))]);
+    // equal values are the same (§22.1.4); a byte above 127 is negative as an `i8`
+    assert_eq!(run(200, 200, 0.0), [(0, pin_bytes(&[1])), (1, pin_bytes(&[200])), (2, real_pin_bytes(1.0))]);
 }
 
 #[test]
-fn an_unknown_delay_commits_unknown_at_the_next_microstep() {
-    // RS-11 AC 6, §3.3.3: `q <- true after t` with `t` unwritten commits `Unknown` (every byte
-    // 0) after 0 seconds, the next microstep (abi.md §6)
+fn a_commit_is_made_after_the_delay_it_names() {
+    // `q <- true after t` commits `true` after `t` seconds
     let mut h = instance("Late");
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("t", unknown(16))]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("t", real_pin_bytes(2.5e-9))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, unknown(2), 0.0)]);
-
-    // with `t` known the value is committed after it
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("t", known_real(2.5e-9))]);
+    assert_eq!(made, [(0, pin_bytes(&[1]), 2.5e-9)]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("t", real_pin_bytes(0.0))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[1]), 2.5e-9)]);
-}
-
-#[test]
-fn a_known_or_over_an_unwritten_input_gives_the_default() {
-    // RS-11 AC 3 and its independent test: `out <- data.known_or(7)` over an unwritten `data`
-    // commits 7, known
-    let mut h = instance("Seven");
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("data", unknown(2))]);
-    result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[7]), 0.0)]);
-    // a written `data` is committed as it is
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("data", known(&[5]))]);
-    result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[5]), 0.0)]);
+    assert_eq!(made, [(0, pin_bytes(&[1]), 0.0)], "a delay of 0 is the next microstep");
 }
 
 #[test]
@@ -475,8 +372,8 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
         let reads: Vec<Vec<u8>> = items(&function.reads)
             .iter()
             .map(|c: &Cell| match items(&shape.pins)[c.index as usize].name.as_str() {
-                "a" => known(&[a]),
-                _ => known(&[b]),
+                "a" => pin_bytes(&[a]),
+                _ => pin_bytes(&[b]),
             })
             .collect();
         let reads: Vec<&[u8]> = reads.iter().map(Vec::as_slice).collect();
@@ -488,7 +385,7 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
     let error = call(8, 0).expect_err("a division by zero is a fault");
     assert_eq!(error.status, status::FAULT);
     assert!(error.message.contains("division by zero"), "the fault carries the panic message: {}", error.message);
-    assert_eq!(call(8, 2).expect("the instance survives"), known(&[4]));
+    assert_eq!(call(8, 2).expect("the instance survives"), pin_bytes(&[4]));
 }
 
 #[test]
@@ -586,11 +483,11 @@ fn run_event(handle: &Handle, name: &str, given: &[(&str, u32, Vec<u8>)]) -> u8 
 
 #[test]
 fn a_settle_event_function_fires_on_the_settle_pin_and_its_guard() {
-    // §13 rule 17 and rule 1: the event of `settle && ready.high()` fires in a microstep exactly
+    // §13 rule 17 and rule 1: the event of `settle && ready` fires in a microstep exactly
     // when the `SETTLE` pin fired (its `CHANGED` byte, abi.md §4) and the guard holds there
     let handle = instance("Settling");
     let fire = |settle: u8, ready_high: bool| {
-        let ready = known(&[u8::from(ready_high)]);
+        let ready = pin_bytes(&[u8::from(ready_high)]);
         run_event(&handle, "event:0", &[("ready", part::VALUE, ready), ("settle", part::CHANGED, vec![settle])])
     };
     assert_eq!(fire(1, true), 1, "the settle phase, the guard holds");

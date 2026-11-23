@@ -15,8 +15,8 @@ arenas
   e0: f64 = real 0.0  @dpwm.msl:8:22
   e1: f64 = param 0  @dpwm.msl:8:22
   e2: bool = gt e1 e0  @dpwm.msl:8:22
-  e3: flagged<bool> = carrier 0  @dpwm.msl:10:45
-  e4: flagged<bool> = not e3  @dpwm.msl:10:45
+  e3: bool = carrier 0  @dpwm.msl:10:45
+  e4: bool = not e3  @dpwm.msl:10:45
   e5: f64 = real 0.5  @dpwm.msl:10:57
   e6: f64 = param 0  @dpwm.msl:10:57
   e7: f64 = div e5 e6  @dpwm.msl:10:57

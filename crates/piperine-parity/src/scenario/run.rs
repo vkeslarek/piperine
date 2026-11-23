@@ -162,7 +162,7 @@ mod tests {
     impl Records {
         /// A record of `stream` with the field `pass`, when given.
         fn of(stream: &str, pass: Option<bool>) -> Record {
-            Record { time: 0.0, instance: "top.mon".into(), stream: stream.into(), fields: pass.map(|flag| ("pass".to_string(), Field::Bool(flag))).into_iter().collect(), maybe: false }
+            Record { time: 0.0, instance: "top.mon".into(), stream: stream.into(), fields: pass.map(|flag| ("pass".to_string(), Field::Bool(flag))).into_iter().collect() }
         }
     }
 

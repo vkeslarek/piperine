@@ -19,7 +19,6 @@ use std::collections::BTreeSet;
 use piperine_ir::{Derivative, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 
@@ -125,10 +124,6 @@ impl Elaboration<'_, '_> {
         let [state, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
         let state = self.lower_expr(&mut standalone, *state)?;
-        if self.flag(state) == Flag::Flagged {
-            self.unsupported(scope.file, span, "a `ddt` of a value that may be unknown");
-            return None;
-        }
         let abstol = match rest {
             [tolerance] => Some(self.lower_expr(&mut standalone, *tolerance)?),
             _ => None,

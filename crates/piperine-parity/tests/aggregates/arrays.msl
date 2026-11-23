@@ -28,7 +28,7 @@ fn range_inclusive() -> u8 { let a = [1u8, 2, 3, 4]; let s = a[1..=2]; s[0] * 10
 fn range_then_index() -> u8 { let a = [1u8, 2, 3, 4]; a[1..4][2] }
 fn range_is_a_copy() -> u8 { let a = [1u8, 2, 3]; let s = a[0..2]; s[0] = 9; a[0] * 10 + s[0] }
 
-module Rows(in clk: Bit, out a0: Bit<u8>, out a1: Bit<u8>, out a2: Bit<u8>, out a3: Bit<u8>, out a4: Bit<u8>, out a5: Bit<u8>, out a6: Bit<u8>, out a7: Bit<u8>, out a8: Bit<u8>, out a9: Bit<u8>, out p0: Bit<u8>, out p1: Bit<u8>, out p2: Bit<u8>, out p3: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>, out r2: Bit<u8>, out r3: Bit<u8>, out r4: Bit<u8>) {}
+module Rows(in clk: Bit, out a0: Bit<u8> = 0, out a1: Bit<u8> = 0, out a2: Bit<u8> = 0, out a3: Bit<u8> = 0, out a4: Bit<u8> = 0, out a5: Bit<u8> = 0, out a6: Bit<u8> = 0, out a7: Bit<u8> = 0, out a8: Bit<u8> = 0, out a9: Bit<u8> = 0, out p0: Bit<u8> = 0, out p1: Bit<u8> = 0, out p2: Bit<u8> = 0, out p3: Bit<u8> = 0, out r0: Bit<u8> = 0, out r1: Bit<u8> = 0, out r2: Bit<u8> = 0, out r3: Bit<u8> = 0, out r4: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         a0 <- literal_sum();
@@ -62,7 +62,7 @@ module Bench() {
 
 // an index past the end fails the analysis, naming the instance, the instant and the index
 fn element(a: [u8; 3], i: u8) -> u8 { a[i] }
-module Overrun(in clk: Bit, out y: Bit<u8>) {}
+module Overrun(in clk: Bit, out y: Bit<u8> = 0) {}
 digital for Overrun { on clk.rise() { y <- element([1, 2, 3], 5); } }
 module OverrunBench() {
     signal clk: Bit; signal y: Bit<u8>;
@@ -70,25 +70,24 @@ module OverrunBench() {
     let overrun = Overrun(clk, y);
 }
 
-// an index that may be unknown reads the merge of the elements it may name and writes by merging
-// into each (§3.3.13): `sel` is never driven
+// an index is an integer (§3.3.5): it reads the element it names and writes into that one; `sel` holds 1
 module Merges(in clk: Bit, in sel: Bit<u2>, in e0: Bit<u8>, in e1: Bit<u8>, in e2: Bit<u8>, in e3: Bit<u8>, out same: Bit<u8> = 1, out differ: Bit<u8> = 1, out w0: Bit<u8> = 1, out w1: Bit<u8> = 1) {}
 digital for Merges {
     on clk.rise() {
         let eq = [e0, e1, e2];
         same <- eq[sel];
         let ne = [e0, e1, e3];
-        differ <- ne[sel];
+        differ <- ne[2];
         let w = [e0, e1];
-        w[sel] = 5;
+        w[sel] = 7;
         w0 <- w[0];
         let v = [e0, e3];
-        v[sel] = 5;
+        v[sel] = 7;
         w1 <- v[1];
     }
 }
 module MergeBench() {
-    signal clk: Bit; signal sel: Bit<u2>;
+    signal clk: Bit; signal sel: Bit<u2> = 1;
     signal e0: Bit<u8> = 5; signal e1: Bit<u8> = 5; signal e2: Bit<u8> = 5; signal e3: Bit<u8> = 6;
     signal same: Bit<u8>; signal differ: Bit<u8>; signal w0: Bit<u8>; signal w1: Bit<u8>;
     let osc = Osc(clk) { f: 200M };

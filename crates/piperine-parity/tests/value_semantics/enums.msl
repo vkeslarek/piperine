@@ -8,7 +8,7 @@ digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 #[derive(PartialEq, Repr)]
 enum Mode { Idle, Run, Hold }
 
-module Rows(in clk: Bit, out m: Bit<Mode>, out same: Bit<bool>, out differs: Bit<bool>) {}
+module Rows(in clk: Bit, out m: Bit<Mode> = Mode::Idle, out same: Bit<bool> = false, out differs: Bit<bool> = false) {}
 digital for Rows {
     on clk.rise() {
         let a = Mode::Run;

@@ -138,12 +138,11 @@ fn inherited_rust_forms_parse() {
     assert!(matches!(&pat("[a, b, ..]").kind, PatKind::Array(v) if v.len() == 3 && matches!(v[2].kind, PatKind::Rest)));
     // Alternatives, including nested in a tuple (spec: `(None, y) | (y, None)`).
     assert!(matches!(&pat("(None, y) | (y, None)").kind, PatKind::Or(v) if v.len() == 2));
-    // Literals: integers, negative, strings, bools, `Unknown`.
+    // Literals: integers, negative, strings, bools.
     assert!(matches!(&pat("0").kind, PatKind::Lit(_)));
     assert!(matches!(&pat("-1").kind, PatKind::Lit(e) if matches!(e.kind, ExprKind::Unary { op: UnOp::Neg, .. })));
     assert!(matches!(&pat("\"s\"").kind, PatKind::Lit(_)));
     assert!(matches!(&pat("true").kind, PatKind::Lit(e) if matches!(&e.kind, ExprKind::Lit(Lit { kind: LitKind::Bool(true), .. }))));
-    assert!(matches!(&pat("Unknown").kind, PatKind::Lit(e) if matches!(&e.kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. }))));
     // Ranges.
     assert!(matches!(&pat("0..=9").kind, PatKind::Range { inclusive: true, lo: Some(_), hi: Some(_) }));
     assert!(matches!(&pat("0b00..=0b11").kind, PatKind::Range { inclusive: true, .. }));
@@ -239,7 +238,6 @@ fn inherited_rust_forms_parse_expressions() {
     assert!(matches!(expr("..4").kind, ExprKind::Range { lo: None, hi: Some(_), .. }));
 
     // ---- literals, paths, tuples, arrays ----
-    assert!(matches!(expr("Unknown").kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. })));
     assert!(matches!(expr("true").kind, ExprKind::Lit(Lit { kind: LitKind::Bool(true), .. })));
     assert!(matches!(expr("2.2u").kind, ExprKind::Lit(Lit { kind: LitKind::Float { raw, .. }, .. }) if raw == "2.2u"));
     assert!(matches!(expr("Phase::Liquid").kind, ExprKind::Path(_)));
@@ -285,7 +283,7 @@ fn inherited_rust_forms_parse_expressions() {
     assert!(matches!(&expr("|x: f64| -> f64 { x }").kind, ExprKind::Closure { ret: Some(_), .. }));
     assert!(matches!(&expr("|| 0").kind, ExprKind::Closure { params, .. } if params.is_empty()));
     // A closure passed to a method, holding a `match` with or-patterns.
-    expr("d.iter().fold(None, |a, x| match (a, x) { (None, y) | (y, None) => y, _ => Some(Unknown) })");
+    expr("d.iter().fold(None, |a, x| match (a, x) { (None, y) | (y, None) => y, _ => Some(0) })");
 
     // ---- control flow ----
     let e = expr("if l < 0.18u { 0.42 } else if l < 1u { 0.45 } else { 0.47 }");
@@ -409,17 +407,10 @@ fn contribution_commit_at_any_depth() {
 }
 
 #[test]
-fn unknown_as_value_ok_as_name_e0908() {
-    // The value half: `Unknown` parses wherever a value is expected.
-    assert!(matches!(expr("Unknown").kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. })));
-    let b = block("{ let x = Unknown; f(Unknown, 1); y <- Unknown; }");
-    assert!(matches!(&b.stmts[0].kind, StmtKind::Let { init: Some(Expr { kind: ExprKind::Lit(Lit { kind: LitKind::Unknown, .. }), .. }), .. }));
-    let ExprKind::Call { args, .. } = &expr("f(Unknown, 1)").kind else { panic!() };
-    assert!(matches!(args[0].value.kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. })));
-    assert!(matches!(&expr("Some(Unknown)").kind, ExprKind::Call { .. }));
-
-    // The name half: as a binding, item or field name it is `E0908`, at the
-    // token itself.
+fn unknown_is_an_ordinary_name() {
+    // explicit-unknowns EU-02: `Unknown` is no literal and no reserved name; the parser takes it wherever an
+    // identifier goes (the checker finds nothing by that name: `E0161`), and raises no `E0908`.
+    assert!(matches!(&expr("Unknown").kind, ExprKind::Path(_)));
     for src in [
         "fn Unknown() {}",
         "struct Unknown;",
@@ -431,15 +422,11 @@ fn unknown_as_value_ok_as_name_e0908() {
         "fn f() { let (a, Unknown) = t; }",
         "fn f() { for Unknown in 0..3 {} }",
         "fn f() { let g = |Unknown| 1; }",
+        "fn f() { let x = Unknown; g(Unknown, 1); }",
     ] {
-        let at = src.find("Unknown").unwrap();
         let r = parse(src);
-        let d = r.diagnostics.iter().find(|d| d.code == "E0908").unwrap_or_else(|| panic!("{src:?}: {:?}", r.diagnostics));
-        assert_eq!(d.span(), Span::new(at, at + 7), "{src:?}");
+        assert!(r.diagnostics.is_empty(), "{src:?}: {:?}", r.diagnostics);
     }
-    // A pattern that merely matches the literal is fine.
-    let r = parse("fn f() { match x { Unknown => 1, _ => 2 }; }");
-    assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
 
 #[test]
@@ -521,7 +508,7 @@ fn inherited_rust_forms_parse_items() {
     assert!(file("").items.is_empty());
     assert!(file("  // just a comment\n").items.is_empty());
     // The spec's closure-in-fn example, whole.
-    file("pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {\n    d.iter().fold(None, |a, x| match (a, x) { (None, y) | (y, None) => y, _ => Some(Unknown) })\n}");
+    file("pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {\n    d.iter().fold(None, |a, x| match (a, x) { (None, y) | (y, None) => y, _ => Some(0) })\n}");
     file("pub fn finish() { emit!(\"sim\", finish = true); }");
 }
 

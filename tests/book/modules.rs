@@ -171,9 +171,8 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
     // structure, placed in a top with the clock as an `in` port. `Capacitor` is chapter 1's, written first
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
-    Refusal::expect(chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::of_top()), "modules#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).earlier("sc.msl").run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.table.rows.len(), 3, "the clock and the two analog nodes");
     assert!(ran.signal("Top.b").abs() < 1e-12, "the integrator's output with no input is at rest");
 }

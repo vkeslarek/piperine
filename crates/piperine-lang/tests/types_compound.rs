@@ -89,7 +89,7 @@ fn unit_enums_and_their_variants_are_typed() {
     let (mode, fault) = (decl(&design, "Mode", true), decl(&design, "Fault", true));
     let got: Vec<Ty> = ["m", "f", "same", "other"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
     assert_eq!(got, [Ty::Enum(mode), Ty::Enum(fault), Ty::Bool, Ty::Bool]);
-    assert_eq!(Ty::Enum(mode).name(&design), "enum `Mode`");
+    assert_eq!(Ty::Enum(mode).name(&design), "Mode");
 
     // `Severity` of the stdlib, through the prelude.
     let src = "module Top() { }\nanalog for Top { let s = Severity::Warning; let w = s == Severity::Error; }";

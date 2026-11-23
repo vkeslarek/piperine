@@ -192,9 +192,8 @@ impl Elaboration<'_, '_> {
     /// The operand expressions of the condition forms `selector_reads` follows.
     fn operands_of(kind: &Expr) -> Vec<LoweredExpr> {
         match kind {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => vec![*expr],
             Expr::Binary { lhs, rhs, .. } => vec![*lhs, *rhs],
-            Expr::KnownOr { value, default } => vec![*value, *default],
             Expr::Unwrap { is, value, .. } => vec![*is, *value],
             Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
             Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
@@ -207,7 +206,7 @@ impl Elaboration<'_, '_> {
 impl Elaboration<'_, '_> {
     /// The conjunction of the conditions of the arms `scope` sits in, lowered standalone (no local
     /// in reach, §14 rule 9); `Some(None)` when nothing encloses the code, `None` after a diagnostic
-    /// (`P0001` for a condition that may be unknown and for an `if let` arm).
+    /// (`P0001` for an `if let` arm).
     pub(super) fn standalone_guard(&mut self, scope: &Scope, span: Span, what: &str) -> Option<Option<LoweredExpr>> {
         if scope.guards.is_empty() {
             return Some(None);
@@ -218,10 +217,6 @@ impl Elaboration<'_, '_> {
             match guard {
                 ArmCondition::If { condition, holds } => {
                     let test = self.lower_expr(&mut standalone, *condition)?;
-                    if self.flag(test) == super::known::Flag::Flagged {
-                        self.unsupported(scope.file, span, &format!("{what} under a condition that may be unknown"));
-                        return None;
-                    }
                     let origin = self.expr_origin(*condition);
                     tests.push(if *holds { test } else { self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Not, expr: test }, piperine_ir::ValueType::Bool, origin) });
                 }

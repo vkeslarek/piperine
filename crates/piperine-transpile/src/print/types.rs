@@ -75,7 +75,7 @@ impl<'a> TypeItems<'a> {
     }
 
     /// Whether a value of `ty` holds an `f64` that is the code's real: directly, in a tuple, an
-    /// array or an option, or through a struct or an enum. A flagged real is a plain `f64`.
+    /// array or an option, or through a struct or an enum.
     pub fn holds_real(&self, ty: &ValueType) -> bool {
         self.holds_real_visiting(ty, &mut BTreeSet::new())
     }
@@ -96,7 +96,7 @@ impl<'a> TypeItems<'a> {
                     TypeKind::Enum { variants, .. } => variants.iter().any(|v| v.fields.iter().any(|(_, field)| self.holds_real_visiting(field, visited))),
                 }
             }
-            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) | ValueType::Flagged(_) => false,
+            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) => false,
         }
     }
 
@@ -225,9 +225,9 @@ impl TypeItems<'_> {
         if self.holds_real(&Self::as_value(self.ir, id)) { format!("{}<f64>", self.name(id)) } else { self.name(id).to_string() }
     }
 
-    /// `impl rt::flag::Carried` and `Levelwise` for type `id` (a struct concatenates its fields, first
-    /// lowest; an enum lays out its tag, then the widest payload, padded with false levels, §2), and
-    /// a `Default` unless the source derives one (`Carried` holds an unknown value as the default).
+    /// `impl rt::pin::Carried` for type `id` (a struct concatenates its fields, first lowest; an
+    /// enum lays out its tag, then the widest payload, padded with false levels, §2), and a
+    /// `Default` unless the source derives one (a pin whose tag names no variant decodes as the default; `try_from_levels` is `None`).
     fn carried_impls(&self, id: TypeId) -> Result<String, Error> {
         let data = self.ir.type_data(id);
         let derives = &data.derives;
@@ -239,7 +239,7 @@ impl TypeItems<'_> {
         let mut t = Text::new();
         t.line(&format!("/// MSL `{}` as a carried value: its bytes and levels follow section 2 of the language.", data.path));
         t.line("#[allow(dead_code)]");
-        t.line(&format!("impl rt::flag::Carried for {head} {{"));
+        t.line(&format!("impl rt::pin::Carried for {head} {{"));
         let mut written = Ok(());
         t.indented(|t| {
             written = match &data.kind {
@@ -248,14 +248,6 @@ impl TypeItems<'_> {
             };
         });
         written?;
-        t.line("}");
-        t.line("");
-        t.line(&format!("impl rt::flag::Levelwise for {head} {{"));
-        t.indented(|t| {
-            t.line(&format!("fn same_levels(self, other: {head}) -> bool {{"));
-            t.indented(|t| t.line("rt::flag::Carried::to_levels(self) == rt::flag::Carried::to_levels(other)"));
-            t.line("}");
-        });
         t.line("}");
         let derived_default = derives.default && matches!(data.kind, TypeKind::Struct { .. });
         if !derived_default {
@@ -288,9 +280,9 @@ impl TypeItems<'_> {
         if name.chars().all(|c| c.is_ascii_digit()) { name.to_string() } else { Text::ident(name) }
     }
 
-    /// `<ty as rt::flag::Carried>::<what>` summed over `types`, `0` for none.
+    /// `<ty as rt::pin::Carried>::<what>` summed over `types`, `0` for none.
     fn sum(types: &[String], what: &str) -> String {
-        if types.is_empty() { "0".to_string() } else { types.iter().map(|ty| format!("<{ty} as rt::flag::Carried>::{what}")).collect::<Vec<_>>().join(" + ") }
+        if types.is_empty() { "0".to_string() } else { types.iter().map(|ty| format!("<{ty} as rt::pin::Carried>::{what}")).collect::<Vec<_>>().join(" + ") }
     }
 
     /// The associated items of a struct's `Carried`: the fields concatenated, the first lowest.
@@ -300,29 +292,35 @@ impl TypeItems<'_> {
         let shape = self.shape(printer, data, self.name(id).to_string(), form, fields)?;
         let accessors: Vec<String> = fields.iter().map(|(field, _)| format!("self.{}", Self::label(field))).collect();
         t.line(&format!("const WIDTH: usize = {};", Self::sum(&shape.types, "WIDTH")));
-        t.line("const SIZE: usize = Self::WIDTH + 1;");
         t.line(&format!("const LEVELS: u32 = {};", Self::sum(&shape.types, "LEVELS")));
         t.line("fn encode(self, out: &mut [u8]) {");
         t.indented(|t| {
             t.line("let mut at = 0;");
-            accessors.iter().for_each(|field| t.line(&format!("rt::flag::Field::write({field}, out, &mut at);")));
+            accessors.iter().for_each(|field| t.line(&format!("rt::pin::Field::write({field}, out, &mut at);")));
         });
         t.line("}");
-        let reads: Vec<String> = fields.iter().map(|_| "rt::flag::Field::read(bytes, &mut at)".to_string()).collect();
+        let reads: Vec<String> = fields.iter().map(|_| "rt::pin::Field::read(bytes, &mut at)".to_string()).collect();
         t.line(&format!("fn decode(bytes: &[u8]) -> {head} {{"));
         t.indented(|t| {
             t.line("let mut at = 0;");
             t.line(&(shape.build)(&reads));
         });
         t.line("}");
-        t.line("fn to_levels(self) -> rt::flag::LevelWords {");
-        t.indented(|t| t.line(&format!("rt::flag::LevelWords::concat::<{}>([{}])", fields.len(), accessors.iter().map(|field| format!("rt::flag::Carried::to_levels({field})")).collect::<Vec<_>>().join(", "))));
+        t.line("fn to_levels(self) -> rt::pin::LevelWords {");
+        t.indented(|t| t.line(&format!("rt::pin::LevelWords::concat::<{}>([{}])", fields.len(), accessors.iter().map(|field| format!("rt::pin::Carried::to_levels({field})")).collect::<Vec<_>>().join(", "))));
         t.line("}");
-        let levels: Vec<String> = fields.iter().map(|_| "rt::flag::Field::levels(words, &mut at)".to_string()).collect();
-        t.line(&format!("fn from_levels(words: &rt::flag::LevelWords) -> {head} {{"));
+        let levels: Vec<String> = fields.iter().map(|_| "rt::pin::Field::levels(words, &mut at)".to_string()).collect();
+        t.line(&format!("fn from_levels(words: &rt::pin::LevelWords) -> {head} {{"));
         t.indented(|t| {
             t.line("let mut at = 0;");
             t.line(&(shape.build)(&levels));
+        });
+        t.line("}");
+        let tried: Vec<String> = fields.iter().map(|_| "rt::pin::Field::try_levels(words, &mut at)?".to_string()).collect();
+        t.line(&format!("fn try_from_levels(words: &rt::pin::LevelWords) -> Option<{head}> {{"));
+        t.indented(|t| {
+            t.line("let mut at = 0;");
+            t.line(&format!("Some({})", (shape.build)(&tried)));
         });
         t.line("}");
         Ok(())
@@ -340,18 +338,17 @@ impl TypeItems<'_> {
         }
         let widths: Vec<String> = shapes.iter().map(|(_, shape)| Self::sum(&shape.types, "WIDTH")).collect();
         let levels: Vec<String> = shapes.iter().map(|(_, shape)| format!("({}) as usize", Self::sum(&shape.types, "LEVELS"))).collect();
-        t.line(&format!("const WIDTH: usize = {tag_bytes} + rt::flag::Tag::widest(&[{}]);", widths.join(", ")));
-        t.line("const SIZE: usize = Self::WIDTH + 1;");
-        t.line(&format!("const LEVELS: u32 = {tag_levels} + rt::flag::Tag::widest(&[{}]) as u32;", levels.join(", ")));
+        t.line(&format!("const WIDTH: usize = {tag_bytes} + rt::pin::Tag::widest(&[{}]);", widths.join(", ")));
+        t.line(&format!("const LEVELS: u32 = {tag_levels} + rt::pin::Tag::widest(&[{}]) as u32;", levels.join(", ")));
         t.line("fn encode(self, out: &mut [u8]) {");
         t.indented(|t| {
             t.line("out[..Self::WIDTH].fill(0);");
             t.line("match self {");
             t.indented(|t| {
                 for (variant, shape) in &shapes {
-                    let writes: Vec<String> = (0..variant.fields.len()).map(|k| format!("rt::flag::Field::write({}, out, &mut at);", Text::generated(&format!("field{k}")))).collect();
+                    let writes: Vec<String> = (0..variant.fields.len()).map(|k| format!("rt::pin::Field::write({}, out, &mut at);", Text::generated(&format!("field{k}")))).collect();
                     let at = if writes.is_empty() { String::new() } else { format!(" let mut at = {tag_bytes}; {}", writes.join(" ")) };
-                    t.line(&format!("{} => {{ rt::flag::Tag::put({}, out, {tag_bytes});{at} }}", shape.pattern, variant.discriminant));
+                    t.line(&format!("{} => {{ rt::pin::Tag::put({}, out, {tag_bytes});{at} }}", shape.pattern, variant.discriminant));
                 }
             });
             t.line("}");
@@ -359,10 +356,10 @@ impl TypeItems<'_> {
         t.line("}");
         t.line(&format!("fn decode(bytes: &[u8]) -> {head} {{"));
         t.indented(|t| {
-            t.line(&format!("match rt::flag::Tag::get(bytes, {tag_bytes}) {{"));
+            t.line(&format!("match rt::pin::Tag::get(bytes, {tag_bytes}) {{"));
             t.indented(|t| {
                 for (variant, shape) in &shapes {
-                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::flag::Field::read(bytes, &mut at)".to_string()).collect();
+                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::pin::Field::read(bytes, &mut at)".to_string()).collect();
                     let built = (shape.build)(&reads);
                     let at = if reads.is_empty() { String::new() } else { format!("let mut at = {tag_bytes}; ") };
                     t.line(&format!("{} => {{ {at}{built} }}", variant.discriminant));
@@ -372,24 +369,20 @@ impl TypeItems<'_> {
             t.line("}");
         });
         t.line("}");
-        let tags: Vec<String> = variants.iter().map(|v| v.discriminant.to_string()).collect();
-        t.line("fn is_valid(bytes: &[u8]) -> bool {");
-        t.indented(|t| t.line(&format!("matches!(rt::flag::Tag::get(bytes, {tag_bytes}), {})", tags.join(" | "))));
-        t.line("}");
-        t.line("fn to_levels(self) -> rt::flag::LevelWords {");
+        t.line("fn to_levels(self) -> rt::pin::LevelWords {");
         t.indented(|t| {
             t.line("let (tag, payload) = match self {");
             t.indented(|t| {
                 for (variant, shape) in &shapes {
-                    let parts: Vec<String> = (0..variant.fields.len()).map(|k| format!("rt::flag::Carried::to_levels({})", Text::generated(&format!("field{k}")))).collect();
-                    t.line(&format!("{} => ({}u64, rt::flag::LevelWords::concat::<{}>([{}])),", shape.pattern, variant.discriminant, parts.len(), parts.join(", ")));
+                    let parts: Vec<String> = (0..variant.fields.len()).map(|k| format!("rt::pin::Carried::to_levels({})", Text::generated(&format!("field{k}")))).collect();
+                    t.line(&format!("{} => ({}u64, rt::pin::LevelWords::concat::<{}>([{}])),", shape.pattern, variant.discriminant, parts.len(), parts.join(", ")));
                 }
             });
             t.line("};");
-            t.line(&format!("rt::flag::LevelWords::concat([rt::flag::LevelWords::of(tag, {tag_levels}), payload.padded(Self::LEVELS - {tag_levels})])"));
+            t.line(&format!("rt::pin::LevelWords::concat([rt::pin::LevelWords::of(tag, {tag_levels}), payload.padded(Self::LEVELS - {tag_levels})])"));
         });
         t.line("}");
-        t.line(&format!("fn from_levels(words: &rt::flag::LevelWords) -> {head} {{"));
+        t.line(&format!("fn from_levels(words: &rt::pin::LevelWords) -> {head} {{"));
         t.indented(|t| {
             // an enum whose variants have no fields has no payload to read
             if shapes.iter().any(|(variant, _)| !variant.fields.is_empty()) {
@@ -398,7 +391,7 @@ impl TypeItems<'_> {
             t.line(&format!("match words.slice(0, {tag_levels}).low() {{"));
             t.indented(|t| {
                 for (variant, shape) in &shapes {
-                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::flag::Field::levels(&payload, &mut at)".to_string()).collect();
+                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::pin::Field::levels(&payload, &mut at)".to_string()).collect();
                     let built = (shape.build)(&reads);
                     let at = if reads.is_empty() { String::new() } else { "let mut at = 0; ".to_string() };
                     t.line(&format!("{} => {{ {at}{built} }}", variant.discriminant));
@@ -408,11 +401,29 @@ impl TypeItems<'_> {
             t.line("}");
         });
         t.line("}");
+        t.line(&format!("fn try_from_levels(words: &rt::pin::LevelWords) -> Option<{head}> {{"));
+        t.indented(|t| {
+            if shapes.iter().any(|(variant, _)| !variant.fields.is_empty()) {
+                t.line(&format!("let payload = words.slice({tag_levels}, Self::LEVELS - {tag_levels});"));
+            }
+            t.line(&format!("match words.slice(0, {tag_levels}).low() {{"));
+            t.indented(|t| {
+                for (variant, shape) in &shapes {
+                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::pin::Field::try_levels(&payload, &mut at)?".to_string()).collect();
+                    let built = (shape.build)(&reads);
+                    let at = if reads.is_empty() { String::new() } else { "let mut at = 0; ".to_string() };
+                    t.line(&format!("{} => {{ {at}Some({built}) }}", variant.discriminant));
+                }
+                t.line("_ => None,");
+            });
+            t.line("}");
+        });
+        t.line("}");
         Ok(())
     }
 
     /// How many bytes the tag of `levels` levels takes in the byte form: none for no levels, else the
-    /// narrowest of 1, 2, 4 and 8 (the width of an integer of that many bits, `rt::flag`).
+    /// narrowest of 1, 2, 4 and 8 (the width of an integer of that many bits, `rt::pin`).
     fn tag_bytes(levels: u32) -> usize {
         match levels {
             0 => 0,

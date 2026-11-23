@@ -37,7 +37,7 @@ fn every_struct_form_is_a_value_type() {
     // a generic struct stays outside the subset (`generics`)
     CheckedSource::assert_refused(&CheckedSource::source("struct G<T> { t: f64 }\nfn f(g: G<f64>) {}", "let h = f;"), "P0001", "generic struct `G`");
     // §1.2.5: the length of an array type is a constant
-    CheckedSource::assert_refused(&CheckedSource::source("const F: f64 = 1.0;\nfn f(v: [u8; F]) {}", "let h = f;"), "E0151", "constant");
+    CheckedSource::assert_refused(&CheckedSource::source("const F: f64 = 1.0;\nfn f(v: [u8; F]) {}", "let h = f;"), "E0188", "constant");
 }
 
 #[test]
@@ -221,20 +221,21 @@ fn derived_traits_give_comparison_and_default() {
     // CV-12 AC 1, H.8 rules 2 to 4: a derived `PartialEq` gives `==` and `!=`, `PartialOrd` gives the
     // four orderings, `Default` gives `T::default()`; the built-in types implement them by rule 7
     // (tuples, arrays and `Option` per part).
-    let items = "#[derive(PartialEq, Eq, PartialOrd, Ord, Default)]\nstruct Key { a: u8, b: bool }\n\
-                 #[derive(PartialEq, PartialOrd, Default)]\nstruct Pt { x: f64, y: f64 }\n\
+    let items = "#[derive(PartialEq, Eq, PartialOrd, Ord)]\nstruct Key { a: u8, b: bool }\n\
+                 #[derive(PartialEq, PartialOrd)]\nstruct Pt { x: f64, y: f64 }\n\
+                 #[derive(Default)]\nstruct Slot { a: Option<u8> }\n\
                  #[derive(Repr, PartialEq, Eq, PartialOrd, Ord)]\nenum Mode { Off, On(u8) }";
-    let body = "let k = Key { a: 1, b: true }; let same = k == k; let other = k != Key::default(); let before = k < Key { a: 2, b: false }; \
-                let p = Pt::default(); let near = p <= Pt { x: 0.0, y: 1.0 }; \
+    let body = "let k = Key { a: 1, b: true }; let same = k == k; let other = k != Key { a: 0, b: false }; let before = k < Key { a: 2, b: false }; \
+                let p = Pt { x: 0.0, y: 0.0 }; let near = p <= Pt { x: 0.0, y: 1.0 }; let slot = Slot::default(); \
                 let t = (1u8, 2.0) == (1u8, 2.0); let arr = [1u8, 2] < [1u8, 3]; let o = Some(1u8) == None; \
                 let m = Mode::On(1) > Mode::Off;";
     for name in ["same", "other", "before", "near", "t", "arr", "o", "m"] {
         assert_eq!(CheckedSource::binding_or_parameter_type(&CheckedSource::source(items, body), name), Ty::Bool, "{name}");
     }
     let src = CheckedSource::source(items, body);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "p"), Ty::Struct(CheckedSource::type_decl(&src, "Pt")), "`T::default()` has the type `T`");
-    // H.8 rule 7: the defaults of the built-in types
-    let defaults = "let a: u8 = u8::default(); let b: bool = bool::default(); let c: f64 = f64::default();";
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "slot"), Ty::Struct(CheckedSource::type_decl(&src, "Slot")), "`T::default()` has the type `T`");
+    // H.8 rule 7: the default of an `Option` is `None` (no number has a default: `types_explicit`)
+    let defaults = "let a: Option<u8> = Option::<u8>::default();";
     CheckedSource::assert_clean(&CheckedSource::source("", defaults));
 }
 
@@ -252,7 +253,7 @@ fn comparing_without_the_trait_is_refused_naming_it() {
     CheckedSource::assert_refused(&CheckedSource::source(plain, "let a = [P { x: 1.0 }] == [P { x: 1.0 }];"), "E0180", "a type that derives `PartialEq`");
     // H.8 rule 6: a derive needs the trait on every field; a float has no `Eq` (H.8 resolution)
     CheckedSource::assert_refused(&CheckedSource::source("#[derive(PartialEq, Eq)]\nstruct P { x: f64 }", "let h = P { x: 1.0 };"), "E0180", "`Eq`");
-    CheckedSource::assert_refused(&CheckedSource::source("#[derive(PartialEq)]\nstruct Q { x: u8 }\n#[derive(PartialEq)]\nstruct P { q: Q, n: f64 }\n#[derive(Default)]\nstruct D { q: Q }", "let h = D::default();"), "E0180", "`Default`");
+    CheckedSource::assert_refused(&CheckedSource::source("#[derive(PartialEq)]\nstruct Q { x: u8 }\n#[derive(PartialEq)]\nstruct P { q: Q, n: f64 }\n#[derive(Default)]\nstruct D { q: Q }", "let h = D::default();"), "E0187", "`Default`");
     // H.8 rule 3: `Ord` requires `Eq` and `PartialOrd`
     CheckedSource::assert_refused(&CheckedSource::source("#[derive(Ord)]\nstruct P { x: u8 }", "let h = P { x: 1 };"), "E0180", "`#[derive(Ord)]` on struct `P` needs `#[derive(Eq)]`");
 }
@@ -337,8 +338,18 @@ fn composite_carriers_type_check() {
     let items = "#[derive(Repr, PartialEq)]\nstruct Pair { a: u3, b: bool }\n\
                  #[derive(Repr, PartialEq)]\nenum Tx { Idle, Start, Data { n: u3 }, Stop }\n\
                  #[derive(Repr)]\n#[repr(u4)]\nenum Wide { A, B(u2, bool) }";
-    for carried in ["(u8, bool)", "[u4; 3]", "Option<u8>", "Pair", "Tx", "Option<Pair>", "[(u2, bool); 2]", "Wide"] {
-        let src = format!("{items}\nmodule Top() {{ signal s: Bit<{carried}>; }}");
+    for (carried, initial) in [
+        ("(u8, bool)", " = (0, false)"),
+        ("[u4; 3]", " = [0, 0, 0]"),
+        ("Option<u8>", ""),
+        ("Pair", " = Pair { a: 0, b: false }"),
+        ("Tx", " = Tx::Idle"),
+        ("Option<Pair>", ""),
+        ("[(u2, bool); 2]", " = [(0, false), (0, false)]"),
+        ("Wide", " = Wide::A"),
+    ] {
+        // a type with `Default` needs no initial value; the others write one (§3.3.4)
+        let src = format!("{items}\nmodule Top() {{ signal s: Bit<{carried}>{initial}; }}");
         CheckedSource::assert_clean_module(&src, carried);
     }
     // WIDTH: tuple/array/Option sums by the table; `Tx` is a 2-level tag and a 3-level payload

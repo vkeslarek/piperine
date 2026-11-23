@@ -2048,10 +2048,12 @@ fn a_drive_without_a_value_starts_at_its_default() {
 
 #[test]
 fn a_relaxing_drive_starts_absent() {
-    // EU-11 AC 7, D14: every drive of a loop starts each pass absent from what `resolve`
-    // receives, and absence is not a value of the type.
+    // EU-11 AC 7, D14: every drive of a loop starts each relaxation (each microstep it runs) absent from what `resolve`
+    // receives, the passes of one relaxation build on the previous pass, and absence is not a value of the type.
     let s = flat(&section(&spec("part_iii_structure.md"), "### 8.2 "));
-    assert!(s.contains("every drive of the loop starts each pass absent from what `resolve` receives; absence is not a value of the type"), "{s}");
+    assert!(s.contains("every drive of the loop starts each relaxation absent from what `resolve` receives (a relaxation is one run of the loop in one microstep); absence is not a value of the type"), "{s}");
+    assert!(s.contains("each from the values the previous pass left within this relaxation"), "{s}");
+    assert!(!s.contains("starts each pass absent"), "the old step 1 is gone: {s}");
 }
 
 #[test]
@@ -2212,14 +2214,16 @@ fn the_removed_words_are_absent_from_the_specification() {
 
 #[test]
 fn appendix_g_records_the_explicit_model() {
-    // EU-17 AC 4: G.72 lists what was removed and says the implementation does not meet it yet;
+    // EU-17 AC 4: G.72 lists what was removed; since phase A of `explicit-unknowns` it says the
+    // implementation meets it in every layer and names `Logic<N>` as phase B (T40);
     // G.29, G.46 and G.57 are closed by it, and no longer have an open or flagged entry.
     let g = spec("appendix_g_scope.md");
     let g72 = flat(&section(&g, "### G.72"));
     for removed in ["the known flag of every level of every value, and the literal `Unknown`", "`level`, `known`, `known_or`, `is_known`, `high`, `merge`, and `Known`", "the merge of effects under unknown control", "the gate of an `analog` read", "`maybe` on a record", "the `resolve` field of a nature, and the library nets `Wire`, `Tri` and `SumNet`"] {
         assert!(g72.contains(removed), "G.72 does not list: {removed}");
     }
-    assert!(g72.contains("The reference implementation does not yet meet this item."), "{g72}");
+    assert!(!g72.contains("does not yet meet this item"), "G.72 says the implementation still falls short: {g72}");
+    assert!(g72.contains("The reference implementation meets this item in every layer") && g72.contains("`Logic<N>`") && g72.contains("phase B of `explicit-unknowns`"), "{g72}");
     let closed = flat(&section(&g, "### Other closed items"));
     for item in ["G.28, G.29, G.45, G.46, G.55, G.57"] {
         assert!(closed.contains(item), "the closed table lacks {item}");
@@ -2244,6 +2248,20 @@ fn the_gallery_works_four_nets() {
         assert!(flat_s.contains(needle), "F.4 lacks {needle}");
     }
     assert!(!flat_s.contains(": Wire;") && !flat_s.contains(": Wire,"), "no library Wire");
+}
+
+#[test]
+fn the_host_fails_loud_and_names_the_absent_cell() {
+    // EU-15 (D15, finding 34): a host that cannot read a cell fails and never fills it; the two cells with no value of
+    // their own are absent, not unknown, and each format spells that one cell
+    let part = spec("part_viii_host.md");
+    let s = flat(&part.replace("\n> ", "\n"));
+    assert!(s.contains("a host that cannot read one fails with the cause"), "{s}");
+    assert!(s.contains("It never fills the cell in."), "{s}");
+    assert!(s.contains("are **absent**, which is not an unknown value"), "{s}");
+    assert!(s.contains("the payload of a `None`, a field of another variant"), "{s}");
+    assert!(s.contains("a param no placement has given a value"), "{s}");
+    assert!(s.contains("an empty field in a text table and in CSV, `null` in JSON Lines, and nothing in a plot"), "{s}");
 }
 
 #[test]

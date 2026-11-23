@@ -73,13 +73,12 @@ pub module Supervisor(
 
 digital for Supervisor {
     on tick.rise() {
-        // Unknown control is read on the safe side: not enabled, Vin low, a cut period.
         // The run counters stop at their thresholds, so they never wrap (`GAPS.md` G3: the
         // natural `saturating_add` on a carrier is not resolved by the front end yet).
-        let enabled = en.known_or(false) && vin_ok.known_or(false);
-        let m = meas.known_or(1023);
-        let r = reference.known_or(0);
-        let oc_n = if !cut.known_or(true) {
+        let enabled = en && vin_ok;
+        let m = meas;
+        let r = reference;
+        let oc_n = if !cut {
             0
         } else if oc_count < OC_PERIODS {
             oc_count + 1
@@ -106,7 +105,7 @@ digital for Supervisor {
         if !enabled {
             mode <- Mode::Off; // UVLO is not a fault: `fault` is untouched
         } else {
-            match mode.known_or(Mode::Off) {
+            match mode {
                 Mode::Off => {
                     mode <- Mode::SoftStart;
                 },
@@ -125,7 +124,7 @@ digital for Supervisor {
                         // end when the count has run 999 more: `retry == 0` then retries
                         retry <- HICCUP_SAMPLES - 1;
                         log(Severity::Warning, "buck: fault, entering hiccup");
-                    } else if mode == Mode::SoftStart && at_target.known_or(false) {
+                    } else if mode == Mode::SoftStart && at_target {
                         mode <- Mode::Regulate;
                         fault <- Fault::Clear;
                     }

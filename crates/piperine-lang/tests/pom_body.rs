@@ -396,7 +396,7 @@ fn assert_round_trips(src: &str) {
 fn value_bodies_round_trip() {
     // Every expression form, as the value of a const.
     let forms = [
-        "1", "2.5e3", "\"s\"", "true", "Unknown", "a", "-a", "!a", "a + b * c - d / e % f", "a ^ b & c | d",
+        "1", "2.5e3", "\"s\"", "true", "a", "-a", "!a", "a + b * c - d / e % f", "a ^ b & c | d",
         "a << 1 >> 2", "a && b || c", "a == b", "a != b", "a < b", "a <= b", "a > b", "a >= b", "a = b", "a += b",
         "a <<= b", "a as f64", "f(1, x: 2)", "a.m(1)", "a.m::<u8>(1, x: 2)", "a.b", "t.0", "a[0]", "0..4", "0..=4", "..4",
         "0..", "..", "(a)", "(a, b)", "()", "[1, 2]", "[0; 4]", "S { x: 1, y: 2 }", "{ 1 }", "{ }",
