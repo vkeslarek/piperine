@@ -240,7 +240,7 @@ fn a_function_has_the_class_its_body_gives() {
     assert_eq!(ran.stream("say").len(), 1, "a function that calls emit! writes where emit! does");
     let reaching = "module Top(in req: Bit, in ack: Bit) { }\ndigital for Top { on handshake(req, ack) { emit!(\"h\", t = now()); } }\n";
     let refused = chapter.wrapped("handshake.msl", "", "values#8", reaching).run(Transient::of("Top", 2e-6));
-    Refusal::expect(refused, "values#8", "P0001", "method `rise` on this receiver is not supported yet");
+    Refusal::expect(refused, "values#8", "P0001", "this call as an event is not supported yet");
 }
 
 #[test]

@@ -141,10 +141,14 @@ impl Elaboration<'_, '_> {
                     Some(self.ir_constant(value, &ty))
                 }
             },
-            // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C (GAPS)
+            // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C
+            // (GAPS L69). A type with no `Default` has none to start at: the carrier takes its value from what drives it
             None if self.hand_written_encode(decl).is_some() && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) => {
-                self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
-                return None;
+                if self.default_initial_value(decl, &ty).is_some() {
+                    self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
+                    return None;
+                }
+                None
             }
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
