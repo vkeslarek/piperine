@@ -2423,6 +2423,14 @@ fn part_v_a_host_set_due_at_t_is_a_commit_at_t_0() {
     ] {
         assert!(s.contains(fact), "Part V lacks \"{fact}\"");
     }
+    for (file, fact) in [
+        ("part_viii_host.md", "a `set` is a host commit due at `(t, 0)`, collected at step 2 of §15 (§15.2)"),
+        ("part_iii_structure.md", "The `set` is a host commit due at `(t, 0)` of a scheduled instant, collected at step 2 of §15"),
+    ] {
+        let text = flat(&spec(file));
+        assert!(text.contains(fact), "{file} lacks \"{fact}\"");
+        assert!(!text.contains("at step 5 of §15") && !text.contains("(§15 step 5)"), "{file} still has a host set apply at step 5");
+    }
     for stale in ["it applies in step 5", "First the host `set`s due at `t` apply, after the settle phase", "applies after the step to `t` is accepted, after the settle phase"] {
         assert!(!s.contains(stale), "Part V still says \"{stale}\"");
     }

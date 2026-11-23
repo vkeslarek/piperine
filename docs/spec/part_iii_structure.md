@@ -824,8 +824,8 @@ A named expression and a value input are not quantities: they are expressions ov
 
 - **§9 rule 3** A change of a discrete carrier that `analog` reads is a jump (§15.2). The carrier is
   constant during every solve on both sides of it.
-- **§9 rule 4** A host **MAY** `set` a non-structural param during a run. The `set` is collected at a
-  scheduled instant and applies after the step to that instant is accepted (§15 step 5). When
+- **§9 rule 4** A host **MAY** `set` a non-structural param during a run. The `set` is a host commit due at
+  `(t, 0)` of a scheduled instant, collected at step 2 of §15, and applies after the step to that instant is accepted. When
   `analog` reads the param, that instant is a jump (§15.2, "Host `set`").
   At it:
   1. every value computed from params is recomputed: bound params, constant `let`s, definitions
