@@ -55,6 +55,11 @@ fn logic_reads_a_four_state_pattern() {
     // `value` 1001 (X is `(0, 0)`, Z is `(0, 1)`). `logic("10xz") & Logic::from(0b1111u4)` is the specification's `10xx`
     // (a Z level under `&` with a 1 is X): `binary` 1100, `value` 1000
     RUN.assert_commits("patterns.msl", &["m0", "m1"], &[vec![0b1100, 0b1001], vec![0b1100, 0b1000]]);
+    // a pattern with another character or another length is `E0702`, naming what is wrong
+    for (file, named) in [("bad_character.msl", "`q`"), ("bad_length.msl", "3 characters")] {
+        let refused = RUN.project(file).elaborate("Bench").err().map(|rejection| rejection.to_string()).unwrap_or_default();
+        assert!(refused.contains("E0702") && refused.contains(named), "{file}: {refused}");
+    }
 }
 
 #[test]
