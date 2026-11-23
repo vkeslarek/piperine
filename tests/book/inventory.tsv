@@ -91,7 +91,7 @@ block	values#20	78f7a9917b6c0c29	held	piperine-cli/book::every_cli_listing_of_th
 block	values#21	1c36af9fee8a108e	run	piperine/book_values::analog_reads_a_digital_carrier_directly	-	-
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
-block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_logic_and_the_net	L21	-
+block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::the_signal_list_elaborates_and_only_the_net_nature_is_missing	L21	-
 block	natures#3	bc658ea2dad63ed4	refused	piperine/book_natures::the_open_drain_line_is_refused_until_a_nature_can_implement_resolve	L21	-
 block	natures#4	3544f7a10903596f	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-

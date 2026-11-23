@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/composite-values/design-c.md`
 **Status**: Draft (executing on the launching agent's instruction)
-**Approved**: user 2026-11-23 — "Aprovo o plano da fase C"
+**Approved**: 2026-11-23 - user: "Aprovo o plano da fase C"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run abi**: `cargo test -p piperine-abi --test array_pins`
 **Run dsarr**: `cargo test -p piperine-digital-solver --test array_nets`
@@ -676,7 +676,7 @@ T86 → T87 → T88 → T89 → T90
 
 ### T89: Book rows and fences the arrays lift
 
-**What**: natures#2's test becomes `signals_of_every_family_are_refused_for_the_logic_and_the_net` (`[Bit; 8]` runs; `Bit<Logic<4>>` and `Sda` stay refused; owner `resolved-nets` unchanged) and modules#10's becomes `the_memory_bank_is_refused_for_its_generic_module` (owner `generics` unchanged); `tests/book/inventory.tsv` names the new tests; `GAPS.md` §11 "Today" of natures#2, modules#10 and cheatsheet#2 no longer names the array of carriers; the fences E.5 (`Ram`), §8.2 (`UartShift`) and §22.1.3 (`signal sh: [Bit; 8]`) are held to the checker (CV-37 AC 2).
+**What**: natures#2's test becomes `the_signal_list_elaborates_and_only_the_net_nature_is_missing` (every line of the list elaborates; `Sda`, the model's own nature, stays `E0161` stand-alone; owner `resolved-nets` unchanged) and modules#10's becomes `the_memory_bank_is_refused_for_its_generic_module` (owner `generics` unchanged); `tests/book/inventory.tsv` names the new tests; `GAPS.md` §11 "Today" of natures#2, modules#10 and cheatsheet#2 no longer names the array of carriers; the fences E.5 (`Ram`), §8.2 (`UartShift`) and §22.1.3 (`signal sh: [Bit; 8]`) are held to the checker (CV-37 AC 2).
 **Where**: `tests/book/natures.rs`
 **Depends on**: T88
 **Reuses**: `Chapter`, `Refusal`, `std_galleries.rs` rows
@@ -685,7 +685,7 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [x] `signals_of_every_family_are_refused_for_the_logic_and_the_net` and `the_memory_bank_is_refused_for_its_generic_module` pass under `**Run book**`, and `book_inventory` passes
+- [x] `the_signal_list_elaborates_and_only_the_net_nature_is_missing` and `the_memory_bank_is_refused_for_its_generic_module` pass under `**Run book**`, and `book_inventory` passes
 - [x] `the_fences_composite_values_lifted_are_checked` passes under `**Run galleries**` with the phase C fences
 - [x] Gate check passes: Task (`piperine`, `piperine-lang`)
 
@@ -816,7 +816,7 @@ Proof: run docs | test gaps_drops_what_composite_values_phase_c_closed ... ok
 Proof: run galleries | test the_fences_composite_values_lifted_are_checked ... ok
 
 **C143** - natures#2 and modules#10 no longer refuse for the array of carriers; their remaining refusals are named. (CV-37, AC 2, the Book half; T89)
-Proof: run book | test signals_of_every_family_are_refused_for_the_logic_and_the_net ... ok
+Proof: run book | test the_signal_list_elaborates_and_only_the_net_nature_is_missing ... ok
 Proof: run book | test the_memory_bank_is_refused_for_its_generic_module ... ok
 
 **C144** - The twins print the bytes they printed before phase C, with `ToleranceContract` unedited. (CV-35, AC 1; T90)

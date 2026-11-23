@@ -66,7 +66,7 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
 }
 
 #[test]
-fn signals_of_every_family_are_refused_for_the_logic_and_the_net() {
+fn the_signal_list_elaborates_and_only_the_net_nature_is_missing() {
     // natures#2 (refused, the net `Sda`, L21; the array of carriers of L24 runs since composite-values phase C): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
     // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
     // `P0001` (L24) and `Sda` is the model's own nature, declared further on in the
