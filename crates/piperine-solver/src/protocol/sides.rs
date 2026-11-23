@@ -274,6 +274,11 @@ pub trait DiscreteSide {
     fn net(&self, _id: u32) -> Option<&[u8]> {
         None
     }
+    /// A discrete net's bytes as the host prints them: [`net`](DiscreteSide::net), or for an array net the bytes of
+    /// every element one after another (an element never committed is its initial value), built per call.
+    fn net_bytes(&self, id: u32) -> Option<std::borrow::Cow<'_, [u8]>> {
+        self.net(id).map(std::borrow::Cow::Borrowed)
+    }
 }
 
 /// What bounded the step the analog side last proposed.

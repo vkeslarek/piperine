@@ -643,8 +643,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `array_probes_read_an_element_and_the_whole_array` passes under `**Run apiarr**`
-- [ ] Gate check passes: Task (`piperine-api`)
+- [x] `array_probes_read_an_element_and_the_whole_array` passes under `**Run apiarr**`
+- [x] Gate check passes: Task (`piperine-api`)
 
 **Tests**: integration
 **Gate**: task
@@ -858,6 +858,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T84 notes:** the ladder run found that an element's name `bl[2]` is a Rust identifier in the analog printer: `Text::spelled_cased` now spells `[` and `]` as `_i` and `_j` (`bl_i2_j`). The test compares the looped and the written-out ladders bit for bit and the closed form to 1e-9 V (DC3, QC6).
 **T85 notes:** `peak_heap_does_not_depend_on_the_declared_length`: `1 << 32` and `1 << 16` elements with 1000 elements written peak 6 774 328 B and 6 739 034 B (35 KiB apart); the same `1 << 32` array with none written peaks 6 006 762 B, so the meter sees the written elements (about 767 B each).
 **T86 notes:** `explicit/initial.msl` `ElementsBench` is the real `[Bit<Option<u8>>; 1 << 20] = [Some(5); 1 << 20]`; `lower_option` reads one element of an array of `Option` carriers as its two halves (`compound.rs`). explicit-unknowns `tasks.md` C13 lost its DEFERRED note and C67 carries the QC1 amendment.
+**T87 notes (amendment: no `array_probe.rs`):** the whole array is a `Probe::Shaped` over `ValueType::Array(elem, count)` and an element is its leaf `[k]`, so the existing cells, formats and `E0801` apply; `Column::Array` is read at every step through `StepView::net_bytes` (the dense bytes of every element, never-committed ones at their initial value; `DiscreteSide::net_bytes`) because a change observation names no element to the recorder. An array of nodes: `Probe::resolve_all` expands `Top.bl` to `Top.bl[0..K]`. Metadata does not list nets, so no count is listed there (gap).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

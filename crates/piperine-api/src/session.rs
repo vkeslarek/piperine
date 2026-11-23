@@ -1011,7 +1011,7 @@ impl Session {
         if spec.print.is_empty() {
             return Ok(Probe::defaults(ir, top));
         }
-        spec.print.iter().map(|entry| Probe::resolve(ir, top, entry)).collect()
+        spec.print.iter().map(|entry| Probe::resolve_all(ir, top, entry)).collect::<Result<Vec<_>, Failure>>().map(|all| all.into_iter().flatten().collect())
     }
 
     fn diagnosed(stage: &'static str, design: Design, found: Vec<DesignDiagnostic>) -> Failure {
