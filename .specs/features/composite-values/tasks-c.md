@@ -840,6 +840,18 @@ Proof: run apiarr | test the_metadata_lists_the_length_of_an_array_port ... ok
 **C150** - A host `set` of a param an array length reads is `E0803`. (CV-36, AC 1; QC2; fix round, finding 1)
 Proof: run apiarr | test a_set_of_a_param_an_array_length_reads_is_e0803 ... ok
 
+**C151** - An array whose length reads a param reads and writes whole: the whole read of an array port, `[x; n]` in a reaction and in `analog`, each per body variant. (CV-36, AC 1; CV-24, AC 1; QC2, QC5; fix round 2, finding 13)
+Proof: run elabarr | test an_array_whose_length_reads_a_param_reads_and_writes_whole ... ok
+
+**C152** - An argument of another length than a port's param length is `E0313` at elaboration, naming both lengths, for carriers and for nodes. (CV-23, AC 3; §8.1.10; fix round 2, finding 14)
+Proof: run elabarr | test an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration ... ok
+
+**C153** - A negative array length from a param is `E0104` naming the length (a panic of the const expression, §1.2.3, §1 rule 11), for carriers and for nodes. (CV-23, AC 1; fix round 2, finding 15)
+Proof: run elabarr | test a_negative_array_length_from_a_param_is_e0104_naming_it ... ok
+
+**C154** - A host that names a declared empty array reads `[]` at every row. (CV-28, AC 1; fix round 2, finding 16)
+Proof: run apiarr | test a_declared_empty_array_prints_as_the_empty_array ... ok
+
 ---
 
 ## Handoff
