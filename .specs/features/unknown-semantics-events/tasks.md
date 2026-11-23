@@ -705,8 +705,8 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `pfd3_rising_together_leaves_state_unchanged` and `pfd3_rising_apart_steps_up_then_down` pass under `**Run sourceevents**`
-- [ ] Gate check passes: Full
+- [x] `pfd3_rising_together_leaves_state_unchanged` and `pfd3_rising_apart_steps_up_then_down` pass under `**Run sourceevents**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

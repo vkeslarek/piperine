@@ -408,3 +408,34 @@ fn a_guard_reads_what_the_reaction_would_read() {
     let run = Scenario::of("reads.msl", "JointBench").transient(50e-9, 10e-9);
     assert_eq!(run.instants(AnalysisKind::Transient, "joint"), [10 * NS]);
 }
+
+impl Run {
+    /// The levels `path` takes after the operating point: instant and `true` or `false`.
+    fn levels(&self, path: &str) -> Vec<(i64, bool)> {
+        self.changes(path).into_iter().filter(|(t, _)| *t > 0).map(|(t, bytes)| (t, bytes[0] == 1)).collect()
+    }
+}
+
+#[test]
+fn pfd3_rising_apart_steps_up_then_down() {
+    // §13 rule 2 (UE-01 AC 3, Independent Test): `fref` alone at 10 ns steps the state up (`up` rises), `fvco` alone at
+    // 20 ns steps it back to 0; `fvco` alone at 100 ns, the state being 0 after the pair at 80 ns, steps it to -1 (`dn`)
+    let run = Scenario::of("pfd3.msl", "PfdBench").transient(120e-9, 10e-9);
+    let up = run.levels("PfdBench.up");
+    assert_eq!(up[..2], [(10 * NS, true), (20 * NS, false)], "{up:?}");
+    let dn = run.levels("PfdBench.dn");
+    assert_eq!(dn, [(100 * NS, true)], "{dn:?}");
+    assert!(up.iter().filter(|(t, _)| *t < 60 * NS).all(|(t, _)| *t == 10 * NS || *t == 20 * NS), "nothing moves at 40 ns: {up:?}");
+}
+
+#[test]
+fn pfd3_rising_together_leaves_state_unchanged() {
+    // §13 rule 2 (UE-01 AC 3): both clocks rise in one microstep. From state 0 (40 ns) the reaction steps up first and
+    // down second, so `up` and `dn` never change there; from state 1 (80 ns, after `fref` alone at 60 ns) it steps
+    // `s < 1` false, then down: the state goes to 0, `up` falls and `dn` stays low
+    let run = Scenario::of("pfd3.msl", "PfdBench").transient(120e-9, 10e-9);
+    let up = run.levels("PfdBench.up");
+    assert!(up.iter().all(|(t, _)| *t != 40 * NS), "up did not move at 40 ns: {up:?}");
+    assert!(run.levels("PfdBench.dn").iter().all(|(t, _)| *t != 40 * NS), "dn did not move at 40 ns");
+    assert_eq!(up, [(10 * NS, true), (20 * NS, false), (60 * NS, true), (80 * NS, false)], "{up:?}");
+}

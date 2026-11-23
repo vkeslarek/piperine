@@ -1,0 +1,41 @@
+//! The three-state phase detector of part IV §13 (UE-01 AC 3), the Book's `Pfd3` verbatim, driven by timed commits:
+//! the clocks rise apart and together, from state 0 and from state 1.
+
+/// Three-state phase detector: two events in one reaction, each tested as a bool.
+module Pfd3(in fref: Bit, in fvco: Bit, out up: Bit, out dn: Bit) {
+    signal state: Bit<i2> = 0;
+    up = state == 1;
+    dn = state == -1;
+}
+digital for Pfd3 {
+    on fref.rise() || fvco.rise() {
+        let s = state;
+        if fref.rise() && s < 1 { s += 1; }    // which one fired?
+        if fvco.rise() && s > -1 { s -= 1; }   // both at once: up first, then down
+        state <- s;
+    }
+}
+
+/// `fref` rises alone at 10 ns and `fvco` alone at 20 ns; both fall at 30 ns and rise together at 40 ns (from state 0);
+/// both fall at 50 ns; `fref` rises alone at 60 ns (state 1); both fall at 70 ns and rise together at 80 ns (from state 1);
+/// both fall at 90 ns and `fvco` rises alone at 100 ns (state -1).
+module Clocks(out fref: Bit = false, out fvco: Bit = false) {}
+digital for Clocks {
+    on at(10n) { fref <- true; }
+    on at(20n) { fvco <- true; }
+    on at(30n) { fref <- false; fvco <- false; }
+    on at(40n) { fref <- true; fvco <- true; }
+    on at(50n) { fref <- false; fvco <- false; }
+    on at(60n) { fref <- true; }
+    on at(70n) { fref <- false; fvco <- false; }
+    on at(80n) { fref <- true; fvco <- true; }
+    on at(90n) { fref <- false; fvco <- false; }
+    on at(100n) { fvco <- true; }
+}
+
+/// The clocks and the detector, `up` and `dn` observable.
+module PfdBench() {
+    signal fref: Bit; signal fvco: Bit; signal up: Bit; signal dn: Bit;
+    let clocks = Clocks(fref, fvco);
+    let pfd = Pfd3(fref, fvco, up, dn);
+}
