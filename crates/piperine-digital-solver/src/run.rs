@@ -209,7 +209,7 @@ impl WholeReads {
                     let length = store.array(net).map_or(0, |array| array.count());
                     windows.push(WindowView { store, net, first: 0, length, size });
                 }
-                Binding::Window { net, first, length } => windows.push(WindowView { store, net, first, length, size }),
+                Binding::ArrayWindow { net, first, length } => windows.push(WindowView { store, net, first, length, size }),
                 _ => {}
             }
         }
@@ -242,8 +242,8 @@ fn cell_bytes(
             },
             // an array pin read at a constant element, or a scalar pin on one element of an array net (a window)
             Binding::Net(id) => ElementPart::fill(store, id, element, c.part, |bytes| fill(&mut buf, bytes)),
-            Binding::Element { net, element: first } => ElementPart::fill(store, net, first, c.part, |bytes| fill(&mut buf, bytes)),
-            Binding::Window { net, first, .. } => ElementPart::fill(store, net, first + element, c.part, |bytes| fill(&mut buf, bytes)),
+            Binding::ArrayElement { net, element: first } => ElementPart::fill(store, net, first, c.part, |bytes| fill(&mut buf, bytes)),
+            Binding::ArrayWindow { net, first, .. } => ElementPart::fill(store, net, first + element, c.part, |bytes| fill(&mut buf, bytes)),
             Binding::Sample(i) => fill(&mut buf, &samples.get(i as usize).copied().unwrap_or(0.0).to_le_bytes()),
             Binding::Absent => {}
         },
@@ -313,7 +313,7 @@ fn call_function(
     for (c, buf) in func.writes.iter().zip(&outputs) {
         let (net, element) = match inst.pins[c.index as usize] {
             Binding::Net(net) => (net, None),
-            Binding::Element { net, element } => (net, Some(element)),
+            Binding::ArrayElement { net, element } => (net, Some(element)),
             _ => continue,
         };
         let event = plan.nets[net.0 as usize].kind == NetKind::Event;
@@ -658,8 +658,8 @@ fn call_reaction(
         let (net, element) = match (pins[s.pin as usize], c.element) {
             (Binding::Net(n), None) if nets[n.0 as usize].count == 0 => (Some(n), None),
             (Binding::Net(n), Some(e)) if e < nets[n.0 as usize].count => (Some(n), Some(e)),
-            (Binding::Element { net, element }, None) => (Some(net), Some(element)),
-            (Binding::Window { net, first, length }, Some(e)) if e < length => (Some(net), Some(first + e)),
+            (Binding::ArrayElement { net, element }, None) => (Some(net), Some(element)),
+            (Binding::ArrayWindow { net, first, length }, Some(e)) if e < length => (Some(net), Some(first + e)),
             (Binding::Sample(_) | Binding::Absent, _) => (None, None),
             (binding, element) => {
                 failure = Some(reject(format!(

@@ -345,7 +345,7 @@ impl Store {
         true
     }
 
-    /// Stamps that the initial commit of array net `net` lands in the next microstep, where every element not
+    /// Records that the initial commit of array net `net` lands in the next microstep, where every element not
     /// written by then reads as changed (part IV §13 rule 6).
     pub fn stamp_initial_array(&mut self, net: NetId) {
         let landing = self.step + 1;

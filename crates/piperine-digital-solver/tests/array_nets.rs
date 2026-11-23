@@ -249,10 +249,10 @@ fn an_element_window_reads_and_writes_one_element() {
     ];
     let lines = NetId(0);
     let instances = vec![
-        Kit::instance::<Poker>("poker", &POKER, "poker", vec![Binding::Element { net: lines, element: 5 }, Binding::Net(NetId(1))]),
+        Kit::instance::<Poker>("poker", &POKER, "poker", vec![Binding::ArrayElement { net: lines, element: 5 }, Binding::Net(NetId(1))]),
         // `Summer` declares 8 elements: `all` sums elements 0..8 of the net, `high` elements 6..14
-        Kit::instance::<Summer>("all", &SUMMER, "summer", vec![Binding::Window { net: lines, first: 0, length: 8 }, Binding::Net(NetId(2)), Binding::Net(NetId(4))]),
-        Kit::instance::<Summer>("high", &SUMMER, "summer", vec![Binding::Window { net: lines, first: 6, length: 8 }, Binding::Net(NetId(3)), Binding::Net(NetId(5))]),
+        Kit::instance::<Summer>("all", &SUMMER, "summer", vec![Binding::ArrayWindow { net: lines, first: 0, length: 8 }, Binding::Net(NetId(2)), Binding::Net(NetId(4))]),
+        Kit::instance::<Summer>("high", &SUMMER, "summer", vec![Binding::ArrayWindow { net: lines, first: 6, length: 8 }, Binding::Net(NetId(3)), Binding::Net(NetId(5))]),
     ];
     let mut engine = Kit::engine(nets, instances);
     Kit::instant(&mut engine, Tick(0));

@@ -107,7 +107,7 @@ impl SparseArray {
         self.written.get(&element).map_or(self.initial_changed_at == step, |state| state.changed_at == step)
     }
 
-    /// Stamps the microstep the initial commit lands in (part IV §13 rule 6).
+    /// Records the microstep the initial commit lands in (part IV §13 rule 6).
     pub(crate) fn stamp_initial(&mut self, step: u64) {
         self.initial_changed_at = step;
     }

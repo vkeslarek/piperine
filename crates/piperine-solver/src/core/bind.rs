@@ -37,6 +37,18 @@ pub enum Port {
     Net(NetName),
     /// Nothing: the pin is private (an `OPTIONAL` pin reads as zero bytes).
     Open,
+    /// A discrete pin on `length` consecutive elements of the array net `net` from `first`: a scalar pin takes one
+    /// element (`length` 1), an array pin of `length` elements takes that run (composite-values CV-23).
+    Window { net: NetName, first: u64, length: u64 },
+}
+
+/// An array net the builder declared: `count` elements, each starting at `init` (one element's bytes, every
+/// element's bytes, or none for all zero).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ArrayDecl {
+    pub name: String,
+    pub count: u64,
+    pub init: Vec<u8>,
 }
 
 /// The name of a design-wide discrete or event net.
@@ -76,6 +88,10 @@ pub enum Site {
     Ground,
     /// A discrete or event pin on this net.
     Net(NetId),
+    /// A scalar discrete pin on one element of an array net.
+    ArrayElement { net: NetId, element: u64 },
+    /// An array pin on a run of elements of an array net.
+    ArrayWindow { net: NetId, first: u64, length: u64 },
     /// Nothing (an unbound `OPTIONAL` pin).
     Absent,
 }
@@ -174,6 +190,7 @@ pub struct Bound {
 #[derive(Clone, Debug)]
 pub(crate) struct Recipe {
     pub specs: Vec<DeviceSpec>,
+    pub arrays: Vec<ArrayDecl>,
     pub shared: Vec<(String, ParamValue)>,
     pub session: Vec<(String, ParamValue)>,
     pub resolution: f64,
@@ -267,6 +284,8 @@ impl Bound {
 /// What the builder hands to [`bind`].
 pub(crate) struct BindInput<'a> {
     pub specs: Vec<DeviceSpec>,
+    /// The array nets: name, element count and initial value.
+    pub arrays: Vec<ArrayDecl>,
     /// Shared param nets: name and seed.
     pub shared: Vec<(String, ParamValue)>,
     /// Session parameters for `NAMED` globals.
@@ -345,6 +364,18 @@ impl Nets {
         i
     }
 
+    /// The array net `decl`, created with the element shape of `pin` on first use.
+    fn get_or_add_array(&mut self, key: &str, decl: &ArrayDecl, pin: &Pin) -> usize {
+        if let Some(i) = self.named.get(key) {
+            return *i;
+        }
+        let spec = NetSpec { init: decl.init.clone(), ..NetSpec::array(&decl.name, pin.layout.size, pin.layout.align, decl.count) };
+        self.specs.push(spec);
+        let i = self.specs.len() - 1;
+        self.named.insert(key.to_string(), i);
+        i
+    }
+
     /// A net of its own with the shape of `pin`.
     fn add(&mut self, name: &str, pin: &Pin) -> usize {
         let spec = if pin.kind == kind::EVENT {
@@ -363,7 +394,9 @@ impl Nets {
         spec.record |= pin.flags & pin_flag::RECORD != 0;
         spec.relax |= pin.flags & pin_flag::RELAX != 0;
         spec.structural |= pin.flags & pin_flag::STRUCTURAL != 0;
-        if spec.init.is_empty() && pin.flags & pin_flag::HAS_INIT != 0 && pin.role != role::PARAM {
+        // a scalar pin on one element of an array net says nothing of the other elements' initial value
+        let element_pin = spec.count > 0 && pin.count == 0;
+        if spec.init.is_empty() && pin.flags & pin_flag::HAS_INIT != 0 && pin.role != role::PARAM && !element_pin {
             spec.init = pin.init.as_slice().to_vec();
         }
     }
@@ -418,7 +451,7 @@ fn create(module: &'static Module, path: &str, values: &[(u32, Vec<u8>)]) -> Res
 
 /// Binds `input` to its two plans.
 pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
-    let BindInput { specs, shared, session, netlist, resolution, microsteps, time_point_rule, temperature } = input;
+    let BindInput { specs, arrays, shared, session, netlist, resolution, microsteps, time_point_rule, temperature } = input;
     let mut nets = Nets::default();
     let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
     for (name, seed) in shared {
@@ -499,7 +532,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                             Port::Node(r) if r.variable().is_ground() => Site::Ground,
                             Port::Node(r) => Site::Unknown(r),
                             Port::Open => Site::Unknown(netlist.connect_branch(BranchIdentifier::new(path, pname))),
-                            Port::Net(n) => {
+                            Port::Net(n) | Port::Window { net: n, .. } => {
                                 return Err(bind_error(path, format!("continuous pin `{pname}` bound to net `{n}`")));
                             }
                         },
@@ -531,9 +564,38 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                 }
                 kind::DISCRETE | kind::EVENT => {
                     let private = format!("{path}.{pname}");
+                    let mut window: Option<(u64, u64)> = None;
                     let net = match pin.role {
                         role::PORT => match take(&mut ports, &mut given) {
-                            Port::Net(n) => Some(nets.get_or_add(&format!("net:{n}"), &n, pin)),
+                            Port::Net(n) => match arrays.iter().find(|decl| decl.name == n) {
+                                Some(decl) if pin.count == decl.count => Some(nets.get_or_add_array(&format!("net:{n}"), decl, pin)),
+                                Some(decl) => {
+                                    return Err(bind_error(
+                                        path,
+                                        format!("pin `{pname}` of {} elements bound to array net `{n}` of {} elements", pin.count, decl.count),
+                                    ));
+                                }
+                                None => Some(nets.get_or_add(&format!("net:{n}"), &n, pin)),
+                            },
+                            Port::Window { net: n, first, length } => {
+                                let Some(decl) = arrays.iter().find(|decl| decl.name == n) else {
+                                    return Err(bind_error(path, format!("pin `{pname}` bound to a window of `{n}`, which is no array net")));
+                                };
+                                if first.checked_add(length).is_none_or(|end| end > decl.count) || length == 0 {
+                                    return Err(bind_error(
+                                        path,
+                                        format!("pin `{pname}` bound to elements {first}..+{length} of array net `{n}` of {} elements", decl.count),
+                                    ));
+                                }
+                                if length != pin.count.max(1) {
+                                    return Err(bind_error(
+                                        path,
+                                        format!("pin `{pname}` of {} elements bound to a window of {length} elements of `{n}`", pin.count.max(1)),
+                                    ));
+                                }
+                                window = Some((first, length));
+                                Some(nets.get_or_add_array(&format!("net:{n}"), decl, pin))
+                            }
                             Port::Open if optional => None,
                             Port::Open => Some(nets.add(&private, pin)),
                             Port::Node(_) => {
@@ -608,7 +670,13 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                     if let Some(n) = net {
                         nets.merge(n, pin);
                     }
-                    (net.map_or(Site::Absent, |n| Site::Net(NetId(n as u32))), net)
+                    let site = match (net, window) {
+                        (None, _) => Site::Absent,
+                        (Some(n), None) => Site::Net(NetId(n as u32)),
+                        (Some(n), Some((element, 1))) if pin.count == 0 => Site::ArrayElement { net: NetId(n as u32), element },
+                        (Some(n), Some((first, length))) => Site::ArrayWindow { net: NetId(n as u32), first, length },
+                    };
+                    (site, net)
                 }
                 _ => return Err(bind_error(path, format!("pin `{pname}` has an unknown kind"))),
             };
@@ -685,6 +753,20 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                         abinds.push(AnalogBinding::Absent);
                     }
                 }
+                Site::ArrayElement { net, element } => {
+                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
+                        return Err(bind_error(&b.path, format!("an analog function reads pin `{}`, on element {element} of an array net", pin.name.as_str())));
+                    }
+                    abinds.push(AnalogBinding::Absent);
+                    dbinds.push(Binding::ArrayElement { net: *net, element: *element });
+                }
+                Site::ArrayWindow { net, first, length } => {
+                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
+                        return Err(bind_error(&b.path, format!("an analog function reads pin `{}`, on a window of an array net", pin.name.as_str())));
+                    }
+                    abinds.push(AnalogBinding::Absent);
+                    dbinds.push(Binding::ArrayWindow { net: *net, first: *first, length: *length });
+                }
                 Site::Absent => {
                     abinds.push(AnalogBinding::Absent);
                     dbinds.push(Binding::Absent);
@@ -698,7 +780,9 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         digital_instances.push(InstancePlan { path: b.path, handle: b.digital, pins: dbinds });
     }
     for spec in &nets.specs {
-        if !spec.init.is_empty() && spec.init.len() != spec.size as usize {
+        let element = spec.size as usize;
+        let allowed = spec.init.len() == element || (spec.count > 0 && spec.init.len() as u64 == element as u64 * spec.count);
+        if !spec.init.is_empty() && !allowed {
             return Err(Error::simple(
                 SolverDomain::Device,
                 format!("net `{}` holds {} bytes and its seed {}", spec.name, spec.size, spec.init.len()),

@@ -21,9 +21,9 @@ pub enum Binding {
     /// A discrete or event pin on this net; an array pin bound to a whole array net of equal `count` (P4).
     Net(NetId),
     /// A scalar discrete pin on one element of an array net (a window of one element, CV-23).
-    Element { net: NetId, element: u64 },
+    ArrayElement { net: NetId, element: u64 },
     /// An array pin on `length` consecutive elements of an array net from `first` (a sub-array window, CV-23).
-    Window { net: NetId, first: u64, length: u64 },
+    ArrayWindow { net: NetId, first: u64, length: u64 },
     /// A continuous pin a reaction reads: an index into the owner's sample vector.
     Sample(u32),
     /// An unbound `OPTIONAL` pin: it reads as zero bytes.
@@ -34,7 +34,7 @@ impl Binding {
     /// The net a pin is on, whatever part of it.
     pub fn net(&self) -> Option<NetId> {
         match self {
-            Binding::Net(net) | Binding::Element { net, .. } | Binding::Window { net, .. } => Some(*net),
+            Binding::Net(net) | Binding::ArrayElement { net, .. } | Binding::ArrayWindow { net, .. } => Some(*net),
             Binding::Sample(_) | Binding::Absent => None,
         }
     }
@@ -43,8 +43,8 @@ impl Binding {
     /// (a whole net is every element).
     pub fn elements(&self) -> Option<(u64, u64)> {
         match self {
-            Binding::Element { element, .. } => Some((*element, 1)),
-            Binding::Window { first, length, .. } => Some((*first, *length)),
+            Binding::ArrayElement { element, .. } => Some((*element, 1)),
+            Binding::ArrayWindow { first, length, .. } => Some((*first, *length)),
             _ => None,
         }
     }
@@ -414,7 +414,7 @@ fn check_bindings(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Dig
                         ));
                     }
                 }
-                (Binding::Element { net, element }, kind::DISCRETE) => {
+                (Binding::ArrayElement { net, element }, kind::DISCRETE) => {
                     let spec = array_net(nets, net, &name)?;
                     if pin.count != 0 || element >= spec.count {
                         return Err(bind_error(
@@ -423,7 +423,7 @@ fn check_bindings(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Dig
                         ));
                     }
                 }
-                (Binding::Window { net, first, length }, kind::DISCRETE) => {
+                (Binding::ArrayWindow { net, first, length }, kind::DISCRETE) => {
                     let spec = array_net(nets, net, &name)?;
                     if pin.count != length || length == 0 || first.checked_add(length).is_none_or(|end| end > spec.count) {
                         return Err(bind_error(
@@ -590,7 +590,7 @@ impl DigitalPlan {
     pub fn net_layout(&self, net: NetId) -> Option<&Layout<'_>> {
         self.instances.iter().find_map(|inst| {
             inst.pins.iter().enumerate().find_map(|(i, b)| match b {
-                Binding::Net(id) | Binding::Element { net: id, .. } | Binding::Window { net: id, .. } if *id == net => {
+                Binding::Net(id) | Binding::ArrayElement { net: id, .. } | Binding::ArrayWindow { net: id, .. } if *id == net => {
                     inst.handle.shape().pins.get(i).map(|p| &p.layout)
                 }
                 _ => None,
