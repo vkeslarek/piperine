@@ -310,7 +310,7 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert_eq!(rows("## 3. Silent", "## 4."), 1, "one silent entry");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 25, "twenty-five loud rows (L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 24, "twenty-four loud rows (L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70; L70 closed by T54)");
 }
 
 #[test]
@@ -808,4 +808,13 @@ fn gaps_section_10_lists_exactly_the_owned_codes() {
     for delivered in ["E0614", "E0703", "E0704", "E0705", "E0706"] {
         assert!(!allowed.contains(&delivered), "{delivered} is raised and is no entry");
     }
+}
+
+#[test]
+fn gaps_drops_l70() {
+    // generics GN-31 (T54): `encode` and `decode` of every layout run, so the row L70 leaves `GAPS.md` and no section of the
+    // gaps record names the two `P0001` refusals it listed
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L70 |"), "GAPS.md still has the row L70");
+    assert!(!gaps.contains("`encode` on a value of a type whose layout is derived"), "the L70 refusal text is gone");
 }

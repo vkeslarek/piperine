@@ -1,0 +1,64 @@
+//! `encode` and `decode` under `T: Repr` at every layout of part I §2 (GAPS L70): `f64`, a signed integer, a derived
+//! struct, a payload-free enum, a tuple and an array. `word` packs the levels of `x.encode()` into a `u64`, least
+//! significant level first; the expected words are computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+struct Trio { a: u8, b: bool, c: u8 }
+#[derive(Repr, PartialEq)]
+enum Mode { X, Y, Z }
+
+fn word<T: Repr>(x: T) -> u64 {
+    let levels = x.encode();
+    let w = 0u64;
+    let k = 0u32;
+    for level in levels {
+        if level { w = w + (1u64 << k); }
+        k += 1;
+    }
+    w
+}
+fn returns<T: Repr + PartialEq>(x: T) -> bool {
+    match T::decode(x.encode()) { Some(y) => y == x, None => false }
+}
+fn with_tag<T: Repr>(x: T, low: bool, high: bool) -> bool {
+    let levels = x.encode();
+    levels[0] = low;
+    levels[1] = high;
+    match T::decode(levels) { Some(_) => true, None => false }
+}
+
+fn flag(b: bool) -> u8 { if b { 1 } else { 0 } }
+
+module Rows(in clk: Bit, out w0: Bit<u64> = 0, out w1: Bit<u64> = 0, out w2: Bit<u64> = 0, out w3: Bit<u64> = 0, out w4: Bit<u64> = 0, out w5: Bit<u64> = 0, out w6: Bit<u64> = 0, out r0: Bit<u8> = 9, out r1: Bit<u8> = 9, out r2: Bit<u8> = 9, out r3: Bit<u8> = 9, out r4: Bit<u8> = 9, out r5: Bit<u8> = 9, out r6: Bit<u8> = 9, out n0: Bit<u8> = 9, out n1: Bit<u8> = 9) {}
+digital for Rows {
+    on clk.rise() {
+        w0 <- word(-1.5);
+        w1 <- word(inf);
+        w2 <- word(-3i8);
+        w3 <- word(Trio { a: 5, b: true, c: 200 });
+        w4 <- word(Mode::Z);
+        w5 <- word((7u8, true));
+        w6 <- word([3u8, 4u8]);
+        r0 <- flag(returns(-1.5));
+        r1 <- flag(returns(inf));
+        r2 <- flag(returns(-3i8));
+        r3 <- flag(returns(Trio { a: 5, b: true, c: 200 }));
+        r4 <- flag(returns(Mode::Z));
+        r5 <- flag(returns((7u8, true)));
+        r6 <- flag(returns([3u8, 4u8]));
+        n0 <- flag(with_tag(Mode::X, true, true));
+        n1 <- flag(with_tag(Mode::X, true, false));
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal w0: Bit<u64>; signal w1: Bit<u64>; signal w2: Bit<u64>; signal w3: Bit<u64>; signal w4: Bit<u64>; signal w5: Bit<u64>; signal w6: Bit<u64>;
+    signal r0: Bit<u8>; signal r1: Bit<u8>; signal r2: Bit<u8>; signal r3: Bit<u8>; signal r4: Bit<u8>; signal r5: Bit<u8>; signal r6: Bit<u8>;
+    signal n0: Bit<u8>; signal n1: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, w0, w1, w2, w3, w4, w5, w6, r0, r1, r2, r3, r4, r5, r6, n0, n1);
+}

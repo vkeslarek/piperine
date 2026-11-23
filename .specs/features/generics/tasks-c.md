@@ -159,9 +159,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `encode_and_decode_run_at_every_layout` passes under `**Run srcgen**`
-- [ ] `gaps_drops_l70` passes under `**Run docs**`
-- [ ] Gate check passes: Quick
+- [x] `encode_and_decode_run_at_every_layout` passes under `**Run srcgen**`
+- [x] `gaps_drops_l70` passes under `**Run docs**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -449,3 +449,41 @@ fn a_bound_that_writes_the_trait_arguments_runs_the_impl_of_that_list() {
     let (real, byte): (f64, u8) = (Convert::<f64>::to(Cell), Convert::<u8>::to(Cell));
     RUN.assert_commits("trait_args.msl", &["a0", "a1"], &[CarrierBytes::real(real), CarrierBytes::byte(byte)]);
 }
+
+/// `struct Trio { a: u8, b: bool, c: u8 }` of the model `levels.msl`.
+struct Trio {
+    a: u8,
+    b: bool,
+    c: u8,
+}
+
+impl Trio {
+    /// The levels of §2 rule 3, field after field, least significant level first, packed into a word.
+    fn word(&self) -> u64 {
+        u64::from(self.a) | (u64::from(self.b) << 8) | (u64::from(self.c) << 9)
+    }
+}
+
+#[test]
+fn encode_and_decode_run_at_every_layout() {
+    // GN-01 AC 1 residual (GAPS L70), §2 rules 2 to 6 and 9: the levels `encode` gives are what Rust computes (`f64::to_bits`,
+    // two's complement, the fields of a struct and the items of a tuple or an array in order, the tag of an enum), every
+    // value comes back through `decode`, and a tag no variant names is `None`
+    let words = [
+        (-1.5f64).to_bits(),
+        f64::INFINITY.to_bits(),
+        u64::from((-3i8) as u8),
+        Trio { a: 5, b: true, c: 200 }.word(),
+        // `Mode::Z` is the tag 2 of three variants (two levels)
+        2,
+        u64::from(7u8) | (1 << 8),
+        u64::from(3u8) | (u64::from(4u8) << 8),
+    ];
+    let names = ["w0", "w1", "w2", "w3", "w4", "w5", "w6"];
+    let wanted: Vec<Vec<u8>> = words.iter().map(|word| CarrierBytes::unsigned_64(*word)).collect();
+    RUN.assert_commits("levels.msl", &names, &wanted);
+    let returned: Vec<Vec<u8>> = (0..7).map(|_| CarrierBytes::byte(1)).collect();
+    RUN.assert_commits("levels.msl", &["r0", "r1", "r2", "r3", "r4", "r5", "r6"], &returned);
+    // tag 3 names no variant of the three-variant enum, tag 1 names `Y`
+    RUN.assert_commits("levels.msl", &["n0", "n1"], &[CarrierBytes::byte(0), CarrierBytes::byte(1)]);
+}
