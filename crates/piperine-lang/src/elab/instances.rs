@@ -69,7 +69,9 @@ impl Elaboration<'_, '_> {
     /// type for a type parameter and a value for a const one; a closure or a function has no type to give yet (T37).
     pub(super) fn instance_substitution(&self, function: DeclId, arguments: &[ConcreteValue]) -> Substitution {
         let mut substitution = Substitution::new();
-        let signature = GenericSignature::of(self.design, function);
+        // a method of a generic `impl` takes the parameters of the `impl`
+        let owner = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some()).unwrap_or(function);
+        let signature = GenericSignature::of(self.design, owner);
         // a function a trait declares runs for one type, which is `Self`: its one argument
         if let (true, Some(ConcreteValue::Type(ty))) = (self.is_trait_function(function), arguments.first())
             && let Some(owner) = self.design.decl_data(function).parent

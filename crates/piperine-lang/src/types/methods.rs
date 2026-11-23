@@ -8,7 +8,8 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, FileId, FnParamData};
 
 use super::bounds::BoundCheck;
 use super::check::Checker;
-use super::{Callee, GenericValue, Substitution, Ty};
+use super::inference::Inference;
+use super::{Callee, GenericValue, Instantiation, Substitution, Ty};
 
 impl Checker<'_> {
     /// The type of the `self` parameter `param` of the function `function`: the type of its `impl`, or
@@ -44,6 +45,21 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// What the generic parameters of the `impl` of `function` are replaced by for a receiver of type `recv_ty`:
+    /// the receiver's type is unified with the `impl`'s self type (`Window<T>` against `Window<f64>`). Empty for
+    /// a function of an `impl` with no parameter; `E0181` naming one the receiver does not give.
+    fn impl_substitution(&mut self, call: ExprId, function: DeclId, own: &Ty, recv_ty: &Ty, file: FileId, span: Span) -> Option<Substitution> {
+        let Some(owner) = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some()) else { return Some(Substitution::new()) };
+        let signature = self.generic_signature(owner);
+        let mut inference = Inference::new(&signature);
+        inference.unify(own, recv_ty);
+        let substitution = self.complete_arguments(&mut inference, &signature, owner, file, span)?;
+        // the call is an instantiation of the `impl`: the elaborator instantiates the method with its arguments (T35)
+        let arguments = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
+        self.instantiations.insert(call, Instantiation { item: owner, arguments });
+        Some(substitution)
     }
 
     /// Whether `function` is declared in a trait.
@@ -116,13 +132,13 @@ impl Checker<'_> {
             return None;
         }
         let (own, rest) = params.split_first()?;
+        let mut substitution = self.impl_substitution(expr, function, own, recv_ty, file, span)?;
         // a function a trait declares has `Self` for its receiver: the receiver's type stands for it
-        let mut substitution = Substitution::new();
         if let Ty::Param(owner) = own
             && matches!(self.design.decl_data(*owner).kind, DeclKind::Trait(_))
         {
             substitution.bind(*owner, GenericValue::Type(recv_ty.clone()));
-        } else if !recv_ty.fits(own) {
+        } else if !recv_ty.fits(&substitution.apply(own)) {
             self.mismatch(file, self.design.expr_node(recv).span, own, recv_ty);
         }
         let callee = if matches!(recv_ty, Ty::Param(_)) { Callee::Bound { item: function } } else { Callee::Method(function) };

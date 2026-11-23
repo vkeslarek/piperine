@@ -17,9 +17,9 @@ impl Elaboration<'_, '_> {
     /// in order, a `Call` of the method's variant (for a function of a trait, the instance for the type
     /// of the receiver). `None` after a diagnostic.
     pub(super) fn lower_method_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, receiver: ExprId, arguments: &[ExprId], origin: piperine_ir::Origin) -> Option<LoweredExpr> {
-        let span = self.design.expr_node(expr).span;
         if self.is_generic_impl_item(function) {
-            self.unsupported(scope.file, span, "a method of a generic impl");
+            // the layout of a generic type has no arena instance until T38
+            self.unsupported(scope.file, self.design.expr_node(expr).span, "a method of a generic impl");
             return None;
         }
         let mut lowered = vec![self.lower_expr(scope, receiver)?];

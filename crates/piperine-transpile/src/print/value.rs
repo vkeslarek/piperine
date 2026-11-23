@@ -707,7 +707,10 @@ impl<'a> ValuePrinter<'a> {
                 let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
                 // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
                 // generic call leaves it open
-                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
+                // a scalar result alone, with arguments that hold no real (a method of an enum that returns an `f64`),
+                // leaves `R` open where the call is an argument of a generic function, so the call names it
+                let result_alone = !params.is_empty() && !params.iter().any(|p| items.holds_real(&p.ty));
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !result_alone && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
                 let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }

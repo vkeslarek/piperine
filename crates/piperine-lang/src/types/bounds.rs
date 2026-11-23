@@ -72,10 +72,26 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
 impl Checker<'_> {
     /// The bounds written on the type parameter `param`, in order.
     pub(super) fn bounds_of(&self, param: DeclId) -> Vec<Bound> {
-        match &self.design.decl_data(param).kind {
+        let mut found: Vec<Bound> = match &self.design.decl_data(param).kind {
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => bounds.iter().filter_map(|path| GenericSignature::bound(self.design, *path)).collect(),
             _ => Vec::new(),
-        }
+        };
+        // §3.1.2: the parameters of an `impl` take their bounds from the declaration of the type it is written for
+        found.extend(self.inherited_bounds(param));
+        found
+    }
+
+    /// The bounds the declaration gives the parameter `param` of an `impl` (`impl<T> Window<T>` with
+    /// `struct Window<T: PartialOrd>`): those of the declaration's parameter written at the same place.
+    fn inherited_bounds(&self, param: DeclId) -> Vec<Bound> {
+        let Some(owner) = self.design.decl_data(param).parent else { return Vec::new() };
+        let DeclKind::Impl(data) = &self.design.decl_data(owner).kind else { return Vec::new() };
+        let crate::pom::TypeKind::Path(path) = &self.design.type_node(data.self_ty).kind else { return Vec::new() };
+        let Some(segment) = self.design.path_node(*path).segments.last() else { return Vec::new() };
+        let (Resolution::Decl(target), Some(crate::pom::GenericArgsNode::Angle { args, .. })) = (segment.res, &segment.args) else { return Vec::new() };
+        let written = args.iter().position(|arg| matches!(arg, crate::pom::GenericArgNode::Type(ty) if matches!(self.design.type_resolution(*ty), Resolution::Decl(decl) if decl == param)));
+        let declared = GenericSignature::of(self.design, target);
+        written.and_then(|at| declared.parameters().get(at)).map_or_else(Vec::new, |parameter| parameter.bounds.clone())
     }
 
     /// Whether the bounds of `param` give the H.8 trait `which`, a supertrait of a bound included

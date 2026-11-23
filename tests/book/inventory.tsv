@@ -59,15 +59,15 @@ block	types#14	ab640fdf8ec97154	shown	-	-	-
 block	types#15	acfdc5d5abc58d68	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run family.msl --analysis transient --stop 2e-6
 block	types#16	8e920eeacbf1e24c	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L7	-
 block	types#17	3947677589d123b8	refused	piperine/book_types::the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them	L7	-
-block	generics#1	fdb5d23ba36c91c0	refused	piperine/book_generics::the_methods_of_a_trait_are_refused_where_a_top_reaches_them	L7	-
-block	generics#2	6803b9254f40ecb6	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
+block	generics#1	fdb5d23ba36c91c0	refused	piperine/book_generics::the_methods_of_a_trait_run_where_a_top_reaches_them	L7	-
+block	generics#2	6803b9254f40ecb6	refused	piperine/book_generics::the_generic_listings_run_where_a_top_reaches_them	L7	-
 block	generics#3	8694f745166f4054	fragment	generics#2	-	-
-block	generics#4	124b4c9bb8ae22d5	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
-block	generics#5	1e73ed00424c8e07	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
+block	generics#4	124b4c9bb8ae22d5	refused	piperine/book_generics::the_generic_listings_run_where_a_top_reaches_them	L7	-
+block	generics#5	1e73ed00424c8e07	refused	piperine/book_generics::the_generic_listings_run_where_a_top_reaches_them	L7	-
 block	generics#6	08b623f55f10a9aa	run	piperine/book_generics::a_closure_is_passed_to_the_methods_of_an_option	-	-
 block	generics#7	59d44a07fe9184da	shown	-	-	-
 block	generics#8	23eae11c0b71edb0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clip.msl --analysis transient --stop 2e-6
-block	generics#9	319d042885819d10	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L9	-
+block	generics#9	319d042885819d10	refused	piperine/book_generics::the_generic_listings_run_where_a_top_reaches_them	L9	-
 block	values#1	f05a8aa7a07546d8	run	piperine/book_values::blinky_counts_three_rising_edges_in_three_microseconds	-	-
 block	values#2	01a6b1a07512449e	shown	-	-	-
 block	values#3	e719e6647aab42d6	shown	-	-	-
