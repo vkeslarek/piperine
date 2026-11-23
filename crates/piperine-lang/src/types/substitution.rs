@@ -45,6 +45,11 @@ impl Substitution {
         self.values.get(&parameter)
     }
 
+    /// Every parameter and what it is replaced by.
+    pub fn entries(&self) -> impl Iterator<Item = (DeclId, &GenericValue)> {
+        self.values.iter().map(|(parameter, value)| (*parameter, value))
+    }
+
     /// Whether nothing is replaced.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()

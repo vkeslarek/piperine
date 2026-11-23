@@ -127,7 +127,7 @@ impl Checker<'_> {
                 _ => self.infer(expr),
             };
             if let Some(found) = found
-                && !found.fits(expected)
+                && !self.compatible(expr, &found, expected)
                 && found != Ty::Never
             {
                 if self.event_reads.contains(&expr) {

@@ -72,6 +72,11 @@ pub(super) struct Checker<'d> {
     pub(super) defaults: BTreeMap<ExprId, Ty>,
     /// The type each type node of the reachable set writes.
     pub(super) written: BTreeMap<TypeId, Ty>,
+    /// The generic function whose definition is being checked or whose signature is being typed:
+    /// what a definition defers is recorded under it.
+    pub(super) generic_item: Option<DeclId>,
+    /// What each generic function defers to its instantiations.
+    pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The instantiation each call of a generic function makes (§3.8.10).
     pub(super) instantiations: BTreeMap<ExprId, super::Instantiation>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
@@ -161,6 +166,8 @@ impl<'d> Checker<'d> {
             widths: BTreeMap::new(),
             defaults: BTreeMap::new(),
             written: BTreeMap::new(),
+            generic_item: None,
+            obligations: BTreeMap::new(),
             instantiations: BTreeMap::new(),
             project_methods: Self::project_methods(design),
             continuity: Continuity::new(design),
@@ -220,7 +227,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, instantiations: self.instantiations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -550,6 +557,15 @@ impl<'d> Checker<'d> {
     /// it has one, and whether the signature as a whole is inside the subset. A refused piece
     /// does not stop the others from being typed, so the body can still be checked.
     pub(super) fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
+        // what the types of a generic signature defer (`[T; N + 1]`) is recorded under the function
+        let outer = std::mem::replace(&mut self.generic_item, self.design.decl_data(decl).generics_span.map(|_| decl));
+        let parts = self.signature_parts_of(decl);
+        self.generic_item = outer;
+        parts
+    }
+
+    /// [`Checker::signature_parts`] with the generic item set.
+    fn signature_parts_of(&mut self, decl: DeclId) -> Option<SignatureParts> {
         let data: DeclData = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let mut ok = true;
@@ -589,6 +605,13 @@ impl<'d> Checker<'d> {
     /// signature outside the subset is refused once and the body is still checked, with the
     /// parameters that could not be typed silent.
     fn function(&mut self, decl: DeclId) {
+        let outer = std::mem::replace(&mut self.generic_item, self.design.decl_data(decl).generics_span.map(|_| decl));
+        self.function_of(decl);
+        self.generic_item = outer;
+    }
+
+    /// [`Checker::function`] with the generic item set.
+    fn function_of(&mut self, decl: DeclId) {
         let Some(parts) = self.signature_parts(decl) else { return };
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return };
@@ -597,6 +620,9 @@ impl<'d> Checker<'d> {
         // parameter in it is refused (`P0001`) and the specification gives a non-`bool`
         // condition no code of its own, so that is the plain mismatch.
         if let Some(cond) = f.where_ {
+            if self.generic_item == Some(decl) {
+                self.defer(super::Obligation::Where { item: decl, condition: cond });
+            }
             self.fn_where = true;
             self.within(Context::Const, |this| this.check(cond, &Ty::Bool));
             self.fn_where = false;
@@ -627,7 +653,7 @@ impl<'d> Checker<'d> {
     /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
-            && !found.fits(ret)
+            && !self.compatible_at(file, body.span, &found, ret)
             && found != Ty::Never
         {
             self.mismatch(file, body.span, ret, &found);

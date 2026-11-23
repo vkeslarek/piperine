@@ -150,10 +150,13 @@ impl Checker<'_> {
 
     /// The length `[T; N]` or `[T; N + 1]` writes when it names const parameters (§3.8.3, D14): a
     /// generic length, folded when the item is instantiated; `None` for any other expression.
-    fn generic_length(&self, len: ExprId) -> Option<Length> {
+    fn generic_length(&mut self, len: ExprId) -> Option<Length> {
         match self.generic_parameter_of(len) {
             Some(parameter) => Some(Length::Generic(ConstTerm::Param(parameter))),
-            None if self.mentions_generic_parameter(len) => Some(Length::Generic(ConstTerm::Expr(len))),
+            None if self.mentions_generic_parameter(len) => {
+                self.defer_constant(len);
+                Some(Length::Generic(ConstTerm::Expr(len)))
+            }
             None => None,
         }
     }

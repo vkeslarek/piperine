@@ -110,6 +110,24 @@ impl Ty {
         }
     }
 
+    /// The pairs of lengths [`Ty::fits`] accepted without deciding them: where `self` and `expected`
+    /// have arrays whose lengths are not the same number and not the same parameter, because one is
+    /// built from const parameters. The instantiation compares each pair by value.
+    pub fn deferred_lengths(&self, expected: &Ty) -> Vec<(Length, Length)> {
+        match (self, expected) {
+            (Ty::Array(found, found_length), Ty::Array(wanted, wanted_length)) => {
+                let mut pairs = found.deferred_lengths(wanted);
+                if found_length != wanted_length {
+                    pairs.push((found_length.clone(), wanted_length.clone()));
+                }
+                pairs
+            }
+            (Ty::Option(found), Ty::Option(wanted)) => found.deferred_lengths(wanted),
+            (Ty::Tuple(found), Ty::Tuple(wanted)) => found.iter().zip(wanted).flat_map(|(found, wanted)| found.deferred_lengths(wanted)).collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// The struct `decl`, not generic.
     pub fn structure(decl: DeclId) -> Ty {
         Ty::Struct(Nominal::plain(decl))

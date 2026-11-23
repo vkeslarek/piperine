@@ -118,8 +118,8 @@ impl Checker<'_> {
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| self.recorded_argument(parameter, &params, args, &substitution)).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, function, file, span)?;
         self.instantiations.insert(expr, Instantiation { item: function, arguments });
-        let params: Vec<Ty> = params.iter().map(|param| substitution.apply(param)).collect();
-        let ret = substitution.apply(&ret);
+        let params: Vec<Ty> = params.iter().map(|param| self.substitute(&substitution, param)).collect();
+        let ret = self.substitute(&substitution, &ret);
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         self.finish_call(expr, callee, function, params, ret, args, false)
     }

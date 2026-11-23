@@ -206,6 +206,7 @@ pub struct Types<'d> {
     /// The tag of every enum the check reached.
     pub(super) enum_tags: BTreeMap<DeclId, super::EnumTag>,
     pub(super) written: BTreeMap<TypeId, Ty>,
+    pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
@@ -320,7 +321,7 @@ impl<'d> Types<'d> {
     /// integer built of literals, `const` names and integer arithmetic (§1.2.5). The elaborator's
     /// own constant evaluator needs a typed literal, which a length does not have.
     pub fn integer_constant(&self, expr: ExprId) -> Option<u128> {
-        super::lengths::IntegerFolder { design: self.design }.fold(expr, 16)
+        super::lengths::IntegerFolder::of(self.design).fold(expr, 16)
     }
 
     /// The tag of the enum `decl`.
@@ -367,6 +368,12 @@ impl<'d> Types<'d> {
     /// the argument of each parameter, inferred or written, defaults filled in.
     pub fn instantiation(&self, call: ExprId) -> Option<&Instantiation> {
         self.instantiations.get(&call)
+    }
+
+    /// What the definition of the generic function `item` defers to each instantiation: its
+    /// `where`, the lengths it could only accept and its const expressions (Q1 (c)).
+    pub fn obligations(&self, item: DeclId) -> &[super::Obligation] {
+        self.obligations.get(&item).map_or(&[], Vec::as_slice)
     }
 
     /// The instantiation a type node of the reachable set writes when it is a use of a generic

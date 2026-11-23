@@ -4,7 +4,7 @@
 //! literal, a parenthesis, an `as` cast, integer arithmetic and the name of a `const` give.
 
 use crate::msl::lexer;
-use crate::pom::{BinOp, DeclKind, ExprId, ExprKind, LitKind, Resolution};
+use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, LitKind, Resolution};
 
 use super::check::Checker;
 use super::{Length, Ty};
@@ -63,7 +63,7 @@ impl Checker<'_> {
     /// The value of the const expression `expr` when it is a non-negative integer the folder
     /// computes; `None` for anything else, an overflow or a division by zero included.
     pub(super) fn fold_integer(&self, expr: ExprId, nesting: u8) -> Option<u128> {
-        IntegerFolder { design: self.design }.fold(expr, nesting)
+        IntegerFolder::of(self.design).fold(expr, nesting)
     }
 }
 
@@ -71,6 +71,20 @@ impl Checker<'_> {
 pub(super) struct IntegerFolder<'d> {
     /// The design the expression is read from.
     pub(super) design: &'d crate::pom::Design,
+    /// The value of each const parameter the expression may name (an instantiation's arguments).
+    values: std::collections::BTreeMap<DeclId, u128>,
+}
+
+impl<'d> IntegerFolder<'d> {
+    /// A folder that knows no const parameter.
+    pub(super) fn of(design: &'d crate::pom::Design) -> Self {
+        IntegerFolder { design, values: std::collections::BTreeMap::new() }
+    }
+
+    /// A folder that reads each const parameter in `values` as its value.
+    pub(super) fn with_values(design: &'d crate::pom::Design, values: std::collections::BTreeMap<DeclId, u128>) -> Self {
+        IntegerFolder { design, values }
+    }
 }
 
 impl IntegerFolder<'_> {
@@ -85,6 +99,8 @@ impl IntegerFolder<'_> {
                 _ => None,
             },
             ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } => self.fold(*inner, nesting),
+            // `{ N + 1 }`: a block of one expression is that expression (§3.8.5)
+            ExprKind::Block(block) if let [only] = block.stmts.as_slice() && let crate::pom::StmtKind::Expr { expr: inner, semi: false } = &self.design.stmt_node(*only).kind => self.fold(*inner, nesting),
             ExprKind::Binary { op, lhs, rhs } => {
                 let (lhs, rhs) = (self.fold(*lhs, nesting)?, self.fold(*rhs, nesting)?);
                 match op {
@@ -101,6 +117,7 @@ impl IntegerFolder<'_> {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                     DeclKind::Const(data) => self.fold(data.value?, nesting),
+                    DeclKind::GenericParam(_) => self.values.get(&decl).copied(),
                     _ => None,
                 },
                 _ => None,

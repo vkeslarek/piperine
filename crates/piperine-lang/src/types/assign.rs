@@ -92,7 +92,7 @@ impl Checker<'_> {
                     _ => place,
                 };
                 if let Some(found) = found
-                    && !found.fits(&place)
+                    && !self.compatible(expr, &found, &place)
                 {
                     let span = self.design.expr_node(expr).span;
                     self.mismatch(file, span, &place, &found);

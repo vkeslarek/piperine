@@ -6,7 +6,7 @@
 mod support;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, TypeId};
-use piperine_lang::types::{Bound, ConstTerm, ConstType, GenericSignature, GenericValue, Length, Instantiation, Nominal, ParameterDefault, ParameterKind, Substitution, Ty, Types};
+use piperine_lang::types::{Bound, ConstTerm, ConstType, GenericSignature, GenericValue, Length, Instantiation, Nominal, Obligation, ParameterDefault, ParameterKind, Substitution, Ty, Types};
 
 /// The natures every source below places in the open.
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
@@ -396,4 +396,29 @@ fn a_call_through_an_fn_bound_is_positional_only() {
     let found = model_errors("fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 { f(v: x) }\n");
     assert_eq!(codes_of(&found), ["E0140"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("by position"), "{:?}", found[0]);
+}
+
+#[test]
+fn array_lengths_and_where_are_deferred_to_the_instantiation() {
+    // Q1 (c), §3.8.9: the definition accepts `[f64; N + 1]` against `[f64; N + 1]` and records the pair, the `where` and the
+    // expression; a call substitutes the lengths it infers, so a table of three and a table of four are a type error there
+    let items = "fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] { let wide = [0.0; N + 1]; wide }\n\
+                 fn mean_of<const N: usize>(xs: [f64; N]) -> f64 where N >= 1 { 1.0 }\n\
+                 fn dot<const N: usize>(a: [f64; N], b: [f64; N]) -> f64 { 1.0 }\n";
+    let src = format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ let a = widened([1.0, 2.0]); let m = mean_of([1.0]); let d = dot([1.0, 2.0], [3.0, 4.0]); }}");
+    let design = support::build(&src);
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let declarations = Declarations { design: &design };
+    assert_eq!(types.local(declarations.binding("a")), Some(&Ty::array(Ty::F64, 3)), "N = 2 from the argument folds N + 1");
+    let widened = types.obligations(declarations.item("widened"));
+    assert!(widened.iter().any(|o| matches!(o, Obligation::Constant { .. })), "{widened:?}");
+    assert!(widened.iter().any(|o| matches!(o, Obligation::SameLength { .. })), "the length of `wide` meets the declared one: {widened:?}");
+    let mean = types.obligations(declarations.item("mean_of"));
+    assert!(matches!(mean, [Obligation::Where { .. }]), "the `where` is deferred: {mean:?}");
+    assert!(types.obligations(declarations.item("dot")).is_empty(), "the same parameter is the same length: nothing is owed");
+    let found = analog_types(items, "let d = dot([1.0, 2.0, 3.0], [1.0, 2.0, 3.0, 4.0]);", &["d"]).expect_err("three and four");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "E0180");
+    assert!(found[0].1.contains("expected `[f64; 3]`, found `[f64; 4]`"), "{}", found[0].1);
 }
