@@ -752,3 +752,29 @@ fn a_cross_tolerance_that_is_not_constant_is_p0001() {
         assert!(err[0].diagnostic.message.contains("a `cross` tolerance that is not a constant or a param"), "{tolerance}: {}", err[0].diagnostic.message);
     }
 }
+
+#[test]
+fn an_event_function_call_lowers_to_its_body_event() {
+    // §13 rule 7, design D14 (UE-04 AC 1, 2): a call of `fn handshake(req, ack) -> Event { req.rise() && ack }` is inlined
+    // where it stands, so a reaction headed by it elaborates to the very body of one headed by `req.rise() && ack`; in a
+    // module result and a nested function it is the same event, and an `||` of two calls is two events of one reaction
+    let function = "fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }\n";
+    let module = "module M(in req: Bit, in ack: Bit, out q: Bit = false) { }\n";
+    let by_function = Elab::ir(&format!("{function}{module}digital for M {{ on handshake(req, ack) {{ q <- true; }} }}"), "M");
+    let by_hand = Elab::ir(&format!("{module}digital for M {{ on req.rise() && ack {{ q <- true; }} }}"), "M");
+    assert_eq!(Read { ir: &by_function }.body("M").events().len(), 1, "one event: the body's");
+    assert_eq!(by_function.print_structural(), by_hand.print_structural(), "the call is the event its body writes");
+    // the function's parameters are the call's arguments, not the names of the function: swapped arguments swap the event
+    let swapped = Elab::ir(&format!("{function}{module}digital for M {{ on handshake(ack, req) {{ q <- true; }} }}"), "M");
+    let swapped_by_hand = Elab::ir(&format!("{module}digital for M {{ on ack.rise() && req {{ q <- true; }} }}"), "M");
+    assert_eq!(swapped.print_structural(), swapped_by_hand.print_structural(), "ack rises with req high");
+    // a function that calls another: the outer guard applies to the inner event
+    let nested = format!("{function}fn gated(req: Bit, ack: Bit, en: Bit) -> Event {{ handshake(req, ack) && en }}\nmodule N(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\n");
+    let by_nesting = Elab::ir(&format!("{nested}digital for N {{ on gated(req, ack, en) {{ q <- true; }} }}"), "N");
+    let nested_by_hand = Elab::ir(&format!("module N(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\ndigital for N {{ on req.rise() && ack && en {{ q <- true; }} }}"), "N");
+    assert_eq!(by_nesting.print_structural(), nested_by_hand.print_structural(), "the nested call is its body's event under the outer guard");
+    // a module-body `let`: the same event where it is named
+    let named = Elab::ir(&format!("{function}module L(in req: Bit, in ack: Bit, out q: Bit = false) {{ let ready = handshake(req, ack); }}\ndigital for L {{ on ready {{ q <- true; }} }}"), "L");
+    let named_by_hand = Elab::ir("module L(in req: Bit, in ack: Bit, out q: Bit = false) { }\ndigital for L { on req.rise() && ack { q <- true; } }", "L");
+    assert_eq!(named.print_structural(), named_by_hand.print_structural(), "a body let of the call is the call's event");
+}

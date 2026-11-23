@@ -763,7 +763,7 @@ T27 → T28 → T29 → T30 → T31
 ### T28: Elaborator: an `Event` function is inlined where it stands
 
 **What**: A call of a `fn -> Event` is inlined through `HandleBinding` (D14), its result lowered by `elab/events.rs` into the caller's head, body `let`, guard or body read; a nested `Event` function nests the inlining.
-**Where**: `crates/piperine-lang/src/elab/events.rs`
+**Where**: `crates/piperine-lang/src/elab/event_functions.rs` (new, called from the `Call` arm of `disjuncts` in `elab/events.rs`; no `HandleBinding`, see Settled B5 (2b): the parameters bind in `Scope::handles`/`texts`/`values` under `Environment`)
 **Depends on**: T27
 **Reuses**: `HandleBinding`, `Scope::handles`
 **Requirement**: UE-04
@@ -771,9 +771,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `an_event_function_call_lowers_to_its_body_event` passes under `**Run elabdigital**`
-- [ ] Code clarity: `///` docs; no free function; no god method
-- [ ] Gate check passes: Full
+- [x] `an_event_function_call_lowers_to_its_body_event` passes under `**Run elabdigital**`
+- [x] Code clarity: `///` docs; no free function; no god method
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
