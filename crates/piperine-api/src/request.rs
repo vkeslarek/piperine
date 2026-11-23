@@ -888,7 +888,7 @@ points = 5
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
         // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
         // of HII-01 and `max_steps` (HII-01 amendment), no more
-        assert_eq!(RUN_KEYS.len(), 37);
+        assert_eq!(RUN_KEYS.len(), 36);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }

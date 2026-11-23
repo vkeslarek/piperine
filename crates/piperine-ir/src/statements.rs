@@ -43,11 +43,15 @@ impl Statements {
                         }));
                         next.push(Step::Count(id));
                     }
-                    // a trace is no statement of a reaction: its values are read, none is counted
-                    Some(Stmt::Trace { fields, .. }) => next.extend(fields.iter().filter_map(|f| match f {
-                        EmitField::Value { value, .. } => Some(Step::Expr(*value)),
-                        EmitField::Text { .. } => None,
-                    })),
+                    // a trace is counted too: the `analog` block holds no reaction statement, so the count of
+                    // its statements finds each site's text (`Body::trace_texts`)
+                    Some(Stmt::Trace { fields, .. }) => {
+                        next.extend(fields.iter().filter_map(|f| match f {
+                            EmitField::Value { value, .. } => Some(Step::Expr(*value)),
+                            EmitField::Text { .. } => None,
+                        }));
+                        next.push(Step::Count(id));
+                    }
                     None => {}
                 },
                 Step::Expr(id) => {

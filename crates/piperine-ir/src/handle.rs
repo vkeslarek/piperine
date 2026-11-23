@@ -327,6 +327,28 @@ impl<'a> Body<'a> {
         &self.data().partial_derivatives
     }
 
+    /// The text fields of trace site `site`, as `(name, text)`, in source order: what the site's
+    /// `emit!` wrote that never crosses the ABI. Empty for a site the body does not have.
+    pub fn trace_texts(&self, site: u32) -> Vec<(&'a str, &'a str)> {
+        let ir = self.ir;
+        let analog = self.data().analog.as_deref().unwrap_or(&[]);
+        Statements::of(ir, analog)
+            .into_iter()
+            .find_map(|id| match ir.stmt(id) {
+                Stmt::Trace { site: s, fields } if *s == site => Some(
+                    fields
+                        .iter()
+                        .filter_map(|f| match f {
+                            EmitField::Text { name, text } => Some((name.as_str(), text.as_str())),
+                            EmitField::Value { .. } => None,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
     /// The trace sites, by index (`Stmt::Trace`).
     pub fn traces(&self) -> &'a [TraceSite] {
         &self.data().traces

@@ -1019,8 +1019,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] the `straces` and `apitraces` tests of AO-09 named in `## Checks` pass
-- [ ] Gate check passes: `Run apitraces`, `Run straces`, then Full
+- [x] the `straces` and `apitraces` tests of AO-09 named in `## Checks` pass
+- [x] Gate check passes: `Run apitraces`, `Run straces`, then Full
 
 **Tests**: e2e
 **Gate**: full

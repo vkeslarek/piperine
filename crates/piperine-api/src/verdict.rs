@@ -111,11 +111,13 @@ mod tests {
             instance: "Top.mon".into(),
             stream: "checks".into(),
             fields: vec![("kind".into(), Field::Text("require".into())), ("name".into(), Field::Text(name.into())), ("pass".into(), pass)],
+            iteration: None,
+            analysis: None,
         }
     }
 
     fn other(stream: &str) -> Record {
-        Record { time: 0.0, instance: "Top.mon".into(), stream: stream.into(), fields: vec![("pass".into(), Field::Bool(false))] }
+        Record { time: 0.0, instance: "Top.mon".into(), stream: stream.into(), fields: vec![("pass".into(), Field::Bool(false))], iteration: None, analysis: None }
     }
 
     #[test]
@@ -168,7 +170,7 @@ mod tests {
     }
 
     fn sim(fields: Vec<(String, Field)>) -> Record {
-        Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields }
+        Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields, iteration: None, analysis: None }
     }
 
     #[test]
@@ -201,6 +203,8 @@ mod tests {
             instance: "Top.mon".into(),
             stream: "checks".into(),
             fields: vec![("kind".into(), Field::Text("target".into())), ("name".into(), Field::Text(name.into())), ("margin".into(), margin)],
+            iteration: None,
+            analysis: None,
         }
     }
 

@@ -174,18 +174,17 @@ fn the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature() {
 }
 
 #[test]
-fn the_diode_with_a_trace_is_refused() {
-    // analog#7 (refused): the Diode with `emit!("newton", ..)` in its `analog` block; analog~139c67b5 "This
-    // emit! runs when the code around it runs, and analog runs at every evaluation" and analog~b103eeb0
-    // "The piperine command prints the records of reactions; a trace from analog is not among the lines it
-    // shows" (refused with it). An `emit!` in `analog` is `P0001` (L49)
+fn the_diode_with_a_trace_runs() {
+    // analog#7 (runs since analog-operators T37): the Diode with `emit!("newton", ..)` in its `analog` block is a
+    // trace, written at every evaluation (analog~139c67b5 "This emit! runs when the code around it runs, and
+    // analog runs at every evaluation"); the operating point runs and reads the same 0.4 to 0.7 V as without it
     let chapter = Chapter::read();
     let before = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\nmodule Diode(a: Electrical, k: Electrical) { is: f64 = 1e-14 where is > 0.0; n: f64 = 1.0 where n > 0.0; }\n";
     let after = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a); let r = Resistor(a, b) {{ r: 1k }}; let d = Diode(b, gnd); }}\n", Bench::PARTS);
     let model = chapter.wrapped("traced.msl", before, "analog#7", &after);
-    let given = Refusal::of(model.run(Commands::operating_point()), "analog#7");
-    assert!(given.contains(&("P0001".to_string(), "an `emit!` in an `analog` block is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    let forward = ran.signal("Top.b");
+    assert!(forward > 0.4 && forward < 0.8, "the diode's forward voltage: {forward}");
 }
 
 #[test]

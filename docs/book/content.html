@@ -2868,7 +2868,7 @@ wrote clipper.svg</pre>
   t2'     0           vd = …   id = …     the shorter retry
   …</pre>
 
-<p>The <code>piperine</code> command prints the records of reactions; a trace from <code>analog</code> is not among the lines it shows. Where a trace is available, it is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
+<p>The <code>piperine</code> command prints the records of reactions, and a trace from <code>analog</code> when <code>--stream</code> names its stream, with the Newton iteration that wrote it. A trace is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>You want</th><th>Write</th><th>Records exist for</th></tr></thead>
