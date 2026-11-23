@@ -685,6 +685,17 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A method call: a row of the Appendix H catalogue applied to
     /// its receiver and arguments.
     fn method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
+        // a method of the project: the function's body over the receiver, then the arguments (generics T35)
+        if let Some(Callee::Method(function)) = self.types.callee(expr) {
+            let mut arguments = Vec::new();
+            for operand in std::iter::once(&recv).chain(args) {
+                arguments.push(match self.fn_value_of(*operand) {
+                    Some(function) => Argument { value: None, function: Some(function) },
+                    None => Argument { value: Some(self.fold(*operand, bindings)?), function: None },
+                });
+            }
+            return self.apply_value(expr, FnValue::Named(function), arguments, bindings);
+        }
         if let Some(method) = self.types.method(expr) {
             // the rows over arrays, ranges, iterators and `Option`s take closures and composites (`composite.rs`)
             if let Some(result) = self.sequence_row(expr, method, recv, args, bindings) {

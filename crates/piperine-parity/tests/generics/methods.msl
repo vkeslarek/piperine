@@ -1,0 +1,43 @@
+//! Methods, associated functions and associated constants of an `impl` on a struct, and the methods
+//! a trait gives (GN-03): each function is called from a reaction that commits the result;
+//! the expected values are computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+struct Point { x: f64, y: f64 }
+impl Point {
+    const SIDES: u8 = 4;
+    fn new(x: f64, y: f64) -> Point { Point { x, y } }
+    fn norm2(self) -> f64 { self.x * self.x + self.y * self.y }
+    fn scaled(self, k: f64) -> Point { Point { x: self.x * k, y: self.y * k } }
+    fn dot(self, other: Point) -> f64 { self.x * other.x + self.y * other.y }
+}
+
+trait Shape { fn area(self) -> f64; }
+struct Sq { a: f64 }
+impl Shape for Sq { fn area(self) -> f64 { self.a * self.a } }
+
+fn associated() -> f64 { Point::new(3.0, 4.0).norm2() }
+fn chained() -> f64 { let p = Point::new(1.0, 2.0); p.scaled(3.0).norm2() }
+fn two_receivers() -> f64 { let p = Point::new(1.0, 2.0); let q = Point::new(3.0, 4.0); p.dot(q) }
+fn constant() -> u8 { Point::SIDES * 2 }
+fn trait_own() -> f64 { let s = Sq { a: 3.0 }; s.area() }
+
+module Rows(in clk: Bit, out m0: Bit<f64> = 0.0, out m1: Bit<f64> = 0.0, out m2: Bit<f64> = 0.0, out m3: Bit<u8> = 0, out m4: Bit<f64> = 0.0) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- associated();
+        m1 <- chained();
+        m2 <- two_receivers();
+        m3 <- constant();
+        m4 <- trait_own();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<f64>; signal m1: Bit<f64>; signal m2: Bit<f64>; signal m3: Bit<u8>; signal m4: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, m2, m3, m4);
+}

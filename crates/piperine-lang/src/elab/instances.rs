@@ -70,6 +70,12 @@ impl Elaboration<'_, '_> {
     pub(super) fn instance_substitution(&self, function: DeclId, arguments: &[ConcreteValue]) -> Substitution {
         let mut substitution = Substitution::new();
         let signature = GenericSignature::of(self.design, function);
+        // a function a trait declares runs for one type, which is `Self`: its one argument
+        if let (true, Some(ConcreteValue::Type(ty))) = (self.is_trait_function(function), arguments.first())
+            && let Some(owner) = self.design.decl_data(function).parent
+        {
+            substitution.bind(owner, GenericValue::Type(ty.clone()));
+        }
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {
             match argument {
                 ConcreteValue::Type(ty) => substitution.bind(parameter.decl, GenericValue::Type(ty.clone())),
