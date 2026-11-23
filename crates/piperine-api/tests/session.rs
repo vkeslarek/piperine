@@ -525,10 +525,10 @@ fn a_leaf_text_is_read_by_the_leafs_type() {
 /// `Option`, and whose wrapper hands its own params down.
 const WRAPPED: &str = "enum Mode { Fast, Slow }\n\
     module Vsource(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, gnd) +> dc; }\n\
-    module Inner(p: Electrical) { n: u8 = 1; md: Mode = Mode::Fast; rs: Option<f64>; big: u64 = 0; md2: Mode = Mode::Fast; rs2: Option<f64>; md3: Mode = Mode::Fast; }\n\
+    module Inner(p: Electrical) { n: u8 = 1; md: Mode = Mode::Fast; rs: Option<f64>; big: u64 = 0; md2: Mode = Mode::Fast; rs2: Option<f64>; md3: Mode = Mode::Fast; rs3: Option<f64>; rs4: Option<f64>; r: f64 = 0.0; }\n\
     analog for Inner { i(p, gnd) +> (n as f64) * v(p) / 1k + match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / 1k + v(p) / rs.unwrap_or(1k) + (if big > 9007199254740992 { 1.0 } else { 0.0 }) * v(p) / 1k + match md2 { Mode::Fast => 0.0, Mode::Slow => 1.0 } * v(p) / 1k; }\n\
-    module Wrap(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; big: u64 = 0; slow: bool = false; rt: f64 = 3000.0; k: u8 = 0; \
-      let i = Inner { rs2: rt, md3: match k { 0 => Mode::Fast, _ => Mode::Slow }, n: n, md: md, rs: rs, big: big, md2: if slow { Mode::Slow } else { Mode::Fast } }(p); }\n\
+    module Wrap(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; big: u64 = 0; slow: bool = false; rt: f64 = 3000.0; k: u8 = 0; a: f64 = 1.0; b: f64 = 2.0; \
+      let i = Inner { rs3: rt * 2.0, rs4: a + b, r: match md { Mode::Fast => 1000.0, Mode::Slow => 3000.0 }, rs2: rt, md3: match k { 0 => Mode::Fast, _ => Mode::Slow }, n: n, md: md, rs: rs, big: big, md2: if slow { Mode::Slow } else { Mode::Fast } }(p); }\n\
     module Top() { signal a: Electrical; let v1 = Vsource(a); let w = Wrap { rs: 2k }(a); }\n";
 
 #[test]
@@ -564,15 +564,32 @@ fn params_passed_through_a_wrappers_placement_run() {
     assert_eq!(shown(&session, "md3"), piperine_api::Cell::Text("Fast".into()));
     session.set_text("Top.w.k", "2").unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(shown(&session, "md3"), piperine_api::Cell::Text("Slow".into()));
-    // an integer above 2^53 crosses no derive function: it is refused where a placement reads it, and a param a placement derives takes no write
-    for entry in ["Top.w.big", "Top.w.i.big"] {
+    // an integer above 2^53 crosses a derive function exactly (PI-01 AC 4): the child holds the wrapper's value, and the param a placement
+    // gives takes no write of its own
+    session.set_text("Top.w.big", "9007199254740993").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(shown(&session, "big"), piperine_api::Cell::Int(9_007_199_254_740_993), "the child reads the exact integer");
+    for entry in ["Top.w.i.big"] {
+        match session.set_text(entry, "5") {
+            Err(Failure::Host { code: "E0802", .. }) => {}
+            other => panic!("{entry}: E0802, found {other:?}"),
+        }
         match session.set_text(entry, "9007199254740993") {
             Err(Failure::Host { code: "E0802", .. }) => {}
             other => panic!("{entry}: E0802, found {other:?}"),
         }
     }
-    session.set_text("Top.w.big", "9007199254740").unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(shown(&session, "big"), piperine_api::Cell::Int(9_007_199_254_740), "an integer an `f64` holds follows it");
+    // an `Option` bound to an expression over params follows them (§8.1.19, §8.1.23): `rt * 2.0` and `a + b`
+    assert_eq!(Typed::literal(shown(&session, "rs3")), "Some(5000)");
+    assert_eq!(Typed::literal(shown(&session, "rs4")), "Some(3)");
+    session.set_text("Top.w.b", "5").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(Typed::literal(shown(&session, "rs4")), "Some(6)", "`a + b` over two params");
+    // a value computed by `match` over an enum param, before and after a set
+    assert_eq!(shown(&session, "r"), piperine_api::Cell::Real(3000.0), "`md` was set to Slow above");
+    session.set_text("Top.w.md", "Fast").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(shown(&session, "r"), piperine_api::Cell::Real(1000.0));
+    // a wrapper with no pin: `None` where the child already holds `None` changes nothing and succeeds (F30)
+    session.set_text("Top.w.rs", "None").unwrap_or_else(|f| panic!("{f}"));
+    session.set_text("Top.w.rs", "None").unwrap_or_else(|f| panic!("{f}"));
 }
 
 #[test]

@@ -113,6 +113,11 @@ impl Transpiler {
         self.ir.bodies().any(|body| body.params().iter().any(|param| !matches!(param.ty, ValueType::F64 | ValueType::Bool)))
     }
 
+    /// Whether the design derives a param from another: its derive functions read pins through `rt::Carried`.
+    pub fn derives(&self) -> bool {
+        !piperine_plan::DerivePlan::of(&self.ir).bindings().is_empty()
+    }
+
     /// Whether the design holds a `table_model`, whose generated code builds an `rt::TableModel`.
     pub fn tables(&self) -> bool {
         self.ir.expressions().any(|e| matches!(e, Expr::Table { .. } | Expr::TableSlope { .. }))

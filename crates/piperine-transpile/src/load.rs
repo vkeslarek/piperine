@@ -28,9 +28,10 @@ use crate::error::Error;
 /// The type of `piperine_abi_1` (abi.md §2 entry 1).
 type Export = extern "C" fn() -> *const Library;
 
-/// The type of `piperine_derive_1` (the transpiler's contract with its host, `print/derive.rs`):
-/// the function `k` of the design's derive plan over the parent's params.
-type DeriveExport = for<'a> extern "C" fn(u32, List<'a, f64>) -> f64;
+/// The type of `piperine_derive_2` (the transpiler's contract with its host, `print/derive.rs`):
+/// the function `k` of the design's derive plan over the bytes of the parent's params, answering a 1
+/// and the bytes of the child's param, or nothing.
+type DeriveExport = for<'a> extern "C" fn(u32, List<'a, u8>) -> List<'static, u8>;
 
 /// A loaded, checked library. Dropping a `Loaded` unloads nothing: its modules stay valid to the
 /// end of the process.
@@ -38,7 +39,7 @@ type DeriveExport = for<'a> extern "C" fn(u32, List<'a, f64>) -> f64;
 pub struct Loaded {
     file: PathBuf,
     library: &'static Library,
-    /// `piperine_derive_1`, which a design that derives no param does not export.
+    /// `piperine_derive_2`, which a design that derives no param does not export.
     derive: Option<DeriveExport>,
 }
 
@@ -97,7 +98,7 @@ impl Loaded {
         let export = unsafe { handle.get::<Export>(raw::SYMBOL.as_bytes()) }
             .map(|symbol| *symbol)
             .map_err(|_| format!("has no symbol `{}`", raw::SYMBOL))?;
-        // SAFETY: the export `piperine_derive_1` is printed by this transpiler with the type
+        // SAFETY: the export `piperine_derive_2` is printed by this transpiler with the type
         // `DeriveExport` (`print/derive.rs`), beside `piperine_abi_1` of abi.md §2 entry 1 and
         // under the same cache key, the hash of the source that prints both; a library with no
         // such symbol is a design that derives nothing.
@@ -113,16 +114,21 @@ impl Loaded {
         &self.file
     }
 
-    /// Whether the library exports `piperine_derive_1`.
+    /// Whether the library exports `piperine_derive_2`.
     pub fn derives(&self) -> bool {
         self.derive.is_some()
     }
 
-    /// Derive function `k` over `params`, the parent's params in declaration order; `None` when
-    /// the library exports no derive function. A `k` or a number of params the design has no
-    /// function for gives NaN.
-    pub fn derive(&self, k: u32, params: &[f64]) -> Option<f64> {
-        self.derive.map(|derive| derive(k, List::from_slice(params)))
+    /// Derive function `k` over `params`, the pin bytes of the parent's params in declaration order;
+    /// the pin bytes of the child's param, or `None` when the library exports no derive function or has
+    /// none for this `k` and this width of params.
+    pub fn derive(&self, k: u32, params: &[u8]) -> Option<Vec<u8>> {
+        let answer = self.derive.map(|derive| derive(k, List::from_slice(params)))?;
+        let bytes: Vec<u8> = (0..answer.len()).filter_map(|i| answer.get(i).copied()).collect();
+        match bytes.split_first() {
+            Some((1, value)) => Some(value.to_vec()),
+            _ => None,
+        }
     }
 
     /// The names of the library's modules, in order.

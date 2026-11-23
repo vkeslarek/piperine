@@ -99,7 +99,7 @@ impl Session {
                 return Err(Failure::Host { code: "E0806", message: format!("{action} is scheduled at {at:e} s: a leaf of a composite param is set before the run (at = 0)") });
             }
             let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
-            return Session::set_leaf(&mut self.params, circuit, &param, leaf, value);
+            return Session::set_leaf(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), circuit, &param, leaf, value);
         }
         if at > 0.0 {
             // the values a timed set derives depend on every other set due before it, whatever the
