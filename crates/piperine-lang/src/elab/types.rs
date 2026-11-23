@@ -146,6 +146,15 @@ impl Elaboration<'_, '_> {
         self.type_arena.instances.insert(nominal.clone(), id);
     }
 
+    /// The path of the declaration `decl` as the arena names it: its qualified name, prefixed with `std::` when the standard
+    /// library declares it, so a project's own `logic::Logic` is not the library's `std::logic::Logic` (a host that
+    /// recognises the library's type asks for that path).
+    fn declaration_path(&self, decl: DeclId) -> String {
+        let declaration = self.design.decl(decl);
+        let qualified = declaration.qualified_name();
+        if declaration.krate().is_std() { format!("std::{qualified}") } else { qualified }
+    }
+
     /// The arena entry of the declaration `decl`: its name, path, origin, fields or variants and the
     /// traits it derives.
     fn type_data(&self, decl: DeclId, substitution: &crate::types::Substitution) -> TypeData {
@@ -155,7 +164,7 @@ impl Elaboration<'_, '_> {
             DeclKind::Struct(s) => TypeKind::Struct { form: Self::fields_form(s.form), fields: self.field_list(decl, substitution) },
             _ => self.enum_kind(decl, substitution),
         };
-        TypeData { name, path: self.design.decl(decl).qualified_name(), origin: self.locator.decl(decl), kind, derives: self.derives_of(decl), instance: None, repr: Default::default() }
+        TypeData { name, path: self.declaration_path(decl), origin: self.locator.decl(decl), kind, derives: self.derives_of(decl), instance: None, repr: Default::default() }
     }
 
     /// The source's way of writing fields as the IR's.

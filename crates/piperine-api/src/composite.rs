@@ -20,6 +20,8 @@ pub enum CellShape {
     Struct {
         /// The source name.
         name: String,
+        /// The path of the declaration (`std::logic::Logic`): what tells the library's type from a project's own alike.
+        declaration: String,
         /// How the fields are written.
         form: FieldsForm,
         /// The fields, in order.
@@ -66,7 +68,7 @@ impl CellShape {
             ValueType::Struct(id) => {
                 let data = ir.type_data(*id);
                 let TypeKind::Struct { form, fields } = &data.kind else { return None };
-                Some(CellShape::Struct { name: data.name.clone(), form: *form, fields: CellShape::fields(ir, fields)? })
+                Some(CellShape::Struct { name: data.name.clone(), declaration: data.path.clone(), form: *form, fields: CellShape::fields(ir, fields)? })
             }
             ValueType::Enum(id) => {
                 let data = ir.type_data(*id);
@@ -159,10 +161,10 @@ impl CellShape {
     fn read(&self, bytes: &[u8], at: &mut usize) -> Option<CompositeCell> {
         match self {
             CellShape::Scalar(ty) => Some(CompositeCell::Scalar(Self::scalar(ty, bytes, at))),
-            CellShape::Struct { name, form, fields } => {
+            CellShape::Struct { name, declaration, form, fields } => {
                 let read = Self::read_fields(fields, bytes, at)?;
                 // a `Logic<N>` is its pattern of `N` characters (EU-15 AC 4), not the two planes it is made of
-                Some(match LogicCell::pattern(name, &read) {
+                Some(match LogicCell::pattern(declaration, name, &read) {
                     Some(pattern) => CompositeCell::Scalar(Cell::Text(pattern)),
                     None => CompositeCell::Struct { name: name.clone(), form: *form, fields: read },
                 })
@@ -228,9 +230,17 @@ impl CellShape {
 struct LogicCell;
 
 impl LogicCell {
-    /// The pattern of the struct `name` holding `fields`, when it is a `Logic<N>`: two integer planes called `binary`
-    /// and `value` of `N` levels. `None` for any other struct.
-    fn pattern(name: &str, fields: &[(String, CompositeCell)]) -> Option<String> {
+    /// The declaration of the library's four-state value.
+    const DECLARATION: &'static str = "std::logic::Logic";
+
+    /// The pattern of the struct `name` declared at `declaration` holding `fields`, when it is the library's `Logic<N>`: two
+    /// integer planes called `binary` and `value` of `N` levels. `None` for any other struct, a project's own `Logic<4>`
+    /// with the same fields included.
+    fn pattern(declaration: &str, name: &str, fields: &[(String, CompositeCell)]) -> Option<String> {
+        // an instance's path carries its arguments (`std::logic::Logic<4>`): the declaration is what comes before them
+        if declaration.split('<').next() != Some(Self::DECLARATION) {
+            return None;
+        }
         let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
         let [(first, CompositeCell::Scalar(Cell::Int(binary))), (second, CompositeCell::Scalar(Cell::Int(value)))] = fields else { return None };
         if first != "binary" || second != "value" || levels == 0 || levels > 64 {
@@ -400,6 +410,7 @@ mod tests {
         fn pair() -> CellShape {
             CellShape::Struct {
                 name: "Pair".into(),
+                declaration: "Pair".into(),
                 form: FieldsForm::Named,
                 fields: vec![("a".into(), CellShape::Scalar(ValueType::UInt(8))), ("b".into(), CellShape::Scalar(ValueType::Bool))],
             }
