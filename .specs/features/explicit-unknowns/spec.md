@@ -310,7 +310,9 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 2. The ABI's `Field` SHALL be `{ name, leaf, offset, count }`, and the shipped layouts SHALL be `BIT` `{ v: BOOL @0 }` of size 1 and alignment 1, `BYTE` `{ v: U8 @0 }` of size 1, and `F64` `{ v: F64 @0 }` of size 8 and alignment 8.
 3. The `Host` SHALL offer `commit` and no `commit_with`, and the ABI SHALL define no `commit_flag`.
 4. WHEN a pin carries `Option<T>` THEN its layout SHALL be one `BOOL` presence field followed by the layout of `T`, and a param that may be "not given" SHALL be such a pin.
-5. WHEN a pin carries `Logic<N>` THEN its layout SHALL be two fields, `binary` at offset 0 and `value` at the size of `UInt<N>`, each with the leaf of `UInt<N>`, the whole of twice that size and of that alignment.
+5. WHEN a pin carries `Logic<N>` THEN its layout SHALL be two fields, `binary` at offset 0 and `value` at the size of `UInt<N>`, each with the leaf of `UInt<N>`, the whole of twice that size and packed with alignment 1 like every composite pin.
+
+   *Amendment (coordinator ruling 2026-11-23, finding 45; replaces "and of that alignment"): the two approved texts disagreed with the plan, which lays every composite pin with alignment 1; the packed composite of `composite-values` wins.*
 6. WHEN a drive pin of a resolved net is laid out THEN it SHALL be the layout of the driven type followed by one `driving: BOOL` field, 0 for a drive absent from the resolver and 1 for a present one.
 
 **Independent Test**: a hand-written device in `crates/piperine-abi/tests` with a `BIT` pin of one byte binds and commits under `piperine_abi_1`; a cache entry keyed by the earlier contract is rebuilt.
