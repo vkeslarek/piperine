@@ -227,12 +227,15 @@ pub(super) enum CoreParam {
     Limiter,
     /// `Option<f64>`: a tolerance of `cross`.
     OptionF64,
+    /// A potential or flow probe of a branch of this module: the variable of `ddx` (§14.2.2).
+    /// Judged by name in `core_call` (`E0451`), typed as the `f64` the probe reads.
+    Probe,
 }
 
 impl CoreParam {
     pub(super) fn ty(self) -> Ty {
         match self {
-            CoreParam::F64 => Ty::F64,
+            CoreParam::F64 | CoreParam::Probe => Ty::F64,
             CoreParam::Limiter => Ty::Fn(vec![Ty::F64, Ty::F64], Box::new(Ty::F64)),
             CoreParam::OptionF64 => Ty::Option(Box::new(Ty::F64)),
         }
@@ -282,11 +285,12 @@ pub(super) struct CoreSig {
 }
 
 /// The §14 rows the subset types, by their spelling in `pom/builtin.rs`. A built-in with no row
-/// here (`delay`, `noise`, `ddx`, `simparam`, ...) is
+/// here (`delay`, `noise`, `simparam`, ...) is
 /// `P0001`, which is how it stays refused without a line of code each.
 const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
     ("limit", CoreSig { required: &[CoreParam::F64, CoreParam::Limiter], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
+    ("ddx", CoreSig { required: &[CoreParam::F64, CoreParam::Probe], optional: &[], allowed: Allowed::Analog, result: CoreResult::F64 }),
     ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog, result: CoreResult::F64 }),
     ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),

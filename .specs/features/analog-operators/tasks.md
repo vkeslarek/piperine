@@ -652,8 +652,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `ddx_against_a_non_probe_is_e0451` and `ddx_outside_analog_or_read_by_a_definition_is_e0450` pass
-- [ ] Gate check passes: `Run typeops`, `Run subset`
+- [x] `ddx_against_a_non_probe_is_e0451` and `ddx_outside_analog_or_read_by_a_definition_is_e0450` pass
+- [x] Gate check passes: `Run typeops`, `Run subset`
 
 **Tests**: integration
 **Gate**: quick
