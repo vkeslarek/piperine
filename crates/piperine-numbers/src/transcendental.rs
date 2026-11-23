@@ -45,6 +45,17 @@ impl Evaluation {
         Some((reduced.quadrant, sine, cosine))
     }
 
+    /// `(sinh, cosh)` of a finite `|x|` as intervals: the series up to 2, `(e^x -+ e^-x) / 2` beyond.
+    fn hyperbolic(magnitude: Float128, precision: u32) -> Option<(Interval, Interval)> {
+        let x = Self::point(magnitude, precision)?;
+        if magnitude <= Evaluation::integer(false, 2) {
+            return ElementaryFunctions::sinh_cosh_small(&x);
+        }
+        let exponential = ElementaryFunctions::exp(&x)?;
+        let reciprocal = Interval::integer(false, 1, exponential.precision()).divide(&exponential)?;
+        Some((exponential.subtract(&reciprocal).scaled(-1), exponential.add(&reciprocal).scaled(-1)))
+    }
+
     /// `pi / 2` as an interval carried at `precision` plus the guard bits.
     fn half_pi(precision: u32) -> Interval {
         ReferenceConstants::pi(precision + Self::GUARD_BITS).scaled(-1).with_precision(precision + Self::GUARD_BITS)
@@ -364,5 +375,55 @@ impl Float128 {
             Some(if left { Evaluation::pi(precision).subtract(&angle) } else { angle })
         });
         signed(result)
+    }
+}
+
+impl Float128 {
+    /// The magnitude beyond which `sinh`, `cosh` and `tanh` have overflowed or saturated.
+    const HYPERBOLIC_LIMIT: u64 = 12_000;
+
+    /// The hyperbolic sine, correctly rounded.
+    pub fn sinh(self) -> Float128 {
+        if self.is_nan() || self.is_zero() || self.is_infinite() {
+            return self;
+        }
+        let negative = self.is_sign_negative();
+        let result = if self.abs() > Evaluation::integer(false, Self::HYPERBOLIC_LIMIT) {
+            Float128::INFINITY
+        } else {
+            Evaluation::rounded(None, |precision| Some(Evaluation::hyperbolic(self.abs(), precision)?.0))
+        };
+        if negative { -result } else { result }
+    }
+
+    /// The hyperbolic cosine, correctly rounded.
+    pub fn cosh(self) -> Float128 {
+        if self.is_nan() {
+            return self;
+        }
+        if self.is_zero() {
+            return Float128::ONE;
+        }
+        if self.is_infinite() || self.abs() > Evaluation::integer(false, Self::HYPERBOLIC_LIMIT) {
+            return Float128::INFINITY;
+        }
+        Evaluation::rounded(None, |precision| Some(Evaluation::hyperbolic(self.abs(), precision)?.1))
+    }
+
+    /// The hyperbolic tangent, correctly rounded (`+-1` once it saturates).
+    pub fn tanh(self) -> Float128 {
+        if self.is_nan() || self.is_zero() {
+            return self;
+        }
+        let negative = self.is_sign_negative();
+        let result = if self.is_infinite() || self.abs() > Evaluation::integer(false, Self::HYPERBOLIC_LIMIT) {
+            Float128::ONE
+        } else {
+            Evaluation::rounded(None, |precision| {
+                let (sine, cosine) = Evaluation::hyperbolic(self.abs(), precision)?;
+                sine.divide(&cosine)
+            })
+        };
+        if negative { -result } else { result }
     }
 }

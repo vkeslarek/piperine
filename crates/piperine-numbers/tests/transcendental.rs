@@ -234,3 +234,11 @@ fn inverse_circular_functions_match_the_reference_vectors_bit_for_bit() {
     comparison.check_unary("atan", Float128::atan);
     comparison.check_atan2();
 }
+
+#[test]
+fn hyperbolic_functions_match_the_reference_vectors_bit_for_bit() {
+    let comparison = VectorComparison::committed();
+    comparison.check_unary("sinh", Float128::sinh);
+    comparison.check_unary("cosh", Float128::cosh);
+    comparison.check_unary("tanh", Float128::tanh);
+}

@@ -173,4 +173,41 @@ impl ElementaryFunctions {
         let result = if beyond_one { ReferenceConstants::pi(precision).scaled(-1).subtract(&series) } else { series };
         Some(if negative { result.negated() } else { result })
     }
+
+    /// `(sinh x, cosh x)` for `|x| <= 2` by their Taylor series (all terms positive for `x >= 0`),
+    /// relatively accurate even for a tiny `x`; the tail is bounded by twice the next term.
+    pub fn sinh_cosh_small(x: &Interval) -> Option<(Interval, Interval)> {
+        let precision = x.precision();
+        let square = x.multiply(x);
+        let radius_square = square.largest_magnitude();
+        let stop_sine = Self::stop_exponent(x.magnitude_top().unwrap_or(0), precision);
+        let stop_cosine = Self::stop_exponent(0, precision);
+        let mut sine_term = x.clone();
+        let mut cosine_term = Interval::integer(false, 1, precision);
+        let (mut sine, mut cosine) = (x.clone(), cosine_term.clone());
+        let (mut sine_done, mut cosine_done) = (x.magnitude_top().is_none(), false);
+        let (mut sine_tail, mut cosine_tail) = (MultiPrecision::zero(), MultiPrecision::zero());
+        let two = MultiPrecision::from_integer(false, 2);
+        let mut index = 1u64;
+        while !(sine_done && cosine_done) {
+            if !cosine_done {
+                cosine_term = cosine_term.multiply(&square).divide(&Interval::integer(false, (2 * index - 1) * (2 * index), precision))?;
+                cosine = cosine.add(&cosine_term);
+                if cosine_term.magnitude_top().is_none_or(|top| top < stop_cosine) {
+                    cosine_done = true;
+                    cosine_tail = cosine_term.largest_magnitude().multiply(&radius_square, precision, Rounding::Up).multiply(&two, precision, Rounding::Up);
+                }
+            }
+            if !sine_done {
+                sine_term = sine_term.multiply(&square).divide(&Interval::integer(false, (2 * index) * (2 * index + 1), precision))?;
+                sine = sine.add(&sine_term);
+                if sine_term.magnitude_top().is_none_or(|top| top < stop_sine) {
+                    sine_done = true;
+                    sine_tail = sine_term.largest_magnitude().multiply(&radius_square, precision, Rounding::Up).multiply(&two, precision, Rounding::Up);
+                }
+            }
+            index += 1;
+        }
+        Some((sine.add(&Interval::symmetric(&sine_tail, precision)), cosine.add(&Interval::symmetric(&cosine_tail, precision))))
+    }
 }
