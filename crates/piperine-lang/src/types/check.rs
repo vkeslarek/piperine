@@ -72,6 +72,8 @@ pub(super) struct Checker<'d> {
     pub(super) defaults: BTreeMap<ExprId, Ty>,
     /// The type each type node of the reachable set writes.
     pub(super) written: BTreeMap<TypeId, Ty>,
+    /// The instantiation each call of a generic function makes (§3.8.10).
+    pub(super) instantiations: BTreeMap<ExprId, super::Instantiation>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
     /// defines: a receiver the POM could not type might mean any of them.
     pub(super) project_methods: BTreeSet<String>,
@@ -159,6 +161,7 @@ impl<'d> Checker<'d> {
             widths: BTreeMap::new(),
             defaults: BTreeMap::new(),
             written: BTreeMap::new(),
+            instantiations: BTreeMap::new(),
             project_methods: Self::project_methods(design),
             continuity: Continuity::new(design),
             book: DriveBook::default(),
@@ -217,7 +220,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, instantiations: self.instantiations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in

@@ -332,3 +332,35 @@ fn an_uninferred_generic_argument_is_e0181_naming_the_parameter() {
     let many = analog_types(items, "let a = zeros::<1, 2>();", &["a"]).expect_err("too many arguments");
     assert_eq!(many[0].0, "E0187", "{many:?}");
 }
+
+#[test]
+fn an_argument_that_misses_a_bound_is_e0187() {
+    // §3.8.7: an inferred or written argument satisfies every bound of its parameter, else E0187 naming
+    // the argument and the bound
+    let items = "fn sorted<T: Ord>(a: T, b: T) -> T { if a < b { a } else { b } }\nfn held<T: Repr>(a: T) -> T { a }\n";
+    let errors = analog_types(items, "let a = sorted(1.5, 2.5);", &["a"]).expect_err("f64 is not Ord");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].0, "E0187");
+    assert!(errors[0].1.contains("`f64` does not satisfy the bound `Ord` of `T` in `sorted`"), "{}", errors[0].1);
+    let written = analog_types(items, "let a = held::<str>(\"x\");", &["a"]).expect_err("str has no Repr");
+    assert!(written[0].1.contains("`str` does not satisfy the bound `Repr` of `T` in `held`"), "{written:?}");
+    let met = analog_types(items, "let a = sorted(1u8, 2); let b = held(true);", &["a", "b"]);
+    assert_eq!(met, Ok(vec!["a = u8".to_string(), "b = bool".to_string()]));
+}
+
+#[test]
+fn each_generic_call_records_its_instantiation() {
+    // §3.8.10: `Types::instantiation(call)` is the function and the argument of each parameter, in order,
+    // defaults filled in; a call of a plain function has none
+    let src = "fn pick<T, U = bool>(a: T, b: Option<U>) -> T { a }\nfn plain(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let a = pick(1.5, Some(2u8)); let b = pick::<u8, f64>(1, Some(2.0)); let c = plain(1.0); }";
+    let design = support::build(&format!("{HEAD}{src}"));
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let declarations = Declarations { design: &design };
+    let pick = declarations.item("pick");
+    let calls: Vec<_> = (0..design.expr_count()).map(|i| piperine_lang::pom::ExprId(i as u32)).filter_map(|e| types.instantiation(e).map(|i| (e, i.clone()))).collect();
+    assert_eq!(calls.len(), 2, "two calls of the generic function, none of the plain one: {calls:?}");
+    assert_eq!(calls[0].1.item, pick);
+    assert_eq!(calls[0].1.arguments, [GenericValue::Type(Ty::F64), GenericValue::Type(Ty::UInt(8))]);
+    assert_eq!(calls[1].1.arguments, [GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::F64)]);
+}

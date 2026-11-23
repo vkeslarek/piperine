@@ -9,7 +9,7 @@ use crate::pom::{Arg, DeclId, ExprId, ExprKind, FileId, GenericArgsNode};
 
 use super::check::Checker;
 use super::generics::{GenericParameter, GenericSignature, ParameterKind};
-use super::{ConstTerm, GenericValue, Length, Substitution, Ty};
+use super::{ConstTerm, GenericValue, Instantiation, Length, Substitution, Ty};
 
 /// What a call of a generic function has learnt about its parameters so far.
 pub(super) struct Inference<'s> {
@@ -114,6 +114,9 @@ impl Checker<'_> {
             inference.unify(&ret, &expected);
         }
         let substitution = self.complete_arguments(&mut inference, &signature, function, file, span)?;
+        let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
+        self.arguments_satisfy_bounds(&signature, &arguments, function, file, span)?;
+        self.instantiations.insert(expr, Instantiation { item: function, arguments });
         let params: Vec<Ty> = params.iter().map(|param| substitution.apply(param)).collect();
         let ret = substitution.apply(&ret);
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));

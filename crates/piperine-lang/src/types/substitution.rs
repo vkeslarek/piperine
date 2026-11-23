@@ -157,7 +157,7 @@ impl Checker<'_> {
 
     /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
     /// naming the argument and the bound. `None` after a refusal.
-    fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
+    pub(super) fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
         let item_name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut satisfied = true;
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {

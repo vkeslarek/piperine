@@ -206,6 +206,7 @@ pub struct Types<'d> {
     /// The tag of every enum the check reached.
     pub(super) enum_tags: BTreeMap<DeclId, super::EnumTag>,
     pub(super) written: BTreeMap<TypeId, Ty>,
+    pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
     /// The locals some assignment of a checked body writes (§1.5.12): the elaborator makes exactly these assignable.
@@ -360,6 +361,12 @@ impl<'d> Types<'d> {
     /// to it, or `None` for an optional parameter left out (§3.2).
     pub fn binding(&self, expr: ExprId) -> Option<&[Option<ExprId>]> {
         self.bindings.get(&expr).map(Vec::as_slice)
+    }
+
+    /// The instantiation a call of a generic function of the reachable set makes: the function and
+    /// the argument of each parameter, inferred or written, defaults filled in.
+    pub fn instantiation(&self, call: ExprId) -> Option<&Instantiation> {
+        self.instantiations.get(&call)
     }
 
     /// The instantiation a type node of the reachable set writes when it is a use of a generic
