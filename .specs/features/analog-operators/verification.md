@@ -1,9 +1,56 @@
 # Analog Operators verification
 
-**Verdict**: FAIL (round 2, the closing re-verification at 57821913). Findings 21 to 32 are closed by the fix round and hold on their tests; four new findings, one Major: `ac_stim` read inside a `noise` density, a `delay` input or a `ddx` expression is the internal error `P0004` ("a bug in the elaborator") instead of running or being refused by name (Finding 33). By the skill there is no third round: findings 33 to 36 go to the user.
-**Proofs**: round 2: `proofs.md`, written by `check_proofs.py` at the commit after the one that carries this text (code of 57821913); the implementer's run at 9f50b9e0 was 115 pass, 0 fail. Round 1: a first run at 2782944b gave 99 pass, 5 fail (C45, C46: Finding 21; Build: Finding 32).
-**Diff range**: `52b2223c..b69d4312` (origin/main is the merge base; the merge 534ff5e4 brought main's `explicit-unknowns` in). Round 2: `f4bc0257..57821913` (fix commits 1cb9f99a, 2b4fd47e, e73442a9, a8bfc0c2, e21281f6, 5ce14a9e, 74ada254, c88e5952, 0a50a66c).
+**Verdict**: PASS (round 3, at e99fe16f, then merged with origin/main at 24e0a009). Findings 21 to 36 are closed and hold on their tests and on my own examples. The feature's one final full suite ran green on the merge (below). Items await the user's review; none is a defect ("For the user, round 3").
+**Proofs**: round 3: `proofs.md`, written by `check_proofs.py` at the commit after the one that carries this text (code of 24e0a009, the merge). round 2: `proofs.md`, written by `check_proofs.py` at the commit after the one that carries this text (code of 57821913); the implementer's run at 9f50b9e0 was 115 pass, 0 fail. Round 1: a first run at 2782944b gave 99 pass, 5 fail (C45, C46: Finding 21; Build: Finding 32).
+**Diff range**: `52b2223c..b69d4312` (origin/main is the merge base; the merge 534ff5e4 brought main's `explicit-unknowns` in). Round 2: `f4bc0257..57821913` (fix commits 1cb9f99a, 2b4fd47e, e73442a9, a8bfc0c2, e21281f6, 5ce14a9e, 74ada254, c88e5952, 0a50a66c). Round 3: `cb26ce57..e99fe16f` (6c7cbb51, 7dbd4ab2, f6158056, 08e39a25), then the merge 24e0a009 of origin/main d734d458.
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-23, branch `feature/analog-operators` at b69d4312 (= origin).
+
+## Round 3 (e99fe16f, merged at 24e0a009)
+
+**Findings 33 to 36 hold on their fixes.** I re-ran my round-2 examples at e99fe16f, with ngspice-47 present:
+
+| Example | Result |
+| --- | --- |
+| `noise(1e-18 + ac_stim(1.0, 0.0) * 1e-18)` in a noise run | `onoise` 1.000000e-6 = 1k * sqrt(1e-18): `ac_stim` is 0 in the sweep, with no `P0004` (33) |
+| `v(o) +> delay(ac_stim(1.0), 1u)`, AC at 100 kHz | magnitude 1, phase -36 deg = -360 * 1e5 * 1e-6 (33) |
+| `v(o) +> ddx(ac_stim(1.0) * v(a), v(a))`, AC | magnitude 1, phase 0: the stimulus is the derivative (33) |
+| C34's `StimulusBench` | its density now reads `ac_stim(3.0)`, so a kept stimulus would give 4e-18; the check can fail (34) |
+| `fn g(x) { if x > 0.0 { return x * x; } x }`, `ddx(g(v(a)), v(a))` at 0.6 V | 1.2 = 2 * 0.6: an early return is differentiated (35) |
+| `ddx(5.0 * i(a, gnd), i(a, gnd))` on a flow-only branch | 5, per §14.2.3; `ddx(i * i, i)` is `P0001` naming the flow read (L73); no silent 0 is left (36) |
+
+L73 (a flow of a flow branch read as a value) and L74 (the `fn` forms inside a `ddx` with no finite symbolic reading) are GAPS rows with an owner. The owner is `spec-closure`, an AFK default pending the user's review. That closes the "no GAPS row" half of 35 and 36. 08e39a25 lets an integer cast run in an analog-only design (the transpiler selects the full runtime when a design has an integer value) and makes `ddx` read a field of a written-out struct. Both are covered by `source_partial`. The proposed §14.2.3 amendment sits in spec.md, marked pending, not written into `docs/spec/`. That is the right place for it.
+
+**The merge of origin/main (d734d458, `composite-values` phase C) is 24e0a009.** It had eleven conflicted files, all resolved as unions:
+- the IR model imports;
+- the `Expr` walks of `piperine-ir/tests/model.rs` and transpile `print/analog.rs` (session, delay and noise reads beside main's element reads);
+- the elaborator `Frame`;
+- the plan's pins: element-drive pins after `SETTLE`, session-parameter pins after every other pin, as MD-82's layout says;
+- `FunctionPlan::declare`: main's `WHOLE` guard, with this feature's `read(pins, limits, stims, r)`;
+- the netlist's session params beside main's array nets.
+
+GAPS now reads 20 loud (L24 closed by phase C, L72 by this feature, L73 and L74 open) and 17 unraised codes (main raises `E0313`). `docs.rs` keeps both GAPS tests at 20 loud, L1 to L74. `types_buck` drops the element- and field-commit rows (they run now) and the `delay`/`noise`/`ddx` rows (typed). transpile `tests/operators.rs` gained main's `Commit::target` and `Carrier::count`.
+
+**The final full suite, on 24e0a009** (`/var/tmp/piperine-tmp-b` cleared first, `PIPERINE_NGSPICE` unset, ngspice-47 on the PATH):
+
+| Run | Result |
+| --- | --- |
+| `cargo build --workspace --exclude piperine-lang-server --all-targets` | 0 warnings, 0 errors |
+| `cargo test -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-interp -p piperine-ir -p piperine-plan -p piperine-solver -p piperine-project` | 1062 passed, 0 failed |
+| `cargo test -p piperine-lang -p piperine-transpile` | 1468 passed, 0 failed (the `mutated.rs` panics in the log are the mutation tests' own) |
+| `cargo test -p piperine-api -p piperine-cli` | 478 passed, 0 failed (`twins` included) |
+| `cargo test -p piperine` (root: the Book, `integrated`, `scenarios`) | 414 passed, 0 failed |
+| `cargo test -p piperine-parity -- --nocapture` | 474 passed, 0 failed (the SKIP lines come from the tests that force `Lookup::Skip`) |
+| the seven buck targets (`buck_whole`, `buck_dpwm`, `buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_closed_loop`; `test = false`, run by name) | 23 passed, 0 failed |
+| `cargo test -p piperine --test buck_scenarios` | 61 passed, 0 failed (411.8 s) |
+| `cargo test -p piperine-cli --test twins` | 6 passed, 0 failed |
+
+**For the user, round 3.** These are open decisions, not defects:
+- The eight closing-round criteria: AO-01 AC 10, 11 and 12; AO-03 AC 9; AO-09 AC 8; the `freq()` edge case; and the rest the fix rounds added.
+- The amendments: AO-06 AC 2 (`noise_switch` held to its closed form) and `delay_tline` TD = 1.05 us.
+- The proposed §14.2.3 text in spec.md.
+- `spec-closure` as the owner of L73 and L74.
+
+Disk stood at 88 % after the suite; clearing the tmp directory brought it back to 86 %.
 
 ## Round 2 (57821913): the points the orchestrator asked about
 
