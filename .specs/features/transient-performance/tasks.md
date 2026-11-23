@@ -660,7 +660,7 @@ Why this order: the statistics come first because every gate is stated in them. 
 **Done when**:
 
 - [ ] `Run scenarios` passes with `tests/buck_scenarios.rs` unedited (TP-06 AC 5)
-- [ ] `git diff --quiet origin/main -- crates/piperine-parity/tests crates/piperine-parity/src/contract.rs crates/piperine-cli/tests/twins.rs crates/piperine-solver/tests/parity_baseline.rs` exits 0 (TP-09 AC 4)
+- [ ] `git diff --quiet $(git merge-base origin/main HEAD) -- crates/piperine-parity/tests crates/piperine-parity/src/contract.rs crates/piperine-cli/tests/twins.rs crates/piperine-solver/tests/parity_baseline.rs` exits 0 (TP-09 AC 4)
 - [ ] with `ngspice` taken off `PATH` the parity targets print the harness's skip line and the twins still run (TP-09 AC 5)
 - [ ] `moved.md` exists and lists every moved golden, or says "none" (TP-09 AC 6); `crates/piperine-cli/tests/docs.rs` gains a test that the comment states a step count and that `moved.md` has its three columns
 - [ ] Gate check passes: `Run scenarios`, the parity guard, `Run docs`, then `cargo test` at the root
@@ -840,7 +840,7 @@ Proof: run twins | test the_two_backends_print_the_same_bytes ... ok
 Proof: run grid | test parity_rc_transient ... ok
 
 **C48** - No parity file is edited on the branch (TP-09, AC 4; T23)
-Proof: `git diff --quiet origin/main -- crates/piperine-parity/tests crates/piperine-parity/src/contract.rs crates/piperine-cli/tests/twins.rs crates/piperine-solver/tests/parity_baseline.rs`
+Proof: `git diff --quiet $(git merge-base origin/main HEAD) -- crates/piperine-parity/tests crates/piperine-parity/src/contract.rs crates/piperine-cli/tests/twins.rs crates/piperine-solver/tests/parity_baseline.rs`
 
 **C49** - `buck_long` prints the landing rule its counts were taken under, the solver's default (TP-12, AC 1; fix round F10)
 Proof: run bucklong | test the_statistics_of_the_whole_start_are_reported ... ok
