@@ -35,12 +35,14 @@ impl<'d> ModelCheck<'d> {
     }
 
     /// Whether `decl` is a module, a function or a `const` of a crate but `std`, outside a trait
-    /// (a trait function has no body to check), outside every generic item and not a method with a
-    /// `self` parameter (refused `P0001` until methods land, as a generic body is).
+    /// (a trait function has no body to check), outside every generic item other than itself (a
+    /// generic function is checked once at its definition, Q1 (c); a generic module, struct or
+    /// enum is not, until their own tasks) and not a method with a `self` parameter (refused
+    /// `P0001` until methods land).
     fn is_seed(&self, decl: DeclId) -> bool {
         let data = self.design.decl_data(decl);
         let is_item = matches!(data.kind, DeclKind::Module(_) | DeclKind::Fn(_) | DeclKind::Const(_));
-        is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_or_in_one(decl) && !self.takes_self(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
+        is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_function(decl) && !self.takes_self(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
     }
 
     /// Whether `decl` is a function with a `self` parameter.
@@ -48,9 +50,13 @@ impl<'d> ModelCheck<'d> {
         self.design.decl_data(decl).children.iter().any(|child| matches!(self.design.decl_data(*child).kind, DeclKind::FnParam(FnParamData::SelfValue)))
     }
 
-    /// Whether `decl` or one of its enclosing items writes a `<..>` list.
-    fn is_generic_or_in_one(&self, decl: DeclId) -> bool {
-        let mut at = Some(decl);
+    /// Whether an enclosing item of `decl` writes a `<..>` list, or `decl` does and is not a function.
+    fn is_generic_beyond_a_function(&self, decl: DeclId) -> bool {
+        let own = self.design.decl_data(decl);
+        if own.generics_span.is_some() && !matches!(own.kind, DeclKind::Fn(_)) {
+            return true;
+        }
+        let mut at = own.parent;
         while let Some(current) = at {
             let data = self.design.decl_data(current);
             if data.generics_span.is_some() {

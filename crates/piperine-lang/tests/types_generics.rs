@@ -198,3 +198,29 @@ fn a_written_use_is_recorded_as_an_instantiation() {
     let uses: Vec<Instantiation> = (0..design.type_count()).filter_map(|i| types.written_instantiation(TypeId(i as u32))).collect();
     assert_eq!(uses, [Instantiation { item: pair, arguments: vec![GenericValue::Type(Ty::UInt(8)), GenericValue::Type(Ty::UInt(8))] }], "the one use of a generic type, defaults filled");
 }
+
+#[test]
+fn a_generic_body_is_checked_once_at_its_definition() {
+    // Q1 (c), GN-07 AC 1: a generic function nothing calls is typed against its own parameters, each an
+    // opaque type, so a body that returns what it is given is clean and one that returns it as another
+    // type is refused at the definition, once, naming the parameter
+    let clean = support::build(&format!("{HEAD}fn id<T>(x: T) -> T {{ x }}\nfn first<T, const N: usize>(a: [T; N]) -> T {{ a[0] }}\nfn pick<T>(c: bool, a: T, b: T) -> T {{ if c {{ a }} else {{ b }} }}\n"));
+    assert_eq!(Types::check_model(&clean), Ok(()), "a generic body that fits its signature checks");
+    let found = model_errors("fn wrong<T>(x: T) -> f64 { x }\nfn twice<T>(x: T) -> T { let y: bool = x; x }\n");
+    assert_eq!(codes_of(&found), ["E0180", "E0180"], "{found:?}");
+    assert!(found[0].diagnostic.message.contains("expected `f64`, found `T`"), "{:?}", found[0]);
+    // the `where` ranges over the const parameters and is a `bool` (§3 rule 8)
+    let guarded = support::build(&format!("{HEAD}fn wide<const N: usize>(x: f64) -> f64 where N > 2 {{ x }}\nfn flagged<const B: bool>(x: f64) -> f64 where B {{ x }}\n"));
+    assert_eq!(Types::check_model(&guarded), Ok(()), "a const parameter is a const expression of its type");
+    let unguarded = model_errors("fn bad<const N: usize>(x: f64) -> f64 where 1.0 { x }\n");
+    assert_eq!(codes_of(&unguarded), ["E0180"], "{unguarded:?}");
+}
+
+#[test]
+fn a_call_of_a_generic_function_waits_for_inference() {
+    // until a generic call binds its arguments (T20, T21) a call or a function value of a generic function is `P0001`
+    let design = support::build(&format!("{HEAD}fn id<T>(x: T) -> T {{ x }}\nmodule Top() {{ }}\nanalog for Top {{ let y = id(1.0); }}"));
+    let found = Types::check(&design, "Top").err().expect("a call of a generic function is refused");
+    assert!(codes_of(&found).iter().all(|code| code == "P0001"), "{found:?}");
+    assert!(found[0].diagnostic.message.contains("generic function"), "{:?}", found[0]);
+}

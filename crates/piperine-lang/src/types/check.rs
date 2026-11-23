@@ -516,6 +516,14 @@ impl<'d> Checker<'d> {
 
     /// The declared parameter types and result of a function, or `None` after a `P0001`.
     pub(super) fn signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
+        let data = self.design.decl_data(decl);
+        if data.generics_span.is_some() {
+            // a use of a generic function binds its arguments after inference (T20, T21): until then
+            // a call or a function value of one is outside the subset
+            let (file, span) = (data.file, data.span);
+            self.unsupported(file, span, "generic function");
+            return None;
+        }
         let parts = self.signature_parts(decl)?;
         let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
         match (parts.ok, params, parts.ret) {
@@ -532,9 +540,9 @@ impl<'d> Checker<'d> {
         let DeclKind::Fn(f) = &data.kind else { return None };
         let mut ok = true;
         if data.generics_span.is_some() {
+            // the list is held to §3.8; the parameters below are typed with `Ty::Param`, so the body
+            // is checked once at its definition (Q1 (c))
             self.generic_signature(decl);
-            self.unsupported(data.file, data.span, "generic function");
-            ok = false;
         }
         if f.abi.is_some() {
             self.unsupported(data.file, data.span, "`extern` function");

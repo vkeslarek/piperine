@@ -4,7 +4,7 @@
 
 use crate::msl::lexer;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
+use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack;
 
 use super::check::{Checker, Context};
@@ -549,6 +549,8 @@ impl Checker<'_> {
                         self.lower_type(c.ty)
                     }
                     DeclKind::Param(p) => self.lower_type(p.ty),
+                    // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
+                    DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
