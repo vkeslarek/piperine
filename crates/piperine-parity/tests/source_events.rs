@@ -439,3 +439,48 @@ fn pfd3_rising_together_leaves_state_unchanged() {
     assert!(run.levels("PfdBench.dn").iter().all(|(t, _)| *t != 40 * NS), "dn did not move at 40 ns");
     assert_eq!(up, [(10 * NS, true), (20 * NS, false), (60 * NS, true), (80 * NS, false)], "{up:?}");
 }
+
+/// The instants, in ns, at which the stimulus of `handshake.msl` makes a handshake: `req` rises with `ack` high.
+const HANDSHAKES: [i64; 4] = [40, 60, 110, 130];
+
+#[test]
+fn handshake_fires_when_req_rises_with_ack_high() {
+    // §13 rule 7 (UE-04 AC 2): `fn handshake(req, ack) -> Event { req.rise() && ack }` heads a reaction that runs in the
+    // microsteps where `req` rises with `ack` high: 40, 60 (both rise in one microstep), 110 and 130 ns, and not at
+    // 10 ns (`ack` low), 20 ns (`ack` rises, `req` does not) nor 80 ns (`ack` low)
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    let wanted: Vec<i64> = HANDSHAKES.iter().map(|ns| ns * NS).collect();
+    assert_eq!(run.instants(AnalysisKind::Transient, "head"), wanted);
+}
+
+#[test]
+fn an_event_function_in_every_event_position() {
+    // §13 rule 7 (UE-04 AC 1): the call is the same event in a head, a module-body `let`, a guard after another event and
+    // an operand of `||`: the guard holds at 110 ns only (`en` rises with a handshake; at 80 ns it rises with `ack` low),
+    // `either` is the handshakes plus `ack` falling at 50 and 70 ns
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    let wanted: Vec<i64> = HANDSHAKES.iter().map(|ns| ns * NS).collect();
+    assert_eq!(run.instants(AnalysisKind::Transient, "named"), wanted, "a module-body let of the call");
+    assert_eq!(run.instants(AnalysisKind::Transient, "guarded"), [110 * NS], "a guard after `en.rise()`");
+    let mut either: Vec<i64> = wanted.iter().copied().chain([50 * NS, 70 * NS]).collect();
+    either.sort_unstable();
+    assert_eq!(run.instants(AnalysisKind::Transient, "either"), either, "an operand of `||`");
+}
+
+#[test]
+fn an_event_function_read_as_a_bool_says_whether_it_fired() {
+    // §13 rule 2 (UE-04 AC 3): read in a body run on either edge, the call is true exactly where it fired: at the edges of
+    // 10, 20, 80 and 100 ns it did not, at 40, 60, 110 and 130 ns it did
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    let read: Vec<(i64, bool)> = run.records(AnalysisKind::Transient, "read").into_iter().map(|(t, r)| (t, Run::flag(&r, "shaken"))).collect();
+    let wanted: Vec<(i64, bool)> = [10, 20, 40, 60, 80, 100, 110, 130].iter().map(|ns| (ns * NS, HANDSHAKES.contains(ns))).collect();
+    assert_eq!(read, wanted);
+}
+
+#[test]
+fn an_event_function_calling_another_fires_under_the_outer_guard() {
+    // §13 rule 7 (UE-04 AC 1): `gated` is `handshake(req, ack) && en`: of the handshakes only those with `en` high, 110 and
+    // 130 ns, fire it
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "gated"), [110 * NS, 130 * NS]);
+}

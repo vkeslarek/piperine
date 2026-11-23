@@ -1,0 +1,75 @@
+//! A function that returns `Event` from source (§13 rule 7, UE-04): the Book's `handshake` in the head of a reaction, in a
+//! module-body `let`, in a guard and read as a `bool` in a body, and a function that calls it. A stimulus drives the three
+//! carriers by timed commits.
+
+/// A request that is acknowledged in the same cycle.
+pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }
+
+/// The handshake, and the same while `en` is high: a function that calls another.
+pub fn gated(req: Bit, ack: Bit, en: Bit) -> Event { handshake(req, ack) && en }
+
+/// `req` rises at 10 ns with `ack` low, `ack` rises at 20 ns, `req` falls at 30 ns and rises at 40 ns (a handshake); both
+/// fall at 50 ns and rise together at 60 ns (a handshake); both fall at 70 ns; `req` and `en` rise at 80 ns with `ack` low;
+/// both fall at 90 ns; `ack` rises at 100 ns and `req` with `en` at 110 ns (a handshake, `en` high); `req` falls at
+/// 120 ns and rises at 130 ns (a handshake, `en` still high).
+module Stimulus(out req: Bit = false, out ack: Bit = false, out en: Bit = false) {}
+digital for Stimulus {
+    on at(10n) { req <- true; }
+    on at(20n) { ack <- true; }
+    on at(30n) { req <- false; }
+    on at(40n) { req <- true; }
+    on at(50n) { req <- false; ack <- false; }
+    on at(60n) { req <- true; ack <- true; }
+    on at(70n) { req <- false; ack <- false; }
+    on at(80n) { req <- true; en <- true; }
+    on at(90n) { req <- false; en <- false; }
+    on at(100n) { ack <- true; }
+    on at(110n) { req <- true; en <- true; }
+    on at(120n) { req <- false; }
+    on at(130n) { req <- true; }
+}
+
+/// The function as the head of a reaction.
+module InHead(in req: Bit, in ack: Bit) {}
+digital for InHead {
+    on handshake(req, ack) { emit!("head", t = now()); }
+}
+
+/// The function named by a module-body `let`, which heads a reaction by that name.
+module InLet(in req: Bit, in ack: Bit) { let ready = handshake(req, ack); }
+digital for InLet {
+    on ready { emit!("named", t = now()); }
+}
+
+/// The function as an operand of `||` in a head, and in a guard after another event.
+module InGuard(in req: Bit, in ack: Bit, in en: Bit) {}
+digital for InGuard {
+    on en.rise() && handshake(req, ack) { emit!("guarded", t = now()); }
+    on ack.fall() || handshake(req, ack) { emit!("either", t = now()); }
+}
+
+/// The function read as a `bool` in the body of a reaction run on either edge.
+module Read(in req: Bit, in ack: Bit) {}
+digital for Read {
+    on req.rise() || ack.rise() {
+        let shaken = handshake(req, ack);
+        emit!("read", t = now(), shaken = shaken);
+    }
+}
+
+/// A function that calls another, as a head.
+module Nested(in req: Bit, in ack: Bit, in en: Bit) {}
+digital for Nested {
+    on gated(req, ack, en) { emit!("gated", t = now()); }
+}
+
+/// Every placement over one stimulus.
+module HandshakeBench() {
+    signal req: Bit; signal ack: Bit; signal en: Bit;
+    let stimulus = Stimulus(req, ack, en);
+    let head = InHead(req, ack);
+    let named = InLet(req, ack);
+    let guarded = InGuard(req, ack, en);
+    let read = Read(req, ack);
+    let nested = Nested(req, ack, en);
+}

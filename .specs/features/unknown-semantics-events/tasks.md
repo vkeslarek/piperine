@@ -793,8 +793,8 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `handshake_fires_when_req_rises_with_ack_high`, `an_event_function_in_every_event_position`, `an_event_function_read_as_a_bool_says_whether_it_fired` and `an_event_function_calling_another_fires_under_the_outer_guard` pass under `**Run sourceevents**`
-- [ ] Gate check passes: Full
+- [x] `handshake_fires_when_req_rises_with_ack_high`, `an_event_function_in_every_event_position`, `an_event_function_read_as_a_bool_says_whether_it_fired` and `an_event_function_calling_another_fires_under_the_outer_guard` pass under `**Run sourceevents**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
