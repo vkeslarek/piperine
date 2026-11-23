@@ -555,3 +555,18 @@ fn include_str_in_a_const_is_a_str() {
     assert_eq!(codes_of(&d), ["E0180"], "{src}");
     assert_eq!(snippet(&src, &d[0]), "include_str!(\"data.txt\")");
 }
+
+#[test]
+fn a_borrow_outside_a_call_argument_is_not_e0102() {
+    // PI-13, value-semantics V1 (G.71): `E0102` is retired, so a `&` in the position it used to
+    // guard (outside a call argument) never raises it; the form is refused by another code or
+    // by the parser, and the guard of spec codes lists no row for `E0102`.
+    let src = source("", "let x = 1.0; let r = &x;");
+    let design = support::build(&src);
+    let mut found = support::codes(&design);
+    if let Err(diagnostics) = Types::check(&design, "Top") {
+        found.extend(codes_of(&diagnostics));
+    }
+    assert!(!found.is_empty(), "a `&` outside a call argument is refused: {src}");
+    assert!(found.iter().all(|code| code != "E0102"), "E0102 is retired (value-semantics V1): {found:?}");
+}
