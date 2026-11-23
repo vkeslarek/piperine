@@ -8,6 +8,7 @@ pub mod control;
 pub mod pin;
 pub mod int;
 pub mod real;
+pub mod table;
 
 /// The text of `rt/real.rs`, as generated code compiles it.
 pub const REAL: &str = include_str!("rt/real.rs");
@@ -19,6 +20,8 @@ pub const COMMITS: &str = include_str!("rt/commits.rs");
 pub const CONTROL: &str = include_str!("rt/control.rs");
 /// The text of `rt/pin.rs`, as generated code compiles it.
 pub const PIN: &str = include_str!("rt/pin.rs");
+/// The text of `rt/table.rs`, as generated code compiles it.
+pub const TABLE: &str = include_str!("rt/table.rs");
 
 /// The `rt.rs` of a design with digital forms: the files as its modules, their names
 /// re-exported, so generated code spells `rt::Real`, `rt::UInt`, `rt::Carried` whatever file
@@ -26,19 +29,22 @@ pub const PIN: &str = include_str!("rt/pin.rs");
 const ROOT: &str = "\
 //! The runtime of a design with digital forms: reals and their derivatives (real.rs), integers
 //! that wrap at their width (int.rs), the types a pin carries (pin.rs), raising a panic and the
-//! bounds of a model's own values (control.rs), and the commits of a reaction (commits.rs).
+//! bounds of a model's own values (control.rs), the commits of a reaction (commits.rs) and the
+//! interpolant of a `table_model` (table.rs).
 
 pub mod commits;
 pub mod control;
 pub mod pin;
 pub mod int;
 pub mod real;
+pub mod table;
 
 pub use commits::Commits;
 pub use control::{Depth, Index, Panic, Trips};
 pub use pin::{Carried, LevelWords};
 pub use int::{Int, UInt, Unwrap};
 pub use real::{Dual, Real};
+pub use table::TableModel;
 ";
 
 /// The files a design's cache entry holds as its runtime.
@@ -51,7 +57,7 @@ impl Runtime {
     /// key are what an analog-only build has always had.
     pub fn files(digital: bool) -> Vec<(&'static str, &'static str)> {
         if digital {
-            vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS)]
+            vec![("rt.rs", ROOT), ("rt/real.rs", REAL), ("rt/int.rs", INT), ("rt/pin.rs", PIN), ("rt/control.rs", CONTROL), ("rt/commits.rs", COMMITS), ("rt/table.rs", TABLE)]
         } else {
             vec![("rt.rs", REAL)]
         }

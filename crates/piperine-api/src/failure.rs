@@ -79,9 +79,8 @@ impl PanicFault {
 
     /// A spec code the panic's message starts with (`E0705: ..`), and the message without it.
     fn leading_code(&self) -> Option<(&'static str, &str)> {
-        // `E0705` joins this list in the task that makes `table_model` raise it (a code a source
-        // spells is a code it raises, and the guard of codes owns it until then).
-        const CODES: [&str; 1] = ["E0105"];
+        // the codes a model panic may carry as its own: `E0705` is `table_model` outside its table under `E`
+        const CODES: [&str; 2] = ["E0105", "E0705"];
         let code = CODES.iter().find(|code| self.operation.starts_with(&format!("{code}: ")))?;
         Some((code, &self.operation[code.len() + 2..]))
     }

@@ -25,7 +25,6 @@ E0453	analog-operators	L44
 E0454	analog-operators	L45 (`noise`)
 E0456	analog-operators	L47 (`simparam`)
 E0702	explicit-unknowns	EU-02 (GAPS L58: raised again by T45 with `Logic`)
-E0705	params-and-io	PI-10 AC 5, raised here
 E0807	gradients	H8
 E0808	gradients	H8
 E0809	gradients	H8

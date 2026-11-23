@@ -113,6 +113,11 @@ impl Transpiler {
         self.ir.bodies().any(|body| body.params().iter().any(|param| !matches!(param.ty, ValueType::F64 | ValueType::Bool)))
     }
 
+    /// Whether the design holds a `table_model`, whose generated code builds an `rt::TableModel`.
+    pub fn tables(&self) -> bool {
+        self.ir.expressions().any(|e| matches!(e, Expr::Table { .. } | Expr::TableSlope { .. }))
+    }
+
     /// The design as one Rust source text (`design.rs`); a form with no lowering is
     /// `Error::Unsupported` and gives no text. The same `Ir` always gives the same bytes.
     pub fn source(&self) -> Result<String, Error> {

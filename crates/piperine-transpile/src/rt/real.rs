@@ -13,6 +13,8 @@ pub trait Real:
     fn constant(v: f64) -> Self;
     /// The value, its tangent dropped.
     fn value(self) -> f64;
+    /// `f(self)` for a function the caller evaluated: the value `value` and the tangent `slope · d(self)`.
+    fn compose(self, value: f64, slope: f64) -> Self;
     fn exp(self) -> Self;
     fn ln(self) -> Self;
     fn sqrt(self) -> Self;
@@ -74,6 +76,10 @@ impl Real for f64 {
 
     fn value(self) -> f64 {
         self
+    }
+
+    fn compose(self, value: f64, _slope: f64) -> f64 {
+        value
     }
 
     fn exp(self) -> f64 {
@@ -284,6 +290,10 @@ impl<const N: usize> Real for Dual<N> {
 
     fn value(self) -> f64 {
         self.v
+    }
+
+    fn compose(self, value: f64, slope: f64) -> Dual<N> {
+        self.chain(value, slope)
     }
 
     fn exp(self) -> Dual<N> {

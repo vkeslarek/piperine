@@ -1115,11 +1115,11 @@ T44
 
 **Done when**:
 
-- [ ] `linear_table_model_is_the_interpolation_at_op_and_dc_sweep`, `discrete_control_gives_the_closest_sample`, `cubic_reproduces_a_cubic_polynomial`, `extrapolation_c_and_l_at_each_end`, `extrapolation_e_outside_is_e0705` pass under `**Run sourcetables**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] The transpile goldens are byte-identical
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `linear_table_model_is_the_interpolation_at_op_and_dc_sweep`, `discrete_control_gives_the_closest_sample`, `cubic_reproduces_a_cubic_polynomial`, `extrapolation_c_and_l_at_each_end`, `extrapolation_e_outside_is_e0705` pass under `**Run sourcetables**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] The transpile goldens are byte-identical
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
