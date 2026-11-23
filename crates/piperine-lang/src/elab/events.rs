@@ -241,7 +241,7 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Call { args, .. } => match self.types.callee(expr) {
                 // A function that returns `Event` (§13 rule 7): inlined, its body's event standing here (`event_functions.rs`).
-                Some(Callee::Function(function)) if self.is_event_function_call(expr, function) => self.event_function_disjuncts(scope, expr, function),
+                Some(Callee::Function(function)) if self.is_event_function(function) => self.event_function_disjuncts(scope, expr, function),
                 Some(Callee::Core(id)) if id.info().name == "cross" => {
                     // `cross(e, ttol, etol)`: positionally or by name (§3.2)
                     let (mut watched, mut ttol, mut etol) = (None, None, None);

@@ -777,4 +777,11 @@ fn an_event_function_call_lowers_to_its_body_event() {
     let named = Elab::ir(&format!("{function}module L(in req: Bit, in ack: Bit, out q: Bit = false) {{ let ready = handshake(req, ack); }}\ndigital for L {{ on ready {{ q <- true; }} }}"), "L");
     let named_by_hand = Elab::ir("module L(in req: Bit, in ack: Bit, out q: Bit = false) { }\ndigital for L { on req.rise() && ack { q <- true; } }", "L");
     assert_eq!(named.print_structural(), named_by_hand.print_structural(), "a body let of the call is the call's event");
+    // read in a guard and in a body: the event its body writes, read as a `bool` there (§13 rules 2 and 9)
+    let guarded = Elab::ir(&format!("{function}module G(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\ndigital for G {{ on en.rise() && handshake(req, ack) {{ q <- true; }} }}"), "G");
+    // `en.rise()` heads it and the call's event (`req` rising, guarded by `ack`) is appended for the guard to read as `fired`
+    assert_eq!(Read { ir: &guarded }.body("G").events().len(), 2, "a guard that reads the call appends its event");
+    let read = Elab::ir(&format!("{function}module R(in req: Bit, in ack: Bit, out q: Bit = false) {{ }}\ndigital for R {{ on req.rise() || ack.rise() {{ q <- handshake(req, ack); }} }}"), "R");
+    // the head's two events and the one the body's read appends (the call's event, guarded by `ack`): `fired` of the third
+    assert_eq!(Read { ir: &read }.body("R").events().len(), 3, "a body that reads the call appends its event");
 }

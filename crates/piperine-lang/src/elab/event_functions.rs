@@ -16,9 +16,10 @@ use piperine_ir::ExprId as LoweredExpr;
 use crate::types::Ty;
 
 impl Elaboration<'_, '_> {
-    /// Whether `call` is a call of a `fn` whose result is an `Event` (§13 rule 7).
-    pub(super) fn is_event_function_call(&self, call: ExprId, function: DeclId) -> bool {
-        matches!(&self.design.decl_data(function).kind, DeclKind::Fn(_)) && self.typed(call) == Some(Ty::Event)
+    /// Whether `function` is a `fn` whose declared result is an `Event` (§13 rule 7). The type of a call is not asked: a
+    /// call read as a `bool` (§13 rules 2 and 9) is typed `bool`, and is the same call of the same function.
+    pub(super) fn is_event_function(&self, function: DeclId) -> bool {
+        matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.ret.is_some_and(|ret| self.typed_written(ret) == Some(Ty::Event)))
     }
 
     /// The disjuncts of the call `call` of the event function `function`: those of the event its body yields, over the
