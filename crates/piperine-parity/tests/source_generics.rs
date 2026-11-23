@@ -139,3 +139,25 @@ fn trait_methods_dispatch_statically_to_their_impl_default_or_blanket() {
         ],
     );
 }
+
+/// `fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64` of the model `callables.msl`.
+fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 {
+    f(f(x))
+}
+
+/// `fn halve(x: f64) -> f64` of the model.
+fn halve(x: f64) -> f64 {
+    0.5 * x
+}
+
+#[test]
+fn a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound() {
+    // GN-01 AC 4 (§3.8.6, D9): one generic function called with a plain closure, a closure that captures a local by
+    // value and a function's name, each its own instance
+    let gain = 4.0;
+    RUN.assert_commits(
+        "callables.msl",
+        &["m0", "m1", "m2"],
+        &[CarrierBytes::real(twice(|v| v + 1.0, 3.0)), CarrierBytes::real(twice(|v| v * gain, 2.0)), CarrierBytes::real(twice(halve, 10.0))],
+    );
+}

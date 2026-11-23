@@ -92,8 +92,7 @@ fn the_generic_listings_run_where_a_top_reaches_them() {
     // generics#2 (run in part): `pick` and `larger`, with generics#3, their calls, a fragment of it, run with the values
     // Rust gives; `overdrive`, which calls a method through its `Receiver` bound, runs by static dispatch (T36);
     // generics#4 (refused, L1): the generic struct `Window` and its method; generics#5: the const parameter of
-    // `dot`, `mean_of` and `widened`; generics#9 (refused, L9): `at_middle`, which takes any function (generic);
-    // `corrected`, which takes a function by its type, runs. The forms that still wait are asserted refused
+    // `dot`, `mean_of` and `widened`; generics#9: `at_middle`, which takes any function, runs with `corrected`. The forms that still wait are asserted refused
     let chapter = Chapter::read();
     let receiver = chapter.text("generics#1");
     for call in ["pick(en, 3.3, 0.0)", "larger(3u8, 200)", "overdrive(Family::Cmos, 2.8, 3.3)", "larger::<u16>(3, 200)"] {
@@ -108,13 +107,10 @@ fn the_generic_listings_run_where_a_top_reaches_them() {
     Refusal::expect(Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));"), "generics#4", "P0001", "generic struct `Window` is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "this name as a value is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = mean_of([1.0, 2.0]));"), "generics#5", "P0001", "this name as a value is not supported yet");
-    Refusal::expect(Reached::run("generics#9", "", "emit!(\"r\", s = mid_ramp(1M));"), "generics#9", "P0001", "a name whose type is not a value type is not supported yet");
-    // a call of a function value runs since composite-values T5 and T23; the generic function that takes one stays refused
-    // the whole-model check (S3) refuses `mid_ramp` (it calls a generic function) where nothing reaches it,
-    // so `clean` runs from the listing without it
-    let listing = chapter.text("generics#9");
-    let without_ramp: String = listing.split("\n\n").filter(|item| !item.contains("fn mid_ramp")).collect::<Vec<_>>().join("\n\n");
-    let model = Model::written("reached.msl", &format!("{without_ramp}\n{}", Reached::top("emit!(\"r\", s = clean(1.0));")));
+    // generics#9: `at_middle` takes a closure for its `Fn` bound (T37) and `corrected` a function by its type
+    let ramp = Reached::run("generics#9", "", "emit!(\"r\", s = mid_ramp(1M));").unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("5.000000e-1", Fields::real(ramp.stream("r")[0], "s"), "mid_ramp(1M)");
+    let model = Model::written("reached.msl", &format!("{}\n{}", chapter.text("generics#9"), Reached::top("emit!(\"r\", s = clean(1.0));")));
     assert!(model.run(Reached::overrides()).is_ok(), "generics#9: `clean` calls a function value and runs");
 }
 

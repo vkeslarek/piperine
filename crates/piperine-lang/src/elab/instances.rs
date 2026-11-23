@@ -57,7 +57,7 @@ impl Instance {
                 ConcreteValue::Const(value) => value.to_string(),
                 ConcreteValue::Bool(value) => value.to_string(),
                 ConcreteValue::Function(function) => design.decl_data(*function).name.as_ref().map_or_else(|| "fn".to_string(), |n| n.text.clone()),
-                ConcreteValue::Closure(closure) => format!("closure${}", elaboration.closure_ordinal(*closure)),
+                ConcreteValue::Closure(closure) => format!("closure${}${}", elaboration.closure_owner_name(*closure), elaboration.closure_ordinal(*closure)),
             })
             .collect()
     }
@@ -82,10 +82,32 @@ impl Elaboration<'_, '_> {
                 ConcreteValue::Type(ty) => substitution.bind(parameter.decl, GenericValue::Type(ty.clone())),
                 ConcreteValue::Const(value) => substitution.bind(parameter.decl, GenericValue::Const(ConstTerm::Value(*value))),
                 ConcreteValue::Bool(flag) => substitution.bind(parameter.decl, GenericValue::Const(ConstTerm::Bool(*flag))),
-                ConcreteValue::Function(_) | ConcreteValue::Closure(_) => {}
+                // a closure or a function stands for its function type: the parameter that takes it is a function value
+                ConcreteValue::Function(_) | ConcreteValue::Closure(_) => {
+                    if let Some(ty) = self.callable_type(argument) {
+                        substitution.bind(parameter.decl, GenericValue::Type(ty));
+                    }
+                }
             }
         }
         substitution
+    }
+
+    /// The function type a closure or a function name has: what the parameter bound by `Fn(A) -> R` is in the
+    /// instance (D9: the instance takes the callable as a function value, called by `f(x)` like any local of
+    /// function type). `None` for an argument that is no callable.
+    fn callable_type(&self, value: &ConcreteValue) -> Option<Ty> {
+        match value {
+            ConcreteValue::Closure(closure) => self.types.ty(*closure).cloned(),
+            ConcreteValue::Function(function) => {
+                let data = self.design.decl_data(*function);
+                let DeclKind::Fn(signature) = &data.kind else { return None };
+                let inputs: Option<Vec<Ty>> = data.children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::FnParam(_))).map(|param| self.typed_local(param)).collect();
+                let output = signature.ret.and_then(|ret| self.typed_written(ret)).unwrap_or(Ty::Unit);
+                Some(Ty::Fn(inputs?, Box::new(output)))
+            }
+            _ => None,
+        }
     }
 
     /// The instance the call `call` makes, from the instantiation the checker recorded folded under the
@@ -248,6 +270,12 @@ impl Elaboration<'_, '_> {
             Length::Generic(ConstTerm::Param(parameter)) => values.get(parameter).and_then(|count| i128::try_from(*count).ok()),
             Length::Generic(_) => None,
         }
+    }
+
+    /// The name of the item a closure is written in: two items each have a `closure$0`, so the instance names the item too.
+    pub(super) fn closure_owner_name(&self, closure: ExprId) -> String {
+        let owner = self.design.expr_node(closure).owner;
+        self.design.decl_data(owner).name.as_ref().map_or_else(String::new, |name| name.text.clone())
     }
 
     /// The position of the closure `closure` among the closures of the item it is written in, in source order.

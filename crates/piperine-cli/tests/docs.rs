@@ -551,7 +551,7 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     for stale in ["| L5 |", "| L6 |", "| L10 |"] {
         assert!(!book.contains(stale), "section 11 still names {stale}");
     }
-    assert!(book.contains("| types#17 | L7 |") && !book.contains("| types#11 |") && !book.contains("| analog#2 |"), "types#17 follows its remaining refusal, types#11 runs and analog#2 runs");
+    assert!(!book.contains("| types#17 |") && !book.contains("| types#11 |") && !book.contains("| analog#2 |"), "types#17 runs since generics T36 and T37, types#11 runs and analog#2 runs");
     // section 9: the rows of I §1-§2 and I §3-§3.3 no longer list the loops as a hole
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
     let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
@@ -653,7 +653,7 @@ fn gaps_drops_what_composite_values_phase_b_closed() {
     for stale in ["| types#7 | L3 |", "| generics#4 | L1 |"] {
         assert!(!book.contains(stale), "section 11 still names {stale}");
     }
-    assert!(book.contains("| types#7 | L7 | `generics` |") && book.contains("| generics#4 | L7 | `generics` |"), "types#7 and generics#4 wait on generic items");
+    assert!(!book.contains("| types#7 |") && book.contains("| generics#4 | L7 | `generics` |"), "types#7 runs since generics T37 and generics#4 waits on generic items");
     // section 9: the coverage of values, functions, the stdlib and the inherited library
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");

@@ -132,10 +132,10 @@ fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
     // fields and no `Repr`, since composite-values finding 3: see `tuples_and_structs_run_where_a_top_reaches_them`,
     // `a_table_const_runs_where_a_top_reaches_it` and `an_enum_without_repr_runs_as_a_value`.)
     // When one of them runs this test fails and its row moves to `run`
-    let mean = Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));").unwrap_or_else(|failure| panic!("{failure}"));
+    let mean = Chapter::read().wrapped("reached.msl", "", "types#7", &Reached::top("emit!(\"r\", s = mean(TAPS));")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
     Printed::holds("3.333333e-1", Fields::real(mean.stream("r")[0], "s"), "mean(TAPS)");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
-    let high = Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));").unwrap_or_else(|failure| panic!("{failure}"));
+    let high = Chapter::read().wrapped("reached.msl", family, "types#16", &Reached::top("emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
     ValueFile::flag(high.stream("r")[0], "s", 2.0 > 0.5 * 3.3);
 }
 

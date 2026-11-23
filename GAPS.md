@@ -382,15 +382,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| types#7 | L7 | `generics` | reached from a top, `mean` is `P0001` (a generic function over the length of an array); `smoothed`, over the `const` table `TAPS`, runs |
-| types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
-| types#17 | L7 | `generics` | reached from a top, `range_of` runs (an enum without `Repr` is a value; its range pattern is accepted) and `mean` is `P0001` (a generic function over an array) |
-| generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |
-| generics~872b633d | L7 | `generics` | a default body of a trait does not run: the method `reads_high` on `Family` is `P0001` |
-| generics#2 | L7 | `generics` | reached from a top, `pick`, `larger` and `overdrive` are `P0001`: a generic function |
 | generics#4 | L7 | `generics` | reached from a top, `in_tolerance` is `P0001`: a struct expression of the generic struct `Window` |
 | generics#5 | L7 | `generics` | reached from a top, `dot` and `mean_of` are `P0001`: a generic function with a const parameter, over an array type |
-| generics#9 | L9 | `generics` | reached from a top, `mid_ramp` is `P0001` (a generic function with an `Fn` bound); `clean`, a call of a function value, runs |
 | values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
