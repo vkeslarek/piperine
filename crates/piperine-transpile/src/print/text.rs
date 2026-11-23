@@ -137,7 +137,10 @@ impl Text {
     /// hoisted item under its frame (`gate.x`, `require.pass`), `$` a numbered placement or local
     /// (`above$0`, `match$0`). They print as `_v`, `_d` and `_s`: `rev3_v1`, `gate_dx`,
     /// `above_s0_dinit_s0_dup`, snake-case names (contract.md D9). The name of a body variant
-    /// (`Sw~short=1,gain=-0.5`) adds `=`, `,` and `-`, printed `_q`, `_c` and `_m`. Two names of one owner that
+    /// (`Sw~short=1,gain=-0.5`) adds `=`, `,` and `-`, printed `_q`, `_c` and `_m`. The name of a
+    /// generic instance (design D8) adds `::<` and `<` printed `_g`, `, ` printed `_c` and `>`
+    /// printed `_e`: `swap::<f64>` is `swap_gf64_e`, `Pair<Pair<f64>, u8>` is `Pair_gPair_gf64_e_cu8_e`
+    /// and `Pair<Pair<f64, u8>>` is `Pair_gPair_gf64_cu8_e_e`, so nested argument lists spell apart. Two names of one owner that
     /// spell alike are refused where the owner is printed, never shadowed. A front-end name is also
     /// lowercased: an unnamed placement is `<module>$<k>`, with the module's own capital (`Lag$0.y`,
     /// analog-structure design 5), which prints `lag_s0_dy`, never `Lag_s0_dy` (a non-snake-case
@@ -151,7 +154,7 @@ impl Text {
     /// variant's struct, `StartedBench_vv0_q0_d6`, which `LibraryPrinter::camel` turns into
     /// `StartedBenchVv0Q0D6`; a lowercase type name is a rustc warning).
     pub fn spelled_cased(name: &str) -> String {
-        name.replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m")
+        name.replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m")
     }
 }
 
@@ -166,6 +169,14 @@ mod tests {
         // body variant `StartedBench~v0=0.6` is `StartedBench_vv0_q0_d6`, not a lowercase type.
         assert_eq!(Text::spelled_cased("StartedBench~v0=0.6"), "StartedBench_vv0_q0_d6");
         assert_eq!(Text::ident("StartedBench~v0=0.6"), "startedbench_vv0_q0_d6");
+    }
+
+    #[test]
+    fn a_generic_instance_spells_with_the_marks_of_design_d8() {
+        // `::<` and `<` are `_g`, `, ` is `_c`, `>` is `_e`; nested argument lists differ
+        assert_eq!(Text::spelled_cased("swap::<f64>"), "swap_gf64_e");
+        assert_eq!(Text::spelled_cased("widen::<3, u8>"), "widen_g3_cu8_e");
+        assert_ne!(Text::spelled_cased("Pair<Pair<f64>, u8>"), Text::spelled_cased("Pair<Pair<f64, u8>>"));
     }
 
     /// The significant digits of a decimal literal: its mantissa's digits, leading and trailing
