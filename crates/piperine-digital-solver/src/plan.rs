@@ -84,6 +84,8 @@ pub struct FnNode {
 #[derive(Clone, Debug)]
 pub struct Analysis {
     writers: Vec<NetWriter>,
+    /// Per net: the `(first, length)` runs of elements a function writes (the whole net for a pin not in a window).
+    function_runs: Vec<Vec<(u64, u64)>>,
     functions: Vec<FnNode>,
     /// `[instance][reaction][statement]`: whether the statement keeps `LATER`.
     later: Vec<Vec<Vec<bool>>>,
@@ -131,6 +133,12 @@ impl Analysis {
     /// The nets of the global event `SETTLE`.
     pub fn settle_nets(&self) -> &[NetId] {
         &self.settle_nets
+    }
+
+    /// Whether a function writes `element` of array net `net`: a reaction's statement landing there would be the second
+    /// writer of that element (P1), which no bind rule proves for a run-time element.
+    pub fn function_writes(&self, net: NetId, element: u64) -> bool {
+        self.function_runs[net.0 as usize].iter().any(|(first, length)| element >= *first && element - *first < *length)
     }
 
     /// The writer of `net`.
@@ -192,7 +200,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
     }
     check_bindings(nets, inputs)?;
     check_layouts(nets, inputs)?;
-    let writers = find_writers(nets, inputs)?;
+    let (writers, function_runs) = find_writers(nets, inputs)?;
     let mut functions = Vec::new();
     let mut later = Vec::new();
     for (n, input) in inputs.iter().enumerate() {
@@ -269,6 +277,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
     let crossing = crossing_reach(nets, inputs, &functions);
     Ok(Analysis {
         writers,
+        function_runs,
         functions,
         later,
         start_nets: globals(global::START),
@@ -502,7 +511,8 @@ impl WriterEntry {
     /// Whether `first` and `second`, writers of an array net of `count` elements (0 for a scalar net), break P1. On an array
     /// net a reaction's statement names its element at run time, so it is never proved to share one with a function's window:
     /// the checker refuses that pair statically (a drive and a commit of one element, or of any element, are `E0221`,
-    /// `E0220`); two functions, or two reactions, collide where their runs overlap.
+    /// `E0220`) and the engine faults a commit that lands in a function's run (`Analysis::function_writes`); two
+    /// functions, or two reactions, collide where their runs overlap.
     fn clash(count: u64, first: &WriterEntry, second: &WriterEntry) -> bool {
         if count == 0 {
             return true;
@@ -515,14 +525,14 @@ impl WriterEntry {
     /// their runs overlap.
     fn collides(&self, other: &WriterEntry) -> bool {
         match (self.elements, other.elements) {
-            (Some((a, la)), Some((b, lb))) => a < b + lb && b < a + la,
+            (Some((first, length)), Some((other_first, other_length))) => first < other_first + other_length && other_first < first + length,
             _ => true,
         }
     }
 }
 
 /// P1: one writer per net (per element of an array net), derived from the shapes; the host when none.
-fn find_writers(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<Vec<NetWriter>, DigitalError> {
+fn find_writers(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(Vec<NetWriter>, Vec<Vec<(u64, u64)>>), DigitalError> {
     let mut found: Vec<Vec<WriterEntry>> = (0..nets.len()).map(|_| Vec::new()).collect();
     let mut note = |binding: Binding, writer: NetWriter, who: String| {
         let Some(net) = binding.net() else { return };
@@ -552,7 +562,14 @@ fn find_writers(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<Vec<NetWr
         }
     }
     let mut writers = Vec::with_capacity(nets.len());
+    let mut function_runs = Vec::with_capacity(nets.len());
     for (i, list) in found.into_iter().enumerate() {
+        function_runs.push(
+            list.iter()
+                .filter(|entry| matches!(entry.writer, NetWriter::Function { .. }))
+                .map(|entry| entry.elements.unwrap_or((0, nets[i].count)))
+                .collect(),
+        );
         for (a, first) in list.iter().enumerate() {
             let clash = list[a + 1..].iter().find(|second| first.writer != second.writer && WriterEntry::clash(nets[i].count, first, second));
             if let Some(second) = clash {
@@ -561,7 +578,7 @@ fn find_writers(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<Vec<NetWr
         }
         writers.push(list.first().map_or(NetWriter::Host, |e| e.writer));
     }
-    Ok(writers)
+    Ok((writers, function_runs))
 }
 
 /// One instance of the plan: a live device and where its pins are.

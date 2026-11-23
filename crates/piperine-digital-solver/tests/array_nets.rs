@@ -86,7 +86,7 @@ use piperine_abi::caller::Handle;
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, BYTE};
 use piperine_abi::raw::{Cell, Module, Shape, Statement, WHOLE, cell, part, role};
-use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
 use piperine_abi::thunk::module;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::landing::TimePointRule;
@@ -308,4 +308,65 @@ fn element_commits_keep_the_last_write_per_level_and_transport_per_element() {
     let due = engine.next_due().expect("the delayed commits are queued");
     Kit::instant(&mut engine, due);
     assert_eq!([engine.read_element(mem, 0)[0], engine.read_element(mem, 1)[0]], [1, 1], "C3 per element");
+}
+
+/// Always writes `1` to its scalar pin `bit`: a function, so bound to one element of an array net it is that element's writer.
+struct Holder;
+static HOLDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static HOLDER: OnceLock<Module> = OnceLock::new();
+
+impl Device for Holder {
+    fn prototype() -> &'static Shape<'static> {
+        HOLDER_SHAPE.get_or_init(Holder::shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Holder, Arc::clone(HOLDER_SHAPE.get_or_init(Holder::shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        cx.out_bytes(0).copy_from_slice(&[1]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+impl Holder {
+    /// pins: `bit` (0, `BIT`); function 0 writes it.
+    fn shape() -> ShapeRef {
+        let mut buffer = ShapeBuf::new();
+        let bit = buffer.pin(PinSpec::discrete("bit", role::PORT, &BIT));
+        buffer.function(FunctionSpec { name: "hold", writes: vec![Cell { kind: cell::PIN, index: bit, part: part::VALUE }], ..FunctionSpec::default() });
+        buffer.freeze()
+    }
+}
+
+#[test]
+fn a_reaction_committing_an_element_a_function_writes_is_a_fault() {
+    // P1 per element (abi.md §3.1): a function whose pin is the window of element `held` and a reaction committing
+    // elements 0 to 3 of the same array net. The bind rules cannot tell which element a statement names, so the
+    // engine faults the commit that lands in the function's window instead of letting the later write win.
+    let build = |held: u64| {
+        let nets = vec![NetSpec::array("lines", 1, 1, 8), NetSpec::event("go")];
+        let instances = vec![
+            Kit::instance::<Holder>("holder", &HOLDER, "holder", vec![Binding::ArrayElement { net: NetId(0), element: held }]),
+            Kit::instance::<Banker>("bank", &BANKER, "banker", vec![Binding::ArrayWindow { net: NetId(0), first: 0, length: 4 }, Binding::Net(NetId(1))]),
+        ];
+        let plan = DigitalPlan::bind(nets, instances, Resolution::default()).expect("the pair binds: no static rule proves the element");
+        let mut engine = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
+        engine.start().expect("the engine starts");
+        Kit::instant(&mut engine, Tick(0));
+        engine.fire(NetId(1), Tick(1)).expect("go is an event net");
+        engine
+    };
+    // control: the function holds element 6, outside what the reaction commits, so the run goes through
+    let mut apart = build(6);
+    Kit::instant(&mut apart, Tick(1));
+    assert_eq!(apart.read_element(NetId(0), 6), [1], "the function's element holds 1");
+    assert_eq!(apart.read_element(NetId(0), 3), [1], "and the reaction's commits landed");
+    // the function holds element 2, which the reaction commits: a fault naming the net and the element
+    let mut clash = build(2);
+    let fault = clash.run_instant(Tick(1), &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect_err("a second writer of element 2");
+    let text = fault.to_string();
+    assert!(text.contains("element 2") && text.contains("`lines`") && text.contains("P1"), "{text}");
 }

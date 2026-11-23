@@ -669,6 +669,16 @@ fn call_reaction(
                 return status::FAULT;
             }
         };
+        // P1 per element: a statement landing on an element a function writes is that element's second writer
+        if let (Some(n), Some(e)) = (net, element)
+            && analysis.function_writes(n, e)
+        {
+            failure = Some(reject(format!(
+                "reaction {} statement {} committed element {e} of array net `{}`, which a function writes (P1: one writer per element)",
+                job.reaction, c.statement, nets[n.0 as usize].name
+            )));
+            return status::FAULT;
+        }
         let record = net
             .filter(|n| nets[n.0 as usize].record)
             .map(|_| format!("{path}.{}", pin_names[s.pin as usize]));
