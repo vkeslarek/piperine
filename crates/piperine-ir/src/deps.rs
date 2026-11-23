@@ -103,6 +103,8 @@ pub enum Target {
     DelayMaximum(u32),
     /// The power density of a noise source (`Body::noise_sources`).
     NoiseDensity(u32),
+    /// Everything a trace site (`Body::traces`) writes: the values of its fields.
+    Trace(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -225,6 +227,7 @@ impl<'a> Body<'a> {
             Target::DelayTime(i) => (&deps.delay_times, i, "delay site"),
             Target::DelayMaximum(i) => (&deps.delay_maxima, i, "delay site"),
             Target::NoiseDensity(i) => (&deps.noise_densities, i, "noise source"),
+            Target::Trace(i) => (&deps.traces, i, "trace site"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -292,6 +295,7 @@ pub(crate) struct BodyDeps {
     delay_times: Vec<Sources>,
     delay_maxima: Vec<Sources>,
     noise_densities: Vec<Sources>,
+    traces: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -430,6 +434,8 @@ enum Task {
     Addend { branch: u32, operator: Operator, at: ExprId },
     /// The step of a `bound_step` site (its value on the stack).
     Cap(u32),
+    /// A field of a trace site (its value on the stack).
+    Trace(u32),
     /// The condition of the `if` `0` is on the value stack: keep it for its arms.
     Hold(ExprId),
     /// The walk enters an arm of the `if` `0`: its condition encloses what the arm contributes.
@@ -480,6 +486,8 @@ struct Walk<'a> {
     reads: Option<Sources>,
     /// The step of each `bound_step` site, grown as sites are met.
     caps: Vec<Sources>,
+    /// What each trace site writes, by site.
+    traces: Vec<Sources>,
     /// The condition of each `if` whose arms are being walked, by the `if`'s expression id.
     held: HashMap<ExprId, Value>,
     /// The conditions of the arms enclosing the statement being walked, outermost first: what a
@@ -510,6 +518,7 @@ impl<'a> Walk<'a> {
             stims: vec![Sources::default(); data.stims.len()],
             reads: None,
             caps: Vec::new(),
+            traces: vec![Sources::default(); data.traces.len()],
             held: HashMap::new(),
             enclosing: Vec::new(),
             frames: Vec::new(),
@@ -635,6 +644,7 @@ impl<'a> Walk<'a> {
             delay_times,
             delay_maxima,
             noise_densities,
+            traces: walk.traces,
         }
     }
 
@@ -723,6 +733,12 @@ impl<'a> Walk<'a> {
                         Operator::Ddt => self.charge[b].join(&value.sources),
                     }
                 }
+                Task::Trace(site) => {
+                    let value = self.pop();
+                    if let Some(slot) = self.traces.get_mut(site as usize) {
+                        slot.join(&value.sources);
+                    }
+                }
                 Task::Cap(site) => {
                     let value = self.pop();
                     if self.caps.len() <= site as usize {
@@ -787,6 +803,13 @@ impl<'a> Walk<'a> {
                 for f in fields {
                     if let EmitField::Value { value, .. } = f {
                         next.extend([Task::Expr(*value), Task::Discard]);
+                    }
+                }
+            }
+            Stmt::Trace { site, fields } => {
+                for f in fields {
+                    if let EmitField::Value { value, .. } = f {
+                        next.extend([Task::Expr(*value), Task::Trace(*site)]);
                     }
                 }
             }

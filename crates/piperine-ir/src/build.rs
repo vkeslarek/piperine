@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, TraceSite, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -184,6 +184,7 @@ impl IrBuilder {
             delays: Vec::new(),
             noise_sources: Vec::new(),
             session_parameters: Vec::new(),
+            traces: Vec::new(),
             hoisted: Vec::new(),
             merges: Vec::new(),
             reaches: Vec::new(),
@@ -325,6 +326,13 @@ impl IrBuilder {
         let list = &mut self.body_data(body).inflows;
         list.push(inflow);
         list.len() as u32 - 1
+    }
+
+    /// Adds a trace site to `body`: returns its index, the identity `Stmt::Trace` names it by.
+    pub fn trace(&mut self, body: BodyId, trace: TraceSite) -> u32 {
+        let traces = &mut self.body_data(body).traces;
+        traces.push(trace);
+        traces.len() as u32 - 1
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.

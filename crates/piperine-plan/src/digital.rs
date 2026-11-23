@@ -137,7 +137,7 @@ impl StatementPlan {
             .filter_map(|id| match ir.stmt(id) {
                 Stmt::Commit { carrier, after, .. } => Some(StatementPlan::commit(ir, *carrier, *after)),
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
-                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } => None,
+                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } | Stmt::Trace { .. } => None,
             })
             .collect()
     }

@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, TraceSite, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
@@ -320,6 +320,11 @@ impl<'a> Body<'a> {
     /// The session parameters the body reads, by index (`Expr::SessionParameter`).
     pub fn session_parameters(&self) -> &'a [SessionParameter] {
         &self.data().session_parameters
+    }
+
+    /// The trace sites, by index (`Stmt::Trace`).
+    pub fn traces(&self) -> &'a [TraceSite] {
+        &self.data().traces
     }
 
     /// The authored placements, in source order.

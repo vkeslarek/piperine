@@ -417,6 +417,11 @@ impl<'a> Printer<'a> {
             text.push_str(&self.at(&site.origin));
             self.line(1, &text);
         }
+        for (i, site) in body.traces.iter().enumerate() {
+            let stream = body.streams.get(site.stream as usize).map_or(format!("<bad stream {}>", site.stream), |s| format!("{:?}", s.name));
+            let at = self.at(&site.origin);
+            self.line(1, &format!("trace{i} {stream}{at}"));
+        }
         for (i, parameter) in body.session_parameters.iter().enumerate() {
             let at = self.at(&parameter.origin);
             self.line(1, &format!("session S{i} {:?}{at}", parameter.name));
@@ -753,6 +758,22 @@ impl<'a> Printer<'a> {
                 if let Some(after) = after {
                     next.extend([Piece::Text(" after ".into()), Piece::Expr(*after)]);
                 }
+            }
+            Stmt::Trace { site, fields } => {
+                next.push(Piece::Text(format!("trace{site} {{")));
+                for (i, f) in fields.iter().enumerate() {
+                    if i > 0 {
+                        next.push(Piece::Text(", ".into()));
+                    }
+                    match f {
+                        EmitField::Value { field, value } => {
+                            next.push(Piece::Text(format!("f{field} = ")));
+                            next.push(Piece::Expr(*value));
+                        }
+                        EmitField::Text { name, text } => next.push(Piece::Text(format!("{} = {text:?}", Printer::name(name)))),
+                    }
+                }
+                next.push(Piece::Text("}".into()));
             }
             Stmt::Emit { stream, fields } => {
                 let name = scope.streams.get(*stream as usize).map_or(format!("<bad stream {stream}>"), |s| Printer::name(&s.name));
@@ -1359,6 +1380,16 @@ impl<'a> Printer<'a> {
             }
             Stmt::Commit { carrier, value, after } => {
                 format!("commit c{carrier} e{} {}", value.0, after.map_or("-".to_string(), |a| format!("e{}", a.0)))
+            }
+            Stmt::Trace { site, fields } => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|f| match f {
+                        EmitField::Value { field, value } => format!("f{field} e{}", value.0),
+                        EmitField::Text { name, text } => format!("{} {text:?}", Printer::name(name)),
+                    })
+                    .collect();
+                format!("trace t{site} ({})", parts.join(", "))
             }
             Stmt::Emit { stream, fields } => {
                 let parts: Vec<String> = fields

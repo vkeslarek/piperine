@@ -8,7 +8,7 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BodySpec, Branch, BranchKind, Constant, DelaySite, NoiseSource, SessionParameter, Expr, ExprId, FunctionSpec, Ir, IrBuilder, InstanceSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Real, Stmt, StmtId, Target, Terminal, ValueType,
+    Addend, BodySpec, Branch, BranchKind, Constant, DelaySite, EmitField, NoiseSource, SessionParameter, Stream, StreamField, TraceSite, Expr, ExprId, FunctionSpec, Ir, IrBuilder, InstanceSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Real, Stmt, StmtId, Target, Terminal, ValueType,
     BodyNode,
 };
 
@@ -19,6 +19,8 @@ struct Written {
     delays: Vec<DelaySite>,
     noise_sources: Vec<NoiseSource>,
     session_parameters: Vec<SessionParameter>,
+    streams: Vec<Stream>,
+    traces: Vec<TraceSite>,
 }
 
 /// The one body `Op(a)` with the flow branch `(a, gnd)` and the param `td: f64` (index 0), whose
@@ -48,7 +50,7 @@ impl Operators {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let Written { analog, delays, noise_sources, session_parameters } = write(&mut b);
+        let Written { analog, delays, noise_sources, session_parameters, streams, traces } = write(&mut b);
         let delay_time = Param { name: "td".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Op".into(),
@@ -70,6 +72,12 @@ impl Operators {
         }
         for parameter in session_parameters {
             b.session_parameter(body, parameter);
+        }
+        for stream in streams {
+            b.stream(body, stream);
+        }
+        for trace in traces {
+            b.trace(body, trace);
         }
         let params = vec![Constant::Real(Real::new(1e-9))];
         let top = b.instance(InstanceSpec { path: "Op".into(), name: "Op".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
@@ -249,4 +257,65 @@ fn a_session_parameter_read_out_of_range_or_with_a_non_real_default_is_broken() 
         Written { analog: vec![Operators::contribute(b, read)], session_parameters: vec![Operators::gmin()], ..Written::default() }
     });
     assert!(Operators::names(&typed.check(), "the default of a `simparam`"), "{:?}", typed.check());
+}
+
+/// Trace sites.
+impl Operators {
+    /// The stream `newton` with the field `x: f64`.
+    fn newton() -> Stream {
+        Stream { name: "newton".into(), fields: vec![StreamField { name: "x".into(), ty: ValueType::F64 }] }
+    }
+
+    /// `emit!("newton", x = v(a), who = "diode")` as the trace of site `site`.
+    fn trace_the_probe(b: &mut IrBuilder, site: u32) -> StmtId {
+        let x = Self::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        b.stmt(Stmt::Trace { site, fields: vec![EmitField::Value { field: 0, value: x }, EmitField::Text { name: "who".into(), text: "diode".into() }] })
+    }
+
+    /// The trace site of stream 0.
+    fn trace_site() -> TraceSite {
+        TraceSite { stream: 0, origin: Self::at() }
+    }
+
+    /// A design tracing the probe, the trace being in the `analog` block.
+    fn tracing() -> Ir {
+        Self::ir(|b| Written { analog: vec![Self::trace_the_probe(b, 0)], streams: vec![Self::newton()], traces: vec![Self::trace_site()], ..Written::default() })
+    }
+}
+
+#[test]
+fn a_trace_site_is_built_checked_printed_and_round_tripped() {
+    let ir = Operators::tracing();
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    let text = ir.to_string();
+    assert!(text.contains("trace0 \"newton\""), "{text}");
+    assert!(text.contains("trace0 {f0 = probe(a, gnd), who = \"diode\"}"), "{text}");
+    let body = ir.bodies().next().expect("a body");
+    assert_eq!(body.traces().len(), 1);
+    assert_eq!(Operators::round_trip(&ir), ir);
+    // A trace reads what its fields read, and writes no row.
+    assert_eq!(body.dependencies(Target::Trace(0)).nodes, vec![0]);
+}
+
+#[test]
+fn a_trace_out_of_range_in_a_function_or_mistyped_is_broken() {
+    // A trace of a site the body does not have.
+    let none = Operators::ir(|b| Written { analog: vec![Operators::trace_the_probe(b, 0)], streams: vec![Operators::newton()], ..Written::default() });
+    assert!(Operators::names(&none.check(), "trace of site 0, out of range (0 sites)"), "{:?}", none.check());
+    // A trace in a function: the analog block alone writes one.
+    let in_function = Operators::ir(|b| {
+        let trace = Operators::trace_the_probe(b, 0);
+        let unit = Operators::ex(b).unit();
+        let body = Operators::ex(b).block(vec![trace], Some(unit), ValueType::Unit);
+        b.function(FunctionSpec { name: "log".into(), origin: Operators::at(), params: vec![], ret: ValueType::Unit, locals: vec![], body });
+        Written { analog: vec![], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..Written::default() }
+    });
+    assert!(Operators::names(&in_function.check(), "a trace outside the analog block of a body"), "{:?}", in_function.check());
+    // A field of the wrong type: `x: f64` written a `bool`.
+    let mistyped = Operators::ir(|b| {
+        let flag = Operators::ex(b).boolean(true);
+        let trace = b.stmt(Stmt::Trace { site: 0, fields: vec![EmitField::Value { field: 0, value: flag }] });
+        Written { analog: vec![trace], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..Written::default() }
+    });
+    assert!(Operators::names(&mistyped.check(), "the value of a trace field"), "{:?}", mistyped.check());
 }

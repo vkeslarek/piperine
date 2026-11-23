@@ -589,8 +589,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_session_parameter_is_built_checked_printed_and_round_tripped` passes
-- [ ] Gate check passes: `Run irops`
+- [x] `a_session_parameter_is_built_checked_printed_and_round_tripped` passes
+- [x] Gate check passes: `Run irops`
 
 **Tests**: integration
 **Gate**: quick
@@ -610,8 +610,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_trace_site_is_built_checked_printed_and_round_tripped` passes
-- [ ] Gate check passes: `Run irops`
+- [x] `a_trace_site_is_built_checked_printed_and_round_tripped` passes
+- [x] Gate check passes: `Run irops`
 
 **Tests**: integration
 **Gate**: quick

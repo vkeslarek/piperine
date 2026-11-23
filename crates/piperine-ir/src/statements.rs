@@ -43,6 +43,11 @@ impl Statements {
                         }));
                         next.push(Step::Count(id));
                     }
+                    // a trace is no statement of a reaction: its values are read, none is counted
+                    Some(Stmt::Trace { fields, .. }) => next.extend(fields.iter().filter_map(|f| match f {
+                        EmitField::Value { value, .. } => Some(Step::Expr(*value)),
+                        EmitField::Text { .. } => None,
+                    })),
                     None => {}
                 },
                 Step::Expr(id) => {

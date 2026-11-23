@@ -93,6 +93,8 @@ struct Owner {
     noise_sources: usize,
     /// The number of the body's session parameters.
     session_parameters: usize,
+    /// The record stream of each of the body's trace sites.
+    traces: Vec<u32>,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
     /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
@@ -232,7 +234,7 @@ impl<'a> Checker<'a> {
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
             Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } | Stmt::Assign { value, .. } => Some(*value),
-            Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => fields.iter().find_map(|f| match f {
                 EmitField::Value { value, .. } => Some(*value),
                 EmitField::Text { .. } => None,
             }),
@@ -397,7 +399,7 @@ impl<'a> Checker<'a> {
                         self.expr_id(&item, &origin, *after);
                     }
                 }
-                Stmt::Emit { fields, .. } => {
+                Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => {
                     for f in fields {
                         if let EmitField::Value { value, .. } = f {
                             self.expr_id(&item, &origin, *value);
@@ -950,7 +952,7 @@ impl<'a> Checker<'a> {
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
-                    Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
+                    Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),
                         EmitField::Text { .. } => None,
                     })),
@@ -1246,6 +1248,7 @@ impl<'a> Checker<'a> {
                 delays: body.delays.len(),
                 noise_sources: body.noise_sources.len(),
                 session_parameters: body.session_parameters.len(),
+                traces: body.traces.iter().map(|t| t.stream).collect(),
                 reaction: false,
                 event: None,
                 in_body: true,
@@ -1369,6 +1372,7 @@ impl<'a> Checker<'a> {
                 delays: 0,
                 noise_sources: 0,
                 session_parameters: 0,
+                traces: Vec::new(),
                 reaction: false,
                 event: None,
                 in_body: false,
@@ -1522,6 +1526,31 @@ impl<'a> Checker<'a> {
                 if let Some(after) = after {
                     self.carried(w, *after, &ValueType::F64, "the delay of a commit");
                     next.push(Task::Expr(*after, ctx));
+                }
+            }
+            Stmt::Trace { site, fields } => {
+                // A trace is written where the analog block executes it: not in a function, a
+                // closure, a loop or a reaction.
+                if !w.owner.analog {
+                    self.report(w.owner.item.clone(), origin.clone(), "a trace outside the analog block of a body".to_string());
+                } else if ctx.closure {
+                    self.report(w.owner.item.clone(), origin.clone(), "a trace inside a closure".to_string());
+                }
+                let Some(stream) = w.owner.traces.get(*site as usize).copied() else {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("trace of site {site}, out of range ({} sites)", w.owner.traces.len()));
+                    return;
+                };
+                let Some(types) = w.owner.streams.get(stream as usize).cloned() else {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("trace site {site} names stream {stream}, out of range ({} streams)", w.owner.streams.len()));
+                    return;
+                };
+                for f in fields {
+                    let EmitField::Value { field, value } = f else { continue };
+                    match types.get(*field as usize) {
+                        Some(ty) => self.carried(w, *value, ty, "the value of a trace field"),
+                        None => self.report(w.owner.item.clone(), origin.clone(), format!("trace writes field {field} of stream {stream}, out of range ({} fields)", types.len())),
+                    }
+                    next.push(Task::Expr(*value, ctx));
                 }
             }
             Stmt::Emit { stream, fields } => {

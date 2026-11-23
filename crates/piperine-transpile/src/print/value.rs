@@ -1059,6 +1059,16 @@ impl<'a> ValuePrinter<'a> {
             },
             Stmt::Assign { place, op, value } => self.assign(place, *op, *value),
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
+            // SPEC_DEVIATION: a trace is refused until T30 prints its watch write.
+            // Reason: the IR form lands first (T20); a form with no printer fails loud.
+            Stmt::Trace { fields, .. } => Err(Error::Unsupported {
+                form: "emit! in analog".into(),
+                path: format!("{} s{}", self.path, s.index()),
+                origin: fields.iter().find_map(|f| match f {
+                    EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
+                    EmitField::Text { .. } => None,
+                }).unwrap_or_else(|| self.origin.clone()),
+            }),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
                 if !self.commits {

@@ -111,6 +111,10 @@ pub struct BodyData {
     /// (`Expr::SessionParameter`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) session_parameters: Vec<SessionParameter>,
+    /// The trace sites: each `emit!` in the `analog` block (§19 rule 4), by index
+    /// (`Stmt::Trace`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) traces: Vec<TraceSite>,
     /// The modules placed in an expression whose nodes or `analog` statements joined this body.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) hoisted: Vec<Hoisted>,
@@ -362,6 +366,15 @@ pub struct NoiseSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionParameter {
     pub name: String,
+    pub origin: Origin,
+}
+
+/// An `emit!` in the `analog` block (§19 rule 4): one `TRACE` watch, written at every Newton
+/// evaluation that executes the statement. Its index in the body's list is its identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TraceSite {
+    /// The record stream the site writes (its index in `Body::streams`).
+    pub stream: u32,
     pub origin: Origin,
 }
 
@@ -730,6 +743,9 @@ pub enum Stmt {
     /// `emit!("stream", f = value, …)`, in a reaction: one record of stream `stream` (its index
     /// in the body's streams). Counted with the commits in the reaction's statement numbering.
     Emit { stream: u32, fields: Vec<EmitField> },
+    /// `emit!("stream", f = value, …)` in the `analog` block: one record of the stream of trace
+    /// site `site` (`Body::traces`), written when the statement executes.
+    Trace { site: u32, fields: Vec<EmitField> },
     /// `bound_step(value);` at the top level of the `analog` block: the solver's next step is no
     /// longer than `value`, an `f64`. `site` numbers the statements of the body. `when` is the
     /// conjunction of the conditions the source wrote it under, a `bool` lowered standalone: a
@@ -780,7 +796,7 @@ impl Stmt {
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
             Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
             Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),
-            Stmt::Emit { fields, .. } => fields
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => fields
                 .iter()
                 .filter_map(|f| match f {
                     EmitField::Value { value, .. } => Some(*value),

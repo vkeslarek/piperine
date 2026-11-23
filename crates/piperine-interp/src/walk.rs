@@ -582,6 +582,7 @@ impl<'a> Walk<'a> {
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Commit` is not executed by this walk (at {at})")))
             }
             Stmt::Emit { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `Emit` is not executed by this walk")),
+            Stmt::Trace { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `Trace` is not executed by this walk")),
             Stmt::Assign { value, .. } => {
                 let at = Self::origin(ir.expr_origin(*value));
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Assign` is not executed by this walk (at {at})")))
