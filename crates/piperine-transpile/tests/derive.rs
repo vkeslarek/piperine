@@ -70,11 +70,11 @@ fn the_source_holds_one_derive_function_per_binding() {
     assert_eq!(text.matches("fn derive_").count(), 2, "{text}");
     assert!(text.contains("fn derive_0_(params_: &[u8]) -> Vec<u8> {\n    let t = <f64 as rt::Carried>::from_pin(&params_[0..8]);\n    <f64 as rt::Carried>::pin(t * 3.0)\n}"), "{text}");
     assert!(text.contains("fn derive_1_(params_: &[u8]) -> Vec<u8> {\n    let rr = <f64 as rt::Carried>::from_pin(&params_[0..8]);\n    <f64 as rt::Carried>::pin(rr * 2.0)\n}"), "{text}");
-    assert!(text.contains("pub extern \"C\" fn piperine_derive_2(k: u32, params: List<'_, u8>, mut out: BytesMut<'_>) -> u32"), "{text}");
+    assert!(text.contains("pub extern \"C\" fn piperine_derive_3(k: u32, params: List<'_, u8>, mut out: BytesMut<'_>) -> u32"), "{text}");
     assert!(text.contains("0 if params.len() == 8 => Some(derive_0_(&params)),") && text.contains("1 if params.len() == 8 => Some(derive_1_(&params)),"), "{text}");
     // a design that derives nothing prints none of it (the sources of every other design are unchanged)
     let plain = source(chain(false));
-    assert!(!plain.contains("fn derive_") && !plain.contains("piperine_derive_2"), "{plain}");
+    assert!(!plain.contains("fn derive_") && !plain.contains("piperine_derive_3"), "{plain}");
 }
 
 #[test]

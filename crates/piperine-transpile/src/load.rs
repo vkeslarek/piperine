@@ -28,7 +28,7 @@ use crate::error::Error;
 /// The type of `piperine_abi_1` (abi.md §2 entry 1).
 type Export = extern "C" fn() -> *const Library;
 
-/// The type of `piperine_derive_2` (the transpiler's contract with its host, `print/derive.rs`):
+/// The type of `piperine_derive_3` (the transpiler's contract with its host, `print/derive.rs`):
 /// the function `k` of the design's derive plan over the bytes of the parent's params, writing the
 /// bytes of the child's param into the buffer it is lent and answering how many (0: nothing).
 type DeriveExport = for<'a> extern "C" fn(u32, List<'a, u8>, BytesMut<'a>) -> u32;
@@ -39,7 +39,7 @@ type DeriveExport = for<'a> extern "C" fn(u32, List<'a, u8>, BytesMut<'a>) -> u3
 pub struct Loaded {
     file: PathBuf,
     library: &'static Library,
-    /// `piperine_derive_2`, which a design that derives no param does not export.
+    /// `piperine_derive_3`, which a design that derives no param does not export.
     derive: Option<DeriveExport>,
 }
 
@@ -98,7 +98,7 @@ impl Loaded {
         let export = unsafe { handle.get::<Export>(raw::SYMBOL.as_bytes()) }
             .map(|symbol| *symbol)
             .map_err(|_| format!("has no symbol `{}`", raw::SYMBOL))?;
-        // SAFETY: the export `piperine_derive_2` is printed by this transpiler with the type
+        // SAFETY: the export `piperine_derive_3` is printed by this transpiler with the type
         // `DeriveExport` (`print/derive.rs`), beside `piperine_abi_1` of abi.md §2 entry 1 and
         // under the same cache key, the hash of the source that prints both; a library with no
         // such symbol is a design that derives nothing.
@@ -114,7 +114,7 @@ impl Loaded {
         &self.file
     }
 
-    /// Whether the library exports `piperine_derive_2`.
+    /// Whether the library exports `piperine_derive_3`.
     pub fn derives(&self) -> bool {
         self.derive.is_some()
     }

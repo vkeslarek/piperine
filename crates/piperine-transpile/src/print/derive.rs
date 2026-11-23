@@ -4,7 +4,7 @@
 //! parent's declaration order, each as wide as its pin (`PinLayout::size`), and giving the pin
 //! bytes of the child's param: every param crosses as the typed value it is (an integer exactly, a
 //! `bool`, an `f64`, an enum's tag, an `Option` or a composite), never as an `f64`. The export
-//! `piperine_derive_2(k, params, out)` sits next to `piperine_abi_1` and the host reaches it through
+//! `piperine_derive_3(k, params, out)` sits next to `piperine_abi_1` and the host reaches it through
 //! `Compiled::derive`: the host lends `out`, as wide as the child's pin, the function writes the pin
 //! bytes into it and answers how many it wrote, 0 for a `k` this design has no function for or a
 //! parent of another width. Nothing is allocated for the host to keep. The buffers are read and
@@ -19,7 +19,7 @@ use crate::print::{Text, ValuePrinter};
 
 /// The symbol the export has: the suffix is the version of this contract, as `piperine_abi_1`'s is
 /// the ABI major.
-pub const SYMBOL: &str = "piperine_derive_2";
+pub const SYMBOL: &str = "piperine_derive_3";
 
 /// Prints the derive functions of a design.
 #[derive(Debug)]

@@ -236,7 +236,7 @@ fn a_module_typed_param_is_not_set_by_text() {
     let (_dir, file) = lone(&text);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &flags("op", "interp", Some("Top"))).unwrap_or_else(|f| panic!("{f}"));
-    Session::describe(&project, &spec).unwrap_or_else(|f| panic!("the design opens: {f}"));
+    Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: PathBuf::from("/nonexistent/cache") })).unwrap_or_else(|f| panic!("the design opens: {f}"));
     let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..flags("op", "interp", Some("Top")) };
     match open(&text, &overrides, &unused()) {
         Err(Failure::Diagnostics { found, .. }) => {
@@ -429,7 +429,7 @@ fn an_integer_above_2_pow_53_is_set_exactly() {
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { param_texts: vec![("Top.l.big".to_string(), "9007199254740993".to_string())], ..flags("op", "interp", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let (_, metadata) = Session::describe(&project, &spec).unwrap_or_else(|f| panic!("{f}"));
+    let (_, metadata) = Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: PathBuf::from("/nonexistent/cache") })).unwrap_or_else(|f| panic!("{f}"));
     let shown = metadata.params.into_iter().find(|p| p.path == "Top.l.big").expect("the param").value;
     assert_eq!(shown, piperine_api::Cell::Int(9_007_199_254_740_993));
 }
@@ -539,11 +539,27 @@ fn describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string())], ..flags("op", "interp", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    match Session::describe(&project, &spec) {
+    match Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: PathBuf::from("/nonexistent/cache") })) {
         Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("--backend rust") && !message.contains("does not match"), "{message}"),
         Err(other) => panic!("E0802, found {other}"),
         Ok(_) => panic!("the interpreter cannot recompute an integer the child holds"),
     }
+}
+
+#[test]
+fn describing_a_rust_request_shows_the_values_a_run_derives_of_every_param_type() {
+    // F36, HII-10: `describe` of a Rust request with `Top.w.n = 6` and `Top.w.md = Slow` evaluates what the placement passes to the child
+    // (an integer, an enum) through the compiled derive, so it shows the values a run uses, not a refusal
+    let (_dir, file) = lone(WRAPPED);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string()), ("Top.w.md".to_string(), "Slow".to_string())], ..flags("op", "rust", Some("Top")) };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let (_, metadata) = Session::describe(&project, &spec, &|| Ok(Settings { rustc: settings.rustc.clone(), cache: settings.cache.clone() })).unwrap_or_else(|f| panic!("{f}"));
+    let value = |path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone());
+    assert_eq!(value("Top.w.i.n"), Some(piperine_api::Cell::Int(6)));
+    assert_eq!(value("Top.w.i.md"), Some(piperine_api::Cell::Text("Slow".into())));
 }
 
 #[test]

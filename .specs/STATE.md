@@ -1510,7 +1510,7 @@ deviation tables of their commits.
 
 1. **A host `set` recomputes every value derived from the param it changes** (§8.1.23, decision
    X9): the child params, the constant `let`s and the definitions whose expression reads it. The
-   derivation is a function the compiled backend generates, `piperine_derive_2(k, params)` over the pin bytes of the parent's params, giving the child's pin bytes,
+   derivation is a function the compiled backend generates, `piperine_derive_3(k, params, out) -> u32` (the contract version is the suffix: `params` the pin bytes of the parent's params, `out` a `BytesMut` the host sizes to the child's pin, the answer the bytes written, 0 for none),
    from a `DerivePlan` that `piperine-plan` builds from the IR; the host calls it, then writes each
    changed pin through `CircuitInstance::set`, checking each child's `where` first and undoing
    the writes on a refusal (§23.1 rule 6). A timed `set` derives when it is scheduled, one write

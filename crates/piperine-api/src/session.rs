@@ -938,13 +938,30 @@ impl Session {
 
     /// The top of `spec` and what its design declares, elaborated and nothing else: no backend
     /// builds it and no analysis runs (`piperine info`). The request's `params` are applied to the
-    /// table, and what a placement derives from them is evaluated by the interpreter's walk, so
-    /// the values shown are the ones a run uses. Diagnostics are the `Failure` of a design that
-    /// does not elaborate, as `Session::open` gives them.
-    pub fn describe(project: &Project, spec: &RunSpec) -> Result<(String, Metadata), Failure> {
+    /// table, and what a placement derives from them is evaluated as the request's backend would
+    /// (HII-10, so the values shown are the ones a run uses): by the interpreter's walk for an
+    /// interpreter request, which holds `f64` and `bool` params only, and by the compiled design's
+    /// derive functions for a Rust request, every param type included. That compile happens only
+    /// when the request sets a param some placement derives from; `settings` is asked for then and
+    /// not otherwise. Diagnostics are the `Failure` of a design that does not elaborate, as
+    /// `Session::open` gives them.
+    pub fn describe(project: &Project, spec: &RunSpec, settings: &dyn Fn() -> Result<Settings, Failure>) -> Result<(String, Metadata), Failure> {
         let (ir, top) = Session::elaborate(project, spec)?;
         let mut table = Params::of(&ir);
-        let derive = Evaluated::new(&ir, table.plan());
+        let backend = Backend::choose(None, None, spec.backend.as_deref())?;
+        let sets_a_param = !spec.params.is_empty() || !spec.param_texts.is_empty();
+        let compiled = match backend {
+            Backend::Rust if sets_a_param && !table.plan().bindings().is_empty() => {
+                let transpiler = Transpiler::new(ir.clone()).map_err(|e| Failure::Backend(e.to_string()))?;
+                Some(transpiler.compile(&settings()?).map_err(|e| Failure::Backend(e.to_string()))?)
+            }
+            _ => None,
+        };
+        let evaluated = Evaluated::new(&ir, table.plan());
+        let derive: &dyn Derive = match &compiled {
+            Some(compiled) => compiled,
+            None => &evaluated,
+        };
         for (entry, value) in &spec.params {
             let target = ParamTarget::resolve(&ir, ir.top().path(), entry)?;
             match &target.leaf {
@@ -953,7 +970,7 @@ impl Session {
                     table.apply_leaf(&change);
                 }
                 None => {
-                    table.set(&target.param.instance, &target.param.param, *value, Some(&derive), &mut |_| Ok(()))?;
+                    table.set(&target.param.instance, &target.param.param, *value, Some(derive), &mut |_| Ok(()))?;
                 }
             }
         }
@@ -978,7 +995,7 @@ impl Session {
                     }
                 }
                 (None, ParamText::Whole(scalar)) => {
-                    table.set(&path.instance, &path.param, scalar.exact_real().unwrap_or(f64::NAN), Some(&derive), &mut |_| Ok(()))?;
+                    table.set(&path.instance, &path.param, scalar.exact_real().unwrap_or(f64::NAN), Some(derive), &mut |_| Ok(()))?;
                     if let (None, ParamScalar::Integer(value)) = (scalar.exact_real(), scalar) {
                         table.keep_exact(&path.instance, &path.param, value);
                     }

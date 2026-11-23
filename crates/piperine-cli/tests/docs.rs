@@ -225,7 +225,7 @@ fn state_records_the_derived_param_decision() {
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-69:").expect("STATE.md holds MD-69");
     let decision = state[at..].split("\n---").next().expect("a decision");
-    for name in ["`piperine_derive_2(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
+    for name in ["`piperine_derive_3(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
         assert!(decision.contains(name), "MD-69 names {name}");
     }
     let claude = read("CLAUDE.md");

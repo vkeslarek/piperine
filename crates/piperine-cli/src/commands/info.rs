@@ -5,7 +5,8 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use piperine_api::{Cell, Metadata, Overrides, Project, Session, Table};
+use piperine_api::{Cell, Failure, Metadata, Overrides, Project, Session, Table};
+use piperine_transpile::Settings;
 
 use crate::cli::Out;
 use crate::commands::run::{RunCommand, Stop};
@@ -54,7 +55,7 @@ impl InfoCommand {
         let name = if lone.is_some() { None } else { self.target.clone().or(first) };
         let spec = project.request(name.as_deref(), &overrides)?;
         let backend = RunCommand::backend(None, &spec)?;
-        let (top, metadata) = Session::describe(&project, &spec)?;
+        let (top, metadata) = Session::describe(&project, &spec, &|| Settings::from_environment().map_err(|error| Failure::Backend(error.to_string())))?;
         let mut out = out.borrow_mut();
         writeln!(out, "info {}: top {top}, backend {}", spec.name, backend.name())?;
         for (title, table) in [("params", Self::params(&metadata)), ("ports", Self::ports(&metadata)), ("streams", Self::streams(&metadata))] {
