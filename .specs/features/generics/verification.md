@@ -1,0 +1,101 @@
+# Generics verification (phases A and B, T1 to T52)
+
+**Verdict**: FAIL
+**Proofs**: `proofs.md` at 66fa3037 (62 pass, 4 fail: C10, C11, C12, C42 - each cites a test name that does not exist at `HEAD`); rerun at the verification commit (see `proofs.md`)
+**Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-23, branch `feature/generics` at 66fa3037 (diff `origin/main...HEAD`, merge base ffe17a87)
+**Scope**: phases A and B only. Phases C to E are not tasked; tasks.md:1491 records that they must be tasked and delivered before spec-closure, and every GAPS row they own is listed there (L29, L30, L31, L32, S3 for generic modules, L58 group, L69) - with the misattributions of Finding 5. Per that line the feature is not closed; `validate_verification.py` was run for information only.
+
+**Also run at HEAD (targeted, no workspace run, per the gate policy):** `cargo test -p piperine --test book_generics --test book_types --test book_inventory --test book_claims --test book_packages --test book_values` (7 + 19 + 18 + 7 + 12 + 18 passed). `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src crates/piperine-transpile/tests/golden`: only `crates/piperine-parity/src/project.rs` (+2 lines, T4's `Types::check_model` call before `Types::check`); no tolerance, contract or golden moved.
+
+**Own examples** (throwaway test target in `crates/piperine-lang/tests/`, deleted, at 66fa3037):
+
+- `where` boundary: `fn clamp<const N: usize>(x) where N > 2` at `clamp::<3>` elaborates, at `clamp::<2>` is `E0127` "the `where` of `clamp::<2>` is false"; uninstantiated, the model check is clean (the `where` is per instantiation, Q1 (c)). Holds.
+- Definition check, unreached: `fn lt<T: Repr>(a: T, b: T) -> bool { a < b }` with nothing calling it is `E0180` "`T` has no `PartialOrd` ... add `T: PartialOrd`". Holds. `fn add<T>(a: T, b: T) -> T { a + b }` is three `E0180` "expected `f64`, found `T`" (H.8 has no arithmetic trait, so no bound can be named; the message is odd but the refusal is at the definition). Holds.
+- `fn mk<T: Default>() -> T` called as `let x = mk();` is `E0181` naming `T` and `mk`. Holds.
+- A solve-reading call in a param's `where` is `E0122` "a const context"; in a param default with a handle (`p: f64 = level(o)`) `E0122`; in a definition (`f = clock();`) `E0336` (D13 amended). In an event expression (`on cross(level(o) - 0.5)`) accepted by the checker and the elaborator. Holds as D13 amended (see Finding 9 on the spec text).
+- `impl M` on a module is `E0130`; `impl S { fn others(self) }` on a struct is `E0131`; a blanket `impl<T: PartialOrd> D for T` beside `impl D for f64` is `E0187` "two `impl`s of `D` apply to `f64`"; a blanket over `T: Sh` does not reach a struct with no `Sh` (`E0161` no method). Hold.
+- `fn p<N: Nature>(a: N) -> bool { a.prev() }` is `P0001` "method `prev` on this receiver" (refused by name; GAPS L53 names the `Bit<T>` spelling that runs). Holds as recorded.
+- A continuous handle stored through a block, an `if` or a `match` (`let c = { a };`, `let c = if true { a } else { a };`, `let c = match 1 { _ => a };`) is **not** `E0133`: accepted when `c` is unused, `P0001` "probe through an access that names several natures" when probed. Fails (Finding 3). A struct field holding a handle is `E0133`. Holds.
+- `w::<{N + 1}>(x)` inside a generic body is `P0001` "an integer literal in a generic argument" - a const expression as a generic argument is GN-14 (phase C), refused by name. Holds (wording aside).
+
+## Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| C1 | `source_generics.rs` `generic_functions_run_with_explicit_and_inferred_arguments` | partly - `pick<T>` unbounded and `count`/`table_total` const run against Rust, inferred and explicit, at `f64`, `u8`, a struct; no H.8-bound or `Repr`-bound function runs in this test (Finding 6) |
+| C2 | `source_generics.rs` `a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound` | yes - three callables, values from Rust's `twice` |
+| C3 | `types_generics.rs` `an_uninferred_generic_argument_is_e0181_naming_the_parameter` | yes |
+| C4 | `elab_generics.rs` `a_false_where_is_e0127_naming_the_instantiation` | yes - names `clamp::<1>`; my `clamp::<2>`/`::<3>` boundary holds |
+| C5 | `elab_generics.rs` `one_ir_function_per_distinct_instantiation_named_by_its_arguments`; `generics.rs` (ir) `a_function_instance_is_built_checked_and_printed` | yes - exact sorted name list and `instance()` per function |
+| C6 | `elab_generics.rs` `the_pom_keeps_the_generic_function_as_written` | yes - one `pick` with its list, none named for an instance (the before/after compare is guaranteed by `&Design`; the name check carries it) |
+| C7 | `source_generics.rs` `methods_associated_functions_and_constants_run_with_rusts_meaning` | yes |
+| C8 | `types_traits.rs` `an_impl_on_a_module_is_e0130` | yes |
+| C9 | `types_traits.rs` `a_method_named_like_a_carrier_method_is_e0131` | yes |
+| C10 | cited `a_trait_method_calls_its_impl_or_its_default_body` does not exist; the behaviour is held by `source_generics.rs:125` `trait_methods_dispatch_statically_to_their_impl_default_or_blanket` (own, default body, overridden default) | no - proof red, name drift (Finding 1) |
+| C11 | cited `a_bound_method_calls_the_instances_implementation` does not exist; held by the same test (`total(Sq)` and `total(Rect)` through `S: Shape`) | no - proof red (Finding 1) |
+| C12 | `types_traits.rs` `a_blanket_impl_applies_to_every_type_its_bound_admits` passes; cited `a_blanket_impl_applies_at_run_time` does not exist (the run-time blanket is `m5` of the same dispatch test, one type) | no - second proof red (Finding 1) |
+| C13 | `types_traits.rs` `a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type`, `overlapping_impls_are_e0187` | yes |
+| C14 | `types_traits.rs` `impl_trait_for_a_bundle_is_e0134`, `impl_trait_for_a_nature_is_accepted` | yes |
+| C15 | `source_generics.rs` `a_hand_written_repr_carries_its_own_layout`; `composite_shape.rs` `a_hand_written_repr_is_one_leaf_of_its_width`; ir `a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed` | yes |
+| C16 | `source_generics.rs` `a_decode_returning_none_is_returned_to_the_caller` | yes |
+| C17 | `source_generics.rs` `generic_structs_and_enums_instantiate_per_argument_list` | yes |
+| C18 | `source_generics.rs` `a_generic_repr_instance_is_laid_out_per_section_2`; `types_generics.rs` `a_generic_repr_type_over_an_argument_without_repr_is_e0110` | yes |
+| C19 | `types_generics.rs` `a_generic_body_is_checked_once_at_its_definition` | yes |
+| C20 | `types_generics.rs` `a_member_no_bound_gives_is_refused_at_the_definition` | yes - codes and the named bound asserted per case |
+| C21 | `elab_generics.rs` `instantiation_errors_name_the_item_and_its_arguments` | yes |
+| C22 | `spec_text.rs` `rule_9_splits_definition_and_instantiation_errors` | yes |
+| C23 | `types_model.rs` `every_item_kind_of_every_crate_is_checked_unreached`; api `a_dependency_crate_is_type_checked` | yes |
+| C24 | api `a_library_package_with_no_run_is_type_checked`; `types_model.rs` `an_unreached_item_has_the_code_it_has_when_reached`; cli `check_reports_one_error_per_unreached_item_kind` | yes |
+| C25 | `types_model.rs` `an_unreached_function_with_an_error_fails_the_model_check` | yes |
+| C26 | `types_model.rs` `an_unplaced_module_calling_ddt_from_a_function_is_e0350` | yes |
+| C27 | parity `the_source_runner_checks_the_whole_model`; api `a_run_fails_on_an_unreached_error_with_the_check_diagnostic`; cli `build_and_run_fail_with_the_check_diagnostic` | yes |
+| C28 | `source_handles.rs` `impl_thermal_celsius_reads_temp_minus_273_15` | yes |
+| C29 | `types_handles.rs` `a_carrier_method_call_follows_the_lookup_order` | yes - the `abs -> bool` case discriminates nature impl before value method |
+| C30 | `types_traits.rs` `a_non_function_item_in_an_impl_on_a_nature_is_e0132` | yes |
+| C31 | `source_handles.rs` `a_handle_is_read_probed_passed_on_and_has_carrier_methods` | yes |
+| C32 | `types_handles.rs` `a_handle_returned_stored_or_written_is_e0133` | partly - the seven direct forms hold (the `returned` rows accept any `E0133` message); a handle stored through a block, `if` or `match` escapes `E0133` (Finding 3) |
+| C33 | `source_handles.rs` `a_discrete_handle_reads_the_value_with_its_flags` | yes |
+| C34 | `source_handles.rs` `a_nature_generic_handle_function_instantiates_per_nature` | yes |
+| C35 | `source_handles.rs` `a_probing_function_runs_from_analog_and_a_reaction`; `types_handles.rs` `solve_reading_functions_are_accepted_where_the_table_allows` | yes - event expressions are not in the test; my own example holds |
+| C36 | `types_handles.rs` `a_solve_reading_call_in_a_const_context_is_e0122` | yes as D13 amended (const and param default; my `where` example holds) |
+| C37 | `types_handles.rs` `a_probe_of_a_handle_in_a_function_is_not_e0450` | yes |
+| C38 | `frozen.rs` `each_generics_form_is_refused_by_name`; `elab_handles.rs` `a_handle_call_lowers_to_its_written_out_body` | yes |
+| C39 | `types_generics.rs` `phase_c_d_and_e_forms_stay_p0001_by_name` | yes |
+| C40 | `twins.rs` `every_twin_prints_the_bytes_it_printed_before_the_move` | yes |
+| C41 | the build line and `suite_hygiene` | yes - zero warnings, hygiene green |
+| C42 | `docs.rs` `gaps_drops_what_generics_phase_a_closed`, `gaps_drops_what_generics_phase_b_closed` pass; cited `gaps_narrows_s3_to_generic_items` was renamed by T43 (04ca431f) | no - first proof red (Finding 1) |
+| C43 | `std_galleries.rs` `the_fences_generics_lifted_are_checked` | yes - an empty expected list, recorded (no gallery fence writes a phase A form) |
+| C44 | `elab_generics.rs` `equal_arguments_make_one_instance` | yes |
+| C45 | `source_generics.rs` `a_const_generic_of_zero_runs_its_loops_zero_times` | yes |
+| C46 | `elab_generics.rs` `an_endless_instantiation_chain_is_e0341` | yes |
+| C47 | `elab_generics.rs` `the_elaborator_reads_types_only_through_the_substitution` | yes, structurally - a source scan that the raw reads live only in `consts.rs`; the source runs carry the end-to-end half |
+| C48 | `generics.rs` (transpile) `instance_names_compile_and_nested_arguments_spell_apart` | yes |
+
+## Implementer-declared deviations
+
+| Deviation | Judgement |
+| --- | --- |
+| D9 amended (T37): a callable for an `Fn` bound is a function value, not inlined | Legitimate design amendment: GN-01 AC 2 fixes only "accepted and called positionally", and GN-02's one-instance-per-callable still holds (`closure$<item>$k`). Recorded in design.md:364. |
+| D13 amended (T47): `E0122` in const contexts only; a definition keeps `E0336`; `temperature()` pure | `temperature()` pure matches the §3 table (part_i_values.md:902). Keeping `E0336` for a definition matches §8.2.5 and part_iv_behavior.md:800, but the §3 table does not list definitions as allowed, so GN-12 AC 2 reads `E0122` there; the spec says neither sentence. Needs a spec sentence (Finding 9) - user ruling. |
+| D18 (T39): hand-written `Repr` lowered by hand (`Type.encode`, `Type.decode.is/.val` packed) | Legitimate: an implementation choice under GN-05 AC 1/2, both proven at source level (C15, C16). |
+| D19 (T43): S3 kept, narrowed to generic module bodies, instead of dropped | Legitimate and correct: GN-31 AC 1 removes an id only when closed; a generic module's body is still unchecked when unreached (`model.rs::is_generic_beyond_a_function`), so dropping S3 would have hidden a live gap. |
+| GN-05 AC 3, AC 4 added to the approved spec (440fc72c) with GAPS L69 | Adds two requirements to an approved spec, deferred to phase C, without the user's words. The refusals are by name and listed, so nothing is silent, but approved scope changed (Finding 11) - user ruling. |
+| `a.prev()` on `N: Nature` not typed | Acceptable: `N` has no value type in §4, so `prev` cannot be typed; it is `P0001` by name and GAPS L53 names the spelling that runs (`Bit<T>`). |
+| `a.changed()` / `Event`-returning function owned by `unknown-semantics-events` (L53) | Legitimate: spec "Out of Scope" puts a function returning `Event` in L53. |
+| Beyond tasks: bound with trait arguments dispatch; const evaluator reading const generic args; transpiler `#[allow(unused_variables)]`; Book ch.4 status box | Each is tested (`a_bound_that_writes_the_trait_arguments_runs_the_impl_of_that_list`, `a_const_context_reads_the_const_generic_arguments`, the srcgen models leave the variables unread, the Book claim rows). The `match_s` name test in the printer is brittle (Finding 8). |
+
+## Findings
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| 1. **Major** - four proofs are red at `HEAD`: C10, C11, C12 (second proof) and C42 (first proof) cite tests that do not exist. Failure scenario: `check_proofs.py` reports "no test ran" and the gate cannot pass; a reader of `## Checks` looks for a test that was never written | tasks.md:1304, 1307, 1311, 1413; T36 (2b585ab9) wrote one test `trait_methods_dispatch_statically_to_their_impl_default_or_blanket` (source_generics.rs:125) for the three; T43 (04ca431f) renamed `gaps_narrows_s3_to_generic_items` to `gaps_drops_what_generics_phase_a_closed` | point C10, C11 and C12's run proof at `trait_methods_dispatch_statically_to_their_impl_default_or_blanket`; drop C42's first proof (its successor is already the second); rerun `check_proofs.py` | |
+| 2. **Minor** - tasks T7 to T37 were committed with their `Done when` boxes unchecked (execution contract rule 3: tasks.md marked complete before the commit). Failure scenario: a resumed session reads 31 tasks as open | tasks.md:310 to 966, every `- [ ]` under T7 to T37; their commits (39fe031f .. 6005361e) do not touch tasks.md | tick the boxes of T7 to T37 against their commits | |
+| 3. **Minor** - `E0133` is matched on a bare path only: a continuous handle stored through a block, an `if` or a `match` (`let c = { a };`, `let c = if t { a } else { a };`, `let c = match k { _ => a };`) is accepted when unused and `P0001` (wrong code) when probed. Failure scenario: GN-11 AC 2's code is not raised for a stored handle; a user is told "not supported yet" for a form the spec forbids | crates/piperine-lang/src/types/handles.rs:115-158 (`handle_named` on the initializer only); own examples above | look through block tails and `if`/`match` arms (the value positions of the initializer, the `return` and the struct/tuple/array elements) when looking for a handle; add the three forms to `a_handle_returned_stored_or_written_is_e0133` | |
+| 4. **Minor** - Book row `modules~1faf8c12` (L29, `m` and `dtemp`) has Owner `params-and-io`, but `params-and-io` plans no `m`/`dtemp` (its spec lists `E0375` as generics'), spec.md "Gaps closed" puts L29 on generics GN-24 to GN-26, and tasks.md:1491 itself lists the row under phase D. Failure scenario: the row has no owner that will flip it; `params-and-io` closes and the row is orphaned | GAPS.md:397; `.specs/features/params-and-io/spec.md` (`E0375` row: "generics"); tasks.md:1491 | Owner `generics` (phase D); drop "landing with `params-and-io`" from tasks.md:1491 unless that feature takes it | |
+| 5. **Minor** - the phase C to E note misattributes: L32 and GN-21 to GN-23 are put under phase C (spec: phase D, templates); "GN-26 AC 3" does not exist (`E0375` is GN-25 AC 3); phase D names neither GN-21 to GN-25 nor L32. Every owned row (L29, L30, L31, L32, S3, L58 group, L69) is listed, so nothing is lost | tasks.md:1491; spec.md Phases table and GN-21 to GN-26 | rewrite the note by the spec's phase table: C = GN-13 to GN-20 (L30, L31, S3, L69, GN-14's repeat); D = GN-21 to GN-26 (L32, L29, `modules~1faf8c12`); E = GN-27, GN-28 (L58) | |
+| 6. **Minor** - C1's test is looser than its claim: GN-01 AC 1 names H.8, `Repr`, project-trait, `Fn` and const bounds; the test runs an unbounded `T` and const `N` only. The project trait (C11), `Fn` (C2) and `Repr` through a handle (`discrete.msl`) run elsewhere; no srcgen model runs a function bounded by an H.8 trait (`T: PartialOrd`) or a value-level `T: Repr` (`x.encode()`, `T::WIDTH`). Failure scenario: dispatch of an H.8 operator on an instance (e.g. `<` at `u8` vs `f64`) regresses with only the Book's `larger` row noticing | source_generics.rs:328; crates/piperine-parity/tests/generics/functions.msl:9-37 | add `larger<T: PartialOrd>` at `u8` and `f64` and a `width<T: Repr>() -> u32 { T::WIDTH }` / `x.encode()` call to `functions.msl` with Rust-computed expectations | |
+| 7. **Minor** - code cleanliness (user rules): new free functions `stack::wide` (crates/piperine-lang/src/stack.rs:15), test helpers `model_errors`, `snippets`, `codes_of` (crates/piperine-lang/tests/types_model.rs:25, 34, 38, a new file), `typeck_findings` (crates/piperine-api/tests/project.rs:191), `code_lines` (crates/piperine-cli/tests/commands.rs:807), and the Rust oracles `total`, `twice`, `halve`, `load`, `pick`, `count`, `table_total` (crates/piperine-parity/tests/source_generics.rs:120-323); `ModelCheck::new` has no doc comment (types/model.rs:21) and the module doc (model.rs:7-9) still says a generic item is left out and `P0001` when reached | the files and lines named | put the helpers on owner types (as `GenericSources`/`HandleSources` already do), the oracles on a `RustOracle` type or as `impl` methods, `wide` beside `deep` on a `Stack` type; doc `new`; rewrite the module doc to D19's state | |
+| 8. **Minor** - the transpiler recognises the elaborator's `match` temporary by its printed name (`name.starts_with("match_s")`): any local whose printed name starts so (a user `let match_size`) silently gets `#[allow(unused_variables)]`, and a rename of the temporary brings the warning back. Failure scenario: the rule depends on a spelling, not on what the local is | crates/piperine-transpile/src/print/value.rs:1004 | mark the temporary in the IR (or test the elaborator's own `match$` origin) instead of the printed prefix | |
+| 9. **Minor** - D13's amendment is not in the spec: part_i_values.md:903 lists where a solve-reading function is callable (definitions are not listed, so GN-12 AC 2 reads `E0122` in a definition), while the implementation keeps `E0336` there. Failure scenario: code and spec disagree on one construct's code (code-follows-spec rule) | design.md:367; part_i_values.md:903; part_iv_behavior.md:800; my example `f = clock();` gives `E0336` | user ruling; then one sentence in §3 (or the `E0122` row) saying a solve-reading call in a definition is §8.2.5's `E0336`, with a `spec_text.rs` assertion | |
+| 10. **Minor** - the refusal of a generic `extern "intrinsic"` call still says "generic function is not supported yet" although generic functions run; it is what blocks `parse_table`/`parse_hex`/`table_model` (L57) and `logic`/`matches_bits` (L68). The Book rows `packages#12` and `cheatsheet#10` give Owner `composite-values` (closed; the flip is planned in `params-and-io` T37/T43, whose text does not mention lifting this refusal). Failure scenario: the message names a form that now runs, and the row's owner is a closed feature | crates/piperine-lang/src/types/inference.rs:108-113; GAPS.md:413, 421 (owner column unchanged from `main`) | name the form ("a generic `extern \"intrinsic\"` function"); owner `params-and-io` for both rows, with a note that its T37 lifts this refusal for `parse_table` | |
+| 11. **Minor (user ruling)** - GN-05 AC 3 and AC 4 were added to the approved spec by the implementer (440fc72c), deferred to phase C with GAPS L69, without the user's words. Approved criteria may not be edited; an addition takes a new requirement id. Failure scenario: phase C inherits scope the user never approved | spec.md:138-139; `git log -- .specs/features/generics/spec.md` | ask the user; if approved, move them to a new id (e.g. GN-32, phase C) with the approval line | |
