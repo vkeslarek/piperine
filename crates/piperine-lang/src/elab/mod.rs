@@ -18,7 +18,7 @@ mod compound;
 mod consts;
 mod control;
 mod contribute;
-mod delays; mod derivatives; mod noise; mod partial;
+mod delays; mod derivatives; mod noise; mod partial; mod session;
 mod derived;
 mod diagnose;
 mod drives;

@@ -89,3 +89,16 @@ fn noise_table_waits_for_its_dependencies() {
     assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
     assert!(err[0].diagnostic.message.contains("generic module"), "{}", err[0].diagnostic.message);
 }
+
+#[test]
+fn simparam_lowers_to_one_session_parameter_per_name() {
+    // AO-07 (§14.4): `simparam("gmin", 1e-12)` read twice, and `simparam("tnom", None)`, are two
+    // parameters of the body, one per name; a read with no default makes `tnom` required, and a
+    // name every read gives a default stays optional.
+    let ir = Elab::ir(&design("v(o, gnd) +> simparam(\"gmin\", 1e-12) + simparam(\"gmin\", 2e-12) + simparam(\"tnom\", None);"), "Top");
+    let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+    let names: Vec<(&str, bool)> = m.session_parameters().iter().map(|p| (p.name.as_str(), p.required)).collect();
+    assert_eq!(names, [("gmin", false), ("tnom", true)]);
+    let text = ir.to_string();
+    assert!(text.contains("simparam(\"gmin\", 1e-12)") && text.contains("simparam(\"tnom\")"), "{text}");
+}

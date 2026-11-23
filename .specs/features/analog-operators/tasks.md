@@ -925,8 +925,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `simparam_lowers_to_one_session_parameter_per_name` passes
-- [ ] Gate check passes: `Run elabops`
+- [x] `simparam_lowers_to_one_session_parameter_per_name` passes
+- [x] Gate check passes: `Run elabops`
 
 **Tests**: integration
 **Gate**: quick
