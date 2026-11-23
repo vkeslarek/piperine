@@ -124,7 +124,13 @@ impl Checker<'_> {
         };
         match passed {
             // the argument is read as the value the carrier holds; the elaborator binds the carrier itself (`elab/handles.rs`)
-            Some(found) if found == *expected => self.exprs[expr.index()] = Some(Self::handle_read_type(&found)),
+            Some(found) if found == *expected => {
+                // an element `x[k]`: its base and its index are typed like any read
+                if matches!(self.design.expr_node(expr).kind, ExprKind::Index { .. }) {
+                    self.infer(expr);
+                }
+                self.exprs[expr.index()] = Some(Self::handle_read_type(&found));
+            }
             _ => self.check(expr, expected),
         }
     }

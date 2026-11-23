@@ -26,7 +26,7 @@ mod event_reads;
 mod events;
 mod exits;
 mod files; mod override_text; mod table_model; mod tables;
-mod elaborator; mod analog;
+mod elaborator; mod analog; mod elements;
 mod functions;
 mod handles; mod hoist;
 mod host_sources; mod levels;

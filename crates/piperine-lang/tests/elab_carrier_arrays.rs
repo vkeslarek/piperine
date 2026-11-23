@@ -55,3 +55,53 @@ fn arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes() {
     assert_eq!(nodes, ["bl[0]", "bl[1]", "bl[2]", "bl[3]"], "K nodes, named by element");
     assert_eq!(arrays, [("bl".to_string(), 0, 4)], "one name for the array");
 }
+
+/// The structural text of body `Top` of `src`, which elaborates and checks.
+fn structure_of(src: &str) -> String {
+    Elab::ir(src, "Top").print_structural()
+}
+
+#[test]
+fn element_reads_and_events_lower_per_element() {
+    // CV-24: `x[i]` is one element read (constant or run-time index), the whole `x` an array of the values,
+    // `x[k].prev()` the element's previous value, `x[i].changed()` the element's change as a `bool`, and
+    // `on x[k].rise()` an event on that element only, guarded by its edge
+    let src = "module Top(in clk: Bit, in at: Bit<u2>, out q: Bit<u8> = 0) {\n\
+               signal mem: [Bit<u8>; 4] = [0; 4];\n\
+               signal lines: [Bit; 4];\n\
+               signal grid: [[Bit<u8>; 2]; 3] = [[0; 2]; 3];\n}\n\
+               digital for Top {\n\
+               on clk.rise() { let a = mem[1]; let b = mem[at]; let p = mem[2].prev(); let c = lines[at].changed(); let g = grid[2][1]; q <- a + b + p; }\n\
+               on lines[2].rise() { }\n\
+               on mem[3].changed() { }\n}";
+    let text = structure_of(src);
+    for needle in ["mem[", ".prev", "lines["] {
+        assert!(text.contains(needle), "the structure names `{needle}`:\n{text}");
+    }
+    let ir = Elab::ir(src, "Top");
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    // the events are the elements' own: `lines[2]` (a rise) and `mem[3]`, never the whole carriers
+    let events: Vec<_> = body.events().iter().map(|e| e.source.clone()).collect();
+    let lines = body.carriers().iter().position(|c| c.name == "lines").expect("lines") as u32;
+    let mem = body.carriers().iter().position(|c| c.name == "mem").expect("mem") as u32;
+    assert!(events.contains(&piperine_ir::EventSource::ElementChanged { carrier: lines, element: 2 }), "{events:?}");
+    assert!(events.contains(&piperine_ir::EventSource::ElementChanged { carrier: mem, element: 3 }), "{events:?}");
+    let rise = body.events().iter().find(|e| e.source == piperine_ir::EventSource::ElementChanged { carrier: lines, element: 2 }).expect("the rise event");
+    assert!(rise.guard.is_some(), "a rise carries its edge guard (!prev && now)");
+    // §1 rule 11: a constant element past the end is E0104 naming it; an event head that does not fold is the E0180 mismatch naming it
+    let past = Elab::run("module Top() { signal m: [Bit<u8>; 4] = [0; 4]; }\ndigital for Top { on m[0].changed() { let a = m[4]; } }", "Top").expect_err("past the end");
+    assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", support::Elab::codes(&past));
+    let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
+    assert!(folding.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("`l[at]`")), "{:?}", support::Elab::codes(&folding));
+}
+
+#[test]
+fn an_element_binds_a_handle_parameter() {
+    // GN-11, QC3: `f(lines[k])` binds the handle to that one carrier, so `.prev()` and a read inside `f` are the
+    // element's
+    let src = "fn was(a: Bit) -> bool { a.prev() }\n\
+               module Top(in clk: Bit, out q: Bit = false) { signal lines: [Bit; 4]; }\n\
+               digital for Top { on clk.rise() { q <- was(lines[2]); } }";
+    let text = structure_of(src);
+    assert!(text.contains("lines") && text.contains(".prev"), "the handle reads the element's previous value:\n{text}");
+}

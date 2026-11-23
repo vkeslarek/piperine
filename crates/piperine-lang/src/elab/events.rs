@@ -30,6 +30,7 @@
 use piperine_ir::{BinaryOp, Env, Event, EventSource, Expr, ExprId as LoweredExpr, Origin, Reaction, Stmt, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
+use super::elements::{ElementRef, Lookup};
 use super::lower::Scope;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtId};
 use crate::types::{Builtin, Callee};
@@ -214,6 +215,16 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::MethodCall { recv, .. } => match self.types.builtin(expr) {
                 Some(Builtin::Changed) if let Some(param) = self.param_of(scope, *recv) => Some(vec![Disjunct { source: EventSource::ParamChanged(param), discrete: Vec::new(), continuous: Vec::new(), origin }]),
+                Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) if let Lookup::Found(element) = self.element_lookup(scope, *recv) => {
+                    // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
+                    let at = self.folded_element(scope, *recv, element)?;
+                    let discrete = match edge {
+                        Builtin::Rise => vec![self.element_rise_guard(element, origin.clone())],
+                        Builtin::Fall => vec![self.element_fall_guard(element, origin.clone())],
+                        _ => Vec::new(),
+                    };
+                    Some(vec![Disjunct { source: EventSource::ElementChanged { carrier: element.carrier, element: at }, discrete, continuous: Vec::new(), origin }])
+                }
                 Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) => {
                     let carrier = self.carrier_of(scope, *recv)?;
                     let discrete = match edge {
@@ -449,13 +460,34 @@ impl Elaboration<'_, '_> {
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
     }
 
+    /// `x[k].rise()`'s guard: `!ElementPrevious(x, k) && x[k]`.
+    fn element_rise_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(element, origin.clone());
+        let was_low = self.not(previous, origin.clone());
+        let read = self.carrier_element_read(element, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: was_low, rhs: read }, ValueType::Bool, origin)
+    }
+
+    /// `x[k].fall()`'s guard: `ElementPrevious(x, k) && !x[k]`.
+    fn element_fall_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(element, origin.clone());
+        let read = self.carrier_element_read(element, origin.clone());
+        let low = self.not(read, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
+    }
+
     fn not(&mut self, operand: LoweredExpr, origin: Origin) -> LoweredExpr {
         self.emit(Expr::Unary { op: UnaryOp::Not, expr: operand }, ValueType::Bool, origin)
     }
 
     /// A read of carrier `c`: its value.
     pub(super) fn carrier_read(&mut self, c: u32, origin: Origin) -> LoweredExpr {
-        let ty = self.structure.carriers[c as usize].ty.clone();
+        let carrier = &self.structure.carriers[c as usize];
+        // an array of carriers read whole is the array of its elements' values (CV-24 AC 1)
+        let ty = match carrier.count {
+            Some(count) => ValueType::Array(Box::new(carrier.ty.clone()), count),
+            None => carrier.ty.clone(),
+        };
         self.emit(Expr::Carrier(c), ty, origin)
     }
 
@@ -471,10 +503,14 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(expr).span;
         match builtin {
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
-            Builtin::Prev => {
-                let carrier = self.carrier_of(scope, recv)?;
-                Some(self.previous(carrier, origin))
-            }
+            Builtin::Prev => match self.element_lookup(scope, recv) {
+                Lookup::Found(element) => Some(self.element_previous(element, origin)),
+                Lookup::Failed => None,
+                Lookup::No => {
+                    let carrier = self.carrier_of(scope, recv)?;
+                    Some(self.previous(carrier, origin))
+                }
+            },
             Builtin::Inflow => self.lower_inflow(scope, recv, origin),
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
             // edge that reaches this arm stands where no event read does.
