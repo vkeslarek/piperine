@@ -263,3 +263,12 @@ fn the_book_drives_nets_with_strength() {
     let mut standalone = book.match_indices("Wire").filter(|(at, _)| !book[..*at].ends_with(|c: char| c.is_ascii_alphabetic()));
     assert!(standalone.next().is_none(), "the Book names a library Wire (AlarmLine and AndWire are the model's own)");
 }
+
+#[test]
+fn the_slice_listing_bounds_t_by_default_as_gallery_e6_does() {
+    // natures#8 amended (T116, BA3): `signal buf: Bit<T>` starts at `T::default()` (§3.3.4), so the old
+    // `Slice<T: Repr>` was refused; shown here on a plain module, where `u8` has no `Default`.
+    let source = "module Slice(in clk: Bit) { signal buf: Bit<u8>; }\nmodule Top() { signal c: Bit; let s = Slice(c); }\n";
+    let faulty = Faulty::elaborating("natures#8", source, "Top");
+    faulty.first("E0187");
+}

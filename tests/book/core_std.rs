@@ -132,7 +132,7 @@ fn the_pad_drives_its_node_and_reads_it_back() {
 
 #[test]
 fn the_register_with_a_setup_check_is_refused_for_the_generic_monitor() {
-    // core-std#8 (refused): `Reg` places `Setup(clk, d) { ts: 100p }`, and `Setup<T: Repr>` is a generic
+    // core-std#8 (refused): `Reg` places `Setup(clk, d, late) { ts: 100p }` after T116, and `Setup<T: Repr>` is a generic
     // module (L30)
     let chapter = Chapter::read();
     let after = "module Top(in clk: Bit) { signal d: Bit; signal q: Bit; let r = Reg(clk, d, q); }\n";
@@ -288,4 +288,13 @@ fn e0702_is_raised_for_a_pattern_with_another_character_or_another_length() {
     assert_eq!(character.pointed_at("E0702"), "\"10q1\"");
     let length = Faulty::elaborating("core-std~6e04c51d", "module Top() { signal a: Bit<Logic<4>> = logic(\"101\"); }\n", "Top");
     assert!(length.first("E0702").message.contains("3 characters"), "{}", length.first("E0702").message);
+}
+
+#[test]
+fn a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was() {
+    // core-std#8 amended (T116, BA1): the old listing placed `Setup(clk, d)` and left the `out` carrier port
+    // `viol` unconnected; §8.1.8 "a carrier port is never optional", so the form is refused on a plain module.
+    let source = "module Check(in clk: Bit, in d: Bit, out viol: Bit = false) { ts: f64 = 1n; }\nmodule Reg(in clk: Bit, in d: Bit, out q: Bit = false) { let chk = Check(clk, d) { ts: 100p }; }\nmodule Top() { signal clk: Bit; signal d: Bit; signal q: Bit; let r = Reg(clk, d, q); }\n";
+    let faulty = Faulty::elaborating("core-std#8", source, "Top");
+    faulty.first("E0312");
 }

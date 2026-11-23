@@ -2241,7 +2241,7 @@ impl<T> Stream<T> {
     pub fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid && self.ready }
 }
 
-module Slice<T: Repr>(in clk: Bit, rx: flip Stream<T>, tx: Stream<T>) {
+module Slice<T: Repr + Default>(in clk: Bit, rx: flip Stream<T>, tx: Stream<T>) {
     signal full: Bit = false;
     signal buf: Bit<T>;
     tx.data = buf;
@@ -3229,7 +3229,7 @@ digital for PwmCheck {
     }
 }</pre>
 
-<p>Place it beside the generator in <code>PwmBench</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d) { ts: 100p }</code>; chapter 13 lists them.</p>
+<p>Place it beside the generator in <code>PwmBench</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d, late) { ts: 100p }</code>; chapter 13 lists them.</p>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
@@ -6629,7 +6629,8 @@ module Board(in req0: Bit, in req1: Bit) {
 </tbody></table></div>
 
 <pre data-lang="msl">module Reg(in clk: Bit, in d: Bit, out q: Bit = false) {
-    let chk = Setup(clk, d) { ts: 100p };
+    signal late: Bit;
+    let chk = Setup(clk, d, late) { ts: 100p };
 }
 digital for Reg { on clk.rise() { q &lt;- d; } }</pre>
 
@@ -8841,7 +8842,7 @@ nature Electrical {
     r: f64 = 1k where r > 0.0;     // param
     rs: Option<f64>;               // may be left out
     signal mid: Electrical;
-    signal s: [Bit; N];
+    signal s: [Bit; N] = [false; N];
 }</pre></div>
 
 <div class="cheat-card"><h4>Body items</h4>

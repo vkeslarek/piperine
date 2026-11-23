@@ -378,8 +378,8 @@ fn require_writes_to_checks_as_a_pass_or_a_failure() {
 
 #[test]
 fn the_library_declares_the_monitors_and_never_runs() {
-    // digital~5f53905d: "The library also has ready-made monitors built this way, such as Never(clk, bad)
-    // and Setup(clk, d) { ts: 100p }": `std/monitor.msl` declares both, and `Never` is one `require` per
+    // digital~7b9de27c: "The library also has ready-made monitors built this way, such as Never(clk, bad)
+    // and Setup(clk, d, late) { ts: 100p }": `std/monitor.msl` declares both, and `Never` is one `require` per
     // rising edge (`Setup` is generic, which the compiler refuses: chapter 13, core-std)
     let library = StandardLibrary::normalized(&["monitor.msl"]);
     assert!(library.contains("module Never(in clk: Bit, in bad: Bit)"), "Never is declared");

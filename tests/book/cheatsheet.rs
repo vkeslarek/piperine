@@ -194,3 +194,12 @@ fn a_name_of_yours_hides_the_library_but_not_the_core() {
     let faulty = Faulty::elaborating("cheatsheet~a9561024", "fn ddt(x: f64) -> f64 { x }\nmodule Top() { }\n", "Top");
     assert_eq!(faulty.first("E0457").message, "`ddt` is a core primitive and cannot be redefined (§14 rule 1)");
 }
+
+#[test]
+fn an_array_of_bits_with_no_initial_value_is_e0187() {
+    // cheatsheet#2 amended (T116, BA2): the old card wrote `signal s: [Bit; N];`; `bool` has no `Default`
+    // (§3.3.4, MD-78), so a carrier array nothing initializes is refused on a plain module.
+    let source = "module M(in clk: Bit) { signal s: [Bit; 2]; }\nmodule Top() { signal c: Bit; let m = M(c); }\n";
+    let faulty = Faulty::elaborating("cheatsheet#2", source, "Top");
+    faulty.first("E0187");
+}

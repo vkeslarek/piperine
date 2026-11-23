@@ -297,11 +297,11 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was` passes under `**Run bookcorestd**`
-- [ ] `an_array_of_bits_with_no_initial_value_is_e0187` passes under `**Run bookcheatsheet**`
-- [ ] `the_slice_listing_bounds_t_by_default_as_gallery_e6_does` passes under `**Run booknatures**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
-- [ ] Gate check passes: Quick
+- [x] `a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was` passes under `**Run bookcorestd**`
+- [x] `an_array_of_bits_with_no_initial_value_is_e0187` passes under `**Run bookcheatsheet**`
+- [x] `the_slice_listing_bounds_t_by_default_as_gallery_e6_does` passes under `**Run booknatures**`
+- [x] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
