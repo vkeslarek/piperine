@@ -1,0 +1,25 @@
+//! A carrier of `Option<Logic<4>>` (§3.3.3, §22.1.1): it starts at `None`, a commit of `Some(logic("10xz"))` lands one
+//! microstep later, and `unwrap_or` reads the four levels. The expected values are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Setter(in clk: Bit, out p: Bit<Option<Logic<4>>>) {}
+digital for Setter {
+    on clk.rise() { p <- Some(logic("10xz")); }
+}
+
+module Probe(in clk: Bit, in o: Bit<Option<Logic<4>>>, in p: Bit<Option<Logic<4>>>) {}
+digital for Probe {
+    on clk.rise() {
+        emit!("seen", o = match o { None => 1, Some(_) => 2 }, p = match p { None => 1, Some(_) => 2 }, binary = p.unwrap_or(logic("zzzz")).binary, value = p.unwrap_or(logic("zzzz")).value);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal o: Bit<Option<Logic<4>>>; signal p: Bit<Option<Logic<4>>>;
+    let osc = Osc(clk) { f: 1G };
+    let setter = Setter(clk, p);
+    let probe = Probe(clk, o, p);
+}

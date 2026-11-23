@@ -806,8 +806,10 @@ impl<'a> ValuePrinter<'a> {
     /// The levels of `e` as `rt::LevelWords`: what `same` compares and `cast` moves. A real of the
     /// code's own type (`R`) is read at its value.
     fn levels(&self, e: ExprId) -> Result<String, Error> {
-        let operand = self.piece(e)?.at(Prec::Atom);
-        let operand = if *self.ir.expr_type(e) == ValueType::F64 && !self.plain { format!("{operand}.value()") } else { operand };
+        // a call argument needs no parentheses; the `.value()` of a real binds to an atom
+        let real = *self.ir.expr_type(e) == ValueType::F64 && !self.plain;
+        let operand = self.piece(e)?.at(if real { Prec::Atom } else { Prec::Low });
+        let operand = if real { format!("{operand}.value()") } else { operand };
         Ok(format!("rt::Carried::to_levels({operand})"))
     }
 

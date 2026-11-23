@@ -388,6 +388,11 @@ impl Elaboration<'_, '_> {
             ExprKind::Call { callee, args, .. } if self.types.callee(expr).is_none() && let Some(decoded) = self.lower_parameter_decode(scope, expr, *callee, args, &origin) => decoded,
             // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
+            // A method call whose function returns an `Option` (`x.to_bits()`): the pair of its two halves for the instance of its `impl`.
+            ExprKind::MethodCall { recv, args, .. } if let Some(function) = self.calls_option_method(expr) => {
+                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_option_instance_method(scope, expr, function, *recv, &args)
+            }
             // A field of `Option` type: the two halves of the packed value, each unpacked from the
             // field read where it stands.
             ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => {

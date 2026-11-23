@@ -1,0 +1,16 @@
+//! `Logic<100>` has two `UInt<100>` planes; integers wider than 64 bits are refused by name (`GAPS.md` L13).
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Rows(in clk: Bit, out m: Bit<Logic<100>>) {}
+digital for Rows {
+    on clk.rise() { m <- Logic::from(5u100); }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m: Bit<Logic<100>>;
+    let osc = Osc(clk);
+    let rows = Rows(clk, m);
+}

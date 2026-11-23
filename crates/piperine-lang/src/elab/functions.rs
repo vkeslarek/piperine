@@ -98,11 +98,14 @@ impl Elaboration<'_, '_> {
         let Some(parent) = data.parent else { return own };
         // an `impl` with parameters is told apart by the arguments of its instances
         let DeclKind::Impl(owner) = &self.design.decl_data(parent).kind else { return own };
-        if self.design.decl_data(parent).generics_span.is_some() {
+        // an `impl` with parameters is told apart by the arguments of its instances, and a trait `impl` also by its type and
+        // its trait arguments (`impl BitAnd for Logic<N>` and `impl BitAnd<UInt<N>, Logic<N>> for Logic<N>` give two `bitand`)
+        if self.design.decl_data(parent).generics_span.is_some() && owner.trait_.is_none() {
             return own;
         }
         let suffix = self.trait_arguments_suffix(parent);
-        match self.typed_written(owner.self_ty) {
+        // the type as written, under no substitution: the name of an instance is the same wherever it is asked
+        match self.consts.written_as_declared(owner.self_ty) {
             Some(ty) => format!("{}.{own}{suffix}", ty.source_name(self.design)),
             None => own,
         }
@@ -114,7 +117,7 @@ impl Elaboration<'_, '_> {
     #[inline(never)]
     fn trait_arguments_suffix(&self, owner: DeclId) -> String {
         let arguments = self.impls.impls().iter().find(|entry| entry.decl == owner).map(|entry| entry.trait_arguments.clone()).unwrap_or_default();
-        let written: Vec<String> = arguments.iter().filter_map(|argument| self.typed_written(*argument)).map(|ty| ty.source_name(self.design)).collect();
+        let written: Vec<String> = arguments.iter().filter_map(|argument| self.consts.written_as_declared(*argument)).map(|ty| ty.source_name(self.design)).collect();
         if written.is_empty() { String::new() } else { format!("::<{}>", written.join(", ")) }
     }
 

@@ -1178,8 +1178,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] Every `source_logic` test that `## Checks` assigns to T46 passes
-- [ ] Gate check passes: Full
+- [x] Every `source_logic` test that `## Checks` assigns to T46 passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
