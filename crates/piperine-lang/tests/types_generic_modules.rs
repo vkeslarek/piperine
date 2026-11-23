@@ -9,6 +9,7 @@ mod support;
 mod generic_sources;
 
 use generic_sources::GenericSources;
+use piperine_lang::pom::Design;
 use piperine_lang::types::UnfinishedForm;
 
 /// The whole-model check with generic modules admitted: the form is still behind the unfinished-forms gate.
@@ -132,3 +133,34 @@ fn a_carrier_handed_to_a_generic_out_port_needs_no_initial_value() {
     let alone = format!("{items}module Top() {{ signal s: Bit; }}\n");
     assert!(Admitted::pairs(&alone).iter().any(|(code, _)| code == "E0187"), "{:?}", Admitted::pairs(&alone));
 }
+
+#[test]
+fn a_behavior_block_binds_its_modules_generic_names() {
+    // GN-13 AC 2 (§8): inside `analog<S> for idt<S>` and `digital<T> for Setup<T>` the module's names are in scope with the
+    // module's types: `signal y: S` is a node of the nature parameter, `Bit<T>` a carrier of the type parameter
+    let analog = "module Integ<S: Nature>(x: f64) -> f64 { signal y: S; potential(y) }\n\
+                  analog<S> for Integ<S> { flow(y) +> ddt(potential(y)) - x; }\n";
+    assert_eq!(Admitted::pairs(analog), vec![], "the nature parameter is read inside the block");
+    let digital = "module Latch<T: Repr + Default>(in clk: Bit, in d: Bit<T>) { signal q: Bit<T>; }\n\
+                   digital<T> for Latch<T> { on clk.rise() { q <- d; } }\n";
+    assert_eq!(Admitted::pairs(digital), vec![], "the type parameter is read inside the block");
+    // a body that treats `T` as a type it is not is the mismatch, at the definition
+    let wrong = "module Latch<T: Repr + Default>(in clk: Bit, in d: Bit<T>) { signal q: Bit<T>; }\n\
+                 digital<T> for Latch<T> { on clk.rise() { q <- true; } }\n";
+    assert!(Admitted::pairs(wrong).iter().any(|(code, message)| code == "E0432" && message.contains("expected `T`, found `bool`")), "{:?}", Admitted::pairs(wrong));
+}
+
+#[test]
+fn behavior_names_that_differ_are_e0403_naming_both_lists() {
+    // GN-13 AC 3 (§8): a block whose list differs from the module's in name, number or order is `E0403` naming both lists
+    let cases = [("analog<T> for Short<T> { }", "<T>", "<S>"), ("analog<S, U> for Short<S, U> { }", "<S, U>", "<S>"), ("analog<B, A> for Pair<B, A> { }", "<B, A>", "<A, B>")];
+    for (block, written, declared) in cases {
+        let src = format!("module Short<S: Nature>(a: S, b: S) {{ }}\nmodule Pair<A: Nature, B: Nature>(a: A, b: B) {{ }}\n{block}\n");
+        let design = Design::builder().source("top.msl", format!("{}{src}", GenericSources::HEAD)).build();
+        let found: Vec<_> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0403").collect();
+        assert_eq!(found.len(), 1, "{block}: {:?}", support::codes(&design));
+        let message = &found[0].diagnostic.message;
+        assert!(message.contains(&format!("`{written}`")) && message.contains(&format!("`{declared}`")), "{block}: {message}");
+    }
+}
+

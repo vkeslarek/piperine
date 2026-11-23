@@ -388,8 +388,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_behavior_block_binds_its_modules_generic_names` and `behavior_names_that_differ_are_e0403_naming_both_lists` pass under `**Run typesmods**`
-- [ ] Gate check passes: Quick
+- [x] `a_behavior_block_binds_its_modules_generic_names` and `behavior_names_that_differ_are_e0403_naming_both_lists` pass under `**Run typesmods**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
