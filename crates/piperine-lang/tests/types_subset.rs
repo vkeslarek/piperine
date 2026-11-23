@@ -38,7 +38,6 @@ const ROWS: &[Row] = &[
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
     Row { construct: "placement through a template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; let r = t(a, b); }", names: "module template" },
     Row { construct: "value input of an unsupported type", source: "module Top(x: (f64, f64)) { }", names: "value input port" },
-    Row { construct: "named argument of a result module", source: "module M(x: f64, y: Option<f64>) -> f64 { x }\nmodule Top() { let m = M(1.0, y: 2.0); }", names: "named connection" },
     Row { construct: "extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: E) { }\nmodule Top(a: E) { let x = X(a); }", names: "`extern` module" },
     Row { construct: "generation", source: "module Top(a: E) { for i in 0..2 { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
     Row { construct: "ddx", source: "module Top(a: E) { }\nanalog for Top { let x = ddx(v(a), v(a)); }", names: "`ddx`" },

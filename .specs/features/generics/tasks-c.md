@@ -366,9 +366,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_trailing_option_value_input_passed_by_name_binds_it` and `a_named_connection_that_is_no_trailing_option_input_is_e0140` pass under `**Run typesmodules**`
-- [ ] `a_value_input_passed_by_name_reads_its_argument` passes under `**Run elabresults**`
-- [ ] Gate check passes: Quick
+- [x] `a_trailing_option_value_input_passed_by_name_binds_it` and `a_named_connection_that_is_no_trailing_option_input_is_e0140` pass under `**Run typesmodules**`
+- [x] `a_value_input_passed_by_name_reads_its_argument` passes under `**Run elabresults**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

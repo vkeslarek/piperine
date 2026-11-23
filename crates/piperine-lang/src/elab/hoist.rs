@@ -26,7 +26,7 @@ use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::msl::Diagnostic;
-use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, Resolution, StructClass};
+use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, PortArguments, Resolution, StructClass};
 use crate::types::Callee;
 
 impl Elaboration<'_, '_> {
@@ -219,11 +219,12 @@ impl Elaboration<'_, '_> {
         frame.params = bound;
         frame.unrolled = scope.unrolled.clone();
         let mut node_ports = Vec::new();
+        let bound = PortArguments::bind(self.design, module, args);
         for (k, port) in ports.iter().enumerate() {
             if self.is_value_input(*port) {
-                frame.inputs.insert(*port, args.get(k).map(|a| a.value));
+                frame.inputs.insert(*port, bound.at(k).map(|a| a.value));
             } else if self.types.carrier(*port).is_none() {
-                node_ports.push((*port, args.get(k).map(|a| a.value)));
+                node_ports.push((*port, bound.at(k).map(|a| a.value)));
             }
         }
         // A node port is the caller's terminal for its argument, read in the caller's frame.
@@ -238,7 +239,8 @@ impl Elaboration<'_, '_> {
         self.record_hoisted(index, module, &name, call, gained);
         self.lower_carriers(index, module);
         // A discrete `in` value input: the hoisted carrier, driven by the caller's expression.
-        for (port, arg) in ports.iter().zip(args) {
+        for (position, port) in ports.iter().enumerate() {
+            let Some(arg) = bound.at(position) else { continue };
             let Some(carrier) = self.frames[index].carriers.get(port).copied() else { continue };
             let origin = self.expr_origin(arg.value);
             let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());

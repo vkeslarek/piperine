@@ -270,17 +270,13 @@ impl Checker<'_> {
             DeclKind::Port(p) => Some((*c, p.ty, p.dir)),
             _ => None,
         }).collect();
-        let named = args.iter().any(|a| a.name.is_some());
-        if named {
-            for arg in args.iter().filter(|a| a.name.is_some()) {
-                self.unsupported(file, arg.span, "named connection");
-            }
-        }
         let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type_under_placement(*ty)).collect();
         let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
-        if args.len() < min || args.len() > max {
+        // a named connection that is no trailing `Option` input is `E0140` from the POM (`classify.rs`), before this check
+        let positional = args.iter().filter(|arg| arg.name.is_none()).count();
+        if positional < min || args.len() > max {
             let span = self.design.expr_node(expr).span;
             let name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
             if call_rule {
@@ -290,14 +286,15 @@ impl Checker<'_> {
                 let message = format!("`{name}` has {} port(s), found {} connection(s)", ports.len(), args.len());
                 self.coded(file, "E0312", span, message, "wrong number of connections");
             }
-        }
-        let counted = args.len() >= min && args.len() <= max;
-        for (i, arg) in args.iter().enumerate() {
-            let port = ports.get(i).copied().zip(kinds.get(i).cloned()).filter(|_| !named && counted);
-            let Some(((port_decl, _, dir), kind)) = port else {
+            for arg in args {
                 self.infer(arg.value);
-                continue;
-            };
+            }
+            return;
+        }
+        let bound = crate::pom::PortArguments::bind(self.design, module, args);
+        for (index, kind) in kinds.iter().cloned().enumerate() {
+            let Some(arg) = bound.at(index) else { continue };
+            let (port_decl, _, dir) = ports[index];
             match kind {
                 Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
