@@ -161,6 +161,95 @@ impl Float16 {
         Self::from_pattern(Self::arithmetic().remainder_euclid(self.0 as u128, divisor.0 as u128))
     }
 
+    /// `f(self)` computed in `f64` and rounded once to `f16` (QD3): `f64` leaves a `2^-42` relative
+    /// margin below any `f16` midpoint a libm error could reach.
+    fn through_f64<F>(self, function: F) -> Float16
+    where
+        F: Fn(f64) -> f64,
+    {
+        Float16::from_f64(function(self.to_f64()))
+    }
+
+    /// `e^x`.
+    pub fn exp(self) -> Float16 {
+        self.through_f64(f64::exp)
+    }
+
+    /// The natural logarithm (NaN below zero, `-inf` at zero).
+    pub fn ln(self) -> Float16 {
+        self.through_f64(f64::ln)
+    }
+
+    /// The base-10 logarithm.
+    pub fn log10(self) -> Float16 {
+        self.through_f64(f64::log10)
+    }
+
+    /// The base-2 logarithm.
+    pub fn log2(self) -> Float16 {
+        self.through_f64(f64::log2)
+    }
+
+    /// The sine.
+    pub fn sin(self) -> Float16 {
+        self.through_f64(f64::sin)
+    }
+
+    /// The cosine.
+    pub fn cos(self) -> Float16 {
+        self.through_f64(f64::cos)
+    }
+
+    /// The tangent.
+    pub fn tan(self) -> Float16 {
+        self.through_f64(f64::tan)
+    }
+
+    /// The arcsine (NaN outside `[-1, 1]`).
+    pub fn asin(self) -> Float16 {
+        self.through_f64(f64::asin)
+    }
+
+    /// The arccosine (NaN outside `[-1, 1]`).
+    pub fn acos(self) -> Float16 {
+        self.through_f64(f64::acos)
+    }
+
+    /// The arctangent.
+    pub fn atan(self) -> Float16 {
+        self.through_f64(f64::atan)
+    }
+
+    /// The hyperbolic sine.
+    pub fn sinh(self) -> Float16 {
+        self.through_f64(f64::sinh)
+    }
+
+    /// The hyperbolic cosine.
+    pub fn cosh(self) -> Float16 {
+        self.through_f64(f64::cosh)
+    }
+
+    /// The hyperbolic tangent.
+    pub fn tanh(self) -> Float16 {
+        self.through_f64(f64::tanh)
+    }
+
+    /// `self.atan2(x)`: the angle of the point `(x, self)`.
+    pub fn atan2(self, x: Float16) -> Float16 {
+        Float16::from_f64(self.to_f64().atan2(x.to_f64()))
+    }
+
+    /// `self` raised to `exponent`.
+    pub fn powf(self, exponent: Float16) -> Float16 {
+        Float16::from_f64(self.to_f64().powf(exponent.to_f64()))
+    }
+
+    /// `self` raised to an integer (as `powf` of that integer, which `f64` evaluates accurately).
+    pub fn powi(self, exponent: i32) -> Float16 {
+        Float16::from_f64(self.to_f64().powf(f64::from(exponent)))
+    }
+
     /// `sqrt(x^2 + y^2)` without overflow in the squares, correctly rounded.
     pub fn hypot(self, other: Self) -> Self {
         Self::from_pattern(Self::arithmetic().hypot(self.0 as u128, other.0 as u128))

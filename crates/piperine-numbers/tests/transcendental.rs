@@ -3,10 +3,16 @@
 //! `mpmath` at 1 024 bits and rounded to binary128 by exact rational comparison. Every
 //! comparison is bit for bit; there is no tolerance anywhere.
 
+use piperine_numbers::convert::NumberConversion;
+use piperine_numbers::format::BinaryFormat;
+use piperine_numbers::half::Float16;
+use piperine_numbers::power::ExactPower;
 use piperine_numbers::quad::Float128;
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::thread;
 
 /// The functions a vector file exists for.
 const FUNCTIONS: [&str; 16] = ["exp", "ln", "log2", "log10", "powf", "powi", "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh"];
@@ -241,4 +247,171 @@ fn hyperbolic_functions_match_the_reference_vectors_bit_for_bit() {
     comparison.check_unary("sinh", Float128::sinh);
     comparison.check_unary("cosh", Float128::cosh);
     comparison.check_unary("tanh", Float128::tanh);
+}
+
+/// The oracle of the `f16` transcendentals is the `f128` library (proven bit for bit above),
+/// rounded to `f16`. An input whose `f128` result lies within one `f128` unit of an `f16`
+/// midpoint cannot be decided by it and fails the test naming the input (an exact `powf` result
+/// is the one exception: its `f128` value is exact, so a tie is a true tie).
+struct HalfOracle {
+    /// The failures found, collected across threads.
+    failures: Mutex<Vec<String>>,
+}
+
+impl HalfOracle {
+    /// An oracle with no failures yet.
+    fn new() -> Self {
+        HalfOracle { failures: Mutex::new(Vec::new()) }
+    }
+
+    /// The `f128` of an `f16` pattern (exact).
+    fn widen(bits: u16) -> Float128 {
+        Float128::from_bits(NumberConversion::float_to_float(BinaryFormat::HALF, bits as u128, BinaryFormat::QUAD))
+    }
+
+    /// The `f16` pattern an `f128` result rounds to.
+    fn narrow(bits: u128) -> u16 {
+        NumberConversion::float_to_float(BinaryFormat::QUAD, bits, BinaryFormat::HALF) as u16
+    }
+
+    /// The expected `f16` pattern of an `f128` result, or the ambiguity message.
+    fn expected(result: Float128, exact: bool) -> Result<u16, String> {
+        let center = Self::narrow(result.to_bits());
+        if result.is_nan() || result.is_infinite() || result.is_zero() || exact {
+            return Ok(center);
+        }
+        for neighbour in [result.to_bits() - 1, result.to_bits() + 1] {
+            if Self::narrow(neighbour) != center {
+                return Err("its f128 result lies within one f128 unit of an f16 midpoint".to_string());
+            }
+        }
+        Ok(center)
+    }
+
+    /// Whether two `f16` patterns are the same value (equal bits, or both NaN).
+    fn same(expected: u16, actual: Float16) -> bool {
+        (actual.is_nan() && Float16::from_bits(expected).is_nan()) || expected == actual.to_bits()
+    }
+
+    /// Records a failure.
+    fn fail(&self, message: String) {
+        if let Ok(mut failures) = self.failures.lock() {
+            failures.push(message);
+        }
+    }
+
+    /// Runs `check` on every index below `count`, split over the available threads.
+    fn parallel<F>(count: u32, check: F)
+    where
+        F: Fn(u32) + Sync,
+    {
+        let workers = thread::available_parallelism().map(|number| number.get() as u32).unwrap_or(4);
+        thread::scope(|scope| {
+            for worker in 0..workers {
+                let check = &check;
+                scope.spawn(move || {
+                    let mut index = worker;
+                    while index < count {
+                        check(index);
+                        index += workers;
+                    }
+                });
+            }
+        });
+    }
+
+    /// One-argument methods over all 65 536 inputs.
+    fn check_unary(&self, name: &str, quad: fn(Float128) -> Float128, half: fn(Float16) -> Float16) {
+        Self::parallel(1 << 16, |bits| {
+            let bits = bits as u16;
+            match Self::expected(quad(Self::widen(bits)), false) {
+                Err(why) => self.fail(format!("{name}({bits:#06x}): {why}")),
+                Ok(expected) if !Self::same(expected, half(Float16::from_bits(bits))) => self.fail(format!("{name}({bits:#06x}): expected {expected:#06x}, got {:#06x}", half(Float16::from_bits(bits)).to_bits())),
+                Ok(_) => {}
+            }
+        });
+    }
+
+    /// `powi` over all inputs with exponents -4 to 4.
+    fn check_integer_power(&self) {
+        Self::parallel(9 << 16, |index| {
+            let (bits, exponent) = ((index % (1 << 16)) as u16, (index >> 16) as i32 - 4);
+            let exponent_bits = Float128::from_bits(NumberConversion::integer_to_float(exponent < 0, &[u64::from(exponent.unsigned_abs())], BinaryFormat::QUAD));
+            let exact = exponent != 0 && Self::widen(bits).is_finite() && !Self::widen(bits).is_zero() && ExactPower::of(Self::widen(bits).abs(), exponent_bits).is_some();
+            match Self::expected(Self::widen(bits).powi(exponent), exact) {
+                Err(why) => self.fail(format!("powi({bits:#06x}, {exponent}): {why}")),
+                Ok(expected) if !Self::same(expected, Float16::from_bits(bits).powi(exponent)) => self.fail(format!("powi({bits:#06x}, {exponent}): expected {expected:#06x}, got {:#06x}", Float16::from_bits(bits).powi(exponent).to_bits())),
+                Ok(_) => {}
+            }
+        });
+    }
+
+    /// A deterministic pair of `f16` patterns for one index of a sequence (splitmix64 of the seed and the index).
+    fn pair(seed: u64, index: u32) -> (u16, u16) {
+        let mut mixed = seed.wrapping_add(u64::from(index).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        mixed ^= mixed >> 31;
+        (mixed as u16, (mixed >> 32) as u16)
+    }
+
+    /// The special values of `f16` as patterns, both signs.
+    fn specials() -> Vec<u16> {
+        let positive = [0x0000u16, 0x0001, 0x03FF, 0x0400, 0x3400, 0x3800, 0x3C00, 0x3C01, 0x4000, 0x4200, 0x4900, 0x5640, 0x7BFF, 0x7C00, 0x7C01, 0x7E00];
+        positive.iter().flat_map(|bits| [*bits, *bits | 0x8000]).collect()
+    }
+
+    /// A two-argument method over every pair of special values and `2^20` deterministic random pairs.
+    fn check_pairs(&self, name: &str, seed: u64, quad: fn(Float128, Float128) -> (Float128, bool), half: fn(Float16, Float16) -> Float16) {
+        let specials = Self::specials();
+        let total = (specials.len() * specials.len()) as u32 + (1 << 20);
+        Self::parallel(total, |index| {
+            let (x, y) = if (index as usize) < specials.len() * specials.len() {
+                (specials[index as usize / specials.len()], specials[index as usize % specials.len()])
+            } else {
+                Self::pair(seed, index)
+            };
+            let (result, exact) = quad(Self::widen(x), Self::widen(y));
+            match Self::expected(result, exact) {
+                Err(why) => self.fail(format!("{name}({x:#06x}, {y:#06x}): {why}")),
+                Ok(expected) if !Self::same(expected, half(Float16::from_bits(x), Float16::from_bits(y))) => self.fail(format!("{name}({x:#06x}, {y:#06x}): expected {expected:#06x}, got {:#06x}", half(Float16::from_bits(x), Float16::from_bits(y)).to_bits())),
+                Ok(_) => {}
+            }
+        });
+    }
+
+    /// Asserts nothing failed.
+    fn finish(&self) {
+        let failures = self.failures.lock().map(|list| list.clone()).unwrap_or_default();
+        let mut shown: Vec<String> = Vec::new();
+        for failure in &failures {
+            let name = failure.split('(').next().unwrap_or("");
+            if shown.iter().filter(|line| line.starts_with(name)).count() < 3 {
+                shown.push(failure.clone());
+            }
+        }
+        assert!(failures.is_empty(), "{} f16 results are wrong or undecided; the first of each function:\n{}", failures.len(), shown.join("\n"));
+    }
+}
+
+#[test]
+fn every_f16_transcendental_is_correctly_rounded_over_all_inputs() {
+    let oracle = HalfOracle::new();
+    oracle.check_unary("exp", Float128::exp, Float16::exp);
+    oracle.check_unary("ln", Float128::ln, Float16::ln);
+    oracle.check_unary("log2", Float128::log2, Float16::log2);
+    oracle.check_unary("log10", Float128::log10, Float16::log10);
+    oracle.check_unary("sin", Float128::sin, Float16::sin);
+    oracle.check_unary("cos", Float128::cos, Float16::cos);
+    oracle.check_unary("tan", Float128::tan, Float16::tan);
+    oracle.check_unary("asin", Float128::asin, Float16::asin);
+    oracle.check_unary("acos", Float128::acos, Float16::acos);
+    oracle.check_unary("atan", Float128::atan, Float16::atan);
+    oracle.check_unary("sinh", Float128::sinh, Float16::sinh);
+    oracle.check_unary("cosh", Float128::cosh, Float16::cosh);
+    oracle.check_unary("tanh", Float128::tanh, Float16::tanh);
+    oracle.check_integer_power();
+    oracle.check_pairs("atan2", 1091, |y, x| (y.atan2(x), false), Float16::atan2);
+    oracle.check_pairs("powf", 1092, |x, y| (x.powf(y), x.is_finite() && y.is_finite() && !x.is_zero() && !y.is_zero() && ExactPower::of(x.abs(), y).is_some()), Float16::powf);
+    oracle.finish();
 }
