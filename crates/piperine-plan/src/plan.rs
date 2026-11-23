@@ -279,7 +279,11 @@ impl ReadSet {
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
         set.0.extend(body.delay_reads(target).into_iter().map(Source::Delay));
-        set.0.extend(body.noise_reads(target).into_iter().map(Source::NoiseValue));
+        // A noise source's input is read by the analog evaluation alone (abi.md §4.2): a check, an
+        // event, a drive or a reaction reads 0 there, which is the value at every accepted solution.
+        if matches!(target, Query::Flow(_) | Query::Charge(_) | Query::Limit(_) | Query::Stim(_) | Query::Derivative(_) | Query::DelayInput(_) | Query::DelayTime(_) | Query::DelayMaximum(_) | Query::NoiseDensity(_) | Query::Trace(_)) {
+            set.0.extend(body.noise_reads(target).into_iter().map(Source::NoiseValue));
+        }
         set.0.extend(body.session_parameter_reads(target).into_iter().map(Source::SessionParameter));
         set.0.extend(body.param_previous_reads(target).into_iter().map(Source::ParamPrevious));
         set

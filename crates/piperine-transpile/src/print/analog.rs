@@ -59,6 +59,7 @@ impl<'a> AnalogPrinter<'a> {
             flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
             derivatives: (0..body.derivatives().len() as u32).map(Self::derivative_pin).collect(),
             delays: (0..body.delays().len() as u32).map(|k| Text::generated(&format!("delay{k}_value"))).collect(),
+            noises: (0..body.noise_sources().len() as u32).map(crate::print::NoisePrinter::input_name).collect(),
             param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
@@ -321,7 +322,10 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Delay(k) => {
                     sources.insert(Source::Delay(*k));
                 }
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) | Expr::Noise(_) => {}
+                Expr::Noise(k) => {
+                    sources.insert(Source::NoiseValue(*k));
+                }
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) => {}
                 Expr::Derivative(k) => {
                     sources.insert(Source::Derivative(*k));
                 }

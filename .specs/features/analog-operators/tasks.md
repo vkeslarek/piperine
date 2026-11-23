@@ -799,8 +799,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `the_noise_function_writes_its_density_and_faults_454` and `a_reaction_reads_noise_as_zero` pass
-- [ ] Gate check passes: `Run tops`, `Run tgolden`
+- [x] `the_noise_function_writes_its_density_and_faults_454` and `a_reaction_reads_noise_as_zero` pass
+- [x] Gate check passes: `Run tops`, `Run tgolden`
 
 **Tests**: integration
 **Gate**: quick

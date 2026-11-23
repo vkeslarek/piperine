@@ -40,6 +40,7 @@ impl<'a> DigitalPrinter<'a> {
             flows: Vec::new(),
             derivatives: (0..self.body.derivatives().len() as u32).map(AnalogPrinter::derivative_pin).collect(),
             delays: (0..self.body.delays().len() as u32).map(|k| self.names.read_name(Source::Delay(k))).collect(),
+            noises: Vec::new(),
             param_previous: (0..self.body.params().len() as u32).map(|p| self.names.read_name(Source::ParamPrevious(p))).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
         }

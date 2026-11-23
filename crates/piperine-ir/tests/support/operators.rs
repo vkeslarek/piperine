@@ -8,7 +8,7 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BodyNode, BodySpec, Branch, BranchKind, Constant, DelaySite, EmitField, Expr, ExprId, InstanceSpec, Ir, IrBuilder, NodeRef, NodeRole, NoiseSource, Operator, Origin, Param, QuantityRole, Real,
+    Addend, BodyNode, BodySpec, Branch, BranchKind, Carrier, Constant, DelaySite, EmitField, Event, Expr, ExprId, InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NoiseSource, Operator, Origin, Param, QuantityRole, Reaction, Real,
     SessionParameter, Stmt, StmtId, Stream, StreamField, Terminal, TraceSite, ValueType,
 };
 
@@ -21,6 +21,9 @@ pub struct Written {
     pub session_parameters: Vec<SessionParameter>,
     pub streams: Vec<Stream>,
     pub traces: Vec<TraceSite>,
+    pub carriers: Vec<Carrier>,
+    pub events: Vec<Event>,
+    pub reactions: Vec<Reaction>,
 }
 
 /// The one body `Op(a)` with the flow branch `(a, gnd)` and the param `td: f64` (index 0), whose
@@ -50,7 +53,7 @@ impl Operators {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let Written { analog, delays, noise_sources, session_parameters, streams, traces } = write(&mut b);
+        let Written { analog, delays, noise_sources, session_parameters, streams, traces, carriers, events, reactions } = write(&mut b);
         let delay_time = Param { name: "td".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Op".into(),
@@ -79,8 +82,21 @@ impl Operators {
         for trace in traces {
             b.trace(body, trace);
         }
+        let top = b.next_instance_id();
+        let nets: Vec<_> = carriers.iter().map(|c| NetSpec { path: format!("Op.{}", c.name), ty: c.ty.clone(), declared_by: top, init: None, origin: origin.clone() }).collect();
+        for carrier in carriers {
+            b.carrier(body, carrier);
+        }
+        for event in events {
+            b.event(body, event);
+        }
+        for reaction in reactions {
+            b.reaction(body, reaction);
+        }
+        let nets: Vec<_> = nets.into_iter().map(|net| b.net(net)).collect();
         let params = vec![Constant::Real(Real::new(1e-9))];
         let top = b.instance(InstanceSpec { path: "Op".into(), name: "Op".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
+        b.bind_nets(top, nets);
         b.finish(top)
     }
 

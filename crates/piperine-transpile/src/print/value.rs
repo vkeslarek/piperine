@@ -141,6 +141,9 @@ pub struct Reads {
     pub derivatives: Vec<String>,
     /// By delay site: the variable of its output pin (`delay<k>.value`, analog-operators AO-02).
     pub delays: Vec<String>,
+    /// By noise source: the variable of its input's `VALUE` (`noise<k>.value`, AO-03). A body
+    /// printed with none reads 0 where a source is read: a reaction or a guard (§14.8.5).
+    pub noises: Vec<String>,
     /// By body param: the variable its pin's `PREVIOUS` was decoded into (`p.prev()`, §5.3.1).
     pub param_previous: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
@@ -764,8 +767,14 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the output of a delay site")),
             },
-            Expr::Noise(_) => Err(self.unsupported(e, "noise")),
             Expr::SessionParameter { .. } => Err(self.unsupported(e, "simparam")),
+            // §14.8.5: a reaction or a guard reads 0 (its printer names no noise input), as does
+            // every accepted solution of `analog`
+            Expr::Noise(k) => match self.analog.as_ref().map(|r| r.noises.get(*k as usize)) {
+                Some(Some(name)) => atom(self.read(name)),
+                Some(None) if self.analog.as_ref().is_some_and(|r| r.noises.is_empty()) => atom("0.0".to_string()),
+                _ => Err(self.unsupported(e, "the value of a noise source")),
+            },
             Expr::ParamPrevious(p) => match self.analog.as_ref().and_then(|r| r.param_previous.get(*p as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the previous value of a param")),
