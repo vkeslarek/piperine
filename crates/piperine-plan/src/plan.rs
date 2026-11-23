@@ -157,6 +157,9 @@ pub enum Source {
     /// instant is running (§15 step 4). The event function of each `settle` event reads it
     /// (§13 rule 17).
     Settle,
+    /// The `VALUE` of the `GLOBAL NAMED` pin of session parameter `k`: an `Option<f64>`, known
+    /// when the host gave the parameter. Discrete, constant during an analysis (§14.4.1).
+    SessionParameter(u32),
 }
 
 impl Source {
@@ -275,6 +278,7 @@ impl ReadSet {
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
         set.0.extend(body.delay_reads(target).into_iter().map(Source::Delay));
         set.0.extend(body.noise_reads(target).into_iter().map(Source::NoiseValue));
+        set.0.extend(body.session_parameter_reads(target).into_iter().map(Source::SessionParameter));
         set.0.extend(body.param_previous_reads(target).into_iter().map(Source::ParamPrevious));
         set
     }
@@ -342,6 +346,9 @@ pub struct Pins {
     /// The `GLOBAL` `SETTLE` pin, after the delay `max` pins, when the body has a `settle`
     /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
     pub settle: Option<u32>,
+    /// The `GLOBAL NAMED` pin of each session parameter the body reads, named the parameter,
+    /// after every other pin.
+    pub session_parameters: Vec<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -388,6 +395,11 @@ impl Pins {
     /// The rate pin of derivative site `k`; `GROUND` for a site the body does not have.
     pub fn derivative(&self, k: u32) -> u32 {
         self.derivatives.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The pin of session parameter `k`; `GROUND` for a parameter the body does not have.
+    pub fn session_parameter(&self, k: u32) -> u32 {
+        self.session_parameters.get(k as usize).copied().unwrap_or(GROUND)
     }
 
     /// The output pin of delay site `k`; `GROUND` for a site the body does not have.
@@ -596,6 +608,7 @@ impl BodyPlan {
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let delay_maxima = Digital::delay_maximum_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
+        let session_parameters = Self::session_parameter_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
         let pins = Pins {
@@ -620,6 +633,7 @@ impl BodyPlan {
             derivative_abstols,
             delay_maxima,
             settle,
+            session_parameters,
         };
 
         // Terms, branch by branch.
@@ -787,6 +801,24 @@ impl BodyPlan {
         BodyPlan { shape: s.freeze(), functions, reactions }
     }
 
+    /// Adds one `GLOBAL NAMED` pin per session parameter of the body, named the parameter, holding
+    /// an `Option<f64>` (the value and its known byte): `OPTIONAL` when every read gives a default,
+    /// so a host that gives none leaves the pin unknown and the read takes its default (D12).
+    fn session_parameter_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        let layout = PinLayout::in_ir(body.ir(), &ValueType::Option(Box::new(ValueType::F64)));
+        let fields = layout.as_ref().map(PinLayout::fields).unwrap_or_default();
+        let shaped = layout.as_ref().map(|l| l.layout(&fields));
+        body.session_parameters()
+            .iter()
+            .map(|parameter| {
+                let at = format!("{}:{}:{}", parameter.origin.file, parameter.origin.line, parameter.origin.col);
+                let flags = if parameter.required { 0 } else { pin_flag::OPTIONAL };
+                let spec = PinSpec::discrete(&parameter.name, role::GLOBAL, shaped.as_ref().unwrap_or(&F64));
+                s.pin(PinSpec { origin: &at, global: global::NAMED, flags, ..spec })
+            })
+            .collect()
+    }
+
     /// What term `t` reads.
     fn term_set(body: Body<'_>, t: Term) -> ReadSet {
         match t {
@@ -906,6 +938,7 @@ impl BodyPlan {
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
             Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
+            Source::SessionParameter(k) => value(cell::PIN, pins.session_parameter(k)),
         }
     }
 

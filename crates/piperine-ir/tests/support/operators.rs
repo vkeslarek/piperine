@@ -135,7 +135,7 @@ impl Operators {
 
     /// The session parameter `gmin`.
     pub fn gmin() -> SessionParameter {
-        SessionParameter { name: "gmin".into(), origin: Self::at() }
+        SessionParameter { name: "gmin".into(), required: false, origin: Self::at() }
     }
 }
 

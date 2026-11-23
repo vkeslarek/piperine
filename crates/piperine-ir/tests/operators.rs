@@ -132,6 +132,14 @@ fn a_session_parameter_is_built_checked_printed_and_round_tripped() {
     let bare = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], session_parameters: vec![Operators::gmin()], ..Written::default() });
     assert_eq!(bare.check(), vec![], "{}", bare);
     assert!(bare.to_string().contains("simparam(\"gmin\")"), "{bare}");
+    // a parameter some read gives no default is `required`, and prints so
+    let required = Operators::ir(|b| {
+        let mut parameter = Operators::gmin();
+        parameter.required = true;
+        Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], session_parameters: vec![parameter], ..Written::default() }
+    });
+    assert!(required.to_string().contains("session S0 \"gmin\" required"), "{required}");
+    assert_eq!(RoundTrip::of(&required), required);
 }
 
 #[test]

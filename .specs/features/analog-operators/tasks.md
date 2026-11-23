@@ -736,8 +736,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_session_parameter_is_a_named_global_optional_with_a_default` and `the_netlist_hands_its_session_parameters_to_the_builder` pass
-- [ ] Gate check passes: `Run planops`, `Run tgolden`
+- [x] `a_session_parameter_is_a_named_global_optional_with_a_default` and `the_netlist_hands_its_session_parameters_to_the_builder` pass
+- [x] Gate check passes: `Run planops`, `Run tgolden`
 
 **Tests**: integration
 **Gate**: quick

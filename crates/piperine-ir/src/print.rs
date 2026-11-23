@@ -428,7 +428,8 @@ impl<'a> Printer<'a> {
         }
         for (i, parameter) in body.session_parameters.iter().enumerate() {
             let at = self.at(&parameter.origin);
-            self.line(1, &format!("session S{i} {:?}{at}", parameter.name));
+            let required = if parameter.required { " required" } else { "" };
+            self.line(1, &format!("session S{i} {:?}{required}{at}", parameter.name));
         }
         for (i, source) in body.noise_sources.iter().enumerate() {
             let group = source.group.as_ref().map_or("none".to_string(), |g| format!("{g:?}"));

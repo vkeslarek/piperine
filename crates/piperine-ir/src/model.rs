@@ -370,6 +370,10 @@ pub struct NoiseSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionParameter {
     pub name: String,
+    /// Whether some read of the parameter gives no default: the host must then give the
+    /// parameter (`E0456`), and its pin is not `OPTIONAL`.
+    #[serde(default)]
+    pub required: bool,
     pub origin: Origin,
 }
 

@@ -92,6 +92,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
             Source::NoiseValue(k) => Text::generated(&format!("noise{k}_input")),
+            Source::SessionParameter(k) => Text::generated(&format!("simparam{k}")),
             Source::Param(p) => {
                 self.body.params().get(p as usize).map_or_else(|| Text::generated(&format!("param{p}")), |x| Text::ident(&x.name))
             }

@@ -105,6 +105,8 @@ impl Interpreted {
                 Source::Delay(_) => None,
                 // a noise source's input: refused by name likewise (AO-11)
                 Source::NoiseValue(_) => None,
+                // a session parameter: refused by name likewise (AO-11)
+                Source::SessionParameter(_) => None,
                 // a param's previous value or changed byte: refused by name likewise (T15)
                 Source::ParamPrevious(_) | Source::ParamChanged(_) => None,
             };

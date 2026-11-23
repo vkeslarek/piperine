@@ -16,17 +16,18 @@ pub trait Modules {
 }
 
 /// The instance table of one design, ready to be bound to the modules of its bodies.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Netlist<'a> {
     ir: &'a Ir,
     resolution: Option<f64>,
     microsteps: Option<usize>,
     time_point_rule: Option<TimePointRule>,
+    session_parameters: Vec<(String, f64)>,
 }
 
 impl<'a> Netlist<'a> {
     pub fn new(ir: &'a Ir) -> Netlist<'a> {
-        Netlist { ir, resolution: None, microsteps: None, time_point_rule: None }
+        Netlist { ir, resolution: None, microsteps: None, time_point_rule: None, session_parameters: Vec::new() }
     }
 
     /// This netlist with the session's tick length (the `RESOLUTION` global), in seconds; the
@@ -45,6 +46,18 @@ impl<'a> Netlist<'a> {
     /// the analog step on; the engine's own default (`Observable`) when never given.
     pub fn with_time_point_rule(self, rule: TimePointRule) -> Netlist<'a> {
         Netlist { time_point_rule: Some(rule), ..self }
+    }
+
+    /// This netlist with the session's parameters, each handed to the builder as the value of the
+    /// `GLOBAL NAMED` pin of that name (`simparam`, §14.4): a pin of a name not given here stays
+    /// unknown, which an `OPTIONAL` pin reads as its default.
+    pub fn with_session_parameters(self, parameters: &[(String, f64)]) -> Netlist<'a> {
+        Netlist { session_parameters: parameters.to_vec(), ..self }
+    }
+
+    /// The session parameters this netlist hands to the builder, in the order given.
+    pub fn session_parameters(&self) -> &[(String, f64)] {
+        &self.session_parameters
     }
 
     /// The design as a solver circuit: one solver node per design node, in the IR's node order
@@ -83,6 +96,9 @@ impl<'a> Netlist<'a> {
         }
         if let Some(rule) = self.time_point_rule {
             builder.time_point_rule(rule);
+        }
+        for (name, value) in &self.session_parameters {
+            builder.session_param(name, ParamValue::Real(*value));
         }
         for instance in ir.instances() {
             let body = instance.body();

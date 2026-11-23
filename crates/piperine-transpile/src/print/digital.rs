@@ -124,7 +124,7 @@ impl<'a> DigitalPrinter<'a> {
                 Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
+            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_) | Source::SessionParameter(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
         }))

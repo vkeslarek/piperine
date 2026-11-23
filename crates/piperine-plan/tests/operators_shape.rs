@@ -4,9 +4,9 @@
 //! expected entry is written from the design (mechanisms 2 to 6) and abi.md, and every shape
 //! passes `piperine_abi::validate`.
 
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Shape, cell, input, kind, op, part, role};
-use piperine_ir::{Env, Expr, Ir, NoiseSource, ValueType};
-use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, cell, global, input, kind, op, part, pin_flag, role};
+use piperine_ir::{BodyId, Env, Expr, Ir, NoiseSource, ValueType};
+use piperine_plan::{BodyPlan, FunctionPlan, Mode, Modules, Netlist, Source, Target, Term};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/operators.rs"]
@@ -168,4 +168,57 @@ fn a_noise_source_is_an_input_with_its_density_function() {
     assert_eq!(noise.reads, [Source::Freq]);
     assert_eq!(Find::terms_plan(&plan).reads, [Source::NoiseValue(0)]);
     assert_eq!(piperine_abi::validate::validate(plan.shape().shape()), Ok(()));
+}
+
+/// `i(a, gnd) +> simparam("gmin", <default>)`, the parameter `required` when it has no default.
+fn parameterised(default: Option<f64>) -> Ir {
+    Operators::ir(|b| {
+        let mut parameter = Operators::gmin();
+        parameter.required = default.is_none();
+        Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, default)], session_parameters: vec![parameter], ..Written::default() }
+    })
+}
+
+#[test]
+fn a_session_parameter_is_a_named_global_optional_with_a_default() {
+    // D12: a `GLOBAL NAMED` pin named the parameter, after every other pin; `OPTIONAL` when every
+    // read gives a default; the read is a discrete `Source::SessionParameter`.
+    let ir = parameterised(Some(1e-12));
+    let plan = Find::plan(&ir);
+    let shape = plan.shape().shape();
+    assert_eq!(Find::pin_names(shape), ["td", "a", "gmin"]);
+    let pin = shape.pins.get(2).expect("the session pin");
+    assert_eq!((pin.kind, pin.role, pin.global), (kind::DISCRETE, role::GLOBAL, global::NAMED));
+    assert_eq!(pin.flags & pin_flag::OPTIONAL, pin_flag::OPTIONAL);
+    let function = Find::terms_plan(&plan);
+    assert_eq!(function.reads, [Source::SessionParameter(0)]);
+    assert_eq!(function.slots, 0);
+    let reads: Vec<Cell> = shape.functions.iter().find(|f| f.name.as_str() == "terms").expect("terms").reads.iter().copied().collect();
+    assert_eq!(reads, [Find::value(2)]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    // a read with no default makes the parameter required: its pin is not `OPTIONAL`
+    let required = Find::plan(&parameterised(None));
+    let pin = required.shape().shape().pins.get(2).expect("the session pin");
+    assert_eq!(pin.flags & pin_flag::OPTIONAL, 0);
+}
+
+/// A supplier with no module: every body has nothing to run.
+struct Nothing;
+
+impl Modules for Nothing {
+    fn module(&self, _: BodyId) -> Option<&'static Module> {
+        None
+    }
+}
+
+#[test]
+fn the_netlist_hands_its_session_parameters_to_the_builder() {
+    // The netlist keeps the parameters in the order given and the circuit it builds accepts them
+    // (their effect on a bound pin is proved with the host, `piperine-api`'s `session_parameters`).
+    let ir = parameterised(Some(1e-12));
+    let given = [("gmin".to_string(), 1e-9), ("tnom".to_string(), 27.0)];
+    let netlist = Netlist::new(&ir).with_session_parameters(&given);
+    assert_eq!(netlist.session_parameters(), given);
+    assert!(netlist.circuit(&Nothing).is_ok());
+    assert!(Netlist::new(&ir).session_parameters().is_empty());
 }
