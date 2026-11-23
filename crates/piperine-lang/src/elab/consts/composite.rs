@@ -169,8 +169,8 @@ impl ConstEval<'_, '_> {
     /// `Name { field: value, .. }` of a struct or an enum variant: its fields in declaration order,
     /// evaluated in the order written (§1.3.11).
     pub(super) fn struct_value(&mut self, expr: ExprId, path: crate::pom::PathId, inits: &[FieldInit], bindings: &Bindings) -> Result<Constant, ConstFault> {
-        let owner = match self.types.ty(expr) {
-            Some(Ty::Struct(Nominal { decl, .. })) => *decl,
+        let owner = match self.typed(expr) {
+            Some(Ty::Struct(Nominal { decl, .. })) => decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => return Err(ConstFault::Unsupported { expr, what: "a struct expression that names neither a struct nor a variant".to_string() }),
@@ -319,10 +319,10 @@ impl ConstEval<'_, '_> {
 
     /// The position of the field `name` of the tuple or struct `recv` is.
     fn field_position(&self, recv: ExprId, name: &str) -> Option<usize> {
-        match self.types.ty(recv)? {
+        match self.typed(recv)? {
             Ty::Tuple(_) => name.parse().ok(),
             Ty::Struct(Nominal { decl, .. }) => {
-                let fields = self.types.fields(*decl)?;
+                let fields = self.types.fields(decl)?;
                 match name.parse::<usize>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),
                     _ => fields.iter().position(|f| f.name.as_deref() == Some(name)),
@@ -853,7 +853,7 @@ impl ConstEval<'_, '_> {
     /// `sum()`: the elements added with `+` from the first, starting from zero (H.7 rule 9).
     fn sum(&mut self, expr: ExprId, receiver: Constant) -> Result<Constant, ConstFault> {
         let elements = self.elements_of(expr, receiver)?;
-        let zero = match self.types.ty(expr) {
+        let zero = match self.typed(expr) {
             Some(Ty::F64) => Constant::Real(Real::new(0.0)),
             _ => Constant::Int(0),
         };
@@ -889,7 +889,7 @@ impl ConstEval<'_, '_> {
     /// `expect`, `unwrap_or`, `unwrap_or_else`, `map`, `and_then` and `or` over a composite
     /// `Option`; `None` for any other method.
     pub(super) fn option_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
-        if !matches!(method, Method::IsSome | Method::IsNone | Method::Unwrap | Method::Expect | Method::UnwrapOr | Method::UnwrapOrElse | Method::Map | Method::AndThen | Method::Or) || !matches!(self.types.ty(recv), Some(Ty::Option(_))) {
+        if !matches!(method, Method::IsSome | Method::IsNone | Method::Unwrap | Method::Expect | Method::UnwrapOr | Method::UnwrapOrElse | Method::Map | Method::AndThen | Method::Or) || !matches!(self.typed(recv), Some(Ty::Option(_))) {
             return None;
         }
         Some(self.run_option_row(expr, method, recv, args, bindings))

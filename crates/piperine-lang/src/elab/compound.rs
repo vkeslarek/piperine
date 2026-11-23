@@ -70,7 +70,7 @@ impl Elaboration<'_, '_> {
     /// `bool` per test, read in `scope`, a scope with no local, so the scrutinee is read again at
     /// each test (`selectors.rs`, a guarded site's `enabled`). `None` after a diagnostic.
     pub(super) fn standalone_arm_tests(&mut self, scope: &mut Scope, scrutinee: ExprId, earlier: &[PatId], pat: Option<PatId>) -> Option<Vec<LoweredExpr>> {
-        let subject = if matches!(self.types.ty(scrutinee), Some(Ty::Option(_))) { Subject::RereadPair(scrutinee) } else { Subject::Reread(scrutinee) };
+        let subject = if matches!(self.typed(scrutinee), Some(Ty::Option(_))) { Subject::RereadPair(scrutinee) } else { Subject::Reread(scrutinee) };
         let mut tests = Vec::new();
         for before in earlier {
             if let Some(test) = self.pattern_test(scope, &subject, *before) {
@@ -227,10 +227,10 @@ impl Elaboration<'_, '_> {
 
     /// The type of the payload of the `Option` expression `expr`.
     fn payload_type(&self, expr: ExprId) -> Option<ValueType> {
-        match self.types.ty(expr) {
-            Some(Ty::Option(inner)) => self.value_type(inner),
+        match self.typed(expr) {
+            Some(Ty::Option(inner)) => self.value_type(&inner),
             // An argument read as `Some` of itself (§3.2.3) keeps its own type.
-            Some(other) if self.types.implicit_some(expr) => self.value_type(other),
+            Some(other) if self.types.implicit_some(expr) => self.value_type(&other),
             _ => None,
         }
     }
@@ -344,7 +344,7 @@ impl Elaboration<'_, '_> {
                 },
                 _ => unsupported(self),
             },
-            ExprKind::Call { args, .. } if matches!(self.types.ty(expr), Some(Ty::Option(_))) && self.is_some_call(expr) => {
+            ExprKind::Call { args, .. } if matches!(self.typed(expr), Some(Ty::Option(_))) && self.is_some_call(expr) => {
                 let [arg] = args.as_slice() else { return unsupported(self) };
                 let val = self.lower_expr(scope, arg.value)?;
                 let is = self.emit(Expr::Bool(true), ValueType::Bool, origin);
@@ -365,8 +365,8 @@ impl Elaboration<'_, '_> {
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
             // A field of `Option` type: the two halves of the packed value, each unpacked from the
             // field read where it stands.
-            ExprKind::Field { expr: recv, name, .. } if matches!(self.types.ty(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => {
-                let index = self.field_index(self.types.ty(*recv)?, &name.text)?;
+            ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => {
+                let index = self.field_index(&self.typed(*recv)?, &name.text)?;
                 let mut half = |this: &mut Self, part: LevelPart, ty: ValueType| {
                     let base = this.lower_expr(scope, *recv)?;
                     let packed = this.emit(Expr::Field { expr: base, index }, ValueType::Option(Box::new(payload.clone())), origin.clone());

@@ -114,6 +114,6 @@ impl Elaboration<'_, '_> {
     /// Whether the function `decl` returns an `Option`.
     fn calls_option_function_decl(&self, decl: DeclId) -> bool {
         let DeclKind::Fn(f) = &self.design.decl_data(decl).kind else { return false };
-        f.ret.and_then(|t| self.types.written(t)).is_some_and(|t| matches!(t, crate::types::Ty::Option(_)))
+        f.ret.and_then(|t| self.typed_written(t)).is_some_and(|t| matches!(t, crate::types::Ty::Option(_)))
     }
 }

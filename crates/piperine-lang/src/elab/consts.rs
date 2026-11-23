@@ -37,7 +37,7 @@ use piperine_ir::{Constant, Real};
 use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
-use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
+use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, TypeId, UnOp};
 use crate::types::{Callee, Method, Nominal, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
@@ -170,11 +170,29 @@ pub struct ConstEval<'d, 't> {
     files: IncludedFiles,
     /// The composite values the evaluation holds (`composite.rs`).
     composites: Vec<Composite>,
+    /// What the generic parameters of the function instance being lowered are replaced by (generics
+    /// T32): empty outside an instance. Every read of the type table goes through it.
+    substitution: crate::types::Substitution,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
+    /// The type the checker gave `expr` under the substitution of the instance being lowered.
+    pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
+        self.types.ty(expr).map(|ty| self.substitution.apply(ty))
+    }
+
+    /// The type of the binding `binding` under the substitution.
+    pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
+        self.types.local(binding).map(|ty| self.substitution.apply(ty))
+    }
+
+    /// The type the type node `ty` writes under the substitution.
+    pub(super) fn typed_written(&self, ty: TypeId) -> Option<Ty> {
+        self.types.written(ty).map(|ty| self.substitution.apply(ty))
+    }
+
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -311,7 +329,7 @@ impl<'d, 't> ConstEval<'d, 't> {
 
     /// The integer type the checker gave `expr`, as the width and sign the evaluator wraps to.
     fn width(&self, expr: ExprId) -> Option<Width> {
-        self.types.ty(expr).and_then(Width::of)
+        self.typed(expr).and_then(|ty| Width::of(&ty))
     }
 
     /// A literal as the constant it is: a number of its type's width, a bool, a real.
@@ -574,17 +592,17 @@ impl<'d, 't> ConstEval<'d, 't> {
             },
             other => other,
         };
-        let value = match (self.types.ty(operand), value) {
-            (Some(Ty::Enum(Nominal { decl, .. })), Constant::Int(position)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.get(position as usize)) {
+        let value = match (self.typed(operand), value) {
+            (Some(Ty::Enum(Nominal { decl, .. })), Constant::Int(position)) => match self.types.enum_tag(decl).and_then(|t| t.discriminants.get(position as usize)) {
                 Some(discriminant) => Constant::Int(*discriminant),
                 None => return Err(ConstFault::Unsupported { expr, what: "a cast of a variant outside its enum".to_string() }),
             },
             (_, value) => value,
         };
-        let converted = match (self.types.ty(expr), value) {
+        let converted = match (self.typed(expr), value) {
             (Some(Ty::F64), Constant::Int(v)) => Constant::Real(Real::new(v as f64)),
             (Some(Ty::F64), Constant::Real(r)) => Constant::Real(r),
-            (Some(to), value) => match (Width::of(to), value) {
+            (Some(to), value) => match (Width::of(&to), value) {
                 (Some(width), Constant::Int(v)) => width.wrap(v),
                 (Some(width), Constant::Real(r)) => width.saturate(r.get()),
                 (Some(width), Constant::Bool(b)) => width.wrap(i128::from(b)),

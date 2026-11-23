@@ -38,7 +38,7 @@ impl Elaboration<'_, '_> {
     /// Whether a call of `function` is inlined where it stands: it reaches `emit!` (§19 rule 10) or
     /// takes a `str`, a text that exists at elaboration only (§1.2.9).
     pub(super) fn is_inlined(&self, function: DeclId) -> bool {
-        let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.types.local(*c), Some(Ty::Str)));
+        let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
         self.types.emits(function).is_some() || takes_text
     }
 
@@ -55,7 +55,7 @@ impl Elaboration<'_, '_> {
         let mut lowered = Vec::new();
         let mut ok = true;
         for field in fields {
-            if matches!(self.types.ty(field.value), Some(Ty::Str)) {
+            if matches!(self.typed(field.value), Some(Ty::Str)) {
                 match self.text_of(scope, field.value) {
                     Some(text) => lowered.push(EmitField::Text { name: field.name.text.clone(), text }),
                     // A file with no text was reported as `E0612` or `E0613` by `read_included_files`.
@@ -69,7 +69,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             // an `Option` field is its presence and its payload, packed as one value (§19 rule 11, D8)
-            let lowered_value = match self.types.ty(field.value).cloned() {
+            let lowered_value = match self.typed(field.value) {
                 Some(Ty::Option(payload)) => match self.value_type(&payload) {
                     Some(payload) => self.lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
                     None => {
@@ -195,7 +195,7 @@ impl Elaboration<'_, '_> {
         let mut ok = true;
         for (param, arg) in params.iter().zip(args) {
             let param_name = self.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            if matches!(self.types.ty(*arg), Some(Ty::Str)) {
+            if matches!(self.typed(*arg), Some(Ty::Str)) {
                 match self.text_of(scope, *arg) {
                     Some(text) => {
                         scope.texts.insert(*param, text);

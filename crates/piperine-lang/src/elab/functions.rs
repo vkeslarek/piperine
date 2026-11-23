@@ -25,7 +25,7 @@ impl Elaboration<'_, '_> {
         for param in declared {
             // An `Option<T>` parameter is two: `name.is` and `name.val` (§3.2), read as the pair
             // of an `Option` local.
-            if let Some(Ty::Option(payload)) = self.types.local(param).cloned() {
+            if let Some(Ty::Option(payload)) = self.typed_local(param) {
                 let Some(payload) = self.value_type(&payload) else {
                     self.unsupported(data.file, self.design.decl_data(param).span, "an `Option` parameter whose payload has no value in the IR");
                     ok = false;
@@ -51,7 +51,7 @@ impl Elaboration<'_, '_> {
         // The declared result is checked for a type the IR has; the variant's result is its body's.
         let declared_ret = match f.ret {
             // an `Option` result is two IR functions (`returns.rs`), each with the type of its half
-            Some(ty) if matches!(self.types.written(ty), Some(Ty::Option(_))) => true,
+            Some(ty) if matches!(self.typed_written(ty), Some(Ty::Option(_))) => true,
             Some(ty) => self.lower_type(data.file, ty).is_some(),
             None => true,
         };
@@ -76,10 +76,10 @@ impl Elaboration<'_, '_> {
 
     /// The IR type a type written in a signature names: the checker's type of it, as an IR type.
     pub(super) fn lower_type(&mut self, file: FileId, ty: TypeId) -> Option<ValueType> {
-        let lowered = self.types.written(ty).and_then(|t| self.value_type(t));
+        let lowered = self.typed_written(ty).and_then(|t| self.value_type(&t));
         if lowered.is_none() {
             let span = self.design.type_node(ty).span;
-            let what = match self.types.written(ty) {
+            let what = match self.typed_written(ty) {
                 Some(crate::types::Ty::Enum(_)) => "an enum of one variant, whose tag has no level,",
                 _ => "a type that has no value in the IR",
             };

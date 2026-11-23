@@ -38,7 +38,7 @@ impl Elaboration<'_, '_> {
     /// `B` (it lists the tags of its variants). `None` after a diagnostic.
     pub(super) fn lower_cast(&mut self, scope: &mut Scope, expr: ExprId, value: ExprId) -> Option<Pair> {
         let origin = self.expr_origin(expr);
-        let Some(Ty::Option(to)) = self.types.ty(expr).cloned() else {
+        let Some(Ty::Option(to)) = self.typed(expr) else {
             self.unsupported(scope.file, self.design.expr_node(expr).span, "a `cast` the checker did not type as an `Option`");
             return None;
         };

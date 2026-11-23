@@ -55,7 +55,7 @@ impl Elaboration<'_, '_> {
     /// gives (`FunctionResult`) when the body returns early.
     pub(super) fn lower_function_body(&mut self, scope: &mut Scope, function: DeclId, half: Half, file: FileId, body: &BlockNode) -> Option<LoweredExpr> {
         let declared = match &self.design.decl_data(function).kind {
-            DeclKind::Fn(f) => f.ret.and_then(|t| self.types.written(t).cloned()),
+            DeclKind::Fn(f) => f.ret.and_then(|t| self.typed_written(t)),
             _ => None,
         };
         let payload = match &declared {
@@ -272,7 +272,7 @@ impl Elaboration<'_, '_> {
     /// types its signature gives, and the loop flag.
     fn declare_exit_slots(&mut self, function: DeclId, scope: &mut Scope, span: Span, origin: &Origin) -> Option<InlineExit> {
         let declared = match &self.design.decl_data(function).kind {
-            DeclKind::Fn(f) => f.ret.and_then(|t| self.types.written(t).cloned()),
+            DeclKind::Fn(f) => f.ret.and_then(|t| self.typed_written(t)),
             _ => None,
         };
         let payload = match &declared {
@@ -368,6 +368,6 @@ impl Elaboration<'_, '_> {
     pub(super) fn calls_option_function(&self, expr: ExprId) -> Option<DeclId> {
         let Some(Callee::Function(function)) = self.types.callee(expr) else { return None };
         let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return None };
-        f.ret.and_then(|t| self.types.written(t)).is_some_and(|t| matches!(t, Ty::Option(_))).then_some(function)
+        f.ret.and_then(|t| self.typed_written(t)).is_some_and(|t| matches!(t, Ty::Option(_))).then_some(function)
     }
 }

@@ -137,6 +137,22 @@ impl ValueTypes<'_> {
 }
 
 impl Elaboration<'_, '_> {
+    /// The type the checker gave `expr`, with the generic parameters of the instance being lowered
+    /// replaced by their arguments: the one read of the type table of an expression (`ConstEval::typed`).
+    pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
+        self.consts.typed(expr)
+    }
+
+    /// The type of the binding `binding` under the substitution.
+    pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
+        self.consts.typed_local(binding)
+    }
+
+    /// The type the type node `ty` writes, under the substitution.
+    pub(super) fn typed_written(&self, ty: crate::pom::TypeId) -> Option<Ty> {
+        self.consts.typed_written(ty)
+    }
+
     /// The IR method a numeric row of Appendix H lowers to; `None` for the rows that lower
     /// elsewhere (`exp`, `ln`, `sqrt`, `abs` of `f64` are `Math`; `checked_*` and the `Option`
     /// and `bool` rows are pairs).
@@ -220,9 +236,9 @@ impl Elaboration<'_, '_> {
         let file = self.design.decl_data(node.owner).file;
         let origin = self.expr_origin(expr);
         // `!` is no value: a diverging expression is `()` until its position gives it a type (`exits.rs`).
-        let ty = match self.types.ty(expr) {
+        let ty = match self.typed(expr) {
             Some(Ty::Never) => Some(ValueType::Unit),
-            other => other.and_then(|t| self.value_type(t)),
+            other => other.and_then(|t| self.value_type(&t)),
         };
         let Some(ty) = ty else {
             self.unsupported(file, node.span, "an expression the type checker gave no value type");
@@ -251,7 +267,7 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
-            ExprKind::Field { expr: recv, name, .. } if matches!(self.types.ty(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
+            ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
             ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),
@@ -266,8 +282,8 @@ impl Elaboration<'_, '_> {
                 let operand = self.lower_expr(scope, *operand)?;
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
-            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
-            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op, lhs, rhs } => {
                 // The right operand of `&&`/`||` runs only when the left does not decide: it is
                 // conditional exactly like an `if` arm.
@@ -330,7 +346,7 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
             ExprKind::While { cond, body } => self.lower_while(scope, *cond, body, origin),
-            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, matches!(self.types.ty(expr), Some(Ty::Never)), origin),
+            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, matches!(self.typed(expr), Some(Ty::Never)), origin),
             ExprKind::For { pat, iter, body } => self.lower_for(scope, *pat, *iter, body, origin),
             ExprKind::Break(value) => self.lower_break(scope, *value, node.span, origin),
             ExprKind::Continue => Some(self.lower_continue(origin)),
@@ -460,7 +476,7 @@ impl Elaboration<'_, '_> {
         let mut lowered = Vec::new();
         let mut ok = true;
         for (param, slot) in params.iter().zip(binding) {
-            match self.types.local(*param).cloned() {
+            match self.typed_local(*param) {
                 Some(Ty::Option(payload)) => match self.lower_option_slot(scope, slot, &payload, expr) {
                     Some(pair) => lowered.extend(pair),
                     None => ok = false,
@@ -496,7 +512,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(binding);
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (file, span) = (data.file, data.span);
-        let Some(ty) = self.types.local(binding).and_then(|t| self.value_type(t)) else {
+        let Some(ty) = self.typed_local(binding).and_then(|t| self.value_type(&t)) else {
             self.unsupported(file, span, "a name whose type is not a value type");
             return None;
         };
@@ -575,8 +591,8 @@ impl Elaboration<'_, '_> {
     /// (one local per component). `false` after a diagnostic.
     fn lower_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: crate::pom::PatId, init: ExprId, file: FileId, span: Span) -> bool {
         match self.design.pat_node(pat).kind.clone() {
-            PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
-            PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
             // An iterator or a range holds no value: the name stands for the chain it was bound to (`iterators.rs`).
             PatKind::Ident { binding, sub: None, .. } if self.is_sequence_binding(binding) => {
                 scope.let_sources.insert(binding, init);

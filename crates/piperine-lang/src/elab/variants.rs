@@ -115,13 +115,13 @@ impl Elaboration<'_, '_> {
     /// what a recursive call is first taken to give.
     fn declared_result(&self, function: DeclId, half: Half) -> ValueType {
         let declared = match &self.design.decl_data(function).kind {
-            DeclKind::Fn(f) => f.ret.and_then(|t| self.types.written(t)),
+            DeclKind::Fn(f) => f.ret.and_then(|t| self.typed_written(t)),
             _ => None,
         };
         match (declared, half) {
             (Some(Ty::Option(_)), Half::Presence) => ValueType::Bool,
-            (Some(Ty::Option(payload)), _) => self.value_type(payload).unwrap_or(ValueType::Unit),
-            (Some(ty), _) => self.value_type(ty).unwrap_or(ValueType::Unit),
+            (Some(Ty::Option(payload)), _) => self.value_type(&payload).unwrap_or(ValueType::Unit),
+            (Some(ty), _) => self.value_type(&ty).unwrap_or(ValueType::Unit),
             (None, _) => ValueType::Unit,
         }
     }

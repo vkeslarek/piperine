@@ -151,7 +151,7 @@ impl Elaboration<'_, '_> {
     fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
         match folded {
             Ok(value) => Some(value),
             Err(fault) => {

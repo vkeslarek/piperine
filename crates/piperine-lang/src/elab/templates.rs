@@ -59,7 +59,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn fold_param_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let ExprKind::Struct { fields, class: StructClass::Template(module), .. } = self.design.expr_node(expr).kind.clone() else {
             // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-            if self.types.ty(expr).is_some_and(crate::types::Ty::is_composite) {
+            if self.typed(expr).is_some_and(|ty| ty.is_composite()) {
                 return self.composite_constant(expr, bindings);
             }
             return self.consts.value(expr, bindings);

@@ -360,7 +360,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
-        if params.iter().any(|p| matches!(self.types.local(*p), Some(Ty::Option(_)))) {
+        if params.iter().any(|p| matches!(self.typed_local(*p), Some(Ty::Option(_)))) {
             self.unsupported(scope.file, span, "a recursion reached from `analog` with an `Option` parameter");
             return None;
         }
