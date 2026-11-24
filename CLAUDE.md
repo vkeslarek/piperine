@@ -1,189 +1,129 @@
 # Piperine — Claude Code Instructions
 
-## Project summary
+Piperine is a mixed-signal language (MSL) and its simulator. Source in MSL is parsed, checked and
+elaborated into an IR; the IR is printed as Rust and built into a device library that speaks one
+device ABI; a native solver (an owner over an analog and a digital sub-solver) runs it. Rust
+workspace, edition 2024. `docs/spec/` is the only grammar and semantics source.
 
-Piperine is a mixed-signal language and simulator. `piperine-lang` parses the Piperine
-mixed-signal language (MSL, specified in `docs/spec/`), builds the POM `Design` from it,
-type-checks the M1 analog subset and the digital and mixed forms of `msl-digital` (`types/`)
-and elaborates them into `piperine-ir`'s `Ir` (`elab/`, MD-64). `piperine-transpile` prints the
-IR as Rust, builds it with `rustc` into a device library and loads it (MD-63); the frozen
-interpreter `piperine-interp` runs the M1 analog subset only. `examples/buck` runs whole from
-its `.msl`, closed loop included. The native solver is three crates:
-`piperine-solver` (the analysis engine and the owner protocol over the device ABI) and two sub-solvers,
-`piperine-analog-solver` and `piperine-digital-solver`, which the solver owner combines.
-Devices speak one ABI, the leaf crate `piperine-abi` (MD-61): the `#[repr(C)]` contract of
-`.specs/features/device-abi/abi.md`, the `Device` trait, the solver-side `caller::Handle`
-and the shape and partials checks; it depends on no crate.
-The analog and the digital side meet only through events at an instant, run by the owner
-protocol (`piperine-solver/src/protocol/`, MD-60, MD-62): no value or snapshot is shared, and
-the device ABI is the only device contract. Rust workspace, edition 2024.
-
-**The crates that compile are the root `Cargo.toml`'s `default-members`:** `piperine-lang`,
-`piperine-ir`, `piperine-abi`, the three solver crates, `piperine-interp`, `piperine-plan`,
-`piperine-transpile`, `piperine-parity`, and the host crates `piperine-project`, `piperine-api`,
-`piperine-cli` and the root `piperine` shell package, which build (feature `msl-cli`). Only
-`piperine-lang-server` stays outside the default build: it still targets the retired Verilog-AMS
-front end, is not edited, and is deferred by the user to a feature of its own.
-
-## Pipeline (the spine)
+## Pipeline
 
 ```
-source ──parse──► Design (POM)                     crate: piperine-lang
-                    │  types::Types::check (M1 analog + msl-digital forms)
-                    │  elab::Elaborator::run
-                    ▼
-                  Ir (piperine-ir)                   crate: piperine-ir
-                    │  BodyPlan, Netlist::circuit    crate: piperine-plan
-                    ▼
-                IR → Rust → rustc → device library   crate: piperine-transpile
-                (or the frozen M1 interpreter)       crate: piperine-interp
-                                    │
-                                    ▼
-          piperine-solver  ◄── owns ──►  piperine-analog-solver
-          (owner protocol, analyses)     piperine-digital-solver
-                                    │
-                                    ▼
-                    hosts: piperine-api (Project, Session) ◄── piperine-cli (`piperine`)
+MSL source (.msl) + embedded std (crates/piperine-lang/std/*.msl)
+  │ piperine-lang   msl/ parse ─► pom/ Design (the source, resolved) ─► types/ check ─► elab/ elaborate
+  ▼
+Ir                  piperine-ir     arenas + typed ids, check, printer/parser
+  │                 piperine-plan   BodyPlan (ABI shape + function table), Netlist::circuit
+  ▼
+device library      piperine-transpile  IR ─► Rust ─► rustc ─► cdylib exporting piperine_abi_1 (cached)
+                    piperine-interp     reference interpreter over the same plan (differential oracle)
+  ▼
+piperine-abi        the device ABI (#[repr(C)] contract, Device trait) — the only device contract
+  ▼
+piperine-solver     owner: analyses + owner protocol ─┬─ piperine-analog-solver  (MNA, Newton, TR-BDF2)
+                                                     └─ piperine-digital-solver (byte nets, events)
+  ▼
+piperine-api        Project, Session, params, probes, records ◄── piperine-cli (`piperine`)
 ```
 
-The owner `piperine-solver` depends on both sub-solvers and on `piperine-abi`; the sub-solvers
-depend on neither the owner nor each other. `piperine-abi` is the one in-tree crate any of the three may
-depend on (MD-61). Events at an instant, run by the owner protocol, are the boundary between them.
+Dependency arrows are part of the design — breaking one is a regression:
+- `piperine-abi`, `piperine-ir` and `piperine-numbers` are leaf crates (no in-tree dependency).
+- The sub-solvers depend only on `piperine-abi` and never on each other or on the owner; analog
+  and digital meet only through events at an instant, run by the owner protocol.
+- Generated device code links only `piperine-abi` and the embedded runtime (`rt/`, which embeds
+  `piperine-numbers` as source).
 
-### UNBREAKABLE RULE — POM navigability mirrors the source
+## UNBREAKABLE RULE — the POM mirrors the source
 
-**The POM's navigability reflects the structure of the original code, never the internal
-structure of elaboration.** A device author reads back their own modules, instances, and
-hierarchy from the POM exactly as written; internal transforms (hierarchy flattening above
-all) are codegen concerns they must never leak into `Design::modules`. Every elaboration pass
-builds the POM from the immutable AST and only *adds* or *validates* — it never overwrites
-authored structure. Monomorphization may *name* a concrete variant (`urc__5`) but must keep
-the `instance → submodule → sub-instances` tree walkable. A transform that needs a
-collapsed/flattened form (e.g. for codegen) produces a **separate side artifact**
-(`Design::flat_modules`, `#[serde(skip)]`), leaving the authored hierarchy intact. See
-`.specs/features/hierarchy-flattening/design.md`.
+The POM (`piperine-lang/src/pom/`) is what the author wrote, every name resolved. Resolution and
+elaboration only *add* links or *validate*; they never rewrite authored structure. The elaborator
+reads the POM and never writes it. Anything collapsed, flattened, hoisted or monomorphized lives
+in the IR or in a separate side table, never in the authored module/instance tree.
+
+## Crates
+
+| Crate | Role |
+|---|---|
+| `piperine-lang` | Front end: `msl/` (lexer, parser, printer, formatter), `pom/` (the object model + reflection), `types/` (checker), `elab/` (POM → `Ir`), `std/` (the standard library, in MSL). |
+| `piperine-ir` | The IR object model, builder, `Ir::check`, printer and parser. |
+| `piperine-plan` | What both backends share: a body's ABI shape and function table; the design's circuit. |
+| `piperine-transpile` | Compiled backend: IR printed as Rust, built by `rustc`, cached by hash, loaded. |
+| `piperine-interp` | Reference interpreter over the same plan; a differential oracle for the transpiler. |
+| `piperine-abi` | Device ABI: raw layout, shapes, `Device` trait, thunks, `caller::Handle`, partials verification. `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
+| `piperine-numbers` | Integers of any width, exact `f16`, correctly rounded `f128`; also embedded as runtime source. |
+| `piperine-solver` | Owner: analyses (op/dc/ac/tran/noise/…), owner protocol, device binding, `Net` naming. |
+| `piperine-analog-solver` | MNA + linear algebra, `ConvergencePlan` (gmin/source stepping, Newton), `TrBdf2` + LTE, device assembly. |
+| `piperine-digital-solver` | Byte-net event engine: commit queue, levelized order, instants, time advance. |
+| `piperine-api` | The host library: `Project`, `Session`, `Params`, `Probe`, `Record`, `Verdict`, `Failure`. Every rule of what a run prints or judges lives here. Root package `piperine` re-exports it. |
+| `piperine-cli` | The `piperine` binary, a thin shell over `piperine-api`. |
+| `piperine-project` | `Piperine.toml`, dependencies, lockfile. |
+| `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
+| `piperine-lang-server` | **Broken and deferred.** Targets the retired front end. Not in `default-members`; do not edit. |
 
 ## Build and test
 
 ```sh
-cargo build                       # the default members (the crates that compile)
-cargo test                        # their whole suite, ngspice parity included
-cargo test -p piperine-solver     # one crate
-cargo test <name>                 # one test
-cargo test -- --nocapture         # see solver output
-cargo test -p piperine --test integrated   # the per-task gate: five small mixed-signal designs, about half a minute
+cargo build                                   # default members; zero warnings is the bar
+cargo test -p <crate>                         # the crates you touched
+cargo test -p <crate> --test <target>         # one target
+cargo test -p piperine --test integrated      # small mixed-signal designs end to end (~30 s)
 ```
 
-`cargo test` skips every target that simulates the buck converter (`test = false`, MD-77). The per-task
-and per-batch gate is the integrated suite above, with `cargo test -p piperine-cli --test integrated`; the
-buck runs on demand by the four lines of the "On demand" block of `examples/buck/README.md`, once at a
-feature's close (before its merge) when the feature changes the runtime, the printer, the plan, the solvers
-or the lowering of an existing form, and in every task that edits `examples/buck/**`, `tests/e2e/buck/**`
-or a buck target.
+- **Never `cargo build/test --workspace` bare** — the language server does not build. A full
+  run is `--workspace --exclude piperine-lang-server`.
+- **Gate policy:** per task and per batch, build + the touched crates/targets only. The full
+  suite (all packages, `piperine-parity --nocapture` with ngspice, the buck targets, the twins)
+  runs **once per feature**, at final verification before merge.
+- The buck targets are `test = false`; run them by name (`buck_*`, `book_buck`, `buck_scenarios`)
+  as listed in `examples/buck/README.md`.
+- Never retune a tolerance. ngspice parity first; `ToleranceContract` is the only place a
+  numeric tolerance is written.
+- Build hygiene: set `CARGO_TARGET_DIR` per worktree (never share one between concurrent builds),
+  `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` keep the target dir small. Watch disk space.
 
-At the root, `cargo build` / `cargo test` run the `default-members` (the crates that
-compile). Never pass `--workspace`: `piperine-lang-server` does not build.
+## Code rules (binding)
 
-## Crate responsibilities
+1. **Code follows the spec.** A divergence from `docs/spec/` or the Book is a defect to fix, or
+   a spec amendment the user approves — never an accepted documented state.
+2. **Fail loud.** A form not supported yet is refused by name (`P0001`, or `Unsupported` in the
+   transpiler), with an owner in `GAPS.md`. Never a silent `0.0`, no-op or fallback.
+3. **No free functions** (tests included): every function is a method of a type or trait that
+   owns it. Exceptions only where the language requires one (`main`, `#[test]`, ABI exports).
+4. **Names say what things do:** full words, no abbreviations, object-oriented naming; one
+   purpose per type; files named for their system role (never `utils.rs`).
+5. **No god methods;** small methods, flat control flow. No file-scope lint suppression,
+   no `#[allow]` to hide a design problem (`too_many_arguments` → a parameter object).
+6. **Doc comments on every item.**
+7. **No macros** (`macro_rules!`, proc-macro codegen): data tables and methods instead.
+8. **No language special cases:** builtins follow the same rules as user items and are
+   declared in the MSL prelude (`std/`); no hidden peephole for one spelling.
+9. **No `unwrap`/`expect` on user-input paths.**
 
-| Crate | Role |
-|-------|------|
-| `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer `msl::print`, and the formatter `msl::format` behind `piperine fmt`, which keeps every plain comment through `msl::comments`) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`); the type checker (`types/`: `Types::check`, the M1 analog subset and the digital and mixed forms of `msl-digital`, one `P0001` naming each construct outside them) and the elaborator (`elab/`: `Elaborator::run`, `Design` + top module to an `Ir`, reading the POM and never writing it; modules with a result hoisted and unknown-ness computed as `Flagged`, MD-64).  Spec: `docs/spec/`; POM guide: `docs/pom/`. |
-| `piperine-ir` | The IR: an elaborated design as an object model (`Ir`: arenas of bodies, functions, instances, nodes, natures behind typed `u32` ids), its builder (`IrBuilder`), `Ir::check()` and the printer (`print_structural`). A leaf crate: no in-tree dependency. Produced by `piperine-lang`'s `elab/`; read by `piperine-plan`, `piperine-transpile` and `piperine-interp`. |
-| `piperine-abi` | The device ABI (MD-61, `.specs/features/device-abi/abi.md`): the `#[repr(C)]` shape, frames and `u32` constants (`raw.rs`), the shipped layouts `BIT`/`REAL`/`BYTE`/`F64`/`NONE` (`layout.rs`), the owned shape builder `ShapeBuf`/`ShapeRef` (`shape.rs`), the `Device` trait and its `Eval`/`React` lenses (`device.rs`), the generic `extern "C"` thunks `module::<D>`/`library` (`thunk.rs`), the solver-side `caller::Handle`, shape-local `validate` and the finite-difference `verify_partials`. Depends on no crate; `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
-| `piperine-numbers` | The numeric library (composite-values phase D, MD-79 item 7): integers of any width (`WideUInt`/`WideInt` over `u64` limbs), `f16` and `f128` correctly rounded in every operation and H.2 method, decimal reading and shortest printing, `as` among every width. A leaf crate with no dependency and no `unsafe`; its files are also embedded verbatim as `rt/numbers/*.rs` in the runtime of a design that uses a number width (MD-63 item 1). |
-| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the owner protocol (`protocol/`) and its adapters (`analyses/adapters.rs`), the bind of device instances (`core/bind.rs`, `core/builder.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-abi` (the device ABI), `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
-| `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors, the device `Assembly` (`device/`: terms, partials, histories, limit iterates, checkpoints) and the secant step of crossing location (`crossing.rs`). Depends only on `piperine-abi`; it names no digital type. |
-| `piperine-digital-solver` | The digital sub-solver: the byte-net engine of the device ABI (`engine.rs`, `plan.rs`, `queue.rs`, `dag.rs`, `instant.rs`, `advance.rs`, `tick.rs`, `observe.rs`, `DigitalLimits`). Depends only on `piperine-abi`; it names no analog type. |
-| `piperine-api` | The library face (MD-20), rewritten small by `msl-cli` (its old content is gone): `Project` (a package found from `Piperine.toml`, its crate graph and its `[run.<name>]` tables; a lone file), `RunSpec`/`Overrides` (a run request, keys and flags), `Backend`, `Session` (one run: parse, type check, elaborate, compile on a backend once, run its analysis), `Probe`, `Table`, `Record`/`Streams` (`emit!` records decoded from the sink), `Plot`, `Verdict` (checks, `fatal`, target margins), `Failure` (`P0010`, `P0011`, `E0801` to `E0806`), and, from `host-ii`, `metadata.rs` (`Metadata`: params, ports, streams), `params.rs` (`Params`/`Derive`: a `set` that recomputes the derived params, MD-69) and the host drive, timed `set` and subscription of `Session` (`drive`, `set_at`, `subscribe`). Every rule of what a run prints or judges lives here, with a Rust test. |
-| `piperine-cli` | The `piperine` binary, a shell over `piperine-api` (clap builder, no derive): the eight commands `check`, `build`, `run`, `test`, `info`, `new`, `clean`, `fmt`; text tables, record lines, CSV, JSON Lines and SVG in `render/`; exit codes 0/1/2. Its e2e targets run the real binary; `tests/book.rs` holds every CLI listing of the Book to the binary. |
-| `piperine-project` | `Piperine.toml` (manifest, `[run]` tables accepted and located but not read: `piperine-api` reads them), path and git dependencies, the lockfile (MD-58, MD-59). |
-| `piperine-lang-server` | LSP server. **Outside the default build and deferred** (user, 2026-11-16): it still targets the retired front end and is not edited. |
-| `piperine-plan` | What the two backends of an `Ir` share (MD-63): `BodyPlan` (a body's ABI shape and the table of what each function computes: `FunctionPlan`, `Mode`, `Source`, `Target`, `Term`) and `Netlist::circuit`, the design's instance table bound to whatever implements `Modules`. Depends on `piperine-ir`, `piperine-abi`, `piperine-solver`. |
-| `piperine-transpile` | The compiled backend (MD-63): `Transpiler::new` checks and plans an `Ir`; the IR is printed as one readable Rust source, built by `rustc` into a `cdylib` exporting `piperine_abi_1`, cached by hash and loaded. Generated code links only `piperine-abi` and the embedded runtime `rt`. |
-| `piperine-parity` | The parity harness and the runner of MSL from source (`publish = false`): runs ngspice on `tests/e2e/twins/*.cir` at test time and compares the MSL twins under one `ToleranceContract` (`tests/e2e/` holds each twin with its command and expected output; `tests/scenarios.rs` runs them); `Project` takes a crate graph from disk to a compiled circuit, which the `buck_*` targets use to run `examples/buck` from its `.msl`. |
+## Tests
 
-The root package `piperine` is the shell over `piperine-api` (`pub use piperine_api::*`, so a Rust
-host writes `use piperine::…`); it builds, and its integrated tests are the `tests/integrated/` package (MD-77).
+- No hand-kept list. Enumerate with `ls crates/*/tests/*.rs tests/` or the `Running` lines of
+  `cargo test`; every target opens with a `//!` scope header.
+- A target lives in the crate it exercises. Root `tests/` holds only the integrated tests:
+  `tests/book/` (one target per Book chapter + `inventory.tsv`), `tests/integrated/`,
+  `tests/scenarios.rs`, `tests/buck_scenarios.rs`, fixtures in `tests/e2e/`.
+- `crates/piperine-lang/tests/suite_hygiene.rs` guards the suite: no switched-off code, no
+  `#[ignore]`, no target without `//!`, no file-scope lint suppression, no dead identifiers.
+- Never weaken an assertion to make a test pass. Re-pins are exact.
+- Frozen corpora: `tests/fixtures*`, the twin goldens. Book/golden numbers may move after a
+  solver change only while they stay within ngspice/analytic tolerance.
 
-## Solver architecture (current state)
+## Documentation and tracking
 
-- **One ABI:** the `Device` trait of `piperine-abi` (MD-62). The analog `Assembly` and the
-  digital `Digital` run its shapes; the solver owns the companion, the limit iterate, every
-  history and every checkpoint, and a device is `eval` over declared reads, writes and
-  partials, and `react`. Devices are bound by `CircuitBuilder::device` (`core/bind.rs`).
-- **Naming:** `Net` (`core/net.rs`) unifies analog nodes, branch currents, digital nets,
-  and pseudo variables under one public identity with stable labels.
-- **Convergence:** `ConvergencePlan` (analog crate, `convergence.rs`) composes `HomotopyStrategy`
-  (gmin stepping, source stepping), `NewtonStrategy`, `StepperStrategy`, and `PlanLimits`
-  (caps extracted from magic numbers).
-- **Integration:** `TrBdf2` (analog crate, `math/integration.rs`) — the sole transient scheme (a
-  Trapezoidal stage over `γh` then a BDF2 stage over `(1−γ)h`, γ = 2−√2); no
-  method-selection surface. LTE-driven timestep via the plan's PI controller.
-- **Errors:** `SolverDomain` enum — typed domains, no free strings.
-- **Protocol:** the owner protocol (`protocol/`) steps both sides; a boundary change is solved on the left value, the instant runs, then it is delivered with a restart (MD-62). The digital engine returns `Result<_, DigitalError>`; the owner maps it to `Error` at its call sites.
-- **Prelude:** `prelude.rs` exports the host-facing surface.
+- `docs/spec/` — the MSL specification (Parts I–VIII, appendices A–H; `index.md` is the map).
+- `docs/book/` — the Book (`content.html`, built by `build.py`). Every listing is held by a test
+  in `tests/book/` and a row in `tests/book/inventory.tsv` (runs / holds / refused + owner).
+- `GAPS.md` — what is refused or wrong today (L-numbers, each with an owner).
+- `ROADMAP.md` — what is planned, in order.
+- `.specs/STATE.md` (decision log, MD-numbers) + `.specs/features/<name>/` (spec, design, tasks,
+  verification, proofs) — the spec-driven workflow: an author never verifies their own work.
+- `docs/pom/` — the POM guide for tool authors.
 
-## Known gaps
+## Git
 
-- The hosts build and run an MSL project end to end: `piperine run` in `examples/rc` or
-  `examples/buck`. The language server does not build and is deferred. What runs, what is refused
-  and what is wrong today: `GAPS.md`. Planned order: `ROADMAP.md`.
-- Solver ABI work in progress: `.specs/STATE.md` holds the decision log and
-  `.specs/features/` the feature specs.
-
-## Naming & conventions
-
-- `gnd` is the reference node (the MNA ground).
-- Elaboration folds every param to a constant per instance, a child's param that reads the
-  parent's params included; the instance table holds the constants.
-- A hoisted name keeps its IR path (`gate.x`, `above$0.init$0.up`) on its ABI pin; the
-  generated Rust maps `.` to `_d` and `$` to `_s`.
-
-## Declared language surface
-
-The language's built-in items (the primitive value types, the math functions, the catalogue
-of methods per receiver type, the environment reads) are tables of the front end; the
-standard library is ordinary MSL source embedded in `piperine-lang` (`std/*.msl`). A name
-that resolves to nothing, or a method with no catalogue row for its receiver's type, is a
-diagnostic, never a silent no-op.
-
-## Files not to edit casually
-
-- `crates/piperine-lang/src/msl/` — the MSL lexer and parser; changes ripple through all
-  parsing. Grammar and semantics come from `docs/spec/` only.
-- `crates/piperine-lang/src/pom/` — the POM and its resolution; the elaborator reads it and
-  never writes it.
-- `crates/piperine-lang/std/` and `examples/buck/src/` — the acceptance targets of the front
-  end: a form of theirs that does not check, elaborate or run is fixed in the compiler.
-- `tests/fixtures*` — frozen test corpora.
-
-## Where the tests are
-
-A hand-maintained list of test files goes stale silently (P6 found this file
-naming a target that had been switched off with `#![cfg(any())]`). So there is
-no list here — the tree is the list, and a guard keeps it honest.
-
-- **Enumerate**: `ls crates/*/tests/*.rs`, or `cargo test`
-  (each `Running tests/<name>.rs` line is one target). Every target opens with a
-  `//!` header saying what it covers — read that first.
-- **Placement rule (MD-28, amended by MD-72)**: a target lives in the crate it exercises; the root
-  `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter, through
-  `piperine::`, with `inventory.tsv`), `tests/scenarios.rs` (the ngspice scenarios) and `tests/e2e/`
-  (their fixtures); `tests/integrated/` (one target, one module per scenario, MD-77) runs the scenario
-  package `tests/e2e/integrated/`. Integration tests are grouped by functionality, one concern per target.
-- **The enforcing guard**: `crates/piperine-lang/tests/suite_hygiene.rs` walks the repo's own sources
-  and fails on switched-off test code, `#[ignore]`d tests, unregistered
-  ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope
-  lint suppression (MD-33), and dead-architecture identifiers (MD-35).
-
-## Documentation
-
-- `docs/spec/` (Parts I–VIII + appendices A–G; `index.md` is the map) — the Piperine
-  mixed-signal language (MSL) specification, the sole grammar and semantics source of the
-  front end. Design record (adversarial critic/builder rounds, review):
-  `.specs/features/msl-spec/`.
-- What does not work yet, ranked: `GAPS.md`.
-- What is in development and in what order: `ROADMAP.md` (the development pool)
-- Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
-- Open items: `ROADMAP.md`
+- Commits: conventional type (`feat|fix|docs|test|refactor|…`; `merge` is not a type), one task
+  per commit, trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Never `git stash`. Work in a worktree per lane; remove it when done (push the branch first).

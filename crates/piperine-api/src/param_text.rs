@@ -10,6 +10,7 @@ use piperine_lang::elab::LiteralText;
 
 use crate::composite::CellShape;
 use crate::failure::Failure;
+use crate::leaf_input::LeafInput;
 use crate::logic_pattern::LogicPattern;
 use crate::number_cell::{FloatCell, FloatFormat, NumberCell, WideCell};
 use crate::session::ParamPath;
@@ -51,12 +52,12 @@ pub enum ParamText {
         /// The payload, zero for `None`.
         value: Scalar,
     },
-    /// A `Logic<N>` param: the two planes its pattern lays out (`abi.md` P3), as the leaves `binary` and `value`.
-    Planes {
-        /// The plane `binary`: 1 where a level is 0 or 1.
-        binary: Scalar,
-        /// The plane `value`: the level where binary, else X (0) or Z (1).
-        value: Scalar,
+    /// A `Logic<N>` param: the exact bytes of its pin, the planes `binary` and `value` its pattern lays out (`abi.md` P3), at any
+    /// `N`.
+    Pattern {
+        /// The pin's bytes: the plane `binary` (1 where a level is 0 or 1), then the plane `value` (the level where binary, else
+        /// X as 0 and Z as 1).
+        bytes: Vec<u8>,
     },
 }
 
@@ -88,20 +89,15 @@ impl ParamText {
         }
     }
 
-    /// The leaves of a composite param's pin this text writes, in the order of its layout (an `Option`'s `some` and `value`, a
-    /// `Logic<N>`'s `binary` and `value`); a payload or plane an `f64` cannot hold is `E0802`.
-    pub fn leaves(&self, label: &str) -> Result<Option<[(&'static str, f64); 2]>, Failure> {
-        match self {
-            ParamText::Planes { binary, value } => {
-                let exact = |scalar: &Scalar| scalar.exact_real().ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{label}` refuses a pattern whose plane an `f64` cannot hold exactly: set the leaves `binary` and `value` as numbers") });
-                Ok(Some([("binary", exact(binary)?), ("value", exact(value)?)]))
-            }
-            ParamText::Option { some, value } => {
-                let payload = value.exact_real().ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{label}` refuses a payload an `f64` cannot hold exactly: set the leaf `value` as a number in range") })?;
-                Ok(Some([("some", f64::from(u8::from(*some))), ("value", payload)]))
-            }
-            ParamText::Whole(_) | ParamText::Exact { .. } => Ok(None),
-        }
+    /// The leaves of an `Option` param's pin this text writes, `some` then `value`, each exactly (an integer payload as its
+    /// digits, never through an `f64`); `None` for a text that is no `Option`.
+    pub fn leaves(&self) -> Option<[(&'static str, LeafInput); 2]> {
+        let ParamText::Option { some, value } = self else { return None };
+        let payload = match value {
+            Scalar::Real(real) => LeafInput::Number(*real),
+            Scalar::Integer(integer) => LeafInput::Text(integer.to_string()),
+        };
+        Some([("some", LeafInput::Number(f64::from(u8::from(*some)))), ("value", payload)])
     }
 }
 
@@ -111,13 +107,7 @@ impl Reading<'_> {
     fn pattern(&self, ty: &ValueType) -> Result<ParamText, Failure> {
         let shape = CellShape::of(self.ir, ty).and_then(|shape| LogicPattern::planes_of(&shape));
         let Some((width, plane)) = shape else { return Err(self.refused(format!("{ty} is no `Logic<N>`"))) };
-        if width > 53 {
-            return Err(self.refused("a pattern of more than 53 levels has planes an `f64` cannot hold: set the leaves `binary` and `value` as numbers".to_string()));
-        }
-        let bytes = LogicPattern::parse(self.text, width, &format!("`{}`", self.label))?.bytes(plane);
-        let little_endian = |bytes: &[u8]| bytes.iter().rev().fold(0i128, |acc, byte| (acc << 8) | i128::from(*byte));
-        let (binary, value) = bytes.split_at(plane);
-        Ok(ParamText::Planes { binary: Scalar::Integer(little_endian(binary)), value: Scalar::Integer(little_endian(value)) })
+        Ok(ParamText::Pattern { bytes: LogicPattern::parse(self.text, width, &format!("`{}`", self.label))?.bytes(plane) })
     }
 
     /// The pin bytes of the text as a value of the number-width type `ty`, read in its own format (A.8 rule 8; an integer by

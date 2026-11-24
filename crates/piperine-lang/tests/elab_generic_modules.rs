@@ -2,7 +2,7 @@
 //! generic arguments, a false module `where` reported for the instance, a chain of growing arguments bounded, and the POM
 //! left as written.
 
-use piperine_ir::Ir;
+use piperine_ir::{CarrierRole, Ir};
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic};
 
@@ -90,6 +90,12 @@ fn a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_natu
     assert!(ir.check().is_empty(), "{:?}", ir.check());
     let names: Vec<String> = ir.bodies().map(|body| body.name().to_string()).collect();
     assert!(names.iter().any(|name| name == "Tribuf::<Line>") && names.iter().any(|name| name == "Pullup::<Line>"), "{names:?}");
+    let tribuf = ir.bodies().find(|body| body.name() == "Tribuf::<Line>").expect("the instance body");
+    let w = tribuf.carriers().iter().find(|carrier| carrier.name == "w").expect("the port `w`");
+    assert!(matches!(w.role, CarrierRole::Resolved { port: true, .. }), "`w` is a resolved port of the instance: {:?}", w.role);
+    let net = ir.nets().find(|net| net.path() == "Top.n").expect("the net of `n`");
+    let resolution = net.resolution().expect("`n` is a resolved net of `Line`");
+    assert_eq!(resolution.drives.len(), 2, "the tribuf and the pull-up each hold one drive of it");
 }
 
 #[test]

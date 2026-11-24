@@ -53,16 +53,12 @@ fn the_buck_readme_says_when_to_run_the_buck_on_demand() {
 
 #[test]
 fn the_instructions_name_the_integrated_gate_and_the_buck_on_demand() {
-    // integrated-tests IT-13 AC 2: `CLAUDE.md` names the integrated target as the per-task gate, says that
-    // `cargo test` skips the buck and points at the README's "On demand" block; "Where the tests are"
-    // names `tests/integrated/` and `tests/e2e/integrated/`; `AGENTS.md` names the gate too
+    // integrated-tests IT-13 AC 2, narrowed by the CLAUDE.md rewrite of 2026-11-24 (AGENTS.md now
+    // points at CLAUDE.md): `CLAUDE.md` names the integrated gate, the buck's README and the root's
+    // integrated tests
     let claude = read("CLAUDE.md");
-    for held in ["cargo test -p piperine --test integrated", "cargo test -p piperine-cli --test integrated", "`cargo test` skips every target that simulates the buck", "examples/buck/README.md", "\"On demand\"", "tests/integrated/", "tests/e2e/integrated/"] {
-        assert!(claude.contains(held), "CLAUDE.md names `{held}`");
-    }
-    let agents = read("AGENTS.md");
     for held in ["cargo test -p piperine --test integrated", "examples/buck/README.md", "tests/integrated/"] {
-        assert!(agents.contains(held), "AGENTS.md names `{held}`");
+        assert!(claude.contains(held), "CLAUDE.md names `{held}`");
     }
 }
 
@@ -83,32 +79,14 @@ fn the_buck_readme_points_at_the_scenarios() {
 
 #[test]
 fn the_instruction_files_say_the_host_crates_build() {
-    // CLI-20 AC 1: `CLAUDE.md` and `AGENTS.md` no longer say the host crates do not build; their
-    // rows say what `msl-cli` left (`Project`/`Session` for `piperine-api`, the seven commands for
-    // `piperine-cli`, `msl::format` for `piperine-lang`); `piperine-lang-server` is outside the
-    // default build and deferred
-    for path in ["CLAUDE.md", "AGENTS.md"] {
-        let text = read(path);
-        for stale in ["(does not build yet)", "do not build yet", "five do not build", "four crates do not\nbuild", "piperine-cli`, `piperine-project` and the language server do not"] {
-            assert!(!text.contains(stale), "{path} still says `{stale}`");
-        }
-        assert!(text.contains("piperine-lang-server") && text.contains("outside the default build") && text.contains("deferred"), "{path} says the language server is outside the default build and deferred");
-        assert!(text.contains("msl::format"), "{path} names `msl::format`");
-    }
+    // CLI-20 AC 1, narrowed by the CLAUDE.md rewrite of 2026-11-24: the crate table's rows say the
+    // host library holds `Project` and `Session`, and the language server is deferred
     let claude = read("CLAUDE.md");
     let row = |name: &str| claude.lines().find(|l| l.starts_with(&format!("| `{name}` |"))).unwrap_or_else(|| panic!("CLAUDE.md has a row for {name}")).to_string();
     let api = row("piperine-api");
     assert!(api.contains("`Project`") && api.contains("`Session`"), "the piperine-api row names Project and Session: {api}");
-    let cli = row("piperine-cli");
-    for command in ["check", "build", "run", "test", "new", "clean", "fmt"] {
-        assert!(cli.contains(&format!("`{command}`")), "the piperine-cli row names `{command}`: {cli}");
-    }
-    assert!(row("piperine-lang").contains("msl::format"), "the piperine-lang row names `msl::format`");
-    assert!(claude.contains("The root package `piperine`") && claude.contains("it builds"), "CLAUDE.md says the root package builds");
-    let agents = read("AGENTS.md");
-    for name in ["piperine-project", "piperine-api", "piperine-cli", "root `piperine` shell package"] {
-        assert!(agents.contains(name), "AGENTS.md names {name}");
-    }
+    assert!(row("piperine-lang-server").contains("deferred"), "the language server row says it is deferred");
+    assert!(read("AGENTS.md").contains("CLAUDE.md"), "AGENTS.md points at CLAUDE.md");
 }
 
 #[test]
@@ -210,32 +188,20 @@ fn state_records_root_e2e() {
     for name in ["`tests/book/`", "`tests/book/inventory.tsv`", "`tests/e2e/`", "`tests/scenarios.rs`", "MD-28"] {
         assert!(decision.contains(name), "MD-72 names {name}");
     }
-    for file in ["AGENTS.md", "CLAUDE.md"] {
-        let text = read(file);
-        assert!(text.contains("tests/book/") && text.contains("tests/e2e/") && text.contains("tests/scenarios.rs"), "{file} says the root holds the integrated tests");
-        assert!(!text.contains("holds no Rust target"), "{file} still says the root holds no Rust target");
-    }
-    assert!(read("CLAUDE.md").contains("`tests/e2e/twins/*.cir`"), "CLAUDE.md's parity row names tests/e2e/");
+    let claude = read("CLAUDE.md");
+    assert!(claude.contains("tests/book/") && claude.contains("tests/e2e/") && claude.contains("tests/scenarios.rs"), "CLAUDE.md says the root holds the integrated tests");
 }
 
 #[test]
 fn state_records_the_derived_param_decision() {
     // HII-23 AC 3: `.specs/STATE.md` holds MD-69 naming the generated derive function, the unchanged
-    // MD-18 and the library surface of the drive and the timed `set`; the instruction files name the
-    // new api modules and the new command
+    // MD-18 and the library surface of the drive and the timed `set`
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-69:").expect("STATE.md holds MD-69");
     let decision = state[at..].split("\n---").next().expect("a decision");
     for name in ["`piperine_derive_3(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
         assert!(decision.contains(name), "MD-69 names {name}");
     }
-    let claude = read("CLAUDE.md");
-    let api = claude.lines().find(|l| l.starts_with("| `piperine-api` |")).expect("a piperine-api row");
-    for module in ["`metadata.rs`", "`params.rs`", "`drive`", "`set_at`"] {
-        assert!(api.contains(module), "the piperine-api row names {module}");
-    }
-    assert!(claude.lines().any(|l| l.starts_with("| `piperine-cli` |") && l.contains("`info`")), "the piperine-cli row names `info`");
-    assert!(read("AGENTS.md").contains("check build run test info"), "AGENTS.md lists `info`");
 }
 
 #[test]
@@ -956,9 +922,7 @@ fn gaps_drops_what_composite_values_phase_d_closed() {
     assert!(row.to_lowercase().contains("delivered"), "{row}");
     let rs = read(".specs/features/ir-rust/spec.md");
     assert!(rs.contains("superseded by composite-values Q4 (2026-11-23)"), "RS-Q6 is superseded");
-    for table in ["CLAUDE.md", "AGENTS.md"] {
-        assert!(read(table).contains("piperine-numbers"), "{table} lists the crate");
-    }
+    assert!(read("CLAUDE.md").contains("piperine-numbers"), "CLAUDE.md lists the crate");
 }
 
 #[test]

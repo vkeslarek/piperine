@@ -14,7 +14,9 @@ use piperine_solver::abi::Value;
 use piperine_solver::prelude::ParamValue;
 use piperine_transpile::Compiled;
 
+use crate::composite::CellShape;
 use crate::failure::Failure;
+use crate::leaf_input::{LeafEncoding, LeafInput};
 
 /// What recomputes a derived param (§8.1.19, §8.1.23): the compiled device's generated function `k`, over the pin bytes of the
 /// parent's params one after another in declaration order, each as wide as its pin, giving the `width` pin bytes of the child's param. A param
@@ -185,31 +187,6 @@ impl Changed {
     }
 }
 
-/// The bytes of one leaf of a composite param.
-struct LeafValue;
-
-impl LeafValue {
-    /// `value` as the leaf `leaf` (a `leaf::*` constant) holds it, little-endian; the reason it cannot when it cannot.
-    fn encode(leaf: u32, value: f64) -> Result<Vec<u8>, String> {
-        let whole = |low: f64, high: f64| {
-            if value.fract() == 0.0 && (low..=high).contains(&value) { Ok(value) } else { Err(format!("the leaf holds a whole number from {low} to {high}")) }
-        };
-        Ok(match leaf {
-            piperine_abi::raw::leaf::F64 => value.to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::BOOL => vec![u8::from(whole(0.0, 1.0)? == 1.0)],
-            piperine_abi::raw::leaf::U8 => (whole(0.0, 255.0)? as u8).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::U16 => (whole(0.0, 65535.0)? as u16).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::U32 => (whole(0.0, 4294967295.0)? as u32).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::U64 => (whole(0.0, 18446744073709551615.0)? as u64).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::I8 => (whole(-128.0, 127.0)? as i8).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::I16 => (whole(-32768.0, 32767.0)? as i16).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::I32 => (whole(-2147483648.0, 2147483647.0)? as i32).to_le_bytes().to_vec(),
-            piperine_abi::raw::leaf::I64 => (whole(-9223372036854775808.0, 9223372036854775807.0)? as i64).to_le_bytes().to_vec(),
-            other => return Err(format!("leaf kind {other} has no host value")),
-        })
-    }
-}
-
 /// The values of every param of every instance, by instance in the IR's order.
 #[derive(Debug, Clone)]
 pub struct Params {
@@ -253,6 +230,8 @@ struct CompositeParam {
     name: String,
     /// The layout of its pin.
     layout: CompositeLayout,
+    /// Its shape, which names the type of each scalar leaf (`None` for a type the host's decoder has no shape of).
+    shape: Option<CellShape>,
     /// The bytes its pin holds: its value.
     bytes: Vec<u8>,
 }
@@ -305,7 +284,7 @@ impl Params {
                     .filter_map(|(param, given)| {
                         let layout = CompositeLayout::of(ir, &param.ty)?;
                         let bytes = CompositeLayout::bytes(ir, &param.ty, *given)?;
-                        Some(CompositeParam { name: param.name.clone(), layout, bytes })
+                        Some(CompositeParam { name: param.name.clone(), layout, shape: CellShape::of(ir, &param.ty), bytes })
                     })
                     .collect(),
                 exacts: instance
@@ -369,11 +348,11 @@ impl Params {
         Some(composite.layout.leaves().iter().map(|l| l.name.clone()).collect())
     }
 
-    /// The write of `value` to `leaf` of the composite param `param` of `instance`, with nothing
-    /// applied: the whole param's new bytes. `E0801` for a param or a leaf that does not exist
-    /// (the leaves are named), `E0802` for a value the leaf cannot hold (a `bool` is 0 or 1, an
-    /// integer a whole number in its range).
-    pub fn leaf_change(&self, instance: &str, param: &str, leaf: &str, value: f64) -> Result<LeafChange, Failure> {
+    /// The write of `input` to `leaf` of the composite param `param` of `instance`, with nothing applied: the whole param's new
+    /// bytes. `E0801` for a param or a leaf that does not exist (the leaves are named), `E0802` for a value the leaf cannot hold
+    /// (a `bool` is 0 or 1, `true` or `false`; an integer a whole number in the range of the leaf's own type, written exactly at any
+    /// width).
+    pub fn leaf_change(&self, instance: &str, param: &str, leaf: &str, input: &LeafInput) -> Result<LeafChange, Failure> {
         let label = format!("{instance}.{param}.{leaf}");
         let composite = self
             .slot(instance)
@@ -383,41 +362,12 @@ impl Params {
             code: "E0801",
             message: format!("`{label}` names no leaf of `{instance}.{param}`: its leaves are {}", composite.layout.leaves().iter().map(|l| format!("`{}`", l.name)).collect::<Vec<_>>().join(", ")),
         })?;
-        let refused = |why: String| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {why}") };
+        let encoding = LeafEncoding { leaf: found, ty: composite.shape.as_ref().and_then(|shape| shape.leaf_type(leaf)) };
+        let encoded = encoding.bytes(input).map_err(|why| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {}: {why}", input.shown()) })?;
         let mut bytes = composite.bytes.clone();
-        let encoded = LeafValue::encode(found.leaf, value).map_err(refused)?;
         let at = found.offset as usize;
         bytes[at..at + encoded.len()].copy_from_slice(&encoded);
         Ok(LeafChange { instance: instance.to_string(), param: param.to_string(), leaf: leaf.to_string(), old: composite.bytes.clone(), bytes })
-    }
-
-    /// The number `text` is for `leaf` of the composite param `param`, read by the leaf's own type with the language's literal
-    /// syntax: a `bool` leaf takes `true` or `false` only, an integer leaf an integer literal (decimal, `0x`, `0b`, `_`) in range,
-    /// a real leaf a number. `E0801` for a leaf that does not exist, `E0802` for a text that is no value of the leaf.
-    pub fn leaf_number(&self, instance: &str, param: &str, leaf: &str, text: &str) -> Result<f64, Failure> {
-        let label = format!("{instance}.{param}.{leaf}");
-        let composite = self
-            .slot(instance)
-            .and_then(|s| s.composites.iter().find(|c| c.name == param))
-            .ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{instance}.{param}` is no composite param of the design") })?;
-        let found = composite.layout.leaves().iter().find(|l| l.name == leaf).ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{label}` names no leaf of `{instance}.{param}`") })?;
-        let refused = |why: &str| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value `{}`: {why}", text.trim()) };
-        let text = text.trim();
-        match found.leaf {
-            piperine_abi::raw::leaf::BOOL => match text {
-                "true" => Ok(1.0),
-                "false" => Ok(0.0),
-                _ => Err(refused("a `bool` leaf is `true` or `false`")),
-            },
-            piperine_abi::raw::leaf::F64 => text.parse::<f64>().map_err(|_| refused("it is not a number")),
-            _ => {
-                let value = piperine_lang::elab::LiteralText::integer(text).ok_or_else(|| refused("it is not an integer literal"))?;
-                if value.unsigned_abs() > 1 << 53 {
-                    return Err(refused("an `f64` cannot hold it exactly"));
-                }
-                Ok(value as f64)
-            }
-        }
     }
 
     /// Takes `change` into the table.
@@ -483,9 +433,13 @@ impl Params {
     }
 
     /// The changes of writing `bytes` to the composite param `param` of `instance`, and of every value bound from it (§8.1.23).
+    /// Bytes of another length than the param's are `E0802`: they are no value of its type.
     pub fn changes_composite(&self, instance: &str, param: &str, bytes: Vec<u8>, shown: &str, derive: Option<&dyn Derive>) -> Result<Vec<Changed>, Failure> {
         self.refuse_derived(instance, param)?;
         let old = self.composite_bytes(instance, param).map(<[u8]>::to_vec);
+        if let Some(held) = old.as_ref().filter(|held| held.len() != bytes.len()) {
+            return Err(Failure::Host { code: "E0802", message: format!("`{instance}.{param}` refuses the value {shown}: it is {} bytes, and the param holds {}", bytes.len(), held.len()) });
+        }
         let ty = self.type_of(instance, param);
         self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old: f64::NAN, value: f64::NAN, derived: false, bytes: Some(bytes), old_bytes: old, text: Some(shown.to_string()) }, derive)
     }

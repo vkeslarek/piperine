@@ -4,7 +4,7 @@
 
 use super::{Checker, Walk};
 use crate::ids::FunctionId;
-use crate::model::{Origin, ValueType};
+use crate::model::{CarrierRole, Origin, ValueType};
 
 impl Checker<'_> {
     /// The checks of one `Expr::Resolve`: `ty` is the type the expression records.
@@ -48,8 +48,8 @@ impl Checker<'_> {
         }
     }
 
-    /// The checks of every net's `Resolution`: its resolver and holders are instances of the design, its drive and others
-    /// nets are nets of it, the drive nets hold the driven type, and an others net names a drive and holds the value type.
+    /// The checks of every net's `Resolution`: its resolver and holders are instances of the design, each holder's carrier is a
+    /// resolved carrier of its instance's body, its drive and others nets are nets of it, the drive nets hold the driven type, and an others net names a drive and holds the value type.
     pub(super) fn resolutions(&mut self) {
         let ir = self.ir;
         for net in &ir.nets {
@@ -64,10 +64,15 @@ impl Checker<'_> {
             for holder in resolution.holders.iter().flatten() {
                 match ir.instances.get(holder.instance.index()) {
                     None => self.report(item.clone(), net.origin.clone(), format!("holder instance {} out of range ({} instances)", holder.instance.0, ir.instances.len())),
-                    Some(instance) if holder.carrier as usize >= ir.bodies[instance.body.index()].carriers.len() => {
-                        self.report(item.clone(), net.origin.clone(), format!("holder carrier {} out of range for instance {}", holder.carrier, instance.path))
-                    }
-                    Some(_) => {}
+                    Some(instance) => match ir.bodies[instance.body.index()].carriers.get(holder.carrier as usize) {
+                        None => self.report(item.clone(), net.origin.clone(), format!("holder carrier {} out of range for instance {}", holder.carrier, instance.path)),
+                        Some(carrier) if !matches!(carrier.role, CarrierRole::Resolved { .. }) => self.report(
+                            item.clone(),
+                            net.origin.clone(),
+                            format!("holder carrier {} (`{}`) of instance {} is no resolved carrier", holder.carrier, carrier.name, instance.path),
+                        ),
+                        Some(_) => {}
+                    },
                 }
             }
             for drive in &resolution.drives {
