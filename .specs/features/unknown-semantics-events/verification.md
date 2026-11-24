@@ -27,7 +27,7 @@ hand-written guard in the same run does. At 41 ns a fall with `s` high does not 
 **L75's refusals are spec-allowed forms with a real owner.** A guarded `match` arm, a binding pattern, `if let`,
 `while`/`loop`/`break`/`continue`, a `let` of a pattern and a bare expression statement are all forms §3 allows in a
 body. The rule for a refused allowed form is "runs, or a GAPS row with a real owner", and L75 is that row (owner
-`spec-closure`, P0001 messages quoted). The docs.rs counts follow at 20 loud, the header names L1 to L75, and §9 is
+`spec-closure`, approved by the user 2026-11-23, P0001 messages quoted). The docs.rs counts follow at 20 loud, the header names L1 to L75, and §9 is
 checked in both spellings. `emit!` is correctly not a gap. §3's class table makes an emitting `fn` callable in
 reactions and `analog` only, an event `fn` in event positions only, and the restrictions add up, so `E0122` is the
 spec's own answer. The test pins the code.

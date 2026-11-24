@@ -838,6 +838,18 @@ entering the module at its port `p`.
   branch −1. A probe of any other branch is held constant. `limit` is transparent (§18 rule 3). The
   result of any other instance is held constant.
 
+  > **Amendment (approved 2026-11-23).** A `fn` called in `e` is differentiated through its body,
+  > run symbolically. These forms are differentiated: a `let` of a name, an assignment, an `if` (an
+  > early `return` in its branch included), a `for` over a range whose bounds are constant in the
+  > analysis, a recursion whose decisions are constant in the analysis, a parameter of type
+  > `Option`, `str` or a handle, a method, a generic function, and a struct or tuple written out and
+  > read by field. A `while`, a `loop`, a `break`, a `continue`, a `for` whose bounds are not
+  > constant, an `if let`, a `let` of a pattern, an assignment to a field or an element, an array
+  > read by an index, and a call made for its effect have no finite symbolic reading and are
+  > `P0001` (GAPS L74). The flow of a branch the module gives no potential contribution is a probe
+  > like any other: it contributes 1 against itself; a derivative that still reads the value of
+  > that flow is `P0001` until a solve reads such a flow (GAPS L73).
+
 > **Resolution.** §14.2.3 defines the derivative over probe leaves. `ddx(v(g) - v(s), v(g, s))` is
 > therefore 0: the two single-node probes are other branches.
 
