@@ -192,6 +192,24 @@ impl Checker<'_> {
         }
     }
 
+    /// Whether `expr`, of the type `ty`, is an `if`, a `match` or a block whose result is a node: one chosen by a condition, which
+    /// no value is (§1.4.7). `E0133` is reported for it, naming the form; a `let` bound to a node names it instead.
+    pub(super) fn chooses_a_node(&mut self, expr: ExprId, ty: Option<&Ty>) -> bool {
+        if !matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) {
+            return false;
+        }
+        let form = match &self.design.expr_node(expr).kind {
+            ExprKind::If { .. } => "an `if`",
+            ExprKind::Match { .. } => "a `match`",
+            ExprKind::Block(_) => "a block",
+            _ => return false,
+        };
+        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        let message = format!("{form} whose result is a node chooses a node, and a node is hardware, never a value (§1.4.7): name the node itself");
+        self.coded(file, "E0133", span, message, "a node chosen by an expression");
+        true
+    }
+
     /// `E0133` for a function whose result type is a handle (a node or a carrier of a nature).
     pub(super) fn check_handle_result(&mut self, function: DeclId, ret: Option<&Ty>) {
         let Some(ret) = ret.filter(|ty| Self::is_handle_type(ty)) else { return };

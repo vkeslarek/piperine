@@ -392,7 +392,9 @@ fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
   (`+>`), each at the time its rule gives ([§5.2](part_ii_carriers.md#52-drives),
   [§12.1](part_iv_behavior.md#121-reactions), [§11](part_iv_behavior.md#11-analog)). Reading
   a carrier yields a value: a copy of what the carrier holds at that read
-  ([§5.1](part_ii_carriers.md#51-declaring-and-reading)).
+  ([§5.1](part_ii_carriers.md#51-declaring-and-reading)). A `let` bound to a node names that
+  node; an `if`, a `match` or a block whose result is a node chooses one, which no value does, and
+  is `E0133` (generics phase D fix round 5, 2026-11-24, AFK default pending user review).
 - **§1.4.8** A type is checked against a required type by equality. Two types are equal when
   they are the same scalar type, the same struct, enum, nature or module with equal generic
   arguments, or the same composite form with equal parts. Const arguments and array lengths
@@ -1098,7 +1100,7 @@ only reference a function holds, and it is not a value.
 | --- | --- | --- |
 | `E0131` | a method named `changed`, `prev`, `others` or `inflow` | elaboration |
 | `E0132` | an item other than a function in an `impl` on a nature or bundle | elaboration |
-| `E0133` | a handle returned, stored in a value, or written through | elaboration |
+| `E0133` | a handle returned, stored in a value, or written through; an `if`, `match` or block whose result is a node (§1.4.7) | elaboration |
 | `E0134` | `impl Trait for` a bundle | elaboration |
 
 **Examples**

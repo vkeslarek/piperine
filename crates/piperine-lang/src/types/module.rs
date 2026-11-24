@@ -282,7 +282,7 @@ impl Checker<'_> {
     }
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
-    fn reads_poisoned(&self, expr: ExprId) -> bool {
+    pub(super) fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
             _ => false,

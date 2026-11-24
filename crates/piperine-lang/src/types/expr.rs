@@ -191,6 +191,9 @@ impl Checker<'_> {
             if ty == Some(Ty::Event) && !in_event_position {
                 ty = Some(self.event_out_of_place(expr));
             }
+            if self.chooses_a_node(expr, ty.as_ref()) {
+                ty = None;
+            }
             self.exprs[expr.index()] = ty.clone();
             ty
         })

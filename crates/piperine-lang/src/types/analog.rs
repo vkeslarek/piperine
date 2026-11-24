@@ -88,6 +88,8 @@ impl Checker<'_> {
                     self.missing_access(file, *callee, &name, target);
                     return None;
                 }
+                // a `let` whose value was refused already (`E0133` for a chosen node) is no second diagnostic
+                OperandAccess::NoNode if args.first().is_some_and(|arg| self.reads_poisoned(arg.value)) => return None,
                 OperandAccess::NoNode => {
                     self.unsupported(file, node.span, "probe through an access that names several natures");
                     return None;

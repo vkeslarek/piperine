@@ -246,3 +246,20 @@ fn parentheses_around_a_node_argument_name_the_node() {
         assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
     }
 }
+
+#[test]
+fn a_node_chosen_by_an_expression_is_e0133() {
+    // §1.4.7: a node is hardware, never a value, so an `if`, a `match` or a block whose result is a node chooses one and is `E0133`
+    // naming the form, at run time or over a param alike; a `let` bound to a node names it and is clean
+    for (statement, form) in [
+        ("let y = if v(x) > 0.5 { x } else { p };", "an `if`"),
+        ("let y = if k > 0.5 { x } else { p };", "an `if`"),
+        ("let y = match n { 0 => x, _ => p };", "a `match`"),
+        ("let y = { x };", "a block"),
+    ] {
+        let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(y); }}");
+        let found = HandleSources::found(&src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{statement}: {found:?}");
+        assert!(found[0].1.starts_with(&format!("{form} whose result is a node chooses a node")), "{statement}: {found:?}");
+    }
+}

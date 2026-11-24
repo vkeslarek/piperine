@@ -86,3 +86,13 @@ fn parentheses_around_a_node_argument_lower_to_the_node() {
     let bare = Elab::ir(&design("i(p, gnd) +> v(x) + v(x) + v(c0.sn); v(q) +> 1.0;"), "Top").print_structural();
     assert_eq!(wrapped, bare);
 }
+
+#[test]
+fn a_node_chosen_at_run_time_is_e0133_not_an_elaboration_refusal() {
+    // §1.4.7: `let y = if v(x) > 0.5 { x } else { p };` is refused by the checker with `E0133` at the `if`, never with the
+    // elaborator's `P0001` for a node argument that is not a name
+    let src = "module Top() { signal x: Electrical; signal p: Electrical; }\nanalog for Top { let y = if v(x) > 0.5 { x } else { p }; i(p, gnd) +> v(y); }";
+    let diagnostics = Elab::run(src, "Top").expect_err("a node chosen at run time");
+    assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+    assert_eq!(&src[diagnostics[0].diagnostic.span().range()], "if v(x) > 0.5 { x } else { p }");
+}
