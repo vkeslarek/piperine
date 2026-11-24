@@ -165,3 +165,23 @@ fn a_malformed_number_width_form_is_refused() {
     });
     assert_eq!(negative.check(), vec![], "-1 as i70 is two limbs of ones");
 }
+
+#[test]
+fn a_math_function_is_typed_by_its_operand() {
+    // H.2: `sqrt`, `exp`, `ln` and `abs` of a float of any width give a float of that width; a mismatch is refused
+    for ty in [ValueType::F32, ValueType::F16, ValueType::F128] {
+        let typed = Widths::ir(|b| {
+            let operand = Widths::expr(b, Expr::FloatBits(0), ty.clone(), 3);
+            let root = Widths::expr(b, Expr::Math { f: piperine_ir::MathFn::Sqrt, args: vec![operand] }, ty.clone(), 3);
+            let value = Widths::expr(b, Expr::Cast { expr: root, to: ValueType::F64 }, ValueType::F64, 3);
+            (vec![], value)
+        });
+        assert_eq!(typed.check(), vec![], "sqrt of a {ty} is a {ty}");
+        let mismatched = Widths::ir(|b| {
+            let operand = Widths::expr(b, Expr::FloatBits(0), ty.clone(), 3);
+            let value = Widths::expr(b, Expr::Math { f: piperine_ir::MathFn::Sqrt, args: vec![operand] }, ValueType::F64, 3);
+            (vec![], value)
+        });
+        assert!(!mismatched.check().is_empty(), "sqrt of a {ty} is not an f64");
+    }
+}

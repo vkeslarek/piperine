@@ -685,9 +685,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_widths_compile_and_compute_as_their_library` passes under `**Run tw**` (one function per type with every operator, `as` pair and method, its results compared with Rust's `f32` and with `piperine-numbers` called in the test; a zero divisor panics naming it)
-- [ ] Every transpile golden is byte-identical
-- [ ] Gate check passes: Task (`piperine-transpile`)
+- [x] `number_widths_compile_and_compute_as_their_library` passes under `**Run tw**` (one function per type with every operator, `as` pair and method, its results compared with Rust's `f32` and with `piperine-numbers` called in the test; a zero divisor panics naming it)
+- [x] Every transpile golden is byte-identical
+- [x] Gate check passes: Task (`piperine-transpile`)
 
 **Tests**: integration
 **Gate**: task

@@ -1843,12 +1843,14 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => {
                 if first {
-                    self.own(w, &origin, ty, &ValueType::F64);
+                    // typed by its operand (H.2): a float of any width gives a float of that width, `f64` otherwise
+                    let operand = args.first().and_then(|a| self.ty(*a)).filter(|t| t.is_other_float()).cloned().unwrap_or(ValueType::F64);
+                    self.own(w, &origin, ty, &operand);
                     if args.len() != 1 {
                         self.wrong(w, origin.clone(), format!("a math function takes 1 argument, found {}", args.len()));
                     }
                     for a in args {
-                        self.want(w, *a, &ValueType::F64, "argument of a math function");
+                        self.want(w, *a, &operand, "argument of a math function");
                     }
                 }
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));

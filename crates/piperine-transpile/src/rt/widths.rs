@@ -6,7 +6,7 @@
 //! Embedded with `rt/numbers/*.rs` and compiled by generated code only when a design uses a new
 //! width; the files here refer to their siblings as `super::`.
 
-use core::ops::{Div, Rem};
+use core::ops::{Div, Rem, Shl, Shr};
 
 use super::control::Panic;
 use super::int::{Int, UInt};
@@ -142,6 +142,117 @@ impl<const N: u32, const L: usize> Rem for WideInt<N, L> {
             Some(value) => value,
             None => Panic::raise(format!("integer remainder by zero: Int<{N}> {} % 0", self.to_decimal_string())),
         }
+    }
+}
+
+/// The amount of a shift, read from any integer type (§1.4.3): a negative amount panics naming
+/// the operation, an amount past 64 bits saturates (it shifts every bit out all the same).
+pub trait ShiftAmount: Copy {
+    /// The amount as a count of bit positions.
+    fn amount(self, operator: &str) -> u64;
+}
+
+/// An integer wider than 64 bits as the right side of a shift: the marker that lets `UInt<N>` and
+/// `Int<N>` shift by it without overlapping their impls for the narrow types.
+pub trait WideShiftAmount: ShiftAmount {}
+
+impl<const N: u32> ShiftAmount for UInt<N> {
+    fn amount(self, _operator: &str) -> u64 {
+        self.get()
+    }
+}
+
+impl<const N: u32> ShiftAmount for Int<N> {
+    fn amount(self, operator: &str) -> u64 {
+        if self.get() < 0 {
+            Panic::raise(format!("a shift by a negative amount: `{operator}` by Int<{N}> {}", self.get()));
+        }
+        self.get() as u64
+    }
+}
+
+impl<const N: u32, const L: usize> ShiftAmount for WideUInt<N, L> {
+    fn amount(self, _operator: &str) -> u64 {
+        match self.to_u128() {
+            Some(value) => u64::try_from(value).unwrap_or(u64::MAX),
+            None => u64::MAX,
+        }
+    }
+}
+
+impl<const N: u32, const L: usize> ShiftAmount for WideInt<N, L> {
+    fn amount(self, operator: &str) -> u64 {
+        if self.is_negative() {
+            Panic::raise(format!("a shift by a negative amount: `{operator}` by Int<{N}> {}", self.to_decimal_string()));
+        }
+        WideInt::<N, L>::magnitude(&self).amount(operator)
+    }
+}
+
+impl<const N: u32, const L: usize> WideShiftAmount for WideUInt<N, L> {}
+impl<const N: u32, const L: usize> WideShiftAmount for WideInt<N, L> {}
+
+impl<const N: u32, const L: usize, A: ShiftAmount> Shl<A> for WideUInt<N, L> {
+    type Output = WideUInt<N, L>;
+    /// `self << amount` modulo `2^N`; an amount of `N` or more gives 0.
+    fn shl(self, rhs: A) -> Self {
+        self.shift_left(rhs.amount("<<"))
+    }
+}
+
+impl<const N: u32, const L: usize, A: ShiftAmount> Shr<A> for WideUInt<N, L> {
+    type Output = WideUInt<N, L>;
+    /// `floor(self / 2^amount)`.
+    fn shr(self, rhs: A) -> Self {
+        self.shift_right(rhs.amount(">>"))
+    }
+}
+
+impl<const N: u32, const L: usize, A: ShiftAmount> Shl<A> for WideInt<N, L> {
+    type Output = WideInt<N, L>;
+    /// `self << amount` modulo `2^N`; an amount of `N` or more gives 0.
+    fn shl(self, rhs: A) -> Self {
+        self.shift_left(rhs.amount("<<"))
+    }
+}
+
+impl<const N: u32, const L: usize, A: ShiftAmount> Shr<A> for WideInt<N, L> {
+    type Output = WideInt<N, L>;
+    /// `floor(self / 2^amount)`, filling with the sign.
+    fn shr(self, rhs: A) -> Self {
+        self.shift_right(rhs.amount(">>"))
+    }
+}
+
+impl<const N: u32, A: WideShiftAmount> Shl<A> for UInt<N> {
+    type Output = UInt<N>;
+    /// `self << amount` by an integer wider than 64 bits.
+    fn shl(self, rhs: A) -> UInt<N> {
+        self.shl_by(rhs.amount("<<"))
+    }
+}
+
+impl<const N: u32, A: WideShiftAmount> Shr<A> for UInt<N> {
+    type Output = UInt<N>;
+    /// `self >> amount` by an integer wider than 64 bits.
+    fn shr(self, rhs: A) -> UInt<N> {
+        self.shr_by(rhs.amount(">>"))
+    }
+}
+
+impl<const N: u32, A: WideShiftAmount> Shl<A> for Int<N> {
+    type Output = Int<N>;
+    /// `self << amount` by an integer wider than 64 bits.
+    fn shl(self, rhs: A) -> Int<N> {
+        self.shl_by(rhs.amount("<<"))
+    }
+}
+
+impl<const N: u32, A: WideShiftAmount> Shr<A> for Int<N> {
+    type Output = Int<N>;
+    /// `self >> amount` by an integer wider than 64 bits.
+    fn shr(self, rhs: A) -> Int<N> {
+        self.shr_by(rhs.amount(">>"))
     }
 }
 

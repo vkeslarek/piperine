@@ -339,6 +339,9 @@ impl<'a> ValuePrinter<'a> {
     /// `rt::UInt::<N>::new(0)` or `rt::Int::<N>::new(0)`: the value of an integer param no one
     /// wrote.
     pub fn zero(ty: &ValueType) -> String {
+        if let Some(zero) = Self::number_zero(ty) {
+            return zero;
+        }
         match ty {
             ValueType::UInt(n) => format!("rt::UInt::<{n}>::new(0)"),
             ValueType::Int(n) => format!("rt::Int::<{n}>::new(0)"),
@@ -706,8 +709,9 @@ impl<'a> ValuePrinter<'a> {
             Expr::Real(r) => atom(format!("R::constant({})", Text::real(r.get()))),
             Expr::Bool(b) => atom(b.to_string()),
             Expr::Unit => atom("()".to_string()),
+            Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) if Self::is_number_width(self.ir.expr_type(e)) => self.number_literal(e),
             Expr::Int(v) => atom(format!("{}::new({v})", self.integer_path(self.ir.expr_type(e), e)?)),
-            Expr::FloatBits(_) | Expr::Wide(_) => Err(self.unsupported(e, &format!("a literal of type {}: the printer of the number widths is not written yet", self.ir.expr_type(e)))),
+            Expr::FloatBits(_) | Expr::Wide(_) => self.number_literal(e),
             Expr::Local(i) => match self.locals.get(*i as usize) {
                 Some(name) => atom(name.clone()),
                 None => Err(self.unsupported(e, "a local out of range")),
@@ -877,6 +881,9 @@ impl<'a> ValuePrinter<'a> {
 
     /// `expr as to`.
     fn cast(&self, e: ExprId, expr: ExprId, to: &ValueType) -> Result<Piece, Error> {
+        if let Some(piece) = self.number_cast(e, expr, to)? {
+            return Ok(piece);
+        }
         let from = self.ir.expr_type(expr);
         let (source, target) = (from, to);
         let generic_real = *source == ValueType::F64 && !self.plain;
@@ -928,6 +935,7 @@ impl<'a> ValuePrinter<'a> {
                 // is an `i32` literal: analog code has no `rt::Int`.
                 (Method::Powi, Expr::Int(v)) => format!("{v}_i32"),
                 (Method::Powi, _) => format!("{}.get() as i32", self.piece(*a)?.at(Prec::Atom)),
+                (Method::Pow, _) if self.ir.expr_type(receiver).is_wide_integer() => self.wide_exponent(*a)?,
                 _ => self.expr(*a)?,
             };
             printed.push(text);
