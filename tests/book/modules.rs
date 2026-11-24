@@ -221,16 +221,16 @@ fn the_memory_bank_is_refused_for_its_template_and_bundle() {
     // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The
     // generic module runs (T71), so do the arrays of carriers and the generation `for` of the bank (T77). What is left, exactly:
     // the bundle `Cell`, a struct with a carrier field (L25), the placement through the template `cell` and the template `C`,
-    // which nothing infers (L32, phase D)
+    // bounded by `Fn`, which is `P0001` by name until phase D (L32)
     let chapter = Chapter::read();
-    let top = format!("module Top() {{\n    signal wl: [Bit; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
+    let top = format!("module Top() {{\n    signal wl: [Bit; 64] = [false; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
     let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
-    assert_eq!(codes, ["P0001", "P0001", "E0181"], "{given:?}");
+    assert_eq!(codes, ["P0001", "P0001", "P0001"], "{given:?}");
     assert!(given[0].1.contains("`Cell` has a carrier field, a bundle is not supported yet"), "{given:?}");
     assert_eq!(given[1].1, "placement through a template value or a function is not supported yet");
-    assert!(given[2].1.contains("cannot infer the type parameter `C` of `MemoryBank`"), "{given:?}");
+    assert_eq!(given[2].1, "the template parameter `C` of `MemoryBank`, bounded by `Fn` is not supported yet");
     assert!(!given.iter().any(|(_, message)| message.contains("array of")), "the arrays of carriers run: {given:?}");
     Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet");
 }

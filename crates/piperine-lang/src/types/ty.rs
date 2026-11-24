@@ -398,7 +398,7 @@ impl Ty {
             Ty::Bool => "bool".to_string(),
             Ty::Unit => "()".to_string(),
             Ty::Node(nature) => match &design.decl_data(*nature).name {
-                Some(n) => format!("node of nature `{}`", n.text),
+                Some(n) => format!("node of nature {}", n.text),
                 None => "node".to_string(),
             },
             Ty::AnyNode => "node".to_string(),

@@ -135,15 +135,11 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
     let chapter = Chapter::read();
     let placing = "module Top(in clk: Bit) { signal b: Stream<Option<u8>>; signal d: Stream<Option<u8>>; let s = Slice::<Option<u8>>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    let member = "the target of a definition is a member of an instance: a parent never writes a child's drive (§8.2.10)";
     let wanted = [
         ("P0001", "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet"),
         ("P0001", "`flip` type is not supported yet"),
-        ("E0222", member),
-        ("E0222", member),
-        ("E0222", member),
     ];
-    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the bundle's refusals");
+    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the bundle's refusals, with no cascade from the definitions through its members");
     Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8", wanted[0].0, wanted[0].1);
 }
 
@@ -214,7 +210,7 @@ fn e0250_discrete_and_continuous_never_connect() {
     let source = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nmodule Top() { signal clk: Bit; let r1 = Resistor(clk, gnd) { r: 1k }; }\n";
     let faulty = Faulty::elaborating("natures~42ab6e1d", source, "Top");
     assert_eq!(faulty.pointed_at("E0250"), "clk");
-    assert_eq!(faulty.first("E0250").message, "a discrete carrier is connected to a port of node of nature `Electrical` (§6.1)");
+    assert_eq!(faulty.first("E0250").message, "a discrete carrier is connected to a port of node of nature Electrical (§6.1)");
 }
 
 #[test]
@@ -276,7 +272,7 @@ fn the_book_drives_nets_with_strength() {
 fn the_slice_listing_bounds_t_by_default_as_gallery_e6_does() {
     // natures#8 amended (T116, BA3): `signal buf: Bit<T>` starts at `T::default()` (§3.3.4), so the old
     // `Slice<T: Repr>` was refused; shown here on a plain module, where `u8` has no `Default`.
-    let source = "module Slice(in clk: Bit) { signal buf: Bit<u8>; }\nmodule Top() { signal c: Bit; let s = Slice(c); }\n";
+    let source = "module Slice(in clk: Bit) { signal buf: Bit<u8>; }\nmodule Top() { signal c: Bit = false; let s = Slice(c); }\n";
     let faulty = Faulty::elaborating("natures#8", source, "Top");
-    faulty.first("E0187");
+    assert!(faulty.first("E0187").message.starts_with("`buf` has no initial value and its type `u8`"), "{}", faulty.first("E0187").message);
 }

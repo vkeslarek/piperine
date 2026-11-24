@@ -219,7 +219,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             if self.types.carrier(*port).is_some() {
-                match self.lower_carrier_arg(scope, &name, *port, arg.value) {
+                match self.lower_carrier_argument(scope, &name, *port, arg.value) {
                     Some((carrier, window)) => {
                         carriers.push(Some(carrier));
                         windows.push(window);
@@ -291,7 +291,7 @@ impl Elaboration<'_, '_> {
     /// The carrier of the parent an argument at the carrier port `port` of the placement
     /// `instance` is bound to: the carrier it names, or for an expression at an `in` port the
     /// carrier of its anonymous definition (§8.2.9). `None` after a diagnostic.
-    pub(super) fn lower_carrier_arg(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
+    pub(super) fn lower_carrier_argument(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
         let node = self.design.expr_node(arg).clone();
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)

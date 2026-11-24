@@ -151,7 +151,7 @@ fn the_template_card_is_refused_for_its_template_and_bundle() {
         ("P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet"),
         ("P0001", "placement through a template value or a function is not supported yet"),
         ("P0001", "placement through a template value or a function is not supported yet"),
-        ("E0187", "`module `Bsim4`` does not satisfy the bound `Fn` of `C` in `Inner` (§3.8.7)"),
+        ("P0001", "the template parameter `C` of `Inner`, bounded by `Fn` is not supported yet"),
     ];
     assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the refusals still owed");
     Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", wanted[0].0, wanted[0].1);
@@ -212,7 +212,17 @@ fn a_name_of_yours_hides_the_library_but_not_the_core() {
 fn an_array_of_bits_with_no_initial_value_is_e0187() {
     // cheatsheet#2 amended (T116, BA2): the old card wrote `signal s: [Bit; N];`; `bool` has no `Default`
     // (§3.3.4, MD-78), so a carrier array nothing initializes is refused on a plain module.
-    let source = "module M(in clk: Bit) { signal s: [Bit; 2]; }\nmodule Top() { signal c: Bit; let m = M(c); }\n";
+    let source = "module M(in clk: Bit) { signal s: [Bit; 2]; }\nmodule Top() { signal c: Bit = false; let m = M(c); }\n";
     let faulty = Faulty::elaborating("cheatsheet#2", source, "Top");
-    faulty.first("E0187");
+    assert_eq!(faulty.given.iter().map(|reported| reported.code.as_str()).collect::<Vec<_>>(), ["E0187"], "only the array is refused");
+    assert!(faulty.first("E0187").message.starts_with("`s` has no initial value and its type `bool` does not implement `Default`"), "{}", faulty.first("E0187").message);
+    // the same hole through a width, a wider carried type, and an array read by a reaction in the top itself
+    for source in [
+        "module M(in clk: Bit) { signal s: [Bit<u8>; 2]; }\nmodule Top() { signal c: Bit = false; let m = M(c); }\n",
+        "module M<const N: usize>(in clk: Bit) { signal s: [Bit; N]; }\nmodule Top() { signal c: Bit = false; let m = M::<2>(c); }\n",
+        "module Top() { signal c: Bit = false; signal s: [Bit; 2]; }\ndigital for Top { on at(1u) { s[0] <- c; } }\n",
+    ] {
+        let faulty = Faulty::elaborating("cheatsheet#2", source, "Top");
+        assert!(faulty.first("E0187").message.starts_with("`s` has no initial value"), "{source}: {}", faulty.first("E0187").message);
+    }
 }

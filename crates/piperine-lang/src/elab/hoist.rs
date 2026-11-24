@@ -244,7 +244,7 @@ impl Elaboration<'_, '_> {
         }
         // An `out` carrier port is the caller's own carrier for its argument: what the callee commits, the caller's carrier holds.
         for (port, arg) in out_ports {
-            let (carrier, window) = self.lower_carrier_arg(scope, &name, port, arg?)?;
+            let (carrier, window) = self.lower_carrier_argument(scope, &name, port, arg?)?;
             if window.is_some() {
                 self.unsupported(file, node.span, "a window of an array of carriers at the `out` port of a hoisted module");
                 return None;

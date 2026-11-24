@@ -737,7 +737,14 @@ fn a_structural_param_overrides_before_the_run_and_is_refused_during_it() {
     let bodies: Vec<String> = session.ir().bodies().map(|body| body.name().to_string()).collect();
     assert!(bodies.iter().any(|name| name == "Taps::<3>") && !bodies.iter().any(|name| name == "Taps::<2>"), "the instance takes the overridden value: {bodies:?}");
     match session.set_at("Top.count", 4.0, 5e-7) {
-        Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("count"), "{message}"),
+        Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("`Top.count` is a structural param"), "{message}"),
         other => panic!("E0803, found {other:?}"),
+    }
+    // a sweep of it is refused before anything compiles, naming it as structural
+    let sweep = Overrides { sweep: Some("Top.count".to_string()), from: Some(1.0), to: Some(3.0), step: Some(1.0), ..flags("dc", "rust", Some("Top")) };
+    match open(GENERIC_ARGUMENT, &sweep, &settings) {
+        Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("`Top.count` is a structural param"), "{message}"),
+        Err(other) => panic!("E0803, found {other:?}"),
+        Ok(_) => panic!("E0803, the sweep of a structural param opened"),
     }
 }

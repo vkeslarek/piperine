@@ -10,7 +10,7 @@ use crate::pom::{DeclId, DeclKind, ExprId, GenericParamData, ExprKind, FileId, G
 
 use super::check::Checker;
 use super::bounds::BoundCheck;
-use super::generics::{GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
+use super::generics::{Bound, GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
 use super::{ConstTerm, GenericValue, Length, Nominal, Ty};
 
 /// The values the parameters of a generic item are replaced by, by parameter declaration.
@@ -189,14 +189,17 @@ impl Checker<'_> {
     }
 
     /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
-    /// naming the argument and the bound. `None` after a refusal.
+    /// naming the argument and the bound. A template parameter (`C: Fn(..)`, phase D) is `P0001` naming it. `None` after a refusal.
     pub(super) fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
         let item_name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut satisfied = true;
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {
             let GenericValue::Type(ty) = argument else { continue };
             for bound in &parameter.bounds {
-                if !BoundCheck::new(self).satisfies(ty, bound) {
+                if matches!(bound, Bound::Callable { .. }) {
+                    self.unsupported(file, span, &format!("the template parameter `{}` of `{item_name}`, bounded by `Fn`", parameter.name));
+                    satisfied = false;
+                } else if !BoundCheck::new(self).satisfies(ty, bound) {
                     let message = format!("`{}` does not satisfy the bound `{}` of `{}` in `{item_name}` (§3.8.7)", ty.source_name(self.design), self.bound_name(bound), parameter.name);
                     self.coded(file, "E0187", span, message, "an argument that does not satisfy its bound");
                     satisfied = false;

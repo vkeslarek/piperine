@@ -831,6 +831,14 @@ fn gaps_drops_what_generics_phase_c_closed() {
     for gone in ["| L30 |", "| L31 |", "E0225 E0322", "E0342\n"] {
         assert!(!gaps.contains(gone), "GAPS.md still holds `{gone}`");
     }
+    // the stdlib items that check and run left L58 (`since`, `Stable`, `Setup`, `Hold`, `MinPulse`); only the refused remain
+    let stdlib = gaps.lines().find(|line| line.starts_with("| L58 |")).expect("GAPS.md holds L58");
+    for running in ["`since`", "`Stable`", "`Setup`", "`Hold`", "`MinPulse`"] {
+        assert!(!stdlib.contains(running), "L58 still lists {running}, which runs");
+    }
+    for refused in ["`idtmod`", "`noise_table`", "`inertial`", "`AckWithin`"] {
+        assert!(stdlib.contains(refused), "L58 keeps {refused}, still refused");
+    }
     let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
     for code in ["E0322", "E0340", "E0342"] {
         assert!(!owners.contains(code), "code_owners.tsv still lists {code}");

@@ -6,7 +6,7 @@ use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic};
 
-/// A design over the real standard library, elaborated with generic modules admitted.
+/// A design over the real standard library, elaborated, generic modules among them.
 struct ModuleElab;
 
 impl ModuleElab {
