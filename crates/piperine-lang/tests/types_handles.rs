@@ -268,6 +268,36 @@ fn a_node_chosen_by_the_run_is_e0133() {
 }
 
 #[test]
+fn a_let_assigned_only_values_of_elaboration_chooses_a_node() {
+    // §1.4.7 (coordinator ruling, finding 26): a `let` is a constant when its initializer, every value assigned to it and every
+    // condition around those fold at elaboration, so a choice by it is typed as the node; an assigned value or a condition
+    // around an assignment that reads the run is `E0133` alone, naming the read
+    let module = "module Top() { signal x: Electrical; signal p: Electrical; k: f64 = 1.0; sel: bool = false; }";
+    for statement in [
+        "let s = sel; s = !sel;",
+        "let s = sel; if k > 0.5 { s = !s; }",
+        "let s = sel; for j in 0..3 { s = !s; }",
+        "let s = sel; let w = v(x); s = !s;",
+        "let s = true; s = sel; s = !s;",
+    ] {
+        let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{statement}");
+    }
+    for (statement, read) in [
+        ("let s = sel; s = v(x) > 0.5;", "it reads a probe"),
+        ("let s = sel; if v(x) > 0.5 { s = !s; }", "it reads a probe in a condition around an assignment"),
+        ("let s = sel; for j in 0..3 { if v(x) > 0.0 { break; } s = !s; }", "it reads a probe in a condition around an assignment"),
+        ("let s = sel; s = now() > 1.0;", "it reads `now()`"),
+        ("let t = v(x) > 0.5; let s = sel; s = t;", "it reads the variable `t`, whose value depends on the run: it reads a probe"),
+    ] {
+        let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
+        let found = HandleSources::found(&src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{statement}: {found:?}");
+        assert!(found[0].1.contains(&format!("by the variable `s`, whose value depends on the run: {read}")), "{statement}: {found:?}");
+    }
+}
+
+#[test]
 fn a_node_chosen_at_elaboration_is_typed_as_the_node() {
     // §1.4.7 (user decision of 2026-11-24): a choice over params, constants, generation indexes and `let`s of those names the node
     // it folds to, whatever statements its arms hold: `if` and `match` over a param, a block, `gnd` in an arm, a `let` of a param,

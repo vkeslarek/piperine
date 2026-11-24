@@ -165,6 +165,31 @@ fn a_node_chosen_through_lets_and_arm_statements_folds_to_the_node() {
 }
 
 #[test]
+fn a_let_assigned_only_values_of_elaboration_folds_to_the_node_it_holds_there() {
+    // §1.4.7 (coordinator ruling, finding 26): the statements before the choice run at elaboration, so with `sel` false and `k` 1
+    // each `s` below holds the value written last where `if s` reads it, and the choice names `x` for true and `p` for false
+    for (analog, node) in [
+        ("let s = sel; s = !sel;", "x"),
+        ("let s = sel; if k > 0.5 { s = !s; }", "x"),
+        ("let s = sel; if k < 0.5 { s = !s; }", "p"),
+        ("let s = sel; for j in 0..3 { s = !s; }", "x"),
+        ("let s = sel; for j in 0..2 { s = !s; }", "p"),
+        ("let s = sel; let w = v(x); s = !s;", "x"),
+        ("let s = true; s = sel;", "p"),
+        ("let t = !sel; let s = sel; s = t;", "x"),
+    ] {
+        let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; signal q: Electrical; sel: bool = false; k: f64 = 1.0; }}\nanalog for Top {{ i(x, gnd) +> v(x); i(p, gnd) +> v(p); {analog} let y = if s {{ x }} else {{ p }}; i(q, gnd) +> v(y); }}");
+        let printed = Elab::ir(&src, "Top").print_structural();
+        assert!(printed.contains(&format!("b2.flow +> direct probe({node}, gnd)")), "{analog}: {printed}");
+    }
+    // assigned from a probe: the checker's `E0133` naming the read, and nothing from the elaborator
+    let src = "module Top() { signal x: Electrical; signal p: Electrical; sel: bool = false; }\nanalog for Top { let s = sel; s = v(x) > 0.5; let y = if s { x } else { p }; i(p, gnd) +> v(y); }";
+    let diagnostics = Elab::run(src, "Top").expect_err("a node chosen at run time");
+    assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+    assert!(diagnostics[0].diagnostic.message.contains("the variable `s`, whose value depends on the run: it reads a probe"), "{}", diagnostics[0].diagnostic.message);
+}
+
+#[test]
 fn a_node_of_a_child_connects_to_another_placement() {
     // §8.2.8, §8.1.10: `Th(c0.sn)` binds `Th`'s port to the storage node of `c0`, placed by name or through a template, and so
     // does `Th(if sel { c0.sn } else { t })` with `sel` true

@@ -104,6 +104,54 @@ impl ConstEval<'_, '_> {
         Ok(value)
     }
 
+    /// The value `local` holds after the statements `stmts` run at elaboration over `bindings` (a node chosen by a `let` its body
+    /// assigns, §1.4.7). A statement that does not fold (a contribution, a `let` of a probe) runs no further: its `let` binds
+    /// nothing and every local it assigns is forgotten, so a later read of one does not fold either. `None` when `local` has no scalar value
+    /// then.
+    pub(in crate::elab) fn local_after(&mut self, at: ExprId, stmts: &[StmtId], local: DeclId, bindings: &Bindings) -> Option<Constant> {
+        let outer = std::mem::take(&mut self.locals);
+        let outer_functions = self.fn_values.clone();
+        for stmt in stmts {
+            if self.exec_block(at, &[*stmt], bindings).is_err() {
+                self.leaving = None;
+                for written in self.written_by(*stmt) {
+                    self.locals.remove(&written);
+                }
+            }
+        }
+        let value = self.locals.get(&local).copied().filter(|value| self.composite_of(*value).is_none());
+        self.locals = outer;
+        self.fn_values = outer_functions;
+        value
+    }
+
+    /// The locals the statement `stmt` assigns, anywhere in it.
+    fn written_by(&self, stmt: StmtId) -> Vec<DeclId> {
+        let mut exprs = Vec::new();
+        for child in crate::pom::stmt_children(self.design, stmt) {
+            crate::pom::preorder(self.design, child, &mut exprs);
+        }
+        exprs
+            .into_iter()
+            .filter_map(|expr| match &self.design.expr_node(expr).kind {
+                ExprKind::Assign { lhs, .. } => self.root_local(*lhs),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The local a place is rooted in: `x` of `x`, `x.f` and `x[i]`.
+    fn root_local(&self, place: ExprId) -> Option<DeclId> {
+        match &self.design.expr_node(self.peel(place)).kind {
+            ExprKind::Field { expr, .. } | ExprKind::Index { expr, .. } => self.root_local(*expr),
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(local)) => Some(local),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// `let pat = init;`, with `else { .. }` when the pattern may not match (§1.7.5, `let .. else`).
     fn exec_let(&mut self, expr: ExprId, pat: PatId, init: ExprId, otherwise: Option<&BlockNode>, bindings: &Bindings) -> Result<(), ConstFault> {
         if let Some(function) = self.fn_value_of(init)

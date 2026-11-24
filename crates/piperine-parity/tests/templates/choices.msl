@@ -33,3 +33,37 @@ analog for RigChoices {
     i(t2, gnd) +> v(t2, gnd);
     i(u1, gnd) +> v(u1, gnd);
 }
+
+/// Drives `flipped` with the line a `let` assigned from params picks (`s` starts at `sel` and is flipped), and `toggled` with
+/// the line a `let` toggled three times under a condition over `k` picks (verification finding 26).
+module PickAssigned(a: Electrical, b: Electrical, flipped: Electrical, toggled: Electrical) {
+    sel: bool = false;
+    k: f64 = 1.0;
+}
+analog for PickAssigned {
+    let s = sel;
+    s = !sel;
+    potential(flipped) +> v(if s { a } else { b });
+    let t = sel;
+    for j in 0..3 {
+        if k > 0.5 {
+            t = !t;
+        }
+    }
+    potential(toggled) +> v(if t { a } else { b });
+}
+
+module RigAssigned() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal f1: Electrical;
+    signal t1: Electrical;
+    signal f2: Electrical;
+    signal t2: Electrical;
+    let low = PickAssigned(a, b, f1, t1) { sel: false };
+    let high = PickAssigned(a, b, f2, t2) { sel: true, k: 0.0 };
+}
+analog for RigAssigned {
+    potential(a) +> 0.2;
+    potential(b) +> 0.8;
+}

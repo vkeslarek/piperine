@@ -488,7 +488,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Adds every param a node choice's condition `expr` reads to `found`, through the initializers of the `let`s it reads
-    /// (`let s = sel; if s { .. }`).
+    /// (`let s = sel; if s { .. }`), the values assigned to them and the conditions around those (`if k > 0.5 { s = !s; }`).
     fn collect_choice_params(&self, expr: ExprId, found: &mut Vec<DeclId>, depth: usize) {
         self.collect_params(expr, found);
         if depth > 64 {
@@ -497,6 +497,11 @@ impl Elaboration<'_, '_> {
         for local in self.read_bindings(expr) {
             if let Some(init) = self.let_initializer(local) {
                 self.collect_choice_params(init, found, depth + 1);
+            }
+            if self.types.is_assigned(local) {
+                for read in self.assignment_reads(local) {
+                    self.collect_choice_params(read, found, depth + 1);
+                }
             }
         }
     }
