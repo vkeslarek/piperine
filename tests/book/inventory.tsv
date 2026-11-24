@@ -75,7 +75,7 @@ block	values#4	765499a926d8b83d	held	piperine-cli/book::every_cli_listing_of_the
 block	values#5	cef4b6240f4d6713	shown	-	-	-
 block	values#6	99d13973553af432	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run blinky.msl --analysis transient --stop 3e-6 --print-step 1e-6 --print count
 block	values#7	35ff65aaf710211a	run	piperine/book_values::a_message_with_values_is_a_record_with_a_text_field	-	-
-block	values#8	775ff75685a16476	refused	piperine/book_values::a_function_has_the_class_its_body_gives	L53	-
+block	values#8	775ff75685a16476	run	piperine/book_values::a_function_has_the_class_its_body_gives	-	-
 block	values#9	d9806c64bb24943b	fragment	values#10	-	-
 block	values#10	bf4e0f7117cbdde7	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek	-	-
 block	values#11	a07bbc60df4e55a9	shown	-	-	-
@@ -257,7 +257,7 @@ block	simulation#8	bb39a1d477539ba8	held	piperine-cli/book::every_cli_listing_of
 block	simulation#9	e9f2e26422078619	shown	-	-	-
 block	simulation#10	93d9904c6f268314	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis ac --from 1e3 --to 1e6 --per-decade 1 --print b
 block	cheatsheet#1	a91c1587123be4d7	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
-block	cheatsheet#2	69490dc245b2826e	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_hoisted_out_carrier	L75	-
+block	cheatsheet#2	69490dc245b2826e	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_hoisted_out_carrier	L76	-
 block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
 block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
@@ -350,7 +350,7 @@ claim	values~8414e064	8414e064b32e2bbf	holds	piperine/book_values::after_schedul
 claim	values~82576d99	82576d998faba1e1	holds	piperine/book_values::blinky_counts_three_rising_edges_in_three_microseconds	-	A let in a module body places hardware. let ctr = Counter(clk, count); is an instance named ctr, not a call that returns.
 claim	values~2bf57b76	2bf57b767d174af0	holds	piperine/book_language::the_literal_forms_have_the_values_their_comments_give	-	This is also the scaffold of the earlier examples, now readable: module Literals() {} is a piece of hardware with no ports and nothing inside, and on at(1u) { … } is a reaction to the event "the time is 1 µs", which fires once.
 claim	values~4938c15f	4938c15f88e053f2	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The first three lines after the header are the three records of the table above, as the command prints them: one line each, live.
-claim	values~c389077a	c389077a09d64172	refused	values#8	L53	The compiler infers a class from the body: a pure function, like diode_current, works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns Event, like handshake, works where events go; and one that calls emit! works where emit! does.
+claim	values~c389077a	c389077a09d64172	holds	piperine/book_values::a_function_has_the_class_its_body_gives	-	The compiler infers a class from the body: a pure function, like diode_current, works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns Event, like handshake, works where events go; and one that calls emit! works where emit! does.
 claim	values~d0e86096	d0e860965d39c65b	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek	-	This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window.
 claim	values~8ad56d03	8ad56d032086a4c3	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
 claim	values~3c87d509	3c87d5093c5ad414	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.

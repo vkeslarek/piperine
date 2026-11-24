@@ -74,7 +74,7 @@ fn the_nature_card_is_the_standard_librarys() {
 fn the_module_card_is_refused_for_its_hoisted_out_carrier() {
     // cheatsheet#2 (refused): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0, x: f64) where
     // N >= 1 { .. }` placed as `M::<2>`. The generic module runs (T71); the card's value input `x: f64` makes `M` a module
-    // that is called, and a called module is hoisted into its caller, which holds no `out` carrier (L75)
+    // that is called, and a called module is hoisted into its caller, which holds no `out` carrier (L76)
     let chapter = Chapter::read();
     let after = "module Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\n";
     Refusal::expect(chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()), "cheatsheet#2", "P0001", "a hoisted module that holds an `out` carrier, is not supported yet");
