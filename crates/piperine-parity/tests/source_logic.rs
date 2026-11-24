@@ -71,6 +71,14 @@ fn logic_and_matches_bits_give_the_table_values() {
 }
 
 #[test]
+fn a_logic_param_binds_a_pattern_and_a_reaction_reads_it() {
+    // §8.1.15 (a param's type is any value type): `pat: Logic<4> = logic("10xz")` is a param, a composite one set by leaves.
+    // By default `pat` is the `10xz` of §22.1.4 (`binary` 1100, `value` 1001); a placement that binds `logic("01zx")` gives
+    // levels 3 to 0 equal to 0, 1, Z, X: `binary` 1100, `value` 0110
+    RUN.assert_commits("param.msl", &["by_default", "by_placement"], &[vec![0b1100, 0b1001], vec![0b1100, 0b0110]]);
+}
+
+#[test]
 fn a_logic_bit_rises_into_one_and_falls_into_zero() {
     // §22.1.5 (EU-20 AC 3, D9): `l.rise()` is a change that ends at 1 and `l.fall()` a change that ends at 0, wherever it
     // started. `l` steps through 1, 0, Z, 1, X, 0, 1, Z, 0 from X: it rises at steps 1 (from X), 4 (from Z) and 7 (from

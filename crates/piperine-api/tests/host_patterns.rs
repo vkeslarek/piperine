@@ -1,8 +1,8 @@
 //! Scope: the host writes a four-state pattern (L71, §22.1.4, `docs/spec/part_viii_host.md` §23.1): `Session::drive_pattern` drives
 //! a top's `in` port of type `Logic<N>` and the host's drive of a top's resolved port whose drive type is `Logic<N>`, with the
 //! text the host prints a cell as (`10xz`, highest level first). A character outside `0 1 x z` and a length other than `N` are
-//! `E0702`; a port that holds no `Logic` is `E0802`. A `Logic` is no param (a value input of a struct type is outside the
-//! language's subset), so `--param` has no pattern to read.
+//! `E0702`; a port that holds no `Logic` is `E0802`. A `Logic<N>` param (§8.1.15) is set the same way, by the pattern as text
+//! (`Session::set_text`, `--param Top.pat=01zx`), since its two planes are leaves a user would not write.
 #![cfg(unix)]
 
 use std::cell::RefCell;
@@ -33,8 +33,11 @@ impl Bench {
         }
     }
     module Top(in a: Bit<Logic<4>> = logic(\"0000\"), in byte: Bit<u8> = 0, w: Bus) {
+        pat: Logic<4> = logic(\"10xz\");
         signal q: Bit<Logic<4>>;
+        signal held: Bit<Logic<4>>;
         q = a;
+        held = pat;
     }
     ";
 
@@ -143,4 +146,17 @@ fn a_refused_pattern_changes_nothing() {
     assert_eq!(Bench::refusal(s.drive_pattern("q", "1010", 0.0).expect_err("a signal")).0, "E0804");
     assert_eq!(Bench::refusal(s.drive_pattern("nothing", "1010", 0.0).expect_err("no such port")).0, "E0801");
     assert_eq!(Bench::cell(&Bench::op(&mut s), "Top.a"), &Cell::Text("0000".to_string()));
+}
+
+#[test]
+fn a_logic_param_is_set_by_its_pattern() {
+    // §8.1.15 and §22.1.4: `pat: Logic<4> = logic("10xz")` is a param; its text is the pattern the host prints a cell as. The
+    // default reads back `10xz`, `01zx` replaces it, and a bad pattern is `E0702` and changes nothing
+    let mut s = Bench::session("op", Overrides::default());
+    s.set_text("Top.pat", "01zx").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(Bench::cell(&Bench::op(&mut s), "Top.held"), &Cell::Text("01zx".to_string()));
+    let mut untouched = Bench::session("op", Overrides::default());
+    assert_eq!(Bench::refusal(untouched.set_text("Top.pat", "01zq").expect_err("a bad character")).0, "E0702");
+    assert_eq!(Bench::refusal(untouched.set_text("Top.pat", "01z").expect_err("a wrong length")).0, "E0702");
+    assert_eq!(Bench::cell(&Bench::op(&mut untouched), "Top.held"), &Cell::Text("10xz".to_string()));
 }

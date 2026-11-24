@@ -23,7 +23,7 @@ use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::{Model, Ran};
 use support::printed::Printed;
-use support::records::{Fields, Rows};
+use support::records::{DrivenCells, Fields, Rows};
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -451,6 +451,7 @@ module Top() {
 }
 digital for Top {
     on pending.changed() { emit!(\"pending\", v = pending); }
+    on listed.changed() { emit!(\"listed\", v = listed); }
     on bare_pending.changed() { emit!(\"bare_pending\", v = bare_pending); }
     on at(500n) { clk <- true; }
     on at(700n) { clk <- false; }
@@ -561,6 +562,12 @@ module Top() {
 digital for Top { on at(1u) { a <- Some(5); } on at(2u) { b <- Some(7); } on at(3u) { a <- None; } }
 ";
 
+    /// A transient of `Top` to `stop` printing the net `signal` every microsecond: what a listing's own net holds, which no
+    /// stream of the bench writes.
+    fn sampled(signal: &str, stop: f64) -> Overrides {
+        Overrides { print_step: Some(1e-6), print: vec![signal.to_string()], ..Commands::transient_of("Top", stop) }
+    }
+
     /// `rows` as the owned texts `NetBench::rows` gives, for a table written in the test.
     fn table(rows: &[&str]) -> Vec<String> {
         rows.iter().map(|row| row.to_string()).collect()
@@ -579,6 +586,7 @@ fn the_irq_line_runs_on_its_resolved_nature() {
     let ran = NetBench::model("digital#16", NetBench::IRQ_BENCH).run(Commands::transient_of("Top", 6e-6)).unwrap_or_else(|failure| panic!("digital#16: {failure}"));
     assert_eq!(NetBench::rows(&ran, "line", &NetBench::DRIVEN), NetBench::table(&["0 1 Pull", "1000 0 Strong", "4000 1 Pull"]), "idle, a request, the second request changes nothing, released");
     assert_eq!(NetBench::rows(&ran, "pending", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "sampled at the edges that follow the request and its release");
+    assert_eq!(NetBench::rows(&ran, "listed", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "the listing's own `Board` gives what its watched copy does");
     assert_eq!(NetBench::rows(&ran, "bare", &NetBench::DRIVEN), NetBench::table(&["0 z HighZ", "1000 0 Strong", "4000 z HighZ"]), "no pull-up: Z while released");
     assert_eq!(NetBench::rows(&ran, "bare_pending", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "`pending` stays low on the edge at 0.5 us, while the line reads Z");
 }
@@ -590,6 +598,10 @@ fn the_four_worked_nets_give_the_tables_of_f_4() {
     let ran = NetBench::model("digital#17", NetBench::AND_WIRE_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#17: {failure}"));
     assert_eq!(NetBench::rows(&ran, "net", &["value"]), NetBench::table(&["0 true", "1000 false", "3000 true"]), "(false, false) high; (true, false) and (true, true) low");
     assert_eq!(NetBench::rows(&ran, "alone", &["value"]), NetBench::table(&["0 true"]), "no `IrqSource`: `resolve` of an empty array is high");
+    // the listing's own `Board` resolves the same table on its own net `irq_n`, read at every microsecond of the stimulus
+    let listed = NetBench::model("digital#17", NetBench::AND_WIRE_BENCH).run(NetBench::sampled("board.irq_n", 4e-6)).unwrap_or_else(|failure| panic!("digital#17: {failure}"));
+    let level = |row: usize| Table::text(&listed, row, "Top.board.irq_n");
+    assert_eq!((0..=4).map(level).collect::<Vec<_>>(), ["true", "false", "false", "true", "true"].map(|flag| format!("Bool({flag})")), "(false, false) high; (true, false) and (true, true) low; released, high");
     // a drive of another type picks no `impl`: E0180 naming the nature and the type (digital~4b2beb4c)
     let wrong = format!("{}module Wrong(irq_n: AndWire) {{ irq_n = logic(\"1\"); }}\nmodule Top() {{ signal n: AndWire; let w = Wrong(n); }}\n", Chapter::read().text("digital#17"));
     let refused = Refusal::of(Model::written("net.msl", &wrong).run(Commands::transient_of("Top", 1e-6)), "digital#17");
@@ -598,6 +610,8 @@ fn the_four_worked_nets_give_the_tables_of_f_4() {
     let ran = NetBench::model("digital#18", NetBench::SDA_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#18: {failure}"));
     assert_eq!(NetBench::rows(&ran, "net", &NetBench::DRIVEN), NetBench::table(&["0 1 Pull", "1000 0 Strong", "3000 1 Pull"]), "Z and Z: 1 at Pull; strong 0: 0 at Strong; two strong 0: still 0 at Strong");
     assert_eq!(NetBench::rows(&ran, "bare", &["level", "strength", "z"]), NetBench::table(&["0 z HighZ true", "1000 0 Strong false", "3000 z HighZ true"]), "no `Pullup`: `Driven::Z`, `sda.v.is_z()`");
+    let listed = NetBench::model("digital#18", NetBench::SDA_BENCH).run(NetBench::sampled("bus.sda", 4e-6)).unwrap_or_else(|failure| panic!("digital#18: {failure}"));
+    assert_eq!(DrivenCells::column(&listed.table, "Top.bus.sda"), NetBench::table(&["1 Pull", "0 Strong", "0 Strong", "1 Pull", "1 Pull"]), "the listing's own `I2cBus`, every microsecond");
     // F.4.3 and F.4.4: a tri-state bus with two drivers and a keeper, and a conflict of equal strengths
     let ran = NetBench::model("digital#19", NetBench::BUS_BENCH).run(Commands::transient_of("Top", 8e-6)).unwrap_or_else(|failure| panic!("digital#19: {failure}"));
     let held = NetBench::rows(&ran, "net", &["level", "strength", "x"]);
@@ -605,6 +619,12 @@ fn the_four_worked_nets_give_the_tables_of_f_4() {
         held,
         NetBench::table(&["0 x Weak true", "1000 1 Strong false", "2000 1 Weak false", "3000 0 Strong false", "4000 0 Weak false", "5000 x Strong true", "6000 1 Strong false", "7000 1 Weak false"]),
         "before any drive X at Weak; `d0` at Strong; the keeper's last level at Weak; `d1` at Strong; the conflict X at Strong; agreement 1 at Strong; the keeper remembers the 1"
+    );
+    let listed = NetBench::model("digital#19", NetBench::BUS_BENCH).run(NetBench::sampled("bus.line", 8e-6)).unwrap_or_else(|failure| panic!("digital#19: {failure}"));
+    assert_eq!(
+        DrivenCells::column(&listed.table, "Top.bus.line"),
+        NetBench::table(&["x Weak", "1 Strong", "1 Weak", "0 Strong", "0 Weak", "x Strong", "1 Strong", "1 Weak", "1 Weak"]),
+        "the listing's own `Bus`, every microsecond"
     );
     // F.4.4's typed bus: the driven type is `Option<u8>`, the value a reader sees `Data`
     let ran = NetBench::model("digital#20", NetBench::DATA_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#20: {failure}"));

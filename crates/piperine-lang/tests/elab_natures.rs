@@ -77,7 +77,7 @@ fn drives_are_ordered_by_instance_path_segment_by_segment() {
     // segment, names by code point, whatever the order the instances are written in.
     let ir = Elab::ir(&format!("{TOTAL}module Top() {{ signal n: Total; let c = Driver(n); let a = Driver(n); let b = Driver(n); }}"), "Top");
     let text = ir.print_structural();
-    assert!(text.contains("held by (Top.a, Top.b, Top.c)"), "{text}");
+    assert!(text.contains("held by (Top.a#0, Top.b#0, Top.c#0)"), "{text}");
 }
 
 #[test]

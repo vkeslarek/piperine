@@ -184,6 +184,10 @@ fn an_impl_resolve_of_another_shape_is_e0203() {
         "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve(d: [f64; 2]) -> f64 { 0.0 } }\nmodule Top() { }",
         // no `resolve`
         "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn other<const N: usize>(d: [f64; N]) -> f64 { 0.0 } }\nmodule Top() { }",
+        // an impure class: solve-reading, emitting, and through a called function (the class names are asserted by `an_impure_resolve_is_e0203_naming_its_class`)
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { now() } }\nmodule Top() { }",
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { emit!(\"log\", total = 1.0); 0.0 } }\nmodule Top() { }",
+        "fn stamp() -> f64 { now() }\nnature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { stamp() } }\nmodule Top() { }",
     ];
     for text in wrong {
         let source = Source::new(text);
@@ -193,6 +197,27 @@ fn an_impl_resolve_of_another_shape_is_e0203() {
     let source = Source::new("nature Total { value: f64 }\nimpl Resolve<f64, bool> for Total { fn resolve<const N: usize>(d: [f64; N]) -> bool { false } }\nmodule Top() { }");
     let diagnostics = Types::check_model(&source.design).expect_err("E0203");
     assert!(diagnostics[0].diagnostic.message.contains("Total"), "{}", diagnostics[0].diagnostic.message);
+}
+
+#[test]
+fn an_impure_resolve_is_e0203_naming_its_class() {
+    // §4 rule 8: `resolve` is of class pure. A solve-reading body, an emitting one, and one that
+    // reaches either through a called function are `E0203` naming the nature and the class.
+    let heads = "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { ";
+    let impure = [
+        ("solve-reading", format!("{heads}d.iter().fold(0.0, |a, x| a + x) + now() }} }}\nmodule Top() {{ }}")),
+        ("emitting", format!("{heads}emit!(\"log\", total = 1.0); 0.0 }} }}\nmodule Top() {{ }}")),
+        ("solve-reading", format!("fn stamp() -> f64 {{ now() }}\n{heads}stamp() }} }}\nmodule Top() {{ }}")),
+        ("emitting", format!("fn trace() -> f64 {{ emit!(\"log\", total = 1.0); 0.0 }}\n{heads}trace() }} }}\nmodule Top() {{ }}")),
+        ("solve-reading", format!("fn stamp() -> f64 {{ now() }}\nfn indirect() -> f64 {{ stamp() }}\n{heads}indirect() }} }}\nmodule Top() {{ }}")),
+    ];
+    for (class, text) in impure {
+        let source = Source::new(&text);
+        let diagnostics = Types::check_model(&source.design).expect_err(&text);
+        let first = &diagnostics[0].diagnostic;
+        assert_eq!(first.code.to_string(), "E0203", "{text}");
+        assert!(first.message.contains("Total") && first.message.contains(class), "{}", first.message);
+    }
 }
 
 #[test]

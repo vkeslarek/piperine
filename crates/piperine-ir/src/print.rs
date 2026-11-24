@@ -162,7 +162,7 @@ impl<'a> Printer<'a> {
         if self.structural { String::new() } else { format!("  @{origin}") }
     }
 
-    /// `  resolved by <resolver> of <driven> drives (<net>, ..) held by (<instance>, ..) others (<k>: <net>, ..)` after a
+    /// `  resolved by <resolver> of <driven> drives (<net>, ..) held by (<instance>#<carrier>, ..) others (<k>: <net>, ..)` after a
     /// resolved net: the paths of what the net is made of (RN-03).
     fn resolution(&self, resolution: &crate::model::Resolution) -> String {
         let ir = self.ir;
@@ -170,7 +170,7 @@ impl<'a> Printer<'a> {
         let instance = |id: &crate::ids::InstanceId| ir.instances.get(id.index()).map_or("<bad instance>".to_string(), |i| Printer::name(&i.path));
         let resolver = instance(&resolution.resolver);
         let drives: Vec<String> = resolution.drives.iter().map(net).collect();
-        let holders: Vec<String> = resolution.holders.iter().map(|holder| holder.as_ref().map_or("host".to_string(), instance)).collect();
+        let holders: Vec<String> = resolution.holders.iter().map(|holder| holder.as_ref().map_or("host".to_string(), |held| format!("{}#{}", instance(&held.instance), held.carrier))).collect();
         let others: Vec<String> = resolution.others.iter().map(|(drive, id)| format!("{drive}: {}", net(id))).collect();
         format!("  resolved by {resolver} of {} drives ({}) held by ({}) others ({})", resolution.driven, drives.join(", "), holders.join(", "), others.join(", "))
     }

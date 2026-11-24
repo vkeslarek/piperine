@@ -260,13 +260,13 @@ impl Session {
         if let ParamText::Exact { bytes } = &read {
             return Session::write_exact(table, derive, circuit, path, bytes.clone(), text);
         }
-        match read.option_leaves(&path.label())? {
+        match read.leaves(&path.label())? {
             None => match read {
                 ParamText::Whole(scalar) => match scalar.exact_real() {
                     Some(value) => Session::set_param(table, derive, circuit, path, value),
                     None => Session::set_exact_integer(table, derive, circuit, path, scalar),
                 },
-                ParamText::Option { .. } | ParamText::Exact { .. } => Ok(()),
+                ParamText::Option { .. } | ParamText::Planes { .. } | ParamText::Exact { .. } => Ok(()),
             },
             Some(leaves) => {
                 // both leaves are written on a copy of the table, so the param changes once, whole

@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BodyId, BodySpec, Carrier, CarrierRole, Drive, Expr, FunctionId, InstanceId, InstanceSpec, NetId, NetSpec, Origin, Resolution, ValueType};
+use piperine_ir::{BodyId, BodySpec, Carrier, CarrierRole, Drive, Expr, FunctionId, Holder, InstanceId, InstanceSpec, NetId, NetSpec, Origin, Resolution, ValueType};
 
 use super::elaborator::Elaboration;
 use super::instances::ConcreteValue;
@@ -115,7 +115,7 @@ impl Elaboration<'_, '_> {
     fn resolve_net(&mut self, net: NetId, group: Vec<ResolvedUse>) {
         let Some(declared) = self.resolvers.declared.get(&net).cloned() else { return };
         let mut holders: Vec<&ResolvedUse> = group.iter().filter(|used| used.plan.drives).collect();
-        holders.sort_by_key(|used| DriveOrder::key(&used.path));
+        holders.sort_by_key(|used| (DriveOrder::key(&used.path), used.plan.carrier));
         let host = group.iter().any(|used| used.host_port);
         let sample = &group[0];
         if self.one_driven_type(&holders, &declared) {
@@ -125,13 +125,13 @@ impl Elaboration<'_, '_> {
         let Some(driven) = self.stored_type(&implementation.driven) else { return };
         let value = sample.value.clone();
         let mut drive_nets = Vec::new();
-        let mut owners: Vec<Option<InstanceId>> = Vec::new();
+        let mut owners: Vec<Option<Holder>> = Vec::new();
         let mut readers: Vec<(u32, NetId)> = Vec::new();
         let slots = host.then_some(None).into_iter().chain(holders.iter().map(|used| Some(*used)));
         for (index, slot) in slots.enumerate() {
             let drive = self.ir.net(NetSpec { path: format!("{}$drive{index}", declared.path), ty: driven.clone(), declared_by: declared.declared_by, init: None, origin: declared.origin.clone() });
             drive_nets.push(drive);
-            owners.push(slot.map(|used| used.instance));
+            owners.push(slot.map(|used| Holder { instance: used.instance, carrier: used.plan.carrier }));
             if slot.is_some_and(|used| used.plan.reads_others) {
                 let others = self.ir.net(NetSpec { path: format!("{}$others{index}", declared.path), ty: value.clone(), declared_by: declared.declared_by, init: None, origin: declared.origin.clone() });
                 readers.push((index as u32, others));

@@ -117,7 +117,7 @@ impl<'ir> LoopDrives<'ir> {
         for net in self.ir.nets() {
             let Some(resolution) = net.resolution() else { continue };
             let Some(index) = resolution.drives.iter().position(|id| self.ir.net(*id).path() == drive) else { continue };
-            let holder = resolution.holders[index].map_or_else(|| "host".to_string(), |instance| self.ir.instance(instance).path().to_string());
+            let holder = resolution.holders[index].map_or_else(|| "host".to_string(), |held| self.ir.instance(held.instance).path().to_string());
             return ((net.path().to_string(), index), holder);
         }
         ((String::new(), place), drive.to_string())

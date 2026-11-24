@@ -1195,7 +1195,7 @@ impl Resolved {
         b.bind_nets(child, vec![first, second, value]);
         b.resolve_net(
             value,
-            piperine_ir::Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(root), None], others: vec![(0, others)] },
+            piperine_ir::Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(piperine_ir::Holder { instance: root, carrier: 0 }), None], others: vec![(0, others)] },
         );
         let ir = b.finish(root);
         assert_eq!(ir.check(), vec![], "the fixture passes check()");

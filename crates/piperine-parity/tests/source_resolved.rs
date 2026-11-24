@@ -137,6 +137,11 @@ fn resolve_receives_the_drives_in_instance_path_order() {
     let built = Model::of("drives.msl").built("OrderBench");
     let seen = built.run(10e-9, 1e-9);
     assert_eq!(Model::values(&seen, "OrderBench.n").last().copied(), Some(123.0));
+    // array indices compare numerically (`cell[10]` after `cell[9]`): twelve generated drivers arrive in index order, so the
+    // net answers 12, and by name (`cell[10]` before `cell[2]`) it would answer 0
+    let generated = Model::of("drives.msl").built("IndexBench");
+    let seen = generated.run(10e-9, 1e-9);
+    assert_eq!(Model::values(&seen, "IndexBench.n").last().copied(), Some(12.0));
 }
 
 #[test]

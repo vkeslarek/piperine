@@ -334,15 +334,15 @@ checker, the elaborator, the IR and the generated Rust.
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | RN-01 | P1: A project declares its own discrete nature | T1–T2 | Verified |
-| RN-02 | P1: A nature that implements `Resolve` is declared and checked | T16, T17, T19, T20, T28, T37, T38 | In Tasks |
-| RN-03 | P1: Drives combine through `resolve` | T12–T14, T17, T18, T20, T22, T33 | Delivered (T22; T33 edge cases remain) |
+| RN-02 | P1: A nature that implements `Resolve` is declared and checked | T16, T17, T19, T20, T28, T37, T38 | Delivered (T16-T20, T28, T37, T38) |
+| RN-03 | P1: Drives combine through `resolve` | T12–T14, T17, T18, T20, T22, T33 | Delivered (T22, T33) |
 | RN-04 | P1: `others()` | T3, T15, T19, T23 | Verified |
-| RN-05 | P1: Loops among resolved drives settle by relaxation | T7–T9, T11, T21, T24, T25, T31 | Delivered (T24, T25; T31 remains) |
-| RN-06 | P1: The library nets of §22.3 | T26–T31 | Started (T26 delivered; T27–T31 remain) |
-| RN-07 | P1: `Bidir` | T32 | In Tasks |
+| RN-05 | P1: Loops among resolved drives settle by relaxation | T7–T9, T11, T21, T24, T25, T31 | Delivered (T24, T25, T31) |
+| RN-06 | P1: The library nets of §22.3 | T26–T31 | Delivered (T26-T31) |
+| RN-07 | P1: `Bidir` | T32 | Delivered (T32) |
 | RN-08 | P1: A signal-flow node | T4–T6 | Verified |
-| RN-09 | P2: The Book's net rows run | T34, T35, T39 | In Tasks |
-| RN-10 | P3: The documents say what is true | T10, T36, T38 | In Tasks |
+| RN-09 | P2: The Book's net rows run | T34, T35, T39 | Delivered (T34, T35, T39) |
+| RN-10 | P3: The documents say what is true | T10, T36, T38 | Delivered (T36) |
 
 **Coverage:** 10 total, 10 mapped to tasks (tasks.md, T1–T39), 0 unmapped.
 
@@ -354,6 +354,7 @@ checker, the elaborator, the IR and the generated Rust.
 | L22 | a discrete nature the project declares | RN-01 |
 | L23 | signal-flow natures (`VSignal`) | RN-08 |
 | L25 | bundles | `resolved-nets-bundles` |
+| L71 | a host write of a `Logic` param or of a four-state pattern (owed by `explicit-unknowns`, finding 55) | RN-03 (the host's drive of a resolved `Logic` port), RN-09 (the Book's `Logic` rows); round 1 fix F12 makes a `Logic<N>` param run |
 | L58, resolved-net group | `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir` | RN-06, RN-07 (`TribufDelayed`: `generics`, with `inertial`) |
 | §11, the net rows | natures#2, natures#3, natures~e99c1920, natures~91c3bffe, digital#16 to digital#20, core-std#6 | RN-09 |
 

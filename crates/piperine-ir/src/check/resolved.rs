@@ -62,8 +62,12 @@ impl Checker<'_> {
                 self.report(item.clone(), net.origin.clone(), format!("{} holders for {} drives", resolution.holders.len(), resolution.drives.len()));
             }
             for holder in resolution.holders.iter().flatten() {
-                if holder.index() >= ir.instances.len() {
-                    self.report(item.clone(), net.origin.clone(), format!("holder instance {} out of range ({} instances)", holder.0, ir.instances.len()));
+                match ir.instances.get(holder.instance.index()) {
+                    None => self.report(item.clone(), net.origin.clone(), format!("holder instance {} out of range ({} instances)", holder.instance.0, ir.instances.len())),
+                    Some(instance) if holder.carrier as usize >= ir.bodies[instance.body.index()].carriers.len() => {
+                        self.report(item.clone(), net.origin.clone(), format!("holder carrier {} out of range for instance {}", holder.carrier, instance.path))
+                    }
+                    Some(_) => {}
                 }
             }
             for drive in &resolution.drives {
