@@ -97,6 +97,39 @@ Gaps the real feature must close:
 
 Result page: https://claude.ai/artifact/BRoyB1LUJ4kVX1k3QCeZ39
 
+## Idea on standby: an external GPL plugin first (user, 2026-11-24)
+
+Final discussion on standby. Piperine is MIT (GPL-compatible), so an AVR plugin built on simavr can
+be GPL-3.0 if it lives in its own repository and package, never in the Piperine repo or binary:
+Piperine stays MIT; whoever distributes Piperine + the plugin together distributes the combination
+under the GPL (MIT allows it); using it obliges nothing. The plugin boundary already exists (the
+device ABI: a `cdylib` exporting `piperine_abi_1`, `piperine-transpile/src/load.rs`; the
+`piperine-plugin` crate: native dlopen, manifest, trust). Possible path: (1) external GPL plugin over
+simavr through the ABI — many MCUs at once; (2) later our own MIT core (avr8js base + datasheet
+distillation) as the official plugin behind the same contract; simavr becomes its test oracle;
+(3) the same mechanism opens other emulators (ESP32 via QEMU, RISC-V, FPGA). Missing pieces are the
+PoC gaps (MSL `extern "cosim"` → library loading, text/bytes param, `HORIZON` run-ahead, sink
+filtering). Not legal advice.
+
+## Analog → MCU without lockstep (coordinator note, 2026-11-24)
+
+MCU → circuit is cheap: the core runs ahead to its next visible action and commits it at its exact
+time. Circuit → MCU forces lockstep only if the core cannot know when an input will change. Plan:
+1. Inputs reach the core only as discrete events — a pin threshold crossing (located exactly by the
+   solver's `cross`), an ADC sample (requested by the core at a time it knows), a comparator flip —
+   never as a continuous read.
+2. **Optimistic run-ahead with rollback** (time-warp): the core snapshots its state (our own core:
+   registers + SRAM + peripherals, a few KB, copied cheaply) and runs to the horizon; if an input
+   event arrives at t before where it ran, it restores the snapshot ≤ t, applies the input at t,
+   re-runs, and replaces its already committed future outputs (`REPLACE` commits).
+3. **Skip the rollback when the input was not observed:** the core logs the instants it read each
+   pin (`PINx` read, armed interrupt); if nothing read the changed pin after t, the input is applied
+   without re-running.
+4. **Conservative lookahead** where possible: the analog side's event prediction gives an earliest
+   possible next crossing; the core may run safely up to min(next own action, that bound).
+5. ABI fix needed: `HORIZON` must be the end of the tentative step (abi.md R5), not the current
+   instant, when a `cross` reaches the device — the PoC's 4 µs polling came from that.
+
 ## Questions for the user
 
 1. **Board / core scope.** Start with the Uno (ATmega328P, 16 MHz) only? Later: Mega (ATmega2560),
