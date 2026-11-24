@@ -948,7 +948,8 @@ Proof: run docs | test gaps_drops_what_generics_phase_c_closed ... ok
 
 **C82** - Every Book row and gallery fence phase C lets run is held to it. (GN-31, AC 2; T71, T77, T80, T81)
 Proof: run bookdigital | test the_flip_flop_runs_for_a_type_with_a_default ... ok
-Proof: run bookcheatsheet | test the_module_card_runs_for_its_const_generic ... ok
+Proof: run bookcheatsheet | test the_module_card_runs_for_its_const_generic_without_its_value_input ... ok
+Proof: run bookcheatsheet | test the_module_card_runs_with_its_value_input_and_its_out_carrier ... ok
 Proof: run bookcheatsheet | test the_body_items_card_runs_with_its_generation ... ok
 Proof: run bookcorestd | test the_register_with_a_setup_check_runs ... ok
 Proof: run bookmodules | test the_lowpass_module_runs_over_the_generic_integrator ... ok
@@ -999,11 +1000,9 @@ Proof: run typesmods | test a_carrier_handed_to_a_generic_out_port_needs_no_init
 **C126** - `_` as a generic argument of a placement is inferred as if left out. (§1.2.12; GN-13, AC 1; T61)
 Proof: run typesmods | test an_underscore_generic_argument_is_inferred ... ok
 
-**C127** - A Book row still refused after a task that changed its refusal is pinned to its exact remaining refusals and their owners. (GN-31, AC 2; re-pin rule; T71, T77)
-Proof: run bookmodules | test the_ladder_is_refused_for_its_generation ... ok
+**C127** - A Book row still refused after a task that changed its refusal is pinned to its exact remaining refusals and their owners. The ladder and the half reactions run (C70, C73), so they leave this list. (GN-31, AC 2; re-pin rule; T71, T77)
 Proof: run bookmodules | test the_memory_bank_is_refused_for_its_template_and_bundle ... ok
 Proof: run bookcheatsheet | test the_template_card_is_refused_for_its_template_and_bundle ... ok
-Proof: run bookmodules | test the_half_reactions_are_refused_for_their_digital_generation ... ok
 Proof: run booknatures | test a_bundle_is_refused_where_the_solver_reaches_it ... ok
 Proof: run bookgenerics | test a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it ... ok
 Proof: run bookwelcome | test the_status_paragraph_lists_what_is_still_refused_and_one_item_runs ... ok
