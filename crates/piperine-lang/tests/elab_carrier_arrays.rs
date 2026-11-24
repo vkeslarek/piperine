@@ -508,3 +508,18 @@ fn a_run_time_element_read_in_a_definition_is_one_read_of_the_array() {
     let drive = printed.lines().find(|line| line.trim_start().starts_with("drive q")).expect("the drive of q");
     assert_eq!(drive.trim(), "drive q = mem[at]", "one read at the run-time element");
 }
+
+#[test]
+fn a_loop_of_definitions_through_elements_is_e0339_naming_the_elements() {
+    // §8.2.3: definitions that depend on each other with no reaction and no `after` between are a loop, an error through a
+    // one-driver carrier, found at elaboration where elements fold (it was a bind cycle of the digital solver, after rustc,
+    // naming internal functions): `b[1] = b[2] + 1; b[2] = b[1];` names both elements and the instance
+    Refusals::assert_one("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[2] + 1; b[2] = b[1]; }", "E0339", &["`b[1]`, `b[2]`", "`Top`"]);
+    // a read at a run-time element may be the definition's own element: a loop
+    Refusals::assert_one("module Top(in at: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = at; b[1] = b[at] + 1; b[2] = 0; }", "E0339", &["`b[1]`", "`Top`"]);
+    // a loop across two arrays, and one through a carrier defined in every iteration of a generation `for`
+    Refusals::assert_one("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 2]; signal c: [Bit<u8>; 2]; b[0] = clk; b[1] = c[1]; c[0] = clk; c[1] = b[1] + 1; }", "E0339", &["`b[1]`, `c[1]`"]);
+    Refusals::assert_one("module Top(in clk: Bit<u8>) { signal y: Bit<u8>; for k in 0..1 { y = y + clk; } }", "E0339", &["`y`", "`Top`"]);
+    // a chain through elements is no loop
+    elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
+}

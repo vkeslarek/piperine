@@ -158,6 +158,7 @@ impl Elaboration<'_, '_> {
         self.lower_digital(&mut scope, module);
         self.judge_element_coverage(module, &name);
         self.judge_drive_overlaps(&name);
+        self.judge_drive_loops(&name);
         let carriers = self.structure.carriers.clone();
         let reaches = self.structure.reaches.clone();
         let merged = scope.merged.clone();

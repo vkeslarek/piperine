@@ -465,6 +465,12 @@ impl IrBuilder {
         self.exprs.get(id.index()).map(|e| &e.origin)
     }
 
+    /// The statement `id` added before, for a pass that walks what it just built (the elaborator reads what a drive
+    /// reads this way); `None` for an id this builder never handed out.
+    pub fn stmt_kind(&self, id: StmtId) -> Option<&Stmt> {
+        self.stmts.get(id.index())
+    }
+
     /// The statement `id` added before; `None` for an id this builder never handed out.
     pub(crate) fn stmt_data(&self, id: StmtId) -> Option<&Stmt> {
         self.stmts.get(id.index())

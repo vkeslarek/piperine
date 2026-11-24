@@ -145,7 +145,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The carrier `decl` as the element `reach` names when it is one element of an array (`g[1][1]`), else its name.
-    fn shared_element_name(&mut self, decl: DeclId, reach: ElementReach) -> String {
+    pub(super) fn shared_element_name(&mut self, decl: DeclId, reach: ElementReach) -> String {
         let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let ElementReach::Run(first, end) = reach else { return name };
         let shape = self.consts.typed_carrier_array(decl).and_then(|array| self.shape_in(&array, 0));

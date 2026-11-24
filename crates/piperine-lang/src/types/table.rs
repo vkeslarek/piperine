@@ -413,6 +413,15 @@ impl<'d> Types<'d> {
         self.deferred_coverage.overlaps.contains(&decl)
     }
 
+    /// Whether the carrier `decl` (or each carrier of an array of them) has a one-driver nature (§5.2): a loop of
+    /// definitions through it is an error, where one through resolved carriers only settles by relaxation (§8.2.3).
+    pub fn is_one_driver(&self, decl: DeclId) -> bool {
+        match self.carriers.get(&decl).map(Ty::innermost) {
+            Some(Ty::Carrier { nature, .. }) => super::nature_rules::NatureRules::of(self.design, *nature).one_driver,
+            _ => false,
+        }
+    }
+
     /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an
     /// array whose innermost element is a `Ty::Carrier` (CV-23).
     pub fn carrier_array(&self, decl: DeclId) -> Option<&Ty> {
