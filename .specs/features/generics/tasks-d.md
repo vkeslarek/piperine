@@ -548,6 +548,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 **C87** - `Name { params }` and `Name::<G> { params }` as a `const`, a param value or a function result give a value of the module's type. (GN-21, AC 1; T84, T85)
 Proof: run typestempl | test a_template_is_a_value_of_its_modules_type ... ok
 Proof: run elabtempl | test templates_fold_from_consts_functions_and_two_levels_of_params ... ok
+Proof: run elabtempl | test a_template_of_a_generic_module_names_its_arguments ... ok
+Proof: run elabtempl | test two_templates_of_one_generic_module_with_different_arguments_are_two_values ... ok
+Proof: run elabtempl | test a_template_of_a_generic_module_obeys_its_where_and_names_its_missing_arguments ... ok
 
 **C88** - A template leaving a required param unbound is `E0319`. (GN-21, AC 2; T84)
 Proof: run typestempl | test a_template_leaving_a_required_param_is_e0319 ... ok
@@ -578,9 +581,12 @@ Proof: run typestempl | test a_fn_bounded_parameter_is_inferred_from_its_templat
 **C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok
 
-**C96** - `inst.name` through a template-typed param resolves against the concrete module, `E0343` for a missing or private item. (GN-23, AC 3; T91)
+**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; a non-node item is refused by name (`P0001`, L78), never as a type error; an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix round 1)
 Proof: run elabtempl | test inst_name_through_a_template_param_reads_the_concrete_module ... ok
 Proof: run elabtempl | test a_missing_item_through_a_template_param_is_e0343 ... ok
+Proof: run elabtempl | test inst_name_in_the_module_that_places_the_template_reads_the_concrete_module ... ok
+Proof: run elabtempl | test a_non_node_item_through_a_template_is_refused_by_name_never_as_a_type_error ... ok
+Proof: run elabtempl | test an_out_of_range_generated_cell_names_its_element_and_the_length_of_its_own_loop ... ok
 
 **C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92)
 Proof: run spectext | test a_module_type_takes_trait_and_inherent_impls_in_the_spec ... ok
@@ -588,6 +594,7 @@ Proof: run spectext | test a_bound_combines_a_trait_and_fn_p_in_the_spec ... ok
 Proof: run typestraits | test an_impl_on_a_module_type_is_accepted ... ok
 Proof: run typestraits | test a_module_impl_function_that_reads_the_solve_is_e0122 ... ok
 Proof: run elabtempl | test a_module_impl_function_runs_on_a_template_at_elaboration ... ok
+Proof: run elabtempl | test the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl ... ok
 Proof: run srctempl | test the_swappable_mosfet_runs_each_model ... ok
 
 **C98** - `multiplicity()` returns `Some` of the run's `multiplicity` session parameter and `None` when the run sets none; nothing is scaled by the system. (GN-24, AC 1, AC 2; amended twice 2026-11-23, DQ4; T97, T100)
@@ -597,6 +604,7 @@ Proof: run srcimplicit | test nothing_set_reads_none ... ok
 **C99** - `multiplicity()` is a stdlib function, `simparam("multiplicity")`, with `DEFAULT_MULTIPLICITY = 1.0` beside it: no core row, no dedicated key, flag or check, no environment read (`E0802` for it withdrawn; user decision 2026-11-23). (GN-24, AC 3, AC 6; T99)
 Proof: run typesimplicit | test multiplicity_is_a_stdlib_function_over_simparam ... ok
 Proof: run elabimplicit | test multiplicity_lowers_to_the_session_parameter ... ok
+Proof: run elabimplicit | test a_function_that_reaches_the_session_parameter_at_any_depth_reads_it_in_the_body ... ok
 
 **C100** - A resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body is four in parallel placed with `m: Some(4.0)` and follows the run's one multiplicity without it; reading `multiplicity()` in a param default is `E0321`, the code of §8.1.16 and §8.5.5 (`E0188` is the `const` item's). (GN-24, AC 4, AC 5; T100)
 Proof: run srcimplicit | test an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel ... ok
@@ -651,6 +659,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T91 (done):** `bank.c0.sn` is a read through a child of a child, which no elaboration supported (concrete or template): the module of `bank` now lowers a `Reached` node for each `child.item` the design reads (`elab/reach_through_templates.rs`, demands found once, slots right after the module's own nodes), the reader reaches that node, `place.rs` hands a reached node's binding up. Also: a generic module's module-param keys are classified (`classify_module_param_keys`), `is_module_param` holds for a `C: Fn(..)` param, `placed_module` names a call's module from the folded template, the checker `reach`es a template's module and types `v(c.x)` through a callable param as a potential probe (flow and contributions through it stay refused). A module declaring a node in generation cannot be read through (refused loud).
 **T92 (done):** `bank.cells[r][c].sn` reads a child placed in generation: the bank's body lowers one reached node per iteration (`DemandEntry`), the reader finds its slot by expanding the bank's generation under the bank's keys (`entries_under`). The swappable MOSFET listing calls `SQUARE.gain()` in a param default of the rig (a method on a param template inside a `let` or a param default, `fet.gain()`, is not typed yet: `a param default that reads a param` / `an expression the type checker gave no value type`), and `DiffPair<N: Mosfet + Fn(..)>` places `fet`. T93 must write the Book listing in that shape.
 **T93 (done):** modules#14 (the swappable MOSFET listing, run) and modules#15 (its placement, fragment) are new Book blocks after the binning fragment, so the extern block is now modules#16 (inventory, GAPS section 11 and its test follow); the Book counts 289 blocks (129 `msl`). modules#10 and cheatsheet#8 are narrowed to the bundle `Cell` and its literal (two `P0001`: the type and `struct expression`), their rows go to L25 / `resolved-nets-bundles`; the cascade `placement through a template value or a function` on a param whose `Fn` bound failed to type is gone (`fn_bound_failed`). The L32 row itself and the GAPS counts are left to T102. For the merge with B16: `tests/book/inventory_guard.rs` block counts, `GAPS.md` counts line and `docs/book/content.html` both lanes touch.
+**Fix round 1 (2026-11-24, verification-d.md findings 1 to 12):** (1) `v(c0.sn)` in the module that places the template resolves against the folded template's module (`elab/reach.rs::template_item`). (2) A non-node item through a template cannot be typed before the template folds, so it is a named `P0001` (L78), never `E0180`/`E0417` (`Checker::template_reads`). (3) `fet.gain()` through `N: Mosfet + Fn(..)` runs at elaboration on the template (`lower.rs::is_template_method`) in a body `let` and in `analog`; the parity `DiffPair` drives `s` with it. A param default that reads the param `fet` is the general §8.1.16 gap (L80). (4) A template of a generic module names its arguments (`types/templates.rs`, `TemplateValue::arguments`, `placement_instance`); `Ty::Module` still carries none (L79). (5) `reads_session_parameter` follows calls transitively. (6) to (9), (12): records, decision log, check text, doc comments and the `#[link]` example amended. (10), (11): `E0342` names the loop that is out of range, `add_nested_node` takes a `NestedRead`. A placement of a generic module that records no instance is a named `P0001`, never a silent drop.
 **Dispatched:** none yet.
 **Walked:** none yet.
 
