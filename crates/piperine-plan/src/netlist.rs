@@ -131,6 +131,12 @@ impl<'a> Netlist<'a> {
                 };
                 ports.push(window);
             }
+            // a resolved carrier's drive pin, then its others pin when the body calls `others()`, in carrier order
+            for (c, carrier) in body.carriers().iter().enumerate() {
+                if matches!(carrier.role, CarrierRole::Resolved { .. }) {
+                    ports.extend(Self::resolved_ports(self.ir, instance, c));
+                }
+            }
             let mut values: Vec<(&str, ParamValue)> = Vec::new();
             for (param, given) in body.params().iter().zip(instance.params()).filter(|(param, given)| param.default.as_ref() != Some(*given)) {
                 let value = match given {
@@ -161,6 +167,28 @@ impl<'a> Netlist<'a> {
                 builder.array_net(net.path(), count, &init);
             }
         }
+    }
+
+    /// The ports of the pins of resolved carrier `c` of `instance` besides its value pin (`Pins::resolved`): the drive pin
+    /// is bound to the drive net of this instance's drive, and the others pin, when the body calls `others()`, to the
+    /// others net of that drive, or to the value net when the instance holds no drive (§5.2.11). A net that records no
+    /// resolution leaves both pins open.
+    fn resolved_ports(ir: &Ir, instance: piperine_ir::Instance<'_>, c: usize) -> Vec<Port> {
+        let reads_others = instance.body().reads_others(c as u32);
+        let resolution = instance.net(c).and_then(|net| net.resolution().map(|resolution| (net, resolution)));
+        let Some((value, resolution)) = resolution else {
+            return if reads_others { vec![Port::Open, Port::Open] } else { vec![Port::Open] };
+        };
+        let held = resolution.holders.iter().position(|holder| *holder == Some(instance.id()));
+        let drive = held.map_or(Port::Open, |k| Port::Net(ir.net(resolution.drives[k]).path().to_string()));
+        let mut ports = vec![drive];
+        if reads_others {
+            ports.push(match held {
+                Some(k) => resolution.others.iter().find(|(drive, _)| *drive as usize == k).map_or(Port::Open, |(_, net)| Port::Net(ir.net(*net).path().to_string())),
+                None => Port::Net(value.path().to_string()),
+            });
+        }
+        ports
     }
 
     /// The window of an array of carriers the parent of `instance` gives carrier `c` of it (an `in` or `out` port),

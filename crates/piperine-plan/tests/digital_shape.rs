@@ -1119,3 +1119,114 @@ fn the_drive_layout_appends_a_plain_driving_byte() {
     let u16 = piperine_plan::DriveLayout::of(&ir, &Ty::u(16)).expect("a u16 is driven");
     assert_eq!((u16.driving_at(), u16.size(), u16.align()), (2, 4, 2));
 }
+
+/// The stub devices of a resolved design: each serves the shape the plan gives its body, so the netlist binds the pins
+/// the plan declared; neither runs anything.
+struct Stub;
+
+static HOLDER_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+static RESOLVER_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+static HOLDER: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+static RESOLVER: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+
+/// The stub of the holder body.
+struct HolderDevice;
+/// The stub of the resolver body.
+struct ResolverDevice;
+
+impl piperine_abi::device::Device for HolderDevice {
+    fn prototype() -> &'static Shape<'static> {
+        HOLDER_SHAPE.get().expect("the holder plan is set before its module").shape()
+    }
+    fn create(_: &piperine_abi::device::Values<'_>) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((HolderDevice, std::sync::Arc::clone(HOLDER_SHAPE.get().expect("set"))))
+    }
+    fn eval(&self, _: u32, _: &mut piperine_abi::device::Eval<'_>) -> Result<(), piperine_abi::device::Fault> {
+        Ok(())
+    }
+    fn react(&self, _: u32, _: &mut piperine_abi::device::React<'_>) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+impl piperine_abi::device::Device for ResolverDevice {
+    fn prototype() -> &'static Shape<'static> {
+        RESOLVER_SHAPE.get().expect("the resolver plan is set before its module").shape()
+    }
+    fn create(_: &piperine_abi::device::Values<'_>) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((ResolverDevice, std::sync::Arc::clone(RESOLVER_SHAPE.get().expect("set"))))
+    }
+    fn eval(&self, _: u32, _: &mut piperine_abi::device::Eval<'_>) -> Result<(), piperine_abi::device::Fault> {
+        Ok(())
+    }
+    fn react(&self, _: u32, _: &mut piperine_abi::device::React<'_>) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+impl piperine_plan::Modules for Stub {
+    fn module(&self, body: BodyId) -> Option<&'static piperine_abi::raw::Module> {
+        // body 0 is the resolver and body 1 the holder: the order `Resolved::design` adds them in
+        match body.index() {
+            0 => Some(RESOLVER.get_or_init(|| piperine_abi::thunk::module::<ResolverDevice>("resolver"))),
+            1 => Some(HOLDER.get_or_init(|| piperine_abi::thunk::module::<HolderDevice>("holder"))),
+            _ => None,
+        }
+    }
+}
+
+impl Resolved {
+    /// The design of `resolved_design`: the holder `Source` as the top, its resolver the child `Source.w$resolve` over two
+    /// drive nets (the first held by `Source`, the second by the host) and an others net of the first drive, with the
+    /// net `Source.w` recording them.
+    fn design() -> Ir {
+        let mut b = IrBuilder::new();
+        let resolver = Resolved::resolver(&mut b);
+        let holder = Resolved::holder(&mut b);
+        let top = b.next_instance_id();
+        let at = || Resolved::at(1);
+        let net = |b: &mut IrBuilder, path: &str, ty: ValueType| b.net(piperine_ir::NetSpec { path: path.into(), ty, declared_by: top, init: None, origin: at() });
+        let value = net(&mut b, "Source.w", Ty::u(8));
+        let seen = net(&mut b, "Source.seen", Ty::u(8));
+        let first = net(&mut b, "Source.w$drive0", ValueType::Bool);
+        let second = net(&mut b, "Source.w$drive1", ValueType::Bool);
+        let others = net(&mut b, "Source.w$others0", Ty::u(8));
+        let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: holder, parent: None, nodes: vec![], params: vec![], origin: at() });
+        b.bind_nets(root, vec![value, seen]);
+        let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: at() });
+        b.bind_nets(child, vec![first, second, value]);
+        b.resolve_net(
+            value,
+            piperine_ir::Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(root), None], others: vec![(0, others)] },
+        );
+        let ir = b.finish(root);
+        assert_eq!(ir.check(), vec![], "the fixture passes check()");
+        ir
+    }
+}
+
+#[test]
+fn a_resolved_net_binds_drives_value_and_others() {
+    // RN-04 (abi.md §9 D1, spec §5.2.11): the holder's drive pin is the net of its drive and its others pin the net of that
+    // drive's others; the resolver reads each drive net and writes the value net, which every reader's value pin meets.
+    let ir = Resolved::design();
+    for (cell, body) in [(&HOLDER_SHAPE, "Source"), (&RESOLVER_SHAPE, "Count$resolve~2")] {
+        let body = ir.bodies().find(|b| b.name() == body).expect("the body");
+        let _ = cell.set(std::sync::Arc::clone(BodyPlan::new(body).shape()));
+    }
+    let circuit = piperine_plan::Netlist::new(&ir).circuit(&Stub).unwrap_or_else(|e| panic!("circuit: {e}"));
+    let names = &circuit.bound().expect("bound").names;
+    let net_of = |instance: &str, pin: &str| -> String {
+        let i = names.instances.iter().position(|p| p == instance).unwrap_or_else(|| panic!("no instance {instance}"));
+        let k = names.pin_names[i].iter().position(|n| n == pin).unwrap_or_else(|| panic!("no pin {pin} on {instance}"));
+        // a site is a net when it prints as `Net(<id>)`; the design-wide net of that name is the one it prints as
+        let site = format!("{:?}", names.pins[i][k]);
+        names.nets.iter().find(|(_, id)| format!("Net({id:?})") == site).map(|(name, _)| name.trim_start_matches("net:").to_string()).unwrap_or(site)
+    };
+    assert_eq!(net_of("Source", "w"), "Source.w", "the value pin meets the value net");
+    assert_eq!(net_of("Source", "w.drive"), "Source.w$drive0", "the holder's drive pin is the net of its drive (the first, in instance-path order)");
+    assert_eq!(net_of("Source", "w.others"), "Source.w$others0", "the holder's others pin is the others net of its drive");
+    assert_eq!(net_of("Source.w$resolve", "d0"), "Source.w$drive0", "the resolver reads the first drive net");
+    assert_eq!(net_of("Source.w$resolve", "d1"), "Source.w$drive1", "and the second, the host's");
+    assert_eq!(net_of("Source.w$resolve", "v"), "Source.w", "and writes the value net, the one the readers meet");
+}

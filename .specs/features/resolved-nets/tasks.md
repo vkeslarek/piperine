@@ -484,8 +484,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_resolved_net_binds_drives_value_and_others` passes under `**Run planshape**`
-- [ ] Gate check passes: Batch (end of B3), with the buck
+- [x] `a_resolved_net_binds_drives_value_and_others` passes under `**Run planshape**`
+- [x] Gate check passes: Batch (end of B3), with the buck
 
 **Tests**: integration
 **Gate**: batch
