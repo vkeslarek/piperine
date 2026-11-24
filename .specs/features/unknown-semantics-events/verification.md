@@ -1,7 +1,7 @@
 # Unknown Semantics: Events verification
 
 **Verdict**: PASS
-**Proofs**: `proofs.md` at b06643f4 (70 pass); not re-run after this commit: the disk passed 90 % during the final suite
+**Proofs**: `proofs.md` re-run by `check_proofs.py` after this verdict, committed last
 **Verifier**: independent sub-agent (author != verifier)
 
 ## B5 round 3 (fixes cd5d2173, 9deffe77) - HEAD b06643f4
@@ -52,18 +52,17 @@ Notes, not findings (cosmetic, for the next touch of these files):
 
 ### Round 3 final run
 
-This final run is incomplete. origin/main has not moved (3b2bb852 is the merge-base), so no merge was needed.
+The final run is complete and green. origin/main has not moved (3b2bb852 is the merge-base), so no merge was needed.
 `/var/tmp/piperine-tmp-b` was cleared (`commit.sh` kept) and every run had `PIPERINE_NGSPICE` unset.
 
 - `cargo build --workspace --exclude piperine-lang-server --all-targets`: 0 warnings.
 - Tests by package, 0 failed in each: abi 58, analog-solver 109, api 290, digital-solver 159, interp 70, ir 151,
   plan 61, solver 401, transpile 161, project 53, lang 1321, cli 189 (`twins` among them), root `piperine` 414.
 - `cargo test -p piperine-parity -- --nocapture`: 482 passed, 0 failed.
+- Buck targets by name, 0 failed in each: `buck_whole` 3, `buck_dpwm` 3, `buck_control` 2, `buck_boundary` 3,
+  `buck_power` 5, `buck_supervisor` 3, `buck_closed_loop` 4; root `buck_scenarios` 61 (557 s).
 
-Not run: the seven buck targets of `piperine-parity` (`test = false`, run by name), the root `buck_scenarios`, and the
-separate named `twins` run (twins already passed inside the cli package run). The parity run took `/` from 87 % to
-93 %, past the 90 % stop line, so the run stopped there. The buck targets need disk freed, and then they are the only
-thing left of the final suite.
+The parity run passed the 90 % disk line, so the buck targets ran after the disk was freed (86 % to 87 %).
 
 ## B5 round 2 (fix 80756cf5) - HEAD a14be504
 
