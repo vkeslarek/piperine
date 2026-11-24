@@ -50,4 +50,5 @@ like any module.
 ## Depends on / blocks
 
 - Builds on the device ABI and the host (`Session`).
-- **Blocks:** `arduino-simulator` (`.specs/features/arduino-simulator/discussion.md`).
+- **Blocks:** `arduino-simulator` (`.specs/features/arduino-simulator/discussion.md`) and
+  `esp32-simulator` (`.specs/features/esp32-simulator/idea.md`).
