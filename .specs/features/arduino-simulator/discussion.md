@@ -1,6 +1,6 @@
 # Arduino simulator — discussion before planning
 
-Status: **postponed, much later** (user, 2026-11-24: "coloca lá para depois, bem depois"). Open for discussion when it comes back. No spec yet. When the questions
+Status: **postponed, much later** (user, 2026-11-24: "coloca lá para depois, bem depois"). Depends on `device-plugins` (`.specs/features/device-plugins/idea.md`). Open for discussion when it comes back. No spec yet. When the questions
 below are settled, Fable writes `spec.md`, `design.md` and `tasks.md` from this file.
 
 ## Goal
