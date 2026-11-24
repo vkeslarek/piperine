@@ -78,7 +78,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The `digital` blocks of `module`, read in `scope`: their reactions, in source order.
-    pub(super) fn lower_digital(&mut self, scope: &Scope, module: DeclId) {
+    pub(super) fn lower_digital(&mut self, scope: &mut Scope, module: DeclId) {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
         for block in data.behaviors.clone() {
             let decl = self.design.decl_data(block).clone();
@@ -86,9 +86,19 @@ impl Elaboration<'_, '_> {
             if behavior.kind != crate::pom::BehaviorKind::Digital {
                 continue;
             }
-            for child in decl.children {
-                if matches!(self.design.decl_data(child).kind, DeclKind::Reaction(_)) {
-                    self.lower_reaction(scope, child);
+            for (child, iteration) in self.digital_sequence(&decl.children) {
+                if !matches!(self.design.decl_data(child).kind, DeclKind::Reaction(_)) {
+                    continue;
+                }
+                // a reaction made by a generation `for` reads its loop variables as the constants of its iteration
+                for (variable, value) in &iteration.values {
+                    scope.unrolled.bind(*variable, piperine_ir::Constant::Int(*value));
+                }
+                scope.ordinals = iteration.ordinals.clone();
+                self.lower_reaction(scope, child);
+                scope.ordinals.clear();
+                for (variable, _) in &iteration.values {
+                    scope.unrolled.unbind(*variable);
                 }
             }
         }

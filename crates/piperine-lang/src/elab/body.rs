@@ -155,7 +155,7 @@ impl Elaboration<'_, '_> {
         self.decide_branch_kinds(&mut scope);
         self.check_selector_rule(&scope);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
-        self.lower_digital(&scope, module);
+        self.lower_digital(&mut scope, module);
         let carriers = self.structure.carriers.clone();
         let reaches = self.structure.reaches.clone();
         let merged = scope.merged.clone();

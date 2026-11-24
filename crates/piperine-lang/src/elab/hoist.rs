@@ -294,7 +294,7 @@ impl Elaboration<'_, '_> {
         let outer_params = self.consts.set_frame_params(self.frame_bindings(index));
         self.lower_definitions(&inner, module);
         self.hoist_placements(&inner);
-        self.lower_digital(&inner, module);
+        self.lower_digital(&mut inner, module);
         self.consts.set_frame_params(outer_params);
         Some(index)
     }

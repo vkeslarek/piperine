@@ -10,6 +10,7 @@ mod support;
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::DesignDiagnostic;
+use piperine_lang::types::UnfinishedForm;
 use support::Elab;
 
 /// Sources elaborated with generation in a body.
@@ -124,4 +125,41 @@ fn a_generation_recursion_that_does_not_end_is_e0341() {
     let plain = "module Loop(a: E) {\n  depth: usize = 1;\n  if depth > 0 { let again = Loop(a) { depth: depth + 1 }; }\n}\nmodule Top() { signal a: E; let c = Loop(a); }\n";
     let found = Admitted::refused(plain);
     assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Loop")), "{found:?}");
+}
+
+/// Sources whose `digital` blocks hold generation, elaborated with the form admitted until T80.
+struct AdmittedDigital;
+
+impl AdmittedDigital {
+    /// The IR of `src` after the natures, which elaborates and checks.
+    fn ir(src: &str) -> Ir {
+        let design = Elab::design(&format!("{}{src}", Admitted::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
+        let ir = Elaborator::new(&design).admitting(&[UnfinishedForm::DigitalGeneration]).run("Top").unwrap_or_else(|found| panic!("elaboration refused: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        assert!(ir.check().is_empty(), "{:?}", ir.check());
+        ir
+    }
+
+    /// The reactions of the body `Top`, as the text of the structural print lists them.
+    fn reactions(ir: &Ir) -> usize {
+        ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).expect("a body Top").reactions().len()
+    }
+}
+
+#[test]
+fn generated_reactions_are_one_per_iteration_in_source_order() {
+    // GN-19 AC 1, AC 2 (§12.1.2): a `for` around reactions makes one reaction per iteration, its event over the iteration's
+    // element; the reactions of one iteration keep their source order and the iterations follow one another, all inside the
+    // place the `for` has among the block's reactions
+    let src = "module Top() {\n  signal lines: [Bit; 3];\n  signal hits: [Bit<u8>; 3] = [0; 3];\n  signal first: Bit<u8> = 0;\n  signal last: Bit<u8> = 0;\n}\ndigital for Top {\n  on lines[0].fall() { first <- 1; }\n  for k in 0..3 {\n    on lines[k].rise() { hits[k] <- (k as u8) + 1; }\n    on lines[k].fall() { hits[k] <- 0; }\n  }\n  on lines[2].fall() { last <- 1; }\n}\n";
+    let ir = AdmittedDigital::ir(src);
+    assert_eq!(AdmittedDigital::reactions(&ir), 1 + 3 * 2 + 1, "the written reactions and two for each iteration");
+    // the order of the sites: the first reaction is the `first` commit, the last is the `last` commit, the six between are the loop's
+    let body = ir.bodies().find(|b| b.name() == "Top").unwrap();
+    let events: Vec<_> = body.reactions().iter().map(|r| format!("{:?}", r.on)).collect();
+    assert_eq!(events.len(), 8);
+    assert_eq!(events[1..7].iter().collect::<std::collections::BTreeSet<_>>().len(), 6, "six distinct events, one reaction for each iteration and edge: {events:?}");
+    // an `if` in the block selects its arm by a param
+    let arms = "module Top() {\n  signal lines: [Bit; 2];\n  fast: bool = true;\n  signal a: Bit<u8> = 0;\n}\ndigital for Top {\n  if fast { on lines[0].rise() { a <- 1; } } else { on lines[1].rise() { a <- 2; } }\n}\n";
+    assert_eq!(AdmittedDigital::reactions(&AdmittedDigital::ir(arms)), 1);
 }

@@ -759,8 +759,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generated_reactions_are_one_per_iteration_in_source_order` passes under `**Run elabgenr**`
-- [ ] Gate check passes: Quick
+- [x] `generated_reactions_are_one_per_iteration_in_source_order` passes under `**Run elabgenr**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

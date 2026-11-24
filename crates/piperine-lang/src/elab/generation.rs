@@ -42,6 +42,9 @@ pub(super) struct GeneratedItems {
     iterations: BTreeMap<DeclId, Vec<Iteration>>,
     /// The items already refused, so each is reported once.
     refused: BTreeSet<DeclId>,
+    /// Every item met outside a generation or inside one, with its iteration, in the order the generation unrolls them: source
+    /// order, a `for` iteration by iteration (§12.1.2).
+    sequence: Vec<(DeclId, Iteration)>,
 }
 
 impl GeneratedItems {
@@ -71,6 +74,7 @@ impl Elaboration<'_, '_> {
                 DeclKind::Generation(_) => self.expand_generation_item(*item, now),
                 DeclKind::Binding(_) => {}
                 _ => {
+                    self.generated.sequence.push((*item, now.cloned().unwrap_or_default()));
                     if let Some(now) = now {
                         self.admit_generated(*item);
                         self.generated.iterations.entry(*item).or_default().push(now.clone());
@@ -78,6 +82,15 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The reactions of a `digital` block whose items are `items`, each with the iteration it is made for, in the order the
+    /// generation unrolls them: a `for` around reactions makes one per iteration, iteration by iteration, inside the place of
+    /// the `for` in source order (GN-19, §12.1.2).
+    pub(super) fn digital_sequence(&mut self, items: &[DeclId]) -> Vec<(DeclId, Iteration)> {
+        let outer = std::mem::take(&mut self.generated.sequence);
+        self.expand_items(items, None);
+        std::mem::replace(&mut self.generated.sequence, outer)
     }
 
     /// The generation `generation`, written under the iteration `now`.

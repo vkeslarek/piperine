@@ -449,33 +449,22 @@ impl Elaboration<'_, '_> {
 
     /// The params of `module` that the range of a generation `for`, or the condition of a generation `if`, reads.
     fn params_read_by_generation(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
         let mut found = Vec::new();
-        for decl in 0..self.design.decl_count() {
-            let decl = DeclId(decl as u32);
-            let data = self.design.decl_data(decl);
-            if !self.is_inside(decl, module) {
-                continue;
+        // the generation of the body, and of the `digital` blocks, which are written beside the module
+        let mut pending: Vec<DeclId> = self.design.decl_data(module).children.iter().chain(&data.behaviors).copied().collect();
+        while let Some(decl) = pending.pop() {
+            let item = self.design.decl_data(decl);
+            match &item.kind {
+                DeclKind::Generation(crate::pom::GenerationData::For { iter, .. }) => self.collect_params(*iter, &mut found),
+                DeclKind::Generation(crate::pom::GenerationData::If { cond, .. }) => self.collect_params(*cond, &mut found),
+                _ => {}
             }
-            let read = match &data.kind {
-                DeclKind::Generation(crate::pom::GenerationData::For { iter, .. }) => *iter,
-                DeclKind::Generation(crate::pom::GenerationData::If { cond, .. }) => *cond,
-                _ => continue,
-            };
-            self.collect_params(read, &mut found);
+            if matches!(item.kind, DeclKind::Generation(_) | DeclKind::Behavior(_)) {
+                pending.extend(item.children.iter().copied());
+            }
         }
         found
-    }
-
-    /// Whether `decl` is declared under `module`.
-    fn is_inside(&self, decl: DeclId, module: DeclId) -> bool {
-        let mut at = self.design.decl_data(decl).parent;
-        while let Some(current) = at {
-            if current == module {
-                return true;
-            }
-            at = self.design.decl_data(current).parent;
-        }
-        false
     }
 
     /// Adds every param `expr` reads, whatever else it reads, to `found`.
