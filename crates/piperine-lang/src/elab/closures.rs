@@ -111,6 +111,33 @@ impl Elaboration<'_, '_> {
         Some(self.emit(Expr::CallValue { callee, args: lowered }, ret, origin))
     }
 
+    /// Whether the callee `callee` has a function type: typed so, or a name of a local whose type is one (a module-body `let` of a
+    /// closure, `let q = |y: f64| y * 2.0;`).
+    pub(super) fn is_function_valued(&self, callee: ExprId) -> bool {
+        if matches!(self.typed(callee), Some(crate::types::Ty::Fn(..))) {
+            return true;
+        }
+        let ExprKind::Path(path) = &self.design.expr_node(self.peel_parens(callee)).kind else { return false };
+        matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(decl)) if matches!(self.typed_local(decl), Some(crate::types::Ty::Fn(..))))
+    }
+
+    /// `(callee)(args)` where `callee` is an expression whose value is a function: the value lowered, then called.
+    pub(super) fn lower_expression_call(&mut self, scope: &mut Scope, callee: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(callee).span;
+        let function = self.lower_expr(scope, callee)?;
+        let callee_ty = self.expr_types[function.index()].clone();
+        let ValueType::Fn(_, ret) = &callee_ty else {
+            self.unsupported(scope.file, span, "a callee whose function value has no function type once lowered");
+            return None;
+        };
+        let ret = (**ret).clone();
+        let mut lowered = Vec::new();
+        for arg in args {
+            lowered.push(self.lower_expr(scope, *arg)?);
+        }
+        Some(self.emit(Expr::CallValue { callee: function, args: lowered }, ret, origin))
+    }
+
     /// Whether the function `decl` returns an `Option`.
     fn calls_option_function_decl(&self, decl: DeclId) -> bool {
         let DeclKind::Fn(f) = &self.design.decl_data(decl).kind else { return false };

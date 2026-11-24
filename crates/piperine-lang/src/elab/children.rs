@@ -122,7 +122,8 @@ impl Elaboration<'_, '_> {
     /// fields of the struct template it calls, else the block after the call.
     pub(super) fn placement_fields(&self, call: ExprId, module: DeclId) -> Vec<FieldInit> {
         let ExprKind::Call { callee, params, .. } = &self.design.expr_node(call).kind else { return Vec::new() };
-        match &self.design.expr_node(*callee).kind {
+        // `(Cell { cs: 2.0 })(x)`: the template written in place, through parentheses
+        match &self.design.expr_node(self.peel_parens(*callee)).kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module => fields.clone(),
             _ => params.clone().unwrap_or_default(),
         }
@@ -179,17 +180,26 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// Whether the placement `call` is written through an expression that is no name (`(if c { .. } else { .. })(x)`): a choice of
+    /// templates, whose head folds at elaboration (§8.4.6).
+    pub(super) fn has_an_expression_head(&self, call: ExprId) -> bool {
+        let ExprKind::Call { callee, class: CallClass::Instance { module: Some(_), via: None }, .. } = &self.design.expr_node(call).kind else { return false };
+        matches!(self.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_))
+    }
+
     /// The template a placement through a template value places (§8.4.4, §8.4.9): the value the param of module type holds in the
     /// body being lowered (`cell(c)`, PI-04: the default or the parent's binding), or the value the head of the placement folds to
     /// over the key params (`C1(c)`, `nch(l, w)(d, g, s, b)`). `Ok(None)` when `class` is a placement of a module by name or of a
     /// template written in place; `Err` after the diagnostic of a head that does not fold.
     pub(super) fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
-        let CallClass::Instance { module: placed, via: Some(via) } = class else { return Ok(None) };
-        if placed.is_some_and(|placed| *via == placed) {
-            return Ok(None);
-        }
-        if self.is_module_param(*via) {
-            return Ok(scope.keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned());
+        let CallClass::Instance { module: placed, via } = class else { return Ok(None) };
+        match via {
+            Some(via) if placed.is_some_and(|placed| *via == placed) => return Ok(None),
+            Some(via) if self.is_module_param(*via) => return Ok(scope.keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned()),
+            Some(_) => {}
+            // a choice of templates written as the head folds as any head does; a module named by its path places by name
+            None if !self.has_an_expression_head(call) => return Ok(None),
+            None => {}
         }
         let ExprKind::Call { callee, .. } = &self.design.expr_node(call).kind else { return Ok(None) };
         let folded = self.fold_param_value(*callee, &scope.keys.overlaid(&scope.unrolled));

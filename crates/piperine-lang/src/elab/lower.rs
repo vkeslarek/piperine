@@ -585,6 +585,11 @@ impl Elaboration<'_, '_> {
             (_, None) if self.types.default_of(expr).is_some() => Some(self.emit(Expr::Default(ty.clone()), ty, origin)),
             (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && let Some(owner) = self.constructed_decl(*callee) => self.lower_constructor_call(scope, args, owner, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
+            // a callee that is an expression whose value is a function (`(|y: f64| y * 2.0)(x)`, `doubler()(x)`, `(twice)(x)`)
+            (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && self.is_function_valued(*callee) => {
+                let callee = *callee;
+                self.lower_expression_call(scope, callee, args, origin)
+            }
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");
                 None

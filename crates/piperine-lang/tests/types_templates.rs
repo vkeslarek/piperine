@@ -302,3 +302,32 @@ fn an_unread_let_of_a_template_item_is_e0181() {
     let read = bank("let x = c0.cs; i(p, gnd) +> x;");
     assert_eq!(read.codes(), Vec::<String>::new(), "{}", read.message());
 }
+
+#[test]
+fn every_callee_form_the_grammar_admits_is_called_by_its_value() {
+    // Part III `callee ::= path generic_args? | call | '(' expr ')'` (finding 34, the class "every callee form"): each alternative is
+    // a placement when its value is a template (§8.4.4, §8.4.6), a call when it is a function, and `E0180` when it is neither;
+    // no form reaches a generic refusal
+    let head = "const C1: Cell = Cell { cs: 30.0 };\nfn pick(big: bool) -> Cell { if big { Cell { cs: 2.0 } } else { Cell { cs: 1.0 } } }\n\
+                fn twice(y: f64) -> f64 { y * 2.0 }\nfn doubler() -> fn(f64) -> f64 { twice }\n";
+    let forms: [(&str, &[&str]); 14] = [
+        ("let b = Cell(x);", &[]),
+        ("let b = twice(1.0);", &[]),
+        ("let b = pick(true)(x);", &[]),
+        ("let b = doubler()(1.0);", &[]),
+        ("let b = (Cell { cs: 2.0 })(x);", &[]),
+        ("let b = (C1)(x);", &[]),
+        ("let b = (if true { Cell { cs: 2.0 } } else { C1 })(x);", &[]),
+        ("let b = (match n { 0 => C1, _ => Cell { cs: 2.0 } })(x);", &[]),
+        ("let b = ({ C1 })(x);", &[]),
+        ("let b = (|y: f64| y * 2.0)(1.0);", &[]),
+        ("let b = (twice)(1.0);", &[]),
+        ("let b = (if true { twice } else { twice })(1.0);", &[]),
+        ("let b = (2.0)(x);", &["E0180"]),
+        ("let b = (if v(x) > 0.5 { C1 } else { Cell { cs: 2.0 } })(x);", &["E0362"]),
+    ];
+    for (form, codes) in forms {
+        let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ n: u8 = 0; {form} }}"));
+        assert_eq!(source.codes(), codes, "{form}: {}", source.message());
+    }
+}

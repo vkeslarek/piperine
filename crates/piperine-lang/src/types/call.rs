@@ -83,8 +83,29 @@ impl Checker<'_> {
                     None
                 }
             },
-            _ => {
-                self.unsupported(file, node.span, Unsupported::expr(&node.kind));
+            // the callee is an expression, not a name (Part III `callee ::= path | call | '(' expr ')'`)
+            _ => self.value_call(expr, *callee, args),
+        }
+    }
+
+    /// A call whose callee is an expression that names nothing (`(f)(x)` aside, which is a name: `make()(x)`, `(|y: f64| y)(x)`,
+    /// `(if c { f } else { g })(x)`): its value is called by the type it has (§1.5). A function type takes the arguments; any other
+    /// type is `E0180`. A callee that did not type has its own diagnostic.
+    fn value_call(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Ty> {
+        match self.infer(callee) {
+            Some(Ty::Fn(params, result)) => {
+                self.apply(expr, &params, args)?;
+                Some(*result)
+            }
+            found => {
+                if let Some(found) = found {
+                    let (file, span) = (self.file_of_expr(expr), self.design.expr_node(callee).span);
+                    let message = format!("the callee's type `{}` is no function and no template (§1.5)", found.name(self.design));
+                    self.coded(file, "E0180", span, message, "a call of a value that is not a function");
+                }
+                for arg in args {
+                    self.infer(arg.value);
+                }
                 None
             }
         }

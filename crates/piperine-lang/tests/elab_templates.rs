@@ -418,3 +418,26 @@ fn an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal() {
     assert_eq!(Elab::codes(&diagnostics), ["E0181"]);
     assert_eq!(&source[diagnostics[0].diagnostic.span().range()], "c0.cs", "at the read");
 }
+
+#[test]
+fn every_callee_form_elaborates_to_what_it_names() {
+    // Part III `callee` (findings 33 and 34): every template-valued callee form places the `Cell` its value names, and every
+    // function-valued one is a value of the body, in either text order of the `let` that holds it
+    let head = format!("{CELL}const C1: Cell = Cell {{ cs: 30.0 }};\nfn pick(big: bool) -> Cell {{ if big {{ Cell {{ cs: 30.0 }} }} else {{ Cell {{ cs: 1.0 }} }} }}\nfn twice(y: f64) -> f64 {{ y * 2.0 }}\nfn doubler() -> fn(f64) -> f64 {{ twice }}\n");
+    let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let b = Cell(x) {{ cs: 30.0 }}; }}"), "Top");
+    for form in [
+        "let b = pick(true)(x);",
+        "let b = (Cell { cs: 30.0 })(x);",
+        "let b = (C1)(x);",
+        "let b = (if true { Cell { cs: 30.0 } } else { C1 })(x);",
+        "let b = (match n { 0 => C1, _ => Cell { cs: 1.0 } })(x);",
+        "let b = ({ C1 })(x);",
+        "let b = q(x); let q = if n == 0 { C1 } else { Cell { cs: 1.0 } };",
+    ] {
+        let ir = Elab::ir(&format!("{head}module Top() {{ n: u8 = 0; signal x: Electrical; {form} }}"), "Top");
+        assert_eq!(Placed::first_param(&ir, "Top.b"), Placed::first_param(&direct, "Top.b"), "{form}");
+    }
+    for form in ["let b = doubler()(1.0);", "let b = (|y: f64| y * 2.0)(1.0);", "let b = (twice)(1.0);", "let b = q(1.0); let q = |y: f64| y * 2.0;"] {
+        Elab::ir(&format!("{head}module Top() {{ n: u8 = 0; signal x: Electrical; {form} signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * b; }}"), "Top");
+    }
+}

@@ -328,3 +328,17 @@ fn a_cycle_through_values_is_refused() {
     let refused = RUN.refusal("value_cycle.msl", "RigValueCycle");
     assert!(refused.contains("E0332") && refused.contains("reads its own name through other `let`s"), "{refused}");
 }
+
+#[test]
+fn every_callee_form_runs_what_it_names() {
+    // Part III `callee` (findings 33 and 34): a closure read before its `let`, a closure literal and a parenthesized function are
+    // called (a function that returns a function is elaborated, `elab_templates`, but the Rust backend does not print its type yet); a parenthesized choice of templates (`if`, `match`, a block) places the cell it picks,
+    // whose storage node follows the line (0.5) scaled by `cs`
+    let twice = |y: f64| y * 2.0;
+    let wanted = [0.25 * 3.0, 0.25 * 2.0, twice(0.2), RustOracle::storage(4.0, 0.5), RustOracle::storage(5.0, 0.5), RustOracle::storage(6.0, 0.5)];
+    let seen = RUN.operating_point("callees.msl", "RigCallees", &["l1", "l2", "l4", "s1", "s2", "s3"]);
+    assert_eq!(seen.len(), wanted.len());
+    for (value, wanted) in seen.iter().zip(wanted) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}

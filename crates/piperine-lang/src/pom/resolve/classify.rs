@@ -511,6 +511,12 @@ fn callee_class(design: &Design, callee: ExprId, templates: &BTreeMap<ExprId, St
             },
             _ => (CallClass::Function, None),
         },
+        // `(if c { R { .. } } else { R { .. } })(connections)`, `(match ..)(..)`, `({ .. })(..)`: a choice of templates of one module
+        // written as the head (§8.4.6), placed through no declaration; any other expression is a value called by its type
+        ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) => match template_module(design, callee, templates, 0) {
+            Some(m) => (CallClass::Instance { module: Some(m), via: None }, Some(m)),
+            None => (CallClass::Function, None),
+        },
         _ => (CallClass::Function, None),
     }
 }

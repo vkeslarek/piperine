@@ -1,0 +1,34 @@
+//! Every callee form Part III's `callee` production admits, and a body `let` read before its text position (verification findings
+//! 33 and 34). The expected values are computed by Rust in `source_templates.rs`.
+
+/// One cell: its storage node follows the bit line scaled by `cs`.
+module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; }
+analog for Dram { potential(sn) +> cs * v(a); }
+
+fn twice(y: f64) -> f64 { y * 2.0 }
+
+module RigCallees() {
+    signal a: Electrical;
+    let early = q(0.25);
+    let q = |y: f64| y * 3.0;
+    let literal = (|y: f64| y * 2.0)(0.25);
+    let named = (twice)(0.2);
+    let chosen = (if true { Dram { cs: 4.0 } } else { Dram { cs: 1.0 } })(a);
+    let matched = (match 1 { 0 => Dram { cs: 1.0 }, _ => Dram { cs: 5.0 } })(a);
+    let blocked = ({ Dram { cs: 6.0 } })(a);
+    signal l1: Electrical;
+    signal l2: Electrical;
+    signal l4: Electrical;
+    signal s1: Electrical;
+    signal s2: Electrical;
+    signal s3: Electrical;
+}
+analog for RigCallees {
+    potential(a) +> 0.5;
+    potential(l1) +> early;
+    potential(l2) +> literal;
+    potential(l4) +> named;
+    potential(s1) +> v(chosen.sn);
+    potential(s2) +> v(matched.sn);
+    potential(s3) +> v(blocked.sn);
+}

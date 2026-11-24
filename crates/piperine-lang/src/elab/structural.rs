@@ -596,9 +596,11 @@ impl Elaboration<'_, '_> {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
         let mut found = Vec::new();
         for call in &data.instances {
-            let ExprKind::Call { callee, class: crate::pom::CallClass::Instance { module: Some(placed), via: Some(via) }, .. } = &self.design.expr_node(*call).kind else { continue };
-            if via == placed || self.is_module_param(*via) {
-                continue;
+            let ExprKind::Call { callee, class: crate::pom::CallClass::Instance { module: Some(placed), via }, .. } = &self.design.expr_node(*call).kind else { continue };
+            match via {
+                Some(via) if via == placed || self.is_module_param(*via) => continue,
+                None if !self.has_an_expression_head(*call) => continue,
+                _ => {}
             }
             // through the `let`s that hold the template (`let t = if sel { .. } else { .. }; t(x)`)
             self.collect_choice_params(*callee, &mut found, &mut Vec::new());
