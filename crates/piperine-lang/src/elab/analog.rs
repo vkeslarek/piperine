@@ -352,8 +352,9 @@ impl Elaboration<'_, '_> {
         Some(true)
     }
 
-    /// A node argument: a port or signal of the body, or ground.
+    /// A node argument: a port or signal of the body, or ground; parentheses around it name the same node (`v((x))`).
     pub(super) fn lower_terminal(&mut self, scope: &Scope, arg: ExprId) -> Option<Terminal> {
+        let arg = self.peel_parens(arg);
         let node = self.design.expr_node(arg).clone();
         let file = self.design.decl_data(node.owner).file;
         if let ExprKind::Field { .. } = &node.kind {

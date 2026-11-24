@@ -75,3 +75,14 @@ fn an_access_a_let_bound_nodes_nature_lacks_is_e0206() {
     assert_eq!(Elab::codes(&diagnostics), ["E0206"]);
     assert!(diagnostics[0].diagnostic.message.contains("declares no access `v`"), "{diagnostics:?}");
 }
+
+#[test]
+fn parentheses_around_a_node_argument_lower_to_the_node() {
+    // §1.5, §6 rule 4: `v((x))`, `v((y))` with `let y = x;`, `v((c0.sn))` and `v((q)) +> 1.0` lower to the IR the forms without the
+    // parentheses lower to
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    let design = |statements: &str| format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; signal q: Electrical; }}\nanalog for Top {{ {statements} }}");
+    let wrapped = Elab::ir(&design("let y = x; i(p, gnd) +> v((x)) + v((y)) + v((c0.sn)); v((q)) +> 1.0;"), "Top").print_structural();
+    let bare = Elab::ir(&design("i(p, gnd) +> v(x) + v(x) + v(c0.sn); v(q) +> 1.0;"), "Top").print_structural();
+    assert_eq!(wrapped, bare);
+}

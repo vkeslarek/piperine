@@ -233,3 +233,16 @@ fn an_access_a_let_bound_nodes_nature_lacks_is_refused_as_for_the_node() {
         }
     }
 }
+
+#[test]
+fn parentheses_around_a_node_argument_name_the_node() {
+    // §1.5 (a parenthesized expression is the expression), §6 rule 4: `v((x))`, `v((y))`, `v((c0.sn))` and `v((q)) +> ..` probe and
+    // contribute as without the parentheses, in a plain module and through a template
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for src in [
+        format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; signal q: Electrical; }}\nanalog for Top {{ let y = x; i(p, gnd) +> v((x)) + v((y)) + v((c0.sn)) + v((x), (p)); v((q)) +> 1.0; }}"),
+        format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v((c0.sn)) + v((y)); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
+    ] {
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+    }
+}
