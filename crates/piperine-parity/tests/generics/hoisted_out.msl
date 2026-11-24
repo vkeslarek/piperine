@@ -24,6 +24,9 @@ digital for HoldBench { on clk.rise() { emit!("seen", value = q.unwrap_or(0u8), 
 module Bank<const ROWS: usize>(in clk: Bit, out word: [Bit; ROWS] = [false; ROWS]) {}
 digital<ROWS> for Bank<ROWS> { on clk.rise() { for k in 0..ROWS { word[k] <- true; } } }
 
+// Holds its `out` array at the first value: the row of the bench no `Bank` writes needs a driver of its own (§3.3.4).
+module Idle<const ROWS: usize>(out word: [Bit; ROWS] = [false; ROWS]) {}
+
 module WindowBench() {
     signal clk: Bit;
     signal whole: [Bit; 4];
@@ -31,6 +34,7 @@ module WindowBench() {
     let osc = Osc(clk) { f: 10G };
     let all = Bank::<4>(clk, whole);
     let row = Bank::<3>(clk, grid[1]);
+    let rest = Idle::<3>(grid[0]);
 }
 digital for WindowBench {
     on clk.rise() {
