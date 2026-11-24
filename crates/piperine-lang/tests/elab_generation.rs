@@ -10,7 +10,6 @@ mod support;
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::DesignDiagnostic;
-use piperine_lang::types::UnfinishedForm;
 use support::Elab;
 
 /// Sources elaborated with generation in a body.
@@ -127,7 +126,7 @@ fn a_generation_recursion_that_does_not_end_is_e0341() {
     assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Loop")), "{found:?}");
 }
 
-/// Sources whose `digital` blocks hold generation, elaborated with the form admitted until T80.
+/// Sources whose `digital` blocks hold generation.
 struct AdmittedDigital;
 
 impl AdmittedDigital {
@@ -135,7 +134,7 @@ impl AdmittedDigital {
     fn ir(src: &str) -> Ir {
         let design = Elab::design(&format!("{}{src}", Admitted::HEAD));
         assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
-        let ir = Elaborator::new(&design).admitting(&[UnfinishedForm::DigitalGeneration]).run("Top").unwrap_or_else(|found| panic!("elaboration refused: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        let ir = Elaborator::new(&design).run("Top").unwrap_or_else(|found| panic!("elaboration refused: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
         assert!(ir.check().is_empty(), "{:?}", ir.check());
         ir
     }

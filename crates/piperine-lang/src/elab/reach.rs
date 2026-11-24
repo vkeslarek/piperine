@@ -90,7 +90,7 @@ impl Elaboration<'_, '_> {
 
     /// The frame of the child a field read `c.x` names and the item `x` of it. `None` after a
     /// diagnostic.
-    fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
+    pub(super) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Field { expr: receiver, res: Resolution::Decl(item), .. } = &node.kind else {
             self.unsupported(scope.file, node.span, "a field access that is not an item of a placed module");
@@ -132,10 +132,68 @@ impl Elaboration<'_, '_> {
                 frame.params.insert(*key, value);
             }
         }
+        // an instance of a generic module reads its names under its own arguments
+        if self.is_generic_module(module) {
+            let instance = self.module_instance(call, module)?;
+            frame.substitution = self.instance_substitution(instance.item, &instance.arguments);
+        }
         self.frames.push(frame);
         let index = self.frames.len() - 1;
         self.reach_frames.insert((scope.frame, call), index);
         Some(index)
+    }
+
+    /// The nodes of the array of nodes `decl` of the reach frame `frame`, made the first time: one node of the body for each
+    /// element, named by the child's path, each bound to the child's own once it is placed. `false` when `decl` is no array
+    /// of nodes of a child (a diagnostic was reported when its length does not fold).
+    pub(super) fn reach_node_array(&mut self, frame: usize, decl: DeclId) -> bool {
+        if self.frames[frame].node_shapes.contains_key(&decl) {
+            return true;
+        }
+        let Some(child) = self.frames[frame].child else { return false };
+        let outer = self.consts.set_substitution(self.frames[frame].substitution.clone());
+        let found = self.consts.typed_node_array(decl).map(|array| (self.declared_shape(&array, frame, decl, "nodes"), self.own_node_offset(frame, decl), array));
+        self.consts.set_substitution(outer);
+        let Some((Some(shape), Some(offset), array)) = found else { return false };
+        let crate::types::Ty::Node(nature) = array.innermost().clone() else { return false };
+        let Some(nature) = self.nature(nature) else { return false };
+        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let first = self.structure.nodes.len() as u32;
+        for flat in 0..shape.count() {
+            let element = format!("{}{name}{}", self.frames[frame].prefix, shape.subscripts(flat));
+            let origin = self.locator.decl(decl);
+            let spec = BodyNode { name: element.clone(), nature, role: NodeRole::Reached, init: None, origin: origin.clone() };
+            let plan = NodePlan { name: element, role: NodeRole::Reached, nature, init: None, origin };
+            self.structure.nodes.push((spec, plan));
+            self.structure.reaches.push(Reach { child, item: ReachedItem::Node { node: first + flat as u32, child_node: offset + flat as u32 } });
+        }
+        self.frames[frame].nodes.insert(decl, Terminal::Node(first));
+        self.frames[frame].node_shapes.insert(decl, shape);
+        true
+    }
+
+    /// The index the first node of `decl`, a node or an array of nodes of the module of the reach frame `frame`, takes among the
+    /// nodes of the child's body: the nodes its node ports and node signals have before it, an array counting each element.
+    fn own_node_offset(&mut self, frame: usize, decl: DeclId) -> Option<u32> {
+        let module = self.frames[frame].module;
+        let children = self.design.decl_data(module).children.clone();
+        let is = |this: &Self, c: &DeclId, port: bool| match this.design.decl_data(*c).kind {
+            DeclKind::Port(_) => port && this.types.carrier(*c).is_none_or(|_| this.types.node_array(*c).is_some()),
+            DeclKind::Signal(_) => !port && this.types.carrier(*c).is_none_or(|_| this.types.node_array(*c).is_some()),
+            _ => false,
+        };
+        let ordered: Vec<DeclId> = children.iter().filter(|c| is(self, c, true)).chain(children.iter().filter(|c| is(self, c, false))).copied().collect();
+        let mut offset = 0u32;
+        for earlier in ordered {
+            if earlier == decl {
+                return Some(offset);
+            }
+            offset += match self.consts.typed_node_array(earlier) {
+                Some(array) => self.shape_in(&array, frame)?.count() as u32,
+                None => 1,
+            };
+        }
+        None
     }
 
     /// The `let` binding `receiver` names and the placement call that is its whole value.

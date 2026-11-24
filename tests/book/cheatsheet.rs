@@ -41,16 +41,6 @@ struct Surroundings;
 impl Surroundings {
     /// A source and a resistor.
     const PARTS: &'static str = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\n";
-
-    /// The diagnostics `model` gives for its top `Top` as `(code, message)`, which must be a refusal.
-    fn refusals(model: &Model, row: &str) -> Vec<(String, String)> {
-        Refusal::of(model.run(Commands::operating_point()), row)
-    }
-
-    /// Whether `given` holds the diagnostic `message` under `code`.
-    fn holds(given: &[(String, String)], code: &str, message: &str) -> bool {
-        given.contains(&(code.to_string(), message.to_string()))
-    }
 }
 
 #[test]

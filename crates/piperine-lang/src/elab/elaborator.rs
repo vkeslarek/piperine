@@ -16,25 +16,17 @@ use super::unroll::CallCycles;
 use super::variants::Variants;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
-use crate::types::{Types, UnfinishedForm};
+use crate::types::Types;
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
 #[derive(Debug, Clone)]
 pub struct Elaborator<'d> {
     design: &'d Design,
-    /// The unfinished forms the type check admits: none for production, the ones a test names otherwise.
-    forms: Vec<UnfinishedForm>,
 }
 
 impl<'d> Elaborator<'d> {
     pub fn new(design: &'d Design) -> Self {
-        Elaborator { design, forms: Vec::new() }
-    }
-
-    /// This elaborator with the unfinished `forms` admitted by its type check (the gate of generics phase C; tests only).
-    pub fn admitting(mut self, forms: &[UnfinishedForm]) -> Self {
-        self.forms = forms.to_vec();
-        self
+        Elaborator { design }
     }
 
     /// Elaborate `top`, a module of the root crate.
@@ -50,7 +42,7 @@ impl<'d> Elaborator<'d> {
     /// [`run`](Self::run) with the params a host bound before the run: a binding of a key param
     /// selects the variant of its value at that instance (`Overrides`); any other is ignored.
     pub fn run_with(self, top: &str, overrides: &Overrides) -> Result<Ir, Vec<DesignDiagnostic>> {
-        let types = Types::check_admitting(self.design, top, &self.forms)?;
+        let types = Types::check(self.design, top)?;
         let top_decl = types.reached()[0];
         Elaboration::new(self.design, &types, overrides.clone()).run(top_decl)
     }

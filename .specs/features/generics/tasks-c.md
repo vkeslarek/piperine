@@ -780,9 +780,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_generated_bank_reacts_per_element` and `generation_in_a_digital_block_runs_from_every_entry` pass under `**Run srcgenr**`
-- [ ] `the_half_reactions_report_each_stage_in_time_order` passes under `**Run bookmodules**`
-- [ ] Gate check passes: Quick
+- [x] `a_generated_bank_reacts_per_element` and `generation_in_a_digital_block_runs_from_every_entry` pass under `**Run srcgenr**`
+- [x] `the_half_reactions_report_each_stage_in_time_order` passes under `**Run bookmodules**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

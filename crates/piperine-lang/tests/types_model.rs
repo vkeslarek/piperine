@@ -12,7 +12,7 @@ mod generic_sources;
 
 use generic_sources::GenericSources;
 use piperine_lang::pom::{CrateGraph, Design, DesignDiagnostic};
-use piperine_lang::types::{Types, UnfinishedForm, UnfinishedForms};
+use piperine_lang::types::Types;
 
 /// The natures every source below places in the open.
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
@@ -121,18 +121,4 @@ fn an_unreached_generic_module_with_an_error_fails_the_model_check() {
     assert_eq!(GenericSources::codes_of(&found), ["E0180"], "{found:?}");
     let clean = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nmodule Top() { }\n";
     assert!(GenericSources::standard_found(clean).is_empty(), "a clean generic module passes the model check");
-}
-
-#[test]
-fn unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed() {
-    // the interim gate (design-c.md): generic modules left it (T71) and generation in a body (T77); production still refuses
-    // generation in a `digital` block as `main` does
-    assert_eq!(UnfinishedForms::IN_FORCE, [UnfinishedForm::DigitalGeneration]);
-    let placed = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nmodule Top() { signal d: Bit<Option<bool>> = None; let h = Hold::<Option<bool>>(d); }\n";
-    assert_eq!(GenericSources::codes_of(&GenericSources::standard_found(placed)), Vec::<String>::new(), "a placement of a generic module is typed by production: {placed}");
-    let generated = "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, a); } }\n";
-    assert_eq!(GenericSources::codes_of(&GenericSources::standard_found(generated)), Vec::<String>::new(), "generation in a body is typed by production: {generated}");
-    let digital = "module Top() { signal a: [Bit; 2]; }\ndigital for Top { for k in 0..2 { on a[k].rise() { } } }\n";
-    let found = GenericSources::standard_found(digital);
-    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("generation")), "{:?}", GenericSources::codes_of(&found));
 }

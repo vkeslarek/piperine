@@ -185,9 +185,22 @@ impl Elaboration<'_, '_> {
             at = self.peel_parens(inner);
         }
         indexes.reverse();
-        let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Some(None) };
-        let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
-        let Some(shape) = self.frames.get(scope.frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
+        // a name of this module, or a `pub` array of nodes of a placed child (`c.tap[k]`)
+        let (frame, decl) = match self.design.expr_node(at).kind.clone() {
+            ExprKind::Path(path) => {
+                let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
+                (scope.frame, decl)
+            }
+            ExprKind::Field { .. } => {
+                let (frame, item) = self.reached_item(scope, at)?;
+                if !self.reach_node_array(frame, item) {
+                    return Some(None);
+                }
+                (frame, item)
+            }
+            _ => return Some(None),
+        };
+        let Some(shape) = self.frames.get(frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
             // a node of an arm that was not elaborated (§8.2.24)
             if self.generated.of(decl).is_some_and(Vec::is_empty) {
                 self.refer_outside_generation(scope.file, self.design.expr_node(arg).span, decl, None);
@@ -196,7 +209,7 @@ impl Elaboration<'_, '_> {
             return Some(None);
         };
         let span = self.design.expr_node(arg).span;
-        let Some(piperine_ir::Terminal::Node(first)) = self.frame_node(scope.frame, decl) else { return Some(None) };
+        let Some(piperine_ir::Terminal::Node(first)) = self.frame_node(frame, decl) else { return Some(None) };
         let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
         // inside the generation `for`s that declare the array, the name is the iteration's element (§8.2.23)
         let implicit = self.implicit_ordinals(decl, &scope.ordinals);

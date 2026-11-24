@@ -1,0 +1,22 @@
+//! Generation around the reactions of a `digital` block (generics GN-19): a bank of three lines, each a flip-flop of its own
+//! element. Line `k` toggles every `k + 1` ns, so it rises at `k + 1` ns, and its reactions run for that line only. The expected
+//! values are computed by the test, from the rule it cites.
+
+module Bench() {
+    signal lines: [Bit; 3] = [false; 3];
+    signal latched: [Bit<u8>; 3] = [0; 3];
+    signal order: [Bit<u8>; 3] = [0; 3];
+    signal winner: Bit<u8> = 0;
+}
+
+digital for Bench {
+    for k in 0..3 {
+        on lines[k].changed() { lines[k] <- !lines[k] after ((k as f64) + 1.0) * 1n; }
+        on lines[k].rise() { latched[k] <- (k as u8) + 10; }
+        // two reactions of one iteration commit the same element at one instant: the later in source order wins
+        on lines[k].rise() { order[k] <- 1; }
+        on lines[k].rise() { order[k] <- 2; }
+        // the lines `0` and `2` rise together at 3 ns: the later iteration wins
+        on lines[k].rise() { winner <- (k as u8) + 1; }
+    }
+}

@@ -76,8 +76,6 @@ pub(super) struct Checker<'d> {
     pub(super) generic_item: Option<DeclId>,
     /// The arguments of the generic module whose placement is being connected: the ports are typed under it (GN-13).
     pub(super) placement_substitution: Option<super::Substitution>,
-    /// The unfinished forms this check admits (`unfinished.rs`): every other one is refused with `main`'s `P0001`.
-    pub(super) forms: super::UnfinishedForms,
     /// What each generic function defers to its instantiations.
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The instantiation each call of a generic function makes (§3.8.10).
@@ -166,7 +164,7 @@ pub(super) struct Checker<'d> {
 }
 
 impl<'d> Checker<'d> {
-    pub(super) fn new(design: &'d Design, forms: super::UnfinishedForms) -> Self {
+    pub(super) fn new(design: &'d Design) -> Self {
         Checker {
             design,
             exprs: vec![None; design.expr_count()],
@@ -183,7 +181,6 @@ impl<'d> Checker<'d> {
             written: BTreeMap::new(),
             generic_item: None,
             placement_substitution: None,
-            forms,
             obligations: BTreeMap::new(),
             instantiations: BTreeMap::new(),
             impls: std::rc::Rc::new(super::ImplTable::new(design)),

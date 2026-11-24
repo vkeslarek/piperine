@@ -358,12 +358,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type), then its `flip` and three `E0222` for the definitions through its members; the generic module `Slice` runs |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
-| modules#2 | L31 | `generics` | generation `for` in a `digital` block is `P0001` (the generation of the ladder's body runs) |
 | modules#10 | L32 | `generics` | `MemoryBank`: the `Cell` struct with carrier fields (bundle, L25) is `P0001`, the placement through the template `cell` is `P0001` and the template `C` is `E0181` (cannot infer, phase D); the generic module, the generation `for` of its body and the arrays of carriers run |
 | modules#12 | L32 | `generics` | `nch(0.13u, 2u)(d, g, s, b)`: placement through a template value or a function is `P0001` |
 | modules#14 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |
-| modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
-| modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
 | modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` implements them (its GN-26 AC 3 flips this row) |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function are `P0001` and the `Fn` bound of `C` is `E0187` (phase D); the struct `Cell` with carrier fields is `P0001` (bundle, L25); the generic module runs |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |

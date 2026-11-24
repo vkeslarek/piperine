@@ -12,24 +12,22 @@
 use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 
 use super::check::Checker;
-use super::UnfinishedForms;
 
 /// One pass over the items of a design that no top need reach.
 pub(super) struct ModelCheck<'d> {
     design: &'d Design,
-    forms: UnfinishedForms,
 }
 
 impl<'d> ModelCheck<'d> {
     /// A check over every item of `design`.
-    pub(super) fn new(design: &'d Design, forms: UnfinishedForms) -> Self {
-        ModelCheck { design, forms }
+    pub(super) fn new(design: &'d Design) -> Self {
+        ModelCheck { design }
     }
 
     /// Every seeded item checked: `Ok` when none has a diagnostic.
     pub(super) fn run(self) -> Result<(), Vec<DesignDiagnostic>> {
         let items = self.items();
-        let diagnostics = Checker::new(self.design, self.forms.clone()).run_model(&items);
+        let diagnostics = Checker::new(self.design).run_model(&items);
         if diagnostics.is_empty() { Ok(()) } else { Err(diagnostics) }
     }
 

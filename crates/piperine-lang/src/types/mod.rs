@@ -52,9 +52,9 @@ mod result;
 mod substitution;
 mod table;
 mod traits;
-mod ty; mod unfinished;
+mod ty;
 pub(crate) mod unsupported;
 
 pub(crate) use self::logic_pattern::LogicPattern;
-pub use self::{unfinished::{UnfinishedForm, UnfinishedForms}, traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, obligations::Obligation, substitution::Substitution};
+pub use self::{traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, obligations::Obligation, substitution::Substitution};
 pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

@@ -147,3 +147,47 @@ fn the_generic_ladder_equals_the_ladder_written_out() {
         assert!(last[0] > 0.0 && last[0] < 1.0, "the output of the {sections}-section ladder is charging at 5 us: {last:?}");
     }
 }
+
+/// The bank of lines of `tests/generation/bank_digital.msl`, run for 4 ns.
+struct Bank;
+
+impl Bank {
+    /// One nanosecond in the ticks the changes are stamped in.
+    const NS: i64 = 1_000_000;
+
+    /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&GenerationModels::project("bank_digital.msl"), "Bench");
+        let seen = built.run(4e-9, 0.5e-9);
+        support::transient(&seen, &format!("Bench.{name}"))
+    }
+}
+
+#[test]
+fn a_generated_bank_reacts_per_element() {
+    // GN-19 AC 1, AC 2 (§12.1.2): the reactions of iteration `k` latch element `k` when line `k` rises, at `k + 1` ns: element
+    // `k` becomes `k + 10` then and no other element changes (each element's net has its own changes); of the two reactions of one iteration the later commits last
+    // (`order[k]` is 2 and was never left at 1); the lines `0` and `2` rise together at 3 ns and the later iteration wins
+    for k in 0..3_i64 {
+        let latched = Bank::changes(&format!("latched[{k}]"));
+        assert_eq!(latched, vec![((k + 1) * Bank::NS, vec![(k + 10) as u8])], "element {k} latches its own value when its line rises");
+        let order = Bank::changes(&format!("order[{k}]"));
+        assert_eq!(order, vec![((k + 1) * Bank::NS, vec![2])], "element {k} takes the later commit and never held the earlier one");
+    }
+    let winner = Bank::changes("winner");
+    assert_eq!(winner, vec![(Bank::NS, vec![1]), (2 * Bank::NS, vec![2]), (3 * Bank::NS, vec![3])]);
+}
+
+#[test]
+fn generation_in_a_digital_block_runs_from_every_entry() {
+    // GN-19 (design-c "Interim"): with the last unfinished form closed, the plain entries take generation in a `digital` block:
+    // the whole-model check, the check from a top, the elaboration and the compiled run; superseding the pin
+    // `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed`, which listed it as refused
+    let project = GenerationModels::project("bank_digital.msl");
+    let design = project.design().unwrap_or_else(|r| panic!("{r}"));
+    piperine_lang::types::Types::check_model(&design).unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    piperine_lang::types::Types::check(&design, "Bench").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let ir = project.elaborate("Bench").unwrap_or_else(|r| panic!("{r}"));
+    assert!(ir.instance_at("Bench").is_some_and(|bench| bench.body().reactions().len() == 15), "five reactions for each of the three iterations");
+    project.compile("Bench").unwrap_or_else(|r| panic!("{r}"));
+}

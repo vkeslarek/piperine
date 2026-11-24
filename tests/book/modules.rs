@@ -19,11 +19,12 @@ mod support {
     pub mod standard_library;
 }
 
-use piperine::Overrides;
+use piperine::{Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
 use support::printed::Printed;
+use support::records::Fields;
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -86,18 +87,31 @@ fn the_ladder_runs_for_an_operating_point_and_a_sweep() {
 }
 
 #[test]
-fn the_half_reactions_are_refused_for_their_digital_generation() {
-    // modules#2 (refused): the digital block that reports when each tap passes half of the step;
-    // modules~87ce6f6e "Swap the DC source for the Step ... and add a block that reports when each tap
-    // passes half of the step" and modules~3f8e84ba "The stream gets one record per stage" (refused with
-    // it). Generation in a module body runs since T77: the `digital` block is the `P0001` left (L31, T80)
+fn the_half_reactions_report_each_stage_in_time_order() {
+    // modules#2 (run): the digital block that reports when each tap passes half of the step; modules~87ce6f6e "Swap the DC source
+    // for the Step ... and add a block that reports when each tap passes half of the step" and modules~3f8e84ba "The stream gets
+    // one record per stage": three reactions, one per tap, and one record per stage, `stage=1` to `stage=3`, in time order.
+    // The source is the ladder's own with its `Vdc` swapped for a step of 1 V at 1 us (a ramp of 1 ns, which keeps the solve
+    // continuous); the times the Book leaves to the reader are checked against its own rule of thumb (modules~1a89f2ad)
     let chapter = Chapter::read();
-    let model = chapter.wrapped("ladder.msl", &format!("{}\n", chapter.text("modules#1")), "modules#2", "");
-    let transient = Overrides { analysis: Some("transient".to_string()), stop: Some(20e-6), streams: vec!["half".to_string()], ..Overrides::default() };
-    let given = Refusal::of(model.run(transient), "modules#2");
-    let wanted = "generation `for`/`if` in a `digital` block is not supported yet";
-    assert_eq!(given, [("P0001".to_string(), wanted.to_string())], "exactly the generation of the digital block");
-    Refusal::expect(model.run(Overrides { analysis: Some("transient".to_string()), stop: Some(20e-6), streams: vec!["half".to_string()], ..Overrides::default() }), "modules#2", "P0001", wanted);
+    let step = "module StepSource(p: Electrical) { at: f64 = 1u; rise: f64 = 1n; }\nanalog for StepSource { v(p) +> if now() < at { 0.0 } else if now() < at + rise { (now() - at) / rise } else { 1.0 }; }\n";
+    let ladder = chapter.text("modules#1").replace("let src = Vdc(vin) { dc: 1.0 };", "let src = StepSource(vin);");
+    assert_ne!(ladder, chapter.text("modules#1"), "the listing places its DC source as written");
+    let model = chapter.wrapped("ladder.msl", &format!("{step}{ladder}\n"), "modules#2", "");
+    let ran = model.run(Overrides { analysis: Some("transient".to_string()), stop: Some(20e-6), streams: vec!["half".to_string()], ..Overrides::default() }).unwrap_or_else(|failure| panic!("{:?}", Refusal::of(Err(failure), "modules#2")));
+    let half = ran.stream("half");
+    assert_eq!(half.len(), 3, "one record per tap: {:?}", half.iter().map(|record| &record.fields).collect::<Vec<_>>());
+    let stages: Vec<Field> = half.iter().map(|record| Fields::of(record, "stage").clone()).collect();
+    assert_eq!(stages, [Field::Int(1), Field::Int(2), Field::Int(3)], "the stages in order");
+    let times: Vec<f64> = half.iter().map(|record| Fields::real(record, "t")).collect();
+    assert!(times.windows(2).all(|pair| pair[0] < pair[1]), "the edge reaches the taps one after another: {times:?}");
+    // 0.69 times the Elmore delay of 3, 5 and 6 times r * c after the step at 1 us: the rule over-estimates a ladder
+    // (every tap is loaded by the sections behind it), so the times lie between a half of it and all of it
+    for (time, elmore) in times.iter().zip([3.0, 5.0, 6.0]) {
+        let rule = 0.69 * elmore * 1e3 * 1e-9;
+        let after = time - 1e-6;
+        assert!(after > 0.5 * rule && after < 1.1 * rule, "{after:e} s after the step, against the rule's {rule:e} s");
+    }
 }
 
 #[test]

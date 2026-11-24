@@ -7,7 +7,7 @@ use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, 
 
 use super::check;
 use super::model::ModelCheck;
-use super::{GenericValue, Intrinsic, Nominal, Ty, UnfinishedForm, UnfinishedForms};
+use super::{GenericValue, Intrinsic, Nominal, Ty};
 
 /// One instantiation of a generic item: the item and the arguments it is given, in the order of its
 /// parameters (§3.8.10: two uses with equal arguments are one instance).
@@ -238,12 +238,6 @@ impl<'d> Types<'d> {
     /// A design that already holds diagnostics gives them back and nothing is checked; so does
     /// a top that is not a module of the root crate (one diagnostic naming it).
     pub fn check(design: &'d Design, top: &str) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
-        Self::check_admitting(design, top, &[])
-    }
-
-    /// [`Types::check`] with the unfinished `forms` admitted (`unfinished.rs`): what a task's tests use before the form's
-    /// flip.
-    pub fn check_admitting(design: &'d Design, top: &str, forms: &[UnfinishedForm]) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
         if !design.diagnostics().is_empty() {
             return Err(design.diagnostics().to_vec());
         }
@@ -251,22 +245,17 @@ impl<'d> Types<'d> {
             let diagnostic = Diagnostic::new("P0003", format!("`{top}` is not a module of the root crate"), Span::new(0, 0), "no such top module");
             return Err(vec![DesignDiagnostic { file: FileId(0), diagnostic }]);
         };
-        check::Checker::new(design, UnfinishedForms::admitting(forms)).run(module.decl().id())
+        check::Checker::new(design).run(module.decl().id())
     }
 
     /// Check every module, function, `const` and `impl` function of every crate but `std`, reached
     /// from a top or not, and give back only the diagnostics (S3, GN-08): the table of a top is
     /// [`Types::check`]'s. A design that already holds diagnostics gives them back.
     pub fn check_model(design: &Design) -> Result<(), Vec<DesignDiagnostic>> {
-        Self::check_model_admitting(design, &[])
-    }
-
-    /// [`Types::check_model`] with the unfinished `forms` admitted (`unfinished.rs`).
-    pub fn check_model_admitting(design: &Design, forms: &[UnfinishedForm]) -> Result<(), Vec<DesignDiagnostic>> {
         if !design.diagnostics().is_empty() {
             return Err(design.diagnostics().to_vec());
         }
-        ModelCheck::new(design, UnfinishedForms::admitting(forms)).run()
+        ModelCheck::new(design).run()
     }
 
     /// The design the table was built over.
