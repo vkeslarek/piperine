@@ -738,8 +738,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generation_in_a_digital_block_is_typed_per_iteration` passes under `**Run typesgenr**`
-- [ ] Gate check passes: Quick
+- [x] `generation_in_a_digital_block_is_typed_per_iteration` passes under `**Run typesgenr**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -10,7 +10,7 @@ mod generic_sources;
 
 use generic_sources::GenericSources;
 use piperine_lang::pom::{DeclKind, Design};
-use piperine_lang::types::Types;
+use piperine_lang::types::{Types, UnfinishedForm};
 
 /// Sources checked with generation in a module body.
 struct Admitted;
@@ -77,4 +77,26 @@ fn a_param_inside_generation_is_e0322() {
     let src = format!("{PARTS}module Top() {{\n  signal a: E;\n  for k in 0..2 {{ extra: f64 = 1.0; let rk = Resistor(a, gnd) {{ r: 1k }}; }}\n}}\n");
     let found = Admitted::pairs(&src);
     assert!(found.iter().any(|(code, message)| code == "E0322" && message.contains("extra")), "{found:?}");
+}
+
+/// Sources checked with generation in a `digital` block admitted: the form is behind the unfinished-forms gate until T80.
+struct AdmittedDigital;
+
+impl AdmittedDigital {
+    /// The codes and messages of the whole-model check of `src` with the generation of `digital` blocks admitted.
+    fn pairs(src: &str) -> Vec<(String, String)> {
+        GenericSources::admitting_found(src, &[UnfinishedForm::DigitalGeneration]).iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+    }
+}
+
+#[test]
+fn generation_in_a_digital_block_is_typed_per_iteration() {
+    // GN-19 AC 1 (§12.1.14): one reaction per iteration, `k` a constant of the range's integer type, the event over the element of
+    // an array of carriers; a range that reads a carrier is `E0340`
+    let src = "module Top() {\n  signal lines: [Bit; 3];\n  signal hits: [Bit<u8>; 3] = [0; 3];\n}\ndigital for Top {\n  for k in 0..3 { on lines[k].rise() { hits[k] <- (k as u8) + 1; } }\n}\n";
+    assert_eq!(AdmittedDigital::pairs(src), vec![], "{:?}", AdmittedDigital::pairs(src));
+    let nested = "module Top() {\n  signal lines: [Bit; 2];\n  count: usize = 2;\n}\ndigital for Top {\n  for k in 0..count { if k == 0 { on lines[k].rise() { } } else { on lines[k].fall() { } } }\n}\n";
+    assert_eq!(AdmittedDigital::pairs(nested), vec![], "{:?}", AdmittedDigital::pairs(nested));
+    let runtime = "module Top() {\n  signal lines: [Bit; 2];\n  signal count: Bit<u8> = 2;\n}\ndigital for Top {\n  for k in 0..count { on lines[k].rise() { } }\n}\n";
+    assert!(AdmittedDigital::pairs(runtime).iter().any(|(code, message)| code == "E0340" && message.contains("`count`")), "{:?}", AdmittedDigital::pairs(runtime));
 }
