@@ -40,6 +40,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookwelcome**: `cargo test -p piperine --test book_welcome`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run typescarrarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
+**Run elabcarrarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
 **Run paritycarrarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`
@@ -1014,6 +1015,16 @@ Proof: run bookgenerics | test a_form_not_run_yet_is_stopped_before_the_run_with
 Proof: run bookwelcome | test the_status_paragraph_lists_what_is_still_refused_and_one_item_runs ... ok
 Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
+**C128** - The per-element `E0187` holds when the array length is a generic argument or a param and when elements are named through a generation index: `[Bit; N]` with only `b[0]` placed as `M::<4>` is `E0187` naming `b[1..4]` and `M::<4>`; a param length `[Bit; n]` at `n = 4` the same (`Wide~n=4`); an element handed in a generic module the same; `for k in 0..2` over `[Bit; 4]` names `y[2..4]`; every element named through the loop or a length the drive covers is clean. (§3.3.4, §8.2.20; round 3 finding 12; design-c DC11)
+Proof: run elabcarrarr | test a_generic_length_array_is_judged_per_element_at_each_instance ... ok
+Proof: run elabcarrarr | test a_param_length_array_is_judged_per_element_at_each_variant ... ok
+Proof: run elabcarrarr | test a_generation_index_names_the_elements_it_reaches ... ok
+
+**C129** - An initial value of an array of carriers is the value of the elements no `out` port holds: it is `E0223` only once every element is handed (a generic length judged per instance), and an array with one element handed and another committed by the parent runs with its initial value. (§5.2.6, §8.2.21; round 3 finding 13; design-c DC11)
+Proof: run typescarrarr | test an_initial_value_is_the_value_of_the_elements_no_out_port_holds_and_e0223_once_all_are_handed ... ok
+Proof: run elabcarrarr | test an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_element_is_e0223 ... ok
+Proof: run paritycarrarr | test an_element_given_to_an_out_port_is_driven_by_the_child ... ok
+
 ---
 
 ## Handoff
@@ -1092,7 +1103,7 @@ correct (§3.3.4, MD-78): the test harnesses (`signal clk: Bit;` read only by `i
 corrected in T71 (`Dff` at `Option<u8>`, `Dff::<u8>` proven `E0187`), plus two more Book bugs the same rule exposes:
 cheatsheet#2 `signal s: [Bit; N]` and natures#8 `Slice<T: Repr>` with `signal buf: Bit<T>` (T116).
 (3) New tasks T116 (Book amendments) and T117 (named connection); ids continue after phase E's T115 so no id moves. Phase C
-is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C127. B10 = T59, T116, T60, T61, T117, T62, T63, T64.
+is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C129. B10 = T59, T116, T60, T61, T117, T62, T63, T64.
 (4) Continue from the draft: merge `origin/wip/generics-c-b10` into T60/T61's work, then put `ModelCheck`'s seeding and the
 placement typing behind the gate (the draft's `refuse_generic_placements` becomes `UnfinishedForms`); its `GAPS.md` S3 drop
 and `gaps_drops_s3` move to T71.
