@@ -291,7 +291,7 @@ fn a_library_module_on_a_nature_without_resolve_driven_is_e0187() {
     // not `Driven`, so a `Tribuf` placed on it is `E0187` naming the nature and the bound
     let text = format!("{TWO_IMPLS}module Top() {{ signal n: AndWire; let t = Tribuf(n, true, true); }}");
     let diagnostics = Source::new(&text).diagnostics();
-    let found: Vec<&str> = diagnostics.iter().map(|d| d.diagnostic.code.as_str()).collect();
+    let found: Vec<String> = diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect();
     assert_eq!(found, ["E0187"], "{diagnostics:?}");
     let message = &diagnostics[0].diagnostic.message;
     assert!(message.contains("AndWire") && message.contains("Resolve<Driven>"), "{message}");
