@@ -899,8 +899,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `gaps_drops_what_composite_values_phase_d_closed` passes under `**Run docs**`
-- [ ] Gate check passes: Task (`piperine-cli`), then the Batch gate
+- [x] `gaps_drops_what_composite_values_phase_d_closed` passes under `**Run docs**`
+- [x] Gate check passes: Task (`piperine-cli`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
