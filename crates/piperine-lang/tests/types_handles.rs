@@ -215,3 +215,21 @@ fn a_let_bound_to_a_node_is_a_contribution_target() {
         assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
     }
 }
+
+#[test]
+fn an_access_a_let_bound_nodes_nature_lacks_is_refused_as_for_the_node() {
+    // §6 rule 4, §6 rule 10, §11 rule 11: through `let y = t;` the access is judged on `t`'s nature as it is for `t` named
+    // directly: `v(y)` on `Thermal` is `E0206`, and `i(y) +> ..` on a nature without `flow` is `E0413`
+    let signal_flow = "nature Th { potential: Te { access: te, units: \"K\", abstol: 1u } }\n";
+    for (direct, alias, code) in [
+        ("i(p, gnd) +> v(t);", "let y = t; i(p, gnd) +> v(y);", "E0206"),
+        ("i(s) +> 1.0;", "let y = s; i(y) +> 1.0;", "E0413"),
+    ] {
+        for statement in [direct, alias] {
+            let src = format!("{signal_flow}module Top() {{ signal t: Thermal; signal s: Th; signal p: Electrical; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(p); }}");
+            let mut codes: Vec<String> = HandleSources::found(&src).into_iter().map(|(code, _)| code).collect();
+            codes.dedup();
+            assert_eq!(codes, [code], "{statement}");
+        }
+    }
+}

@@ -691,6 +691,10 @@ Proof: run typeshandles | test a_let_bound_to_a_node_is_a_contribution_target ..
 Proof: run elabhandles | test a_contribution_through_a_let_bound_to_a_node_is_the_nodes ... ok
 Proof: run srctempl | test a_let_bound_to_a_node_is_a_contribution_target ... ok
 
+**C115** - Through a `let` bound to a node an access is judged on the node's nature as for the node named directly: one the nature lacks is `E0206`, a flow contribution on a nature without `flow` is `E0413`. (§6 rule 4, §6 rule 10, §11 rule 11; fix round 5, finding 18)
+Proof: run typeshandles | test an_access_a_let_bound_nodes_nature_lacks_is_refused_as_for_the_node ... ok
+Proof: run elabhandles | test an_access_a_let_bound_nodes_nature_lacks_is_e0206 ... ok
+
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 

@@ -66,3 +66,12 @@ fn a_contribution_through_a_let_bound_to_a_node_is_the_nodes() {
     let template = Elab::ir(&format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); }}\nanalog<C> for Bank<C> {{ let y = c0.sn; v(y) +> 1.0; }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"), "Top").print_structural();
     assert!(template.contains("branch b0 (c0.sn, gnd) potential") && template.contains("b0.potential +> direct 1.0"), "{template}");
 }
+
+#[test]
+fn an_access_a_let_bound_nodes_nature_lacks_is_e0206() {
+    // §6 rule 4, §6 rule 10: `let y = t; v(y)` with `t: Thermal` is refused as `v(t)` is, `E0206` at the access
+    let src = "module Top() { signal t: Thermal; signal p: Electrical; }\nanalog for Top { let y = t; i(p, gnd) +> v(y); }";
+    let diagnostics = Elab::run(src, "Top").expect_err("`Thermal` declares no `v`");
+    assert_eq!(Elab::codes(&diagnostics), ["E0206"]);
+    assert!(diagnostics[0].diagnostic.message.contains("declares no access `v`"), "{diagnostics:?}");
+}

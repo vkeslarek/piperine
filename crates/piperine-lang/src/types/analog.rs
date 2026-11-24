@@ -79,11 +79,16 @@ impl Checker<'_> {
             // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4); the role is
             // recorded for the elaborator, which reads a probe and a contribution target alike through it
             Resolution::Deferred(DeferReason::AmbiguousAccess) => match self.access_of_operand(*callee, args) {
-                Some((role, nature)) => {
+                OperandAccess::Found(role, nature) => {
                     self.access_roles.insert(*callee, role);
                     (role, Some(nature))
                 }
-                None => {
+                // `v(y)` with `let y = t;`, `t: Thermal`: what `v(t)` is at resolution (§6 rule 4, §6 rule 10, §11 rule 11)
+                OperandAccess::Missing(name) => {
+                    self.missing_access(file, *callee, &name, target);
+                    return None;
+                }
+                OperandAccess::NoNode => {
                     self.unsupported(file, node.span, "probe through an access that names several natures");
                     return None;
                 }
@@ -116,6 +121,15 @@ impl Checker<'_> {
                 }
                 None => {}
             }
+        }
+        // `i(y)` with `let y = t;`: the resolver named the one quantity of this access, the node's nature lacks it (§6 rule 10)
+        if let (Some(declared), Some(first)) = (nature, natures.first().copied())
+            && first != declared
+            && let Some(name) = self.access_name(*callee)
+            && self.access_role_in(first, &name).is_none()
+        {
+            self.missing_access(file, *callee, &name, target);
+            return None;
         }
         if natures.windows(2).any(|w| w[0] != w[1]) || nature.is_some_and(|q| natures.iter().any(|n| *n != q)) {
             self.coded(file, "E0240", node.span, "the nodes of a probe have different natures".to_string(), "nodes of two natures");
@@ -321,18 +335,65 @@ impl Checker<'_> {
     }
 }
 
+/// What the node a probe's first operand holds says of an access name the resolver left ambiguous.
+enum OperandAccess {
+    /// The nature has a quantity of that access: its role, and the nature.
+    Found(QuantityRole, DeclId),
+    /// The nature declares no access of that name, which is named.
+    Missing(String),
+    /// The operand is no node of a nature.
+    NoNode,
+}
+
 impl Checker<'_> {
     /// Whether every quantity the access name of `callee` stands for is a potential: the nature does not change the role.
-    /// The quantity an access name `callee` (`v`) names in the nature of the node its first operand holds, as its role and the
-    /// nature: a `let` bound to a node keeps the node's nature, so `v(y)` reads the potential of `y`'s nature. `None` when the
-    /// operand is no node of a nature, or that nature has no quantity of that access.
-    fn access_of_operand(&mut self, callee: ExprId, args: &[Arg]) -> Option<(QuantityRole, DeclId)> {
-        let Some(Ty::Node(nature)) = self.infer(args.first()?.value) else { return None };
+    /// The quantity an access name `callee` (`v`) names in the nature of the node its first operand holds: a `let` bound to a node
+    /// keeps the node's nature, so `v(y)` reads the potential of `y`'s nature.
+    fn access_of_operand(&mut self, callee: ExprId, args: &[Arg]) -> OperandAccess {
+        let Some(first) = args.first() else { return OperandAccess::NoNode };
+        let Some(Ty::Node(nature)) = self.infer(first.value) else { return OperandAccess::NoNode };
+        let Some(name) = self.access_name(callee) else { return OperandAccess::NoNode };
+        match self.access_role_in(nature, &name) {
+            Some(role) => OperandAccess::Found(role, nature),
+            None => OperandAccess::Missing(name),
+        }
+    }
+
+    /// The access name the callee `callee` of a probe writes (`v`, `i`).
+    fn access_name(&self, callee: ExprId) -> Option<String> {
         let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
-        let name = self.design.path_node(*path).segments.last()?.name.text.clone();
+        self.design.path_node(*path).segments.last().map(|segment| segment.name.text.clone())
+    }
+
+    /// The role of the quantity of `nature` that declares the access `name`, `None` when it declares none.
+    fn access_role_in(&self, nature: DeclId, name: &str) -> Option<QuantityRole> {
         self.design.decl_data(nature).children.iter().find_map(|child| match &self.design.decl_data(*child).kind {
-            DeclKind::Quantity(quantity) if quantity.attrs.iter().any(|a| a.name.text == "access" && matches!(&self.design.expr_node(a.value).kind, ExprKind::Path(p) if self.design.path_node(*p).segments.last().is_some_and(|s| s.name.text == name))) => Some((quantity.role, nature)),
+            DeclKind::Quantity(quantity) if self.is_accessed_as(quantity, name) => Some(quantity.role),
             _ => None,
+        })
+    }
+
+    /// The diagnostic of the access `name` (the callee `callee`) that the nature of the probed node lacks, as resolution gives it for
+    /// a node named directly: a flow access contributed to on a nature without `flow` is `E0413`, any other is `E0206`.
+    fn missing_access(&mut self, file: crate::pom::FileId, callee: ExprId, name: &str, target: bool) {
+        let span = self.design.expr_node(callee).span;
+        let flow = (0..self.design.decl_count()).any(|index| match &self.design.decl_data(DeclId(index as u32)).kind {
+            DeclKind::Quantity(quantity) => quantity.role == QuantityRole::Flow && self.is_accessed_as(quantity, name),
+            _ => false,
+        });
+        if target && flow {
+            let message = format!("a flow contribution needs a nature with a `flow`: the nature of the first argument declares none, so `{name}` cannot be contributed to it (§11 rule 11)");
+            self.coded(file, "E0413", span, message, "no flow on this nature");
+        } else {
+            self.coded(file, "E0206", span, format!("the nature of the first argument declares no access `{name}`"), "not an access of that nature");
+        }
+    }
+
+    /// Whether the quantity `quantity` declares the access name `name` (`access: v`).
+    fn is_accessed_as(&self, quantity: &crate::pom::QuantityData, name: &str) -> bool {
+        quantity.attrs.iter().filter(|attribute| attribute.name.text == "access").any(|attribute| match &self.design.expr_node(attribute.value).kind {
+            ExprKind::Path(path) => self.design.path_node(*path).segments.last().is_some_and(|segment| segment.name.text == name),
+            _ => false,
         })
     }
 
