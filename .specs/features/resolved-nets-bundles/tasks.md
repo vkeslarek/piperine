@@ -279,8 +279,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_literal_field_of_another_nature_is_e0263`, `a_literal_outside_a_connection_or_a_bundle_operand_is_e0264` and `bundles_of_different_types_do_not_connect` pass under `**Run typesbundles**`
-- [ ] Gate check passes: Quick
+- [x] `a_literal_field_of_another_nature_is_e0263`, `a_literal_outside_a_connection_or_a_bundle_operand_is_e0264` and `bundles_of_different_types_do_not_connect` pass under `**Run typesbundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

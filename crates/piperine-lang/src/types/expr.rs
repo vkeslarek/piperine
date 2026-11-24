@@ -258,6 +258,8 @@ impl Checker<'_> {
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::IncludeStr(_) => self.include_str(expr),
+            // a bundle literal is read only as a connection (`bundle.rs`), never as a value (§7 rules 8, 9)
+            ExprKind::Struct { class: StructClass::BundleLiteral, .. } => self.literal_outside_connection(expr),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
                 self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
                 None
@@ -609,6 +611,8 @@ impl Checker<'_> {
                     DeclKind::Param(p) => self.lower_type(p.ty),
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
                     DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
+                    // a bundle is no value (§7 rule 9)
+                    DeclKind::Port(_) | DeclKind::Signal(_) if self.design.is_bundle_owner(decl) => self.bundle_as_value(expr),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {

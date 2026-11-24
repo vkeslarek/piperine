@@ -138,4 +138,10 @@ impl Design {
             }
         }
     }
+
+    /// Whether `expr` is the receiver of a method call (`rx` of `rx.beat(clk)`).
+    pub(crate) fn is_method_receiver(&self, expr: ExprId) -> bool {
+        let parent = self.expr_parent.get(expr.index()).copied().flatten();
+        parent.is_some_and(|parent| matches!(&self.expr_node(parent).kind, ExprKind::MethodCall { recv, .. } if *recv == expr))
+    }
 }

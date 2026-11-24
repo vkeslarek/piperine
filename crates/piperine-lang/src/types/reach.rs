@@ -19,6 +19,9 @@ impl Checker<'_> {
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
         // a field of a bundle port or signal is the carrier or node its leaf stands for (§7 rule 12); the bundle is no value to read
         if let Some(leaf) = self.design.bundle_field(expr) {
+            if self.design.is_bundle_group(leaf) {
+                return self.bundle_as_value(expr);
+            }
             return self.item_type(leaf, file, node.span);
         }
         match res {

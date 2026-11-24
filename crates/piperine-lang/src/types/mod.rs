@@ -17,7 +17,7 @@ mod carrier;
 mod catalogue;
 mod check;
 mod class; mod classes;
-mod bounds;
+mod bounds; mod bundle;
 mod closures;
 mod coherence;
 mod compound;

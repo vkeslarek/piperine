@@ -318,7 +318,8 @@ impl Checker<'_> {
             DeclKind::Port(p) => Some((*c, p.ty, p.dir)),
             _ => None,
         }).collect();
-        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type_under_placement(*ty)).collect();
+        // a bundle port has no type of its own: its fields are the leaves it stands for (`bundle.rs`)
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(decl, ty, _)| if self.design.is_bundle_owner(*decl) { None } else { self.port_type_under_placement(*ty) }).collect();
         let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
@@ -343,6 +344,10 @@ impl Checker<'_> {
         for (index, kind) in kinds.iter().cloned().enumerate() {
             let Some(arg) = bound.at(index) else { continue };
             let (port_decl, _, dir) = ports[index];
+            if self.design.is_bundle_owner(port_decl) {
+                self.connect_bundle(arg.value, port_decl);
+                continue;
+            }
             match kind {
                 Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),

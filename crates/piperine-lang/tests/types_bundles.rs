@@ -107,3 +107,37 @@ fn a_carrier_method_on_a_field_applies_to_that_field() {
         Bundles::STREAM
     ));
 }
+
+#[test]
+fn a_literal_field_of_another_nature_is_e0263() {
+    // §7 rule 8: each field of a literal is a carrier of the field's nature (or a node of a compatible one)
+    let cell = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Leaf(c: Cell) { }\n";
+    Bundles::accepted(&format!("{cell}module Top(in w: Bit, b: Electrical) {{ let c = Leaf(Cell {{ wl: w, bl: b }}); }}"));
+    for (fields, at) in [("wl: b, bl: b", "wl: b"), ("wl: w, bl: w", "bl: w"), ("wl: wide, bl: b", "wl: wide")] {
+        let refused = Bundles::refused(&format!("{cell}module Top(in w: Bit, in wide: Bit<u8>, b: Electrical) {{ let c = Leaf(Cell {{ {fields} }}); }}"));
+        assert_eq!(refused, [("E0263".to_string(), at.to_string())], "{fields}");
+    }
+}
+
+#[test]
+fn a_literal_outside_a_connection_or_a_bundle_operand_is_e0264() {
+    // §7 rules 8 and 9: a literal is written only as a connection, and a bundle is no operand, argument or value
+    let cell = "struct Cell { in wl: Bit, bl: Electrical }\n";
+    let refused = Bundles::refused(&format!("{cell}module Top(in w: Bit, b: Electrical) {{ let c = Cell {{ wl: w, bl: b }}; }}"));
+    assert_eq!(refused, [("E0264".to_string(), "Cell { wl: w, bl: b }".to_string())]);
+    let refused = Bundles::refused(&format!("{}module Top(in s: Stream) {{ let x = s; }}", Bundles::STREAM));
+    assert_eq!(refused, [("E0264".to_string(), "s".to_string())]);
+    let refused = Bundles::refused(&format!("{}module Top(in s: Stream) {{ let x = s == s; }}", Bundles::STREAM));
+    assert_eq!(refused.iter().map(|c| c.0.as_str()).collect::<Vec<_>>(), ["E0264", "E0264"], "both operands: {refused:?}");
+    // a field is a carrier, not a bundle: reading it is fine
+    Bundles::accepted(&format!("{}module Top(in s: Stream) {{ let x = s.valid; }}", Bundles::STREAM));
+}
+
+#[test]
+fn bundles_of_different_types_do_not_connect() {
+    // §7 rule 14: a bundle connects to a port of its own `struct`, whatever the names of the fields
+    let items = "struct A { out x: Bit }\nstruct B { out x: Bit }\nmodule Child(p: A) { p.x = true; }\n";
+    Bundles::accepted(&format!("{items}module Top() {{ signal s: A; let c = Child(s); }}"));
+    let refused = Bundles::refused(&format!("{items}module Top(q: B) {{ q.x = true; let c = Child(q); }}"));
+    assert_eq!(refused, [("E0251".to_string(), "q".to_string())]);
+}

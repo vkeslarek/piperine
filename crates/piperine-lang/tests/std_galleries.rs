@@ -477,9 +477,10 @@ fn the_fences_generics_lifted_are_checked() {
 /// (`flip Stream<T>`, its fields typed by the struct's own `T`, `GAPS.md` L25, `resolved-nets-bundles` T19) and F.3's bundle
 /// `Cell` is read through a probe over several natures. F.3's template parameter `C: Fn(..)` and the placement through it are
 /// phase D, L32 (`generics`). The generic modules themselves check, and the non-generic bundles (`Cell`) type.
-const REMAINING_REFUSALS: [&str; 8] = [
+const REMAINING_REFUSALS: [&str; 9] = [
     "E.6 as `Slice`: P0001: `flip` type is not supported yet",
     "E.6 as `Slice`: E0337: mismatched types: expected `T`, found `T`",
+    "E.6 as `Slice`: P0001: a function on a bundle is not supported yet",
     "E.6 as `Slice`: E0432: mismatched types: expected `T`, found `T`",
     "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
     "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
