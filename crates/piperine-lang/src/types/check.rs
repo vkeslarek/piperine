@@ -125,6 +125,9 @@ pub(super) struct Checker<'d> {
     pub(super) template_items: BTreeMap<ExprId, Ty>,
     /// The role of each access name the resolver left ambiguous (`v` of `v(y)`, `y` a `let`), read from the node its probe names.
     pub(super) access_roles: BTreeMap<ExprId, crate::pom::QuantityRole>,
+    /// The `if`s, `match`es and blocks refused for choosing a node (`E0133`, `handles.rs`): an operand that is one is no second
+    /// diagnostic.
+    pub(super) chosen_nodes: BTreeSet<ExprId>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
     /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
@@ -214,6 +217,7 @@ impl<'d> Checker<'d> {
             template_locals: BTreeMap::new(),
             template_items: BTreeMap::new(),
             access_roles: BTreeMap::new(),
+            chosen_nodes: BTreeSet::new(),
             handles: BTreeSet::new(),
             bound_substitution: None,
             bound_arguments: BTreeMap::new(),

@@ -207,7 +207,17 @@ impl Checker<'_> {
         let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
         let message = format!("{form} whose result is a node chooses a node, and a node is hardware, never a value (§1.4.7): name the node itself");
         self.coded(file, "E0133", span, message, "a node chosen by an expression");
+        self.chosen_nodes.insert(expr);
         true
+    }
+
+    /// Whether the node operand `operand` was refused already: a node chosen by an expression (through parentheses), or a `let`
+    /// whose value was refused.
+    pub(super) fn operand_refused(&self, operand: ExprId) -> bool {
+        match &self.design.expr_node(operand).kind {
+            ExprKind::Paren(inner) => self.operand_refused(*inner),
+            _ => self.chosen_nodes.contains(&operand) || self.reads_poisoned(operand),
+        }
     }
 
     /// `E0133` for a function whose result type is a handle (a node or a carrier of a nature).

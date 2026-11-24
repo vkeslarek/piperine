@@ -96,3 +96,13 @@ fn a_node_chosen_at_run_time_is_e0133_not_an_elaboration_refusal() {
     assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
     assert_eq!(&src[diagnostics[0].diagnostic.span().range()], "if v(x) > 0.5 { x } else { p }");
 }
+
+#[test]
+fn a_node_chosen_at_a_probe_or_a_target_is_e0133_alone() {
+    // §1.4.7: `v(if ..)` read, `v(if ..) +> ..` and `i(if ..) +> ..` are refused with `E0133` at the `if`, and no `P0001` follows
+    for statement in ["i(p, gnd) +> v(if v(p) > 0.0 { x } else { p });", "v(if v(p) > 0.0 { x } else { p }) +> 1.0;", "i(if v(p) > 0.0 { x } else { p }) +> 1.0;"] {
+        let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; }}\nanalog for Top {{ {statement} }}");
+        let diagnostics = Elab::run(&src, "Top").expect_err("a node chosen at run time");
+        assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{statement}: {:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+    }
+}

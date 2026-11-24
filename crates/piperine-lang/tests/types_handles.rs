@@ -263,3 +263,26 @@ fn a_node_chosen_by_an_expression_is_e0133() {
         assert!(found[0].1.starts_with(&format!("{form} whose result is a node chooses a node")), "{statement}: {found:?}");
     }
 }
+
+#[test]
+fn a_node_chosen_at_a_node_argument_is_e0133_alone() {
+    // §1.4.7: an `if` written straight at a node argument (a probe read, a contribution target of either access, inside
+    // parentheses, as the second node, a placement's or an `Fn` bound's connection) is `E0133` and nothing else
+    let modules = "module R(a: Electrical, b: Electrical) { }\nanalog for R { i(a, b) +> v(a, b); }\n\
+                   module H<C: Fn(Electrical, Electrical)>(a: Electrical) { cell: C; signal b: Electrical; let c = cell(a, if v(a) > 0.0 { a } else { b }); }\n";
+    let choose = "if v(p) > 0.0 { x } else { p }";
+    for (body, analog) in [
+        ("", format!("i(p, gnd) +> v({choose});")),
+        ("", format!("v({choose}) +> 1.0;")),
+        ("", format!("i({choose}) +> 1.0;")),
+        ("", format!("i(p, gnd) +> v(({choose}));")),
+        ("", format!("i(p, gnd) +> v(x, {choose});")),
+        ("", format!("i(p, gnd) +> potential({choose});")),
+        ("let r = R(x, if k > 0.0 { x } else { p });", String::new()),
+        ("let h = H::<_>(x) { cell: R { } };", String::new()),
+    ] {
+        let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; {body} }}\nanalog for Top {{ {analog} }}");
+        let found = HandleSources::found(&src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{body}{analog}: {found:?}");
+    }
+}

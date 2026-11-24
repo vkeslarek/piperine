@@ -699,10 +699,12 @@ Proof: run elabhandles | test an_access_a_let_bound_nodes_nature_lacks_is_e0206 
 Proof: run typeshandles | test parentheses_around_a_node_argument_name_the_node ... ok
 Proof: run elabhandles | test parentheses_around_a_node_argument_lower_to_the_node ... ok
 
-**C117** - A node is never chosen by an expression: an `if`, a `match` or a block whose result is a node is `E0133` naming the form, at run time or over a param, with no second diagnostic; the spec says so (§1.4.7 and the `E0133` row, AFK default pending user review). (fix round 5, verifier's note)
+**C117** - A node is never chosen by an expression: an `if`, a `match` or a block whose result is a node is `E0133` naming the form, at run time or over a param, with no second diagnostic, also written straight at a probe, a contribution target or a connection (fix round 6, finding 20); the spec says so (§1.4.7 and the `E0133` row, AFK default pending user review). (fix round 5, verifier's note)
 Proof: run typeshandles | test a_node_chosen_by_an_expression_is_e0133 ... ok
 Proof: run elabhandles | test a_node_chosen_at_run_time_is_e0133_not_an_elaboration_refusal ... ok
 Proof: run spectext | test a_node_chosen_by_an_expression_is_e0133_in_the_spec ... ok
+Proof: run typeshandles | test a_node_chosen_at_a_node_argument_is_e0133_alone ... ok
+Proof: run elabhandles | test a_node_chosen_at_a_probe_or_a_target_is_e0133_alone ... ok
 
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
