@@ -23,7 +23,45 @@ impl Checker<'_> {
             }
             // A field of a value (§1.3.4): the type says whether it exists. A missing or private
             // item of a placed child already has its `E0343`.
+            // `bank.c0.sn` where `c0` is placed through a callable param (`cell: C`, `C: Fn(..)`): the module is the
+            // template's, known at elaboration, which resolves the item (`E0343` for a missing or private one, §8.4.8)
+            _ if self.placed_through_callable(*receiver) => {
+                self.infer_receiver(*receiver)?;
+                Some(Ty::AnyNode)
+            }
             _ => self.field_of_value(expr, *receiver, name),
+        }
+    }
+
+    /// Whether `receiver` (a name, possibly reached through a child: `c0`, `bank.c0`) is bound by a `let` to a call of a callable
+    /// param of a module: an instance of a module only the folded template names (§8.4.8).
+    pub(super) fn placed_through_callable(&mut self, receiver: ExprId) -> bool {
+        let mut at = receiver;
+        loop {
+            match &self.design.expr_node(at).kind {
+                ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => at = *inner,
+                _ => break,
+            }
+        }
+        let binding = match &self.design.expr_node(at).kind {
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) => decl,
+                _ => return false,
+            },
+            ExprKind::Field { res: Resolution::Decl(decl), .. } => *decl,
+            _ => return false,
+        };
+        let Some(parent) = self.design.decl_data(binding).parent else { return false };
+        let DeclKind::Let(data) = &self.design.decl_data(parent).kind else { return false };
+        let mut value = data.value;
+        while let ExprKind::Paren(inner) = &self.design.expr_node(value).kind {
+            value = *inner;
+        }
+        let ExprKind::Call { callee, .. } = &self.design.expr_node(value).kind else { return false };
+        let ExprKind::Path(path) = &self.design.expr_node(*callee).kind else { return false };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(param)) => matches!(self.design.decl_data(param).kind, DeclKind::Param(_)) && self.module_param_callable(param).is_some(),
+            _ => false,
         }
     }
 

@@ -1,7 +1,7 @@
 //! Analog forms: probes (`v(a, b)`, `potential`), contributions (`+>`) and the core primitives
 //! of the subset (`ddt`, `limit`, `ac_stim` and the environment functions of §14.4).
 
-use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
+use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclId, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
 
 use super::catalogue::{Allowed, Core};
 use super::check::{Checker, Context};
@@ -70,6 +70,9 @@ impl Checker<'_> {
             },
             Resolution::Builtin(id) if id.info().name == "flow" => (QuantityRole::Flow, None),
             Resolution::Builtin(_) => (QuantityRole::Potential, None),
+            // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
+            // name is read as a potential probe until then
+            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.names_only_potentials(*callee) && args.first().is_some_and(|arg| self.reads_through_callable(arg.value)) => (QuantityRole::Potential, None),
             Resolution::Deferred(DeferReason::AmbiguousAccess) => {
                 self.unsupported(file, node.span, "probe through an access that names several natures");
                 return None;
@@ -304,5 +307,41 @@ impl Checker<'_> {
             return None;
         }
         Some(Ty::Bool)
+    }
+}
+
+impl Checker<'_> {
+    /// Whether every quantity the access name of `callee` stands for is a potential: the nature does not change the role.
+    fn names_only_potentials(&self, callee: ExprId) -> bool {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
+        let Some(segment) = self.design.path_node(*path).segments.last() else { return false };
+        let mut found = false;
+        for i in 0..self.design.decl_count() {
+            let decl = DeclId(i as u32);
+            let DeclKind::Quantity(quantity) = &self.design.decl_data(decl).kind else { continue };
+            let accessed = quantity.attrs.iter().any(|a| a.name.text == "access" && matches!(&self.design.expr_node(a.value).kind, ExprKind::Path(p) if self.design.path_node(*p).segments.last().is_some_and(|s| s.name.text == segment.name.text)));
+            if accessed {
+                if quantity.role != QuantityRole::Potential {
+                    return false;
+                }
+                found = true;
+            }
+        }
+        found
+    }
+
+    /// Whether `operand` (through parentheses and indexes) is an item `inst.name` of an instance placed through a callable param.
+    fn reads_through_callable(&mut self, operand: ExprId) -> bool {
+        let mut at = operand;
+        loop {
+            match &self.design.expr_node(at).kind {
+                ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => at = *inner,
+                _ => break,
+            }
+        }
+        match self.design.expr_node(at).kind.clone() {
+            ExprKind::Field { expr: receiver, .. } => self.placed_through_callable(receiver),
+            _ => false,
+        }
     }
 }

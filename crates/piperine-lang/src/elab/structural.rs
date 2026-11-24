@@ -361,10 +361,9 @@ impl Elaboration<'_, '_> {
         found.into_iter().filter(|c| potential.contains(&c.ends)).collect()
     }
 
-    /// Classifies the key params of `modules` (the reached modules with a body): see the module
-    /// documentation. Run once, before any body is lowered.
-    pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
-        // A param of module type is structural (§8.4.6): its template selects what is placed.
+    /// A param of module type is structural (§8.4.6): its template selects what is placed. Every reached module has such keys, a
+    /// generic module's too: each instance of it is one body per template (`modules` holds the generic ones).
+    pub(super) fn classify_module_param_keys(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             for param in order.clone() {
@@ -373,6 +372,11 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// Classifies the key params of `modules` (the reached modules with a body): see the module
+    /// documentation. Run once, before any body is lowered.
+    pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             for contribution in self.potential_capable_contributions(*module) {

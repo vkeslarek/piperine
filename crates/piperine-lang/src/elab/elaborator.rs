@@ -99,6 +99,11 @@ pub(super) struct Elaboration<'d, 't> {
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
     pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
+    /// The items of a child's child the body being lowered reaches, by the child's frame, the grandchild's `let` and the item
+    /// (`reach_through_templates.rs`).
+    pub(super) nested_nodes: BTreeMap<(usize, DeclId, String), piperine_ir::Terminal>,
+    /// What the design reads through a child of a child, by module (`reach_through_templates.rs`).
+    pub(super) nested_demands: super::reach_through_templates::NestedDemands,
     /// The diverging expressions lowered so far (`exits.rs`).
     pub(super) divergences: Divergences,
     /// How many placements of a module an unrolled loop has hoisted so far, by the frame that
@@ -145,6 +150,8 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
+            nested_nodes: BTreeMap::new(),
+            nested_demands: super::reach_through_templates::NestedDemands::default(),
             divergences: Divergences::default(),
             unrolled_names: BTreeMap::new(),
             looped: BTreeMap::new(),
@@ -173,10 +180,12 @@ impl<'d, 't> Elaboration<'d, 't> {
         let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
         // a generic module has no body of its own: each instance a placement makes is one (`generic_bodies.rs`)
+        let with_generic = modules.clone();
         let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.is_generic_module(*m)).collect();
         self.read_included_files();
         self.build_type_arena();
         self.plan_params(&modules);
+        self.classify_module_param_keys(&with_generic);
         self.classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
         // variants take the ids after them, on request.

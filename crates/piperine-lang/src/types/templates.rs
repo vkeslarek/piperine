@@ -15,6 +15,8 @@ impl Checker<'_> {
         self.param_block(fields, None);
         self.require_bound_params(expr, module, fields);
         self.require_const_params(fields);
+        // the template's module is placed at elaboration, through a callable param whose module the checker never names
+        self.reach(module);
         self.exprs[expr.index()] = Some(Ty::Module(module));
         Some(Ty::Module(module))
     }

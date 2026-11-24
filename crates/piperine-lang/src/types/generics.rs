@@ -132,6 +132,12 @@ impl GenericSignature {
         self.parameters.iter().filter(|parameter| parameter.default.is_none()).count()
     }
 
+    /// Whether the type parameter `param` carries an `Fn(..)` bound: its values are callable, a module's template (§8.4.5).
+    pub fn is_callable(design: &Design, param: DeclId) -> bool {
+        let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &design.decl_data(param).kind else { return false };
+        bounds.iter().any(|path| matches!(Self::bound(design, *path), Some(Bound::Callable { .. })))
+    }
+
     /// The bound a path names, `None` for a name that is no trait (`Checker::generic_signature`
     /// reports it).
     pub(super) fn bound(design: &Design, path: PathId) -> Option<Bound> {

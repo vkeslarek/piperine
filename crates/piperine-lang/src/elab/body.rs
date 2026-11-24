@@ -139,6 +139,7 @@ impl Elaboration<'_, '_> {
             }
         }
         self.lower_nodes(module);
+        self.lower_nested_demands(&scope, module);
         let ammeters = self.lower_ammeters(&mut scope, module);
         scope.merged = self.merged_branches(&scope, module);
         self.lower_carriers(0, module);

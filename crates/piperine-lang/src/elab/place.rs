@@ -125,24 +125,31 @@ impl Elaboration<'_, '_> {
             self.ir.bind_nets(instance, nets.clone());
         }
         stack.push(key);
+        let mut bound = Vec::new();
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
             if let Some(placed) = self.place_child(child, &parent, stack) {
-                self.bind_reaches(&plan.reaches, index as u32, instance, &placed);
+                bound.extend(self.bind_reaches(&plan.reaches, index as u32, instance, &placed));
             }
         }
         stack.pop();
+        // a node this body reaches is a node of its own to the parent that reads it in turn (`bank.c0.sn`)
+        for (slot, own) in bound {
+            nodes[slot as usize] = own;
+        }
         Some(Placed { instance, nodes, nets, host_ports })
     }
 
     /// Binds each node and carrier `instance` reads of its child number `child` (`inst.name`, a
-    /// `Reach` of the body) to the child instance's own, now that the child is placed.
-    fn bind_reaches(&mut self, reaches: &[Reach], child: u32, instance: InstanceId, placed: &Placed) {
+    /// `Reach` of the body) to the child instance's own, now that the child is placed; the nodes bound, by slot.
+    fn bind_reaches(&mut self, reaches: &[Reach], child: u32, instance: InstanceId, placed: &Placed) -> Vec<(u32, NodeRef)> {
+        let mut bound = Vec::new();
         for reach in reaches.iter().filter(|r| r.child == child) {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
                     if let Some(own) = placed.nodes.get(child_node as usize) {
                         self.ir.bind_reached_node(instance, node, *own);
+                        bound.push((node, *own));
                     }
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
@@ -152,6 +159,7 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+        bound
     }
 
     /// Makes the two ends of each branch the body merges one node in the instance whose nodes are

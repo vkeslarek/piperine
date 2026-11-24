@@ -117,7 +117,7 @@ fn a_param_block_on_a_template_placement_is_e0361() {
 
 /// Two modules with the ports of `Fn(E, E)`, one that differs, and a bank bound by `C: Fn(E, E)`.
 const BANK: &str = "module Pair(a: E, b: E) { cs: f64 = 1.0; }\nmodule Twin(p: E, q: E) { cs: f64 = 2.0; }\n\
-module Wrong(a: E, b: Bit) { }\nmodule Short(a: E) { }\n\
+module Wrong(a: E, in b: Bit) { }\nmodule Short(a: E) { }\n\
 module Bank<C: Fn(E, E)>(x: E, y: E) { cell: C; let first = cell(x, y); }\n";
 
 #[test]

@@ -127,7 +127,7 @@ impl Checker<'_> {
 
     /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
     /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
-    fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
+    pub(super) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
         let DeclKind::Param(data) = &self.design.decl_data(param).kind else { return None };
         match self.lower_type(data.ty)? {
             Ty::Param(parameter) => self.callable_of(parameter),

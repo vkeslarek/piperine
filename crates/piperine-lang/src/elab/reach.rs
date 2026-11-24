@@ -23,7 +23,6 @@ use super::hoist::PlacementKey;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
-use crate::types::Callee;
 
 impl Elaboration<'_, '_> {
     /// The index each placement that is not hoisted takes in the body's children (`Child` order,
@@ -32,10 +31,11 @@ impl Elaboration<'_, '_> {
     pub(super) fn index_children(&mut self, module: DeclId) {
         self.child_indices.clear();
         self.reach_frames.clear();
+        self.nested_nodes.clear();
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
         let mut next = 0;
         for call in data.instances.clone() {
-            if matches!(self.types.callee(call), Some(Callee::Module(_))) && self.hoisted_callee(call).is_none() {
+            if self.placed_module(call, &self.body_keys).is_some() && self.hoisted_callee(call).is_none() {
                 self.child_indices.insert(call, next);
                 // a placement in generation is one child per iteration
                 next += self.generated.of(self.design.expr_node(call).owner).map_or(1, |iterations| iterations.len() as u32);
@@ -45,6 +45,9 @@ impl Elaboration<'_, '_> {
 
     /// The node a field read `c.mid` names, as a terminal of the body.
     pub(super) fn reached_terminal(&mut self, scope: &Scope, expr: ExprId) -> Option<Terminal> {
+        if let Some(nested) = self.nested_terminal(scope, expr) {
+            return nested;
+        }
         let (frame, item) = self.reached_item(scope, expr)?;
         let terminal = self.frame_node(frame, item);
         if terminal.is_none() {
@@ -107,6 +110,12 @@ impl Elaboration<'_, '_> {
     fn child_frame(&mut self, scope: &Scope, receiver: ExprId) -> Option<usize> {
         let span = self.design.expr_node(receiver).span;
         let (binding, key) = self.receiver_placement(scope, receiver)?;
+        self.placement_frame(scope, binding, key, span)
+    }
+
+    /// The reach frame of the placement `key` bound by the `let` binding `binding`, made the first time (`reach_through_templates.rs`
+    /// makes one for the placement a child of the body places, to name an item of the child's child).
+    pub(super) fn placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
         let call = key.call;
         if let Some(frame) = self.frames[scope.frame].placements.get(&key) {
             return Some(*frame);
@@ -114,7 +123,7 @@ impl Elaboration<'_, '_> {
         if let Some(frame) = self.reach_frames.get(&(scope.frame, key.clone())) {
             return Some(*frame);
         }
-        let (Some(Callee::Module(module)), Some(first), 0) = (self.types.callee(call), self.child_indices.get(&call).copied(), scope.frame) else {
+        let (Some(module), Some(first), 0) = (self.placed_module(call, &scope.keys), self.child_indices.get(&call).copied(), scope.frame) else {
             self.unsupported(scope.file, span, "a field of a child of a child");
             return None;
         };
@@ -125,9 +134,7 @@ impl Elaboration<'_, '_> {
             None => first,
         };
         let name = format!("{}{}", self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone()), key.subscripts());
-        let fields = self.placement_fields(call, module);
-        let call_span = self.design.expr_node(call).span;
-        let values = self.child_key_values(scope, module, &fields, scope.file, call_span)?;
+        let values = self.placement_key_values(scope, call, module, self.design.expr_node(call).span)?;
         let mut frame = Frame::root(module);
         frame.parent = Some(scope.frame);
         frame.prefix = format!("{}{name}.", self.frames[scope.frame].prefix);
@@ -201,11 +208,44 @@ impl Elaboration<'_, '_> {
         None
     }
 
+    /// How many nodes the body of the module of the reach frame `frame` has of its own, before any reached node: its node ports
+    /// and node signals, an array counting each element. `None` after a diagnostic when the module declares a node in generation,
+    /// whose count only the module's own lowering knows.
+    pub(super) fn own_node_total(&mut self, frame: usize) -> Option<u32> {
+        let module = self.frames[frame].module;
+        let data = self.design.decl_data(module).clone();
+        let mut total = 0u32;
+        for child in &data.children {
+            match &self.design.decl_data(*child).kind {
+                DeclKind::Generation(_) if self.declares_node(*child) => {
+                    self.unsupported(data.file, self.design.decl_data(*child).span, "a node declared in generation of a module a parent reads through");
+                    return None;
+                }
+                DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(*child).is_none() => total += 1,
+                DeclKind::Port(_) | DeclKind::Signal(_) if self.types.node_array(*child).is_some() => {
+                    let array = self.consts.typed_node_array(*child)?;
+                    total += self.shape_in(&array, frame)?.count() as u32;
+                }
+                _ => {}
+            }
+        }
+        Some(total)
+    }
+
+    /// Whether the generation `decl` declares a port or a signal, at any depth.
+    fn declares_node(&self, decl: DeclId) -> bool {
+        self.design.decl_data(decl).children.iter().any(|child| match &self.design.decl_data(*child).kind {
+            DeclKind::Port(_) | DeclKind::Signal(_) => true,
+            DeclKind::Generation(_) => self.declares_node(*child),
+            _ => false,
+        })
+    }
+
     /// The `let` binding a receiver `c` or `c[k]` names and the placement it reads, with its iteration: inside the loops of
     /// a placement written in generation the name is the iteration's instance, and each index outside them names one by
     /// its ordinal (§8.2.23). `None` after a diagnostic: a receiver that is no such name, an index that does not fold
     /// (`E0188`), an instance the generation never made (`E0342`), or a part of a nested array of instances.
-    fn receiver_placement(&mut self, scope: &Scope, receiver: ExprId) -> Option<(DeclId, PlacementKey)> {
+    pub(super) fn receiver_placement(&mut self, scope: &Scope, receiver: ExprId) -> Option<(DeclId, PlacementKey)> {
         let span = self.design.expr_node(receiver).span;
         let mut at = self.peel_parens(receiver);
         let mut indexes = Vec::new();
@@ -249,7 +289,7 @@ impl Elaboration<'_, '_> {
         let Some(Resolution::Decl(binding)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
         let value = self.body_let_value(binding)?;
         let call = self.peel_parens(value);
-        matches!(self.types.callee(call), Some(Callee::Module(_))).then_some((binding, call))
+        self.placed_module(call, &self.body_keys).map(|_| (binding, call))
     }
 
     /// The terminal of the body that the node `decl` of the frame `frame` is: the frame's own, or,

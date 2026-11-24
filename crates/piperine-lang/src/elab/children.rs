@@ -17,7 +17,7 @@ use super::templates::TemplateValue;
 use super::unlowered::Unlowered;
 use crate::msl::Diagnostic;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
-use crate::types::{Callee, Ty};
+use crate::types::Ty;
 
 /// A placement, as instance placement needs it.
 #[derive(Clone)]
@@ -76,7 +76,7 @@ impl Elaboration<'_, '_> {
         let mut ordinals: Vec<(DeclId, u32)> = Vec::new();
         let mut out = Vec::new();
         for call in calls {
-            let Some(Callee::Module(child_module)) = self.types.callee(call) else { continue };
+            let Some(child_module) = self.placed_module(call, &scope.keys) else { continue };
             // A module with a result or a value input is hoisted into this body, not placed (`hoist.rs`).
             if self.hoisted_callee(call).is_some() {
                 continue;
@@ -169,8 +169,8 @@ impl Elaboration<'_, '_> {
     /// over the key params (`C1(c)`, `nch(l, w)(d, g, s, b)`). `Ok(None)` when `class` is a placement of a module by name or of a
     /// template written in place; `Err` after the diagnostic of a head that does not fold.
     fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
-        let CallClass::Instance { module: Some(placed), via: Some(via) } = class else { return Ok(None) };
-        if via == placed {
+        let CallClass::Instance { module: placed, via: Some(via) } = class else { return Ok(None) };
+        if placed.is_some_and(|placed| *via == placed) {
             return Ok(None);
         }
         if self.is_module_param(*via) {
@@ -183,6 +183,20 @@ impl Elaboration<'_, '_> {
             Err(fault) => {
                 self.const_fault(&fault, "the head of a placement through a template");
                 Err(())
+            }
+        }
+    }
+
+    /// The values the key params of `module` take at the placement `call`: the template's when the placement goes through one,
+    /// else the ones its block writes (`child_key_values`). `None` after a diagnostic.
+    pub(super) fn placement_key_values(&mut self, scope: &Scope, call: ExprId, module: DeclId, span: crate::msl::Span) -> Option<Bindings> {
+        let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return None };
+        match self.template_through(scope, call, &class) {
+            Err(()) => None,
+            Ok(Some(template)) => self.template_values(&template, scope.file, span).map(|(_, keys)| keys),
+            Ok(None) => {
+                let fields = self.placement_fields(call, module);
+                self.child_key_values(scope, module, &fields, scope.file, span)
             }
         }
     }
@@ -205,7 +219,12 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(call).clone();
         let file = self.design.decl_data(node.owner).file;
         let ExprKind::Call { args, class, .. } = &node.kind else { return None };
-        if !matches!(class, CallClass::Instance { module: Some(m), .. } if *m == module) {
+        let placed = match class {
+            CallClass::Instance { module: Some(m), .. } => *m == module,
+            CallClass::Instance { module: None, via: Some(via) } => self.is_module_param(*via),
+            _ => false,
+        };
+        if !placed {
             self.unsupported(file, node.span, "a placement through a template value");
             return None;
         }

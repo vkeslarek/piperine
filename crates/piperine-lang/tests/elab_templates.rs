@@ -100,3 +100,53 @@ fn a_module_impl_function_runs_on_a_template_at_elaboration() {
     let bound = format!("{MOSFET}fn threshold<N: Mosfet>(n: N) -> f64 {{ n.vth() }}\nconst N1: Bsim4 = Bsim4 {{ vth0: 0.7 }};\nmodule Probe() {{ vt: f64 = threshold(N1); signal p: Electrical; }}\nanalog for Probe {{ v(p, gnd) +> vt; }}\nmodule Top() {{ let a = Probe(); }}");
     assert_eq!(Placed::first_param(&Elab::ir(&bound, "Top"), "Top.a"), Constant::Real(Real::new(0.7 + 0.1)));
 }
+
+/// A cell with a `pub` storage node `sn` held at `cs`, a bank that places it through the callable param `cell`, and the
+/// bank's `pub let c0`.
+const BANK: &str = "module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; hidden: f64 = 3.0; }\n\
+analog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd) - cs; }\n\
+module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }\n";
+
+#[test]
+fn inst_name_through_a_template_param_reads_the_concrete_module() {
+    // §8.4.8 (GN-23 AC 3): `bank.c0.sn` is a node of the `Dram` the bank's template names, so a probe of it reads the
+    // cell's own storage node and the design elaborates
+    let source = format!(
+        "{BANK}module Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ cs: 2.0 }} }}; signal probe: Electrical; }}\n\
+         analog for Top {{ i(probe, gnd) +> v(probe, gnd) - v(bank.c0.sn); }}"
+    );
+    let ir = Elab::ir(&source, "Top");
+    assert!(ir.instance_at("Top.bank.c0").is_some(), "the cell the template names is placed");
+    assert_eq!(Placed::first_param(&ir, "Top.bank.c0"), Constant::Real(Real::new(2.0)));
+    // the probe reads the storage node of the cell the template places: the reached node of `Top` is that node
+    let top = ir.instance_at("Top").expect("the top");
+    let reached = top.body().nodes().iter().position(|node| node.name == "bank.c0.sn").expect("`Top` reaches `bank.c0.sn`");
+    assert_eq!(top.node(reached).expect("a bound node").path(), "Top.bank.c0.sn");
+}
+
+#[test]
+fn a_missing_item_through_a_template_param_is_e0343() {
+    // §8.4.8: an item the concrete module lacks, or keeps private, is `E0343` at elaboration
+    for item in ["missing", "hidden"] {
+        let source = format!(
+            "{BANK}module Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ cs: 2.0 }} }}; signal probe: Electrical; }}\n\
+             analog for Top {{ i(probe, gnd) +> v(probe, gnd) - v(bank.c0.{item}); }}"
+        );
+        let diagnostics = Elab::run(&source, "Top").expect_err("the item is out of reach");
+        assert!(Elab::codes(&diagnostics).contains(&"E0343".to_string()), "{item}: {diagnostics:?}");
+    }
+}
+
+#[test]
+fn a_node_of_a_child_of_a_child_is_reached_without_a_template() {
+    // §8.2.8: `bank.c0.sn` names a `pub` node of the module a `pub let` of the bank places, a template or not
+    let source = "module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; }\n\
+        analog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd) - cs; }\n\
+        module Bank(a: Electrical) { pub let c0 = Dram(a) { cs: 2.0 }; }\n\
+        module Top() { signal x: Electrical; let bank = Bank(x); signal probe: Electrical; }\n\
+        analog for Top { i(probe, gnd) +> v(probe, gnd) - v(bank.c0.sn); }";
+    let ir = Elab::ir(source, "Top");
+    let top = ir.instance_at("Top").expect("the top");
+    let reached = top.body().nodes().iter().position(|node| node.name == "bank.c0.sn").expect("`Top` reaches `bank.c0.sn`");
+    assert_eq!(top.node(reached).expect("a bound node").path(), "Top.bank.c0.sn");
+}
