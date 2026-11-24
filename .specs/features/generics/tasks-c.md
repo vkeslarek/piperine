@@ -802,9 +802,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `the_fences_generics_phase_c_lifted_are_checked` passes under `**Run galleries**`
-- [ ] `phase_d_and_e_forms_stay_p0001_by_name` passes under `**Run typesgen**`
-- [ ] Gate check passes: Quick
+- [x] `the_fences_generics_phase_c_lifted_are_checked` passes under `**Run galleries**`
+- [x] `phase_d_and_e_forms_stay_p0001_by_name` passes under `**Run typesgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

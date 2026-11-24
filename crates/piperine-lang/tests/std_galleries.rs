@@ -471,6 +471,48 @@ fn the_fences_generics_lifted_are_checked() {
     assert_eq!(held, EXPECTED_HELD, "the fences that write phase A forms are held");
 }
 
+/// How the type checker named the forms phase C lifted (`types/unsupported.rs`, `types/check.rs`): a generic module and
+/// generation in a module body or in a `digital` block.
+const PHASE_C_LIFTED: [&str; 3] = ["generic module", "generation `for`/`if` in a module body", "generation `for`/`if` in a `digital` block"];
+
+/// What a gallery fence writes of the forms `generics` phase C lifted: a generic module.
+struct GenericModules;
+
+impl GenericModules {
+    /// Whether `text` declares a module with a `<..>` list: `module Dff<T: Repr>(..)`.
+    fn written_in(text: &str) -> bool {
+        text.lines().map(str::trim_start).any(|line| {
+            let line = line.strip_prefix("pub ").unwrap_or(line);
+            line.strip_prefix("module ").is_some_and(|rest| rest.split('(').next().is_some_and(|head| head.contains('<')))
+        })
+    }
+}
+
+#[test]
+fn the_fences_generics_phase_c_lifted_are_checked() {
+    // GN-31 AC 2: a gallery fence that writes a generic module (and, in it, a generation `for`) is held to the type checker,
+    // each of its modules as the top: none of its refusals names a form phase C lifted
+    let mut held = Vec::new();
+    for g in galleries() {
+        if !GenericModules::written_in(&g.block.text) {
+            continue;
+        }
+        let text = assemble(&g.block.text, fixtures_of(&g.section));
+        let design = build(&text);
+        for module in ModuleNames::declared_in(&text) {
+            let Err(refused) = piperine_lang::types::Types::check(&design, &module) else { continue };
+            for diagnostic in refused {
+                let message = diagnostic.diagnostic.message;
+                for lifted in PHASE_C_LIFTED {
+                    assert!(!message.contains(lifted), "{} as `{module}`: the checker still refuses {lifted}: {message}", g.section);
+                }
+            }
+        }
+        held.push(g.section);
+    }
+    assert_eq!(held, ["D.1", "E.1", "E.2", "E.3", "E.6", "F.2", "F.3"], "the fences that write a generic module are held");
+}
+
 /// PI-11 AC 3: each of the 16 gallery fences is the formatter's output for itself, so a reader
 /// copies it into a file `piperine fmt --check` accepts.
 #[test]
