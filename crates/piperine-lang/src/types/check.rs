@@ -732,8 +732,6 @@ impl<'d> Checker<'d> {
             // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
             // module that holds the closure, typed with it, not module items (design D9).
             (DeclKind::Binding(_), _) => {}
-            (DeclKind::Generation(_), ItemPhase::Declarations) if !self.forms.admits(super::UnfinishedForm::Generation) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
-            (DeclKind::Generation(_), _) if !self.forms.admits(super::UnfinishedForm::Generation) => {}
             (DeclKind::Generation(_), _) => self.generation(child, phase == ItemPhase::Declarations, |this, inner| this.module_item(inner, phase)),
             (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
             (_, _) => {}

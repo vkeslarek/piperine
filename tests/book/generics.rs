@@ -132,9 +132,11 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // generics~c212674a: a generic module, which the box no longer lists since T71: the smallest one placed runs
     let model = piperine::Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..piperine::Overrides::default() };
     Model::written("hold.msl", "module Hold<T: Repr + Default>(in d: Bit<T>, out q: Bit<T>) {}\nmodule Top() { signal d: Bit<Option<u8>> = None; signal q: Bit<Option<u8>>; let h = Hold::<Option<u8>>(d, q); }\n").run(model).unwrap_or_else(|failure| panic!("a generic module is refused: {:?}", Refusal::of(Err(failure), "g")));
-    // generation in a module body is the form still stopped before the run, naming it
-    let generation = Faulty::elaborating("generics~e60a0a07", "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, gnd); } }\n", "Top");
-    assert!(generation.given.iter().any(|reported| reported.code == "P0001" && reported.message == "generation `for`/`if` in a module body is not supported yet"), "{:?}", generation.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    // generation in a module body runs since T77 (the smallest one: a placement in a `for`)
+    Model::written("repeat.msl", "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, gnd); } }\n").run(piperine::Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..piperine::Overrides::default() }).unwrap_or_else(|failure| panic!("generation in a body is refused: {:?}", Refusal::of(Err(failure), "g")));
+    // generation in a `digital` block is the form still stopped before the run, naming it
+    let generation = Faulty::elaborating("generics~e60a0a07", "module Top() { signal lines: [Bit; 2] = [false; 2]; }\ndigital for Top { for k in 0..2 { on lines[k].rise() { } } }\n", "Top");
+    assert!(generation.given.iter().any(|reported| reported.code == "P0001" && reported.message == "generation `for`/`if` in a `digital` block is not supported yet"), "{:?}", generation.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }
 
 #[test]

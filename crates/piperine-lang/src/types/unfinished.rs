@@ -9,8 +9,6 @@
 /// One form of the language whose checking runs ahead of its lowering.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnfinishedForm {
-    /// Generation `for`/`if` in a module body (T72 to T76); flipped by T77.
-    Generation,
     /// Generation `for`/`if` around reactions of a `digital` block (T78, T79); flipped by T80, which deletes the gate.
     DigitalGeneration,
 }
@@ -24,7 +22,7 @@ pub struct UnfinishedForms {
 
 impl UnfinishedForms {
     /// The forms production still refuses, in the order their tasks flip them.
-    pub const IN_FORCE: [UnfinishedForm; 2] = [UnfinishedForm::Generation, UnfinishedForm::DigitalGeneration];
+    pub const IN_FORCE: [UnfinishedForm; 1] = [UnfinishedForm::DigitalGeneration];
 
     /// The gate production uses: every form refused.
     pub fn closed() -> UnfinishedForms {

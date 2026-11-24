@@ -15,18 +15,17 @@ mod mixed;
 #[path = "buck/support.rs"]
 mod support;
 
-use piperine_lang::types::UnfinishedForm;
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
-/// The model `file` of `tests/generation/`, with generation in a module body admitted until its flip.
+/// The model `file` of `tests/generation/`, .
 struct GenerationModels;
 
 impl GenerationModels {
     /// The project of `file`.
     fn project(file: &str) -> Project {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/generation").join(file);
-        Project::new(&path).admitting(&[UnfinishedForm::Generation])
+        Project::new(&path)
     }
 
     /// The voltage of each node in `names` of `top` of `file` at its operating point.

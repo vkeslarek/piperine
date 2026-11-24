@@ -10,10 +10,9 @@ mod support;
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::DesignDiagnostic;
-use piperine_lang::types::UnfinishedForm;
 use support::Elab;
 
-/// Sources elaborated with generation in a body admitted: the form is behind the unfinished-forms gate until T77.
+/// Sources elaborated with generation in a body.
 struct Admitted;
 
 impl Admitted {
@@ -24,7 +23,7 @@ impl Admitted {
     fn run(src: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         let design = Elab::design(&format!("{}{src}", Self::HEAD));
         assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
-        Elaborator::new(&design).admitting(&[UnfinishedForm::Generation]).run("Top")
+        Elaborator::new(&design).run("Top")
     }
 
     /// The IR of `src`, which elaborates and checks.

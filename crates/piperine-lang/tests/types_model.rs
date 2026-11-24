@@ -125,12 +125,14 @@ fn an_unreached_generic_module_with_an_error_fails_the_model_check() {
 
 #[test]
 fn unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed() {
-    // the interim gate (design-c.md): generic modules left it (T71); production still refuses generation in a body and in a
-    // `digital` block as `main` does
-    assert_eq!(UnfinishedForms::IN_FORCE, [UnfinishedForm::Generation, UnfinishedForm::DigitalGeneration]);
+    // the interim gate (design-c.md): generic modules left it (T71) and generation in a body (T77); production still refuses
+    // generation in a `digital` block as `main` does
+    assert_eq!(UnfinishedForms::IN_FORCE, [UnfinishedForm::DigitalGeneration]);
     let placed = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nmodule Top() { signal d: Bit<Option<bool>> = None; let h = Hold::<Option<bool>>(d); }\n";
     assert_eq!(GenericSources::codes_of(&GenericSources::standard_found(placed)), Vec::<String>::new(), "a placement of a generic module is typed by production: {placed}");
     let generated = "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, a); } }\n";
-    let found = GenericSources::standard_found(generated);
+    assert_eq!(GenericSources::codes_of(&GenericSources::standard_found(generated)), Vec::<String>::new(), "generation in a body is typed by production: {generated}");
+    let digital = "module Top() { signal a: [Bit; 2]; }\ndigital for Top { for k in 0..2 { on a[k].rise() { } } }\n";
+    let found = GenericSources::standard_found(digital);
     assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("generation")), "{:?}", GenericSources::codes_of(&found));
 }

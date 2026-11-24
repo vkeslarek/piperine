@@ -212,7 +212,7 @@ impl Checker<'_> {
             let item = self.design.decl_data(child).clone();
             match &item.kind {
                 DeclKind::Reaction(r) => self.reaction(&r.clone(), item.file),
-                DeclKind::Generation(_) => self.unsupported(item.file, item.span, "generation `for`/`if` in a `digital` block"),
+                DeclKind::Generation(_) if !self.forms.admits(super::UnfinishedForm::DigitalGeneration) => self.unsupported(item.file, item.span, "generation `for`/`if` in a `digital` block"),
                 _ => {}
             }
         }

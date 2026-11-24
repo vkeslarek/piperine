@@ -98,16 +98,16 @@ fn the_module_card_runs_for_its_const_generic_without_its_value_input() {
 }
 
 #[test]
-fn the_body_items_card_is_refused_for_its_generation() {
-    // cheatsheet#3 (refused): the instance, the named expression, the definition, the delayed definition and
-    // `for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }`, placed in a body that declares the names
-    // it uses: the generation `for` is `P0001` (L31)
+fn the_body_items_card_runs_with_its_generation() {
+    // cheatsheet#3 (run): the instance, the named expression, the definition, the delayed definition and
+    // `for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }`, placed in a body that declares the names it uses. The card
+    // reads `y` in its delayed definition (it read the param `r`, a number, as a bit: BA4 of `generics`); the loop makes the
+    // array `rk` of `N` instances, `rk[0]` to `rk[2]` here
     let chapter = Chapter::read();
-    let before = "const N: u32 = 3;\nmodule Resistor(in p: Bit, in n: Bit) { r: f64 = 1k; }\nmodule Top() {\n    r: f64 = 1k;\n    tpd: f64 = 1n;\n    signal a: Bit;\n    signal b: Bit;\n    signal mid: Bit;\n    signal y: Bit;\n    signal q: Bit;\n    signal qn: Bit;\n";
+    let before = "const N: usize = 3;\nmodule Resistor(in p: Bit, in n: Bit) { r: f64 = 1k; }\nmodule Top() {\n    r: f64 = 1k;\n    tpd: f64 = 1n;\n    signal a: Bit = false;\n    signal b: Bit = false;\n    signal mid: Bit = false;\n    signal y: Bit;\n    signal q: Bit = false;\n    signal qn: Bit = false;\n";
     let model = chapter.wrapped("body.msl", before, "cheatsheet#3", "}\n");
-    let given = Surroundings::refusals(&model, "cheatsheet#3");
-    assert!(Surroundings::holds(&given, "P0001", "generation `for`/`if` in a module body is not supported yet"), "{given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "cheatsheet#3", "P0001", "generation `for`/`if` in a module body is not supported yet");
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#3: {:?}", Refusal::of(Err(failure), "cheatsheet#3")));
+    assert!(format!("{:?}", ran.table.rows).contains("Top.q"), "the operating point lists the top's signals");
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn the_debug_prints_card_runs_with_its_analog_trace() {
 }
 
 #[test]
-fn the_template_card_is_refused_for_its_template_and_its_bundle() {
+fn the_template_card_is_refused_for_its_template_and_bundle() {
     // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module
     // generic over the template. The generic module runs (T71); what is left is exactly: the struct `Cell` with a carrier
     // field, a bundle (L25, `resolved-nets-bundles`), the two placements through a template value or a function and the

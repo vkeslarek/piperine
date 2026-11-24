@@ -111,7 +111,7 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 | - | ------- | ---- | ------------------ | ---- |
 | L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
 | L30 | generic modules run (T71); what is left of this row is `Short<N>` placed over each nature (T69) and the params read by generic arguments and lengths as structural (T70) | §8 rule 4 | - | M |
-| L31 | generation `for` and `if`, in a body and in a `digital` block | §8.2.7, §12 rule 1 | `generation for/if in a module body` | M |
+| L31 | generation `for` and `if` in a `digital` block (in a module body it runs, T77) | §12 rule 1 | `generation for/if in a digital block` | M |
 | L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
 
@@ -358,18 +358,13 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type), then its `flip` and three `E0222` for the definitions through its members; the generic module `Slice` runs |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
-| modules#1 | L31 | `generics` | `ladder.msl` is `P0001`, generation `for` in the body of `Ladder`, for an operating point and for the DC sweep (the generic module runs) |
-| modules#2 | L31 | `generics` | generation `for` in a module body and in a `digital` block are the two `P0001`s |
-| modules#10 | L32 | `generics` | `MemoryBank`: the `Cell` struct with carrier fields (bundle, L25) is `P0001`, the generation `for` of its body is `P0001` (L31) and the template `C` is `E0181` (cannot infer, phase D); the generic module and the arrays of carriers run |
+| modules#2 | L31 | `generics` | generation `for` in a `digital` block is `P0001` (the generation of the ladder's body runs) |
+| modules#10 | L32 | `generics` | `MemoryBank`: the `Cell` struct with carrier fields (bundle, L25) is `P0001`, the placement through the template `cell` is `P0001` and the template `C` is `E0181` (cannot infer, phase D); the generic module, the generation `for` of its body and the arrays of carriers run |
 | modules#12 | L32 | `generics` | `nch(0.13u, 2u)(d, g, s, b)`: placement through a template value or a function is `P0001` |
 | modules#14 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |
-| modules~b53307eb | L31 | `generics` | the const generic and its `where N >= 1` run; the ladder is refused for its generation with modules#1 |
 | modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
 | modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
 | modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` implements them (its GN-26 AC 3 flips this row) |
-| modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
-| modules~4bcb9f1d | L31 | `generics` | `E0304` is not raised by the Book's ladder: its body is `P0001`, generation, before `Ladder::<0>` is lowered (a generic module without generation raises it) |
-| cheatsheet#3 | L31 | `generics` | the `for k in 0..N { .. }` of the body items is `P0001`: generation in a module body; the instance, the named expression and the definitions around it are accepted |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function are `P0001` and the `Fn` bound of `C` is `E0187` (phase D); the struct `Cell` with carrier fields is `P0001` (bundle, L25); the generic module runs |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | natures#2 | L21 | `resolved-nets` | the lines of the list run (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>> = logic("10xx")`); `Sda`, declared further on in the chapter, is `E0161` when the block stands alone, and with a stand-in nature the listing's floating nodes `mid` and `vout` make the operating point singular (`E0503`): the closure of resolved-nets must either give the block a connected node or re-judge the row (made to run by resolved-nets, after explicit-unknowns phase B: `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |

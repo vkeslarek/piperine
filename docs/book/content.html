@@ -2389,23 +2389,15 @@ module LadderTop() {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the first listing as <code>ladder.msl</code>. An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point. Today the compiler does not take generation in a module body yet, so both commands stop at the ladder with this refusal and run nothing:</p>
+  <p>Save the first listing as <code>ladder.msl</code>. An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point. The generation <code>for</code> places the three sections, and both commands run:</p>
 <pre data-lang="sh">piperine run ladder.msl --analysis op
 piperine run ladder.msl --analysis dc --sweep src.dc --from 0 --to 1 --step 0.5</pre>
-<pre data-lang="text" data-cli-output="piperine run ladder.msl --analysis op" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+<pre data-lang="text" data-cli-output="piperine run ladder.msl --analysis op">run ladder: op, top LadderTop, backend rust
 
-  × generation `for`/`if` in a module body is not supported yet
-    ╭─[ladder.msl:27:5]
- 26 │         let tail = Short(tap[N], b);
- 27 │ ╭─▶     for k in 0..N {
- 28 │ │           pub let sec = RcSection(tap[k], tap[k + 1]) { r, c };
- 29 │ ├─▶     }
-    · ╰──── generation `for`/`if` in a module body is outside the M1 subset
- 30 │     }
-    ╰────
-
-error: typeck failed with 1 diagnostic(s)</pre>
-  <p>Once it runs: at DC the capacitors are open, so the output equals the input at every point of the sweep. For the <code>half</code> stream, use the version with the step source and run <code>--analysis transient --stop 20e-6 --stream half</code>: three record lines, <code>stage=1</code> to <code>stage=3</code>, in time order.</p>
+signal          value
+LadderTop.vin   1.000000e0
+LadderTop.vout  1.000000e0</pre>
+  <p>At DC the capacitors are open, so the output equals the input at every point of the sweep. For the <code>half</code> stream, use the version with the step source and run <code>--analysis transient --stop 20e-6 --stream half</code>: three record lines, <code>stage=1</code> to <code>stage=3</code>, in time order.</p>
 </div>
 
 <h3>Modules that return a value</h3>
@@ -8849,7 +8841,7 @@ nature Electrical {
 <pre data-lang="msl">let r1 = Resistor(a, mid) { r: 1k };   // instance
 let half = r / 2.0;                    // named expression
 y = a & b;                             // definition
-q = !(r | qn) after tpd;               // delayed definition
+q = !(y | qn) after tpd;               // delayed definition
 for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }   // generation</pre></div>
 
 <div class="cheat-card"><h4>Analog</h4>

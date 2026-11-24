@@ -10,21 +10,21 @@ mod generic_sources;
 
 use generic_sources::GenericSources;
 use piperine_lang::pom::{DeclKind, Design};
-use piperine_lang::types::{Types, UnfinishedForm};
+use piperine_lang::types::Types;
 
-/// Sources checked with generation in a module body admitted: the form is behind the unfinished-forms gate until T77.
+/// Sources checked with generation in a module body.
 struct Admitted;
 
 impl Admitted {
     /// The codes and messages of the whole-model check of `src` with generation admitted.
     fn pairs(src: &str) -> Vec<(String, String)> {
-        GenericSources::admitting_found(src, &[UnfinishedForm::Generation]).iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+        GenericSources::standard_found(src).iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
     }
 
     /// The type the check gives the binding `name` of `src` after the natures, as the checker writes it.
     fn local(src: &str, name: &str) -> String {
         let design = Design::builder().source("top.msl", format!("{}{src}", GenericSources::HEAD)).build();
-        let types = Types::check_admitting(&design, "Top", &[UnfinishedForm::Generation]).unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
         let binding = GenericSources::binding(&design, name);
         types.local(binding).map_or_else(|| "?".to_string(), |ty| ty.name(&design))
     }
@@ -32,7 +32,7 @@ impl Admitted {
     /// The type the check gives the carrier or node array `name` of `Top` in `src`.
     fn carrier(src: &str, name: &str) -> String {
         let design = Design::builder().source("top.msl", format!("{}{src}", GenericSources::HEAD)).build();
-        let types = Types::check_admitting(&design, "Top", &[UnfinishedForm::Generation]).unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
         let decl = (0..design.decl_count()).map(|i| piperine_lang::pom::DeclId(i as u32)).find(|d| matches!(design.decl_data(*d).kind, DeclKind::Signal(_)) && design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == name)).expect("a signal of that name");
         types.carrier(decl).map_or_else(|| "?".to_string(), |ty| ty.name(&design))
     }

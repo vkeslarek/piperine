@@ -98,16 +98,16 @@ block	natures#5	c62d8033ca3aff49	shown	-	-	-
 block	natures#6	acda13a1a5efeb66	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
 block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
 block	natures#8	2873c252462bda40	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
-block	modules#1	b8d5395ceea2ea36	refused	piperine/book_modules::the_ladder_is_refused_for_its_generation	L31	-
-block	modules#2	88069ff453a25020	refused	piperine/book_modules::the_half_reactions_are_refused_for_their_generation	L31	-
+block	modules#1	b8d5395ceea2ea36	run	piperine/book_modules::the_ladder_runs_for_an_operating_point_and_a_sweep	-	-
+block	modules#2	88069ff453a25020	refused	piperine/book_modules::the_half_reactions_are_refused_for_their_digital_generation	L31	-
 block	modules#3	fd35830b4553e5ac	shown	-	-	-
 block	modules#4	d7b4e96dd3da2949	shown	-	-	-
-block	modules#5	0e59f5f5480a7f94	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run ladder.msl --analysis op
+block	modules#5	bf44728750e5a669	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run ladder.msl --analysis op
 block	modules#6	7c3db491e9d50314	run	piperine/book_modules::the_lowpass_module_runs_over_the_generic_integrator	-	-
 block	modules#7	785f58bd27638c90	run	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	-
 block	modules#8	f26832ff2564dcd3	run	piperine/book_modules::the_pi_controller_runs_with_its_generic_idt	-	-
 block	modules#9	76ab743eefe57ede	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
-block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_template_bundle_and_generation	L32	-
+block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_template_and_bundle	L32	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
 block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that_returns_a_template_is_refused_where_it_is_placed	L32	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
@@ -258,12 +258,12 @@ block	simulation#9	e9f2e26422078619	shown	-	-	-
 block	simulation#10	93d9904c6f268314	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis ac --from 1e3 --to 1e6 --per-decade 1 --print b
 block	cheatsheet#1	a91c1587123be4d7	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
 block	cheatsheet#2	69490dc245b2826e	run	piperine/book_cheatsheet::the_module_card_runs_with_its_value_input_and_its_out_carrier	-	-
-block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
+block	cheatsheet#3	46efd56252751d3d	run	piperine/book_cheatsheet::the_body_items_card_runs_with_its_generation	-	-
 block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
 block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book_cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
-block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_template_and_its_bundle	L32	-
+block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_template_and_bundle	L32	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
 block	cheatsheet#10	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
 block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
@@ -384,7 +384,7 @@ claim	natures~42b8e61d	42b8e61dc142ae1f	holds	piperine/book_natures::e0210_an_in
 claim	modules~e1c9cfba	e1c9cfbaca0c7ca0	prose	-	-	By the end of this chapter you can build a design out of smaller modules: place instances, bind params, generate a row of stages with a loop, look inside a child from its parent, and write a module that returns a value, such as a filter you can call inside an expression.
 claim	modules~9df7d4b2	9df7d4b27dc00585	holds	piperine/book_modules::a_module_body_takes_a_param_with_a_where_and_an_instance_with_a_param_block	-	c: f64 = 1p where c 0.0;
 claim	modules~fbe506f7	fbe506f7f13abb2c	holds	piperine/book_modules::a_module_body_takes_a_param_with_a_where_and_an_instance_with_a_param_block	-	let r1 = Resistor(a, b) { r: 1k };
-claim	modules~b53307eb	b53307eb7b1a3b15	refused	modules#1	L31	Ladder<const N: usize> takes the number of sections as a generic argument, and where N >= 1 refuses an empty ladder.
+claim	modules~b53307eb	b53307eb7b1a3b15	holds	piperine/book_modules::the_ladder_runs_for_an_operating_point_and_a_sweep	-	Ladder<const N: usize> takes the number of sections as a generic argument, and where N >= 1 refuses an empty ladder.
 claim	modules~87ce6f6e	87ce6f6e612d4c68	refused	modules#2	L31	Swap the DC source for the Step of chapter 1 and add a block that reports when each tap passes half of the step:
 claim	modules~3f8e84ba	3f8e84ba1992d29f	refused	modules#2	L31	The stream gets one record per stage, in order, because the edge reaches the taps one after another:
 claim	modules~f355ab23	f355ab23250e139e	prose	-	-	The times are left for you; the exercise at the end of the chapter gives an estimate to check them against.
@@ -399,10 +399,10 @@ claim	modules~0d5cece8	0d5cece8da26ecc3	holds	piperine/book_modules::e0312_a_por
 claim	modules~4bd9101d	4bd9101dc68f498c	holds	piperine/book_modules::e0343_a_parent_sees_only_what_the_child_publishes	-	E0343
 claim	modules~4bcf201d	4bcf201dc6871037	holds	piperine/book_modules::e0333_an_instance_used_as_a_value_names_the_instance	-	E0333
 claim	modules~80317e1d	80317e1de450c3f6	holds	piperine/book_modules::e0903_a_body_holds_no_variables	-	E0903
-claim	modules~4bd9131d	4bd9131dc68f4ea5	unraised	piperine/book_modules::e0340_is_not_raised_generation_is_refused_before_its_range_is_checked	L31	E0340
+claim	modules~4bd9131d	4bd9131dc68f4ea5	holds	piperine/book_modules::e0340_a_generation_range_read_from_a_signal	-	E0340
 claim	modules~4bcf211d	4bcf211dc68711ea	holds	piperine/book_modules::e0330_one_name_is_declared_once_in_a_module	-	E0330
 claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_module_and_its_behavior_live_in_one_file	-	E0401
-claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_waits_for_the_generation_of_the_generic_ladder	L31	E0304
+claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	holds	piperine/book_modules::e0304_a_generic_ladder_of_zero_sections	-	E0304
 claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
 claim	analog~750ad45d	750ad45df3f747a1	holds	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	The command runs: it prints the two clip records, then the table of the rows, and writes the plot:
 claim	analog~139c67b5	139c67b5de8bbf3a	holds	piperine/book_analog::the_diode_with_a_trace_runs	-	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
