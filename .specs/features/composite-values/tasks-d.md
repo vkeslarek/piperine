@@ -1093,6 +1093,9 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 ---
 
+- D5/D6 gate (T116 to T126, 2026-11-23): Build line green with zero warnings; cargo test of piperine-ir, -transpile, -plan, -lang, -api, -cli (docs, run) green; book_language, book_inventory, book_claims, book_types green; parity source_number_widths (release, 9 tests), source_logic, source_aggregates, source_carrier_arrays, source_control green. Commits: dbe2c1ec T116; 6ad639c1 T117 and T118 (one commit: the literal fold is the lowering); 57adf2aa T119 and T120; 9760d834 T121; f868f619 T122; 7a88cb3d T123 and T124 (also carries the Book status-box text edit of T125); f67cf0af T125; c0a4c45a T126.
+- Deviations: T117/T118, T119/T120 and T123/T124 are one commit each (the work shares files). `Expr::Math` is typed by its operand in `Ir::check` (H.2). A design that uses f32 embeds the numeric runtime (Carried and Convert live in rt/widths.rs). The lexer rejects a float literal whose f64 value is infinite (A.2 rule 8), so an f128 literal is limited to the f64 range: the f128 vectors drawn from source are the finite ones within it. `Logic<N>` for N > 64 runs (L13 refusal removed, a generic integer width takes any value up to 2^32 - 1). The `**Approved**` line for this tasks file was relayed by the coordinator and is NOT written: it records the user's own words.
+
 ## Phase Execution Map
 
 ```
