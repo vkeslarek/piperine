@@ -16,6 +16,8 @@ impl Elaboration<'_, '_> {
         let mut sub = Scope::new(scope.file);
         sub.params = scope.params.clone();
         sub.frame = scope.frame;
+        sub.unrolled = scope.unrolled.clone();
+        sub.ordinals = scope.ordinals.clone();
         sub
     }
 

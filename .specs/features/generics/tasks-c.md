@@ -630,8 +630,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generation_for_makes_arrays_and_if_keeps_the_taken_arm`, `an_untaken_arm_or_an_index_outside_is_e0342` and `an_empty_generation_range_makes_an_empty_array` pass under `**Run elabgenr**`
-- [ ] Gate check passes: Quick
+- [x] `generation_for_makes_arrays_and_if_keeps_the_taken_arm`, `an_untaken_arm_or_an_index_outside_is_e0342` and `an_empty_generation_range_makes_an_empty_array` pass under `**Run elabgenr**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

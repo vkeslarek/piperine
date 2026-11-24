@@ -10,6 +10,7 @@ use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
+use super::generation::Iteration;
 use super::instances::Instance;
 use super::lower::Scope;
 use super::templates::TemplateValue;
@@ -69,7 +70,7 @@ impl Elaboration<'_, '_> {
     /// The placements of `module` in source order, each as the `Child` of its body and the plan
     /// placement reads. A placement of a module the type checker did not reach is skipped: it
     /// was refused already.
-    pub(super) fn lower_children(&mut self, scope: &Scope, module: DeclId) -> Vec<(Child, ChildPlan)> {
+    pub(super) fn lower_children(&mut self, scope: &mut Scope, module: DeclId) -> Vec<(Child, ChildPlan)> {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
         let calls = data.instances.clone();
         let mut ordinals: Vec<(DeclId, u32)> = Vec::new();
@@ -80,18 +81,38 @@ impl Elaboration<'_, '_> {
             if self.hoisted_callee(call).is_some() {
                 continue;
             }
-            let ordinal = match ordinals.iter_mut().find(|(m, _)| *m == child_module) {
-                Some((_, k)) => {
-                    *k += 1;
-                    *k
-                }
-                None => {
-                    ordinals.push((child_module, 0));
-                    0
-                }
+            // a placement in generation is one child per iteration, named by its ordinals (`sec[1]`); an arm not elaborated has none
+            let owner = self.design.expr_node(call).owner;
+            let iterations = match self.generated.of(owner) {
+                Some(iterations) => iterations.clone(),
+                None => vec![Iteration::default()],
             };
-            if let Some(child) = self.lower_child(scope, call, child_module, ordinal, out.len() as u32) {
-                out.push(child);
+            for iteration in &iterations {
+                let ordinal = match ordinals.iter_mut().find(|(m, _)| *m == child_module) {
+                    Some((_, k)) => {
+                        *k += 1;
+                        *k
+                    }
+                    None => {
+                        ordinals.push((child_module, 0));
+                        0
+                    }
+                };
+                for (variable, value) in &iteration.values {
+                    scope.unrolled.bind(*variable, Constant::Int(*value));
+                }
+                scope.ordinals = iteration.ordinals.clone();
+                let lowered = self.lower_child(scope, call, child_module, ordinal, out.len() as u32);
+                scope.ordinals.clear();
+                for (variable, _) in &iteration.values {
+                    scope.unrolled.unbind(*variable);
+                }
+                if let Some((mut child, mut plan)) = lowered {
+                    let suffix = iteration.subscripts();
+                    child.name.push_str(&suffix);
+                    plan.name.push_str(&suffix);
+                    out.push((child, plan));
+                }
             }
         }
         out
@@ -114,7 +135,7 @@ impl Elaboration<'_, '_> {
         let mut values = Bindings::new();
         for key in self.keys.of(module).to_vec() {
             let written = match fields.iter().find(|f| f.res == Resolution::Decl(key)) {
-                Some(field) => match self.fold_param_value(field.value, &scope.keys) {
+                Some(field) => match self.fold_param_value(field.value, &scope.keys.overlaid(&scope.unrolled)) {
                     Ok(value) => Some(value),
                     Err(fault) => {
                         self.const_fault(&fault, "the value of a param that fixes structure");
@@ -329,7 +350,7 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             }
-            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() };
+            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
             match self.fold_param_value(field.value, &bindings) {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child

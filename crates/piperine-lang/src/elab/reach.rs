@@ -36,7 +36,8 @@ impl Elaboration<'_, '_> {
         for call in data.instances.clone() {
             if matches!(self.types.callee(call), Some(Callee::Module(_))) && self.hoisted_callee(call).is_none() {
                 self.child_indices.insert(call, next);
-                next += 1;
+                // a placement in generation is one child per iteration
+                next += self.generated.of(self.design.expr_node(call).owner).map_or(1, |iterations| iterations.len() as u32);
             }
         }
     }

@@ -112,6 +112,8 @@ pub(super) struct Scope {
     /// The constant each loop variable of the unrolled analog loops the code sits in, and each
     /// parameter of the unrolled recursive calls it sits in, stands for (`unroll.rs`).
     pub(super) unrolled: Bindings,
+    /// The generation `for`s the code being lowered sits in and the ordinal of the iteration in each (`generation.rs`).
+    pub(super) ordinals: Vec<(DeclId, u32)>,
     /// Whether the code being lowered is a statement of an `analog` block, not a function's body.
     pub(super) in_analog_block: bool,
     /// How many `if` and `match` decisions that did not fold the code being lowered sits under.
@@ -139,7 +141,7 @@ impl Scope {
     }
 
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), ordinals: Vec::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 

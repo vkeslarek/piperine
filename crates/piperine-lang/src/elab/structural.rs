@@ -151,6 +151,8 @@ impl<'a, 'd> ParamReads<'a, 'd> {
     fn collect(&self, expr: ExprId, depth: usize, params: &mut BTreeSet<DeclId>) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(_) => true,
+            // the bounds of a generation range, or of the range an array length is
+            ExprKind::Range { lo, hi, .. } => lo.iter().chain(hi.iter()).all(|bound| self.collect(*bound, depth, params)),
             ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } | ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: inner } => self.collect(*inner, depth, params),
             ExprKind::Binary { lhs, rhs, .. } => self.collect(*lhs, depth, params) && self.collect(*rhs, depth, params),
             ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some() => self.collect(*recv, depth, params) && args.iter().all(|a| self.collect(a.value, depth, params)),
@@ -395,6 +397,13 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
+        // A param read by the range or the condition of a generation is structural too (§8.2.7, GN-20).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_generation(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param read by a const generic argument of a placement is structural too (`Taps::<{ count }>`, GN-20).
         for module in modules {
             let order = self.params_of(*module);
@@ -436,6 +445,51 @@ impl Elaboration<'_, '_> {
             }
         }
         found
+    }
+
+    /// The params of `module` that the range of a generation `for`, or the condition of a generation `if`, reads.
+    fn params_read_by_generation(&self, module: DeclId) -> Vec<DeclId> {
+        let mut found = Vec::new();
+        for decl in 0..self.design.decl_count() {
+            let decl = DeclId(decl as u32);
+            let data = self.design.decl_data(decl);
+            if !self.is_inside(decl, module) {
+                continue;
+            }
+            let read = match &data.kind {
+                DeclKind::Generation(crate::pom::GenerationData::For { iter, .. }) => *iter,
+                DeclKind::Generation(crate::pom::GenerationData::If { cond, .. }) => *cond,
+                _ => continue,
+            };
+            self.collect_params(read, &mut found);
+        }
+        found
+    }
+
+    /// Whether `decl` is declared under `module`.
+    fn is_inside(&self, decl: DeclId, module: DeclId) -> bool {
+        let mut at = self.design.decl_data(decl).parent;
+        while let Some(current) = at {
+            if current == module {
+                return true;
+            }
+            at = self.design.decl_data(current).parent;
+        }
+        false
+    }
+
+    /// Adds every param `expr` reads, whatever else it reads, to `found`.
+    fn collect_params(&self, expr: ExprId, found: &mut Vec<DeclId>) {
+        let node = self.design.expr_node(expr);
+        if let ExprKind::Path(path) = &node.kind
+            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+            && matches!(self.design.decl_data(decl).kind, DeclKind::Param(_))
+        {
+            found.push(decl);
+        }
+        for child in crate::pom::expr_children(&node.kind, self.design) {
+            self.collect_params(child, found);
+        }
     }
 
     /// The params of `module` that a const generic argument of one of its placements reads (`Taps::<{ count }>`).

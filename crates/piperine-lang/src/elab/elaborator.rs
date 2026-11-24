@@ -99,6 +99,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) frames: Vec<Frame>,
     /// The index each placement of the body being lowered takes among its children (`reach.rs`).
     pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
+    /// The items of the body being lowered that are written inside generation, and how each unrolls (`generation.rs`).
+    pub(super) generated: super::generation::GeneratedItems,
     /// The reach frame of each child a body reads: by the frame that reads it and the placement.
     /// The values of the key params of the body being lowered: what its initial values fold over.
     pub(super) body_keys: Bindings,
@@ -149,6 +151,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             structure: Structure::default(),
             frames: Vec::new(),
             child_indices: BTreeMap::new(),
+            generated: super::generation::GeneratedItems::default(),
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),

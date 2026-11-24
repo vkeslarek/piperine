@@ -107,6 +107,16 @@ impl Elaboration<'_, '_> {
         while let Ty::Array(element, length) = at {
             dims.push(match length {
                 Length::Fixed(length) => *length,
+                // the length of an array a generation `for` makes: the trips of its range (§8.2.23)
+                Length::Generic(crate::types::ConstTerm::Expr(expr)) if let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(*expr).kind => {
+                    let bound = |this: &mut Self, bound| match this.consts.value(bound, bindings) {
+                        Ok(piperine_ir::Constant::Int(value)) => Ok(value),
+                        _ => Err(LengthFault::NotConstant),
+                    };
+                    let (first, last) = (bound(self, lo)?, bound(self, hi)?);
+                    let count = last + i128::from(inclusive) - first;
+                    u64::try_from(count.max(0)).map_err(|_| LengthFault::Negative(count))?
+                }
                 Length::Generic(crate::types::ConstTerm::Expr(expr)) => match self.consts.value(*expr, bindings) {
                     Ok(piperine_ir::Constant::Int(count)) => u64::try_from(count).map_err(|_| LengthFault::Negative(count))?,
                     _ => return Err(LengthFault::NotConstant),

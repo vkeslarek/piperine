@@ -187,16 +187,30 @@ impl Elaboration<'_, '_> {
         indexes.reverse();
         let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Some(None) };
         let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
-        let Some(shape) = self.frames.get(scope.frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else { return Some(None) };
+        let Some(shape) = self.frames.get(scope.frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
+            // a node of an arm that was not elaborated (§8.2.24)
+            if self.generated.of(decl).is_some_and(Vec::is_empty) {
+                self.refer_outside_generation(scope.file, self.design.expr_node(arg).span, decl, None);
+                return None;
+            }
+            return Some(None);
+        };
         let span = self.design.expr_node(arg).span;
         let Some(piperine_ir::Terminal::Node(first)) = self.frame_node(scope.frame, decl) else { return Some(None) };
-        if indexes.len() > shape.dims.len() {
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        // inside the generation `for`s that declare the array, the name is the iteration's element (§8.2.23)
+        let implicit = self.implicit_ordinals(decl, &scope.ordinals);
+        let generated = self.generated.of(decl).is_some();
+        let mut flat = 0u64;
+        let mut levels = implicit.len();
+        for (ordinal, length) in implicit.iter().zip(&shape.dims) {
+            flat = flat * length + ordinal;
+        }
+        if indexes.len() + implicit.len() > shape.dims.len() {
             self.unsupported(scope.file, span, "an index of an array of nodes past its levels");
             return None;
         }
-        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
-        let mut flat = 0u64;
-        for (index, length) in indexes.iter().zip(&shape.dims) {
+        for (index, length) in indexes.iter().zip(&shape.dims[implicit.len()..]) {
             let folded = match self.consts.value(*index, &bindings) {
                 Ok(piperine_ir::Constant::Int(at)) => u64::try_from(at).ok(),
                 _ => None,
@@ -206,14 +220,19 @@ impl Elaboration<'_, '_> {
                 return None;
             };
             if at >= *length {
-                let message = format!("the element {at} is out of range for an array of {length} nodes (§1 rule 11)");
-                self.report(scope.file, Diagnostic::new("E0104", message, span, "index out of range"));
+                if generated {
+                    self.refer_outside_generation(scope.file, span, decl, Some((at, *length)));
+                } else {
+                    let message = format!("the element {at} is out of range for an array of {length} nodes (§1 rule 11)");
+                    self.report(scope.file, Diagnostic::new("E0104", message, span, "index out of range"));
+                }
                 return None;
             }
             flat = flat * length + at;
+            levels += 1;
         }
-        let below: u64 = shape.dims[indexes.len()..].iter().product();
-        Some(Some((first + (flat * below) as u32, below, indexes.len() == shape.dims.len())))
+        let below: u64 = shape.dims[levels..].iter().product();
+        Some(Some((first + (flat * below) as u32, below, levels == shape.dims.len())))
     }
 
     /// The node `bl[k]` of an array of nodes names (`g[r][c]` of a nested one): its terminal. `Some(None)` when `arg` is no

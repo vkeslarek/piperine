@@ -126,6 +126,7 @@ impl Elaboration<'_, '_> {
         self.frames[0].substitution = self.consts.substitution().clone();
         self.body_keys = keys.clone();
         self.consts.set_frame_params(keys.clone());
+        self.expand_generation(module);
         self.index_children(module);
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
@@ -153,7 +154,7 @@ impl Elaboration<'_, '_> {
         }
         self.decide_branch_kinds(&mut scope);
         self.check_selector_rule(&scope);
-        let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
+        let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
         self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
         let reaches = self.structure.reaches.clone();
@@ -241,13 +242,22 @@ impl Elaboration<'_, '_> {
     /// added to the structure of the body and named in frame 0. A discrete carrier is not a node
     /// (`carriers.rs`).
     fn lower_nodes(&mut self, module: DeclId) {
-        let children = self.design.decl_data(module).children.clone();
+        let mut children = self.design.decl_data(module).children.clone();
+        // the nodes declared in generation are arrays, one element per iteration (`generation.rs`)
+        children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
         let node = |c: &DeclId| self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
             if self.types.node_array(decl).is_some() {
                 if let Some((shape, first)) = self.add_node_array(decl, role, "", 0) {
+                    // a generated array has one element for each iteration; an arm some iterations skip leaves a gap
+                    if let Some(iterations) = self.generated.of(decl)
+                        && iterations.len() as u64 != shape.count()
+                    {
+                        let data = self.design.decl_data(decl);
+                        self.unsupported(data.file, data.span, "a generated node in an arm that not every iteration elaborates");
+                    }
                     self.frames[0].nodes.insert(decl, first);
                     self.frames[0].node_shapes.insert(decl, shape);
                 }

@@ -373,6 +373,17 @@ impl Elaboration<'_, '_> {
         match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
             // a handle is the node the caller passed (`handles.rs`)
             Resolution::Decl(decl) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_terminal(scope, bound),
+            // a node declared in generation: the iteration's element, or the arm was not elaborated (`generation.rs`)
+            Resolution::Decl(decl) if self.generated.of(decl).is_some() && matches!(self.design.decl_data(decl).kind, DeclKind::Signal(_)) => {
+                if self.generated.of(decl).is_some_and(Vec::is_empty) {
+                    self.refer_outside_generation(file, node.span, decl, None);
+                    return None;
+                }
+                self.node_element(scope, arg)?.or_else(|| {
+                    self.unsupported(file, node.span, "a generated node outside the generation that declares it, without an index");
+                    None
+                })
+            }
             Resolution::Decl(decl) => match self.frame_node(scope.frame, decl) {
                 Some(terminal) => Some(terminal),
                 None => {
