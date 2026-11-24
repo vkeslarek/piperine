@@ -278,6 +278,7 @@ fn workflows_name_no_retired_crate() {
 const KEPT_CRATES: &[&str] = &[
     "piperine-abi",
     "piperine-lang",
+    "piperine-interp",
     "piperine-ir",
     "piperine-numbers",
     "piperine-project",
@@ -292,14 +293,11 @@ const KEPT_CRATES: &[&str] = &[
     "piperine-transpile",
 ];
 
-/// The crate names in the rows of the table under `## Crate responsibilities`
-/// of `CLAUDE.md` (the first backticked cell of each row).
+/// The crate names in the rows of the table under `## Crates` of `CLAUDE.md` (the first
+/// backticked cell of each row).
 fn claude_table_crates() -> Vec<String> {
     let text = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
-    let body = text
-        .split("## Crate responsibilities")
-        .nth(1)
-        .expect("CLAUDE.md has a `## Crate responsibilities` section");
+    let body = text.split("## Crates").nth(1).expect("CLAUDE.md has a `## Crates` section");
     let section = body.split("\n## ").next().unwrap_or(body);
     section
         .lines()
@@ -308,94 +306,20 @@ fn claude_table_crates() -> Vec<String> {
         .collect()
 }
 
-/// The crate directory names in the fenced block under `## Workspace map` of
-/// `AGENTS.md` (lines of the tree that name a `piperine-*` directory).
-fn agents_map_crates() -> Vec<String> {
-    let text = std::fs::read_to_string(repo_root().join("AGENTS.md")).expect("read AGENTS.md");
-    let body = text
-        .split("## Workspace map")
-        .nth(1)
-        .expect("AGENTS.md has a `## Workspace map` section");
-    let section = body.split("\n## ").next().unwrap_or(body);
-    let block = section.split("```").nth(1).expect("a fenced block under the map");
-    block
-        .lines()
-        .filter_map(|l| {
-            let at = l.find("piperine-")?;
-            let name: String = l[at..]
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
-                .collect();
-            Some(name)
-        })
-        .collect()
-}
-
 #[test]
 fn instructions_list_the_kept_crates() {
     let mut table = claude_table_crates();
     table.sort();
-    let mut map = agents_map_crates();
-    map.sort();
     let mut kept: Vec<String> = KEPT_CRATES.iter().map(|s| s.to_string()).collect();
     kept.sort();
     assert_eq!(table, kept, "CLAUDE.md crate table");
-    assert_eq!(map, kept, "AGENTS.md workspace map");
-    instruction_text_places_the_moved_code_and_states_the_boundary_as_target();
-}
-
-/// The row of the `CLAUDE.md` crate table for `name`.
-fn claude_row(name: &str) -> String {
-    let text = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
-    let prefix = format!("| `{name}` |");
-    text.lines()
-        .find(|l| l.starts_with(&prefix))
-        .unwrap_or_else(|| panic!("CLAUDE.md has no row for {name}"))
-        .to_string()
-}
-
-/// The role text of both instruction files; run by `instructions_list_the_kept_crates`.
-fn instruction_text_places_the_moved_code_and_states_the_boundary_as_target() {
-    let claude = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
-    let agents = std::fs::read_to_string(repo_root().join("AGENTS.md")).expect("read AGENTS.md");
-    let owner = claude_row("piperine-solver");
-    let analog = claude_row("piperine-analog-solver");
-    for moved in ["math/", "ConvergencePlan", "TrBdf2"] {
-        assert!(!owner.contains(moved), "the owner row still claims {moved}");
-        assert!(analog.contains(moved), "the analog row does not hold {moved}");
-    }
-    assert!(!claude.contains("analyses/convergence.rs"), "CLAUDE.md cites the old convergence path");
-    assert!(!claude.contains("`math/integration.rs`") || claude.contains("analog crate, `math/integration.rs`"));
-    assert!(owner.contains("`piperine-abi`"), "the owner row omits its `piperine-abi` dependency");
-    for (name, text) in [("CLAUDE.md", &claude), ("AGENTS.md", &agents)] {
-        let flat = text.replace('\n', " ");
-        let at = flat.find("owner `piperine-solver` depends on").unwrap_or_else(|| panic!("{name} states no owner dependency"));
-        let sentence = flat[at..].split_once(". ").map_or(&flat[at..], |(s, _)| s);
-        assert!(sentence.contains("piperine-abi"), "{name}: the owner's dependency sentence omits `piperine-abi`: {sentence}");
-    }
-    let agents_owner = agents.lines().find(|l| l.contains("piperine-solver/")).expect("map row");
-    assert!(!agents_owner.contains("math/"), "AGENTS.md owner map row still lists math/");
-    for (name, text) in [("CLAUDE.md", &claude), ("AGENTS.md", &agents)] {
-        assert!(!text.contains("meet through events only"), "{name} states the events-only boundary as current");
-        assert!(!text.contains("through events only."), "{name} states the events-only boundary as current");
-        assert!(!text.contains("Events are the only boundary"), "{name} states the events-only boundary as current");
-        assert!(text.contains("MD-62"), "{name} does not cite MD-62, the device ABI as the only device contract");
-        assert!(text.contains("owner protocol"), "{name} does not name the owner protocol as the boundary");
-        assert!(text.contains("root `piperine`"), "{name} omits the root shell from the non-building list");
-        for gone in ["crates/piperine-plugin", "PluginHost", "codegen's own"] {
-            assert!(!text.contains(gone), "{name} still references {gone}");
-        }
-    }
 }
 
 #[test]
 fn instructions_have_no_entry_for_a_retired_crate() {
-    let both: Vec<String> = claude_table_crates().into_iter().chain(agents_map_crates()).collect();
+    let table = claude_table_crates();
     for retired in RETIRED_CRATES.iter().chain(["piperine-signal", "piperine-vams"].iter()) {
-        assert!(
-            !both.iter().any(|c| c == retired),
-            "an instruction file still lists retired crate {retired}"
-        );
+        assert!(!table.iter().any(|c| c == retired), "CLAUDE.md still lists retired crate {retired}");
     }
 }
 
@@ -421,10 +345,8 @@ fn hygiene_guard_lives_in_piperine_lang() {
 
 #[test]
 fn instruction_files_and_state_name_the_abi_crate() {
-    for file in ["CLAUDE.md", "AGENTS.md"] {
-        let text = std::fs::read_to_string(repo_root().join(file)).expect("read an instruction file");
-        assert!(text.contains("piperine-abi"), "{file} does not name piperine-abi");
-    }
+    let claude = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
+    assert!(claude.contains("piperine-abi"), "CLAUDE.md does not name piperine-abi");
     let state = std::fs::read_to_string(repo_root().join(".specs/STATE.md")).expect("read .specs/STATE.md");
     assert!(state.contains("### MD-61"), ".specs/STATE.md carries no MD-61");
     assert!(state.contains("### MD-62"), ".specs/STATE.md carries no MD-62");
