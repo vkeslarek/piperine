@@ -24,7 +24,7 @@ use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
 use support::printed::Printed;
-use support::records::{Fields, Rows};
+use support::records::{DrivenCells, Fields, Rows};
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -138,6 +138,12 @@ fn the_resolved_line_runs_on_its_nature() {
     let ran = chapter.wrapped("board.msl", "", "core-std#6", Bench::IRQ_BENCH).run(Commands::transient(4e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
     let rows = Rows::of(&ran.stream("line"), &["level", "strength"]);
     assert_eq!(rows, ["0 1 Pull", "1000 0 Strong", "3000 1 Pull"].map(str::to_string), "released, one request, the second request changes nothing, released again");
+    let listed = chapter.wrapped("board.msl", "", "core-std#6", Bench::IRQ_BENCH).run(Overrides { print_step: Some(0.5e-6), print: vec!["board.irq_n".to_string()], ..Commands::transient(4e-6, Some(0.5e-6)) }).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(
+        DrivenCells::column(&listed.table, "Top.board.irq_n"),
+        ["1 Pull", "1 Pull", "0 Strong", "0 Strong", "0 Strong", "0 Strong", "1 Pull", "1 Pull", "1 Pull"].map(str::to_string),
+        "the listing's own `Board` holds its line as its watched copy does: every half microsecond from 0 to 4 us"
+    );
 }
 
 #[test]
