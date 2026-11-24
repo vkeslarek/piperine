@@ -765,6 +765,9 @@ Proof: run elabtempl | test a_bare_module_name_used_as_a_value_places_its_templa
 Proof: run srctempl | test a_bare_module_name_places_its_template_with_every_default ... ok
 Proof: run typesgen | test phase_d_and_e_forms_stay_p0001_by_name ... ok
 
+**C127** - A template choice whose arms name two modules is one `E0180`; a call through the `let` that holds it adds no diagnostic, and a value of a module's type is never called "no function and no template". (§1.5.4, §8.4.4; fix round 15, finding 37)
+Proof: run typestempl | test a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none ... ok
+
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 

@@ -206,6 +206,9 @@ impl Checker<'_> {
                 Some(Ty::Module(module)) if self.binds_an_instance(decl) => {
                     self.instance_as_value(file, span, decl, module.decl);
                 }
+                // a template's type is placed through (§8.4.4): a `let` of one the classifier did not name has its own
+                // diagnostic where its value is written
+                Some(Ty::Module(_)) => {}
                 // the callee's position requires a function (or a template, which places): any other type is a mismatch (§1.5)
                 Some(found) => {
                     let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();

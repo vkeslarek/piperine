@@ -208,8 +208,15 @@ impl Checker<'_> {
             return;
         };
         self.lets_open.insert(*binding, data.value);
+        let reported = self.reported();
         let ty = self.infer_event_position(data.value);
         self.lets_open.remove(binding);
+        // a template whose value was refused (a choice of two modules, `E0180`) holds no template to place: its reads and
+        // calls add nothing to that diagnostic
+        let ty = match ty {
+            Some(Ty::Module(_)) if self.reported() > reported && !self.binds_an_instance(*binding) => None,
+            other => other,
+        };
         if let Some(closure) = self.closure_expr(data.value) {
             self.closure_locals.insert(*binding, closure);
         }

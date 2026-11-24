@@ -406,6 +406,12 @@ impl<'d> Checker<'d> {
         self.design.decl_data(self.design.expr_node(expr).owner).file
     }
 
+    /// How many diagnostics the check has reported so far: a form compares the count before and after typing a part to know
+    /// whether that part was refused.
+    pub(super) fn reported(&self) -> usize {
+        self.diagnostics.len()
+    }
+
     /// `P0001`: a construct outside the M1 subset, named.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));

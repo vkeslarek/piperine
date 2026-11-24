@@ -304,6 +304,21 @@ fn an_unread_let_of_a_template_item_is_e0181() {
 }
 
 #[test]
+fn a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none() {
+    // finding 37: the arms of a template choice name two modules (`E0180`, §1.5.4); a call through the `let` that holds it adds
+    // no second diagnostic, and a template's type is never "no function and no template"
+    for form in [
+        "let t = if sel { Cell {} } else { Sizing { size: 1.0 } }; let b = t(x);",
+        "let t = if sel { Cell {} } else { Sizing { size: 1.0 } };",
+        "let b = t(x); let t = if sel { Cell {} } else { Sizing { size: 1.0 } };",
+    ] {
+        let source = TemplateSource::new(&format!("module Top(x: E) {{ sel: bool = true; {form} }}"));
+        assert_eq!(source.codes(), ["E0180"], "{form}: {}", source.message());
+        assert!(!source.message().contains("no function and no template"), "{form}: {}", source.message());
+    }
+}
+
+#[test]
 fn a_bare_module_name_used_as_a_value_is_its_template_with_every_default() {
     // §8.4 amendment (finding 35): a module's bare name used as a value is the template `Name {}`, every param at its
     // default, wherever a template goes (a `let`, a head, a param value, a function result); a required param it leaves
