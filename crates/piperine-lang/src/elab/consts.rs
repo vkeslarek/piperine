@@ -34,6 +34,7 @@ mod imported;
 mod integers;
 mod numbers;
 mod parsed;
+mod templates;
 
 pub(in crate::elab) use integers::DynamicInteger;
 
@@ -45,7 +46,7 @@ use piperine_ir::{Constant, Real};
 use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
-use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, TypeId, UnOp};
+use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StructClass, TypeId, UnOp};
 use crate::types::{Callee, ConstTerm, GenericValue, Intrinsic, Length, Method, Nominal, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
@@ -209,6 +210,8 @@ pub struct ConstEval<'d, 't> {
     /// The values the module params of the frame being lowered take: an array length that reads a param (`[u8; n]`,
     /// §8.1.2) folds over them wherever a type of that frame is read.
     frame_params: Bindings,
+    /// The templates the evaluation folded, interned by value: a template is a number, equal templates one (`templates.rs`).
+    templates: super::templates::Templates,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
@@ -314,7 +317,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), wides: Vec::new(), wides_taken: 0, substitution: crate::types::Substitution::new(), frame_params: Bindings::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), wides: Vec::new(), wides_taken: 0, substitution: crate::types::Substitution::new(), frame_params: Bindings::new(), templates: super::templates::Templates::default() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -412,6 +415,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             ExprKind::Tuple(items) => self.tuple_value(items, bindings),
             ExprKind::Array(items) => self.array_value(items, bindings),
             ExprKind::ArrayRepeat { elem, len } => self.repeat_value(expr, *elem, *len, bindings),
+            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_literal(*module, fields, bindings),
             ExprKind::Struct { path, fields, .. } => self.struct_value(expr, *path, fields, bindings),
             ExprKind::Field { expr: recv, name, .. } => self.field_value(expr, *recv, &name.text, bindings),
             ExprKind::Index { expr: base, index } => self.index_value(expr, *base, *index, bindings),

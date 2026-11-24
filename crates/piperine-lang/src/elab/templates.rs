@@ -13,7 +13,7 @@ use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution, StructClass};
 
 /// A template folded: the module it names and the value each param of its block gives.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct TemplateValue {
+pub(in crate::elab) struct TemplateValue {
     /// The module the template places.
     pub(super) module: DeclId,
     /// The params the block binds: the param, its folded value and the expression that gave it.
@@ -22,13 +22,13 @@ pub(super) struct TemplateValue {
 
 /// The templates interned so far, by number.
 #[derive(Debug, Default)]
-pub(super) struct Templates {
+pub(in crate::elab) struct Templates {
     values: Vec<TemplateValue>,
 }
 
 impl Templates {
     /// The number of `value`: the one it was given before, else the next.
-    fn intern(&mut self, value: TemplateValue) -> Constant {
+    pub(in crate::elab) fn intern(&mut self, value: TemplateValue) -> Constant {
         let number = match self.values.iter().position(|known| known.module == value.module && known.fields.iter().map(|f| (f.0, f.1)).eq(value.fields.iter().map(|f| (f.0, f.1)))) {
             Some(number) => number,
             None => {
@@ -73,6 +73,6 @@ impl Elaboration<'_, '_> {
             let Resolution::Decl(param) = field.res else { continue };
             folded.push((param, self.fold_param_value(field.value, bindings)?, field.value));
         }
-        Ok(self.templates.intern(TemplateValue { module, fields: folded }))
+        Ok(self.consts.intern_template(TemplateValue { module, fields: folded }))
     }
 }

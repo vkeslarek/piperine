@@ -172,7 +172,7 @@ impl Elaboration<'_, '_> {
         if !self.is_module_param(*param) {
             return None;
         }
-        self.templates.get(scope.keys.get(*param)?).cloned()
+        self.consts.templates().get(scope.keys.get(*param)?).cloned()
     }
 
     /// What a placement through a template gives its module: the constant of each param the block

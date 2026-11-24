@@ -108,8 +108,6 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) looped: BTreeMap<DeclId, std::collections::BTreeSet<crate::pom::ExprId>>,
     /// The functions on a call cycle (`unroll.rs`).
     pub(super) cycles: CallCycles,
-    /// The templates the params of module type hold (`templates.rs`).
-    pub(super) templates: super::templates::Templates,
     /// The IR type each reached struct and enum has (`types.rs`).
     pub(super) type_arena: super::types::TypeArena,
     /// Every trait and `impl` of the design: what a call through a bound resolves against (`methods.rs`).
@@ -151,7 +149,6 @@ impl<'d, 't> Elaboration<'d, 't> {
             unrolled_names: BTreeMap::new(),
             looped: BTreeMap::new(),
             cycles: CallCycles::default(),
-            templates: super::templates::Templates::default(),
             type_arena: super::types::TypeArena::default(),
             impls: crate::types::ImplTable::new(design),
             diagnostics: Vec::new(),
