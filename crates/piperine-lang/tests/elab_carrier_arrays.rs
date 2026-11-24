@@ -439,3 +439,12 @@ fn an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_elem
     elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
     Refusals::assert_one(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(1)), "E0223", &["`y`", "`M::<1>`"]);
 }
+
+#[test]
+fn an_initial_value_beside_definitions_of_every_element_is_e0338_at_the_instance_that_folds_so() {
+    // §8.2.21: an initial value is the value of the elements no undelayed definition names; with a generic length it is
+    // E0338 only at the instance whose elements the definitions all name
+    let src = |length: u32| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N] = [false; N]; b[0] = clk; b[1] = !clk; }}\nmodule Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
+    Refusals::assert_one(&src(2), "E0338", &["`b`", "`M::<2>`"]);
+    elaborates(&src(4));
+}

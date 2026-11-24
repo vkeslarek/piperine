@@ -1025,6 +1025,9 @@ Proof: run typescarrarr | test an_initial_value_is_the_value_of_the_elements_no_
 Proof: run elabcarrarr | test an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_element_is_e0223 ... ok
 Proof: run paritycarrarr | test an_element_given_to_an_out_port_is_driven_by_the_child ... ok
 
+**C130** - An initial value beside undelayed definitions is the value of the elements no definition names: for a generic or param length `E0338` is judged per instance, naming it, once the definitions name every element (`M::<2>` with `b[0]` and `b[1]` defined), and `M::<4>` of the same source is clean. (§8.2.21; coordinator ruling after round 3; design-c DC11)
+Proof: run elabcarrarr | test an_initial_value_beside_definitions_of_every_element_is_e0338_at_the_instance_that_folds_so ... ok
+
 ---
 
 ## Handoff
@@ -1103,7 +1106,7 @@ correct (§3.3.4, MD-78): the test harnesses (`signal clk: Bit;` read only by `i
 corrected in T71 (`Dff` at `Option<u8>`, `Dff::<u8>` proven `E0187`), plus two more Book bugs the same rule exposes:
 cheatsheet#2 `signal s: [Bit; N]` and natures#8 `Slice<T: Repr>` with `signal buf: Bit<T>` (T116).
 (3) New tasks T116 (Book amendments) and T117 (named connection); ids continue after phase E's T115 so no id moves. Phase C
-is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C129. B10 = T59, T116, T60, T61, T117, T62, T63, T64.
+is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C130. B10 = T59, T116, T60, T61, T117, T62, T63, T64.
 (4) Continue from the draft: merge `origin/wip/generics-c-b10` into T60/T61's work, then put `ModelCheck`'s seeding and the
 placement typing behind the gate (the draft's `refuse_generic_placements` becomes `UnfinishedForms`); its `GAPS.md` S3 drop
 and `gaps_drops_s3` move to T71.

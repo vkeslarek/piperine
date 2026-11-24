@@ -400,6 +400,12 @@ impl<'d> Types<'d> {
         self.deferred_coverage.handed_initial.contains(&decl)
     }
 
+    /// Whether the array carrier `decl` has an initial value and undelayed definitions name some of its elements, with a
+    /// length not known yet: `E0338` is judged per instance, once every element is defined.
+    pub fn defers_defined_initial_value(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.defined_initial.contains(&decl)
+    }
+
     /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an
     /// array whose innermost element is a `Ty::Carrier` (CV-23).
     pub fn carrier_array(&self, decl: DeclId) -> Option<&Ty> {

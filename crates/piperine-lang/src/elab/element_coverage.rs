@@ -23,7 +23,8 @@ impl Elaboration<'_, '_> {
         for decl in children {
             let missing = self.types.defers_missing_initial_value(decl);
             let handed = self.types.defers_handed_initial_value(decl);
-            if !missing && !handed {
+            let defined = self.types.defers_defined_initial_value(decl);
+            if !missing && !handed && !defined {
                 continue;
             }
             let (Some(carrier), Some(array)) = (self.frames[0].carriers.get(&decl).copied(), self.consts.typed_carrier_array(decl)) else { continue };
@@ -35,15 +36,16 @@ impl Elaboration<'_, '_> {
             if handed {
                 self.judge_handed_initial_value(decl, carrier, total, instance);
             }
+            if defined {
+                self.judge_defined_initial_value(decl, carrier, total, instance);
+            }
         }
     }
 
     /// `E0187` naming the elements of the array `decl` (carrier `carrier` of the body, `total` elements) that no driver names.
     fn judge_missing_initial_value(&mut self, decl: DeclId, carrier: u32, array: &Ty, total: u64, instance: &str) {
         let mut coverage = self.handed_coverage(carrier, total);
-        for drive in self.structure.drives.iter().filter(|drive| drive.carrier == carrier && drive.after.is_none()) {
-            Self::cover_drive(&mut coverage, drive);
-        }
+        self.cover_definitions(&mut coverage, carrier);
         let data = self.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let Some(unnamed) = coverage.unnamed(&name) else { return };
@@ -63,6 +65,27 @@ impl Elaboration<'_, '_> {
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("`{name}` has an initial value and every element is handed to an `out` port in `{instance}`: the instance holds the drive, so the declaring module may give none (§5.2.6)");
         self.report(data.file, Diagnostic::new("E0223", message, data.span, "initial value without the drive"));
+    }
+
+    /// `E0338` for the array `decl` when undelayed definitions name every one of its `total` elements: the initial value
+    /// would apply to none (§8.2.21). With an element left, the initial value is that element's.
+    fn judge_defined_initial_value(&mut self, decl: DeclId, carrier: u32, total: u64, instance: &str) {
+        let mut coverage = ElementCoverage::counted(total);
+        self.cover_definitions(&mut coverage, carrier);
+        if !coverage.is_complete() {
+            return;
+        }
+        let data = self.design.decl_data(decl).clone();
+        let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("`{name}` has an initial value and an undelayed definition of every element in `{instance}`: the definitions would replace it in the microstep that commits them (§8.2.21)");
+        self.report(data.file, Diagnostic::new("E0338", message, data.span, "initial value under an undelayed definition"));
+    }
+
+    /// The elements of carrier `carrier` that an undelayed definition names.
+    fn cover_definitions(&self, coverage: &mut ElementCoverage, carrier: u32) {
+        for drive in self.structure.drives.iter().filter(|drive| drive.carrier == carrier && drive.after.is_none()) {
+            Self::cover_drive(coverage, drive);
+        }
     }
 
     /// The elements of carrier `carrier` (`total` of them) that children hold at an `out` port.

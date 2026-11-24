@@ -165,6 +165,7 @@ impl Checker<'_> {
             _ => None,
         });
         match (indexed, below) {
+            (Element::At(_), None) => Element::Unfolded,
             (Element::At(prefix), Some(size)) if steps.len() < levels.len() => Element::Run(prefix * size, size),
             (found, _) => found,
         }
@@ -173,9 +174,15 @@ impl Checker<'_> {
     /// The element the first `indexes` name in an array of `levels`: a constant when every index folds, else any.
     fn element_of(&mut self, indexes: &[Step], levels: &[Length]) -> Element {
         let mut flat = 0u64;
-        for (step, length) in indexes.iter().zip(levels) {
+        for (level, (step, length)) in indexes.iter().zip(levels).enumerate() {
             let Step::Index(index) = step else { return Element::Any };
-            let (Some(at), Length::Fixed(count)) = (self.fold_length(*index), length) else {
+            // the length of the outermost level scales nothing, so a generic one still names the element by its index
+            let count = match length {
+                Length::Fixed(count) => Some(*count),
+                _ if level == 0 => Some(0),
+                _ => None,
+            };
+            let (Some(at), Some(count)) = (self.fold_length(*index), count) else {
                 return if self.runtime_read(*index).is_none() { Element::Unfolded } else { Element::Any };
             };
             flat = flat * count + at;

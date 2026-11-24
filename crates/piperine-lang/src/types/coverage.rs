@@ -21,6 +21,8 @@ pub(super) struct DeferredCoverage {
     pub(super) missing_initial: BTreeSet<DeclId>,
     /// Carriers with an initial value that `out` ports of children hold in part (`E0223` once every element is handed).
     pub(super) handed_initial: BTreeSet<DeclId>,
+    /// Carriers with an initial value that undelayed element definitions name in part (`E0338` once every element is defined).
+    pub(super) defined_initial: BTreeSet<DeclId>,
 }
 
 /// Which elements of one carrier a set of drives names, in row-major order for nested arrays.
@@ -160,7 +162,15 @@ impl Checker<'_> {
         let defined: BTreeSet<DeclId> = self.book.undelayed_elements.iter().map(|(carrier, _, _)| *carrier).collect();
         for decl in children.iter().copied().filter(|decl| defined.contains(decl)) {
             let Some(held) = self.carriers.get(&decl).cloned() else { continue };
-            if !self.has_initial(decl) || !self.undelayed_coverage(decl, &held).is_complete() {
+            if !self.has_initial(decl) {
+                continue;
+            }
+            let coverage = self.undelayed_coverage(decl, &held);
+            if coverage.is_deferred() {
+                self.deferred_coverage.defined_initial.insert(decl);
+                continue;
+            }
+            if !coverage.is_complete() {
                 continue;
             }
             let Some((_, _, span)) = self.book.undelayed_elements.iter().find(|(carrier, _, _)| *carrier == decl).copied() else { continue };
