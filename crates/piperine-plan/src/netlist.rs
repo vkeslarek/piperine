@@ -2,7 +2,7 @@
 //! the module of each body.
 
 use piperine_abi::raw::Module;
-use piperine_ir::{BodyId, CarrierRole, Constant, Ir, NodeRef};
+use piperine_ir::{BodyId, CarrierRole, Constant, Holder, Ir, NodeRef};
 use piperine_solver::abi::{Error, SolverDomain};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result, TimePointRule};
 
@@ -180,7 +180,7 @@ impl<'a> Netlist<'a> {
         let Some((value, resolution)) = resolution else {
             return if reads_others { vec![Port::Open, Port::Open] } else { vec![Port::Open] };
         };
-        let held = resolution.holders.iter().position(|holder| *holder == Some(instance.id()));
+        let held = resolution.holders.iter().position(|holder| *holder == Some(Holder { instance: instance.id(), carrier: c as u32 }));
         let drive = held.map_or(Port::Open, |k| Port::Net(ir.net(resolution.drives[k]).path().to_string()));
         let mut ports = vec![drive];
         if reads_others {

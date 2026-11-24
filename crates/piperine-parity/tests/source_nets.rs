@@ -461,3 +461,19 @@ fn a_parent_drives_a_childs_pub_resolved_signal() {
     // §5.2.2, RN-03 edge case: the parent holds a drive of the child's `pub` resolved signal beside the child's own: 1 + 20 + 100
     assert_eq!(edge_values("ParentDrivesBench", "offsets", "value").last(), Some(&121.0), "the child's drive and the parent's");
 }
+
+#[test]
+fn two_carriers_of_one_instance_on_one_net_hold_two_drives() {
+    // §5.2: each written resolved carrier of an instance holds its own drive. `Twin(n, n)` writes 1 on `x` and 2 on `y`, both on
+    // the net `n`: its two drives arrive in carrier order, 12; beside a drive of 3 from the instance `d`, whose path orders first, 312
+    assert_eq!(edge_values("TwinBench", "digits", "value").last(), Some(&12.0), "the twin's two drives");
+    assert_eq!(edge_values("TwinAndDigitBench", "digits", "value").last(), Some(&312.0), "d first, then the twin's x and y");
+}
+
+#[test]
+fn a_tran_with_both_sides_on_one_net_settles_on_the_level() {
+    // §22.3.7 with `a` and `b` the same net: the two carriers of the `Tran` each drive what the other's drive repeats beside the
+    // strong high of `Put`, so the net holds that high
+    let line = Model::of("line.msl");
+    assert_eq!(line.settled("TranSelfBench"), Held { level: Held::HIGH, strength: Held::STRONG });
+}

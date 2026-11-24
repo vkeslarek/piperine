@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{CarrierRole, Instance, Ir, NetId, Target};
+use piperine_ir::{CarrierRole, Holder, Instance, Ir, NetId, Target};
 
 /// One loop of undelayed drives through a one-driver net: the paths of the instances that hold its drives and the carriers
 /// they write, in net order.
@@ -64,7 +64,7 @@ impl<'ir> DriveLoops<'ir> {
             return Some(net.id());
         }
         let resolution = net.resolution()?;
-        let position = resolution.holders.iter().position(|holder| *holder == Some(instance.id()))?;
+        let position = resolution.holders.iter().position(|holder| *holder == Some(Holder { instance: instance.id(), carrier }))?;
         resolution.drives.get(position).copied()
     }
 
@@ -72,7 +72,7 @@ impl<'ir> DriveLoops<'ir> {
     fn other_drives(&self, instance: Instance<'ir>, carrier: u32) -> Vec<NetId> {
         let Some(net) = instance.net(carrier as usize) else { return Vec::new() };
         let Some(resolution) = net.resolution() else { return Vec::new() };
-        let own = resolution.holders.iter().position(|holder| *holder == Some(instance.id()));
+        let own = resolution.holders.iter().position(|holder| *holder == Some(Holder { instance: instance.id(), carrier }));
         resolution.drives.iter().enumerate().filter(|(position, _)| Some(*position) != own).map(|(_, drive)| *drive).collect()
     }
 

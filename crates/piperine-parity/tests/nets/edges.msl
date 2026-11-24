@@ -127,3 +127,24 @@ module ParentDrivesBench() {
     let h = Holder();
     h.w = 20.0;
 }
+
+/// A module whose two resolved carriers meet on one net, each driven: it holds two drives, `x` first, 1 then 2 (§5.2).
+module Twin(x: Digits, y: Digits) {
+    x = 1.0;
+    y = 2.0;
+}
+
+/// `Twin(n, n)` alone: the two drives of one instance arrive in carrier order, 12.
+module TwinBench() {
+    signal n: Digits;
+    let t = Twin(n, n);
+    let look = DigitsLook(n);
+}
+
+/// `Twin(n, n)` and a drive of 3 from the instance `d`, whose path orders before `t`: 3, then the twin's 1 and 2, 312.
+module TwinAndDigitBench() {
+    signal n: Digits;
+    let d = Digit(n) { amount: 3.0 };
+    let t = Twin(n, n);
+    let look = DigitsLook(n);
+}

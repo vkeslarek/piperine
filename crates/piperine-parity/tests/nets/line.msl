@@ -319,6 +319,15 @@ module TranBackwardBench() {
     let look = Look(a);
 }
 
+/// `Tran` with both sides on one net (`Tran(a, a, true)`): two carriers of one instance, two drives; a strong high on `a`
+/// is what each drive repeats, so the net settles on it.
+module TranSelfBench() {
+    signal a: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let t = Tran(a, a, true);
+    let look = Look(a);
+}
+
 /// `Tgate` with `s` high and `sn` high: the n side conducts.
 module TgateNBench() {
     signal a: Line;

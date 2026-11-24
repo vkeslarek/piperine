@@ -4,7 +4,7 @@
 //! `Resolution` names its resolver, drives and holders, and `Ir::check` refuses each form that does not fit.
 
 use piperine_ir::{
-    BodyId, BodySpec, Broken, Carrier, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
+    BodyId, BodySpec, Broken, Carrier, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, Holder, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
 };
 
 /// The bodies and designs this target checks, each beside the MSL it transcribes:
@@ -99,7 +99,7 @@ impl Fixture {
         b.bind_nets(root, vec![value, seen]);
         let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(4) });
         b.bind_nets(child, vec![first, second, value]);
-        b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(root), None], others: vec![(0, others)] });
+        b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(Holder { instance: root, carrier: 0 }), None], others: vec![(0, others)] });
         b.finish(root)
     }
 
@@ -129,7 +129,7 @@ fn a_resolved_net_is_built_checked_and_printed() {
     assert!(printed.contains("resolve [\"resolve~0\", \"resolve~1\", \"resolve~2\"] of (d0, d1)"), "`resolve` names its instances and drives:\n{printed}");
 
     assert!(
-        printed.contains("net Source.w: u8  declared by Source  resolved by Source.w$resolve of bool drives (Source.w$drive0, Source.w$drive1) held by (Source, host) others (0: Source.w$others0)"),
+        printed.contains("net Source.w: u8  declared by Source  resolved by Source.w$resolve of bool drives (Source.w$drive0, Source.w$drive1) held by (Source#0, host) others (0: Source.w$others0)"),
         "the net prints its resolution:\n{printed}"
     );
 

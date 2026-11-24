@@ -1356,6 +1356,16 @@ pub struct NetData {
     pub(crate) resolution: Option<Resolution>,
 }
 
+/// The holder of one drive of a resolved net: a carrier of an instance. An instance whose two resolved carriers sit on one
+/// net holds two drives, one per carrier (§5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Holder {
+    /// The instance whose body writes the carrier.
+    pub instance: InstanceId,
+    /// The carrier's index in the instance's body.
+    pub carrier: u32,
+}
+
 /// What a resolved net is made of below the POM: one drive net per drive, the resolver instance that combines them and
 /// the nets each holder reads `others()` through (RN-03). The value net is the net that holds this record; its type is
 /// the nature's `V`, each drive net's is `driven`.
@@ -1367,8 +1377,8 @@ pub struct Resolution {
     pub driven: ValueType,
     /// One drive net per drive, in instance-path order, the host's first (§4 rule 2).
     pub drives: Vec<NetId>,
-    /// The instance holding each drive, index for index with `drives` (`None`: the host).
-    pub holders: Vec<Option<InstanceId>>,
+    /// The carrier holding each drive, index for index with `drives` (`None`: the host).
+    pub holders: Vec<Option<Holder>>,
     /// The others net of each holder that reads `others()`, by drive index.
     pub others: Vec<(u32, NetId)>,
 }

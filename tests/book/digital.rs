@@ -451,6 +451,7 @@ module Top() {
 }
 digital for Top {
     on pending.changed() { emit!(\"pending\", v = pending); }
+    on listed.changed() { emit!(\"listed\", v = listed); }
     on bare_pending.changed() { emit!(\"bare_pending\", v = bare_pending); }
     on at(500n) { clk <- true; }
     on at(700n) { clk <- false; }
@@ -579,6 +580,7 @@ fn the_irq_line_runs_on_its_resolved_nature() {
     let ran = NetBench::model("digital#16", NetBench::IRQ_BENCH).run(Commands::transient_of("Top", 6e-6)).unwrap_or_else(|failure| panic!("digital#16: {failure}"));
     assert_eq!(NetBench::rows(&ran, "line", &NetBench::DRIVEN), NetBench::table(&["0 1 Pull", "1000 0 Strong", "4000 1 Pull"]), "idle, a request, the second request changes nothing, released");
     assert_eq!(NetBench::rows(&ran, "pending", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "sampled at the edges that follow the request and its release");
+    assert_eq!(NetBench::rows(&ran, "listed", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "the listing's own `Board` gives what its watched copy does");
     assert_eq!(NetBench::rows(&ran, "bare", &NetBench::DRIVEN), NetBench::table(&["0 z HighZ", "1000 0 Strong", "4000 z HighZ"]), "no pull-up: Z while released");
     assert_eq!(NetBench::rows(&ran, "bare_pending", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "`pending` stays low on the edge at 0.5 us, while the line reads Z");
 }
@@ -590,6 +592,10 @@ fn the_four_worked_nets_give_the_tables_of_f_4() {
     let ran = NetBench::model("digital#17", NetBench::AND_WIRE_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#17: {failure}"));
     assert_eq!(NetBench::rows(&ran, "net", &["value"]), NetBench::table(&["0 true", "1000 false", "3000 true"]), "(false, false) high; (true, false) and (true, true) low");
     assert_eq!(NetBench::rows(&ran, "alone", &["value"]), NetBench::table(&["0 true"]), "no `IrqSource`: `resolve` of an empty array is high");
+    // the listing's own `Board` resolves the same table on its own net `irq_n`, sampled in the middle of each step of the stimulus
+    let listed = NetBench::model("digital#17", NetBench::AND_WIRE_BENCH).run(Overrides { print_step: Some(0.5e-6), print: vec!["board.irq_n".to_string()], ..Commands::transient_of("Top", 4e-6) }).unwrap_or_else(|failure| panic!("digital#17: {failure}"));
+    let at = |row: usize| Table::text(&listed, row, "Top.board.irq_n");
+    assert_eq!([at(1), at(3), at(5), at(7)], ["Bool(true)", "Bool(false)", "Bool(false)", "Bool(true)"].map(str::to_string), "(false, false) high; (true, false) and (true, true) low; released, high");
     // a drive of another type picks no `impl`: E0180 naming the nature and the type (digital~4b2beb4c)
     let wrong = format!("{}module Wrong(irq_n: AndWire) {{ irq_n = logic(\"1\"); }}\nmodule Top() {{ signal n: AndWire; let w = Wrong(n); }}\n", Chapter::read().text("digital#17"));
     let refused = Refusal::of(Model::written("net.msl", &wrong).run(Commands::transient_of("Top", 1e-6)), "digital#17");
