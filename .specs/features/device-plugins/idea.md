@@ -47,6 +47,41 @@ like any module.
    TOFU trust, permissions): reuse its loading/trust/packaging or define the device-plugin path
    beside it — to be decided.
 
+## The ABI for MCU integrations — to rethink a little (coordinator assessment, 2026-11-24)
+
+The user asked whether today's device ABI works as-is for the MCU cases (AVR core, simavr / QEMU /
+Renode plugins). Verdict: **the semantics work as-is; efficiency and opaque emulators need a few
+additions.** The PoC already ran a full co-simulation through it (pins, reactions, commits at exact
+times, `wake`, the ADC `sample` event reading the accepted solution, `RECORD` UART).
+
+What works without change:
+- MCU → circuit: pad writes as commits with their own delay; `REPLACE` to revise a future commit.
+- Pull-on-read can be expressed today: the emulator stops before an input read, ends its reaction
+  with a `wake` re-armed at that read's instant, and resumes when the solver has caught up there.
+- Interrupts from inputs: a `cross` → pad change → function → `irq` event → the run reaction.
+- External runtimes (Renode is .NET, QEMU is a process): the plugin's `cdylib` owns the IPC; the
+  ABI does not need to know.
+
+What must change or be added:
+1. **`HORIZON` run-ahead** — implementation fix, not new ABI: abi.md R5 says the horizon is the end
+   of the tentative step; the plan clamps it to the instant when a `cross` reaches the device
+   (`plan.rs::crossing_reach`), which forced the PoC's 4 µs polling.
+2. **Validity window of an input** — new: an ambient/query giving, for an input pin, the earliest
+   instant it could change (from the analog side's event prediction / a conservative bound), so a
+   core can serve repeated reads from cache and run safely up to it.
+3. **Snapshot / restore of opaque state** — new, optional entry points (or a capability flag) for a
+   device whose state lives outside its private pins (simavr, QEMU, Renode), so rollback and
+   rewindable sessions work; without them the device stays `IRREVERSIBLE`. Our own core keeps its
+   state in the private state pin and needs none.
+4. **A text param** (firmware path) — `ParamValue` has `Bytes` (an image works) but no text.
+5. **Cheaper wakes** — a device that only needs to be told "you may run to t" should not force an
+   analog landing at every wake (the PoC's 750 k wakes were 750 k landings).
+6. Host side (not ABI): sink filtering of a device's internal events; a device's own event time on
+   observations.
+
+To decide when the feature is specified: which of 2, 3 and 5 become ABI entry points (abi.md
+amendments, ABI version) versus solver-side behaviour.
+
 ## Depends on / blocks
 
 - Builds on the device ABI and the host (`Session`).
