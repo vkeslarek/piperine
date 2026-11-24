@@ -337,6 +337,15 @@ impl Elaboration<'_, '_> {
         Some(self.emit(Expr::Array(parts), ty, origin))
     }
 
+    /// The position, among the iterations that elaborate the item `item`, of the one whose ordinals in the generation `for`s
+    /// around it are `ordinals`, outermost first: the instance of a generated placement it is. `None` for one the
+    /// generation never made.
+    pub(super) fn iteration_position(&self, item: DeclId, ordinals: &[u64]) -> Option<usize> {
+        let loops = self.generation_loops(item);
+        let wanted: Vec<u32> = ordinals.iter().map(|ordinal| u32::try_from(*ordinal).unwrap_or(u32::MAX)).collect();
+        self.generated.of(item)?.iter().position(|iteration| GeneratedLevels::new(&loops, iteration).0 == wanted)
+    }
+
     /// `E0342` for a reference to `decl`, an item written in generation: whose arm was not elaborated, or whose array has no
     /// element at `index`.
     pub(super) fn refer_outside_generation(&mut self, file: crate::pom::FileId, span: crate::msl::Span, decl: DeclId, index: Option<(u64, u64)>) {

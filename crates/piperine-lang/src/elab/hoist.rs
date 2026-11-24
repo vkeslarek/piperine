@@ -43,7 +43,7 @@ pub(super) struct PlacementKey {
 
 impl PlacementKey {
     /// The subscripts of the iteration, appended to the placement's name: `[1]`, `[0][2]`; empty outside generation.
-    fn subscripts(&self) -> String {
+    pub(super) fn subscripts(&self) -> String {
         self.iteration.iter().map(|ordinal| format!("[{ordinal}]")).collect()
     }
 }

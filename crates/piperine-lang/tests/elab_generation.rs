@@ -262,3 +262,21 @@ fn an_item_only_some_iterations_elaborate_and_generation_in_a_hoisted_module_are
     let found = GenerationSources::refused(hoisted);
     assert!(found.iter().all(|(code, _)| code == "P0001") && found.iter().any(|(_, message)| message.contains("generation in its body")), "{found:?}");
 }
+
+#[test]
+fn a_member_of_a_generated_instance_is_read_by_its_iteration_or_its_ordinal() {
+    // §8.2.8, §8.2.23: inside the loop `c.m` is the member of the iteration's instance (`w[k] = c.m` reads `c[k].m`); outside,
+    // `c[1].m` and `c[1][0].m` name one by its ordinals; an ordinal the generation never made is E0342
+    let cell = "module Cell(in d: Bit, out q: Bit) { pub signal m: Bit; m = !d; q = d; }\n";
+    let inside = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 2]; signal w: [Bit; 2]; for k in 0..2 {{ let c = Cell(clk, y[k]); w[k] = c.m; }} }}\n");
+    let ir = GenerationSources::ir(&inside);
+    let reached: Vec<String> = TopBody::of(&ir).carriers().iter().filter(|c| c.role == piperine_ir::CarrierRole::Reached).map(|c| c.name.clone()).collect();
+    assert_eq!(reached, ["c[0].m", "c[1].m"], "each iteration reads its own instance's member");
+    assert_eq!(TopBody::defined_elements(&ir, "w"), [Some(0), Some(1)]);
+    let nested = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for i in 0..2 {{ for j in 0..2 {{ let c = Cell(clk, y[i * 2 + j]); }} }} signal z: Bit; z = c[1][0].m; }}\n");
+    let ir = GenerationSources::ir(&nested);
+    assert!(TopBody::of(&ir).carriers().iter().any(|c| c.name == "c[1][0].m"), "the instance (1, 0) is read");
+    let past = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 2]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} signal z: Bit; z = c[2].m; }}\n");
+    let found = GenerationSources::refused(&past);
+    assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("`c`")), "{found:?}");
+}

@@ -19,6 +19,7 @@ use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRol
 
 use super::body::NodePlan;
 use super::carriers::Frame;
+use super::hoist::PlacementKey;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
@@ -105,21 +106,25 @@ impl Elaboration<'_, '_> {
     /// the first time it is read.
     fn child_frame(&mut self, scope: &Scope, receiver: ExprId) -> Option<usize> {
         let span = self.design.expr_node(receiver).span;
-        let Some((binding, call)) = self.placement_bound_to(receiver) else {
-            self.unsupported(scope.file, span, "a field of something that is not a name bound to a placement");
-            return None;
-        };
-        if let Some(frame) = self.frames[scope.frame].placements.get(&self.placement_key(scope, call)) {
+        let (binding, key) = self.receiver_placement(scope, receiver)?;
+        let call = key.call;
+        if let Some(frame) = self.frames[scope.frame].placements.get(&key) {
             return Some(*frame);
         }
-        if let Some(frame) = self.reach_frames.get(&(scope.frame, call)) {
+        if let Some(frame) = self.reach_frames.get(&(scope.frame, key.clone())) {
             return Some(*frame);
         }
-        let (Some(Callee::Module(module)), Some(child), 0) = (self.types.callee(call), self.child_indices.get(&call).copied(), scope.frame) else {
+        let (Some(Callee::Module(module)), Some(first), 0) = (self.types.callee(call), self.child_indices.get(&call).copied(), scope.frame) else {
             self.unsupported(scope.file, span, "a field of a child of a child");
             return None;
         };
-        let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        // a placement in generation is one child per iteration, in iteration order (`lower_children`)
+        let owner = self.design.expr_node(call).owner;
+        let child = match self.generated.of(owner) {
+            Some(_) => first + self.iteration_position(owner, &key.iteration)? as u32,
+            None => first,
+        };
+        let name = format!("{}{}", self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone()), key.subscripts());
         let fields = self.placement_fields(call, module);
         let call_span = self.design.expr_node(call).span;
         let values = self.child_key_values(scope, module, &fields, scope.file, call_span)?;
@@ -139,7 +144,7 @@ impl Elaboration<'_, '_> {
         }
         self.frames.push(frame);
         let index = self.frames.len() - 1;
-        self.reach_frames.insert((scope.frame, call), index);
+        self.reach_frames.insert((scope.frame, key), index);
         Some(index)
     }
 
@@ -194,6 +199,48 @@ impl Elaboration<'_, '_> {
             };
         }
         None
+    }
+
+    /// The `let` binding a receiver `c` or `c[k]` names and the placement it reads, with its iteration: inside the loops of
+    /// a placement written in generation the name is the iteration's instance, and each index outside them names one by
+    /// its ordinal (§8.2.23). `None` after a diagnostic: a receiver that is no such name, an index that does not fold
+    /// (`E0188`), an instance the generation never made (`E0342`), or a part of a nested array of instances.
+    fn receiver_placement(&mut self, scope: &Scope, receiver: ExprId) -> Option<(DeclId, PlacementKey)> {
+        let span = self.design.expr_node(receiver).span;
+        let mut at = self.peel_parens(receiver);
+        let mut indexes = Vec::new();
+        while let ExprKind::Index { expr, index } = self.design.expr_node(at).kind.clone() {
+            indexes.push(index);
+            at = self.peel_parens(expr);
+        }
+        indexes.reverse();
+        let Some((binding, call)) = self.placement_bound_to(at) else {
+            self.unsupported(scope.file, span, "a field of something that is not a name bound to a placement");
+            return None;
+        };
+        let mut key = self.placement_key(scope, call);
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        for index in indexes {
+            match self.consts.value(index, &bindings) {
+                Ok(piperine_ir::Constant::Int(ordinal)) if ordinal >= 0 => key.iteration.push(ordinal as u64),
+                _ => {
+                    self.not_folded(scope, self.design.expr_node(index).span, "the index of a generated instance");
+                    return None;
+                }
+            }
+        }
+        let owner = self.design.expr_node(call).owner;
+        let loops = self.generation_loops(owner).len();
+        if key.iteration.len() != loops {
+            self.unsupported(scope.file, span, "a part of an array of generated instances as the receiver of a field: name an instance");
+            return None;
+        }
+        if loops > 0 && self.iteration_position(owner, &key.iteration).is_none() {
+            let length = self.generated.of(owner).map_or(0, Vec::len) as u64;
+            self.refer_outside_generation(scope.file, span, binding, Some((key.iteration.last().copied().unwrap_or(0), length)));
+            return None;
+        }
+        Some((binding, key))
     }
 
     /// The `let` binding `receiver` names and the placement call that is its whole value.

@@ -138,8 +138,17 @@ impl Elaboration<'_, '_> {
         for ordinal in fixed {
             lowered.push(self.emit(Expr::Int(i128::from(*ordinal)), ValueType::UInt(64), origin.clone()));
         }
+        // an index over constants, the loop variables of generation and of unrolled loops included, is its constant
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
         for index in indexes {
-            lowered.push(self.lower_expr(scope, *index)?);
+            let folded = match self.consts.value(*index, &bindings) {
+                Ok(piperine_ir::Constant::Int(at)) => Some(self.emit(Expr::Int(at), ValueType::UInt(64), origin.clone())),
+                _ => None,
+            };
+            match folded {
+                Some(constant) => lowered.push(constant),
+                None => lowered.push(self.lower_expr(scope, *index)?),
+            }
         }
         let constants: Vec<Option<u64>> = lowered.iter().map(|e| self.constant_index(*e)).collect();
         for (constant, length) in constants.iter().zip(&shape.dims) {

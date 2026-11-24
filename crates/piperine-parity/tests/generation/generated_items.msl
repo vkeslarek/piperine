@@ -5,6 +5,9 @@
 // a module with a value input and a result: hoisted into the body that places it, once per iteration of a generation `for`
 module Double(x: u8) -> u8 { x * 2 }
 
+// a module with a body of its own whose `pub` signal the parent reads
+module Tap(in d: Bit<u8>, out q: Bit<u8>) { pub signal m: Bit<u8>; m = d + 100; q = d; }
+
 module Bench() {
     signal tick: Bit = false;
     for k in 0..3 {
@@ -14,8 +17,16 @@ module Bench() {
         let d = Double(s);
         // a definition per iteration: the element `k` of `y`
         y[k] = d + (k as u8);
+        // a placement per iteration; its `pub` member read inside the loop is the iteration's instance's
+        let tap = Tap(s, t[k]);
+        w[k] = tap.m;
     }
     signal y: [Bit<u8>; 3];
+    signal t: [Bit<u8>; 3];
+    signal w: [Bit<u8>; 3];
+    // the member of one instance, named by its ordinal outside the loop
+    signal far: Bit<u8>;
+    far = tap[1].m;
 }
 
 digital for Bench {

@@ -98,7 +98,7 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) body_keys: Bindings,
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
-    pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
+    pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
     /// The diverging expressions lowered so far (`exits.rs`).
     pub(super) divergences: Divergences,
     /// How many placements of a module an unrolled loop has hoisted so far, by the frame that

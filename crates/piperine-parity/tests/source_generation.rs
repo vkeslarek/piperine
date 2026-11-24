@@ -217,6 +217,13 @@ fn carriers_definitions_and_hoisted_placements_in_generation_run() {
     assert_eq!(GeneratedItems::changes("y[1]"), vec![(Bank::NS, vec![y(1, s1(1))]), (3 * Bank::NS, vec![y(1, s1(2))])], "the element 1 follows its carrier");
     assert!(GeneratedItems::changes("y[2]").is_empty(), "the element 2 keeps `2 * 3 + 2`, set at (0, 0)");
     assert_eq!(GeneratedItems::changes("s[1]"), vec![(Bank::NS, vec![s1(1)]), (3 * Bank::NS, vec![s1(2)])], "the generated carrier holds its commits");
+    // §8.2.8, §8.2.23: `tap.m` read inside the loop is the member of the iteration's instance, `s[k] + 100`; `tap[1].m` read
+    // outside names the instance by its ordinal; the element 2 of `s` never changes, so neither does `w[2]`
+    let m = |s: u8| s + 100;
+    assert_eq!(GeneratedItems::changes("w[0]"), vec![(Bank::NS, vec![m(s0(1))]), (3 * Bank::NS, vec![m(s0(2))])]);
+    assert_eq!(GeneratedItems::changes("w[1]"), vec![(Bank::NS, vec![m(s1(1))]), (3 * Bank::NS, vec![m(s1(2))])]);
+    assert!(GeneratedItems::changes("w[2]").is_empty(), "the element 2 keeps `3 + 100`");
+    assert_eq!(GeneratedItems::changes("far"), vec![(Bank::NS, vec![m(s1(1))]), (3 * Bank::NS, vec![m(s1(2))])]);
 }
 
 #[test]
