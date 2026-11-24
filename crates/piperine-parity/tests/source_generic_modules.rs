@@ -15,12 +15,17 @@ mod support;
 #[allow(dead_code)]
 #[path = "source/bytes.rs"]
 mod bytes;
+#[allow(dead_code)]
+#[path = "source/run.rs"]
+mod run;
 
 use std::path::{Path, PathBuf};
 
 use bytes::CarrierBytes;
+use piperine_api::{Field, Record};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
+use run::SourceRun;
 use support::{build, first_edge_value};
 
 /// The model `file` of `tests/generics/`, with generic modules admitted.
@@ -148,4 +153,62 @@ fn short_over_two_natures_is_refused_naming_both() {
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].0, "E0180");
     assert!(found[0].1.contains("Electrical") && found[0].1.contains("Thermal"), "{found:?}");
+}
+
+/// The records of `hoisted_out.msl`.
+struct HoistedRecords;
+
+impl HoistedRecords {
+    /// The models of `tests/generics/`.
+    const RUN: SourceRun = SourceRun::in_directory("tests/generics");
+
+    /// The last `seen` record of `top`: what the model reads at its last rising edge of the run.
+    fn last(top: &str) -> Record {
+        Self::RUN.records_of("hoisted_out.msl", top).into_iter().filter(|record| record.stream == "seen").next_back().unwrap_or_else(|| panic!("{top} emits no `seen` record"))
+    }
+
+    /// The boolean field `name` of `record`.
+    fn boolean(record: &Record, name: &str) -> bool {
+        match record.fields.iter().find(|(field, _)| field == name) {
+            Some((_, Field::Bool(value))) => *value,
+            other => panic!("{name} is a bool: {other:?}"),
+        }
+    }
+
+    /// The integer field `name` of `record`.
+    fn integer(record: &Record, name: &str) -> i128 {
+        match record.fields.iter().find(|(field, _)| field == name) {
+            Some((_, Field::Int(value))) => i128::from(*value),
+            other => panic!("{name} is an integer: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_hoisted_generic_module_commits_to_the_carriers_its_out_ports_are_given() {
+    // part III §8.3.12, part II §5.2.6: `Hold` has a value input, so it is hoisted; its `out q` is the caller's carrier `q` and
+    // its `out ready` is `ready`, which takes the first value of the port (`false`) and then the commit `gain > 1.0`. After
+    // the first edge `q` holds the `d` of the placement, `Some(7)`
+    let (d, gain) = (Some(7u8), 2.0_f64);
+    let seen = HoistedRecords::last("HoldBench");
+    assert_eq!(HoistedRecords::integer(&seen, "value"), i128::from(d.unwrap_or(0)));
+    assert_eq!(HoistedRecords::boolean(&seen, "some"), d.is_some());
+    assert_eq!(HoistedRecords::boolean(&seen, "ready"), gain > 1.0);
+}
+
+#[test]
+fn a_generic_module_takes_a_whole_array_and_a_window_of_one_at_a_port_of_length_rows() {
+    // part III §8.1.10, §8.3.12: `Bank::<4>` is given all of `whole` and `Bank::<3>` the row `grid[1]`, a window of the nested
+    // array `grid`: each writes every element of its port at the first edge, so after it `whole` is all true, and in `grid` the
+    // row 1 is true and the row 0, which no bank writes, keeps its first value
+    let seen = HoistedRecords::last("WindowBench");
+    for k in 0..4 {
+        assert!(HoistedRecords::boolean(&seen, &format!("w{k}")), "whole[{k}] is written by `Bank::<4>`");
+    }
+    let written_row = 1;
+    for (row, prefix) in ["a", "b"].iter().enumerate() {
+        for k in 0..3 {
+            assert_eq!(HoistedRecords::boolean(&seen, &format!("{prefix}{k}")), row == written_row, "grid[{row}][{k}]");
+        }
+    }
 }

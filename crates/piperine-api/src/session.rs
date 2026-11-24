@@ -922,7 +922,12 @@ impl Session {
     fn discrete(circuit: &CircuitInstance, path: &str) -> Option<Vec<u8>> {
         let b = circuit.bound()?;
         let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
-        Some(b.digital.read(NetId(at as u32)).to_vec())
+        let spec = &b.digital.plan().nets[at];
+        if spec.count == 0 {
+            return Some(b.digital.read(NetId(at as u32)).to_vec());
+        }
+        // an array net holds its elements apart: every element in order, one never committed at its initial value
+        Some((0..spec.count).flat_map(|element| b.digital.read_element(NetId(at as u32), element).iter().copied()).collect())
     }
 
     /// What the design declares (HII-10): every param with its value as the run uses it (the

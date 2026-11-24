@@ -123,6 +123,11 @@ impl Elaboration<'_, '_> {
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
         for decl in ports.chain(signals).collect::<Vec<_>>() {
+            // a carrier the frame already holds is the caller's own, bound at an `out` port of a hoisted module (`hoist.rs`)
+            if let Some(held) = self.frames[frame].carriers.get(&decl).copied() {
+                self.give_initial_value(frame, decl, held);
+                continue;
+            }
             if self.is_empty_array(frame, decl) {
                 self.frames[frame].empty_arrays.insert(decl);
                 self.record_empty_array(frame, decl);
@@ -130,6 +135,17 @@ impl Elaboration<'_, '_> {
                 let index = self.add_carrier(carrier);
                 self.frames[frame].carriers.insert(decl, index);
             }
+        }
+    }
+
+    /// The initial value the `out` port `decl` of a hoisted frame gives the caller's carrier `held` it is bound to (§5.2.6: the
+    /// `out` port, not the declaring module, gives it). A carrier that already starts somewhere keeps its value.
+    fn give_initial_value(&mut self, frame: usize, decl: DeclId, held: u32) {
+        if self.structure.carriers[held as usize].init.is_some() {
+            return;
+        }
+        if let Some(carrier) = self.lower_carrier(frame, decl) {
+            self.structure.carriers[held as usize].init = carrier.init;
         }
     }
 
@@ -164,7 +180,7 @@ impl Elaboration<'_, '_> {
         let (role, init) = match &data.kind {
             // A hoisted module's carriers are signals of the enclosing body: its `in` value input
             // is driven by the caller's expression (`hoist.rs`).
-            DeclKind::Port(_) if frame != 0 => (CarrierRole::Signal, None),
+            DeclKind::Port(p) if frame != 0 => (CarrierRole::Signal, if p.dir == Some(Dir::Out) { p.default } else { None }),
             DeclKind::Port(p) => (if p.dir == Some(Dir::Out) { CarrierRole::Out } else { CarrierRole::In }, p.default),
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,

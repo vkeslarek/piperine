@@ -93,7 +93,7 @@ impl Elaboration<'_, '_> {
     /// The default of an `Option` param written with none: `None` (§3.2.10, PI-03 AC 1, explicit-unknowns
     /// EU-06 AC 1), so an instance that binds nothing reads the absent case. Any other type has no
     /// default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`), so the param is required.
-    fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
+    pub(super) fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
         let written = self.typed_written(ty)?;
         if !matches!(written, crate::types::Ty::Option(_)) {
             return None;

@@ -53,6 +53,11 @@ impl Elaboration<'_, '_> {
         matches!(&data.kind, DeclKind::Module(m) if m.ret.is_some()) || data.children.iter().any(|c| self.is_value_input(*c))
     }
 
+    /// Whether `decl` is a carrier port declared `out`.
+    fn is_out_port(&self, decl: DeclId) -> bool {
+        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_some() && p.dir == Some(crate::pom::Dir::Out))
+    }
+
     /// Whether `decl` is a port of a value type: a value input.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
         super::structural::ParamReads::new(self.design, self.types).is_value_input(decl)
@@ -226,13 +231,25 @@ impl Elaboration<'_, '_> {
         frame.unrolled = scope.unrolled.clone();
         frame.substitution = substitution.clone();
         let mut node_ports = Vec::new();
+        let mut out_ports = Vec::new();
         let bound = PortArguments::bind(self.design, module, args);
         for (k, port) in ports.iter().enumerate() {
             if self.is_value_input(*port) {
                 frame.inputs.insert(*port, bound.at(k).map(|a| a.value));
             } else if self.types.carrier(*port).is_none() {
                 node_ports.push((*port, bound.at(k).map(|a| a.value)));
+            } else if self.is_out_port(*port) {
+                out_ports.push((*port, bound.at(k).map(|a| a.value)));
             }
+        }
+        // An `out` carrier port is the caller's own carrier for its argument: what the callee commits, the caller's carrier holds.
+        for (port, arg) in out_ports {
+            let (carrier, window) = self.lower_carrier_arg(scope, &name, port, arg?)?;
+            if window.is_some() {
+                self.unsupported(file, node.span, "a window of an array of carriers at the `out` port of a hoisted module");
+                return None;
+            }
+            frame.carriers.insert(port, carrier);
         }
         // A node port is the caller's terminal for its argument, read in the caller's frame.
         for (port, arg) in node_ports {
@@ -257,6 +274,10 @@ impl Elaboration<'_, '_> {
         // A discrete `in` value input: the hoisted carrier, driven by the caller's expression.
         for (position, port) in ports.iter().enumerate() {
             let Some(arg) = bound.at(position) else { continue };
+            // an `out` port is the caller's carrier itself, driven by the callee alone
+            if self.is_out_port(*port) {
+                continue;
+            }
             let Some(carrier) = self.frames[index].carriers.get(port).copied() else { continue };
             let origin = self.expr_origin(arg.value);
             let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
@@ -332,7 +353,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether `module` holds only what a hoisted module can hold: no placement of a module that is
-    /// not hoisted (it would need a body inside a frame), no `out` carrier. `P0001` naming the first
+    /// not hoisted (it would need a body inside a frame). `P0001` naming the first
     /// form that is not, at the placement.
     fn hoistable(&mut self, module: DeclId, file: crate::pom::FileId, span: crate::msl::Span) -> bool {
         let data = self.design.decl_data(module).clone();
@@ -341,11 +362,6 @@ impl Elaboration<'_, '_> {
             this.unsupported(file, span, &format!("a hoisted module that holds {what},"));
             false
         };
-        for child in &data.children {
-            if matches!(&self.design.decl_data(*child).kind, DeclKind::Port(p) if self.types.carrier(*child).is_some() && p.dir == Some(crate::pom::Dir::Out)) {
-                return refuse(self, "an `out` carrier");
-            }
-        }
         if m.instances.iter().any(|c| matches!(self.types.callee(*c), Some(Callee::Module(_))) && self.hoisted_callee(*c).is_none()) {
             return refuse(self, "a placement of a module that is not hoisted");
         }
@@ -374,6 +390,8 @@ impl Elaboration<'_, '_> {
                         continue;
                     }
                 },
+                // an `Option` param left out is the absent case (§3.2.10), as for a placement that keeps its body
+                None if let Some(absent) = self.absent_option(p.ty) => absent,
                 None => {
                     self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
                     ok = false;

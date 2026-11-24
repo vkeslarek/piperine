@@ -71,13 +71,15 @@ fn the_nature_card_is_the_standard_librarys() {
 }
 
 #[test]
-fn the_module_card_is_refused_for_its_hoisted_out_carrier() {
-    // cheatsheet#2 (refused): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0, x: f64) where
-    // N >= 1 { .. }` placed as `M::<2>`. The generic module runs (T71); the card's value input `x: f64` makes `M` a module
-    // that is called, and a called module is hoisted into its caller, which holds no `out` carrier (L76)
+fn the_module_card_runs_with_its_value_input_and_its_out_carrier() {
+    // cheatsheet#2 (run, L76 closed by `generics`): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0,
+    // x: f64) where N >= 1 { .. }` placed as `M::<2>`. The value input `x` makes `M` a module that is called, hoisted into its
+    // caller, and its `out` carrier `q` is the caller's own carrier for the argument `b`
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\n";
-    Refusal::expect(chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()), "cheatsheet#2", "P0001", "a hoisted module that holds an `out` carrier, is not supported yet");
+    let after = "analog<N> for M<N> { v(mid) +> x; }\nmodule Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\nanalog for Top { v(a) +> 0.0; }\n";
+    let ran = chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("the card is refused: {:?}", Refusal::of(Err(failure), "cheatsheet#2")));
+    let rows = format!("{:?}", ran.table.rows);
+    assert!(rows.contains("Top.b") && rows.contains("Top.c"), "the operating point lists the top's signals: {rows}");
 }
 
 #[test]
