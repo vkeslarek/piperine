@@ -419,8 +419,8 @@ T21
 
 **Done when**:
 
-- [ ] `nested_bundles_apply_flip_recursively` passes under `**Run sourcebundles**`
-- [ ] Gate check passes: Quick
+- [x] `nested_bundles_apply_flip_recursively` passes under `**Run sourcebundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -141,3 +141,15 @@ fn a_cell_literal_connects_each_named_field() {
     let lines: Vec<i128> = Model::records(&built, &seen, "word_line").iter().map(|r| r[0].1).collect();
     assert_eq!(lines, [0, 1], "the word line changes at (0, 0) and at the first rising edge");
 }
+
+#[test]
+fn nested_bundles_apply_flip_recursively() {
+    // §7 rules 3 and 5: the producer `A` drives `fwd.x` (true) and `back.y`; the consumer `B` (the flipped view, applied to the
+    // nested fields too) drives `fwd.y` and `back.x`. `fwd.y = fwd.x` = 1, `back.y = fwd.y` = 1 and `back.x = !back.y` = 0: if
+    // `flip` were not applied to the nested `back`, two modules would drive one field (`E0220`) or none would.
+    let built = Model::of("nested.msl").built("NestedBench");
+    let seen = built.run(20e-9, 1e-9);
+    let fields: Vec<Vec<(String, i128)>> = Model::records(&built, &seen, "fields");
+    let expected = vec![vec![("fwd_x".to_string(), 1), ("fwd_y".to_string(), 1), ("back_x".to_string(), 0), ("back_y".to_string(), 1)]];
+    assert_eq!(fields[..1], expected, "the four fields at the first rising edge");
+}

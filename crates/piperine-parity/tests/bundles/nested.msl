@@ -1,0 +1,40 @@
+//! Nested bundles with `flip` (§7 rule 5): a field of a bundle type is written plain or reversed, and the views apply to it
+//! recursively.
+
+/// A free-running clock of period 10 ns.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A request line the producer drives and an answer line it reads.
+struct Inner { out x: Bit, in y: Bit }
+
+/// Two links: `fwd` as `Inner` says, `back` reversed.
+struct Outer { fwd: Inner, back: flip Inner }
+
+/// The producer view: drives `fwd.x` and `back.y`, reads `fwd.y` and `back.x`.
+module A(o: Outer) {
+    o.fwd.x = true;
+    o.back.y = o.fwd.y;
+}
+
+/// The consumer view: drives `fwd.y` and `back.x`, reads `fwd.x` and `back.y`.
+module B(o: flip Outer) {
+    o.fwd.y = o.fwd.x;
+    o.back.x = !o.back.y;
+}
+
+/// Reads every field and drives none; records them at the first rising edge.
+module Watch(in clk: Bit, in o: Outer) { }
+digital for Watch {
+    on clk.rise() { emit!("fields", fwd_x = o.fwd.x, fwd_y = o.fwd.y, back_x = o.back.x, back_y = o.back.y); }
+}
+
+/// A producer and a consumer of one nested bundle, and an observer.
+module NestedBench() {
+    signal clk: Bit;
+    signal s: Outer;
+    let clock = Clock(clk);
+    let a = A(s);
+    let b = B(s);
+    let w = Watch(clk, s);
+}
