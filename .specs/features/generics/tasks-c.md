@@ -693,8 +693,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `the_generic_ladder_equals_the_ladder_written_out` passes under `**Run srcgenr**`
-- [ ] Gate check passes: Quick
+- [x] `the_generic_ladder_equals_the_ladder_written_out` passes under `**Run srcgenr**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

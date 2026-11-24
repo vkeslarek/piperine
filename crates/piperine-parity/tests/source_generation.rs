@@ -5,6 +5,16 @@
 
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/digital.rs"]
+mod digital;
+#[allow(dead_code)]
+#[path = "../../piperine-transpile/tests/support/mixed.rs"]
+mod mixed;
+#[allow(dead_code)]
+#[path = "buck/support.rs"]
+mod support;
+
 use piperine_lang::types::UnfinishedForm;
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
@@ -89,4 +99,52 @@ fn nested_loops_make_a_nested_array() {
         assert!(ir.instance_at(&format!("GridRig.grid.cell[{row}][{column}]")).is_some(), "cell[{row}][{column}]");
     }
     assert!(ir.instance_at("GridRig.grid.cell[2][0]").is_none() && ir.instance_at("GridRig.grid.cell[0][3]").is_none());
+}
+
+/// The Book's ladder at `sections` sections and the same ladder written out, read side by side.
+struct Ladders;
+
+impl Ladders {
+    /// The nodes both models name, below the top: the output and every tap.
+    fn names(sections: usize) -> Vec<String> {
+        std::iter::once("vout".to_string()).chain((0..=sections).map(|k| format!("lad.tap[{k}]"))).collect()
+    }
+
+    /// The voltage of each node of `names` of `top` at the operating point.
+    fn operating_point(top: &str, names: &[String]) -> Vec<f64> {
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        GenerationModels::operating_point("ladder.msl", top, &names)
+    }
+
+    /// The voltage of each node of `names` at every accepted point of the transient of `top` to 5 us, steps of at most 0.1 us:
+    /// the time, then the voltages.
+    fn transient(top: &str, names: &[String]) -> Vec<(f64, Vec<f64>)> {
+        let built = support::build(&GenerationModels::project("ladder.msl"), top);
+        let nodes: Vec<NodeIdentifier> = names.iter().map(|name| NodeIdentifier::Anonymous(built.ir.node_at(&format!("{top}.{name}")).expect("a node").id().index())).collect();
+        let (_, result) = built.run_with(5e-6, 1e-7);
+        result.iter().map(|point| (point.time(), nodes.iter().map(|node| point.get_node(node).expect("v(n)")).collect())).collect()
+    }
+}
+
+#[test]
+fn the_generic_ladder_equals_the_ladder_written_out() {
+    // GN-18 AC 2: `Ladder::<N>` and the sections written one by one are one netlist: at `N = 1, 3, 8` every tap is the same
+    // number, to the bit, at the operating point (the capacitors open, so every tap is the 0 V the ramp starts at) and at every
+    // point of a transient of the ramp (a charging tap is neither 0 nor 1, so the equality is not vacuous)
+    for sections in [1usize, 3, 8] {
+        let names = Ladders::names(sections);
+        let generated = Ladders::operating_point(&format!("Generic{sections}"), &names);
+        let written = Ladders::operating_point(&format!("Explicit{sections}"), &names);
+        assert_eq!(generated.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), written.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), "N = {sections}");
+        let generated = Ladders::transient(&format!("Generic{sections}"), &names);
+        let written = Ladders::transient(&format!("Explicit{sections}"), &names);
+        assert!(generated.len() > 20, "the transient takes steps");
+        assert_eq!(generated.len(), written.len(), "N = {sections}: the same accepted points");
+        for ((time, left), (other, right)) in generated.iter().zip(&written) {
+            assert_eq!(time.to_bits(), other.to_bits(), "N = {sections}: the same instants");
+            assert_eq!(left.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), right.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), "N = {sections} at {time}");
+        }
+        let (_, last) = generated.last().expect("a last point");
+        assert!(last[0] > 0.0 && last[0] < 1.0, "the output of the {sections}-section ladder is charging at 5 us: {last:?}");
+    }
 }
