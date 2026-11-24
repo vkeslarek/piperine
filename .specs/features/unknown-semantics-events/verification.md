@@ -1,10 +1,49 @@
 # Unknown Semantics: Events verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` not re-run at 35266266 (see the B5 round: the root filesystem was at 93 %, past the 90 % stop line, before any build, so no cargo command ran)
+**Proofs**: `proofs.md` at a14be504 (69 pass; C15 names a test renamed on main, see F13)
 **Verifier**: independent sub-agent (author != verifier)
 
-## B5 round (T24 to T31, closure) - HEAD 35266266
+## B5 round 2 (fix 80756cf5) - HEAD a14be504
+
+Range judged: `git diff 0b049e23..a14be504`. Targeted runs at HEAD (lane B env): `piperine-lang`
+`elab_digital` 30 passed and `types_events` 31 passed; `piperine-parity` `source_events` 27 passed. The disk was at 81 %.
+
+F6 to F9 are closed by 80756cf5. The arguments bind through the checker's slots with `expanded_arguments`:
+named arguments, left-out arguments and `Some` wrapping are proven in the IR and from source. Recursion unrolls through
+`may_expand` and gives `E0126` when it does not end. `let`s, `return`, a block and an `if` decided at elaboration run;
+so do trait methods by method, by path and through a bound. The module-result position and a function generic over a
+nature have tests. `Span` is imported, `function_data` is named and T28's Reuses line is corrected.
+
+Own examples at HEAD (throwaway `crates/piperine-lang/tests/zz_probe.rs`, deleted):
+
+- A trait default body with an empty `impl` (`trait Armed { fn fires(self, c: Bit) -> Event { c.rise() } } impl Armed
+  for bool {}`, `en.fires(clk)`) gives exactly the IR of `clk.rise()`. A default that reaches `Self` through a required
+  method (`c.rise() && self.armed()`) runs as `bool.armed(en)`. Holds.
+- The coordinator's question (2): a default body `c.rise() && self` is `E0180` "expected `bool`, found `Armed`". This
+  is not a finding. §3 rule 9 checks a body once at its definition with each type parameter opaque, and an operator
+  that no bound gives is `E0180`. Inside the trait, `Self` is such a parameter with the bound `Armed`, and `Armed`
+  gives no `&&`. The spec forbids the form, and its named code cites the rule.
+- Mutual recursion `a(c, n)` and `b(c, n)` down to `n <= 0` folds to `clk.rise()`. A `return` body called twice in one
+  head with swapped arguments equals the hand-written pair. A bare `0.2` for an `Option<f64>` parameter is its `Some`.
+  All hold.
+- `fn pick(c: Bit, d: Bit, s: bool) -> Event { if s { c.rise() } else { d.rise() } }` with `s` a carrier is `P0001`
+  (F11).
+
+### Round 2 findings
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| F10 (Minor, cleanliness): the fix adds a free test function, and a refusal message reached from an event function names `ddx` | `crates/piperine-lang/tests/elab_digital.rs`: `fn reaction_on(functions, head)` is a free function, which the user's rule refuses in tests too (round 1 F5 moved the same kind onto types). `symbolic.rs` `bind_expanded_let`, now `pub(super)` and called from `event_functions.rs`, still refuses "a `let` of a pattern that is no name in a `fn` called inside a `ddx`", so an event function's `let (a, b) = ..` reports a `ddx` that is not there | make `reaction_on` a method of a named test type (as `Read`/`Elab`); word the message for both callers | |
+| F11 (Major): the forms the inliner still refuses have no test and no GAPS row with an owner, yet L53 is closed | `event_functions.rs` `event_of_value`: an `if` whose condition is not decided at elaboration is `P0001` (probe: `pick(clk, en, en)`). A `match` falls to `disjuncts`, and `event_of_statements` refuses any statement before the event other than `let` of a name (`let mut` with an assignment, a `for`, an `emit!`). §13 counts the return value of a function as an event position, and §3 rules 6 and 15 allow locals, loops and assignment in a body; no rule forbids an `if` that chooses an event. `grep` finds no test of "not decided at elaboration", "does not end in its event" or "statement that is no `let`" | make them run, or open a GAPS §4 row naming these forms with owner `spec-closure`, pin each refusal by code and span in a test, and adjust the docs.rs counts. If the spec means to forbid a run-time `if` over events, an amendment must name the rule and the code | |
+| F12 (Minor, documents): GAPS §9 still lists functions that return `Event` as a hole of Part IV | `GAPS.md:301`: `IV §12–§13 digital, events` has "`Event` functions" first in "Biggest holes"; `gaps_no_longer_lists_l51_or_l53` checks only the phrase "functions that return `Event`", so it misses this spelling | drop it from the row (or name what F11 leaves) and make the docs.rs assertion catch both spellings | |
+| F13 (Minor, proof): C15's proof names a test that no longer exists, and its claim is false under the amended spec | `tasks.md:1671-1672` names `the_step_after_a_settle_commit_is_exempt_and_restarts`; 9ed8cf8b (main, `transient-performance`) renamed it `..._is_a_landing_and_restarts` and changed the semantics. `docs/spec/part_v_execution.md` S3 now says the step "is a landing and reads it ... first order and sized and tested by that rule" (§15.2 rule 6): it is not exempt. The renamed test asserts `landing: true` on the step to the next time point (false before and after) and one `Restart::Integrator` delivery. That proves UE-03 AC 3 with S3 as it now reads, but not C15's sentence "exempt from the truncation test". So the rename changed the claim, and it cannot be re-pointed as written | reword C15 to S3 ("the step after a settle commit is a landing and restarts the integrator") and point its proof at `the_step_after_a_settle_commit_is_a_landing_and_restarts` (the test of the jump rule belongs to `transient-performance`) | |
+
+### Round 2 final run
+
+Not run: the verdict is FAIL.
+
+## B5 round 1 (T24 to T31, closure) - HEAD 35266266
 
 Range judged: `git diff f8595df9..35266266` (15 files). Read against `docs/spec/part_iv_behavior.md` §13 and
 `docs/spec/part_i_values.md` §3 and §3.2. No own example could run: `df /` reported 93 % (11 GB free) at the
@@ -40,10 +79,10 @@ MD-74 records the B5 decision; ROADMAP marks the feature delivered. No tolerance
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F6 (Major, silent) - an event function binds its arguments by position only: a named argument binds the wrong parameter, a left-out optional one is never bound, and an `Option<T>` parameter is not given `Some`/`None` | `crates/piperine-lang/src/elab/event_functions.rs:83-87`: `params.iter().zip(arguments)` over `args.iter().map(\|arg\| arg.value)` (:48) ignores `arg.name` and the checker's per-call slots (`Types::binding`, `types/table.rs:408`, filled by `bind_arguments`, `types/call.rs:147`). §3.2.2 to §3.2.4 and §3.2.9 allow `fn edge(c: Bit, a: Option<bool>, b: Option<bool>) -> Event { c.rise() && a.unwrap_or(true) }` called `edge(clk, b: Some(false))`: the checker binds `b`, the inliner binds `Some(false)` to `a`, so the event never fires where the spec says it fires on every rise. The ordinary call path does it right (`expansion.rs:183` `expanded_arguments`: slots, `lower_option_slot`) | bind through `self.types.binding(call)` slots as `expanded_arguments` does (an `Option` parameter through `lower_option_slot`, a left-out one as `None`); a test with a named, a left-out and a wrapped `Option` argument | |
-| F7 (Major) - three forms the spec allows are refused `P0001` with no test and no GAPS row, while L53 is closed as if functions returning `Event` all run | `event_functions.rs:29-31` refuses recursion, but §3 rule 12 allows it (unrolled while decided by params and constants, as `expansion.rs` `may_expand` already does elsewhere); `:68-73` refuses a body with statements besides its event, but §3 rules 6 and 15 allow locals (`let`) in a function body, and the event position list of §13 includes "the return value of a function", not only a tail expression; `:61-64` refuses a bodiless one, reachable by a trait-declared `fn ... -> Event;` (§3 rule 2 exempts trait items from E0125). `grep` finds no test naming any of the three messages | either make them run (recursion through the expansion's unrolling, `let`s through the scope's `values` before the tail) or reopen a GAPS §4 row naming the three forms with a real owner (`spec-closure`) and a test per refusal pinning `P0001` and its span; adjust `gaps_no_longer_lists_l51_or_l53` | |
-| F8 (Minor) - C23 does not prove UE-04 AC 1's "result of a module" position, nor the generic-over-a-nature path | `types_events.rs` rows and `handshake.msl` cover head, body `let`, guard, `\|\|`, `&&`, nested function; no `module M(..) -> Event { handshake(req, ack) }`. `event_functions.rs:35-41` (`concrete_instance` + substitution for a generic event function) is reached by no test | add a module-result row to both tests and one generic event function (`fn edge<N: ..>(c: Bit<N>) -> Event`) from source | |
-| F9 (Minor, cleanliness) - inline path and abbreviated binding; a stale task line | `event_functions.rs:75` `crate::msl::Span` written inline instead of imported; `:22`, `:60` bind the function data as `f`; `tasks.md:768` T28 still says "Reuses: `HandleBinding`" though the amendment (`:766`) removed it | import `Span`; name the binding `function_data` (or similar); strike `HandleBinding` from T28's Reuses | |
+| F6 (Major, silent) - an event function binds its arguments by position only: a named argument binds the wrong parameter, a left-out optional one is never bound, and an `Option<T>` parameter is not given `Some`/`None` | `crates/piperine-lang/src/elab/event_functions.rs:83-87`: `params.iter().zip(arguments)` over `args.iter().map(\|arg\| arg.value)` (:48) ignores `arg.name` and the checker's per-call slots (`Types::binding`, `types/table.rs:408`, filled by `bind_arguments`, `types/call.rs:147`). §3.2.2 to §3.2.4 and §3.2.9 allow `fn edge(c: Bit, a: Option<bool>, b: Option<bool>) -> Event { c.rise() && a.unwrap_or(true) }` called `edge(clk, b: Some(false))`: the checker binds `b`, the inliner binds `Some(false)` to `a`, so the event never fires where the spec says it fires on every rise. The ordinary call path does it right (`expansion.rs:183` `expanded_arguments`: slots, `lower_option_slot`) | bind through `self.types.binding(call)` slots as `expanded_arguments` does (an `Option` parameter through `lower_option_slot`, a left-out one as `None`); a test with a named, a left-out and a wrapped `Option` argument | 80756cf5 (round 2 judged it) |
+| F7 (Major) - three forms the spec allows are refused `P0001` with no test and no GAPS row, while L53 is closed as if functions returning `Event` all run | `event_functions.rs:29-31` refuses recursion, but §3 rule 12 allows it (unrolled while decided by params and constants, as `expansion.rs` `may_expand` already does elsewhere); `:68-73` refuses a body with statements besides its event, but §3 rules 6 and 15 allow locals (`let`) in a function body, and the event position list of §13 includes "the return value of a function", not only a tail expression; `:61-64` refuses a bodiless one, reachable by a trait-declared `fn ... -> Event;` (§3 rule 2 exempts trait items from E0125). `grep` finds no test naming any of the three messages | either make them run (recursion through the expansion's unrolling, `let`s through the scope's `values` before the tail) or reopen a GAPS §4 row naming the three forms with a real owner (`spec-closure`) and a test per refusal pinning `P0001` and its span; adjust `gaps_no_longer_lists_l51_or_l53` | 80756cf5 (round 2 judged it) |
+| F8 (Minor) - C23 does not prove UE-04 AC 1's "result of a module" position, nor the generic-over-a-nature path | `types_events.rs` rows and `handshake.msl` cover head, body `let`, guard, `\|\|`, `&&`, nested function; no `module M(..) -> Event { handshake(req, ack) }`. `event_functions.rs:35-41` (`concrete_instance` + substitution for a generic event function) is reached by no test | add a module-result row to both tests and one generic event function (`fn edge<N: ..>(c: Bit<N>) -> Event`) from source | 80756cf5 (round 2 judged it) |
+| F9 (Minor, cleanliness) - inline path and abbreviated binding; a stale task line | `event_functions.rs:75` `crate::msl::Span` written inline instead of imported; `:22`, `:60` bind the function data as `f`; `tasks.md:768` T28 still says "Reuses: `HandleBinding`" though the amendment (`:766`) removed it | import `Span`; name the binding `function_data` (or similar); strike `HandleBinding` from T28's Reuses | 80756cf5 (round 2 judged it) |
 
 ### B5 final run
 
