@@ -36,7 +36,7 @@ struct Crossing;
 
 impl Crossing {
     /// The analog side: node `n` takes 1 V when `d` is high, 0 V otherwise.
-    const ANALOG: &'static str = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\n";
+    const ANALOG: &'static str = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\n";
 }
 
 #[test]
@@ -134,6 +134,33 @@ impl Filter {
     /// The times of the rows of a transient table.
     fn times(ran: &support::model::Ran) -> Vec<f64> {
         (0..ran.table.rows.len()).map(|row| ran.real(row, "time")).collect()
+    }
+}
+
+#[test]
+fn the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter() {
+    // solver#16 (run, `hiss.msl`) with its listings solver#17 and solver#18; solver~611c58a3 "Only the resistor of
+    // hiss.msl makes noise, so the density is its 4 k T / r shaped by the filter, and the input-referred density is
+    // flat.": at 300.15 K the resistor's density is `sqrt(4 k T r)` = 4.071372e-9 V/sqrt(Hz), the 1 kOhm and 1 uF
+    // pole is at 159.15 Hz, so `onoise = sqrt(4 k T r) / sqrt(1 + (f / f_c)^2)` and `inoise` is the same density
+    // divided by that gain: the resistor's own, at every frequency
+    let ran = Chapter::read().marked("hiss.msl", "solver#16").run(Overrides {
+        analysis: Some("noise".to_string()),
+        input: Some("v1".to_string()),
+        output: Some("vout".to_string()),
+        from: Some(10.0),
+        to: Some(1e4),
+        per_decade: Some(1),
+        ..Overrides::default()
+    });
+    let ran = ran.unwrap_or_else(|failure| panic!("hiss.msl fails: {failure:#}"));
+    let resistor = (4.0 * 1.380649e-23 * 300.15 * 1000.0_f64).sqrt();
+    let corner = 1.0 / (2.0 * std::f64::consts::PI * 1000.0 * 1e-6);
+    assert_eq!(ran.table.rows.len(), 4, "one row per decade from 10 Hz to 10 kHz");
+    for (row, frequency) in [10.0, 100.0, 1e3, 1e4].into_iter().enumerate() {
+        let wanted = resistor / (1.0 + (frequency / corner) * (frequency / corner)).sqrt();
+        assert!((ran.real(row, "onoise") / wanted - 1.0).abs() < 1e-3, "onoise at {frequency} Hz: {} against {wanted}", ran.real(row, "onoise"));
+        assert!((ran.real(row, "inoise") / resistor - 1.0).abs() < 1e-3, "inoise at {frequency} Hz is the resistor's own: {}", ran.real(row, "inoise"));
     }
 }
 

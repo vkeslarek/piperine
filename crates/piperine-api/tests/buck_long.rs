@@ -11,7 +11,9 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_digital_solver::landing::TimePointRule;
+use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table, TransientStatistics};
+use piperine_solver::protocol::{LandingCause, StepEnd};
 use piperine_transpile::Settings;
 
 #[path = "support/heap.rs"]
@@ -45,44 +47,140 @@ struct Start {
     /// The peak of live heap during `Session::run`, less the heap live when it began.
     peak: usize,
     wall: Duration,
+    /// How the steps of the run were spent.
+    statistics: TransientStatistics,
+    /// The landing rule the request set; `None` is the solver's own, the observable rule.
+    rule: Option<TimePointRule>,
 }
 
-/// The one run of the whole start of this target.
-fn start() -> &'static Start {
-    static START: OnceLock<Start> = OnceLock::new();
-    START.get_or_init(|| {
-        let buck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
-        let cache = tempfile::tempdir().expect("tmp");
-        let project = Project::at(&buck).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = Overrides {
-            print_step: Some(1e-8),
-            print: ["buck.vout", "buck.ctl.reference", "mode", "pgood"].map(String::from).to_vec(),
-            ..Overrides::default()
-        };
-        let spec = project.request(Some("startup"), &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
-        let checks = Rc::new(RefCell::new(Checks::default()));
-        let base = HEAP.begin();
-        let began = Instant::now();
-        let table = session.run(checks.clone()).unwrap_or_else(|f| panic!("{f}"));
-        let wall = began.elapsed();
-        let peak = HEAP.peak_since(base);
-        let checks = std::mem::take(&mut *checks.borrow_mut());
-        let start = Start { table, checks, peak, wall };
-        eprintln!("{}", report(&start));
-        start
-    })
+impl Start {
+    /// The one run of the whole start of this target.
+    fn once() -> &'static Start {
+        static START: OnceLock<Start> = OnceLock::new();
+        START.get_or_init(|| {
+            let buck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+            let cache = tempfile::tempdir().expect("tmp");
+            let project = Project::at(&buck).unwrap_or_else(|f| panic!("{f}"));
+            let overrides = Overrides {
+                print_step: Some(1e-8),
+                print: ["buck.vout", "buck.ctl.reference", "mode", "pgood"].map(String::from).to_vec(),
+                ..Overrides::default()
+            };
+            let spec = project.request(Some("startup"), &overrides).unwrap_or_else(|f| panic!("{f}"));
+            let rule = spec.options.time_point_rule;
+            let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
+            let checks = Rc::new(RefCell::new(Checks::default()));
+            let base = HEAP.begin();
+            let began = Instant::now();
+            let table = session.run(checks.clone()).unwrap_or_else(|f| panic!("{f}"));
+            let wall = began.elapsed();
+            let peak = HEAP.peak_since(base);
+            let checks = std::mem::take(&mut *checks.borrow_mut());
+            let statistics = session.statistics().cloned().expect("a transient leaves its statistics");
+            let start = Start { table, checks, peak, wall, statistics, rule };
+            eprintln!("{}", start.report());
+            eprintln!("{}", Report::statistics(&start.statistics, start.rule));
+            start
+        })
+    }
+
+    /// The line the run reports: its wall time and its peak live heap.
+    fn report(&self) -> String {
+        format!("buck whole start: {} rows, wall time {:.1} s, peak live heap {} B ({:.1} MiB)", self.table.rows.len(), self.wall.as_secs_f64(), self.peak, self.peak as f64 / (1024.0 * 1024.0))
+    }
 }
 
-/// The line the run reports: its wall time and its peak live heap.
-fn report(start: &Start) -> String {
-    format!("buck whole start: {} rows, wall time {:.1} s, peak live heap {} B ({:.1} MiB)", start.table.rows.len(), start.wall.as_secs_f64(), start.peak, start.peak as f64 / (1024.0 * 1024.0))
+/// The lines the run prints.
+struct Report;
+
+impl Report {
+    /// The name of the landing rule the counts were taken under.
+    fn rule_name(rule: Option<TimePointRule>) -> String {
+        rule.map_or("default (observable)".to_string(), |rule| format!("{rule:?}"))
+    }
+
+    /// One line per count of the run, under the landing rule `rule`: the landings by cause, how every other accepted step ended,
+    /// the rejections by cause, the retakes, the jump steps, the steps at `max_step` and the instants run.
+    fn statistics(statistics: &TransientStatistics, rule: Option<TimePointRule>) -> String {
+        let (steps, analog) = (statistics.steps(), statistics.analog());
+        let causes = [
+            ("analog-read changed", LandingCause::AnalogReadChanged),
+            ("continuous read", LandingCause::ContinuousRead),
+            ("declared reach only", LandingCause::DeclaredReach),
+            ("irreversible", LandingCause::Irreversible),
+            ("host waiter", LandingCause::HostWaiter),
+        ];
+        let mut lines = vec![format!("buck statistics: landing rule {}", Report::rule_name(rule)), format!("buck statistics: accepted steps {}", steps.accepted())];
+        for (name, cause) in causes {
+            lines.push(format!("buck statistics: landings, {name}: {}", steps.landings(cause)));
+        }
+        for (name, end) in [("crossing", StepEnd::Crossing), ("max_step", StepEnd::MaxStep), ("cap", StepEnd::Cap), ("stop", StepEnd::Stop), ("proposal", StepEnd::Proposal)] {
+            lines.push(format!("buck statistics: steps ended at {name}: {}", steps.ended(end)));
+        }
+        lines.push(format!("buck statistics: rejected by truncation {}", analog.rejected_truncation));
+        lines.push(format!("buck statistics: rejected by Newton {}", analog.rejected_newton));
+        lines.push(format!("buck statistics: steps retaken toward a crossing {}", steps.retaken()));
+        lines.push(format!("buck statistics: jump steps {}, jump retakes {}", analog.jump_steps, analog.jump_retakes));
+        lines.push(format!("buck statistics: steps at max_step {}", analog.steps_at_max_step));
+        lines.push(format!("buck statistics: instants run {}", steps.instants_run()));
+        lines.push(format!("buck statistics: sampling share {:.6}", steps.sampling_share()));
+        lines.join("\n")
+    }
+}
+
+/// The columns of a printed table.
+struct Columns;
+
+impl Columns {
+    /// The index of the column whose label is `name` or ends in `.name`.
+    fn index(table: &Table, name: &str) -> usize {
+        let dotted = format!(".{name}");
+        table.columns.iter().position(|c| c == name || c.ends_with(&dotted)).unwrap_or_else(|| panic!("no column `{name}` in {:?}", table.columns))
+    }
+
+    /// The real cells of a column, with the time of each row.
+    fn series(table: &Table, name: &str) -> Vec<(f64, f64)> {
+        let at = Columns::index(table, name);
+        table
+            .rows
+            .iter()
+            .map(|row| match (&row[0], &row[at]) {
+                (Cell::Real(t), Cell::Real(v)) => (*t, *v),
+                other => panic!("a real `{name}` at a real time, found {other:?}"),
+            })
+            .collect()
+    }
+}
+
+
+#[test]
+fn the_statistics_of_the_whole_start_are_reported() {
+    // TP-01 AC 5, TP-12 AC 1: every count is printed under the default landing rule, and the ends
+    // add up to the accepted steps
+    let start = Start::once();
+    assert_eq!(start.rule, None, "the run takes the solver's default rule");
+    let report = Report::statistics(&start.statistics, start.rule);
+    assert!(report.contains("landing rule default (observable)"), "{report}");
+    eprintln!("{report}");
+    let steps = start.statistics.steps();
+    let ended: u64 = StepEnd::ALL.iter().map(|end| steps.ended(*end)).sum();
+    assert_eq!(ended, steps.accepted());
+    assert!(report.contains(&format!("accepted steps {}", steps.accepted())), "{report}");
+    assert!(report.contains("rejected by truncation") && report.contains("instants run"), "{report}");
+}
+
+#[test]
+fn the_whole_start_takes_at_most_300000_steps() {
+    // TP-06 AC 1: 804 136 steps before the feature; the limit is the spec's, never read off a run
+    let accepted = Start::once().statistics.steps().accepted();
+    eprintln!("buck steps: {accepted} accepted for the 600 us start (limit 300000)");
+    assert!(accepted <= 300_000, "{accepted} accepted steps, limit 300000");
 }
 
 #[test]
 fn the_whole_start_is_60001_rows_on_a_10_ns_grid() {
     // LR-08 AC 1: 0 to 600 us on a 10 ns grid, the time of row k being k * 1e-8
-    let table = &start().table;
+    let table = &Start::once().table;
     assert_eq!(table.rows.len(), 60_001, "{:?}", table.columns);
     for (k, row) in table.rows.iter().enumerate() {
         assert_eq!(row[0], Cell::Real(k as f64 * 1e-8), "row {k}");
@@ -92,7 +190,7 @@ fn the_whole_start_is_60001_rows_on_a_10_ns_grid() {
 #[test]
 fn every_check_of_the_whole_start_passes() {
     // LR-08 AC 2: the monitors check at every clock, so there are checks, and none fails
-    let checks = &start().checks;
+    let checks = &Start::once().checks;
     assert!(checks.seen > 0, "no `checks` record in the whole start");
     assert_eq!(checks.failed, 0, "{} of {} checks failed", checks.failed, checks.seen);
 }
@@ -100,43 +198,24 @@ fn every_check_of_the_whole_start_passes() {
 #[test]
 fn the_whole_start_stays_under_one_gibibyte() {
     // LR-12 AC 1
-    let start = start();
+    let start = Start::once();
     assert!(start.peak <= 1 << 30, "peak live heap {} B", start.peak);
 }
 
 #[test]
 fn the_wall_time_and_the_peak_are_reported() {
     // LR-12 AC 2: the line holds both numbers and nothing asserts a time
-    let start = start();
-    let line = report(start);
+    let start = Start::once();
+    let line = start.report();
     eprintln!("{line}");
     assert!(line.contains(&format!("{:.1} s", start.wall.as_secs_f64())), "{line}");
     assert!(line.contains(&format!("{} B", start.peak)), "{line}");
 }
 
-/// The index of the column whose label is `name` or ends in `.name`.
-fn column(table: &Table, name: &str) -> usize {
-    let dotted = format!(".{name}");
-    table.columns.iter().position(|c| c == name || c.ends_with(&dotted)).unwrap_or_else(|| panic!("no column `{name}` in {:?}", table.columns))
-}
-
-/// The real cells of a column, with the time of each row.
-fn series(table: &Table, name: &str) -> Vec<(f64, f64)> {
-    let at = column(table, name);
-    table
-        .rows
-        .iter()
-        .map(|row| match (&row[0], &row[at]) {
-            (Cell::Real(t), Cell::Real(v)) => (*t, *v),
-            other => panic!("a real `{name}` at a real time, found {other:?}"),
-        })
-        .collect()
-}
-
 #[test]
 fn the_overshoot_is_within_15_mv() {
     // LR-09 AC 1, SPEC §10 S1: the output never exceeds 0.8 V by more than 15 mV
-    let vout = series(&start().table, "vout");
+    let vout = Columns::series(&Start::once().table, "vout");
     let (time, peak) = vout.iter().copied().fold((0.0, f64::MIN), |best, (t, v)| if v > best.1 { (t, v) } else { best });
     eprintln!("overshoot: largest buck.vout {peak:.6} V at {time:e} s (limit 0.815 V)");
     assert!(peak <= 0.815, "the largest buck.vout is {peak} V at {time:e} s, limit 0.815 V");
@@ -148,7 +227,7 @@ fn the_output_settles_into_10_mv_within_the_ramp_window() {
     // (`benches/startup.msl`) and the reference ramps over 0.256 ms (§7.2), so the output is
     // inside 0.8 V +- 10 mV from 0.2575 ms +- 0.05 ms; the settling time is the time of the first
     // row from which every later row is inside the band
-    let vout = series(&start().table, "vout");
+    let vout = Columns::series(&Start::once().table, "vout");
     let inside = |v: f64| (v - 0.8).abs() <= 10e-3;
     let last_outside = vout.iter().rposition(|(_, v)| !inside(*v));
     let settled = match last_outside {
@@ -165,9 +244,9 @@ fn the_output_settles_into_10_mv_within_the_ramp_window() {
 fn the_start_ends_in_regulation_with_power_good() {
     // LR-10 AC 2: the last row holds reference code 128 (SPEC §7.2: 0.8 V is code 0, reference
     // 128), supervisor mode `Regulate` (§8, variant 2) and `pgood` true (§8.6)
-    let table = &start().table;
+    let table = &Start::once().table;
     let last = table.rows.last().expect("rows");
-    let (reference, mode, pgood) = (&last[column(table, "reference")], &last[column(table, "mode")], &last[column(table, "pgood")]);
+    let (reference, mode, pgood) = (&last[Columns::index(table, "reference")], &last[Columns::index(table, "mode")], &last[Columns::index(table, "pgood")]);
     eprintln!("end state: reference {reference:?}, mode {mode:?}, pgood {pgood:?} at {:?}", last[0]);
     assert_eq!(reference, &Cell::Int(128), "reference at the end");
     assert_eq!(mode, &Cell::Text("Regulate".into()), "mode at the end (read by its variant name, CV-22)");
@@ -177,7 +256,7 @@ fn the_start_ends_in_regulation_with_power_good() {
 #[test]
 fn the_ripple_is_within_10_mv_peak_to_peak() {
     // LR-11 AC 1, SPEC §2: over the last 40 us the output moves, and by at most 10 mV peak to peak
-    let vout = series(&start().table, "vout");
+    let vout = Columns::series(&Start::once().table, "vout");
     let window: Vec<f64> = vout.iter().filter(|(t, _)| *t >= 560e-6).map(|(_, v)| *v).collect();
     let (low, high) = window.iter().fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
     let ripple = high - low;

@@ -128,7 +128,7 @@ fn outcome() -> &'static Outcome {
     })
 }
 
-/// The value of a net of `bytes` value bytes at the end of the run; it must be known.
+/// The value of a net of `bytes` value bytes at the end of the run.
 fn last(o: &Outcome, path: &str, bytes: usize) -> i32 {
     decode(value_at(o.series(path), ticks(STOP)), bytes, false)
 }
@@ -186,7 +186,7 @@ fn the_output_settles_within_10_mv_of_0v8() {
 fn no_shoot_through_during_the_start() {
     let o = outcome();
     // SPEC §5.3 and §10 S10: the monitor checks at each rising clock edge (200 MHz) that both
-    // commands are never on together: one record per edge, `pass` known and true
+    // commands are never on together: one record per edge, `pass` true
     // the 200 MHz clock rises at 2.5 ns + 5 ns (k - 1): 600 us holds edges 1 to 120 000, the
     // last at 599.9975 us. Exactly one record at each, none elsewhere
     assert_eq!(o.checks.len(), 120_000, "one record per rising edge of 600 us of 200 MHz");
@@ -195,6 +195,6 @@ fn no_shoot_through_during_the_start() {
     assert!(made == edges, "the records are made at the rising edges: first difference at {:?}", made.iter().zip(&edges).position(|(a, b)| a != b));
     let never = vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())];
     assert!(o.checks.iter().all(|(_, _, t)| *t == never), "every record is the `never` check");
-    let failed: Vec<_> = o.checks.iter().filter(|(_, b, _)| b[0] != 1 || b[1] != 1).take(5).collect();
-    assert!(failed.is_empty(), "a check failed or was unknown: {failed:?}");
+    let failed: Vec<_> = o.checks.iter().filter(|(_, b, _)| b[0] != 1).take(5).collect();
+    assert!(failed.is_empty(), "a check failed: {failed:?}");
 }

@@ -108,10 +108,11 @@ impl ParamReads {
     fn walk(ir: &Ir, expr: ExprId, out: &mut Vec<u32>) {
         match ir.expr(expr) {
             Expr::Param(index) => out.push(*index),
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => ParamReads::walk(ir, *expr, out),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => ParamReads::walk(ir, *expr, out),
             Expr::Closure { body, .. } => ParamReads::walk(ir, *body, out),
-            Expr::Binary { lhs: first, rhs: second, .. } | Expr::KnownOr { value: first, default: second } | Expr::Unwrap { is: first, value: second, .. } | Expr::Level { value: first, index: second, .. } | Expr::Merge { a: first, b: second } | Expr::Same { a: first, b: second } => ParamReads::walk_all(ir, &[*first, *second], out),
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => ParamReads::walk(ir, *index, out),
+            Expr::Binary { lhs: first, rhs: second, .. } | Expr::Unwrap { is: first, value: second, .. } | Expr::Same { a: first, b: second } => ParamReads::walk_all(ir, &[*first, *second], out),
             Expr::If { cond, then, otherwise } => ParamReads::walk_all(ir, &[*cond, *then, *otherwise], out),
             Expr::Call { args, .. } | Expr::Math { args, .. } => ParamReads::walk_all(ir, args, out),
             Expr::Method { receiver, args, .. } => {
@@ -127,6 +128,7 @@ impl ParamReads {
                 }
             }
             Expr::Limit { x, f, seed, .. } => ParamReads::walk_all(ir, &[*x, *f].into_iter().chain(*seed).collect::<Vec<_>>(), out),
+            Expr::SessionParameter { .. } => {}
             Expr::Stim { mag, phase, .. } => ParamReads::walk_all(ir, &[*mag].into_iter().chain(*phase).collect::<Vec<_>>(), out),
             control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => {
                 ParamReads::walk_all(ir, &control.operands(), out);
@@ -243,15 +245,10 @@ mod tests {
 
     #[test]
     fn every_form_that_holds_an_operand_reports_the_params_it_reads() {
-        // F1: the forms the walk once skipped (a method call, `known_or`, `is_known`, `high`)
-        // and the ones it kept, each over `a`
-        let unknown = |b: &mut IrBuilder| b.expr(Expr::Unknown, ValueType::F64, origin());
+        // F1: the forms the walk once skipped (a method call) and the ones it kept, each over `a`
+        let constant = |b: &mut IrBuilder| b.expr(Expr::Real(Real::new(0.0)), ValueType::F64, origin());
         assert_eq!(read_by(|_, a| Expr::Method { method: piperine_ir::Method::Max, receiver: a, args: Vec::new() }), [0]);
-        assert_eq!(read_by(|b, a| Expr::Method { method: piperine_ir::Method::Max, receiver: unknown(b), args: vec![a] }), [0]);
-        assert_eq!(read_by(|b, a| Expr::KnownOr { value: a, default: unknown(b) }), [0]);
-        assert_eq!(read_by(|b, a| Expr::KnownOr { value: unknown(b), default: a }), [0]);
-        assert_eq!(read_by(|_, a| Expr::IsKnown(a)), [0]);
-        assert_eq!(read_by(|_, a| Expr::High(a)), [0]);
+        assert_eq!(read_by(|b, a| Expr::Method { method: piperine_ir::Method::Max, receiver: constant(b), args: vec![a] }), [0]);
         assert_eq!(read_by(|_, a| Expr::Cast { expr: a, to: ValueType::F64 }), [0]);
         assert_eq!(read_by(|_, a| Expr::Block { stmts: Vec::new(), value: Some(a) }), [0]);
         assert_eq!(read_by(|_, _| Expr::Real(Real::new(1.0))), Vec::<u32>::new());

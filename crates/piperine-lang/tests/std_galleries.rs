@@ -355,11 +355,11 @@ fn every_gallery_lists_a_std_item() {
 
 /// The gallery fences that write a form `composite-values` lifted, with the text of each form: a `for` in
 /// a reaction (E.3, phase A), a guarded arm of a `match` and the variants of an enum with a payload (E.4,
-/// phases A and B).
-const LIFTED_FENCES: [(&str, &[&str]); 2] = [("E.3", &["for k in 1..N"]), ("E.4", &["_ if !baud_tick", "Tx::Data { n }"])];
+/// phases A and B) and the memory `Ram` of E.5 (phase C).
+const LIFTED_FENCES: [(&str, &[&str]); 3] = [("E.3", &["for k in 1..N"]), ("E.4", &["_ if !baud_tick", "Tx::Data { n }"]), ("E.5", &["[Bit<u32>; 256]", "mem[addr] <- wdata"])];
 
 /// How the type checker named the forms phases A and B lifted, before CV-01 to CV-22 (`types/unsupported.rs`).
-const LIFTED_FORMS: [&str; 14] = [
+const LIFTED_FORMS: [&str; 16] = [
     "assignment",
     "`while` loop",
     "`loop`",
@@ -374,6 +374,8 @@ const LIFTED_FORMS: [&str; 14] = [
     "index expression",
     "a variant with a payload",
     "`#[repr]`",
+    "an array of `Bit",
+    "an element or field commit",
 ];
 
 /// The modules a source text declares.
@@ -414,7 +416,59 @@ fn the_fences_composite_values_lifted_are_checked() {
         }
         held.push(g.section);
     }
-    assert_eq!(held, ["E.3", "E.4"], "both fences are held");
+    assert_eq!(held, ["E.3", "E.4", "E.5"], "the three fences are held (E.5 is phase C: the array of carriers `Ram`; §8.2 and §22.1.3 are not gallery fences)");
+}
+
+/// The sections of the gallery fences that write a form of `generics` phase A: none of the 16 does today (their
+/// `impl Resolve` neighbours are not gallery fences), so the test fails, and this list is the one to update, the day
+/// a fence writes one.
+const EXPECTED_HELD: [&str; 0] = [];
+
+/// What a gallery fence writes of the forms `generics` phase A lifted: a generic function, `impl`, a trait, a generic
+/// struct or enum. A fence is held when its text writes one.
+const GENERICS_FORMS: [&str; 5] = ["fn ", "impl ", "trait ", "struct ", "enum "];
+
+/// How the type checker named the forms phase A lifted before GN-01 to GN-06 (`types/unsupported.rs`).
+const GENERICS_LIFTED: [&str; 6] = ["generic function", "generic struct", "generic enum", "trait", "`impl`", "self parameter"];
+
+/// The `<` that opens a generic list on a line that declares a function, struct or enum, or an `impl` or a trait.
+struct GenericDeclarations;
+
+impl GenericDeclarations {
+    /// Whether `text` declares an item with a `<..>` list or writes an `impl` or a `trait`.
+    fn written_in(text: &str) -> bool {
+        text.lines().map(str::trim_start).any(|line| {
+            let declares = GENERICS_FORMS.iter().any(|form| line.strip_prefix("pub ").unwrap_or(line).starts_with(form));
+            let head = line.split(['{', '(']).next().unwrap_or(line);
+            declares && (head.contains('<') || line.starts_with("impl ") || line.starts_with("trait "))
+        })
+    }
+}
+
+#[test]
+fn the_fences_generics_lifted_are_checked() {
+    // GN-31 AC 2: a gallery fence that writes a form of generics phase A (a generic function, `impl`, a trait, a generic
+    // struct or enum) is held to the type checker, each of its modules as the top: none of its refusals names a form
+    // `generics` lifted
+    let mut held = Vec::new();
+    for g in galleries() {
+        if !GenericDeclarations::written_in(&g.block.text) {
+            continue;
+        }
+        let text = assemble(&g.block.text, fixtures_of(&g.section));
+        let design = build(&text);
+        for module in ModuleNames::declared_in(&text) {
+            let Err(refused) = piperine_lang::types::Types::check(&design, &module) else { continue };
+            for diagnostic in refused {
+                let message = diagnostic.diagnostic.message;
+                for lifted in GENERICS_LIFTED {
+                    assert!(!message.contains(lifted), "{} as `{module}`: the checker still refuses {lifted}: {message}", g.section);
+                }
+            }
+        }
+        held.push(g.section);
+    }
+    assert_eq!(held, EXPECTED_HELD, "the fences that write phase A forms are held");
 }
 
 /// PI-11 AC 3: each of the 16 gallery fences is the formatter's output for itself, so a reader

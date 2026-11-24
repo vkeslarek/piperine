@@ -186,3 +186,38 @@ fn the_only_run_is_run_without_a_name() {
         other => panic!("NoRun naming a and b, found {other:?}"),
     }
 }
+
+/// What a failed `Project::check` reports.
+struct CheckFailure;
+
+impl CheckFailure {
+    /// The codes of the `typeck` diagnostics of a failed check, or a panic naming what else failed.
+    fn typeck_codes(checked: Result<piperine_api::Checked, Vec<Failure>>) -> Vec<String> {
+        let failures = checked.expect_err("the check fails");
+        assert_eq!(failures.len(), 1, "one failure: {failures:?}");
+        match &failures[0] {
+            Failure::Diagnostics { stage: "typeck", found, .. } => found.iter().map(|d| d.diagnostic.code.to_string()).collect(),
+            other => panic!("a typeck failure, found {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_library_package_with_no_run_is_type_checked() {
+    // GN-08 AC 2: `rc` has no `[run]` table; a function nothing calls is wrong
+    let tmp = tempfile::tempdir().expect("tmp");
+    let rc = rc_with_parts(tmp.path(), "");
+    let clean = open(&rc).check().unwrap_or_else(|f| panic!("{f:?}"));
+    assert_eq!((clean.runs, clean.typed), (0, true), "the package is typed with no run");
+    write(&rc.join("src/lib.msl"), &format!("{RESISTOR}fn broken(x: f64) -> bool {{ x + 1.0 }}\n"));
+    assert_eq!(CheckFailure::typeck_codes(open(&rc).check()), ["E0180"]);
+}
+
+#[test]
+fn a_dependency_crate_is_type_checked() {
+    // GN-08 AC 1: the error is in `parts`, a dependency of the package
+    let tmp = tempfile::tempdir().expect("tmp");
+    let rc = rc_with_parts(tmp.path(), "");
+    write(&tmp.path().join("parts/src/lib.msl"), &format!("{CAPACITOR}pub fn broken(x: f64) -> bool {{ x + 1.0 }}\n"));
+    assert_eq!(CheckFailure::typeck_codes(open(&rc).check()), ["E0180"]);
+}

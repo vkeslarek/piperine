@@ -44,7 +44,7 @@ fn the_later_statement_wins() {
     // §12.1.2: commits to one level that apply in the same microstep are ordered by the instant
     // they were made, then by source order; the last one is the value. At 2.5 ns `x` takes 2,
     // and 1 is never seen. At 7.5 ns the same commits leave the value as it is: no change.
-    assert_eq!(transient(&seen, "LaterBench.x"), vec![(5 * NS / 2, vec![2, 1])]);
+    assert_eq!(transient(&seen, "LaterBench.x"), vec![(5 * NS / 2, vec![2])]);
 }
 
 #[test]
@@ -74,5 +74,5 @@ fn an_unchanged_commit_fires_nothing() {
     // firing, moved once, at 2.5 ns (the operating point already counted the initial value of
     // `q`, so it reads 2; three more firings from the unchanged commits would read 5)
     let moved = transient(&seen, "UnchangedBench.n");
-    assert_eq!(moved, vec![(5 * NS / 2, vec![2, 1])], "the counter holds 2 after the one firing");
+    assert_eq!(moved, vec![(5 * NS / 2, vec![2])], "the counter holds 2 after the one firing");
 }

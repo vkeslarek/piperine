@@ -204,3 +204,19 @@ fn no_source_spells_p0002() {
     let spellings = SourceSpellings::from_crates();
     assert!(!spellings.raises("P0002"), "sources that still spell P0002: {:?}", spellings.sites_of("P0002"));
 }
+
+#[test]
+fn this_features_codes_are_all_raised() {
+    // PI-13 AC 4, PI-12 AC 9 (params-and-io): the codes this feature owns (spec.md's table, with `E0810` and `E0811`; `E0906` is retired by explicit-unknowns, MD-78, and is no code of a table now) are raised by a
+    // source and listed in no entry of `code_owners.tsv`.
+    const CODES: [&str; 26] = [
+        "E0105", "E0122", "E0180", "E0182", "E0188", "E0204", "E0205", "E0244", "E0315", "E0333", "E0354", "E0361", "E0610", "E0612", "E0613", "E0614", "E0703", "E0704", "E0705", "E0706", "E0904",
+        "E0810", "E0811", "E0141", "E0802", "E0803",
+    ];
+    let spellings = SourceSpellings::from_crates();
+    let owners = CodeOwners::load();
+    for code in CODES {
+        assert!(spellings.raises(code), "{code} is no code a source raises");
+        assert!(!owners.lists(code), "{code} is still in code_owners.tsv");
+    }
+}

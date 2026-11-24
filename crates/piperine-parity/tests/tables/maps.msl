@@ -1,0 +1,36 @@
+//! `table_model` (params-and-io PI-10, §22.2.15): a voltage `v(i)` held by a source is mapped to `v(o)` through a table,
+//! one module per control string. Every table is a `const` of samples written out, the way a measured one is read
+//! from a file (`diode.msl`).
+
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }
+
+const SAMPLES: [(f64, f64); 5] = [(0.0, 0.0), (1.0, 2.0), (2.0, 3.0), (4.0, 7.0), (5.0, 5.0)];
+/// x^3 - 2 x^2 + x / 2 + 1 at 0, 1, 2, 3, 4 and 5.
+const CUBIC: [(f64, f64); 6] = [(0.0, 1.0), (1.0, 0.5), (2.0, 2.0), (3.0, 11.5), (4.0, 35.0), (5.0, 78.5)];
+
+module LinearMap(i: Electrical, o: Electrical) {}
+analog for LinearMap { v(o, gnd) +> table_model(v(i), SAMPLES, "1"); }
+
+module ClosestMap(i: Electrical, o: Electrical) {}
+analog for ClosestMap { v(o, gnd) +> table_model(v(i), SAMPLES, "D"); }
+
+module CubicMap(i: Electrical, o: Electrical) {}
+analog for CubicMap { v(o, gnd) +> table_model(v(i), CUBIC, "3"); }
+
+module ConstantLowLineHighMap(i: Electrical, o: Electrical) {}
+analog for ConstantLowLineHighMap { v(o, gnd) +> table_model(v(i), SAMPLES, "1CL"); }
+
+module LineLowConstantHighMap(i: Electrical, o: Electrical) {}
+analog for LineLowConstantHighMap { v(o, gnd) +> table_model(v(i), SAMPLES, "1LC"); }
+
+module ErrorMap(i: Electrical, o: Electrical) {}
+analog for ErrorMap { v(o, gnd) +> table_model(v(i), SAMPLES, "1EE"); }
+
+module LinearBench() { signal i: Electrical; signal o: Electrical; let src = Level(i); let map = LinearMap(i, o); }
+module ClosestBench() { signal i: Electrical; signal o: Electrical; let src = Level(i); let map = ClosestMap(i, o); }
+module CubicBench() { signal i: Electrical; signal o: Electrical; let src = Level(i); let map = CubicMap(i, o); }
+module ConstantLowLineHighBench() { signal i: Electrical; signal o: Electrical; let src = Level(i); let map = ConstantLowLineHighMap(i, o); }
+module LineLowConstantHighBench() { signal i: Electrical; signal o: Electrical; let src = Level(i); let map = LineLowConstantHighMap(i, o); }
+module ErrorBench() { signal i: Electrical; signal o: Electrical; let src = Level { volts: 6.0 }(i); let map = ErrorMap(i, o); }

@@ -9,7 +9,7 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BinaryOp, Broken, BodySpec, Branch, BranchKind, ExprId, FunctionId, FunctionSpec, Ir,
+    Addend, BinaryOp, Broken, BodySpec, Branch, BranchKind, Expr, ExprId, Extrapolation, Real, TableControl, TableDegree, FunctionId, FunctionSpec, Ir,
     IrBuilder, Local, NodeRole, Operator, Origin, QuantityRole, Stmt, StmtId, Terminal, ValueType,
 };
 use serde_json::{Value, json};
@@ -38,6 +38,19 @@ impl Corpus {
 struct Shape;
 
 impl Shape {
+    /// `table_model(v(p, n), samples, "1CC")` and its slope as the addends of one contribution (§22.2.15, PI-10).
+    pub fn table_ir(samples: &[(f64, f64)]) -> Ir {
+        Shape::ir(0, |b| {
+            let x = Shape::ex(b).probe(Terminal::Node(0), Terminal::Node(1));
+            let table: Vec<(Real, Real)> = samples.iter().map(|(a, v)| (Real::new(*a), Real::new(*v))).collect();
+            let control = TableControl { degree: TableDegree::Linear, low: Extrapolation::Constant, high: Extrapolation::Constant };
+            let value = b.expr(Expr::Table { x, table: table.clone(), control }, ValueType::F64, Shape::origin());
+            let slope = b.expr(Expr::TableSlope { x, table, control }, ValueType::F64, Shape::origin());
+            let sum = Shape::ex(b).binary(BinaryOp::Add, value, slope);
+            (vec![], sum)
+        })
+    }
+
     const FILE: &'static str = "shape.msl";
 
     fn origin() -> Origin {
@@ -505,4 +518,18 @@ fn a_recursive_call_or_an_unbound_local_is_named() {
     let hits = Entries::with(&broken, "read before its `let`");
     assert_eq!(hits.len(), 1, "{broken:?}");
     assert_eq!(hits[0].origin, Origin { file: "shape.msl".into(), line: 8, col: 4 });
+}
+
+#[test]
+fn a_table_expression_is_built_checked_and_printed() {
+    // PI-10 AC 8 (T40): `Table` and `TableSlope` build, check clean, print with their control string and samples, and a table whose
+    // abscissae do not strictly increase is a broken item.
+    let ir = Shape::table_ir(&[(0.0, 0.0), (1.0, 2.0), (2.0, 3.0)]);
+    assert_eq!(ir.check(), vec![], "a table of increasing abscissae checks clean");
+    let printed = ir.print_structural();
+    assert!(printed.contains("table(") && printed.contains("table_slope(") && printed.contains("\"1CC\"") && printed.contains("[(0.0, 0.0), (1.0, 2.0), (2.0, 3.0)]"), "{printed}");
+    for bad in [&[(0.0, 0.0), (0.0, 1.0)][..], &[(0.0, 0.0), (2.0, 1.0), (1.0, 3.0)], &[(0.0, 0.0)]] {
+        let broken = Shape::table_ir(bad).check();
+        assert!(broken.iter().any(|entry| entry.what.contains("strictly increasing")), "{bad:?}: {broken:?}");
+    }
 }

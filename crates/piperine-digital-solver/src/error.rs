@@ -3,8 +3,6 @@
 
 use std::fmt;
 
-use piperine_abi::layout::MergeError;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum DigitalError {
     /// More delta cycles than the cap at one evaluation time.
@@ -17,6 +15,9 @@ pub enum DigitalError {
     NanDelay { code: &'static str, instance: String, statement: u32 },
     /// E0501: an instant that did not go quiet; the nets still changing.
     NotQuiet { code: &'static str, tick: i64, nets: Vec<String> },
+    /// A relaxing cycle that still moved after its bounded passes (spec §8.2.3 step 4; abi.md §9
+    /// D1): the loop's drives, in name order. The run stops; no level is made up.
+    Unsettled { code: &'static str, tick: i64, drives: Vec<String> },
     /// A device returned `FAULT` (or `RESHAPE` outside the parameter cone), or
     /// the engine caught a commit that breaks its statement's promise.
     Fault { code: u32, message: String, tick: i64, instance: String },
@@ -27,9 +28,6 @@ pub enum DigitalError {
     Unsupported { what: &'static str },
     /// A host write the engine refuses; nothing changed.
     HostWrite { net: String, reason: &'static str },
-    /// A `MERGE` commit (abi.md C7) the net's layout cannot merge: a field with no known byte, a
-    /// defect of a hand-written device (generated code never commits one).
-    Merge { net: String, writer: String, error: MergeError },
 }
 
 impl fmt::Display for DigitalError {
@@ -49,6 +47,9 @@ impl fmt::Display for DigitalError {
             DigitalError::NanDelay { code, instance, statement } => {
                 write!(f, "{code}: NaN delay in statement {statement} of `{instance}`")
             }
+            DigitalError::Unsettled { code, tick, drives } => {
+                write!(f, "{code}: the loop at tick {tick} did not settle; its drives: {}", drives.join(", "))
+            }
             DigitalError::NotQuiet { code, tick, nets } => {
                 write!(f, "{code}: the instant at tick {tick} did not go quiet; still changing: {}", nets.join(", "))
             }
@@ -58,9 +59,6 @@ impl fmt::Display for DigitalError {
             DigitalError::Bind { rule, what } => write!(f, "bind rule {rule} broken: {}", what.join("; ")),
             DigitalError::Unsupported { what } => write!(f, "unsupported: {what}"),
             DigitalError::HostWrite { net, reason } => write!(f, "host write to net `{net}` refused: {reason}"),
-            DigitalError::Merge { net, writer, error } => {
-                write!(f, "commit of `{writer}` to net `{net}` made under unknown control cannot be merged: {error}")
-            }
         }
     }
 }

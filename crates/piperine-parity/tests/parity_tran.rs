@@ -230,3 +230,18 @@ fn uic_rc_runs_and_prints_the_skip_line_without_ngspice() {
         compare_on("uic_rc", "out", &reference, backend);
     }
 }
+
+/// The print rows ngspice exports for the transmission line: its 0.1 us grid over 10 us, both ends included.
+const TLINE_ROWS: usize = 101;
+
+/// A lossless line matched at both ends (`tests/e2e/twins/delay_tline.cir`) against its twin
+/// `0.5 * delay(v(src), 1.05 us)` (analog-operators AO-02): `v(out)` of a 100 kHz sine over ten
+/// periods under `TRAN_VOLTAGE`. The twin runs on the compiled backend only: the source reads `now()`.
+#[test]
+fn delay_tline() {
+    let reference = Ngspice::from_environment().run("delay_tline");
+    for backend in compiled_backends() {
+        let mut bench = Bench::load_on("delay_tline", backend);
+        TranRun::compare(&mut bench, "out", &reference, TLINE_ROWS, TranRun::options);
+    }
+}

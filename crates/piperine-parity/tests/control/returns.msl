@@ -18,8 +18,8 @@ fn shout(x: u8) { if x > 3 { return; } }
 fn halved(x: Option<u8>) -> Option<u8> { let v = x?; Some(v / 2) }
 fn twice_halved(x: Option<u8>) -> Option<u8> { let a = halved(x)?; halved(Some(a)) }
 
-module Rows(in clk: Bit, out a: Bit<u8>, out b: Bit<i16>, out c: Bit<i16>, out d: Bit<u8>, out e: Bit<u8>, out f: Bit<u8>,
-            out g: Bit<u8>, out h: Bit<u8>, out some: Bit, out none: Bit, out third: Bit<u8>) {}
+module Rows(in clk: Bit, out a: Bit<u8> = 0, out b: Bit<i16> = 0, out c: Bit<i16> = 0, out d: Bit<u8> = 0, out e: Bit<u8> = 0, out f: Bit<u8> = 0,
+            out g: Bit<u8> = 0, out h: Bit<u8> = 0, out some: Bit = false, out none: Bit = false, out third: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         a <- first_over(50);

@@ -1,0 +1,27 @@
+//! `Logic<64>` (§22.1.1): the planes are two `UInt<64>`; the tables hold level by level at the widest supported width.
+//! `Logic<100>` needs integers wider than 64 bits, which `GAPS.md` L13 refuses by name. The expected patterns are
+//! written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn a() -> Logic<64> { logic("01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz") }
+fn b() -> Logic<64> { logic("1xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz0") }
+
+module Rows(in clk: Bit, out w_and: Bit<Logic<64>>, out w_or: Bit<Logic<64>>, out w_xor: Bit<Logic<64>>, out w_not: Bit<Logic<64>>, out w_shl: Bit<Logic<64>>) {}
+digital for Rows {
+    on clk.rise() {
+        w_and <- a() & b();
+        w_or <- a() | b();
+        w_xor <- a() ^ b();
+        w_not <- !a();
+        w_shl <- a() << 3;
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal w_and: Bit<Logic<64>>; signal w_or: Bit<Logic<64>>; signal w_xor: Bit<Logic<64>>; signal w_not: Bit<Logic<64>>; signal w_shl: Bit<Logic<64>>;
+    let osc = Osc(clk);
+    let rows = Rows(clk, w_and, w_or, w_xor, w_not, w_shl);
+}

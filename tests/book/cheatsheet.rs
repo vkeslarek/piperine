@@ -114,23 +114,20 @@ fn the_digital_card_runs() {
     let chapter = Chapter::read();
     // `p` sits 0.5 V above `n`, both driven, so the check `v(p, n) <= hi` holds and the operating point is not singular
     let before = format!("{}module M(in clk: Bit, in rst_n: Bit, in d: Bit, out q: Bit = false, p: Electrical, n: Electrical, in en: Bit) {{ t0: f64 = 1u; w: f64 = 1n; hi: f64 = 1.0; }}\n", Surroundings::PARTS);
-    let after = "module Top() { signal c: Bit; signal r: Bit; signal d: Bit; signal q: Bit; signal p: Electrical; signal n: Electrical; signal e: Bit; let sp = Vdc(p) { dc: 0.5 }; let sn = Vdc(n) { dc: 0.0 }; let m = M(c, r, d, q, p, n, e); }\n";
+    let after = "module Top() { signal c: Bit = false; signal r: Bit = false; signal d: Bit = false; signal q: Bit; signal p: Electrical; signal n: Electrical; signal e: Bit = false; let sp = Vdc(p) { dc: 0.5 }; let sn = Vdc(n) { dc: 0.0 }; let m = M(c, r, d, q, p, n, e); }\n";
     let model = chapter.wrapped("digital.msl", &before, "cheatsheet#5", after);
     model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#5, the digital card: {failure}"));
 }
 
 #[test]
-fn the_debug_prints_card_is_refused_for_the_analog_trace() {
-    // cheatsheet#7 (refused): the four reactions that print and `analog for M { emit!("newton", ..); }`: the
-    // `settle` event runs (L52, closed) and an `emit!` in `analog` is `P0001` (L49)
+fn the_debug_prints_card_runs_with_its_analog_trace() {
+    // cheatsheet#7 (runs since analog-operators T37): the four reactions that print and `analog for M { emit!("newton", ..); }`:
+    // the `settle` event (L52) and the trace in `analog` (L49) both run
     let chapter = Chapter::read();
-    let before = "module M(a: Electrical, in clk: Bit, in d: Bit) { vth: f64 = 0.5; signal q: Bit; }\n";
-    let after = "module Top() { signal a: Electrical; signal c: Bit; signal d: Bit; let m = M(a, c, d); }\n";
+    let before = "module M(a: Electrical, in clk: Bit, in d: Bit) { vth: f64 = 0.5; signal q: Bit = false; }\n";
+    let after = "module Top() { signal a: Electrical; signal c: Bit = false; signal d: Bit = false; let m = M(a, c, d); }\nanalog for Top { v(a, gnd) +> 0.7; }\n";
     let model = chapter.wrapped("prints.msl", before, "cheatsheet#7", after);
-    let given = Surroundings::refusals(&model, "cheatsheet#7");
-    assert!(Surroundings::holds(&given, "P0001", "an `emit!` in an `analog` block is not supported yet"), "{given:?}");
-    assert!(!given.iter().any(|(_, message)| message.contains("`settle`")), "`settle` is no longer refused: {given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "cheatsheet#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
+    model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#7: {failure}"));
 }
 
 #[test]
@@ -154,13 +151,12 @@ fn the_extern_card_is_refused() {
 }
 
 #[test]
-fn the_files_card_is_refused_for_its_table_and_its_statement() {
-    // cheatsheet#10 (refused): `mod logic;`, two `use` lines, `const IV: [(f64, f64); 64] =
-    // parse_table(include_str!("iv.tbl"));` and `emit!("log", ..)` among the items. The `emit!` is a
-    // statement among the items, so the file as the sheet writes it is `E0601` (§19 rule 10); without that last line, in
-    // a package that has the files and the dependency it names, and a top that reads the table (the checker
-    // reaches only what the top reaches), `parse_table` is a generic function and `&IV` a reference, `P0001`
-    // (L57)
+fn the_files_card_runs() {
+    // cheatsheet#10 (run, L57 closed by params-and-io): `mod logic;`, two `use` lines, `const IV: [(f64, f64); 64] =
+    // parse_table(include_str!("iv.tbl"));` and `emit!("log", ..)` among the items. The `emit!` is a statement among the
+    // items, so the file as the sheet writes it is `E0601` (§19 rule 10); without that last line, in a package that has the
+    // files and the dependency it names, and a top that reads the table (the checker reaches only what the top reaches),
+    // the card runs: `parse_table` reads `iv.tbl` and `table_model` reads it
     let chapter = Chapter::read();
     let card = chapter.text("cheatsheet#10");
     let (items, statement) = card.rsplit_once('\n').expect("the card has several lines");
@@ -177,11 +173,9 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
     };
     let whole = Refusal::of(package(format!("{card}\nmodule Top() {{ }}\n")).run(Overrides::default()), "cheatsheet#10");
     assert!(whole.iter().any(|(code, message)| code == "E0601" && message == "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)"), "{whole:?}");
-    let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), IV, \"3E\"); }\n";
+    let reading = "module Top() { signal a: Electrical; }\nanalog for Top { i(a) +> table_model(v(a), IV, \"3L\"); }\n";
     let items_only = package(format!("{items}\n{reading}"));
-    let given = Refusal::of(items_only.run(Overrides::default()), "cheatsheet#10");
-    assert!(Surroundings::holds(&given, "P0001", "generic function is not supported yet"), "{given:?}");
-    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "an array whose length is a generic parameter is not supported yet");
+    items_only.run(Overrides::default()).unwrap_or_else(|failure| panic!("the card without its statement runs: {failure:#}"));
 }
 
 #[test]

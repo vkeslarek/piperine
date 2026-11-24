@@ -1,0 +1,104 @@
+//! The four-state tables of `Logic` (§22.1.2) over every pair of states at once: `a` holds each of 0, 1, X and Z on four
+//! levels and `b` cycles through the four on every group, so the 16 levels of `a op b` are the 16 pairs of states. The
+//! expected patterns are the specification's tables, written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn a() -> Logic<16> { logic("00001111xxxxzzzz") }
+fn b() -> Logic<16> { logic("01xz01xz01xz01xz") }
+
+module Rows(in clk: Bit, out p_and: Bit<Logic<16>>, out p_or: Bit<Logic<16>>, out p_xor: Bit<Logic<16>>, out p_not: Bit<Logic<16>>, out p_shl: Bit<Logic<8>>, out p_shr: Bit<Logic<8>>) {}
+digital for Rows {
+    on clk.rise() {
+        p_and <- a() & b();
+        p_or <- a() | b();
+        p_xor <- a() ^ b();
+        p_not <- !a();
+        p_shl <- logic("10xz1100") << 2;
+        p_shr <- logic("10xz1100") >> 3;
+    }
+}
+
+module Mixed(in clk: Bit, out m0: Bit<Logic<4>>, out m1: Bit<Logic<4>>, out m2: Bit<Logic<4>>, out m3: Bit<Logic<1>> = Logic::Z, out m4: Bit<Logic<1>> = Logic::Z, out m5: Bit<Logic<1>> = Logic::Z) {}
+digital for Mixed {
+    on clk.rise() {
+        m0 <- logic("10xz") & 0b1100u4;
+        m1 <- 0b0101u4 | logic("10xz");
+        m2 <- logic("10xz") ^ 0b1111u4;
+        m3 <- Logic::from(true) ^ false;
+        m4 <- true & logic("x");
+        m5 <- logic("z") | true;
+    }
+}
+
+module Compare(in clk: Bit, out e0: Bit<Logic<1>> = Logic::Z, out e1: Bit<Logic<1>> = Logic::Z, out e2: Bit<Logic<1>> = Logic::Z, out e3: Bit<Logic<1>> = Logic::Z, out n0: Bit<Logic<1>> = Logic::Z, out n1: Bit<Logic<1>> = Logic::Z, out n2: Bit<Logic<1>> = Logic::Z, out s0: Bit = false, out s1: Bit = false, out s2: Bit = false, out s3: Bit = false) {}
+digital for Compare {
+    on clk.rise() {
+        e0 <- Logic::from(0b1010u4) == Logic::from(0b1010u4);
+        e1 <- Logic::from(0b1010u4) == Logic::from(0b1000u4);
+        e2 <- logic("10xz") == logic("10xz");
+        e3 <- Logic::from(0b1010u4) == logic("101z");
+        n0 <- Logic::from(0b1010u4) != Logic::from(0b1010u4);
+        n1 <- Logic::from(0b1010u4) != Logic::from(0b1000u4);
+        n2 <- logic("10xz") != logic("10xz");
+        s0 <- same(logic("10xz"), logic("10xz"));
+        s1 <- same(logic("10xz"), logic("10xx"));
+        s2 <- same(logic("zzzz"), logic("zzzz"));
+        s3 <- same(logic("xxxx"), logic("zzzz"));
+    }
+}
+
+module Tests(in clk: Bit, out t0: Bit = false, out t1: Bit = false, out t2: Bit = false, out t3: Bit = false, out t4: Bit = false, out t5: Bit = false, out t6: Bit = false, out t7: Bit = false, out t8: Bit = false, out t9: Bit = false, out t10: Bit = false, out t11: Bit = false, out t12: Bit = false, out t13: Bit = false, out t14: Bit = false, out t15: Bit = false) {}
+digital for Tests {
+    on clk.rise() {
+        t0 <- logic("1111").is_high();
+        t1 <- logic("1110").is_high();
+        t2 <- logic("0000").is_low();
+        t3 <- logic("0001").is_low();
+        t4 <- logic("zzzz").is_z();
+        t5 <- logic("zzzx").is_z();
+        t6 <- logic("xxxx").is_x();
+        t7 <- logic("xxxz").is_x();
+        t8 <- logic("1111").is_low();
+        t9 <- logic("0000").is_high();
+        t10 <- logic("xxxx").is_z();
+        t11 <- logic("zzzz").is_x();
+        t12 <- logic("10xz").is_high();
+        t13 <- logic("10xz").is_low();
+        t14 <- logic("10xz").is_x();
+        t15 <- logic("10xz").is_z();
+    }
+}
+
+module Convert(in clk: Bit, out c0: Bit<Logic<4>>, out c1: Bit<Logic<1>>, out c2: Bit<Logic<1>>, out o0: Bit<u4> = 0, out o1: Bit<u4> = 0, out p0: Bit = false, out p1: Bit = false, out q0: Bit = false, out q1: Bit = false, out q2: Bit = false) {}
+digital for Convert {
+    on clk.rise() {
+        c0 <- Logic::from(0b1010u4);
+        c1 <- Logic::from(true);
+        c2 <- Logic::from(false);
+        o0 <- logic("1010").to_bits().unwrap_or(15);
+        o1 <- logic("10xz").to_bits().unwrap_or(15);
+        p0 <- logic("1010").to_bits().is_some();
+        p1 <- logic("10xz").to_bits().is_some();
+        q0 <- logic("1").to_bit().unwrap_or(false);
+        q1 <- logic("0").to_bit().unwrap_or(true);
+        q2 <- logic("z").to_bit().is_none();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal p_and: Bit<Logic<16>>; signal p_or: Bit<Logic<16>>; signal p_xor: Bit<Logic<16>>; signal p_not: Bit<Logic<16>>; signal p_shl: Bit<Logic<8>>; signal p_shr: Bit<Logic<8>>;
+    signal m0: Bit<Logic<4>>; signal m1: Bit<Logic<4>>; signal m2: Bit<Logic<4>>; signal m3: Bit<Logic<1>>; signal m4: Bit<Logic<1>>; signal m5: Bit<Logic<1>>;
+    signal e0: Bit<Logic<1>>; signal e1: Bit<Logic<1>>; signal e2: Bit<Logic<1>>; signal e3: Bit<Logic<1>>; signal n0: Bit<Logic<1>>; signal n1: Bit<Logic<1>>; signal n2: Bit<Logic<1>>;
+    signal s0: Bit; signal s1: Bit; signal s2: Bit; signal s3: Bit;
+    signal t0: Bit; signal t1: Bit; signal t2: Bit; signal t3: Bit; signal t4: Bit; signal t5: Bit; signal t6: Bit; signal t7: Bit; signal t8: Bit; signal t9: Bit; signal t10: Bit; signal t11: Bit; signal t12: Bit; signal t13: Bit; signal t14: Bit; signal t15: Bit;
+    signal c0: Bit<Logic<4>>; signal c1: Bit<Logic<1>>; signal c2: Bit<Logic<1>>; signal o0: Bit<u4>; signal o1: Bit<u4>; signal p0: Bit; signal p1: Bit; signal q0: Bit; signal q1: Bit; signal q2: Bit;
+    let osc = Osc(clk);
+    let rows = Rows(clk, p_and, p_or, p_xor, p_not, p_shl, p_shr);
+    let mixed = Mixed(clk, m0, m1, m2, m3, m4, m5);
+    let compare = Compare(clk, e0, e1, e2, e3, n0, n1, n2, s0, s1, s2, s3);
+    let tests = Tests(clk, t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15);
+    let convert = Convert(clk, c0, c1, c2, o0, o1, p0, p1, q0, q1, q2);
+}

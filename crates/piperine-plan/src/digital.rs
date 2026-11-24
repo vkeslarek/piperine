@@ -7,12 +7,11 @@
 //! (`Body::child_carriers`: part II §5, the parent's signal is the net its children meet on, so
 //! the netlist binds it to that net like a port; msl-digital T65), `PRIVATE` for any other
 //! `signal`. Its layout is one field `v`
-//! with a known byte (abi.md P3): `BIT` for `bool`, `REAL` for `f64`, and for `UInt<N>`/`Int<N>`
-//! the narrowest of `U8` to `U64` or `I8` to `I64` that holds `N` bits, the known byte right
-//! after the value and the size rounded up to the value's alignment, as `BIT`, `BYTE` and
-//! `REAL` have it. An initial value gives `HAS_INIT` with its canonical bytes: the value
-//! little-endian, the known byte 1, every padding byte 0. An integer param takes the same
-//! layout and default bytes as a carrier of its type.
+//! holding the value and nothing else (abi.md P3): `BIT` for `bool`, `F64` for `f64`, and for
+//! `UInt<N>`/`Int<N>` the narrowest of `U8` to `U64` or `I8` to `I64` that holds `N` bits, the
+//! size the value's own. An initial value gives `HAS_INIT` with its bytes: the value
+//! little-endian. An integer param takes the same layout and default bytes as a carrier of its
+//! type.
 //!
 //! Events (RS-12 AC 3): one `PRIVATE` `EVENT` pin `event:<k>` per event of the body, after the
 //! carrier pins. A `Changed` event is written by the discrete function `event:<k>`, which reads
@@ -62,10 +61,9 @@
 //! Records (msl-digital A4; abi.md P7, C5): each stream of a body is one `PRIVATE` `DISCRETE`
 //! pin named by the stream and flagged `RECORD` (so `QUIET`: no reader, never a microstep). Its
 //! layout holds one field per value field of the stream, in the stream's order, each laid out
-//! as a carrier of its type (the value, then its known byte) at the next offset its alignment
-//! allows, then the field `maybe` of §19 rule 1 (a `bool`, laid out the same way), the size
-//! rounded up to the largest alignment (`RecordLayout`): a site that leaves a
-//! field out writes it all zero, its known byte 0 (P3, C5). Each emit site is one statement of
+//! as a carrier of its type (its value bytes) at the next offset its alignment allows, the size
+//! rounded up to the largest alignment (`RecordLayout`): a site that leaves a field out writes
+//! it all zero (P3, C5). Each emit site is one statement of
 //! its reaction, in the order of the commits (`Body::reaction_statements`), committing the
 //! whole layout. The record pins follow the re-arming pins, in stream order.
 //!
@@ -74,14 +72,14 @@
 //! `at:<k>.<carrier>`. Reactions: the body's in source order, then one per delayed drive in
 //! drive order, then one arming reaction per `at` event in event order.
 
-use piperine_abi::layout::{BIT, BYTE, REAL, leaf_size};
-use piperine_abi::layout::F64;
+use piperine_abi::layout::{BIT, BYTE, F64, leaf_size};
 use piperine_abi::raw::{
-    DEFAULT, Field, GROUND, Layout, List, Statement, Str, field_flag, global, leaf, pin_flag, role, statement_flag, watch,
+    DEFAULT, Field, GROUND, Layout, List, Statement, Str, global, leaf, part, pin_flag, role, statement_flag, watch,
 };
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
-use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, Stream, Target as Query, ValueType};
+use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Projection, Stmt, Stream, Target as Query, ValueType};
 
+use crate::array::ArrayPin;
 use crate::pin::PinLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
@@ -118,18 +116,29 @@ pub struct StatementPlan {
     pub min_after: Option<f64>,
     /// The statement is `REPLACE` (abi.md C3): a commit through it removes every pending one.
     pub replace: bool,
+    /// The byte range `(offset, len)` the statement commits inside the pin, or inside one element of an array pin
+    /// (`ArrayPin::range`); `None`: the whole pin, or the whole element.
+    pub range: Option<(u32, u32)>,
 }
 
 impl StatementPlan {
     /// The statement of a commit to `carrier` delayed by `after`.
     pub fn commit(ir: &Ir, carrier: u32, after: Option<ExprId>) -> StatementPlan {
-        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false }
+        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false, range: None }
+    }
+
+    /// The statement of a commit to `carrier` (an element of type `ty`, an array of `count` of them when `Some`) delayed
+    /// by `after`, through the steps `path` into its value: over the whole element, or over the byte range of the field
+    /// or value-array element the path names (abi.md §3).
+    pub fn commit_through(ir: &Ir, carrier: u32, ty: &ValueType, count: Option<u64>, after: Option<ExprId>, path: &[Projection]) -> StatementPlan {
+        let range = if count.is_some() || !path.is_empty() { ArrayPin::range(ir, ty, path) } else { None };
+        StatementPlan { range, ..Self::commit(ir, carrier, after) }
     }
 
     /// The statement of an emit site of stream `s`: the whole of its `RECORD` pin, due at the
     /// next microstep.
     pub fn record(s: u32) -> StatementPlan {
-        StatementPlan { target: Target::Record(s), min_after: None, replace: false }
+        StatementPlan { target: Target::Record(s), min_after: None, replace: false, range: None }
     }
 
     /// The statements of reaction `k` of `body`, one per commit and per emit site, in ABI order.
@@ -138,9 +147,13 @@ impl StatementPlan {
         body.reaction_statements(k)
             .into_iter()
             .filter_map(|id| match ir.stmt(id) {
-                Stmt::Commit { carrier, after, .. } => Some(StatementPlan::commit(ir, *carrier, *after)),
+                Stmt::Commit { carrier, after, target, .. } => {
+                    let held = body.carriers().get(*carrier as usize)?;
+                    let path = target.as_ref().map_or(&[][..], |t| t.path.as_slice());
+                    Some(StatementPlan::commit_through(ir, *carrier, &held.ty, held.count, *after, path))
+                }
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
-                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } => None,
+                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } | Stmt::Trace { .. } => None,
             })
             .collect()
     }
@@ -149,7 +162,7 @@ impl StatementPlan {
     /// timer fires.
     pub fn arm(body: Body<'_>, k: u32) -> StatementPlan {
         let guarded = body.events().get(k as usize).is_some_and(|e| e.guard.is_some());
-        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true }
+        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true, range: None }
     }
 
     /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
@@ -165,33 +178,33 @@ impl StatementPlan {
 /// The layout of a discrete value of a given IR type, and its bytes.
 pub struct CarrierLayout;
 
-static U16_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::U16, 2)];
-static U32_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::U32, 4)];
-static U64_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::U64, 8)];
-static I8_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I8, 1)];
-static I16_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I16, 2)];
-static I32_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I32, 4)];
-static I64_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I64, 8)];
+static U16_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::U16)];
+static U32_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::U32)];
+static U64_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::U64)];
+static I8_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I8)];
+static I16_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I16)];
+static I32_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I32)];
+static I64_FIELDS: [Field<'static>; 1] = [CarrierLayout::field(leaf::I64)];
 
-/// `{ v: U16 @0, known @2 }`, size 4, align 2.
-static U16: Layout<'static> = Layout { size: 4, align: 2, fields: List::from_slice(&U16_FIELDS) };
-/// `{ v: U32 @0, known @4 }`, size 8, align 4.
-static U32: Layout<'static> = Layout { size: 8, align: 4, fields: List::from_slice(&U32_FIELDS) };
-/// `{ v: U64 @0, known @8 }`, size 16, align 8.
-static U64: Layout<'static> = Layout { size: 16, align: 8, fields: List::from_slice(&U64_FIELDS) };
-/// `{ v: I8 @0, known @1 }`, size 2, align 1.
-static I8: Layout<'static> = Layout { size: 2, align: 1, fields: List::from_slice(&I8_FIELDS) };
-/// `{ v: I16 @0, known @2 }`, size 4, align 2.
-static I16: Layout<'static> = Layout { size: 4, align: 2, fields: List::from_slice(&I16_FIELDS) };
-/// `{ v: I32 @0, known @4 }`, size 8, align 4.
-static I32: Layout<'static> = Layout { size: 8, align: 4, fields: List::from_slice(&I32_FIELDS) };
-/// `{ v: I64 @0, known @8 }`, size 16, align 8.
-static I64: Layout<'static> = Layout { size: 16, align: 8, fields: List::from_slice(&I64_FIELDS) };
+/// `{ v: U16 @0 }`, size 2, align 2.
+static U16: Layout<'static> = Layout { size: 2, align: 2, fields: List::from_slice(&U16_FIELDS) };
+/// `{ v: U32 @0 }`, size 4, align 4.
+static U32: Layout<'static> = Layout { size: 4, align: 4, fields: List::from_slice(&U32_FIELDS) };
+/// `{ v: U64 @0 }`, size 8, align 8.
+static U64: Layout<'static> = Layout { size: 8, align: 8, fields: List::from_slice(&U64_FIELDS) };
+/// `{ v: I8 @0 }`, size 1, align 1.
+static I8: Layout<'static> = Layout { size: 1, align: 1, fields: List::from_slice(&I8_FIELDS) };
+/// `{ v: I16 @0 }`, size 2, align 2.
+static I16: Layout<'static> = Layout { size: 2, align: 2, fields: List::from_slice(&I16_FIELDS) };
+/// `{ v: I32 @0 }`, size 4, align 4.
+static I32: Layout<'static> = Layout { size: 4, align: 4, fields: List::from_slice(&I32_FIELDS) };
+/// `{ v: I64 @0 }`, size 8, align 8.
+static I64: Layout<'static> = Layout { size: 8, align: 8, fields: List::from_slice(&I64_FIELDS) };
 
 impl CarrierLayout {
-    /// The one field `v` of a layout: `leaf` at offset 0, its known byte at `known`.
-    const fn field(leaf: u32, known: u32) -> Field<'static> {
-        Field { name: Str::from_static("v"), leaf, offset: 0, count: 1, flags: field_flag::HAS_KNOWN, known }
+    /// The one field `v` of a layout: `leaf` at offset 0.
+    const fn field(leaf: u32) -> Field<'static> {
+        Field { name: Str::from_static("v"), leaf, offset: 0, count: 1 }
     }
 
     /// The width in bytes of the value of an `N`-bit integer: the narrowest of 1, 2, 4 and 8.
@@ -209,7 +222,7 @@ impl CarrierLayout {
     pub fn of(ty: &ValueType) -> Option<&'static Layout<'static>> {
         match *ty {
             ValueType::Bool => Some(&BIT),
-            ValueType::F64 => Some(&REAL),
+            ValueType::F64 => Some(&F64),
             ValueType::UInt(n) => Some(match Self::width(n) {
                 1 => &BYTE,
                 2 => &U16,
@@ -237,12 +250,12 @@ impl CarrierLayout {
     pub fn bytes_in(ir: &Ir, ty: &ValueType, value: Constant) -> Option<Vec<u8>> {
         match ir.discriminant(ty, value) {
             Some(tag) => Self::bytes(&ir.carried(ty), Constant::Int(tag)),
-            None => Self::bytes(ty, value),
+            None => Self::bytes(&ir.carried(ty), value),
         }
     }
 
-    /// The canonical bytes of `value` held as `ty` (abi.md P3): the value little-endian at
-    /// offset 0, the known byte 1, padding 0. `None` when `value` is not a value of `ty`.
+    /// The bytes of `value` held as `ty` (abi.md P3): the value little-endian at offset 0 and
+    /// nothing else. `None` when `value` is not a value of `ty`.
     pub fn bytes(ty: &ValueType, value: Constant) -> Option<Vec<u8>> {
         let layout = Self::of(ty)?;
         let field = layout.fields.get(0)?;
@@ -260,26 +273,20 @@ impl CarrierLayout {
         };
         let mut bytes = vec![0u8; layout.size as usize];
         bytes[..value.len()].copy_from_slice(&value);
-        bytes[field.known as usize] = 1;
         Some(bytes)
     }
 }
 
 /// The layout of a stream's `RECORD` pin: each value field laid out as a pin of its type
 /// (`PinLayout`: a carrier's scalar layout, or a composite's), in the stream's order, at the
-/// next offset its alignment allows, then the `maybe` field (§19 rule 1: whether the record was
-/// reached under unknown control), a `bool` laid out as a carrier; the size rounded up to the
-/// largest alignment.
+/// next offset its alignment allows; the size rounded up to the largest alignment.
 #[derive(Clone, Debug)]
 pub struct RecordLayout {
     pub size: u32,
     pub align: u32,
-    /// Per value field of the stream: its offset and the layout it is laid out as. The `maybe`
-    /// field is not among them: it is no field of the stream (`maybe_offset`).
+    /// Per value field of the stream: its offset and the layout it is laid out as.
     pub fields: Vec<(u32, PinLayout)>,
-    /// The offset of the `maybe` field.
-    maybe: u32,
-    /// Every leaf of the layout as an ABI field, the `maybe` field last.
+    /// Every leaf of the layout as an ABI field.
     leaves: Vec<RecordLeaf>,
 }
 
@@ -289,7 +296,6 @@ struct RecordLeaf {
     name: String,
     leaf: u32,
     offset: u32,
-    known: u32,
 }
 
 impl RecordLayout {
@@ -318,12 +324,7 @@ impl RecordLayout {
             align = align.max(layout.align());
             fields.push((offset, layout));
         }
-        let maybe_layout = pin(&ValueType::Bool)?;
-        let maybe = end.next_multiple_of(maybe_layout.align());
-        leaves.extend(Self::leaves_of("maybe", maybe, &maybe_layout)?);
-        end = maybe + maybe_layout.size();
-        align = align.max(maybe_layout.align());
-        Some(RecordLayout { size: end.next_multiple_of(align), align, fields, maybe, leaves })
+        Some(RecordLayout { size: end.next_multiple_of(align), align, fields, leaves })
     }
 
     /// The ABI fields of the value field `name` laid out as `layout` at `offset`: the leaf of a
@@ -332,7 +333,7 @@ impl RecordLayout {
         match layout {
             PinLayout::Scalar(scalar) => {
                 let v = scalar.fields.get(0)?;
-                Some(vec![RecordLeaf { name: name.to_string(), leaf: v.leaf, offset, known: offset + v.known }])
+                Some(vec![RecordLeaf { name: name.to_string(), leaf: v.leaf, offset }])
             }
             PinLayout::Composite(composite) => Some(
                 composite
@@ -342,25 +343,28 @@ impl RecordLayout {
                         name: if l.name.is_empty() { name.to_string() } else if l.name.starts_with('[') { format!("{name}{}", l.name) } else { format!("{name}.{}", l.name) },
                         leaf: l.leaf,
                         offset: offset + l.offset,
-                        known: offset + composite.known_offset(),
                     })
                     .collect(),
             ),
         }
     }
 
-    /// The offset of the `maybe` field: a `bool` carrier (its value byte, then its known byte)
-    /// after the stream's value fields.
-    pub fn maybe_offset(&self) -> u32 {
-        self.maybe
+    /// Where the record starts in a `TRACE` watch: after the `BOOL` presence byte, at the
+    /// record's own alignment (abi.md A5).
+    pub fn trace_start(&self) -> u32 {
+        1u32.next_multiple_of(self.align)
     }
 
-    /// The ABI fields of the layout: each value field's leaves, named after the stream's fields,
-    /// then `maybe` (§19 rule 1).
+    /// The size of a `TRACE` watch holding the record: the presence byte, then the record.
+    pub fn trace_size(&self) -> u32 {
+        (self.trace_start() + self.size).next_multiple_of(self.align)
+    }
+
+    /// The ABI fields of the layout: each value field's leaves, named after the stream's fields.
     fn abi_fields(&self) -> Vec<Field<'_>> {
         self.leaves
             .iter()
-            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: 1, flags: field_flag::HAS_KNOWN, known: l.known })
+            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: 1 })
             .collect()
     }
 }
@@ -380,7 +384,7 @@ impl Digital {
                 panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
             };
             let init = match c.init {
-                Some(value) => PinLayout::bytes_in(body.ir(), &c.ty, value).unwrap_or_else(|| {
+                Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
                 None => Vec::new(),
@@ -389,7 +393,7 @@ impl Digital {
             let flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             let fields = layout.fields();
             let abi = layout.layout(&fields);
-            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, &abi) });
+            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, count: c.count.unwrap_or(0), ..PinSpec::discrete(&c.name, pin_role, &abi) });
             debug_assert_eq!(pin, first + i as u32);
         }
         first
@@ -496,6 +500,48 @@ impl Digital {
             .collect()
     }
 
+    /// Adds the private `F64` pin `delay<k>.max` of each delay site, written by a function of the
+    /// parameter cone and named by the site's `DELAY` term.
+    pub(crate) fn delay_maximum_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.delays()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| s.pin(PinSpec { origin: &Self::at(&site.origin), ..PinSpec::discrete(&format!("delay{k}.max"), role::PRIVATE, &F64) }))
+            .collect()
+    }
+
+    /// Adds one `TRACE` watch per trace site of the `analog` block, `trace:<k>`, after the `CAP`
+    /// watches: its layout is a `BOOL` presence byte (0 for "not written in this evaluation", abi.md
+    /// A5) followed by the record layout of the site's stream, whose fields the site leaves out
+    /// stay zero. Returns each site's watch.
+    pub(crate) fn trace_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.traces()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let Some(stream) = body.streams().get(site.stream as usize) else {
+                    panic!("body {}: trace site {k} names stream {}, out of range; check() refuses it", body.name(), site.stream)
+                };
+                let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
+                    panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
+                };
+                let start = record.trace_start();
+                let mut fields = vec![Field { name: Str::from_str("present"), leaf: leaf::BOOL, offset: 0, count: 1 }];
+                fields.extend(record.abi_fields().into_iter().map(|f| Field { offset: f.offset + start, ..f }));
+                let layout = Layout { size: record.trace_size(), align: record.align, fields: List::from_slice(&fields) };
+                s.watch(WatchSpec {
+                    name: &format!("trace:{k}"),
+                    origin: &Self::at(&site.origin),
+                    kind: watch::TRACE,
+                    layout: &layout,
+                    event: DEFAULT,
+                    ttol: DEFAULT,
+                    etol: DEFAULT,
+                })
+            })
+            .collect()
+    }
+
     /// Adds one `CAP` watch per `bound_step` site of the `analog` block, `cap:<site>`; returns
     /// `(site, watch)`.
     pub(crate) fn cap_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<(u32, u32)> {
@@ -549,31 +595,28 @@ impl Digital {
             .collect()
     }
 
-    /// Whether event `e` of `body` has a guard that may be unknown (§13 rule 1).
-    fn guard_may_be_unknown(body: Body<'_>, e: u32) -> bool {
-        body.events().get(e as usize).and_then(|event| event.guard).is_some_and(|g| matches!(body.ir().expr_type(g), ValueType::Flagged(_)))
-    }
-
-    /// Whether reaction `k` of `body` keys its commits by due instant, so it reads the session's
-    /// tick: it decides on a value that may be unknown (§3.3.3), or an event of its head has a
-    /// guard that may be unknown and it runs as a maybe (§13 rule 1).
-    fn keys_commits_by_due(body: Body<'_>, k: u32) -> bool {
-        let head = &body.reactions()[k as usize].on;
-        head.iter().any(|e| Self::guard_may_be_unknown(body, *e)) || body.decides_on_unknown(Query::Reaction(k))
-    }
-
-    /// Adds the `GLOBAL` `RESOLUTION` pin when a reaction of `body` keys its commits by due
-    /// instant (`Digital::keys_commits_by_due`).
-    pub(crate) fn resolution_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
-        let decides = (0..body.reactions().len() as u32).any(|k| Self::keys_commits_by_due(body, k));
-        decides.then(|| s.pin(PinSpec { origin: &Self::at(body.origin()), global: global::RESOLUTION, ..PinSpec::discrete("resolution", role::GLOBAL, &F64) }))
-    }
-
     /// Adds the `GLOBAL` `START` pin when `body` has an `at` event.
     pub(crate) fn start_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
         body.events().iter().any(|e| matches!(e.source, EventSource::At(_))).then(|| {
             s.pin(PinSpec { origin: &Self::at(body.origin()), global: global::START, ..PinSpec::event("start", role::GLOBAL) })
         })
+    }
+
+    /// Adds the `PORT` pin of each drive of one element of an array carrier, `drive:<carrier>[<element>]`, in the element's
+    /// layout; `None` for every other drive. The netlist binds it to that element of the array net (`Port::Window`).
+    pub(crate) fn element_drive_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<u32>> {
+        body.drives()
+            .iter()
+            .map(|d| {
+                let element = d.element.filter(|_| d.after.is_none())?;
+                let carrier = body.carriers().get(d.carrier as usize)?;
+                let layout = PinLayout::in_ir(body.ir(), &carrier.ty)?;
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                let name = format!("drive:{}[{element}]", carrier.name);
+                Some(s.pin(PinSpec { origin: &Self::at(&d.origin), ..PinSpec::discrete(&name, role::PORT, &abi) }))
+            })
+            .collect()
     }
 
     /// Adds the `GLOBAL` `SETTLE` pin when `body` has a `settle` event (§13 rule 17): the pin the
@@ -649,8 +692,12 @@ impl Digital {
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Drive(k));
-            let write = if d.after.is_some() { Target::Delayed(k) } else { Target::Carrier(d.carrier) };
-            let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
+            let write = match (d.after.is_some(), d.element.is_some()) {
+                (true, _) => Target::Delayed(k),
+                (false, true) => Target::ElementDrive(k),
+                (false, false) => Target::Carrier(d.carrier),
+            };
+            let name = Self::drive_name(body, k);
             add(s, name, &d.origin, BodyPlan::function(Mode::Drive(k), &set, vec![(write, None)]));
         }
         for (k, e) in body.events().iter().enumerate() {
@@ -673,6 +720,10 @@ impl Digital {
                 // `settle` (§13 rule 17): the settle pin's `CHANGED` byte, gated by the guard
                 EventSource::Settle => {
                     set.0.insert(Source::Settle);
+                }
+                // `lines[k].changed()` (§13 rule 9): the element's value and `CHANGED` byte, gated by the guard
+                EventSource::ElementChanged { carrier, element } => {
+                    set.0.extend([Source::Element(carrier, element, part::VALUE), Source::Element(carrier, element, part::CHANGED)]);
                 }
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
@@ -698,28 +749,18 @@ impl Digital {
         functions
     }
 
-    /// What reaction `k` of `body` reads: its own dependency set, and what the merge of unknown
-    /// control needs on top of it. A guard that may be unknown (§13 rule 1) makes the reaction
-    /// run as a maybe, so it reads the guard's sources, to recompute it, and whether each event
-    /// of its head fired, to know whether it ran for sure. A decision on a value that may be
-    /// unknown (§3.3.3) and a guard that may be unknown both read the `RESOLUTION` pin: the
-    /// commits of a maybe run are keyed by due instant, so two commits to one carrier merge
-    /// exactly (§13 rule 1).
+    /// The name of drive `k`'s function: `drive:<carrier>`, `drive:<carrier>[<element>]` for one element.
+    pub fn drive_name(body: Body<'_>, k: u32) -> String {
+        let Some(drive) = body.drives().get(k as usize) else { return format!("drive:{k}") };
+        match drive.element {
+            Some(element) => format!("drive:{}[{element}]", Self::carrier_name(body, drive.carrier)),
+            None => format!("drive:{}", Self::carrier_name(body, drive.carrier)),
+        }
+    }
+
+    /// What reaction `k` of `body` reads: its own dependency set.
     fn reaction_reads(body: Body<'_>, k: u32) -> ReadSet {
-        let mut set = ReadSet::target(body, Query::Reaction(k));
-        let head = &body.reactions()[k as usize].on;
-        if head.iter().any(|e| Self::guard_may_be_unknown(body, *e)) {
-            for e in head {
-                if Self::guard_may_be_unknown(body, *e) {
-                    set.union(&ReadSet::target(body, Query::Guard(*e)));
-                }
-                set.0.insert(Source::Fired(*e));
-            }
-        }
-        if Self::keys_commits_by_due(body, k) {
-            set.0.insert(Source::Resolution);
-        }
-        set
+        ReadSet::target(body, Query::Reaction(k))
     }
 
     /// Declares the reactions of `body`: its own, then one per drive with `after`.
@@ -776,6 +817,7 @@ impl Digital {
     /// carrier's pin, or fires an event pin (`len` 0, abi.md C4).
     fn declare(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, name: &str, origin: &str, plan: &ReactionPlan) {
         let limits = body.limits().len() as u32;
+        let stims = body.stims().len() as u32;
         let writes = plan
             .statements
             .iter()
@@ -798,15 +840,17 @@ impl Digital {
                 if st.replace {
                     flags |= statement_flag::REPLACE;
                 }
-                Statement { pin, offset: 0, len, flags, min_after }
+                let (offset, len) = st.range.unwrap_or((0, len));
+                Statement { pin, offset, len, flags, min_after }
             })
             .collect();
         s.reaction(ReactionSpec {
             name,
             origin,
             on: plan.on.clone(),
-            reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, *r)).collect(),
+            reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, stims, *r)).collect(),
             writes,
+            elements: BodyPlan::elements(&plan.reads),
             ..ReactionSpec::default()
         });
     }

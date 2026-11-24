@@ -10,7 +10,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
 
 use super::check::Checker;
-use super::Ty;
+use super::{ConstTerm, Length, Nominal, Ty};
 
 /// One typed field of a struct or of an enum variant, in declaration order.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,20 +27,15 @@ impl Checker<'_> {
     // ---- types as written ------------------------------------------------------------------
 
     /// The type of the struct `decl` named at `span` of `file`: [`Ty::Struct`] once its fields are
-    /// typed, else a diagnostic and `None` (a generic struct or a bundle is outside the subset, a
-    /// duplicate field or a self-containing type is `E0186`).
+    /// typed, else a diagnostic and `None` (a bundle is outside the subset, a duplicate field or a
+    /// self-containing type is `E0186`). A generic struct is typed over its own parameters; its uses
+    /// carry the arguments (`generic_nominal`).
     pub(super) fn struct_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        let data = self.design.decl_data(decl).clone();
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        if data.generics_span.is_some() {
-            self.unsupported(file, span, &format!("generic struct `{name}`"));
-            return None;
-        }
         if self.broken.contains(&decl) {
             return None;
         }
         if self.layouts.contains_key(&decl) {
-            return Some(Ty::Struct(decl));
+            return Some(Ty::structure(decl));
         }
         if self.declaring.contains(&decl) {
             return self.cyclic_type(decl, file, span);
@@ -49,7 +44,7 @@ impl Checker<'_> {
         let declared = self.declare_struct(decl, file, span);
         self.declaring.remove(&decl);
         if declared {
-            Some(Ty::Struct(decl))
+            Some(Ty::structure(decl))
         } else {
             self.broken.insert(decl);
             None
@@ -59,7 +54,7 @@ impl Checker<'_> {
     /// A type met again while its own fields are being typed: `E0186` (§1.3.8).
     pub(super) fn cyclic_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let kind = &self.design.decl_data(decl).kind;
-        let ty = if matches!(kind, DeclKind::Enum(_)) { Ty::Enum(decl) } else { Ty::Struct(decl) };
+        let ty = if matches!(kind, DeclKind::Enum(_)) { Ty::enumeration(decl) } else { Ty::structure(decl) };
         let name = ty.name(self.design);
         self.coded(file, "E0186", span, format!("{name} contains itself: a value has a fixed size and there is no indirection (§1.3.8)"), "contains itself");
         None
@@ -76,8 +71,7 @@ impl Checker<'_> {
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };
-        let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
-        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &types)
+        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &fields)
     }
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.
@@ -133,24 +127,48 @@ impl Checker<'_> {
         Some(Ty::Tuple(types))
     }
 
-    /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0151`.
+    /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`; one that reads a module
+    /// param stays an expression the elaborator folds per body variant (§8.1.2, QC2).
     pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
-        let Some(length) = self.fold_length(len) else {
-            if self.names_generic_parameter(len) {
-                self.unsupported(file, span, "an array whose length is a generic parameter");
-                return None;
-            }
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
             let what = self.expression_name(len);
-            self.coded(file, "E0151", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
+            self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
             return None;
         };
         let element = element?;
+        // an array of carriers or of nodes (CV-23): `Ty::Array` over a `Carrier` or a `Node` element, which no value is
+        if element.is_carrier_element() {
+            return Some(Ty::Array(Box::new(element), length));
+        }
         if !element.is_value() {
             self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
             return None;
         }
         Some(Ty::Array(Box::new(element), length))
+    }
+
+    /// The length that reads a module param (`[T; n]`, `[T; n + 1]`), left as the expression: the checker types it so the
+    /// elaborator's evaluator reads it, and the elaborator folds it per body variant (§8.1.2, QC2).
+    fn module_param_length(&mut self, len: ExprId) -> Option<Length> {
+        if !self.reads_module_param(len) {
+            return None;
+        }
+        self.infer(len)?;
+        Some(Length::Generic(ConstTerm::Expr(len)))
+    }
+
+    /// The length `[T; N]` or `[T; N + 1]` writes when it names const parameters (§3.8.3, D14): a
+    /// generic length, folded when the item is instantiated; `None` for any other expression.
+    fn generic_length(&mut self, len: ExprId) -> Option<Length> {
+        match self.generic_parameter_of(len) {
+            Some(parameter) => Some(Length::Generic(ConstTerm::Param(parameter))),
+            None if self.mentions_generic_parameter(len) => {
+                self.defer_constant(len);
+                Some(Length::Generic(ConstTerm::Expr(len)))
+            }
+            None => None,
+        }
     }
 
     /// The file and span of a type node.
@@ -171,13 +189,14 @@ impl Checker<'_> {
             self.unsupported(file, node.span, "struct expression of a name that is no struct");
             return None;
         };
-        let (ty, owner) = self.constructed_type(target, file, node.span)?;
-        let layout = self.fields_of(owner)?;
+        let (open, owner) = self.constructed_type(target, file, node.span)?;
+        let declared = self.fields_of(owner)?;
         let mut seen: Vec<&str> = Vec::new();
+        let mut values: Vec<(usize, ExprId)> = Vec::new();
         for init in fields {
             let name = init.name.text.as_str();
-            let Some(field) = layout.iter().find(|f| f.name.as_deref() == Some(name)) else {
-                let of = ty.name(self.design);
+            let Some(position) = declared.iter().position(|f| f.name.as_deref() == Some(name)) else {
+                let of = open.name(self.design);
                 self.coded(file, "E0186", init.span, format!("{of} has no field `{name}` (§1.3.3)"), "no such field");
                 self.infer(init.value);
                 continue;
@@ -188,7 +207,11 @@ impl Checker<'_> {
                 continue;
             }
             seen.push(name);
-            self.check(init.value, &field.ty);
+            values.push((position, init.value));
+        }
+        let (ty, layout) = self.close_constructor(expr, open, declared, &values, file, node.span)?;
+        for (position, value) in &values {
+            self.check(*value, &layout[*position].ty);
         }
         let left_out: Vec<String> = layout.iter().filter_map(|f| f.name.as_deref()).filter(|n| !seen.contains(n)).map(|n| format!("`{n}`")).collect();
         if !left_out.is_empty() {
@@ -202,10 +225,10 @@ impl Checker<'_> {
     /// its fields.
     pub(super) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
         match &self.design.decl_data(target).kind {
-            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|ty| (ty, target)),
+            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|_| (self.open_type(target), target)),
             DeclKind::Variant(_) => {
                 let parent = self.design.decl_data(target).parent?;
-                self.enum_type(parent, file, span).map(|ty| (ty, target))
+                self.enum_type(parent, file, span).map(|_| (self.open_type(parent), target))
             }
             other => {
                 self.unsupported(file, span, &format!("{} as a struct expression", super::unsupported::Unsupported::item(other)));
@@ -219,12 +242,14 @@ impl Checker<'_> {
     pub(super) fn constructor_call(&mut self, expr: ExprId, target: DeclId, args: &[Arg]) -> Option<Ty> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let (ty, owner) = self.constructed_type(target, file, node.span)?;
-        let layout = self.fields_of(owner)?;
-        if layout.iter().any(|f| f.name.is_some()) {
+        let (open, owner) = self.constructed_type(target, file, node.span)?;
+        let declared = self.fields_of(owner)?;
+        if declared.iter().any(|f| f.name.is_some()) {
             self.unsupported(file, node.span, "a call of a struct or variant with named fields: write a struct expression `Name { .. }`");
             return None;
         }
+        let positional: Vec<(usize, ExprId)> = args.iter().enumerate().filter(|(_, arg)| arg.name.is_none()).map(|(position, arg)| (position, arg.value)).collect();
+        let (ty, layout) = if declared.len() == args.len() { self.close_constructor(expr, open, declared, &positional, file, node.span)? } else { (open, declared) };
         if layout.len() != args.len() {
             let message = format!("{} takes {} argument{}, found {}", ty.name(self.design), layout.len(), if layout.len() == 1 { "" } else { "s" }, args.len());
             self.mismatch_text(file, node.span, &format!("{} fields", layout.len()), &format!("{} arguments ({message})", args.len()));
@@ -245,9 +270,10 @@ impl Checker<'_> {
 
     /// A struct or a variant named as a value: a unit one is its value, any other is a
     /// constructor that only a call or a struct expression uses.
-    pub(super) fn constructor_value(&mut self, target: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        let (ty, owner) = self.constructed_type(target, file, span)?;
-        let layout = self.fields_of(owner)?;
+    pub(super) fn constructor_value(&mut self, expr: ExprId, target: DeclId, file: FileId, span: Span) -> Option<Ty> {
+        let (open, owner) = self.constructed_type(target, file, span)?;
+        let declared = self.fields_of(owner)?;
+        let (ty, layout) = self.close_constructor(expr, open, declared, &[], file, span)?;
         if !layout.is_empty() {
             let name = ty.name(self.design);
             self.unsupported(file, span, &format!("the name of {name}, which has fields, used as a value: build it with a call or a struct expression"));
@@ -265,8 +291,8 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let found = self.infer(receiver)?;
         match &found {
-            Ty::Struct(decl) => {
-                let layout = self.fields_of(*decl)?;
+            Ty::Struct(Nominal { decl, .. }) => {
+                let layout = self.instance_layout(*decl, &found)?;
                 let named = match name.text.parse::<usize>() {
                     Ok(position) => layout.get(position).filter(|f| f.name.is_none()),
                     Err(_) => layout.iter().find(|f| f.name.as_deref() == Some(name.text.as_str())),
@@ -356,13 +382,13 @@ impl Checker<'_> {
                 for item in items.iter().filter(|i| **i != first) {
                     self.check(*item, &ty);
                 }
-                return Some(Ty::Array(Box::new(ty), items.len() as u64));
+                return Some(Ty::array(ty, items.len() as u64));
             }
         };
         for item in items {
             self.check(*item, &element);
         }
-        Some(Ty::Array(Box::new(element), items.len() as u64))
+        Some(Ty::array(element, items.len() as u64))
     }
 
     /// `[x; N]` (§1.2.5): `x` is `Copy`; `N` a const expression the checker folds, else `E0180`
@@ -376,7 +402,8 @@ impl Checker<'_> {
             }
             _ => self.infer(element),
         };
-        let Some(length) = self.fold_length(len) else {
+        // `[x; N + 1]`: a length over const parameters is generic, folded at an instantiation (§3.8.3)
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
             let span = self.design.expr_node(len).span;
             let what = self.expression_name(len);
             self.mismatch_text(file, span, "a constant array length", &what);
@@ -417,16 +444,6 @@ impl Checker<'_> {
                 self.mismatch_text(file, span, "an integer type", &other.name(self.design));
             }
             None => {}
-        }
-    }
-
-    /// Whether the const expression `expr` is the name of a generic parameter: `[T; N]` waits on
-    /// `generics`, it is not a length the checker fails to fold.
-    fn names_generic_parameter(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(_))),
-            ExprKind::Paren(inner) => self.names_generic_parameter(*inner),
-            _ => false,
         }
     }
 

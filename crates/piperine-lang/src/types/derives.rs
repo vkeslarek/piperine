@@ -11,7 +11,7 @@ use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, E
 
 use super::aggregate::FieldType;
 use super::check::Checker;
-use super::Ty;
+use super::{GenericValue, Length, Nominal, Ty};
 
 /// One trait of the table of H.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +57,12 @@ impl DerivedTrait {
         })
     }
 
+    /// Whether implementing this trait gives `which`: itself and every trait it requires (`Ord` gives
+    /// `Eq`, `PartialOrd` and `PartialEq`, H.8 rules 2 and 3).
+    pub(super) fn gives(self, which: DerivedTrait) -> bool {
+        self == which || self.requires().iter().any(|required| required.gives(which))
+    }
+
     /// The traits a type must implement before it implements this one (H.8 rules 2 and 3).
     fn requires(self) -> &'static [DerivedTrait] {
         match self {
@@ -66,9 +72,15 @@ impl DerivedTrait {
         }
     }
 
-    /// Whether `f64` implements it: no `Eq`, `Ord` or `Hash`, as NaN is not equal to itself (H.8 rule 7).
+    /// Whether `f64` implements it: no `Eq`, `Ord` or `Hash`, as NaN is not equal to itself, and no
+    /// `Default`, as no number is the value of a carrier with none (H.8 rules 4 and 7).
     fn of_float(self) -> bool {
-        !matches!(self, Self::Eq | Self::Ord | Self::Hash)
+        !matches!(self, Self::Eq | Self::Ord | Self::Hash | Self::Default)
+    }
+
+    /// Whether `bool`, `UInt<N>` and `Int<N>` implement it: all but `Default` (H.8 rules 4 and 7).
+    fn of_integer(self) -> bool {
+        self != Self::Default
     }
 
     /// Whether `str` implements it: everything but `Default` (H.8 rule 7).
@@ -78,29 +90,50 @@ impl DerivedTrait {
 }
 
 impl Checker<'_> {
-    /// Whether `ty` implements `which` (H.8 rule 7 for the built-in types, a derive for a struct
+    /// Whether `ty` implements `which` (H.8 rules 4 and 7 for the built-in types, a derive for a struct
     /// or an enum; the derive's own validity is judged where the type is declared).
     pub(super) fn implements(&self, ty: &Ty, which: DerivedTrait) -> bool {
         match ty {
-            Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) => true,
+            Ty::Unit => true,
+            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => which.of_integer(),
             Ty::F64 => which.of_float(),
             Ty::Str => which.of_text(),
             // H.8 rule 4: the default of an `Option` is `None`, whatever its payload.
             Ty::Option(_) if which == DerivedTrait::Default => true,
             Ty::Option(inner) | Ty::Array(inner, _) => self.implements(inner, which),
             Ty::Tuple(items) => items.iter().all(|item| self.implements(item, which)),
-            Ty::Struct(decl) | Ty::Enum(decl) => self.derives(*decl, which.name()),
+            // H.8 rule 6: a generic type implements a trait when it derives it and its arguments do
+            Ty::Struct(nominal) | Ty::Enum(nominal) => {
+                (self.derives(nominal.decl, which.name()) || self.written_impl(ty, which))
+                    && nominal.arguments.iter().all(|argument| match argument {
+                        GenericValue::Type(ty) => self.implements(ty, which),
+                        _ => true,
+                    })
+            }
             Ty::Fn(..) => which == DerivedTrait::Debug,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
+            // what a parameter implements is what its bounds give (§3 rule 9)
+            Ty::Param(param) => self.param_implements(*param, which),
+        }
+    }
+
+    /// Whether the project writes the `impl` that gives `ty` the trait `which` itself: `impl Default for T`, or the plain
+    /// `impl PartialEq for T` whose `==` gives a `bool` (H.8). No other trait of H.8 is written by hand.
+    fn written_impl(&self, ty: &Ty, which: DerivedTrait) -> bool {
+        match which {
+            DerivedTrait::Default => self.impls.has_written_default(ty),
+            DerivedTrait::PartialEq => self.impls.has_plain_partial_eq(ty),
+            _ => false,
         }
     }
 
     /// Judges every derive of the struct or enum `decl` whose fields are `fields` (H.8 rules 4 and
-    /// 6): `Default` on an enum, a required trait left out, and a field without the trait are
-    /// `E0180` naming the trait. `false` when one is refused.
-    pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[Ty]) -> bool {
+    /// 6): a required trait left out, a field without the trait and `Default` on an enum are
+    /// `E0180` naming the trait, and a field without `Default` is `E0187` naming the field and its
+    /// type. `false` when one is refused.
+    pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[FieldType]) -> bool {
         let is_enum = matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_));
-        let name = if is_enum { Ty::Enum(decl) } else { Ty::Struct(decl) }.name(self.design);
+        let name = if is_enum { Ty::enumeration(decl) } else { Ty::structure(decl) }.name(self.design);
         let mut clean = true;
         let derived: Vec<DerivedTrait> = DerivedTrait::ALL.into_iter().filter(|t| self.derives(decl, t.name())).collect();
         for which in derived {
@@ -113,9 +146,19 @@ impl Checker<'_> {
                 self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name} needs `#[derive({})]` too (H.8 rules 2 and 3)", missing.name()));
                 clean = false;
             }
-            if let Some(field) = fields.iter().find(|field| !self.implements(field, which)) {
-                let field = field.name(self.design);
-                self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name}: a field of type `{field}` does not implement `{trait_name}` (H.8 rule 6)"));
+            if let Some(field) = fields.iter().find(|field| !field.ty.has_param() && !self.implements(&field.ty, which)) {
+                let type_name = field.ty.name(self.design);
+                if which == DerivedTrait::PartialEq && !self.impls.builtin_functions("PartialEq", "eq", &field.ty).is_empty() {
+                    let field_name = field.name.as_deref().unwrap_or("a positional field");
+                    let message = format!("`#[derive(PartialEq)]` on {name}: the field `{field_name}` of type `{type_name}` compares with an `impl PartialEq` whose result is not a `bool`, so the derived `==` has no `bool` to give (H.10, §22.1.2 rule 5)");
+                    self.coded(file, "E0187", span, message, "a field whose `==` is not a `bool`");
+                } else if which == DerivedTrait::Default {
+                    let field_name = field.name.as_deref().unwrap_or("a positional field");
+                    let message = format!("`#[derive(Default)]` on {name}: the field `{field_name}` of type `{type_name}` does not implement `Default` (H.8 rule 4)");
+                    self.coded(file, "E0187", span, message, "a field without a default");
+                } else {
+                    self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name}: a field of type `{type_name}` does not implement `{trait_name}` (H.8 rule 6)"));
+                }
                 clean = false;
             }
         }
@@ -130,8 +173,16 @@ impl Checker<'_> {
     /// `==` or `!=` on a value of `ty` needs `PartialEq`; an ordering operator needs `PartialOrd`
     /// (§1.3.10). Reports `E0180` naming the trait when `ty` lacks it.
     pub(super) fn require_trait(&mut self, file: FileId, span: Span, ty: &Ty, which: DerivedTrait) {
-        if !self.implements(ty, which) {
-            let found = ty.name(self.design);
+        if self.implements(ty, which) {
+            return;
+        }
+        let found = ty.name(self.design);
+        if let Ty::Param(_) = ty {
+            let message = format!("mismatched types: `{found}` has no `{}`: the bounds of `{found}` do not give it (§3 rule 9), add `{found}: {}`", which.name(), which.name());
+            self.coded(file, "E0180", span, message, "an operation no bound gives");
+        } else if which == DerivedTrait::Default {
+            self.coded(file, "E0187", span, format!("`{found}` does not implement `Default`: `{found}::default()` has no value (H.8 rule 4)"), "a type without a default");
+        } else {
             self.mismatch_text(file, span, &format!("a type that derives `{}`", which.name()), &found);
         }
     }
@@ -181,13 +232,15 @@ impl Checker<'_> {
         match ty {
             Ty::Bool | Ty::F64 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.design),
             Ty::Tuple(items) => self.repr_sum(items),
-            Ty::Array(element, length) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
+            Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
-            Ty::Struct(decl) if self.derives(*decl, "Repr") => {
-                let fields: Vec<Ty> = self.fields_of(*decl)?.into_iter().map(|f| f.ty).collect();
+            Ty::Struct(_) | Ty::Enum(_) if self.hand_written_levels(ty).is_some() => self.hand_written_levels(ty),
+            Ty::Struct(nominal) if self.derives(nominal.decl, "Repr") => {
+                let substitution = self.nominal_substitution(nominal);
+                let fields: Vec<Ty> = self.fields_of(nominal.decl)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
                 self.repr_sum(&fields)
             }
-            Ty::Enum(decl) => self.enum_levels(*decl),
+            Ty::Enum(nominal) => self.enum_levels(nominal),
             _ => None,
         }
     }
@@ -198,10 +251,12 @@ impl Checker<'_> {
     }
 
     /// The levels of a derived enum: the tag, then the widest payload (§2 rules 2, 5 and 6).
-    fn enum_levels(&mut self, decl: DeclId) -> Option<u32> {
+    fn enum_levels(&mut self, nominal: &Nominal) -> Option<u32> {
+        let decl = nominal.decl;
         if !self.derives(decl, "Repr") {
             return None;
         }
+        let substitution = self.nominal_substitution(nominal);
         let variants = self.variants_of(decl);
         let tag = match self.repr_width(decl) {
             None => usize::BITS - variants.len().saturating_sub(1).leading_zeros(),
@@ -210,7 +265,7 @@ impl Checker<'_> {
         };
         let mut widest = 0u32;
         for variant in variants {
-            let fields: Vec<Ty> = self.fields_of(variant)?.into_iter().map(|f| f.ty).collect();
+            let fields: Vec<Ty> = self.fields_of(variant)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
             widest = widest.max(self.repr_sum(&fields)?);
         }
         tag.checked_add(widest)
@@ -224,7 +279,8 @@ impl Checker<'_> {
         }
         let mut clean = true;
         for (position, field) in fields.iter().enumerate() {
-            if self.repr_levels(&field.ty).is_some() {
+            // a field of a type parameter has a `Repr` where the instance has: each use checks its arguments
+            if field.ty.has_param() || self.repr_levels(&field.ty).is_some() {
                 continue;
             }
             let span = self.design.decl_data(field.decl).span;

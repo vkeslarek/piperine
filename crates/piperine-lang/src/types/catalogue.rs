@@ -138,7 +138,7 @@ impl Catalogue {
     pub(super) fn method(recv: &Ty, name: &str) -> Lookup {
         let rows = match recv {
             Ty::F64 => F64_METHODS,
-            Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
+            Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
             Ty::Array(element, _) => return Self::array(element, name),
             Ty::Range { element, iterable } => return Self::range(element, *iterable, name),
@@ -150,9 +150,9 @@ impl Catalogue {
                     _ => Lookup::Absent,
                 };
             }
-            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => return Lookup::Uncatalogued,
+            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Param(_) => return Lookup::Uncatalogued,
         };
-        match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_)))) {
+        match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_) | Ty::GenericInteger { signed: true, .. }))) {
             Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),
             None => Lookup::Absent,
         }
@@ -227,12 +227,21 @@ pub(super) enum CoreParam {
     Limiter,
     /// `Option<f64>`: a tolerance of `cross`.
     OptionF64,
+    /// A string literal or a `str` the elaborator reads as text: `simparam`'s name.
+    Text,
+    /// `Option<str>`: the name of a `noise` source, a literal or a `str` param passed on.
+    OptionText,
+    /// A potential or flow probe of a branch of this module: the variable of `ddx` (§14.2.2).
+    /// Judged by name in `core_call` (`E0451`), typed as the `f64` the probe reads.
+    Probe,
 }
 
 impl CoreParam {
     pub(super) fn ty(self) -> Ty {
         match self {
-            CoreParam::F64 => Ty::F64,
+            CoreParam::F64 | CoreParam::Probe => Ty::F64,
+            CoreParam::Text => Ty::Str,
+            CoreParam::OptionText => Ty::Option(Box::new(Ty::Str)),
             CoreParam::Limiter => Ty::Fn(vec![Ty::F64, Ty::F64], Box::new(Ty::F64)),
             CoreParam::OptionF64 => Ty::Option(Box::new(Ty::F64)),
         }
@@ -245,6 +254,8 @@ pub(super) enum CoreResult {
     F64,
     Bool,
     Event,
+    /// `simparam`: an `Option<f64>`.
+    OptionF64,
     /// `bound_step`: a statement, no value.
     Unit,
 }
@@ -255,6 +266,7 @@ impl CoreResult {
             CoreResult::F64 => Ty::F64,
             CoreResult::Bool => Ty::Bool,
             CoreResult::Event => Ty::Event,
+            CoreResult::OptionF64 => Ty::Option(Box::new(Ty::F64)),
             CoreResult::Unit => Ty::Unit,
         }
     }
@@ -282,11 +294,15 @@ pub(super) struct CoreSig {
 }
 
 /// The §14 rows the subset types, by their spelling in `pom/builtin.rs`. A built-in with no row
-/// here (`delay`, `noise`, `ddx`, `simparam`, ...) is
+/// here (a built-in the table does not list) is
 /// `P0001`, which is how it stays refused without a line of code each.
 const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
     ("limit", CoreSig { required: &[CoreParam::F64, CoreParam::Limiter], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
+    ("ddx", CoreSig { required: &[CoreParam::F64, CoreParam::Probe], optional: &[], allowed: Allowed::Analog, result: CoreResult::F64 }),
+    ("delay", CoreSig { required: &[CoreParam::F64, CoreParam::F64], optional: &[CoreParam::OptionF64], allowed: Allowed::Instances, result: CoreResult::F64 }),
+    ("noise", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionText], allowed: Allowed::Instances, result: CoreResult::F64 }),
+    ("simparam", CoreSig { required: &[CoreParam::Text], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::OptionF64 }),
     ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog, result: CoreResult::F64 }),
     ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),

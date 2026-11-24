@@ -1,12 +1,10 @@
 //! Relaxation below the language (feature `resolved-nets`, RN-05; spec §8.2.3 steps 1 and 4,
 //! §5.2.12; abi.md §9 D1 and its drive presence field, design D3): a relaxing cycle starts with
 //! every drive absent, stops within the drive count plus one passes, keeps no level of an earlier
-//! microstep once released, leaves an absent drive out of what `resolve` receives and passes an
-//! unknown one; a step that never settles is one `Unsettled` observation naming every `RELAX` net.
-//! The devices are stubs built on `ShapeBuf`: a driver writes the value and
-//! `driving`, a resolver reads `driving` per drive and folds the present ones. A step that never
-//! settles is one `Unsettled` observation naming every `RELAX` net of the step (RN-05 AC 4, below
-//! the language).
+//! microstep once released, leaves an absent drive out of what `resolve` receives and passes a
+//! present one of any value, ends with a plain `driving` byte; a loop that never settles is `E0511`
+//! naming its drives. The devices are stubs built on `ShapeBuf`: a driver writes the value and
+//! `driving`, a resolver reads `driving` per drive and folds the present ones.
 
 #[path = "support/devices.rs"]
 #[allow(dead_code)] // each test target uses the devices it needs
@@ -19,42 +17,42 @@ use devices::{Placed, bind_by_name, net_named};
 use piperine_abi::caller::Handle;
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, HIGH, LOW};
-use piperine_abi::raw::{Cell, Field, Layout, List, Module, Shape, Str, cell, field_flag, leaf, part, pin_flag, role};
+use piperine_abi::raw::{Cell, Field, Layout, List, Module, Shape, Str, cell, leaf, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef};
 use piperine_abi::thunk::module;
 use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::net::NetId;
-use piperine_digital_solver::observe::{Obs, Observation};
+use piperine_digital_solver::observe::Obs;
 use piperine_digital_solver::plan::DigitalPlan;
 use piperine_digital_solver::run::{Ambient, DirtySet, run_functions, write_net};
 use piperine_digital_solver::store::Store;
 use piperine_digital_solver::tick::{Resolution, Tick};
 
-/// The value field of a drive: a `BIT`'s value and known byte.
+/// The value field of a drive: a `BIT`'s value.
 const VALUE: Str = Str::from_static("v");
-/// The presence field of a drive (design D3): `driving: BOOL` with a known byte.
+/// The presence field of a drive (design D3): `driving: BOOL`.
 const DRIVING: Str = Str::from_static("driving");
 
 static DRIVE_FIELDS: [Field; 2] = [
-    Field { name: VALUE, leaf: leaf::BOOL, offset: 0, count: 1, flags: field_flag::HAS_KNOWN, known: 1 },
-    Field { name: DRIVING, leaf: leaf::BOOL, offset: 2, count: 1, flags: field_flag::HAS_KNOWN, known: 3 },
+    Field { name: VALUE, leaf: leaf::BOOL, offset: 0, count: 1 },
+    Field { name: DRIVING, leaf: leaf::BOOL, offset: 1, count: 1 },
 ];
-/// A drive net's layout (abi.md §9 D1): the value's layout followed by `driving`, size 4.
-static DRIVE: Layout = Layout { size: 4, align: 1, fields: List::from_slice(&DRIVE_FIELDS) };
+/// A drive net's layout (abi.md §9 D1): the value's layout followed by `driving`, size 2.
+static DRIVE: Layout = Layout { size: 2, align: 1, fields: List::from_slice(&DRIVE_FIELDS) };
 
-/// The `(value, known)` pair of a `BIT` read, and the presence of a drive read.
+/// The bytes of a drive: its value, then `driving`.
 struct Drive;
 
 impl Drive {
-    /// A present drive (zero bytes are absent): `driving` known true after the value bytes.
-    fn present(value: [u8; 2]) -> [u8; 4] {
-        [value[0], value[1], 1, 1]
+    /// A present drive (zero bytes are absent): the value, then `driving` 1.
+    fn present(value: u8) -> [u8; 2] {
+        [value, 1]
     }
 
-    /// Whether `bytes` is a present drive: `driving` known and true. Zero bytes, the state a
-    /// relaxing cycle starts from, read as `driving` unknown: absent.
+    /// Whether `bytes` is a present drive: `driving` is set. Zero bytes, the state a relaxing
+    /// cycle starts from, are absent.
     fn is_present(bytes: &[u8]) -> bool {
-        bytes[3] != 0 && bytes[2] != 0
+        bytes[1] != 0
     }
 }
 
@@ -88,7 +86,7 @@ impl Pins {
     }
 }
 
-/// Writes a drive from its enable and its value: present with the value when `en` is known true.
+/// Writes a drive from its enable and its value: present with the value when `en` is true.
 ///
 /// pins: en=0, a=1 (PORT BIT); y=2 (PORT DRIVE, RELAX).  fn 0 "drive": reads [en, a] writes [y]
 struct Driver;
@@ -126,9 +124,7 @@ impl Device for Driver {
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let (en, a) = (cx.bytes(0), cx.bytes(1));
-        let enabled = en[1] != 0 && en[0] != 0;
-        let value = [a[0], a[1]];
-        cx.out_bytes(0).copy_from_slice(&if enabled { Drive::present(value) } else { [0; 4] });
+        cx.out_bytes(0).copy_from_slice(&if en[0] != 0 { Drive::present(a[0]) } else { [0; 2] });
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -136,7 +132,7 @@ impl Device for Driver {
     }
 }
 
-/// A keeper: drives the level it reads while that level is known, and releases the net otherwise.
+/// A keeper: drives the level it reads.
 ///
 /// pins: a=0 (PORT BIT); y=1 (PORT DRIVE, RELAX).  fn 0 "keep": reads [a] writes [y]
 struct Keeper;
@@ -172,8 +168,8 @@ impl Device for Keeper {
         Ok((Keeper, Arc::clone(KEEPER_SHAPE.get_or_init(Keeper::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let a = [cx.bytes(0)[0], cx.bytes(0)[1]];
-        cx.out_bytes(0).copy_from_slice(&if a[1] != 0 { Drive::present(a) } else { [0; 4] });
+        let level = cx.bytes(0)[0];
+        cx.out_bytes(0).copy_from_slice(&Drive::present(level));
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -182,8 +178,8 @@ impl Device for Keeper {
 }
 
 /// A resolver over two drives: reads `driving` per drive, passes only the present ones to a
-/// `wired`-like fold (no drive: unknown; an unknown drive or two levels that differ: unknown; else
-/// the level), and notes how many it passed.
+/// `wired`-like fold (no drive: low; two levels that differ: low; else the level), and notes how
+/// many it passed.
 ///
 /// pins: d0=0, d1=1 (PORT DRIVE, RELAX); v=2 (PORT BIT).  fn 0 "resolve": reads [d0, d1] writes [v]
 struct Resolver;
@@ -211,11 +207,10 @@ impl Resolver {
         Handle::create(RESOLVER.get_or_init(|| module::<Resolver>("resolver")), &[]).expect("a stub creates")
     }
 
-    /// The fold over the present drives' `(value, known)` pairs, as a `BIT`.
-    fn fold(present: &[[u8; 2]]) -> [u8; 2] {
-        let Some(first) = present.first() else { return [0, 0] };
-        let agree = present.iter().all(|d| d[1] != 0 && d[0] == first[0]);
-        if agree { [first[0], 1] } else { [0, 0] }
+    /// The fold over the present drives' values, as a `BIT`.
+    fn fold(present: &[u8]) -> [u8; 1] {
+        let Some(first) = present.first() else { return LOW };
+        if present.iter().all(|d| d == first) { [*first] } else { LOW }
     }
 }
 
@@ -227,8 +222,7 @@ impl Device for Resolver {
         Ok((Resolver, Arc::clone(RESOLVER_SHAPE.get_or_init(Resolver::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let present: Vec<[u8; 2]> =
-            (0..2).map(|i| cx.bytes(i)).filter(|b| Drive::is_present(b)).map(|b| [b[0], b[1]]).collect();
+        let present: Vec<u8> = (0..2).map(|i| cx.bytes(i)).filter(|b| Drive::is_present(b)).map(|b| b[0]).collect();
         Received::note(present.len());
         cx.out_bytes(0).copy_from_slice(&Resolver::fold(&present));
         Ok(())
@@ -238,7 +232,7 @@ impl Device for Resolver {
     }
 }
 
-/// An oscillator: drives the inverse of the level it reads, and high while that level is unknown.
+/// An oscillator: drives the inverse of the level it reads.
 /// Two of them on one resolver never settle.
 ///
 /// pins: a=0 (PORT BIT); y=1 (PORT DRIVE, RELAX).  fn 0 "flip": reads [a] writes [y]
@@ -275,9 +269,8 @@ impl Device for Oscillator {
         Ok((Oscillator, Arc::clone(OSCILLATOR_SHAPE.get_or_init(Oscillator::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let a = cx.bytes(0);
-        let level = if a[1] != 0 { a[0] == 0 } else { true };
-        cx.out_bytes(0).copy_from_slice(&Drive::present([level as u8, 1]));
+        let level = cx.bytes(0)[0] == 0;
+        cx.out_bytes(0).copy_from_slice(&Drive::present(level as u8));
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -391,7 +384,7 @@ fn a_relaxing_cycle_starts_absent_and_stops_within_drives_plus_one_passes() {
     let mut oscillating = Loop::oscillating();
     oscillating.dirty = DirtySet::all(&oscillating.plan);
     let before = Received::counts().len();
-    oscillating.run().expect("an unsettled loop is not an error");
+    oscillating.run().expect_err("a loop that does not settle is a fault");
     assert_eq!(Received::counts().len() - before, oscillating.drive_count() + 1, "exactly drives + 1 passes: {:?}", Received::counts());
 }
 
@@ -407,42 +400,62 @@ fn a_released_loop_keeps_no_earlier_level() {
     run.next_microstep();
     run.write("en", &LOW);
     run.run().expect("the loop runs");
-    assert_eq!(run.value("v"), [0, 0], "released: no drive is left, so no level is kept");
-    assert_eq!(run.value("d0"), [0; 4], "the keeper's drive is absent again, not held");
+    assert_eq!(run.value("v"), LOW, "released: no drive is left, so no level is kept");
 }
 
 #[test]
-fn an_absent_drive_is_left_out_and_an_unknown_one_is_passed() {
+fn an_absent_drive_is_left_out_and_a_present_one_is_passed_whatever_its_value() {
     // RN-05 AC 7 (§8.2.3 step 1, §5.2.12, design D3): the absent drive is not passed, so the
-    // other decides alone; a drive whose value is unknown is present and is passed.
+    // other decides alone; a present drive is passed whatever its value, a zero value included:
+    // absence is not a value
     let mut run = Loop::new();
     run.write("en", &HIGH);
     run.write("a", &HIGH);
     run.run().expect("the loop runs");
     assert_eq!(Received::counts()[0], 1, "the absent keeper drive is left out of the first pass");
-    assert_eq!(run.value("v"), HIGH, "the one present drive decides alone, not an unknown");
+    assert_eq!(run.value("v"), HIGH, "the one present drive decides alone");
 
-    let mut unknown = Loop::new();
-    unknown.write("en", &HIGH);
-    unknown.write("a", &[0, 0]);
+    let mut zero = Loop::new();
+    zero.write("en", &HIGH);
+    zero.write("a", &LOW);
     let before = Received::counts().len();
-    unknown.run().expect("the loop runs");
+    zero.run().expect("the loop runs");
     let counts = Received::counts();
-    assert_eq!(counts[before], 1, "an unknown drive is present, so it is passed: {counts:?}");
-    assert_eq!(unknown.value("v"), [0, 0], "and it makes the level unknown");
+    assert_eq!(counts[before], 1, "a present drive of the zero value is passed: {counts:?}");
+    assert_eq!(zero.value("v"), LOW, "and it decides the level");
 }
 
 #[test]
-fn an_unsettled_step_is_one_observation_naming_every_relax_net() {
-    // §8.2.3 step 4: a step still moving after its last pass is one observation, not one per
-    // net, and it names every `RELAX` net of the step in name order (design C9).
+fn an_unsettled_loop_is_e0511_naming_its_drives() {
+    // §8.2.3 step 4, abi.md §9 D1: a loop still moving after its last pass stops the run with
+    // `E0511`, not a level made up: it names the loop's drives, in name order
     let mut run = Loop::oscillating();
     run.dirty = DirtySet::all(&run.plan);
-    run.run().expect("an unsettled loop is not an error");
-    let unsettled: Vec<&Observation> =
-        run.obs.list().iter().filter(|o| matches!(o, Observation::Unsettled { .. })).collect();
-    assert_eq!(unsettled.len(), 1, "one observation for the step: {:?}", run.obs.list());
-    let Observation::Unsettled { nets, .. } = unsettled[0] else { unreachable!("filtered on Unsettled") };
-    assert_eq!(nets, &["alpha", "zeta"], "every RELAX net of the step, in name order");
-    assert_eq!(run.value("v"), [0, 0], "the moving level is unknown");
+    let error = run.run().expect_err("a loop that does not settle is E0511");
+    assert!(matches!(&error, DigitalError::Unsettled { code: "E0511", drives, .. } if drives == &["alpha", "zeta"]), "{error:?}");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("alpha, zeta"), "{error}");
+}
+
+#[test]
+fn a_drive_pin_ends_with_a_plain_driving_byte() {
+    // EU-16 AC 3, abi.md §9 D1: a drive pin is the bytes of its driven type, then `driving: BOOL`,
+    // 0 for absent; nothing else is in it. A present drive of a zero value is `[0, 1]`, an absent
+    // one is `[0, 0]`: the byte, not the value, says whether it drives
+    let mut run = Loop::new();
+    run.write("en", &HIGH);
+    run.write("a", &HIGH);
+    run.run().expect("the loop runs");
+    assert_eq!(run.value("d1"), [1, 1], "the source's drive: the value, then `driving` 1");
+    assert_eq!(run.value("d0"), [1, 1], "the keeper's drive, present once the level is read");
+    let mut zero = Loop::new();
+    zero.write("en", &HIGH);
+    zero.write("a", &LOW);
+    zero.run().expect("the loop runs");
+    assert_eq!(zero.value("d1"), [0, 1], "a present drive of the zero value: `driving` is 1");
+    let mut absent = Loop::new();
+    absent.write("en", &LOW);
+    absent.write("a", &HIGH);
+    absent.dirty = DirtySet::all(&absent.plan);
+    absent.run().expect("the loop runs");
+    assert_eq!(absent.value("d1"), [0, 0], "an absent drive: `driving` 0 and no value");
 }

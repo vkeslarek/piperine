@@ -118,15 +118,11 @@ fn ddt_ac_stim_and_environment_are_f64() {
     let (_, d) = diagnostics("", "let x = temperature(1.0);");
     assert_eq!(codes_of(&d), ["E0141"]);
 
-    // A core primitive with no row of the subset is refused by name, one `P0001` each.
-    // (`analysis(Dc)`, `analysis(Transient)`, `analysis(Ac)`, `bound_step` and `freq` left this
-    // list when FIX-09 to FIX-11 gave them rows: `freq_analysis_kinds_and_bound_step_type`.)
-    for call in ["delay(1.0, 1.0)", "noise(1.0)", "ddx(1.0, v(a))", "simparam(\"x\")"] {
-        let (src, d) = diagnostics("", &format!("let x = {call};"));
-        assert_eq!(codes_of(&d), ["P0001"], "{call}: {d:?}");
-        let name = call.split('(').next().unwrap_or(call);
-        assert!(d[0].diagnostic.message.contains(name), "{call}: {}", d[0].diagnostic.message);
-        assert!(snippet(&src, &d[0]).starts_with(name), "{call}: {}", snippet(&src, &d[0]));
+    // `delay`, `noise`, `ddx` and `simparam` left the refused-by-name list when analog-operators
+    // T22 and T23 gave them rows (`types_analog_operators`); their counts are judged like any row's.
+    for call in ["delay(1.0)", "noise()", "ddx(1.0)", "simparam()"] {
+        let (_, d) = diagnostics("", &format!("let x = {call};"));
+        assert_eq!(codes_of(&d), ["E0141"], "{call}: {d:?}");
     }
 }
 
@@ -219,12 +215,12 @@ fn freq_analysis_kinds_and_bound_step_type() {
 }
 
 #[test]
-fn simparam_stays_p0001() {
-    // FIX-10 AC 4: `simparam` is not in this feature: refused by name, one `P0001`.
-    let (src, d) = diagnostics("", "let x = simparam(\"x\");");
-    assert_eq!(codes_of(&d), ["P0001"]);
-    assert!(d[0].diagnostic.message.contains("simparam"), "{}", d[0].diagnostic.message);
-    assert!(snippet(&src, &d[0]).starts_with("simparam"), "{}", snippet(&src, &d[0]));
+fn simparam_types_with_a_name_as_an_option() {
+    // FIX-10 AC 4 moved: `simparam(name)` is an `Option<f64>` since analog-operators T23 and the user decision
+    // of 2026-11-23 (AO-07): no default argument. A name that is no text is a mismatch.
+    let (src, d) = diagnostics("", "let x = simparam(1.0);");
+    assert_eq!(codes_of(&d).len(), 1, "{d:?}");
+    assert_eq!(snippet(&src, &d[0]), "1.0");
 }
 
 /// `limexp` (std `analog.msl`, §22.2.4) is a module with a result whose body hands `limit` a

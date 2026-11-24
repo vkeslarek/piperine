@@ -19,22 +19,20 @@ struct Row {
 const NODE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
 const ROWS: &[Row] = &[
-    Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "an array of" },
-    Row { construct: "a user trait and impl", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let y = 1.0.get(); } }", names: "method `get`" },
+    // `an element commit` and `a field commit` left this table when composite-values T76 typed them
+    // (`types_carrier_arrays::element_and_field_targets_type_their_levels`).
+    // `an array type` (`signal s: [Bit; 4]`) left this table when composite-values T74 typed it
+    // (`types_carrier_arrays::arrays_of_carriers_type_as_signals_and_ports`).
+    // `a user trait and impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     Row { construct: "a generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: Electrical) { let g = G(a); }", names: "generic module" },
-    Row { construct: "a generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = g(1.0); } }", names: "generic function" },
+    Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
-    Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
-    Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
-    Row { construct: "delay", source: "module Top(p: Electrical) { }\nanalog for Top { let x = delay(v(p), 1.0); }", names: "`delay`" },
-    Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
-    Row { construct: "ddx", source: "module Top(p: Electrical) { }\nanalog for Top { let x = ddx(v(p), v(p)); }", names: "`ddx`" },
+    // `delay`, `noise`, `ddx` and `simparam` left this table when analog-operators T22 and T23 typed them (`types_analog_operators`).
     // `bound_step`, `freq()` and `analysis(Dc | Transient | Ac | Noise)` left this table when
     // FIX-09 to FIX-11 typed them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
-    Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(\"gmin\"); }", names: "`simparam`" },
     Row { construct: "a generation for", source: "module Top(in clk: Bit) { for k in 0..2 { let n = 1.0; } }", names: "generation" },
     Row { construct: "a generation if", source: "module Top(in clk: Bit) { if true { let n = 1.0; } }", names: "generation" },
     Row { construct: "a generation in a digital block", source: "module Top(in clk: Bit) { }\ndigital for Top { for k in 0..2 { on clk.rise() { } } }", names: "generation" },

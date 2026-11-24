@@ -6,7 +6,18 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect, TypeId};
 
 use super::check;
-use super::{Intrinsic, Ty};
+use super::model::ModelCheck;
+use super::{GenericValue, Intrinsic, Nominal, Ty};
+
+/// One instantiation of a generic item: the item and the arguments it is given, in the order of its
+/// parameters (§3.8.10: two uses with equal arguments are one instance).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Instantiation {
+    /// The generic struct, enum or function.
+    pub item: DeclId,
+    /// The argument for each parameter, defaults filled in.
+    pub arguments: Vec<GenericValue>,
+}
 
 /// What a `Deferred` method call of the reachable set resolves to: a row of the Appendix H
 /// catalogue.
@@ -136,20 +147,10 @@ impl Method {
 }
 
 /// A method the checker treats as part of the language because it resolved to the stdlib's own
-/// item (part I §3.3.7): the four flag-total reads, the edges of `Bit` and the history of a
+/// item (part I §3.3.7): the edges of `Bit` and the history of a
 /// carrier. A project's replacement is `P0001` at its use, never one of these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Builtin {
-    /// `x.known() -> Option<T>`.
-    Known,
-    /// `x.known_or(d) -> T`.
-    KnownOr,
-    /// `x.is_known() -> bool`.
-    IsKnown,
-    /// `x.level(k) -> Option<bool>`: level `k` of `x`, `None` when that level is unknown (§22.1).
-    Level,
-    /// `c.high() -> bool` on a `Bit`.
-    High,
     /// `c.changed() -> Event`.
     Changed,
     /// `c.prev() -> T`: the value before the most recent change.
@@ -176,6 +177,14 @@ pub enum Callee {
     Function(DeclId),
     Core(BuiltinId),
     Module(DeclId),
+    /// A method of the project called on a value, by the function it resolves to (§3.7.8).
+    Method(DeclId),
+    /// A method a type parameter's bound gives, by the trait's function: the instance a call reaches is
+    /// the implementation for the concrete type, found where the function is instantiated.
+    Bound {
+        /// The trait's function.
+        item: DeclId,
+    },
     /// A function of §22.1 typed by its contract at the concrete type (`merge`, `same`, `cast`,
     /// `logic`, `matches_bits`), until `generics` lets it compile from its stdlib source.
     Intrinsic(Intrinsic),
@@ -205,6 +214,12 @@ pub struct Types<'d> {
     /// The tag of every enum the check reached.
     pub(super) enum_tags: BTreeMap<DeclId, super::EnumTag>,
     pub(super) written: BTreeMap<TypeId, Ty>,
+    pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
+    /// The parameters of the functions of the check that are handles (`handles.rs`).
+    pub(super) handles: std::collections::BTreeSet<DeclId>,
+    /// The arguments of the trait bound each call through a bound names (`bounds.rs`).
+    pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
+    pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
     /// The locals some assignment of a checked body writes (§1.5.12): the elaborator makes exactly these assignable.
@@ -231,6 +246,16 @@ impl<'d> Types<'d> {
             return Err(vec![DesignDiagnostic { file: FileId(0), diagnostic }]);
         };
         check::Checker::new(design).run(module.decl().id())
+    }
+
+    /// Check every module, function, `const` and `impl` function of every crate but `std`, reached
+    /// from a top or not, and give back only the diagnostics (S3, GN-08): the table of a top is
+    /// [`Types::check`]'s. A design that already holds diagnostics gives them back.
+    pub fn check_model(design: &Design) -> Result<(), Vec<DesignDiagnostic>> {
+        if !design.diagnostics().is_empty() {
+            return Err(design.diagnostics().to_vec());
+        }
+        ModelCheck::new(design).run()
     }
 
     /// The design the table was built over.
@@ -266,7 +291,7 @@ impl<'d> Types<'d> {
         self.methods.get(&expr).copied()
     }
 
-    /// The built-in a method call resolved to (`known_or`, `prev`, ..), set only when the name
+    /// The built-in a method call resolved to (`prev`, `cast`, ..), set only when the name
     /// resolved to the stdlib's own item.
     pub fn builtin(&self, expr: ExprId) -> Option<Builtin> {
         self.builtins.get(&expr).copied()
@@ -276,6 +301,12 @@ impl<'d> Types<'d> {
     /// whether it fired in the microstep (§13 rules 2 and 9). Its type is `bool`.
     pub fn event_read(&self, expr: ExprId) -> bool {
         self.event_reads.contains(&expr)
+    }
+
+    /// The value of the const expression `expr` of a generic item for an instantiation: `values` gives each
+    /// const parameter its argument. `None` when it does not fold (an underflow, an overflow, a division by zero).
+    pub fn fold_with(&self, expr: ExprId, values: BTreeMap<DeclId, u128>) -> Option<u128> {
+        super::lengths::IntegerFolder::with_values(self.design, values).fold(expr, 16)
     }
 
     /// The level count a `T::WIDTH` path of the reachable set reads (§2, §22.1): 1 for `bool`, `N`
@@ -299,6 +330,21 @@ impl<'d> Types<'d> {
         all
     }
 
+    /// Every instance of a generic struct or enum a type of the check holds, with all its arguments given, each after
+    /// the instances inside its arguments: the arena entries the bodies that are not generic need (GN-06).
+    pub fn generic_instances(&self) -> Vec<Nominal> {
+        let mut found = Vec::new();
+        self.exprs.iter().flatten().chain(self.locals.values()).chain(self.written.values()).for_each(|ty| ty.generic_instances(&mut found));
+        found
+    }
+
+    /// The fields of `owner` (a generic struct, or one of its variants) as the instance `nominal` has them: the
+    /// declared field types with the instance's arguments put in the place of the parameters.
+    pub fn instance_fields(&self, owner: DeclId, nominal: &Nominal) -> Vec<super::FieldType> {
+        let substitution = super::Substitution::of(&super::GenericSignature::of(self.design, nominal.decl), &nominal.arguments);
+        self.fields(owner).unwrap_or(&[]).iter().map(|field| super::FieldType { ty: substitution.apply(&field.ty), ..field.clone() }).collect()
+    }
+
     /// The typed fields of the struct or enum variant `owner`, in declaration order.
     pub fn fields(&self, owner: DeclId) -> Option<&[super::FieldType]> {
         self.layouts.get(&owner).map(Vec::as_slice)
@@ -308,7 +354,7 @@ impl<'d> Types<'d> {
     /// integer built of literals, `const` names and integer arithmetic (§1.2.5). The elaborator's
     /// own constant evaluator needs a typed literal, which a length does not have.
     pub fn integer_constant(&self, expr: ExprId) -> Option<u128> {
-        super::lengths::IntegerFolder { design: self.design }.fold(expr, 16)
+        super::lengths::IntegerFolder::of(self.design).fold(expr, 16)
     }
 
     /// The tag of the enum `decl`.
@@ -340,6 +386,18 @@ impl<'d> Types<'d> {
         self.carriers.get(&decl)
     }
 
+    /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an
+    /// array whose innermost element is a `Ty::Carrier` (CV-23).
+    pub fn carrier_array(&self, decl: DeclId) -> Option<&Ty> {
+        self.carriers.get(&decl).filter(|ty| matches!(ty, Ty::Array(..)) && matches!(ty.innermost(), Ty::Carrier { .. }))
+    }
+
+    /// The type of a port or signal declared as an array of nodes (`[Electrical; 4]`): an array whose innermost
+    /// element is a `Ty::Node` (CV-23).
+    pub fn node_array(&self, decl: DeclId) -> Option<&Ty> {
+        self.carriers.get(&decl).filter(|ty| matches!(ty, Ty::Array(..)) && matches!(ty.innermost(), Ty::Node(_)))
+    }
+
     /// What a call or a placement refers to.
     pub fn callee(&self, expr: ExprId) -> Option<Callee> {
         self.callees.get(&expr).copied()
@@ -351,6 +409,38 @@ impl<'d> Types<'d> {
         self.bindings.get(&expr).map(Vec::as_slice)
     }
 
+    /// The instantiation a call of a generic function of the reachable set makes: the function and
+    /// the argument of each parameter, inferred or written, defaults filled in.
+    pub fn instantiation(&self, call: ExprId) -> Option<&Instantiation> {
+        self.instantiations.get(&call)
+    }
+
+    /// The arguments the bound writes for its trait in the call `call` of a method through a bound (`C: Convert<f64>`
+    /// gives `[f64]`); empty for a trait with none. The call's `impl` is the one of that argument list (GN-04).
+    pub fn bound_arguments(&self, call: ExprId) -> &[Ty] {
+        self.bound_arguments.get(&call).map_or(&[], Vec::as_slice)
+    }
+
+    /// Whether the function parameter `param` is a handle: it stands for the carrier the caller passes (§3.1.5).
+    pub fn handle(&self, param: DeclId) -> bool {
+        self.handles.contains(&param)
+    }
+
+    /// What the definition of the generic function `item` defers to each instantiation: its
+    /// `where`, the lengths it could only accept and its const expressions (Q1 (c)).
+    pub fn obligations(&self, item: DeclId) -> &[super::Obligation] {
+        self.obligations.get(&item).map_or(&[], Vec::as_slice)
+    }
+
+    /// The instantiation a type node of the reachable set writes when it is a use of a generic
+    /// struct or enum (`Pair<f64>`); `None` for any other type.
+    pub fn written_instantiation(&self, ty: TypeId) -> Option<Instantiation> {
+        match self.written.get(&ty)? {
+            Ty::Struct(Nominal { decl, arguments }) | Ty::Enum(Nominal { decl, arguments }) if !arguments.is_empty() => Some(Instantiation { item: *decl, arguments: arguments.clone() }),
+            _ => None,
+        }
+    }
+
     /// The type a type node of the reachable set writes (a signature, an annotation, a cast).
     pub fn written(&self, ty: TypeId) -> Option<&Ty> {
         self.written.get(&ty)
@@ -359,6 +449,19 @@ impl<'d> Types<'d> {
     /// The type of a `Binding` declaration.
     pub fn local(&self, binding: DeclId) -> Option<&Ty> {
         self.locals.get(&binding)
+    }
+
+    /// The arguments of the generic `impl` that holds the method `function`, found from the receiver's type
+    /// `receiver` by taking the `impl`'s self type apart (`impl<T: Shape> Describe for T` meeting `Sq` gives `T = Sq`,
+    /// `impl<T> Window<T>` meeting `Window<f64>` gives `T = f64`), in the order of the `impl`'s parameters. `None` when
+    /// the method is not of a generic `impl` or a parameter stays open.
+    pub fn impl_arguments(&self, function: DeclId, receiver: &Ty) -> Option<Vec<GenericValue>> {
+        let owner = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, crate::pom::DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some())?;
+        let first = self.design.decl_data(function).children.iter().copied().find(|child| matches!(self.design.decl_data(*child).kind, crate::pom::DeclKind::FnParam(_)))?;
+        let signature = super::GenericSignature::of(self.design, owner);
+        let mut inference = super::inference::Inference::new(&signature);
+        inference.unify(self.local(first)?, receiver);
+        signature.parameters().iter().map(|parameter| inference.found().get(parameter.decl).cloned()).collect()
     }
 
     /// The modules, functions and constants checked, in first-reach order.

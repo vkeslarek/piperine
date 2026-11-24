@@ -2,8 +2,7 @@
 //! ..)`, and the functions that reach it (`log`, `require`). An `emit!` is allowed in a reaction
 //! and in `analog`; a `fn` that reaches it is callable only there, so a definition, a body
 //! `let` or a const context that reaches one is `E0601`. A site reached from `analog` that writes
-//! `sim` or `checks` is `E0603`. A field name is distinct in one `emit!` and is not `maybe`
-//! (`E0604`); a field has one type per stream in a module, and the type the stdlib gives it on a
+//! `sim` or `checks` is `E0603`. A field name is distinct in one `emit!` (`E0604`); a field has one type per stream in a module, and the type the stdlib gives it on a
 //! reserved stream (`E0605`); a field is a value (`E0606`).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -69,10 +68,9 @@ impl Checker<'_> {
             }
         }
         if self.context == Context::Analog {
+            // a stream other than `sim` and `checks` is a trace (§19 rule 4): it checks
             if is_reserved(&name) {
                 self.analog_writes_reserved(file, span, &name);
-            } else {
-                self.analog_trace(file, span);
             }
         }
         let mut seen = BTreeSet::new();
@@ -82,8 +80,8 @@ impl Checker<'_> {
             self.event_slot = Some(field.value);
             let found = self.infer(field.value);
             let field_name = field.name.text.clone();
-            if field_name == "maybe" || !seen.insert(field_name.clone()) {
-                let message = if field_name == "maybe" { "the field name `maybe` is reserved (§19 rule 11)".to_string() } else { format!("the field `{field_name}` is written twice in one `emit!` (§19 rule 11)") };
+            if !seen.insert(field_name.clone()) {
+                let message = format!("the field `{field_name}` is written twice in one `emit!` (§19 rule 11)");
                 self.coded(file, "E0604", field.span, message, "a field name that is not free");
                 continue;
             }
@@ -113,15 +111,9 @@ impl Checker<'_> {
         self.coded(file, "E0603", span, message, "`analog` writes a reserved stream");
     }
 
-    /// An `emit!` on a stream other than `sim` and `checks` reached from `analog`: a trace
-    /// (§19), which the M1 elaborator does not lower (it has no `TRACE` pin), so it is refused
-    /// by name here rather than failing elaboration (msl-digital edge case 7).
-    fn analog_trace(&mut self, file: FileId, span: Span) {
-        self.unsupported(file, span, "an `emit!` in an `analog` block");
-    }
-
-    /// A call of `function`, which may reach `emit!`: where it stands is where `emit!` may stand
-    /// (`E0601`), and from `analog` it writes neither `sim` nor `checks` (`E0603`).
+    /// A call of `function`, which may reach `emit!`: from `analog` it writes neither `sim` nor `checks`
+    /// (`E0603`). Where an emitting call may not stand at all, in a definition, a body `let` or a const
+    /// context, it is `E0122` (`refuse_outside_class`); `E0601` is `emit!` written directly (§19 rule 10).
     pub(super) fn emitting_call(&mut self, expr: ExprId, function: DeclId) {
         let streams = self.function_streams(function);
         if streams.is_empty() {
@@ -132,20 +124,10 @@ impl Checker<'_> {
         }
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
-        match self.context {
-            Context::Module | Context::Const => {
-                let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                let message = format!("`{name}` reaches `emit!`: it is called where `emit!` may be written, in a reaction or in `analog`, never in a definition, a body `let` or a const context (§19 rule 10)");
-                self.coded(file, "E0601", span, message, "an emitting `fn` out of place");
+        if self.context == Context::Analog {
+            if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
+                self.analog_writes_reserved(file, span, &stream.clone());
             }
-            Context::Analog => {
-                if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
-                    self.analog_writes_reserved(file, span, &stream.clone());
-                } else {
-                    self.analog_trace(file, span);
-                }
-            }
-            Context::Reaction | Context::Function => {}
         }
     }
 

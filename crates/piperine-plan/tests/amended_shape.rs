@@ -4,7 +4,7 @@
 //! by hand and reads its shape entry by entry; every expected entry is written from abi.md (the
 //! section cited at its assertion), and every shape passes `piperine_abi::validate`.
 
-use piperine_abi::raw::{Cell, DEFAULT, Shape, ambient, watch, cell, field_flag, global, kind, leaf, part, pin_flag, role, statement_flag};
+use piperine_abi::raw::{Cell, DEFAULT, Shape, ambient, watch, cell, global, kind, leaf, part, pin_flag, role, statement_flag};
 use piperine_ir::{
     Addend, AnalysisKind, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, Ir,
     IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
@@ -162,7 +162,7 @@ fn time_and_static_are_ambient_reads() {
     // abi.md §4.1: "A reaction reads PIN cells and the ambient inputs TIME, STATIC, TICK,
     // HORIZON": the reaction reads both, and commits t then s
     let (t, s, event) = (Find::pin(shape, "t"), Find::pin(shape, "s"), Find::pin(shape, "event:0"));
-    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event], vec![stat, time], vec![(t, 0, 16, 0, 0.0), (s, 0, 2, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event], vec![stat, time], vec![(t, 0, 8, 0, 0.0), (s, 0, 1, 0, 0.0)]));
     assert_eq!(plan.reactions()[0].reads, [Source::Static, Source::Time]);
 
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
@@ -176,7 +176,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     // }
     // digital for Timer {
     //     on at(t0 + dt) { fired <- true; }
-    //     on at(dt) if dt.known_or(0.0) > 0.0 { fired <- false; }
+    //     on at(dt) if dt > 0.0 { fired <- false; }
     // }
     // ```
     let (ir, body) = Alone::design(|b| {
@@ -187,7 +187,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
         b.carrier(body, Buck::carrier("fired", ValueType::Bool, CarrierRole::Out, None, F, 1, 14));
         let mut x = Dx::new(b, F, 5, 11);
         let (t0, dt) = (x.carrier(0, ValueType::F64), x.carrier(1, ValueType::F64));
-        let sum = x.bin(piperine_ir::BinaryOp::Add, t0, dt, digital::Ty::flagged(ValueType::F64));
+        let sum = x.bin(piperine_ir::BinaryOp::Add, t0, dt, ValueType::F64);
         let at = b.event(body, Event { source: EventSource::At(sum), guard: None, origin: Buck::origin(F, 5, 8) });
         let mut x = Dx::new(b, F, 5, 22);
         let yes = x.boolean(true);
@@ -195,10 +195,9 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
         Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 5);
         let mut x = Dx::new(b, F, 6, 11);
         let dt = x.carrier(1, ValueType::F64);
-        let (zero, dt_guard) = (x.real(0.0), x.carrier(1, ValueType::F64));
-        let known = x.known_or(dt_guard, zero, ValueType::F64);
+        let dt_guard = x.carrier(1, ValueType::F64);
         let zero = x.real(0.0);
-        let positive = x.bin(piperine_ir::BinaryOp::Gt, known, zero, ValueType::Bool);
+        let positive = x.bin(piperine_ir::BinaryOp::Gt, dt_guard, zero, ValueType::Bool);
         let guarded = b.event(body, Event { source: EventSource::At(dt), guard: Some(positive), origin: Buck::origin(F, 6, 8) });
         let mut x = Dx::new(b, F, 6, 40);
         let no = x.boolean(false);
@@ -243,8 +242,8 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     );
     assert_eq!(Find::reaction(shape, "at:1"), (vec![start, rearm1_dt], vec![pin(dt, part::VALUE), time], vec![(timer1, 0, 0, replace, 0.0)]));
     // the body's own reactions listen to the event pins and commit `fired`
-    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0], vec![], vec![(fired, 0, 2, 0, 0.0)]));
-    assert_eq!(Find::reaction(shape, "reaction:1"), (vec![event1], vec![], vec![(fired, 0, 2, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0], vec![], vec![(fired, 0, 1, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:1"), (vec![event1], vec![], vec![(fired, 0, 1, 0, 0.0)]));
     let names: Vec<&str> = shape.reactions.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["reaction:0", "reaction:1", "at:0", "at:1"], "the arming reactions follow the body's");
 
@@ -300,31 +299,20 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
     // abi.md P7, C5: a stream is one PRIVATE discrete pin per instance, flagged RECORD, named by
     // the stream
     assert_eq!((p.kind, p.role, p.flags), (kind::DISCRETE, role::PRIVATE, pin_flag::RECORD));
-    // one field per value field, each with a known byte (P3), laid out as a carrier of its type:
-    // `code` a `BYTE` at 0 (known 1), `level` a `REAL` at the next multiple of 8 (value 8, known
-    // 16), `ok` a `BIT` at 24 (known 25), then the `maybe` of §19 rule 1, a `BIT` at 26 (known
-    // 27); 28 bytes rounded up to the alignment 8. The text `note` is no field: text never
-    // crosses the ABI (design "Amendments behind the IR")
-    let fields: Vec<(String, u32, u32, u32, u32, u32)> =
-        p.layout.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset, f.count, f.flags, f.known)).collect();
-    let known = field_flag::HAS_KNOWN;
-    assert_eq!(
-        fields,
-        [
-            ("code".into(), leaf::U8, 0, 1, known, 1),
-            ("level".into(), leaf::F64, 8, 1, known, 16),
-            ("ok".into(), leaf::BOOL, 24, 1, known, 25),
-            ("maybe".into(), leaf::BOOL, 26, 1, known, 27),
-        ]
-    );
-    assert_eq!((p.layout.size, p.layout.align), (32, 8));
+    // one field per value field, its value bytes (P3), laid out as a carrier of its type:
+    // `code` a `BYTE` at 0, `level` an `F64` at the next multiple of 8, `ok` a `BIT` at 16; 17
+    // bytes rounded up to the alignment 8. The text `note` is no field: text never crosses the
+    // ABI (design "Amendments behind the IR")
+    let fields: Vec<(String, u32, u32, u32)> = p.layout.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset, f.count)).collect();
+    assert_eq!(fields, [("code".into(), leaf::U8, 0, 1), ("level".into(), leaf::F64, 8, 1), ("ok".into(), leaf::BOOL, 16, 1)]);
+    assert_eq!((p.layout.size, p.layout.align), (24, 8));
 
     // the two sites share the pin: each is a statement over its whole layout, in the order of
     // the reaction's commits (C5: a record is a commit to a RECORD pin); a site writes the
-    // fields it leaves out with their known byte 0, which the layout makes room for
+    // fields it leaves out all zero, which the layout makes room for
     let (on, reads, statements) = Find::reaction(shape, "reaction:0");
     assert_eq!((on, reads), (vec![event], vec![]));
-    assert_eq!(statements, [(trace, 0, 32, 0, 0.0), (x, 0, 2, 0, 0.0), (trace, 0, 32, 0, 0.0)]);
+    assert_eq!(statements, [(trace, 0, 24, 0, 0.0), (x, 0, 1, 0, 0.0), (trace, 0, 24, 0, 0.0)]);
     assert_eq!(plan.reactions()[0].statements.iter().map(|s| s.target).collect::<Vec<_>>(), [Target::Record(0), Target::Carrier(1), Target::Record(0)]);
     // nothing reads the pin (P7: RECORD implies QUIET)
     let read = |c: &Cell| c.kind == cell::PIN && c.index == trace;
@@ -399,12 +387,12 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
 #[test]
 fn a_previous_value_is_the_previous_part_of_the_pin() {
     // the flip-flop of abi.md §11.4 with `rise()` as the stdlib writes it (design A7, part IV
-    // §22.1): the previous level is not `Some(true)` and the level is not `Some(false)`
+    // §22.1): the previous level is low and the level is high
     //
     // ```text
     // module Dff(in clk: Bit, in d: Bit, out q: Bit) {}
     // digital for Dff {
-    //     on clk.changed() if !clk.prev().high() && (!clk.is_known() || clk.known_or(false)) { q <- d; }
+    //     on clk.changed() if !clk.prev() && clk { q <- d; }
     //     on d.changed() { q <- d.prev(); }
     // }
     // ```
@@ -413,20 +401,12 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         for (name, role, col) in [("clk", CarrierRole::In, 12), ("d", CarrierRole::In, 25), ("q", CarrierRole::Out, 36)] {
             b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 1, col));
         }
-        let flagged = digital::Ty::flagged(ValueType::Bool);
         let mut x = Dx::new(b, F, 3, 25);
         let o = x.origin();
-        let prev = x.b.expr(Expr::Previous(0), flagged.clone(), o);
-        let was_high = x.high(prev);
-        let not_was_high = x.un(piperine_ir::UnaryOp::Not, was_high, ValueType::Bool);
+        let prev = x.b.expr(Expr::Previous(0), ValueType::Bool, o);
+        let not_was_high = x.un(piperine_ir::UnaryOp::Not, prev, ValueType::Bool);
         let clk = x.carrier(0, ValueType::Bool);
-        let known = x.is_known(clk);
-        let unknown = x.un(piperine_ir::UnaryOp::Not, known, ValueType::Bool);
-        let clk = x.carrier(0, ValueType::Bool);
-        let low = x.boolean(false);
-        let level = x.known_or(clk, low, ValueType::Bool);
-        let not_low = x.bin(piperine_ir::BinaryOp::Or, unknown, level, ValueType::Bool);
-        let guard = x.bin(piperine_ir::BinaryOp::And, not_was_high, not_low, ValueType::Bool);
+        let guard = x.bin(piperine_ir::BinaryOp::And, not_was_high, clk, ValueType::Bool);
         let rise = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin(F, 3, 8) });
         let mut x = Dx::new(b, F, 3, 90);
         let d = x.carrier(1, ValueType::Bool);
@@ -435,7 +415,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         let changed = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 4, 8) });
         let mut x = Dx::new(b, F, 4, 30);
         let o = x.origin();
-        let prev = x.b.expr(Expr::Previous(1), flagged, o);
+        let prev = x.b.expr(Expr::Previous(1), ValueType::Bool, o);
         let commit = x.commit(2, prev, None);
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
         body
@@ -457,7 +437,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
     // read it": the reaction reads d's PREVIOUS (not its VALUE) and commits q
     let (_, reads, statements) = Find::reaction(shape, "reaction:1");
     assert_eq!(reads, [pin(d, part::PREVIOUS)]);
-    assert_eq!(statements, [(q, 0, 2, 0, 0.0)]);
+    assert_eq!(statements, [(q, 0, 1, 0, 0.0)]);
     // P7: a QUIET pin keeps no PREVIOUS, so a carrier whose previous value is read is not QUIET
     for p in [clk, d] {
         assert_eq!(shape.pins.get(p as usize).map(|x| x.flags & pin_flag::QUIET), Some(0));
@@ -615,7 +595,7 @@ fn a_fired_read_names_the_event_pin() {
 
     // abi.md §4.1: a reaction reads the `CHANGED` byte of an event pin: here event 0's, and
     // nothing of event 1 (which the reaction only waits on).
-    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0, event1], vec![pin(event0, part::CHANGED)], vec![(q, 0, 2, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0, event1], vec![pin(event0, part::CHANGED)], vec![(q, 0, 1, 0, 0.0)]));
     assert_eq!(plan.reactions()[0].reads, [Source::Fired(0)]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

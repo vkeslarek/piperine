@@ -5,6 +5,9 @@
 //! buffer, so each net is stored over-aligned to 16 bytes. The alignment is
 //! found, not assumed, so the store needs no `unsafe`.
 
+use std::collections::BTreeMap;
+
+use crate::array::{ArrayInit, ElementUndo, SparseArray};
 use crate::journal::Journal;
 use crate::net::{NetId, NetKind, NetSpec};
 
@@ -60,6 +63,9 @@ struct NetBytes {
     changed_at: u64,
     /// The microstep of the last firing (0: never).
     fired_at: u64,
+    /// The next write is the net's initial value: it is a change whatever it holds, and `PREVIOUS` takes its bytes
+    /// (part II 5.3, D8).
+    first: bool,
 }
 
 /// One net's bytes and stamps, saved to put it back (the relaxation of a cycle writes
@@ -75,6 +81,7 @@ struct Saved {
     net: usize,
     changed_at: u64,
     fired_at: u64,
+    first: bool,
     at: usize,
 }
 
@@ -107,6 +114,8 @@ impl PartialEq for NetJournal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StoreMark {
     len: usize,
+    /// The length of the log of element writes.
+    elements: usize,
     arena: usize,
     step: u64,
 }
@@ -115,6 +124,10 @@ pub struct StoreMark {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Store {
     nets: Vec<NetBytes>,
+    /// The array nets, by net index: an array net's `NetBytes` holds no bytes, its elements live here.
+    arrays: BTreeMap<u32, SparseArray>,
+    /// What each element write replaced, for `rewind`.
+    elements: Journal<ElementUndo>,
     /// The current microstep; starts at 1 so a stamp of 0 means "never".
     step: u64,
     journal: NetJournal,
@@ -123,11 +136,17 @@ pub struct Store {
 impl Store {
     /// A store with every net at zero bytes.
     pub fn new(specs: &[NetSpec]) -> Store {
+        let arrays: BTreeMap<u32, SparseArray> = specs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.count > 0)
+            .map(|(i, s)| (i as u32, SparseArray::new(s.count, s.size, ArrayInit::of(&s.init, s.size))))
+            .collect();
         let nets: Vec<NetBytes> = specs
             .iter()
             .map(|s| {
                 let quiet = s.is_quiet();
-                let size = s.size as usize;
+                let size = if s.count > 0 { 0 } else { s.size as usize };
                 NetBytes {
                     kind: s.kind,
                     quiet,
@@ -135,11 +154,12 @@ impl Store {
                     previous: Aligned::zeroed(if quiet { 0 } else { size }),
                     changed_at: 0,
                     fired_at: 0,
+                    first: false,
                 }
             })
             .collect();
         let journal = NetJournal { log: Journal::default(), arena: Vec::new(), epoch: 1, stamped: vec![0; nets.len()] };
-        Store { nets, step: 1, journal }
+        Store { nets, arrays, elements: Journal::default(), step: 1, journal }
     }
 
     /// Starts journaling: from here to the matching `release`, the first previous state of each
@@ -147,7 +167,7 @@ impl Store {
     /// Marks nest.
     pub fn mark(&mut self) -> StoreMark {
         self.journal.epoch += 1;
-        StoreMark { len: self.journal.log.open(), arena: self.journal.arena.len(), step: self.step }
+        StoreMark { len: self.journal.log.open(), elements: self.elements.open(), arena: self.journal.arena.len(), step: self.step }
     }
 
     /// Puts every net written since `mark` back, and the microstep. The mark stays open.
@@ -160,6 +180,12 @@ impl Store {
             net.previous.bytes_mut().copy_from_slice(&bytes[value..]);
             net.changed_at = saved.changed_at;
             net.fired_at = saved.fired_at;
+            net.first = saved.first;
+        }
+        while let Some(undo) = self.elements.pop_above(mark.elements) {
+            if let Some(array) = self.arrays.get_mut(&undo.net) {
+                array.undo(undo);
+            }
         }
         self.journal.arena.truncate(mark.arena);
         self.step = mark.step;
@@ -168,6 +194,7 @@ impl Store {
 
     /// Ends the newest open mark; the log empties with the outermost.
     pub fn release(&mut self, _mark: StoreMark) {
+        self.elements.close();
         self.journal.log.close();
         if !self.journal.log.is_open() {
             self.journal.arena.clear();
@@ -184,7 +211,7 @@ impl Store {
         if self.journal.log.is_open() && self.journal.stamped[net] != self.journal.epoch {
             self.journal.stamped[net] = self.journal.epoch;
             let n = &self.nets[net];
-            let saved = Saved { net, changed_at: n.changed_at, fired_at: n.fired_at, at: self.journal.arena.len() };
+            let saved = Saved { net, changed_at: n.changed_at, fired_at: n.fired_at, first: n.first, at: self.journal.arena.len() };
             self.journal.arena.extend_from_slice(n.value.bytes());
             self.journal.arena.extend_from_slice(n.previous.bytes());
             self.journal.log.push(saved);
@@ -227,6 +254,18 @@ impl Store {
     pub fn write(&mut self, net: NetId, offset: u32, bytes: &[u8]) -> bool {
         let step = self.step;
         let at = offset as usize;
+        if self.nets[net.0 as usize].first {
+            self.journal_net(net.0 as usize);
+            let n = &mut self.nets[net.0 as usize];
+            n.first = false;
+            n.value.bytes_mut()[at..at + bytes.len()].copy_from_slice(bytes);
+            if !n.quiet {
+                let value = n.value.bytes().to_vec();
+                n.previous.bytes_mut().copy_from_slice(&value);
+                n.changed_at = step;
+            }
+            return true;
+        }
         if self.nets[net.0 as usize].value.bytes()[at..at + bytes.len()] == *bytes {
             return false;
         }
@@ -251,6 +290,13 @@ impl Store {
         }
     }
 
+    /// Marks `net` as holding no value yet: its next write is its initial value, a change whatever the bytes, with
+    /// `PREVIOUS` the same bytes, so `prev()` reads the initial value until a later change (part II 5.3, D8).
+    pub fn expect_initial(&mut self, net: NetId) {
+        self.journal_net(net.0 as usize);
+        self.nets[net.0 as usize].first = true;
+    }
+
     /// The saved state of `net`.
     pub fn save_net(&self, net: NetId) -> NetState {
         NetState(self.net(net).clone())
@@ -260,6 +306,52 @@ impl Store {
     pub fn restore_net(&mut self, net: NetId, state: &NetState) {
         self.journal_net(net.0 as usize);
         self.nets[net.0 as usize] = state.0.clone();
+    }
+
+    /// The array net `net`, or `None` when it is no array.
+    pub fn array(&self, net: NetId) -> Option<&SparseArray> {
+        self.arrays.get(&net.0)
+    }
+
+    /// The array net `net`: a net the plan made an array is one (every element accessor of the store).
+    fn array_of(&self, net: NetId) -> &SparseArray {
+        self.arrays.get(&net.0).unwrap_or_else(|| panic!("net {} is no array net", net.0))
+    }
+
+    /// The bytes of `element` of array net `net` (`VALUE`).
+    pub fn element_value(&self, net: NetId, element: u64) -> &[u8] {
+        self.array_of(net).value(element)
+    }
+
+    /// `PREVIOUS` of `element` of array net `net`.
+    pub fn element_previous(&self, net: NetId, element: u64) -> &[u8] {
+        self.array_of(net).previous(element)
+    }
+
+    /// `CHANGED` of `element` of array net `net`: it changed in this microstep.
+    pub fn element_changed(&self, net: NetId, element: u64) -> bool {
+        self.array_of(net).changed(element, self.step)
+    }
+
+    /// Writes `bytes` at `offset` of `element` of array net `net`; returns whether the element's bytes differ
+    /// afterwards. The net's own stamp records that some element changed. Panics when the range leaves the element
+    /// or the element is not below the array's `count`.
+    pub fn write_element(&mut self, net: NetId, element: u64, offset: u32, bytes: &[u8]) -> bool {
+        let step = self.step;
+        let Some(array) = self.arrays.get_mut(&net.0) else { panic!("net {} is no array net", net.0) };
+        let Some(undo) = array.write(net.0, element, offset, bytes, step) else { return false };
+        self.elements.push(undo);
+        self.nets[net.0 as usize].changed_at = step;
+        true
+    }
+
+    /// Records that the initial commit of array net `net` lands in the next microstep, where every element not
+    /// written by then reads as changed (part IV §13 rule 6).
+    pub fn stamp_initial_array(&mut self, net: NetId) {
+        let landing = self.step + 1;
+        if let Some(array) = self.arrays.get_mut(&net.0) {
+            array.stamp_initial(landing);
+        }
     }
 
     /// Fires an event net in this microstep.

@@ -1,20 +1,20 @@
 //! The ABI layout of an IR aggregate type (composite-values CV-17, CV-20; spec §2).
 //!
 //! A pin holding a composite is one blob: the value bytes of its parts one after another, the
-//! first lowest and unpadded (what `rt::flag::Carried` writes), then one known byte for the whole
-//! value (one flag per value, G6/S6). The layout lists every scalar leaf of the value as a field
-//! at its byte offset, named by its dotted path from the value (`p.x`, `0`, `Data.n`, `tag`),
-//! and every field's known byte is that one byte, so a value reads known only when its flag is
-//! set (P3: an unknown value is all zero). An array has one field per element (`num[2]`) because
-//! one known byte cannot stand for the `count` known bytes of a counted field. A struct, tuple
-//! or array of nothing has no field and a size of 1 (the known byte). An enum lays its tag first
-//! (`tag`, none for a one-variant enum: §2 rule 5), then the widest payload, each variant's
-//! fields overlapping at the payload's start as `Variant.field`; an `Option<T>` is a presence
-//! byte `some` then `T`'s leaves as `value`. The layout is a function of the IR type alone, so
-//! two pins of one net get equal layouts (abi.md P4).
+//! first lowest and unpadded (what `rt::pin::Carried` writes), alignment 1, and nothing else
+//! (abi.md P3: a value is its bytes). The layout lists every scalar leaf of the value as a field
+//! at its byte offset, named by its dotted path from the value (`p.x`, `0`, `Data.n`, `tag`).
+//! An array has one field per element (`num[2]`). A struct, tuple or array of nothing has no
+//! field and a size of 0. An enum lays its tag first (`tag`, none for a one-variant enum:
+//! §2 rule 5), then the widest payload, each variant's fields overlapping at the payload's start
+//! as `Variant.field`; an `Option<T>` is a `BOOL` presence byte `some` then `T`'s leaves as
+//! `value`. The layout is a function of the IR type alone, so two pins of one net get equal
+//! layouts (abi.md P4). A type whose `Repr` the author wrote (`ReprForm::HandWritten`, §2: the
+//! encoding is the type's) is one leaf of its `width` levels, the narrowest unsigned integer that
+//! holds them, whatever its fields are.
 
-use piperine_abi::raw::{Field, Str, field_flag, leaf};
-use piperine_ir::{Constant, Ir, TypeKind, ValueType};
+use piperine_abi::raw::{Field, Str, leaf};
+use piperine_ir::{Constant, Ir, ReprForm, TypeKind, ValueType};
 
 /// One scalar leaf of a composite value.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub struct CompositeLeaf {
     pub offset: u32,
 }
 
-/// The layout of a composite pin: its leaves and the width of the value bytes before the known byte.
+/// The layout of a composite pin: its leaves and the width of its value bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompositeLayout {
     leaves: Vec<CompositeLeaf>,
@@ -44,14 +44,10 @@ impl CompositeLayout {
         Some(CompositeLayout { width: walk.at, leaves: walk.leaves })
     }
 
-    /// The width in bytes of the value, before the known byte (`T::WIDTH` of the runtime's `Carried`).
+    /// The width in bytes of the value, which is the size of the pin (`T::WIDTH` of the
+    /// runtime's `Carried`).
     pub fn width(&self) -> u32 {
         self.width
-    }
-
-    /// The size of the pin: the value bytes, then the known byte.
-    pub fn size(&self) -> u32 {
-        self.width + 1
     }
 
     /// The leaves, in the order of the value's bytes (an enum's payloads overlap).
@@ -59,29 +55,22 @@ impl CompositeLayout {
         &self.leaves
     }
 
-    /// The offset of the known byte.
-    pub fn known_offset(&self) -> u32 {
-        self.width
-    }
-
-    /// The ABI fields of the layout, one per leaf, each holding its value bytes at `offset` and
-    /// the value's known byte.
+    /// The ABI fields of the layout, one per leaf, each holding its value bytes at `offset`.
     pub fn abi_fields(&self) -> Vec<Field<'_>> {
         self.leaves
             .iter()
-            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: 1, flags: field_flag::HAS_KNOWN, known: self.width })
+            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: 1 })
             .collect()
     }
 
-    /// The canonical bytes of `value` held as `ty` (abi.md P3): the value bytes as the runtime's
-    /// `Carried::encode` writes them, the known byte 1. `None` when `value` is not a value of `ty`.
+    /// The bytes of `value` held as `ty` (abi.md P3): as the runtime's `Carried::encode` writes
+    /// them. `None` when `value` is not a value of `ty`.
     pub fn bytes(ir: &Ir, ty: &ValueType, value: Constant) -> Option<Vec<u8>> {
         let layout = Self::of(ir, ty)?;
-        let mut bytes = vec![0u8; layout.size() as usize];
+        let mut bytes = vec![0u8; layout.width() as usize];
         let mut at = 0usize;
         ConstantBytes { ir, out: &mut bytes }.write(ty, value, &mut at)?;
         debug_assert_eq!(at as u32, layout.width, "the bytes of a constant fill the layout's value width");
-        bytes[layout.width as usize] = 1;
         Some(bytes)
     }
 }
@@ -122,6 +111,20 @@ impl TagWidth {
     }
 }
 
+/// The types whose `Repr` the author wrote.
+struct HandWritten;
+
+impl HandWritten {
+    /// The `width` of the hand-written `Repr` of `ty`, `None` for any other type.
+    fn width(ir: &Ir, ty: &ValueType) -> Option<u32> {
+        let (ValueType::Struct(id) | ValueType::Enum(id)) = ty else { return None };
+        match ir.type_data(*id).repr {
+            ReprForm::HandWritten { width, .. } => Some(width),
+            ReprForm::Derived => None,
+        }
+    }
+}
+
 /// The dotted name of a part of a value: the prefix, a dot, the part, with an empty side dropped.
 struct LeafName;
 
@@ -152,12 +155,19 @@ struct LeafWalk<'ir> {
 impl LeafWalk<'_> {
     /// Places the leaves of `ty` named under `name`; `None` for a type no pin holds.
     fn place(&mut self, ty: &ValueType, name: &str) -> Option<()> {
+        if let Some(width) = HandWritten::width(self.ir, ty) {
+            // the ABI's leaves end at 64 bits: a wider encoding is a type no pin holds
+            if width > 64 {
+                return None;
+            }
+            self.integer(width, false, name);
+            return Some(());
+        }
         match ty {
             ValueType::Bool => self.scalar(leaf::BOOL, 1, name),
             ValueType::F64 => self.scalar(leaf::F64, 8, name),
             ValueType::UInt(n) => self.integer(*n, false, name),
             ValueType::Int(n) => self.integer(*n, true, name),
-            ValueType::Flagged(inner) => self.place(inner, name)?,
             ValueType::Tuple(items) => {
                 for (k, item) in items.iter().enumerate() {
                     self.place(item, &LeafName::join(name, &k.to_string()))?;
@@ -176,7 +186,7 @@ impl LeafWalk<'_> {
             }
             ValueType::Enum(id) => self.enumeration(*id, name)?,
             ValueType::Option(inner) => {
-                self.scalar(leaf::U8, 1, &LeafName::join(name, "some"));
+                self.scalar(leaf::BOOL, 1, &LeafName::join(name, "some"));
                 self.place(inner, &LeafName::join(name, "value"))?;
             }
             ValueType::Unit | ValueType::Fn(..) => return None,
@@ -241,8 +251,15 @@ impl ConstantBytes<'_> {
     /// Writes `value` held as `ty` at `*at` and moves `*at` past its bytes; `None` when `value`
     /// is not a value of `ty`.
     fn write(&mut self, ty: &ValueType, value: Constant, at: &mut usize) -> Option<()> {
+        // a hand-written `Repr` is a constant only as its levels word, which the elaborator computed by running `encode`
+        if let Some(width) = HandWritten::width(self.ir, ty) {
+            let Constant::Int(levels) = value else { return None };
+            if width > 64 || levels < 0 || levels >= 1i128 << width {
+                return None;
+            }
+            return self.put(&levels.to_le_bytes()[..TagWidth::bytes_of_bits(width) as usize], at);
+        }
         match (ty, value) {
-            (ValueType::Flagged(inner), _) => self.write(inner, value, at),
             (ValueType::Bool, Constant::Bool(b)) => self.put(&[u8::from(b)], at),
             (ValueType::F64, Constant::Real(r)) => self.put(&r.get().to_le_bytes(), at),
             (ValueType::UInt(n) | ValueType::Int(n), Constant::Int(v)) => {

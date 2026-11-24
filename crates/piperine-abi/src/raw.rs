@@ -37,6 +37,43 @@ pub struct Bytes<'a> {
     pub(crate) life: PhantomData<&'a [u8]>,
 }
 
+/// Bytes the consumer owns and the producer writes: the output buffer of a call. A view built in safe code
+/// (`from_slice`) borrows its memory exclusively for `'a`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct BytesMut<'a> {
+    pub(crate) ptr: *mut u8,
+    pub(crate) len: usize,
+    pub(crate) life: PhantomData<&'a mut [u8]>,
+}
+
+impl<'a> BytesMut<'a> {
+    /// A `BytesMut` borrowing `b` exclusively for `'a`.
+    pub fn from_slice(b: &'a mut [u8]) -> BytesMut<'a> {
+        BytesMut { ptr: b.as_mut_ptr(), len: b.len(), life: PhantomData }
+    }
+
+    /// The length in bytes.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether there are no bytes.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The bytes, to write.
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        if self.len == 0 {
+            return &mut [];
+        }
+        // SAFETY: a `BytesMut` points to `len` writable bytes its consumer lent exclusively for the call
+        // (built by `from_slice`, which borrows them for `'a`).
+        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
 /// A list whose elements lie `stride` bytes apart: the element size as the
 /// producer compiled it. A consumer reads the fields it knows (abi.md §3, §12
 /// "Versioning").
@@ -304,11 +341,18 @@ pub type ReactFn = unsafe extern "C" fn(*mut Instance, u32, *const React) -> u32
 /// `commit` of abi.md §2, the solver's entry.
 pub type CommitFn =
     unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64) -> u32;
-
-/// `commit_with` of abi.md §2, the solver's second entry (ABI minor 1): `commit` plus the
-/// `commit_flag::*` bits of a commit made under unknown control (abi.md C7).
-pub type CommitWithFn =
-    unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64, flags: u32) -> u32;
+/// `commit_element`, the solver's entry for a statement on an array pin: it names the element at run time.
+pub type CommitElementFn = unsafe extern "C" fn(
+    *mut c_void,
+    statement: u32,
+    element: u64,
+    offset: u32,
+    len: u32,
+    bytes: *const u8,
+    after: f64,
+) -> u32;
+/// The reader of an [`ArrayView`]: the bytes of one element of the call's snapshot, for a `part::*`.
+pub type ArrayReadFn = unsafe extern "C" fn(context: *const c_void, element: u64, part: u32) -> *const u8;
 
 /// A named factory in a library.
 #[repr(C)]
@@ -464,6 +508,9 @@ pub struct Pin<'a> {
     pub check: u32,
     /// `CONTINUOUS`: tolerance of the unknown, of its row; 0 = session default.
     pub abstol: [f64; 2],
+    /// `DISCRETE`: 0 is one carrier (every pin before arrays of carriers); `>= 1` makes this an array
+    /// pin of `count` elements, each of `layout` (abi.md §3.1, appended in place at `MINOR` 0).
+    pub count: u64,
 }
 
 /// The only description of bytes.
@@ -485,10 +532,6 @@ pub struct Field<'a> {
     pub offset: u32,
     /// Array length.
     pub count: u32,
-    /// `field_flag::*` bits.
-    pub flags: u32,
-    /// `HAS_KNOWN`: the offset of one byte per element; 0 there = no value.
-    pub known: u32,
 }
 
 /// A real value added to a row through an operator.
@@ -568,6 +611,9 @@ pub struct Function<'a> {
     pub reads: List<'a, Cell>,
     pub writes: List<'a, Cell>,
     pub partials: List<'a, Partial>,
+    /// Empty, or one entry per `reads` entry: the element of an array pin that read names, or [`WHOLE`]
+    /// (abi.md §3, arrays of carriers). A read of a non-array pin carries 0.
+    pub elements: List<'a, u64>,
 }
 
 /// Code run once at an instant when an event pin it listens to fires.
@@ -582,6 +628,9 @@ pub struct Reaction<'a> {
     pub on: List<'a, u32>,
     pub reads: List<'a, Cell>,
     pub writes: List<'a, Statement>,
+    /// Empty, or one entry per `reads` entry: the element of an array pin that read names, or [`WHOLE`]
+    /// (abi.md §3, arrays of carriers). A read of a non-array pin carries 0.
+    pub elements: List<'a, u64>,
 }
 
 /// One declared write of a reaction.
@@ -632,15 +681,32 @@ pub struct React {
 #[derive(Clone, Copy, Debug)]
 pub struct Host {
     /// A later minor may append fields: a host whose `size` does not reach a field does not have
-    /// it (a minor-0 host ends after `commit`).
+    /// it.
     pub size: u32,
     pub commit: CommitFn,
-    /// Minor 1: a commit that may be made under unknown control (abi.md C7).
-    pub commit_with: CommitWithFn,
+    /// Appended by arrays of carriers; a host whose `size` does not reach it refuses element commits.
+    pub commit_element: CommitElementFn,
+}
+
+/// What a `WHOLE` read cell of an array pin holds: the array behind the call's snapshot (R2), read one element
+/// at a time, so a `1 << 32` element array is never copied into a frame (abi.md §5, §3.1).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ArrayView {
+    /// Opaque to the device: handed back to `read`.
+    pub context: *const c_void,
+    /// The number of elements.
+    pub count: u64,
+    /// The bytes of one element.
+    pub size: u32,
+    /// The bytes of `element` for a `part::VALUE`, `PREVIOUS` or `CHANGED`.
+    pub read: ArrayReadFn,
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
+/// `Function.elements`/`Reaction.elements`: a read of every element of an array pin, as an [`ArrayView`].
+pub const WHOLE: u64 = u64::MAX;
 /// The `plus`/`minus` of a term that names the reference node.
 pub const GROUND: u32 = u32::MAX;
 /// A tolerance or bound index meaning "the session default".
@@ -648,18 +714,40 @@ pub const DEFAULT: u32 = u32::MAX - 1;
 /// The ABI major; it is the exported symbol's suffix.
 pub const MAJOR: u32 = 1;
 /// The ABI minor this crate implements.
-pub const MINOR: u32 = 1;
+pub const MINOR: u32 = 0;
 /// The one exported symbol of a library.
 pub const SYMBOL: &str = "piperine_abi_1";
 
-/// `commit_with`'s `flags` (abi.md C7): a commit made on a path taken under unknown control.
-pub mod commit_flag {
-    /// The commit may not have happened: it does not remove the pending commits of its statement
-    /// (transport, C3), it turns them into `MERGE` commits.
-    pub const MAYBE: u32 = 1 << 0;
-    /// The value is merged, level by level, with the value the net holds when the commit applies
-    /// (part I §3.3.3: "the value the carrier would hold then").
-    pub const MERGE: u32 = 1 << 1;
+impl ArrayView {
+    /// The view stored in the bytes of a `WHOLE` read cell; `None` when they are too few.
+    pub fn from_bytes(bytes: &[u8]) -> Option<ArrayView> {
+        if bytes.len() < size_of::<ArrayView>() {
+            return None;
+        }
+        // SAFETY: `ArrayView` is `repr(C)` plain data (pointers, integers); the bytes are enough (checked above)
+        // and `read_unaligned` needs no alignment. The host wrote a real view into this cell (abi.md §3).
+        Some(unsafe { core::ptr::read_unaligned(bytes.as_ptr().cast::<ArrayView>()) })
+    }
+
+    /// The bytes of this view, to hand as the content of a `WHOLE` read cell.
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: a `repr(C)` struct is readable as its own `size_of` bytes for the length of the borrow.
+        unsafe { core::slice::from_raw_parts((self as *const ArrayView).cast::<u8>(), size_of::<ArrayView>()) }
+    }
+
+    /// The bytes of `element` for `part` (`VALUE`, `PREVIOUS` or `CHANGED`); `None` at or past `count`.
+    pub fn element(&self, element: u64, part: u32) -> Option<&[u8]> {
+        if element >= self.count {
+            return None;
+        }
+        let len = if part == self::part::CHANGED { 1 } else { self.size as usize };
+        if len == 0 {
+            return Some(&[]);
+        }
+        // SAFETY: abi.md §3.1: `read` is the host's reader for `data` and returns `len` bytes that stay valid and
+        // unchanged until the call returns, which outlives this borrow of the view.
+        Some(unsafe { core::slice::from_raw_parts((self.read)(self.context, element, part), len) })
+    }
 }
 
 /// `Pin.kind`.
@@ -715,11 +803,6 @@ pub mod leaf {
     pub const I64: u32 = 9;
     pub const F32: u32 = 10;
     pub const F64: u32 = 11;
-}
-
-/// `Field.flags` bits.
-pub mod field_flag {
-    pub const HAS_KNOWN: u32 = 1 << 0;
 }
 
 /// `Term.op`.
@@ -938,7 +1021,7 @@ mod tests {
             ("functions", offset_of!(Shape, functions), 104),
             ("reactions", offset_of!(Shape, reactions), 128),
         ]);
-        check("Pin", (size_of::<Pin>(), 136), (align_of::<Pin>(), 8), &[
+        check("Pin", (size_of::<Pin>(), 144), (align_of::<Pin>(), 8), &[
             ("name", offset_of!(Pin, name), 0),
             ("origin", offset_of!(Pin, origin), 16),
             ("kind", offset_of!(Pin, kind), 32),
@@ -950,19 +1033,18 @@ mod tests {
             ("init", offset_of!(Pin, init), 96),
             ("check", offset_of!(Pin, check), 112),
             ("abstol", offset_of!(Pin, abstol), 120),
+            ("count", offset_of!(Pin, count), 136),
         ]);
         check("Layout", (size_of::<Layout>(), 32), (align_of::<Layout>(), 8), &[
             ("size", offset_of!(Layout, size), 0),
             ("align", offset_of!(Layout, align), 4),
             ("fields", offset_of!(Layout, fields), 8),
         ]);
-        check("Field", (size_of::<Field>(), 40), (align_of::<Field>(), 8), &[
+        check("Field", (size_of::<Field>(), 32), (align_of::<Field>(), 8), &[
             ("name", offset_of!(Field, name), 0),
             ("leaf", offset_of!(Field, leaf), 16),
             ("offset", offset_of!(Field, offset), 20),
             ("count", offset_of!(Field, count), 24),
-            ("flags", offset_of!(Field, flags), 28),
-            ("known", offset_of!(Field, known), 32),
         ]);
         check("Term", (size_of::<Term>(), 56), (align_of::<Term>(), 8), &[
             ("name", offset_of!(Term, name), 0),
@@ -998,21 +1080,23 @@ mod tests {
             ("read", offset_of!(Partial, read), 8),
             ("at", offset_of!(Partial, at), 12),
         ]);
-        check("Function", (size_of::<Function>(), 112), (align_of::<Function>(), 8), &[
+        check("Function", (size_of::<Function>(), 136), (align_of::<Function>(), 8), &[
             ("name", offset_of!(Function, name), 0),
             ("origin", offset_of!(Function, origin), 16),
             ("flags", offset_of!(Function, flags), 32),
             ("reads", offset_of!(Function, reads), 40),
             ("writes", offset_of!(Function, writes), 64),
             ("partials", offset_of!(Function, partials), 88),
+            ("elements", offset_of!(Function, elements), 112),
         ]);
-        check("Reaction", (size_of::<Reaction>(), 112), (align_of::<Reaction>(), 8), &[
+        check("Reaction", (size_of::<Reaction>(), 136), (align_of::<Reaction>(), 8), &[
             ("name", offset_of!(Reaction, name), 0),
             ("origin", offset_of!(Reaction, origin), 16),
             ("flags", offset_of!(Reaction, flags), 32),
             ("on", offset_of!(Reaction, on), 40),
             ("reads", offset_of!(Reaction, reads), 64),
             ("writes", offset_of!(Reaction, writes), 88),
+            ("elements", offset_of!(Reaction, elements), 112),
         ]);
         check("Statement", (size_of::<Statement>(), 24), (align_of::<Statement>(), 8), &[
             ("pin", offset_of!(Statement, pin), 0),
@@ -1039,7 +1123,13 @@ mod tests {
         check("Host", (size_of::<Host>(), 24), (align_of::<Host>(), 8), &[
             ("size", offset_of!(Host, size), 0),
             ("commit", offset_of!(Host, commit), 8),
-            ("commit_with", offset_of!(Host, commit_with), 16),
+            ("commit_element", offset_of!(Host, commit_element), 16),
+        ]);
+        check("ArrayView", (size_of::<ArrayView>(), 32), (align_of::<ArrayView>(), 8), &[
+            ("context", offset_of!(ArrayView, context), 0),
+            ("count", offset_of!(ArrayView, count), 8),
+            ("size", offset_of!(ArrayView, size), 16),
+            ("read", offset_of!(ArrayView, read), 24),
         ]);
     }
 }

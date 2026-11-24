@@ -133,7 +133,7 @@ fn freq_in_a_reaction_is_zero() {
         let seen = build(&project(), top).run(3e-9, 0.5e-9);
         let last = series(&seen, &format!("{top}.r")).pop().expect("a value").1;
         assert_eq!(&last[..8], &7.0f64.to_le_bytes(), "{top}: {last:?}");
-        assert_eq!(last[8], 1, "known");
+        assert_eq!(last.len(), 8, "the whole value");
     }
 }
 

@@ -17,7 +17,7 @@ mod support {
     pub mod refusal;
 }
 
-use piperine::{Field, Overrides, Record};
+use piperine::{Cell, Field, Overrides, Record};
 use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
@@ -221,26 +221,31 @@ fn e0601_an_emit_in_a_module_body_is_misplaced_output() {
 
 #[test]
 fn a_function_has_the_class_its_body_gives() {
-    // values#8 (refused): `diode_current` is pure and `handshake` returns an `Event`; values~c389077a
-    // (refused): "The compiler infers a class from the body: a pure function, like diode_current, works
-    // anywhere; one that probes a voltage or reads now() works where the solver is running; one that
-    // returns Event, like handshake, works where events go; and one that calls emit! works where emit!
-    // does." The pure, `now()` and `emit!` classes run; an `Event` function is `P0001` (GAPS.md L53)
+    // values#8 (run, L53 closed by unknown-semantics-events): `diode_current` is pure and `handshake` returns an
+    // `Event`; values~c389077a "The compiler infers a class from the body: a pure function, like diode_current,
+    // works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns
+    // Event, like handshake, works where events go; and one that calls emit! works where emit! does." All four
+    // classes run in one model: the block as the Book prints it, the pure function in a body, `now()` in a function,
+    // `emit!` in a function, and `handshake` heading a reaction, which runs only where `req` rises with `ack` high
     let chapter = Chapter::read();
-    let top = Reaction::source("emit!(\"d\", i = diode_current(0.6, 1e-14, 0.026), t = clock(), x = 1);").replace("module Top() { }", "fn clock() -> f64 { now() }\nfn say() { emit!(\"say\", x = 1.0); }\nmodule Top() { }").replace("emit!(\"d\"", "say(); emit!(\"d\"");
-    let ran = Transient::ran(&chapter.wrapped("functions.msl", "", "values#8", &top), "Top", 2e-6);
+    let top = Reaction::source("emit!(\"d\", i = diode_current(0.6, 1e-14, 0.026), t = clock(), x = 1);")
+        .replace("module Top() { }", "fn clock() -> f64 { now() }\nfn say() { emit!(\"say\", x = 1.0); }\nmodule Top() { signal req: Bit = false; signal ack: Bit = false; }")
+        .replace("emit!(\"d\"", "say(); emit!(\"d\"")
+        .replace("digital for Top {", "digital for Top { on at(0.2u) { req <- true; } on at(0.4u) { req <- false; } on at(0.5u) { ack <- true; } on at(1u) { req <- true; } on handshake(req, ack) { emit!(\"h\", t = now()); }");
+    let model = Model::written("functions.msl", &format!("{}\n{top}", chapter.text("values#8")));
+    let ran = model.run(Transient::of("Top", 2e-6)).unwrap_or_else(|failure| panic!("the Book's functions run: {failure}"));
     let d = &ran.stream("d")[0];
     let formula = 1e-14 * ((0.6f64 / 0.026).exp() - 1.0);
     assert!(matches!(Fields::of(d, "i"), Field::Real(i) if (i - formula).abs() < 1e-9 * formula), "diode_current: {:?}", Fields::of(d, "i"));
     assert!(matches!(Fields::of(d, "t"), Field::Real(t) if (t - 1e-6).abs() < 1e-12), "a function that reads now() runs where the solver does: {:?}", Fields::of(d, "t"));
     assert_eq!(ran.stream("say").len(), 1, "a function that calls emit! writes where emit! does");
-    let reaching = "module Top(in req: Bit, in ack: Bit) { }\ndigital for Top { on handshake(req, ack) { emit!(\"h\", t = now()); } }\n";
-    let refused = chapter.wrapped("handshake.msl", "", "values#8", reaching).run(Transient::of("Top", 2e-6));
-    Refusal::expect(refused, "values#8", "P0001", "method `rise` on this receiver is not supported yet");
+    let handshakes = ran.stream("h");
+    assert_eq!(handshakes.len(), 1, "a function that returns an Event works where events go: `req` rose with `ack` low at 0.2 us and with `ack` high at 1 us only: {:?}", ran.records);
+    Printed::holds("1.000000e-6", handshakes[0].time, "the handshake");
 }
 
 #[test]
-fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
+fn the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek() {
     // values#10 (run: the window monitor of monitor.msl), values#9 is the enum of values#10; values~d0e86096
     // "This file watches a node and reports, on every clock edge, whether its voltage is under, inside or
     // over a window"; values~8ad56d03 "The source is a ramp of 1 V/µs, so the node walks through all three
@@ -248,7 +253,7 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     // 2.5 V"; values~3c87d509 "if z != zone { emit!(…) } prints only when the zone changes. zone on the
     // right still reads the old value"; values~4f830aa0 "The command prints an enum field as the name of
     // its variant, so from=Ok to=Under is a move from Ok to Under" (the command's line is held with the
-    // listing). The adder and the peek that followed it (values#14 and values#18) are refused, below.
+    // listing). The adder (values#14) runs and the peek that followed it (values#18) is refused, below.
     let chapter = Chapter::read();
     let monitor = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let zones = monitor.stream("zone");
@@ -261,17 +266,30 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     }
     let longer = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 5e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(longer.stream("zone").len(), 3, "the edges at 3.5 and 4.5 us find the zone unchanged and print nothing");
-    // values#14 and values#18 (refused, GAPS.md S8): the adder whose `b` is a `Bit<Option<u8>>` and the peek
-    // over `Bit<Logic<4>>`. The `Option` carrier has a `Repr` since composite-values, and `b` is never driven, so
-    // reading it is the run fault that names it (E0105; `explicit-unknowns` phase A starts every carrier at a
-    // value); `Logic<4>` is the library struct `Logic`, which has no generic parameter until phase B (P0001). The
-    // test fails when either starts to run, and the row then becomes `run`. values~2bbc575e "It is placed in a top that gives a the constant 3 and takes b
-    // from an in port of its own, which nothing drives, so b starts at None" and values~c30bad4d "The
-    // undriven b starts at xxxx ..." are held by the listings' refusal (S8)
-    let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6));
-    Refusal::expect(adder, "values#14", "E0105", "a model panicked under known control in `AdderTop.add` at tick 500000000: `b` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first");
-    let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6));
-    Refusal::expect(peek, "values#18", "P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet");
+    // values#14 (run since `explicit-unknowns` T22): the adder whose `b` is a `Bit<Option<u8>>` that nothing drives,
+    // so it starts at `None` and the `match` takes the `None` arm at each of the three rising edges (values~2bbc575e
+    // "b starts at None"; the sum stays at 0 because no commit is made). values#18, the peek over `Bit<Logic<4>>`
+    // (run since `explicit-unknowns` phase B): `Logic<4>` is the library's four-state value and the host prints its cell as
+    // its pattern; values~c30bad4d "The undriven b starts at xxxx ..." is held by that listing
+    let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let absent = adder.stream("absent");
+    assert_eq!(absent.len(), 3, "one record at each rising edge: {:?}", adder.records);
+    for (record, instant) in absent.iter().zip(["5.000000e-7", "1.500000e-6", "2.500000e-6"]) {
+        assert_eq!(record.instance, "AdderTop.add");
+        Printed::holds(instant, record.time, "the clock edge");
+        assert_eq!((Fields::of(record, "t"), Fields::of(record, "a")), (&Field::Real(record.time), &Field::Int(3)), "t and a");
+    }
+    assert!((0..adder.table.rows.len()).all(|row| adder.cell(row, "AdderTop.sum") == &Cell::Int(0)), "the sum stays at 0: no commit is made");
+    let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let compare = peek.stream("compare");
+    assert_eq!(compare.len(), 3, "one record at each rising edge: {:?}", peek.records);
+    for (record, instant) in compare.iter().zip(["5.000000e-7", "1.500000e-6", "2.500000e-6"]) {
+        assert_eq!(record.instance, "PeekTop.peek");
+        Printed::holds(instant, record.time, "the clock edge");
+        // values~c30bad4d: `a == b` of `1010` and the undriven `xxxx` is `x`, `same(a, b)` is false, and `sure` is false
+        assert_eq!((Fields::of(record, "eq"), Fields::of(record, "same"), Fields::of(record, "sure")), (&Field::Variant("x".to_string()), &Field::Bool(false), &Field::Bool(false)), "eq, same, sure");
+    }
+    assert!((0..peek.table.rows.len()).all(|row| peek.cell(row, "PeekTop.b") == &Cell::Text("xxxx".to_string())), "the undriven `b` stays at xxxx");
 }
 
 #[test]
@@ -296,28 +314,36 @@ fn the_values_chapter_teaches_the_explicit_model() {
 
 #[test]
 fn analog_reads_a_digital_carrier_directly() {
-    // values#21 (refused, GAPS.md S8): the sample-and-hold of the Book reads `held` with no gate. The
-    // earlier front end still reports E0150 for the read (replaces
-    // `analog_reads_a_digital_carrier_through_known_or`, which ran the listing with `held.known_or(0.0)`);
-    // the test fails when the read is accepted. values~267f8cfe is now the sentence "held is a real number
-    // from the first instant, so the contribution needs no gate"
+    // values#21 (run since `explicit-unknowns` T20): the sample-and-hold of the Book reads `held` with no gate
+    // (replaces `analog_reads_a_digital_carrier_through_known_or` and the refusal of the read).
+    // values~267f8cfe is the sentence "held is a real number from the first instant, so the contribution needs no gate"
     let chapter = Chapter::read();
     let after = "module Source(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; signal c: Bit = false; let s = Source(a, gnd); let h = SampleHold(a, b, c); }\ndigital for Top { on at(1u) { c <- true; } }\n";
     let model = chapter.wrapped("sample_hold.msl", "", "values#21", after);
-    Refusal::expect(model.run(Transient::of("Top", 3e-6)), "values#21", "E0150", "an `analog` block reads the discrete carrier `held` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let ran = model.run(Transient::of("Top", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let last = ran.table.rows.len() - 1;
+    assert!((ran.real(0, "Top.b") - 0.0).abs() < 1e-9, "`held` starts at 0.0 and the output with it: {:e}", ran.real(0, "Top.b"));
+    assert!((ran.real(last, "Top.b") - 1.0).abs() < 1e-9, "the output follows `held` after the sample at 1 us: {:e}", ran.real(last, "Top.b"));
 }
 
 #[test]
-fn e0187_is_not_raised_yet() {
-    // values~23c03fc8 "So signal en: Bit; is error E0187", the E0187 cell of the table (values~39ba3a1d) and values~37a548f2 (an
-    // undriven top-level in port of a type with no default) (all `unraised`, GAPS.md S8): the earlier front end
-    // starts a carrier with no value unknown, so `signal en: Bit;` elaborates and runs. The test fails when E0187
-    // is raised. (values~13ffaea6, E0180 for a `Logic`, is raised: `e0180_a_logic_is_no_f64_and_no_bool`.)
-    let source = "module Top() { signal en: Bit; }\ndigital for Top { on at(1u) { emit!(\"e\", t = now()); } }\n";
-    let ran = Transient::ran(&Model::written("no_default.msl", source), "Top", 2e-6);
-    assert_eq!(ran.stream("e").len(), 1, "a signal with no value and no default still runs: E0187 is not raised");
-    let port = Transient::ran(&Model::written("undriven.msl", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
-    assert_eq!(port.stream("p").len(), 1, "an undriven in port of a type with no default still runs");
+fn e0187_a_signal_with_no_first_value_and_no_default_is_refused() {
+    // values~23c03fc8 "So signal en: Bit; is error E0187, naming the signal and the trait Default" and the E0187
+    // cell of the table (values~39ba3a1d): a `bool` has no default, so the first value must be written
+    let faulty = Faulty::elaborating("values~23c03fc8", "module Top() { signal en: Bit; }\n", "Top");
+    assert!(faulty.first("E0187").message.starts_with("`en` has no initial value and its type `bool` does not implement `Default`"), "{}", faulty.first("E0187").message);
+    let written = Transient::ran(&Model::written("first_value.msl", "module Top() { signal en: Bit = false; }\ndigital for Top { on at(1u) { emit!(\"e\", t = now()); } }\n"), "Top", 2e-6);
+    assert_eq!(written.stream("e").len(), 1, "with its first value written the signal runs");
+}
+
+#[test]
+fn an_undriven_top_level_in_port_with_no_default_is_refused() {
+    // values~37a548f2: a top-level `in` port that nothing drives starts at its type's default (here `None`); for a type
+    // with no default, such as `Bit<u8>`, the run refuses to start (E0187) and names the port
+    let none = Transient::ran(&Model::written("undriven_none.msl", "module Top(in b: Bit<Option<u8>>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
+    assert_eq!(none.stream("p").len(), 1, "an undriven in port of type Option starts at None and runs");
+    let refused = Faulty::running("values~37a548f2", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n", Faulty::operating_point_of("Top"));
+    assert!(refused.first("E0187").message.contains("the `in` port `b` of the top `Top` has no initial value, no `Default`"), "{}", refused.first("E0187").message);
 }
 
 #[test]
@@ -325,9 +351,9 @@ fn e0180_a_logic_is_no_f64_and_no_bool() {
     // values~13ffaea6 "Using a Logic where an f64 or a bool is required is error E0180": the library struct `Logic` is
     // a type since composite-values CV-09, so a read of one where a real or a `bool` is wanted is a mismatch
     let real = Faulty::running("values~13ffaea6", "module Top(in l: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { let y: f64 = l; v(a) +> y; }\n", Faulty::operating_point_of("Top"));
-    assert_eq!(real.first("E0180").message, "mismatched types: expected `f64`, found `struct `Logic``");
+    assert_eq!(real.first("E0180").message, "mismatched types: expected `f64`, found `struct `Logic<1>``");
     let flag = Faulty::running("values~13ffaea6", "module Top(in l: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if l { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
-    assert_eq!(flag.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic``");
+    assert_eq!(flag.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic<1>``");
 }
 
 #[test]

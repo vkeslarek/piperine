@@ -1,0 +1,26 @@
+//! Twin of `tests/e2e/twins/delay_tline.cir`: a lossless line matched at both ends is a gain of
+//! one half and a delay, `v(out) = 0.5 * delay(v(src), 1.05 us)`. The source is a 100 kHz sine, which
+//! reads the time, so the twin runs on the compiled backend only.
+mod devices;
+use devices::*;
+
+/// A sine voltage source of amplitude `amplitude` and frequency `frequency`, with a small-signal
+/// stimulus `ac`.
+pub module SineSource(p: Electrical, n: Electrical) {
+    amplitude: f64 = 1.0;
+    frequency: f64 = 100k;
+    ac: f64 = 0.0;
+}
+analog for SineSource {
+    v(p, n) +> amplitude * (2.0 * PI * frequency * now()).sin() + ac_stim(ac);
+}
+
+module DelayTline() {
+    signal src: Electrical;
+    signal r#out: Electrical;
+    let v1 = SineSource { amplitude: 1.0, frequency: 100k, ac: 1.0 }(src, gnd);
+}
+/// The matched line as the source sees it through its 50 ohm: half of the source, 1.05 microseconds late.
+analog for DelayTline {
+    v(r#out, gnd) +> 0.5 * delay(v(src, gnd), 1.05u);
+}

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use piperine_ir::{Body, BodyId, Expr, Ir};
+use piperine_ir::{Body, BodyId, Expr, Ir, ValueType};
 use piperine_plan::BodyPlan;
 
 use crate::print::LibraryPrinter;
@@ -104,6 +104,37 @@ impl Transpiler {
     pub fn loops(&self) -> bool {
         self.ir.expressions().any(|e| matches!(e, Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. }))
             || self.ir.functions().any(|f| print::ValuePrinter::is_recursive(&self.ir, f.id()))
+    }
+
+    /// Whether a param of the design holds a type the pin carries beyond `f64` and `bool`: an
+    /// integer, an enum or an `Option` (PI-01 to PI-03). Its generated reads spell `rt::UInt` and
+    /// `rt::Carried`, so its runtime is the files of `rt` and not `real.rs` alone.
+    pub fn carried_params(&self) -> bool {
+        self.ir.bodies().any(|body| body.params().iter().any(|param| !matches!(param.ty, ValueType::F64 | ValueType::Bool)))
+    }
+
+    /// Whether the design holds an integer value: a constant, a cast or an operation of `rt::UInt` or `rt::Int`, which
+    /// an analog term spells too (`k as f64` of a loop variable), so its runtime is the files of `rt` and not
+    /// `real.rs` alone.
+    pub fn integers(&self) -> bool {
+        self.ir.expression_types().any(|ty| matches!(ty, ValueType::Int(_) | ValueType::UInt(_)))
+    }
+
+    /// Whether the design reads a session parameter or writes a trace: a trace's record is written by
+    /// `rt::Carried`, and a session parameter's pin holds an `Option<f64>` the design reads as one, so
+    /// its runtime is the files of `rt` and not `real.rs` alone.
+    pub fn carried_sites(&self) -> bool {
+        self.ir.bodies().any(|body| !body.session_parameters().is_empty() || !body.traces().is_empty())
+    }
+
+    /// Whether the design derives a param from another: its derive functions read pins through `rt::Carried`.
+    pub fn derives(&self) -> bool {
+        !piperine_plan::DerivePlan::of(&self.ir).bindings().is_empty()
+    }
+
+    /// Whether the design holds a `table_model`, whose generated code builds an `rt::TableModel`.
+    pub fn tables(&self) -> bool {
+        self.ir.expressions().any(|e| matches!(e, Expr::Table { .. } | Expr::TableSlope { .. }))
     }
 
     /// The design as one Rust source text (`design.rs`); a form with no lowering is

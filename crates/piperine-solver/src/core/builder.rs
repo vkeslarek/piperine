@@ -4,9 +4,10 @@
 use std::collections::HashMap;
 
 use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
-use crate::core::bind::{bind, BindInput, DeviceSpec, ParamValue, Port};
+use crate::core::bind::{bind, ArrayDecl, BindInput, DeviceSpec, ParamValue, Port};
 use crate::core::circuit::CircuitInstance;
 use crate::core::result::Result;
+use piperine_digital_solver::landing::TimePointRule;
 
 // ── CircuitBuilder ────────────────────────────────────────────────────────────
 
@@ -36,11 +37,14 @@ pub struct CircuitBuilder {
     nodes: HashMap<String, AnalogReference>,
     /// The device instances, bound in [`build`](Self::build).
     devices: Vec<DeviceSpec>,
+    arrays: Vec<ArrayDecl>,
     shared_params: Vec<(String, ParamValue)>,
     session_params: Vec<(String, ParamValue)>,
     resolution: f64,
     /// The bound on the microsteps of one instant of the digital engine.
     microsteps: usize,
+    /// Which scheduled instants the digital engine's look-ahead lands on.
+    time_point_rule: TimePointRule,
     /// monotonically increasing counter for fresh Anonymous node IDs
     next_anon: usize,
 }
@@ -58,10 +62,12 @@ impl CircuitBuilder {
             netlist: Netlist::new(),
             nodes: HashMap::new(),
             devices: Vec::new(),
+            arrays: Vec::new(),
             shared_params: Vec::new(),
             session_params: Vec::new(),
             resolution: piperine_digital_solver::tick::Resolution::default().seconds_per_tick,
             microsteps: piperine_digital_solver::limits::DigitalLimits::default().max_delta_cycles,
+            time_point_rule: TimePointRule::default(),
             next_anon: 0,
         }
     }
@@ -113,6 +119,14 @@ impl CircuitBuilder {
         self
     }
 
+    /// An array net `name` of `count` elements (composite-values CV-23): a pin binds to one element or a run of its
+    /// elements with [`Port::Window`], an array pin of `count` elements to the whole net with [`Port::Net`]. `init` is
+    /// one element's bytes (every element starts there), every element's bytes, or empty for all zero.
+    pub fn array_net(&mut self, name: &str, count: u64, init: &[u8]) -> &mut Self {
+        self.arrays.push(ArrayDecl { name: name.to_string(), count, init: init.to_vec() });
+        self
+    }
+
     /// A shared param net (a model card, abi.md P5): every instance whose
     /// `PARAM` is given `ParamValue::Shared(name)` is bound to it.
     pub fn param_net(&mut self, name: &str, seed: ParamValue) -> &mut Self {
@@ -139,24 +153,35 @@ impl CircuitBuilder {
         self
     }
 
+    /// Which scheduled instants the digital engine lands the analog step on (Part V §17.2 rule 2):
+    /// only those something observes (the default) or every one the static reach analysis marks.
+    pub fn time_point_rule(&mut self, rule: TimePointRule) -> &mut Self {
+        self.time_point_rule = rule;
+        self
+    }
+
     /// Freeze: bind the device instances (abi.md §9) into a circuit.
     pub fn build(mut self) -> Result<CircuitInstance> {
         let temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
         let recipe = crate::core::bind::Recipe {
             specs: std::mem::take(&mut self.devices),
+            arrays: std::mem::take(&mut self.arrays),
             shared: std::mem::take(&mut self.shared_params),
             session: std::mem::take(&mut self.session_params),
             resolution: self.resolution,
             microsteps: self.microsteps,
+            time_point_rule: self.time_point_rule,
             temperature,
         };
         let bound = bind(BindInput {
             specs: recipe.specs.clone(),
+            arrays: recipe.arrays.clone(),
             shared: recipe.shared.clone(),
             session: recipe.session.clone(),
             netlist: &mut self.netlist,
             resolution: recipe.resolution,
             microsteps: recipe.microsteps,
+            time_point_rule: recipe.time_point_rule,
             temperature: recipe.temperature,
         })?;
         let ground = self.nodes.get("gnd").cloned();

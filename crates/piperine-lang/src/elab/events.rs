@@ -1,20 +1,18 @@
 //! Events and the heads of reactions (part IV §12.1, §13; DIG-09 AC 6 to 9).
 //!
 //! A head is put in disjunctive form, `d₁ || d₂ || …`, each `dₖ` an event source and its guard.
-//! `c.changed()` is `Changed(c)`; `c.rise()` and `c.fall()` are `Changed(c)` guarded by the two
-//! conditions of the stdlib text (§22.1), every part a flag-total read, so the guard is never
-//! unknown:
+//! `c.changed()` is `Changed(c)`; `c.rise()` and `c.fall()` are `Changed(c)` guarded by the
+//! two conditions of the stdlib text (§22.1):
 //!
 //! | Edge | Guard |
 //! | --- | --- |
-//! | `rise` | `!High(Previous(c)) & (!IsKnown(c) \| KnownOr(c, false))`: the previous value is not known-true and the value is not known-false |
-//! | `fall` | `!(IsKnown(Previous(c)) & !KnownOr(Previous(c), true)) & !High(c)`: the previous value is not known-false and the value is not known-true |
+//! | `rise` | `!Previous(c) && c`: the previous value was false and the value is true |
+//! | `fall` | `Previous(c) && !c`: the previous value was true and the value is false |
 //!
 //! `cross(e)` is `Cross(e)` and `at(t)` is `At(t)`. A guard `ev && g₁ && g₂` is split at its
 //! top-level `&&` into conjuncts, each lowered on its own: one that reads a probe, `now()` or
 //! `analysis(Static)` is **continuous** and becomes an `if` around the reaction's body (abi.md
 //! F2: only the discrete part of a guard is a discrete function); the others stay on the event.
-//! A guard that may be unknown is kept as written: the generated code decides it.
 //!
 //! | Head | Reactions |
 //! | --- | --- |
@@ -32,7 +30,7 @@
 use piperine_ir::{BinaryOp, Env, Event, EventSource, Expr, ExprId as LoweredExpr, Origin, Reaction, Stmt, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
-use super::known::Flag;
+use super::elements::{ElementRef, Lookup};
 use super::lower::Scope;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtId};
 use crate::types::{Builtin, Callee};
@@ -57,13 +55,13 @@ impl Elaboration<'_, '_> {
     pub(super) fn continuous_kind(&self, kind: &Expr) -> bool {
         let any = |es: &[LoweredExpr]| es.iter().any(|e| self.continuous(*e));
         match kind {
-            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
-            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Previous(_) => false,
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => self.continuous(*expr),
+            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
+            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::SessionParameter { .. } | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => self.continuous(*expr),
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => self.continuous(*index),
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
-            Expr::KnownOr { value, default } => any(&[*value, *default]),
             Expr::Unwrap { is, value, .. } => any(&[*is, *value]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => any(&[*a, *b]),
+            Expr::Same { a, b } => any(&[*a, *b]),
             Expr::LevelCast { expr, .. } => self.continuous(*expr),
             Expr::If { cond, then, otherwise } => any(&[*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => stmts.iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false)) || value.is_some_and(|v| self.continuous(v)),
@@ -148,29 +146,23 @@ impl Elaboration<'_, '_> {
         self.structure.events.len() as u32 - 1
     }
 
-    /// `a && b && …` over lowered `bool`s, left to right: `&` when an operand may be unknown
-    /// (§3.3.12), `&&` otherwise. `None` for no operand.
+    /// `a && b && …` over lowered `bool`s, left to right. `None` for no operand.
     pub(super) fn conjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
         let mut iter = operands.iter().copied();
         let first = iter.next()?;
         Some(iter.fold(first, |acc, next| {
-            let flag = self.flags(&[acc, next]);
-            let op = if flag == Flag::Flagged { BinaryOp::BitAnd } else { BinaryOp::And };
             let origin = self.ir_origin(next);
-            self.emit(Expr::Binary { op, lhs: acc, rhs: next }, flag.wrap(ValueType::Bool), origin)
+            self.emit(Expr::Binary { op: BinaryOp::And, lhs: acc, rhs: next }, ValueType::Bool, origin)
         }))
     }
 
-    /// `a || b || …` over lowered `bool`s, left to right: `|` when an operand may be unknown
-    /// (§3.3.12), `||` otherwise. `None` for no operand.
+    /// `a || b || …` over lowered `bool`s, left to right. `None` for no operand.
     pub(super) fn disjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
         let mut iter = operands.iter().copied();
         let first = iter.next()?;
         Some(iter.fold(first, |acc, next| {
-            let flag = self.flags(&[acc, next]);
-            let op = if flag == Flag::Flagged { BinaryOp::BitOr } else { BinaryOp::Or };
             let origin = self.ir_origin(next);
-            self.emit(Expr::Binary { op, lhs: acc, rhs: next }, flag.wrap(ValueType::Bool), origin)
+            self.emit(Expr::Binary { op: BinaryOp::Or, lhs: acc, rhs: next }, ValueType::Bool, origin)
         }))
     }
 
@@ -223,6 +215,16 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::MethodCall { recv, .. } => match self.types.builtin(expr) {
                 Some(Builtin::Changed) if let Some(param) = self.param_of(scope, *recv) => Some(vec![Disjunct { source: EventSource::ParamChanged(param), discrete: Vec::new(), continuous: Vec::new(), origin }]),
+                Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) if let Lookup::Found(element) = self.element_lookup(scope, *recv) => {
+                    // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
+                    let at = self.folded_element(scope, *recv, element)?;
+                    let discrete = match edge {
+                        Builtin::Rise => vec![self.element_rise_guard(element, origin.clone())],
+                        Builtin::Fall => vec![self.element_fall_guard(element, origin.clone())],
+                        _ => Vec::new(),
+                    };
+                    Some(vec![Disjunct { source: EventSource::ElementChanged { carrier: element.carrier, element: at }, discrete, continuous: Vec::new(), origin }])
+                }
                 Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) => {
                     let carrier = self.carrier_of(scope, *recv)?;
                     let discrete = match edge {
@@ -232,12 +234,17 @@ impl Elaboration<'_, '_> {
                     };
                     Some(vec![Disjunct { source: EventSource::Changed(carrier), discrete, continuous: Vec::new(), origin }])
                 }
+                _ if self.is_event_method(expr) => self.event_method_disjuncts(scope, expr),
                 _ => {
                     self.unsupported(scope.file, node.span, "this method as an event");
                     None
                 }
             },
             ExprKind::Call { args, .. } => match self.types.callee(expr) {
+                // A function that returns `Event` (§13 rule 7): inlined, its body's event standing here (`event_functions.rs`).
+                Some(Callee::Function(function)) if self.is_event_function(function) => self.event_function_disjuncts(scope, expr, function),
+                // The same through a method: `Trait::fires(x)` and a call through a bound.
+                Some(Callee::Method(_) | Callee::Bound { .. }) if self.is_event_method(expr) => self.event_method_disjuncts(scope, expr),
                 Some(Callee::Core(id)) if id.info().name == "cross" => {
                     // `cross(e, ttol, etol)`: positionally or by name (§3.2)
                     let (mut watched, mut ttol, mut etol) = (None, None, None);
@@ -271,9 +278,9 @@ impl Elaboration<'_, '_> {
                     let module = self.frames[frame].module;
                     let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return None };
                     let result = m.result?;
-                    let outer = std::mem::replace(&mut scope.frame, frame);
+                    let entry = self.enter_frame(scope, frame);
                     let lowered = self.disjuncts(scope, result);
-                    scope.frame = outer;
+                    self.leave_frame(scope, entry);
                     lowered
                 }
                 _ => {
@@ -316,18 +323,25 @@ impl Elaboration<'_, '_> {
             _ => {
                 let before = scope.locals.len();
                 let lowered = self.lower_expr(scope, expr)?;
-                if self.continuous(lowered) || self.reads_local(lowered) {
-                    d.continuous.push(lowered);
-                } else if scope.locals.len() > before {
-                    let span = self.design.expr_node(expr).span;
-                    self.unsupported(scope.file, span, "a `let` in the discrete part of a guard");
-                    return None;
-                } else {
-                    d.discrete.push(lowered);
-                }
-                Some(())
+                let span = self.design.expr_node(expr).span;
+                self.add_conjunct(scope, lowered, before, span, d)
             }
         }
+    }
+
+    /// The lowered `bool` `conjunct` joins the guard of `d`: the continuous part when it reads a probe or a local, the
+    /// discrete part otherwise. `locals` is how many locals the scope held before `conjunct` was lowered, and a `let`
+    /// it added to the discrete part is refused. `None` after a diagnostic.
+    pub(super) fn add_conjunct(&mut self, scope: &mut Scope, conjunct: LoweredExpr, locals: usize, span: crate::msl::Span, d: &mut Disjunct) -> Option<()> {
+        if self.continuous(conjunct) || self.reads_local(conjunct) {
+            d.continuous.push(conjunct);
+        } else if scope.locals.len() > locals {
+            self.unsupported(scope.file, span, "a `let` in the discrete part of a guard");
+            return None;
+        } else {
+            d.discrete.push(conjunct);
+        }
+        Some(())
     }
 
     /// Whether the lowered expression `expr` reads a local of the body being lowered: a conjunct that
@@ -361,27 +375,34 @@ impl Elaboration<'_, '_> {
     /// a param, `None` after a diagnostic. A value reaching a hoisted module's input (`above`'s
     /// `cross(e, ttol, etol)`) is read in the caller's frame.
     fn tolerance(&mut self, scope: &mut Scope, arg: Option<ExprId>) -> Option<Option<LoweredExpr>> {
+        self.optional_constant(scope, arg, "a `cross` tolerance")
+    }
+
+    /// The optional argument `arg`, lowered as [`tolerance`](Self::tolerance) reads one: `Some(None)`
+    /// for one left out or given `None`, `Some(Some(value))` for a constant or a param, `None` after a
+    /// diagnostic naming `what` (`delay`'s `max` is read the same way, §14.6).
+    pub(super) fn optional_constant(&mut self, scope: &mut Scope, arg: Option<ExprId>, what: &str) -> Option<Option<LoweredExpr>> {
         let Some(arg) = arg else { return Some(None) };
         let node = self.design.expr_node(arg).clone();
         match &node.kind {
-            ExprKind::Paren(inner) => return self.tolerance(scope, Some(*inner)),
+            ExprKind::Paren(inner) => return self.optional_constant(scope, Some(*inner), what),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => return Some(None),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.tolerance(scope, Some(given))),
+                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.optional_constant(scope, Some(given), what)),
                     None => {}
                 },
                 _ => {}
             },
             ExprKind::Call { args, .. } if self.is_some_call(arg) => {
                 let payload = args.first().map(|a| a.value);
-                return self.tolerance(scope, payload);
+                return self.optional_constant(scope, payload, what);
             }
             _ => {}
         }
         if !self.constant_or_param(scope, arg) {
-            self.unsupported(scope.file, node.span, "a `cross` tolerance that is not a constant or a param");
+            self.unsupported(scope.file, node.span, &format!("{what} that is not a constant or a param"));
             return None;
         }
         Some(Some(self.event_argument(scope, arg)?))
@@ -428,6 +449,12 @@ impl Elaboration<'_, '_> {
         }
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(bound) = scope.handles.get(&decl).copied()
+        {
+            return self.carrier_of(scope, bound);
+        }
+        if let ExprKind::Path(path) = &node.kind
+            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
             && let Some(index) = self.frame_carrier(scope.frame, decl)
         {
             return Some(index);
@@ -436,50 +463,116 @@ impl Elaboration<'_, '_> {
         None
     }
 
-    /// `c.rise()`'s guard (§22.1): `!High(Previous(c)) & (!IsKnown(c) | KnownOr(c, false))`.
+    /// `c.rise()`'s guard (§22.1): `!Previous(c) && c` on a `Bit` of `bool`; on a `Bit<Logic>` the level `c` is high and
+    /// `Previous(c)` is not (§22.1.5), so an `X` or `Z` before the change counts as not high.
     fn rise_guard(&mut self, c: u32, origin: Origin) -> LoweredExpr {
+        if self.is_four_state(c) {
+            return self.four_state_edge(c, (1, 1), origin);
+        }
         let previous = self.previous(c, origin.clone());
-        let was_high = self.emit(Expr::High(previous), ValueType::Bool, origin.clone());
-        let not_was_high = self.not(was_high, origin.clone());
+        let was_low = self.not(previous, origin.clone());
         let read = self.carrier_read(c, origin.clone());
-        let known = self.emit(Expr::IsKnown(read), ValueType::Bool, origin.clone());
-        let unknown = self.not(known, origin.clone());
-        let read = self.carrier_read(c, origin.clone());
-        let fallback = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-        let level = self.emit(Expr::KnownOr { value: read, default: fallback }, ValueType::Bool, origin.clone());
-        let not_low = self.emit(Expr::Binary { op: BinaryOp::BitOr, lhs: unknown, rhs: level }, ValueType::Bool, origin.clone());
-        self.emit(Expr::Binary { op: BinaryOp::BitAnd, lhs: not_was_high, rhs: not_low }, ValueType::Bool, origin)
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: was_low, rhs: read }, ValueType::Bool, origin)
     }
 
-    /// `c.fall()`'s guard (§22.1): `!(IsKnown(Previous(c)) & !KnownOr(Previous(c), true)) & !High(c)`.
+    /// `c.fall()`'s guard (§22.1): `Previous(c) && !c` on a `Bit` of `bool`; on a `Bit<Logic>` the level `c` is low and
+    /// `Previous(c)` is not (§22.1.5).
     fn fall_guard(&mut self, c: u32, origin: Origin) -> LoweredExpr {
+        if self.is_four_state(c) {
+            return self.four_state_edge(c, (1, 0), origin);
+        }
         let previous = self.previous(c, origin.clone());
-        let known = self.emit(Expr::IsKnown(previous), ValueType::Bool, origin.clone());
-        let previous = self.previous(c, origin.clone());
-        let fallback = self.emit(Expr::Bool(true), ValueType::Bool, origin.clone());
-        let level = self.emit(Expr::KnownOr { value: previous, default: fallback }, ValueType::Bool, origin.clone());
-        let low = self.not(level, origin.clone());
-        let was_low = self.emit(Expr::Binary { op: BinaryOp::BitAnd, lhs: known, rhs: low }, ValueType::Bool, origin.clone());
-        let not_was_low = self.not(was_low, origin.clone());
         let read = self.carrier_read(c, origin.clone());
-        let high = self.emit(Expr::High(read), ValueType::Bool, origin.clone());
-        let not_high = self.not(high, origin.clone());
-        self.emit(Expr::Binary { op: BinaryOp::BitAnd, lhs: not_was_low, rhs: not_high }, ValueType::Bool, origin)
+        let low = self.not(read, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
+    }
+
+    /// `x[k].rise()`'s guard: `!ElementPrevious(x, k) && x[k]`.
+    fn element_rise_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(element, origin.clone());
+        let was_low = self.not(previous, origin.clone());
+        let read = self.carrier_element_read(element, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: was_low, rhs: read }, ValueType::Bool, origin)
+    }
+
+    /// `x[k].fall()`'s guard: `ElementPrevious(x, k) && !x[k]`.
+    fn element_fall_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(element, origin.clone());
+        let read = self.carrier_element_read(element, origin.clone());
+        let low = self.not(read, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
+    }
+
+    /// Whether carrier `c` holds a `Logic`: the only struct the checker lets reach an edge (`edge_read`).
+    fn is_four_state(&self, c: u32) -> bool {
+        matches!(self.structure.carriers[c as usize].ty, ValueType::Struct(_))
+    }
+
+    /// The edge of a `Logic<1>` carrier into the level whose planes are `(binary, value)`: `c` is at that level and
+    /// `Previous(c)` is not (`impl Bit<Logic>`, §22.1.5).
+    fn four_state_edge(&mut self, c: u32, planes: (i128, i128), origin: Origin) -> LoweredExpr {
+        let previous = self.previous(c, origin.clone());
+        let before = self.level_is(previous, planes, origin.clone());
+        let not_before = self.not(before, origin.clone());
+        let read = self.carrier_read(c, origin.clone());
+        let now = self.level_is(read, planes, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: not_before, rhs: now }, ValueType::Bool, origin)
+    }
+
+    /// Whether the `Logic<1>` `logic` has `binary` and `value` planes equal to `planes`.
+    fn level_is(&mut self, logic: LoweredExpr, planes: (i128, i128), origin: Origin) -> LoweredExpr {
+        let plane = ValueType::UInt(1);
+        let mut checks = Vec::new();
+        for (index, wanted) in [(0u32, planes.0), (1, planes.1)] {
+            let field = self.emit(Expr::Field { expr: logic, index }, plane.clone(), origin.clone());
+            let wanted = self.emit(Expr::Int(wanted), plane.clone(), origin.clone());
+            checks.push(self.emit(Expr::Binary { op: BinaryOp::Eq, lhs: field, rhs: wanted }, ValueType::Bool, origin.clone()));
+        }
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: checks[0], rhs: checks[1] }, ValueType::Bool, origin)
     }
 
     fn not(&mut self, operand: LoweredExpr, origin: Origin) -> LoweredExpr {
         self.emit(Expr::Unary { op: UnaryOp::Not, expr: operand }, ValueType::Bool, origin)
     }
 
-    /// A read of carrier `c`: flagged, as every carrier read (§3.3).
+    /// A read of carrier `c`: its value.
     pub(super) fn carrier_read(&mut self, c: u32, origin: Origin) -> LoweredExpr {
-        let ty = Flag::Flagged.wrap(self.structure.carriers[c as usize].ty.clone());
+        let carrier = &self.structure.carriers[c as usize];
+        // an array of carriers read whole is the array of its elements' values (CV-24 AC 1)
+        let ty = match carrier.count {
+            Some(count) => ValueType::Array(Box::new(carrier.ty.clone()), count),
+            None => carrier.ty.clone(),
+        };
         self.emit(Expr::Carrier(c), ty, origin)
     }
 
-    /// `c.prev()`: the value of carrier `c` before its most recent change, flagged like a read.
+    /// `c.prev()`: the value of carrier `c` before its most recent change.
     pub(super) fn previous(&mut self, c: u32, origin: Origin) -> LoweredExpr {
-        let ty = Flag::Flagged.wrap(self.structure.carriers[c as usize].ty.clone());
+        let ty = self.structure.carriers[c as usize].ty.clone();
         self.emit(Expr::Previous(c), ty, origin)
+    }
+
+    /// The read a built-in method is as a value: `c.prev()` is the carrier's previous value and `p.inflow()`
+    /// the flow entering at a port; an edge is an event (`events.rs`), never a value.
+    pub(super) fn lower_builtin_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        match builtin {
+            Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
+            Builtin::Prev => match self.element_lookup(scope, recv) {
+                Lookup::Found(element) => Some(self.element_previous(element, origin)),
+                Lookup::Failed => None,
+                Lookup::No => {
+                    let carrier = self.carrier_of(scope, recv)?;
+                    Some(self.previous(carrier, origin))
+                }
+            },
+            Builtin::Inflow => self.lower_inflow(scope, recv, origin),
+            // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
+            // edge that reaches this arm stands where no event read does.
+            Builtin::Changed | Builtin::Rise | Builtin::Fall => {
+                self.unsupported(scope.file, span, "an event that is not an event read");
+                None
+            }
+        }
     }
 }

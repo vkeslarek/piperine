@@ -174,30 +174,28 @@ fn the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature() {
 }
 
 #[test]
-fn the_diode_with_a_trace_is_refused() {
-    // analog#7 (refused): the Diode with `emit!("newton", ..)` in its `analog` block; analog~139c67b5 "This
-    // emit! runs when the code around it runs, and analog runs at every evaluation" and analog~b103eeb0
-    // "The piperine command prints the records of reactions; a trace from analog is not among the lines it
-    // shows" (refused with it). An `emit!` in `analog` is `P0001` (L49)
+fn the_diode_with_a_trace_runs() {
+    // analog#7 (runs since analog-operators T37): the Diode with `emit!("newton", ..)` in its `analog` block is a
+    // trace, written at every evaluation (analog~139c67b5 "This emit! runs when the code around it runs, and
+    // analog runs at every evaluation"); the operating point runs and reads the same 0.4 to 0.7 V as without it
     let chapter = Chapter::read();
     let before = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\nmodule Diode(a: Electrical, k: Electrical) { is: f64 = 1e-14 where is > 0.0; n: f64 = 1.0 where n > 0.0; }\n";
     let after = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a); let r = Resistor(a, b) {{ r: 1k }}; let d = Diode(b, gnd); }}\n", Bench::PARTS);
     let model = chapter.wrapped("traced.msl", before, "analog#7", &after);
-    let given = Refusal::of(model.run(Commands::operating_point()), "analog#7");
-    assert!(given.contains(&("P0001".to_string(), "an `emit!` in an `analog` block is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    let forward = ran.signal("Top.b");
+    assert!(forward > 0.4 && forward < 0.8, "the diode's forward voltage: {forward}");
 }
 
 #[test]
 fn the_switch_shorts_its_nodes_while_its_control_is_high() {
-    // analog#9 (run since `analog-structure`): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`,
+    // analog#9 (run since `analog-structure`, reading `ctl` directly since `explicit-unknowns` T20): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`,
     // behind 1 kOhm from 1 V: with its control high it shorts `a` to ground (v(a) = 0), with it low it is open
     // (no flow, v(a) = 1 V)
     let chapter = Chapter::read();
     let top = |ctl: &str| format!("module Top() {{ signal s: Electrical; signal a: Electrical; signal c: Bit = {ctl}; let v1 = Vdc(s) {{ dc: 1.0 }}; let r = R(s, a) {{ r: 1k }}; let sw = Switch(a, gnd, c); }}\n");
     for (ctl, volts) in [("true", 0.0), ("false", 1.0)] {
-        Refusal::expect(chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl)).run(Commands::operating_point()), "analog#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl)).earlier("switch.msl");
+        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl));
         let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
         assert!((ran.signal("Top.a") - volts).abs() < 1e-6, "control {ctl}: v(a) = {:e}, wanted {volts}", ran.signal("Top.a"));
     }
@@ -228,12 +226,22 @@ fn the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple(
 }
 
 #[test]
-fn the_noise_source_is_refused() {
-    // analog#11 (refused): `let n = noise(4.0 * K_B * temperature() / r, "thermal");` and its two uses in a
-    // behavior block: the core primitive `noise` is `P0001` (L45)
+fn the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep() {
+    // analog#11 (runs since analog-operators T34): `let n = noise(4.0 * K_B * temperature() / r, "thermal");`
+    // and its two uses in a behavior block: the source is 0 in every solve but a noise sweep, so the two
+    // contributions between `a`, `mid` and `b` carry no current at the operating point. `mid` has the one
+    // resistor to ground the wrapper gives it, so the point is solvable: every node is at 0 V.
     let chapter = Chapter::read();
-    let model = chapter.wrapped("noise.msl", "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\n", "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); }\n");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#11", "P0001", "core primitive `noise` is not supported yet");
+    let before = "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\ni(mid, gnd) +> v(mid, gnd) / r;\n";
+    let model = chapter.wrapped("noise.msl", before, "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); let la = Load(a); let lb = Load(b); }\nmodule Load(p: Electrical) {}\nanalog for Load { i(p, gnd) +> v(p, gnd) / 1k; }\n");
+    let point = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    for row in &point.table.rows {
+        for cell in row.iter().skip(1) {
+            if let Cell::Real(volts) = cell {
+                assert!(volts.abs() <= 1e-12, "a noise source carries no current at the operating point: {row:?}");
+            }
+        }
+    }
 }
 
 #[test]
@@ -262,9 +270,8 @@ fn the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond() {
     // time constant of ron . cs = 0.1 ns per switch": the integrator's switch `ron` is 100 and `cs` 1 pF
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
-    Refusal::expect(chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()), "modules#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).earlier("sc.msl").run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
     let param = |path: &str| match ran.metadata.params.iter().find(|param| param.path == path).unwrap_or_else(|| panic!("no param {path}")).value {
         Cell::Real(value) => value,
         ref other => panic!("{path}: a real number, found {other:?}"),
@@ -300,10 +307,12 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 }
 
 #[test]
-fn e0150_an_unknown_carrier_is_read_with_high() {
-    // analog~39a9371d: "E0150 if ctl { ... } in analog, ctl a Bit": say what unknown means: ctl.high()
-    let faulty = Faulty::elaborating("analog~39a9371d", "module Top(in ctl: Bit) { signal a: Electrical; }\nanalog for Top { if ctl { v(a) +> 1.0; } }\n", "Top");
-    assert_eq!(faulty.first("E0150").message, "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+fn a_bit_in_an_if_is_read_as_its_value() {
+    // analog~39a9371d (the former E0150 row, `if ctl { ... }` in `analog` with `ctl` a `Bit`): the read needs no gate
+    // (part I section 3.3.6), so the source runs and `v(a)` is the arm the `Bit` picks
+    let source = "module Sw(p: Electrical, in ctl: Bit) { }\nanalog for Sw { v(p) +> if ctl { 1.0 } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal c: Bit = true; let s = Sw(a, c); }\n";
+    let ran = Model::written("m.msl", source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!((ran.signal("Top.a") - 1.0).abs() < 1e-9, "a true `Bit` picks the first arm: {:e}", ran.signal("Top.a"));
 }
 
 #[test]
@@ -358,5 +367,5 @@ fn e0180_a_logic_read_in_analog_is_a_mismatch() {
     // `bool` is required is E0180. The library struct `Logic` is a type since composite-values CV-09 (it was `P0001`
     // before), so the code is raised and names both types.
     let faulty = Faulty::running("analog~39ba351d", "module Top(in flags: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if flags { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
-    assert_eq!(faulty.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic``");
+    assert_eq!(faulty.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic<1>``");
 }

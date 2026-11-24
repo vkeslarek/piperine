@@ -407,7 +407,7 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     let all: Vec<&Checked> = checked().iter().collect();
     let commands = hold(&all);
     // the Book shows 56 listings of the binary; the buck's moved to `book_buck` (MD-77), so exactly 55 are held here
-    assert_eq!(commands.len(), 55, "the Book shows {} listings: {commands:?}", commands.len());
+    assert_eq!(commands.len(), 56, "the Book shows {} listings: {commands:?}", commands.len());
     let html = content();
     let (from, to) = span_of(&html, "cli");
     assert!(all.iter().any(|c| c.at >= from && c.at < to) && all.iter().any(|c| c.at < from), "listings of chapter `cli` and of the other chapters are held");
@@ -574,9 +574,14 @@ fn the_chapter_shows_the_session_options() {
         ("maxmicro", "--maxmicro"),
         ("max_steps", "--max-steps"),
         ("nodeset", "--nodeset"),
+        ("simparam", "--simparam"),
     ] {
         assert!(has(key), "the chapter names the option `{key}`");
         assert!(has(flag), "the chapter names the flag `{flag}`");
+    }
+    // the key table gives the noise analysis its keys: the sweep ends, the grid, `output` and `input`
+    for read_by_noise in ["<code>dc</code>, <code>ac</code>, <code>noise</code></td><td>The ends of the sweep", "<code>--per-decade</code></td><td><code>ac</code>, <code>noise</code>", "<code>--points</code></td><td><code>ac</code>, <code>noise</code>", "<code>tf</code>, <code>pz</code>, <code>noise</code></td><td>The voltage source that excites"] {
+        assert!(html.contains(read_by_noise), "the key table says `noise` reads the key of {read_by_noise}");
     }
     let out = run_listing("piperine run lowpass.msl --analysis op --reltol");
     let row = out.lines().find(|l| l.starts_with("Lowpass.vout")).unwrap_or_else(|| panic!("the vout row in\n{out}"));
@@ -625,7 +630,7 @@ fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one(
     // legend; every digital signal is a step trace in a lane of its own below": a node that follows a bit
     // gives one curve, one lane and a legend naming both
     let dir = tempfile::tempdir().expect("tmp");
-    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
+    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
     write(dir.path(), "plot.msl", design);
     let out = Command::new(binary())
         .args(["run", "plot.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "n", "--print", "d", "--plot", "out.svg"])

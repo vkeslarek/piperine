@@ -14,26 +14,23 @@ const STATE: NetId = NetId(3);
 
 fn store() -> Store {
     Store::new(&[
-        NetSpec::discrete("bit", 2, 1),
-        NetSpec::discrete("real", 16, 8),
+        NetSpec::discrete("bit", 1, 1),
+        NetSpec::discrete("real", 8, 8),
         NetSpec::event("ev"),
         NetSpec { quiet: true, ..NetSpec::discrete("state", 4, 4) },
     ])
 }
 
-fn real(v: f64, known: u8) -> [u8; 16] {
-    let mut b = [0u8; 16];
-    b[..8].copy_from_slice(&v.to_le_bytes());
-    b[8] = known;
-    b
+fn real(v: f64) -> [u8; 8] {
+    v.to_le_bytes()
 }
 
 #[test]
 fn a_net_starts_as_zero_bytes() {
     let s = store();
-    assert_eq!(s.value(BIT), [0, 0]);
-    assert_eq!(s.value(REAL), [0u8; 16]);
-    assert_eq!(s.previous(BIT), [0, 0]);
+    assert_eq!(s.value(BIT), [0]);
+    assert_eq!(s.value(REAL), [0u8; 8]);
+    assert_eq!(s.previous(BIT), [0]);
     assert!(!s.changed(BIT) && !s.changed(REAL));
     assert!(!s.fired(EVENT));
     assert_eq!(s.value(EVENT), []);
@@ -54,11 +51,11 @@ fn a_write_of_equal_bytes_is_not_a_change() {
     assert!(!s.changed(BIT));
     assert!(s.write(BIT, 0, &HIGH));
     assert!(!s.write(BIT, 0, &HIGH), "the same bytes again");
-    // 0.0 to -0.0 is a change; the same NaN bytes are not
-    assert!(s.write(REAL, 0, &real(0.0, 1)));
-    assert!(s.write(REAL, 0, &real(-0.0, 1)), "0.0 to -0.0 differs bytewise");
-    assert!(s.write(REAL, 0, &real(f64::NAN, 1)));
-    assert!(!s.write(REAL, 0, &real(f64::NAN, 1)), "the same NaN bytes");
+    // zero bytes are `0.0`; `0.0` to `-0.0` is a change; the same NaN bytes are not
+    assert!(!s.write(REAL, 0, &real(0.0)), "0.0 over the zero bytes");
+    assert!(s.write(REAL, 0, &real(-0.0)), "0.0 to -0.0 differs bytewise");
+    assert!(s.write(REAL, 0, &real(f64::NAN)));
+    assert!(!s.write(REAL, 0, &real(f64::NAN)), "the same NaN bytes");
 }
 
 #[test]
@@ -66,7 +63,7 @@ fn a_change_keeps_the_previous_bytes() {
     let mut s = store();
     s.write(BIT, 0, &HIGH);
     assert_eq!(s.value(BIT), HIGH);
-    assert_eq!(s.previous(BIT), [0, 0], "before the first change: zero");
+    assert_eq!(s.previous(BIT), [0], "before the first change: zero");
     s.begin_microstep();
     s.write(BIT, 0, &LOW);
     assert_eq!(s.value(BIT), LOW);
@@ -76,10 +73,10 @@ fn a_change_keeps_the_previous_bytes() {
     s.write(BIT, 0, &LOW);
     assert_eq!(s.previous(BIT), HIGH);
     // a partial write at an offset changes only those bytes
-    s.write(REAL, 8, &[1]);
+    s.write(REAL, 7, &[1]);
     assert_eq!(s.value(REAL), {
-        let mut b = [0u8; 16];
-        b[8] = 1;
+        let mut b = [0u8; 8];
+        b[7] = 1;
         b
     });
 }
@@ -125,9 +122,9 @@ fn a_clone_compares_equal_byte_for_byte() {
     let c = s.clone();
     assert_eq!(c, s);
     let mut d = c.clone();
-    d.write(REAL, 0, &real(1.0, 1));
+    d.write(REAL, 0, &real(1.0));
     assert_ne!(d, s);
-    assert_eq!(c.value(REAL), [0u8; 16], "a clone is independent");
+    assert_eq!(c.value(REAL), [0u8; 8], "a clone is independent");
     assert_eq!(c.value(REAL).as_ptr() as usize % 8, 0, "a clone is aligned too");
 }
 
@@ -143,13 +140,13 @@ fn a_store_rewind_restores_every_written_net() {
     let outer = s.mark();
     s.write(BIT, 0, &LOW);
     s.write(BIT, 0, &HIGH); // the second write of a net adds no entry
-    s.write(REAL, 8, &[1]);
+    s.write(REAL, 7, &[1]);
     s.begin_microstep();
     s.fire(EVENT);
     assert_eq!(s.journal_len(), 3, "the bit, the real and the event: one entry each");
     let inner_copy = s.clone();
     let inner = s.mark();
-    s.write(REAL, 0, &real(2.5, 1)); // the real again: journaled for the inner mark
+    s.write(REAL, 0, &real(2.5)); // the real again: journaled for the inner mark
     s.write(STATE, 0, &[9, 9, 9, 9]);
     s.begin_microstep();
     assert_eq!(s.journal_len(), 5);
@@ -174,11 +171,11 @@ fn a_seed_is_a_value_that_was_never_a_change() {
     // Feature `analog-structure` AS-14 (§5.3.1): a param's start value is its value from the start:
     // `PREVIOUS` holds the same bytes, `CHANGED` is false, and a later write is a change from it.
     let mut s = store();
-    s.seed(REAL, &real(2.0, 1));
-    assert_eq!(s.value(REAL), real(2.0, 1));
-    assert_eq!(s.previous(REAL), real(2.0, 1), "PREVIOUS is the seed itself");
+    s.seed(REAL, &real(2.0));
+    assert_eq!(s.value(REAL), real(2.0));
+    assert_eq!(s.previous(REAL), real(2.0), "PREVIOUS is the seed itself");
     assert!(!s.changed(REAL), "a seed is no change");
-    assert!(s.write(REAL, 0, &real(5.0, 1)));
+    assert!(s.write(REAL, 0, &real(5.0)));
     assert!(s.changed(REAL));
-    assert_eq!(s.previous(REAL), real(2.0, 1), "the write keeps the seed as its past");
+    assert_eq!(s.previous(REAL), real(2.0), "the write keeps the seed as its past");
 }

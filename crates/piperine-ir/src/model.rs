@@ -85,6 +85,16 @@ pub struct BodyData {
     /// The discrete carriers (`in`/`out` ports of a `Bit` type, `signal`s): ports first.
     #[serde(default)]
     pub(crate) carriers: Vec<Carrier>,
+    /// The arrays of nodes: each names `count` consecutive entries of `nodes`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) node_arrays: Vec<NodeArray>,
+    /// The arrays declared with no element, each by its name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) empty_arrays: Vec<EmptyArray>,
+    /// The window of an array of carriers each child's port is given, parallel to `child_carriers`: `None` for a port
+    /// bound whole or to a scalar carrier.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) child_windows: Vec<Vec<Option<CarrierWindow>>>,
     /// The definitions `c = value;` and `c = value after d;`, in source order.
     #[serde(default)]
     pub(crate) drives: Vec<Drive>,
@@ -101,6 +111,24 @@ pub struct BodyData {
     /// contribution, by index (`Expr::Derivative`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) derivatives: Vec<Derivative>,
+    /// The delay sites: each `delay(x, td, max)` (§14.6), by index (`Expr::Delay`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) delays: Vec<DelaySite>,
+    /// The noise sources: each `noise(psd, name)` (§14.8), by index (`Expr::Noise`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) noise_sources: Vec<NoiseSource>,
+    /// The session parameters the body reads (`simparam`, §14.4), one per name, by index
+    /// (`Expr::SessionParameter`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) session_parameters: Vec<SessionParameter>,
+    /// The trace sites: each `emit!` in the `analog` block (§19 rule 4), by index
+    /// (`Stmt::Trace`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) traces: Vec<TraceSite>,
+    /// The `ddx` calls the elaborator differentiated (§14.2), by index, kept so a reader and the
+    /// interpreter see where one was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) partial_derivatives: Vec<PartialDerivative>,
     /// The modules placed in an expression whose nodes or `analog` statements joined this body.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) hoisted: Vec<Hoisted>,
@@ -190,7 +218,7 @@ pub enum BranchKind {
 
 /// A discrete carrier of a body: `in clk: Bit`, `out hs: Bit = false`, `signal count: Bit<u9> = 0`.
 /// Its index in the body's list is its identity; a read of it (`Expr::Carrier`) has the type
-/// `Flagged(ty)`, since it is unknown until first written (§3.3.1).
+/// `ty`: a carrier holds a value from `(0, 0)` on (§3.3.4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Carrier {
     pub name: String,
@@ -199,6 +227,50 @@ pub struct Carrier {
     pub role: CarrierRole,
     pub init: Option<Constant>,
     pub origin: Origin,
+    /// `Some(k)`: an array of `k` carriers of type `ty`, one array net stored sparsely (CV-23, §5.1.8); `None`: one
+    /// carrier. An element form (`Expr::CarrierElement` and the rest) names an array carrier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+}
+
+/// An array of nodes (`signal bl: [Electrical; 4]`): `count` consecutive `BodyNode`s from `first` named `bl[0]`,
+/// `bl[1]`, ..., kept as one name for the host and the printer (CV-23, CV-26).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeArray {
+    pub name: String,
+    /// The body index of element 0.
+    pub first: u32,
+    pub count: u32,
+    pub origin: Origin,
+}
+
+/// An array declared with no element (`signal none: [Bit<u8>; 0]`, §1.2.3): it holds no carrier and no node, so this
+/// record is all the body keeps of it, for a host that names it (`--print` shows `[]`, CV-28).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmptyArray {
+    /// The array's name as the host addresses it: the frame's prefix, then the declared name (`p.none` for one of a hoisted
+    /// placement `p`).
+    pub name: String,
+    /// Where the array is declared in the source.
+    pub origin: Origin,
+}
+
+/// The part of an array of carriers a child's port is given (CV-23): a run of `length` elements from `first`, or one
+/// element as a scalar when `length` is `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CarrierWindow {
+    pub first: u64,
+    pub length: Option<u64>,
+}
+
+/// What a commit or a definition names inside its carrier (CV-25): an element of an array of carriers, then
+/// projections into the element's value (a field, an element of a value array). Empty is the whole carrier.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CommitTarget {
+    /// The element of an array carrier, an integer expression.
+    pub element: Option<ExprId>,
+    /// The steps into the value, outermost first.
+    pub path: Vec<Projection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,10 +290,17 @@ pub struct Drive {
     pub value: ExprId,
     pub after: Option<ExprId>,
     pub origin: Origin,
+    /// The element of an array carrier the definition names (`bits[0] = a;`, CV-25); `None` for the whole carrier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<u64>,
+    /// The steps into the value (a field, an element of a value array) the definition names inside the carrier or
+    /// its element; empty for all of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<Projection>,
 }
 
 /// An event of a body (§13): what fires it, and a `bool` read at the microstep that must hold
-/// for it to fire. `clk.rise()` is `Changed(clk)` guarded by `clk.high()`; `above(e)` is
+/// for it to fire. `clk.rise()` is `Changed(clk)` guarded by a read of `clk`; `above(e)` is
 /// `Cross(e)`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
@@ -238,7 +317,7 @@ pub enum EventSource {
     /// within the time tolerance `ttol` and the expression tolerance `etol`, each an `f64` that
     /// reads no probe, carrier or clock, or absent.
     Cross { e: ExprId, ttol: Option<ExprId>, etol: Option<ExprId> },
-    /// `at(t)`: simulation time `t`, an `f64` that may be unknown and reads no probe. The event
+    /// `at(t)`: simulation time `t`, an `f64` that reads no probe. The event
     /// fires once, when the clock reaches `t`; a later change of what `t` reads re-arms it.
     At(ExprId),
     /// `p.changed()` of a param `p` of the body (§5.3.1): fires when the param's pin changes, a
@@ -247,6 +326,9 @@ pub enum EventSource {
     /// `settle` (§13 rule 17): fires once per time point, in the settle phase that closes the
     /// instant (§15 step 4), when its guard, if any, holds.
     Settle,
+    /// `x[k].changed()`, `.rise()`, `.fall()` of element `element` of the array carrier `carrier` (CV-24): the
+    /// element took a new value; a constant element, so the plan gives it its own private event pin.
+    ElementChanged { carrier: u32, element: u64 },
 }
 
 /// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,
@@ -261,7 +343,7 @@ pub struct Reaction {
 }
 
 /// A record stream of a body (`emit!("sim", …)`): its name and the value fields its sites write.
-/// A site may leave a field out; the record then carries the field as unknown.
+/// A site that leaves a field out carries the field's `Default` (§19 rule 11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stream {
     pub name: String,
@@ -313,6 +395,63 @@ pub struct Derivative {
     /// `ddt(x, abstol)`: the absolute tolerance of the state, an `f64` that reads no probe,
     /// carrier or clock (a constant or a param expression).
     pub abstol: Option<ExprId>,
+    pub origin: Origin,
+}
+
+/// A `delay(x, td, max)` (§14.6): its output is the private continuous pin `delay<k>.value`, an
+/// unknown that is `x` in an equilibrium solve, `x(t - td)` read from history in a transient step
+/// and `exp(-jω·td)·x` in a sweep; `Expr::Delay(k)` reads it. Its index in the body's list is its
+/// identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DelaySite {
+    pub name: String,
+    /// The delayed quantity, an `f64`, evaluated at every accepted solution (§14 rule 9).
+    pub input: ExprId,
+    /// The delay time, an `f64` in seconds.
+    pub time: ExprId,
+    /// `delay(x, td, max)`: the longest delay the history keeps, an `f64` on the parameter cone.
+    /// `None` bounds the history by `time` itself.
+    pub maximum: Option<ExprId>,
+    pub origin: Origin,
+}
+
+/// A `noise(psd, name)` (§14.8): the `NOISE` input `noise:<k>`. Its value is 0 in every solve; a
+/// noise sweep injects the partials against it with the power density `density`. Its index in
+/// the body's list is its identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoiseSource {
+    pub name: String,
+    /// The group the library reports the source's density under: the literal `name` argument
+    /// found after inlining, `None` for an unnamed source (reported by instance path).
+    pub group: Option<String>,
+    /// The power spectral density, an `f64` evaluated only by a noise sweep (at its frequency).
+    pub density: ExprId,
+    pub origin: Origin,
+}
+
+/// A session parameter a body reads (`simparam`, §14.4): the `GLOBAL NAMED` pin `name`, one per
+/// name in a body. Its index in the body's list is its identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionParameter {
+    pub name: String,
+    pub origin: Origin,
+}
+
+/// An `emit!` in the `analog` block (§19 rule 4): one `TRACE` watch, written at every Newton
+/// evaluation that executes the statement. Its index in the body's list is its identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TraceSite {
+    /// The record stream the site writes (its index in `Body::streams`).
+    pub stream: u32,
+    pub origin: Origin,
+}
+
+/// A `ddx` the elaborator differentiated (§14.2): the expression it stands for is already the
+/// derivative, built by `Differentiation`; this records where it was written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartialDerivative {
+    /// The probe or flow `ddx` differentiated against, as the source spells it.
+    pub name: String,
     pub origin: Origin,
 }
 
@@ -401,6 +540,39 @@ pub struct FunctionData {
     pub(crate) ret: ValueType,
     pub(crate) locals: Vec<Local>,
     pub(crate) body: ExprId,
+    /// The generic item this function is one instantiation of; `None` for a function as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) instance: Option<GenericInstance>,
+}
+
+/// One instantiation of a generic item: the item and the arguments, each printed as the source
+/// spells it (`swap::<f64>` is item `swap`, arguments `["f64"]`). The IR name of the instance is
+/// [`GenericInstance::name`], which `Ir::check` holds the function or type to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenericInstance {
+    /// The generic item's name as written.
+    pub item: String,
+    /// The generic arguments in order, a type, a const value or a function, each as printed.
+    pub arguments: Vec<String>,
+}
+
+impl GenericInstance {
+    /// The name of the instance, `item::<a, b>` (design D8): what its IR function carries.
+    pub fn name(&self) -> String {
+        format!("{}::<{}>", self.item, self.arguments.join(", "))
+    }
+
+    /// The name of the instance of a generic type, `item<a, b>` (design D8).
+    pub fn type_name(&self) -> String {
+        format!("{}<{}>", self.item, self.arguments.join(", "))
+    }
+
+    /// Whether `name` is this instance's name, or that name followed by the half of an `Option`
+    /// result the function computes (`.is` or `.val`, `elab/variants.rs`).
+    pub fn names(&self, name: &str) -> bool {
+        let own = self.name();
+        name.strip_prefix(&own).is_some_and(|rest| matches!(rest, "" | ".is" | ".val"))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -419,9 +591,7 @@ pub enum Expr {
     Param(u32),
     Unary { op: UnaryOp, expr: ExprId },
     Binary { op: BinaryOp, lhs: ExprId, rhs: ExprId },
-    /// `if cond { then } else { otherwise }`. When `cond` is `Flagged` this is the merge of
-    /// §3.3.3: an unknown condition takes both arms and the value (and every commit and record
-    /// of the arms) is the merge of what they give, level by level.
+    /// `if cond { then } else { otherwise }`: runs the arm `cond` selects.
     If { cond: ExprId, then: ExprId, otherwise: ExprId },
     Block { stmts: Vec<StmtId>, value: Option<ExprId> },
     Call { function: FunctionId, args: Vec<ExprId> },
@@ -437,28 +607,31 @@ pub enum Expr {
     Cast { expr: ExprId, to: ValueType },
     /// `receiver.method(args)`: one of the closed set of value methods.
     Method { method: Method, receiver: ExprId, args: Vec<ExprId> },
-    /// The literal `Unknown` (§3.3.1): every level unknown; its type is `Flagged`.
-    Unknown,
-    /// `value.known_or(default)` (§3.3.4): the value when known, `default` otherwise.
-    KnownOr { value: ExprId, default: ExprId },
-    /// `value.is_known()`: the known flag, itself always known.
-    IsKnown(ExprId),
-    /// `value.high()` of a `bool`: known and true.
-    High(ExprId),
-    /// A read of a carrier of the body, by index; its type is `Flagged`.
+    /// A read of a carrier of the body, by index; its type is the carrier's.
     Carrier(u32),
     /// `i(a, b)` of a branch the body drives with a potential contribution: the branch's flow,
     /// an `f64`, by branch index. The branch carries a potential contribution in the body.
     Flow { branch: u32 },
-    /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3). Its type is
-    /// `Flagged`, as a read of the carrier: unknown until the carrier has changed once.
+    /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3), of the carrier's type;
+    /// before the first change it is the initial value.
     Previous(u32),
     /// `p.prev()` of a param `p` of the body (§5.3.1): the value `p` held before its most recent
-    /// change, of the param's own type; a param is known, so it is never flagged.
+    /// change, of the param's own type.
     ParamPrevious(u32),
     /// The rate of the derivative site `k` of the body (`Body::derivatives`): an `f64`, read in
     /// the `analog` block, a body `let`, an event argument or a reaction.
     Derivative(u32),
+    /// The output of the delay site `k` of the body (`Body::delays`): an `f64`, read in the
+    /// `analog` block, a body `let`, an event argument or a reaction.
+    Delay(u32),
+    /// The value of the noise source `k` of the body (`Body::noise_sources`): an `f64` that is 0
+    /// in every solve and the source's unit-variance input in a noise sweep. Read in the `analog`
+    /// block, a body `let` or an event argument; a reaction reads 0.
+    Noise(u32),
+    /// `simparam(name)` (§14.4): the value of the body's session parameter `parameter`
+    /// (`Body::session_parameters`), an `Option<f64>`: `Some` of what the run gave it, else `None`.
+    /// Constant during an analysis; its parts are read through `OptionPart` like any packed option.
+    SessionParameter { parameter: u32 },
     /// `fired(e)` in a reaction: whether the body's event `e` fired in this microstep (the
     /// `CHANGED` byte of its pin), a known `bool`.
     Fired(u32),
@@ -466,21 +639,12 @@ pub enum Expr {
     /// holds, else a fault of the run naming `message` (Rust's `unwrap` text when absent). Its
     /// type is the value's.
     Unwrap { is: ExprId, value: ExprId, message: Option<String> },
-    /// One half of `value.level(index)` (§3.3.4), the `Option<bool>` carried as the pair
-    /// `(is, value)` that `Unwrap` reads: `part` says which. `value` is any `Repr` value (a
-    /// `bool`, an `f64` or an integer type, flagged or not); `index` is a `u32`. The result is
-    /// a `bool`, known when `index` is (§3.3.14) and flagged when it is not (§3.3.13).
-    Level { value: ExprId, index: ExprId, part: LevelPart },
-    /// `merge(a, b)` (§22.1.2): level by level, equal known levels kept and the rest unknown.
-    /// `a` and `b` have one base type; the result is that type, `Flagged`.
-    Merge { a: ExprId, b: ExprId },
-    /// `same(a, b)` (§22.1.4): every level has the same flag and, where known, the same value.
-    /// `a` and `b` have one base type; the result is a `bool`, always known.
+    /// `same(a, b)` (§22.1.4): every level has the same value. `a` and `b` have one type; the
+    /// result is a `bool`.
     Same { a: ExprId, b: ExprId },
     /// `cast::<A, B>(expr)` (§22.1.3): the levels of `expr` under type `to`, which has the same
-    /// number of levels. `tags` lists the tags `to` decodes when it is an enum: a pattern outside
-    /// them is `Unknown`, so the result is `Flagged`; with no `tags` it is flagged only when
-    /// `expr` is.
+    /// number of levels; the result is an `Option<to>`, `None` for a tag that names no variant.
+    /// `tags` lists the tags `to` decodes when it is an enum.
     LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
     /// `loop { body }` (§1.8): runs `body` until a `Break`. Its type is its breaks' value type,
     /// `()` for a `break` with no value.
@@ -530,6 +694,75 @@ pub enum Expr {
     OptionPart { option: ExprId, part: LevelPart },
     /// `T::default()` (H.8 rule 4): the type is the one written.
     Default(ValueType),
+    /// `table_model(x, table, control)` (§22.2.15, PI-10): the interpolant of the `table` of `(abscissa,
+    /// value)` samples, strictly increasing in the abscissa, read at `x`, an `f64`. The table and the
+    /// control are elaboration constants, so the form holds them and the run only evaluates it.
+    Table { x: ExprId, table: Vec<(Real, Real)>, control: TableControl },
+    /// The derivative of the `Table` with the same `table` and `control` with respect to `x`: the slope of
+    /// its interpolant at `x` (§22.2.15 rule 5). An `f64`.
+    TableSlope { x: ExprId, table: Vec<(Real, Real)>, control: TableControl },
+    /// `x[index]`: the value of one element of the array carrier `carrier`, `index` an integer expression (any
+    /// integer; a run-time index past the end is a fault of the run, CV-25 AC 5). Typed as the carrier's `ty`.
+    CarrierElement { carrier: u32, index: ExprId },
+    /// `x[index].prev()`: the value an element had before its last change; typed as the carrier's `ty`.
+    ElementPrevious { carrier: u32, index: ExprId },
+    /// `x[index].changed()` read as a value in a reaction (§13 rule 9): a `bool`.
+    ElementChanged { carrier: u32, index: ExprId },
+}
+
+/// The control string of a `table_model` as the elaborator parsed it (§22.2.15 rules 2 to 4): the
+/// interpolation, and the extrapolation at each end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableControl {
+    /// The interpolation character.
+    pub degree: TableDegree,
+    /// What happens below the first abscissa.
+    pub low: Extrapolation,
+    /// What happens above the last abscissa.
+    pub high: Extrapolation,
+}
+
+/// The interpolation of a `table_model`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TableDegree {
+    /// `D`: the closest sample, no interpolation.
+    Closest,
+    /// `1`: linear.
+    Linear,
+    /// `2`: a quadratic spline.
+    Quadratic,
+    /// `3`: a cubic spline.
+    Cubic,
+}
+
+/// What a `table_model` does outside its table, at one end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Extrapolation {
+    /// `C`: the end value.
+    Constant,
+    /// `L`: the line of the end slope.
+    Linear,
+    /// `E`: an error, `E0705`, when `x` is outside the table.
+    Error,
+}
+
+impl TableControl {
+    /// The control string that parses to this control: the interpolation character then the two
+    /// extrapolation characters.
+    pub fn text(&self) -> String {
+        let degree = match self.degree {
+            TableDegree::Closest => 'D',
+            TableDegree::Linear => '1',
+            TableDegree::Quadratic => '2',
+            TableDegree::Cubic => '3',
+        };
+        let end = |extrapolation: Extrapolation| match extrapolation {
+            Extrapolation::Constant => 'C',
+            Extrapolation::Linear => 'L',
+            Extrapolation::Error => 'E',
+        };
+        format!("{degree}{}{}", end(self.low), end(self.high))
+    }
 }
 
 impl Expr {
@@ -537,10 +770,10 @@ impl Expr {
     /// block or a loop body (`Expr::statements`).
     pub fn operands(&self) -> Vec<ExprId> {
         match self {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => Vec::new(),
-            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
-            Expr::Binary { lhs: a, rhs: b, .. } | Expr::KnownOr { value: a, default: b } | Expr::Unwrap { is: a, value: b, .. } | Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => Vec::new(),
+            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } => vec![*expr],
+            Expr::Binary { lhs: a, rhs: b, .. } | Expr::Unwrap { is: a, value: b, .. } | Expr::Same { a, b } => vec![*a, *b],
             Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
             Expr::Block { value, .. } => value.iter().copied().collect(),
             Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
@@ -548,6 +781,7 @@ impl Expr {
             Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
             Expr::Limit { x, f, seed, .. } => [*x, *f].into_iter().chain(*seed).collect(),
             Expr::Stim { mag, phase, .. } => [*mag].into_iter().chain(*phase).collect(),
+            Expr::SessionParameter { .. } => Vec::new(),
             Expr::Loop { .. } => Vec::new(),
             Expr::While { cond, .. } => vec![*cond],
             Expr::ForRange { low, high, .. } => vec![*low, *high],
@@ -559,7 +793,9 @@ impl Expr {
             Expr::OptionPack { is, value } => vec![*is, *value],
             Expr::OptionPart { option, .. } => vec![*option],
             Expr::Default(_) => Vec::new(),
+            Expr::Table { x, .. } | Expr::TableSlope { x, .. } => vec![*x],
             Expr::Index { expr, index } => vec![*expr, *index],
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => vec![*index],
         }
     }
 
@@ -587,10 +823,13 @@ pub enum Stmt {
     Expr(ExprId),
     Contribute { branch: u32, quantity: QuantityRole, addends: Vec<Addend> },
     /// `carrier <- value;` or `carrier <- value after delay;`, in a reaction.
-    Commit { carrier: u32, value: ExprId, after: Option<ExprId> },
+    Commit { carrier: u32, value: ExprId, after: Option<ExprId>, #[serde(default, skip_serializing_if = "Option::is_none")] target: Option<CommitTarget> },
     /// `emit!("stream", f = value, …)`, in a reaction: one record of stream `stream` (its index
     /// in the body's streams). Counted with the commits in the reaction's statement numbering.
     Emit { stream: u32, fields: Vec<EmitField> },
+    /// `emit!("stream", f = value, …)` in the `analog` block: one record of the stream of trace
+    /// site `site` (`Body::traces`), written when the statement executes.
+    Trace { site: u32, fields: Vec<EmitField> },
     /// `bound_step(value);` at the top level of the `analog` block: the solver's next step is no
     /// longer than `value`, an `f64`. `site` numbers the statements of the body. `when` is the
     /// conjunction of the conditions the source wrote it under, a `bool` lowered standalone: a
@@ -630,6 +869,16 @@ impl Place {
     }
 }
 
+impl CommitTarget {
+    /// The index expressions the target holds: the element, then the projections' indices, outermost first.
+    pub fn index_operands(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.element.into_iter().chain(self.path.iter().filter_map(|step| match step {
+            Projection::Index(index) => Some(*index),
+            Projection::Field(_) => None,
+        }))
+    }
+}
+
 impl Stmt {
     /// The expressions the statement evaluates directly, in evaluation order: a commit's value
     /// before its delay, an emit's values in field order.
@@ -639,9 +888,11 @@ impl Stmt {
             Stmt::Expr(e) => vec![*e],
             Stmt::Assign { place, value, .. } => [*value].into_iter().chain(place.index_operands()).collect(),
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
-            Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
+            Stmt::Commit { value, after, target, .. } => {
+                [*value].into_iter().chain(*after).chain(target.iter().flat_map(CommitTarget::index_operands)).collect()
+            }
             Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),
-            Stmt::Emit { fields, .. } => fields
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => fields
                 .iter()
                 .filter_map(|f| match f {
                     EmitField::Value { value, .. } => Some(*value),
@@ -835,9 +1086,6 @@ pub enum ValueType {
     UInt(u32),
     /// `Int<N>` (`iN`): `N` bits, two's complement, arithmetic modulo `2^N`.
     Int(u32),
-    /// A value that may be unknown (§3.3): the type of a carrier read and of everything computed
-    /// from one. The inner type is `bool`, `f64` or an integer type.
-    Flagged(Box<ValueType>),
     /// A tuple `(A, B, ..)`: its fields, lowest first.
     Tuple(Vec<ValueType>),
     /// An array `[T; N]`: the element type and the length.
@@ -882,11 +1130,36 @@ pub struct Derives {
 pub struct TypeData {
     /// The bare name, `Pair`.
     pub name: String,
-    /// The path of the declaration in the source, `bus::Pair`.
+    /// The path of the declaration in the source, `bus::Pair`; `std::logic::Logic` for one the standard library declares.
     pub path: String,
     pub origin: Origin,
     pub kind: TypeKind,
     pub derives: Derives,
+    /// The generic item this type is one instantiation of (`Pair<f64>`); `None` for a type as
+    /// written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<GenericInstance>,
+    /// How the type crosses the device ABI: derived from its fields (§2) or written by the author.
+    #[serde(default, skip_serializing_if = "ReprForm::is_derived")]
+    pub repr: ReprForm,
+}
+
+/// Where the layout of a type that implements `Repr` comes from (§2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ReprForm {
+    /// `#[derive(Repr)]`: the layout follows the fields.
+    #[default]
+    Derived,
+    /// `impl Repr for T`: `width` levels, written to levels by the function `encode` (the type to
+    /// `[bool; width]`) and read back by `decode` (`[bool; width]` to `Option` of the type).
+    HandWritten { width: u32, encode: FunctionId, decode: FunctionId },
+}
+
+impl ReprForm {
+    /// Whether the layout is derived, which serde leaves unwritten.
+    pub fn is_derived(&self) -> bool {
+        matches!(self, ReprForm::Derived)
+    }
 }
 
 /// The shape of a source type.
@@ -935,7 +1208,8 @@ impl ValueType {
 pub enum Constant {
     Real(Real),
     Bool(bool),
-    /// An integer; its width and sign are the type of the param or carrier it initializes.
+    /// An integer; its width and sign are the type of the param or carrier it initializes. For a type with a
+    /// hand-written `Repr` it is the levels word: level `k` is bit `k`.
     Int(i128),
     /// A composite value (a tuple, an array, a struct, an enum variant, an `Option`): an entry of
     /// the arena of composite constants. The handle keeps `Constant` `Copy`.

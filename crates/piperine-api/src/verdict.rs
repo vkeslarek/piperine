@@ -1,9 +1,8 @@
 //! `Verdict`: pass or fail of one run under `piperine test` (CLI-16). The records of the
-//! reserved `checks` stream are the checks; a check whose `pass` is false, or unknown, fails
+//! reserved `checks` stream are the checks; a check whose `pass` is not true fails
 //! the run. Every check record counts, a passing one too: what a terminal hides never reaches
 //! this type's input as a filter. A `sim` record with `failed = true` (what `fatal` writes) fails
-//! the run with its `msg` (HII-15), unless that record is a `maybe` one (§19 Resolution). A
-//! `maybe` check record is an unknown check (§23.2: it may not have run) and fails. The last
+//! the run with its `msg` (HII-15). The last
 //! margin of each `target` is kept and never fails it (HII-16, the user's decision X3: a target
 //! informs, `require` is the constraint).
 
@@ -14,7 +13,7 @@ use crate::record::{Field, Record, RecordSink};
 pub struct Verdict {
     checks: usize,
     failed: Vec<Record>,
-    /// The first `sim` record whose `failed` is known true: a `fatal` the model called.
+    /// The first `sim` record whose `failed` is true: a `fatal` the model called.
     fatal: Option<Record>,
     /// The last margin of each target name, in the order of its first record.
     targets: Vec<(String, f64)>,
@@ -27,7 +26,7 @@ impl Verdict {
     }
 
     /// Judges `records`, the whole record stream of a run, through the sink: counts those of
-    /// the `checks` stream and keeps those whose `pass` is false or unknown. A `checks` record
+    /// the `checks` stream and keeps those whose `pass` is not true. A `checks` record
     /// with no `pass` field (a `target`, which reports a margin) counts and does not fail.
     pub fn judge(records: &[Record]) -> Verdict {
         let mut verdict = Verdict::new();
@@ -42,14 +41,14 @@ impl Verdict {
         self.failed.is_empty() && self.fatal.is_none()
     }
 
-    /// The first `sim` record whose `failed` is known true (a `fatal(msg)` of the model), with
+    /// The first `sim` record whose `failed` is true (a `fatal(msg)` of the model), with
     /// its `msg` among its fields.
     pub fn fatal(&self) -> Option<&Record> {
         self.fatal.as_ref()
     }
 
     /// The margin of each target, the last record of each name, in the order of the first record
-    /// of each name. A margin that is unknown is NaN, so it shows and never reads as met.
+    /// of each name. A margin that is no real is NaN, so it shows and never reads as met.
     pub fn targets(&self) -> &[(String, f64)] {
         &self.targets
     }
@@ -72,14 +71,12 @@ impl Default for Verdict {
 }
 
 impl RecordSink for Verdict {
-    /// A record of the `checks` stream is counted, and kept when its `pass` is not true, or when
-    /// it is a `maybe` record, whose check may not have run: an unknown check (a `target` keeps
-    /// its margin instead); the first `sim` record whose `failed` is known true and that is no
-    /// `maybe` record is kept as the fatal one; every other record is dropped, so a run's memory
+    /// A record of the `checks` stream is counted, and kept when its `pass` is not true (a
+    /// `target` keeps its margin instead); the first `sim` record whose `failed` is true is kept
+    /// as the fatal one; every other record is dropped, so a run's memory
     /// holds the failures only.
     fn record(&mut self, record: &Record) {
-        // a `fatal` on a path that may not have run ends nothing and fails nothing (§19 Resolution)
-        if record.stream == "sim" && self.fatal.is_none() && record.surely("failed") {
+        if record.stream == "sim" && self.fatal.is_none() && record.holds("failed") {
             self.fatal = Some(record.clone());
         }
         if record.stream != "checks" {
@@ -98,7 +95,7 @@ impl RecordSink for Verdict {
                 None => self.targets.push((name.clone(), margin)),
             }
         }
-        if record.maybe || field("pass").is_some_and(|pass| *pass != Field::Bool(true)) {
+        if field("pass").is_some_and(|pass| *pass != Field::Bool(true)) {
             self.failed.push(record.clone());
         }
     }
@@ -114,16 +111,17 @@ mod tests {
             instance: "Top.mon".into(),
             stream: "checks".into(),
             fields: vec![("kind".into(), Field::Text("require".into())), ("name".into(), Field::Text(name.into())), ("pass".into(), pass)],
-            maybe: false,
+            iteration: None,
+            analysis: None,
         }
     }
 
     fn other(stream: &str) -> Record {
-        Record { time: 0.0, instance: "Top.mon".into(), stream: stream.into(), fields: vec![("pass".into(), Field::Bool(false))], maybe: false }
+        Record { time: 0.0, instance: "Top.mon".into(), stream: stream.into(), fields: vec![("pass".into(), Field::Bool(false))], iteration: None, analysis: None }
     }
 
     #[test]
-    fn no_false_and_no_unknown_pass_is_a_pass() {
+    fn only_a_false_pass_fails_a_check() {
         // CLI-16 AC 1: every check record counts, the passing ones included; a record of
         // another stream is no check, even when it has a `pass` field that is false
         let records = [check("a", Field::Bool(true)), other("trip"), check("b", Field::Bool(true)), other("sim")];
@@ -135,7 +133,7 @@ mod tests {
         let none = Verdict::judge(&[other("trip")]);
         assert!(none.passed() && none.checks() == 0);
         // a `target` has no `pass`: it counts and does not fail
-        let target = Record { fields: vec![("kind".into(), Field::Text("target".into())), ("margin".into(), Field::Real(0.1))], ..check("m", Field::Unknown) };
+        let target = Record { fields: vec![("kind".into(), Field::Text("target".into())), ("margin".into(), Field::Real(0.1))], ..check("m", Field::Bool(true)) };
         let verdict = Verdict::judge(&[target]);
         assert!(verdict.passed() && verdict.checks() == 1);
         // a false `pass` fails, and the failing record is kept as written, in order
@@ -147,28 +145,17 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_pass_fails() {
-        // CLI-16 AC 3: an unknown `pass` is reported as unknown, never as a pass
-        let unknown = check("u", Field::Unknown);
-        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), unknown.clone()]);
-        assert!(!verdict.passed());
-        assert_eq!(verdict.checks(), 2);
-        assert_eq!(verdict.failed(), [unknown]);
-    }
-
-    #[test]
     fn a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive() {
-        // LR-16: the sink counts every check, keeps the failed (false or unknown) in order
+        // LR-16: the sink counts every check, keeps the failed in order
         let mut verdict = Verdict::new();
-        let (bad, unknown) = (check("b", Field::Bool(false)), check("u", Field::Unknown));
+        let bad = check("b", Field::Bool(false));
         verdict.record(&check("a", Field::Bool(true)));
         assert_eq!((verdict.checks(), verdict.failed().len()), (1, 0));
         verdict.record(&bad);
         verdict.record(&check("c", Field::Bool(true)));
-        verdict.record(&unknown);
-        assert_eq!(verdict.checks(), 4);
+        assert_eq!(verdict.checks(), 3);
         assert!(!verdict.passed());
-        assert_eq!(verdict.failed(), [bad, unknown]);
+        assert_eq!(verdict.failed(), [bad]);
     }
 
     #[test]
@@ -183,12 +170,12 @@ mod tests {
     }
 
     fn sim(fields: Vec<(String, Field)>) -> Record {
-        Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields, maybe: false }
+        Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields, iteration: None, analysis: None }
     }
 
     #[test]
     fn a_fatal_record_fails_the_verdict_with_its_message() {
-        // FIX-02 AC 2 and 3: a `sim` record whose `failed` is known true fails the run and
+        // FIX-02 AC 2 and 3: a `sim` record whose `failed` is true fails the run and
         // `fatal()` returns it with its `msg`; the first one is kept
         let boom = sim(vec![("finish".into(), Field::Bool(true)), ("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("boom".into()))]);
         let later = sim(vec![("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("second".into()))]);
@@ -197,9 +184,6 @@ mod tests {
         assert_eq!(verdict.fatal(), Some(&boom));
         assert_eq!(verdict.checks(), 1);
         assert!(verdict.failed().is_empty(), "no check failed");
-        // an unknown `failed` is not a fatal
-        let unknown = sim(vec![("failed".into(), Field::Unknown)]);
-        assert!(Verdict::judge(&[unknown]).passed());
     }
 
     #[test]
@@ -213,37 +197,14 @@ mod tests {
         assert!(Verdict::judge(&[sim(vec![("failed".into(), Field::Bool(false))])]).passed());
     }
 
-    #[test]
-    fn a_maybe_check_fails_as_unknown() {
-        // US-05 AC 4, §23.2: a `require` reached under unknown control is judged as an unknown
-        // check, even when its `pass` is known true on the path that ran
-        let reached = Record { maybe: true, ..check("held", Field::Bool(true)) };
-        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), reached.clone()]);
-        assert!(!verdict.passed());
-        assert_eq!(verdict.checks(), 2);
-        assert_eq!(verdict.failed(), [reached]);
-        // the same check on a path that surely ran passes
-        assert!(Verdict::judge(&[check("held", Field::Bool(true))]).passed());
-    }
-
-    #[test]
-    fn a_maybe_fatal_is_not_fatal() {
-        // US-05 AC 3, §19 Resolution: a `fatal` that may not have happened fails nothing; the
-        // same record on a path that surely ran is the fatal one
-        let boom = sim(vec![("finish".into(), Field::Bool(true)), ("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("boom".into()))]);
-        let verdict = Verdict::judge(&[Record { maybe: true, ..boom.clone() }]);
-        assert!(verdict.passed());
-        assert_eq!(verdict.fatal(), None);
-        assert_eq!(Verdict::judge(&[boom.clone()]).fatal(), Some(&boom));
-    }
-
     fn target(name: &str, margin: Field) -> Record {
         Record {
             time: 1e-6,
             instance: "Top.mon".into(),
             stream: "checks".into(),
             fields: vec![("kind".into(), Field::Text("target".into())), ("name".into(), Field::Text(name.into())), ("margin".into(), margin)],
-            maybe: false,
+            iteration: None,
+            analysis: None,
         }
     }
 
@@ -253,8 +214,8 @@ mod tests {
         let records = [target("gain", Field::Real(0.5)), target("power", Field::Real(2.0)), target("gain", Field::Real(0.25)), target("power", Field::Real(1.0)), target("gain", Field::Real(0.125))];
         let verdict = Verdict::judge(&records);
         assert_eq!(verdict.targets(), [("gain".to_string(), 0.125), ("power".to_string(), 1.0)]);
-        // an unknown margin shows as NaN
-        assert!(Verdict::judge(&[target("x", Field::Unknown)]).targets()[0].1.is_nan());
+        // a margin that is no real shows as NaN
+        assert!(Verdict::judge(&[target("x", Field::Bool(true))]).targets()[0].1.is_nan());
     }
 
     #[test]

@@ -86,7 +86,7 @@ fn a_flow_of_several_contributions_is_e0801() {
 }
 
 /// A design with a discrete port and a stream: a counter with a bounded param.
-const PORTS: &str = "module Counter(in clk: Bit, out q: Bit<u8> = 0) { limit: f64 = 9.0 where limit > 0.0; wide: bool = true; }\ndigital for Counter { on clk.rise() { q <- q.known_or(0) + 1; emit!(\"tick\", n = q.known_or(0)); } }\nmodule Top() {\n    signal clk: Bit = false;\n    signal q: Bit<u8>;\n    let c = Counter(clk, q) { limit: 7.0 };\n}\n";
+const PORTS: &str = "module Counter(in clk: Bit, out q: Bit<u8> = 0) { limit: f64 = 9.0 where limit > 0.0; wide: bool = true; }\ndigital for Counter { on clk.rise() { q <- q + 1; emit!(\"tick\", n = q); } }\nmodule Top() {\n    signal clk: Bit = false;\n    signal q: Bit<u8>;\n    let c = Counter(clk, q) { limit: 7.0 };\n}\n";
 
 fn opened(text: &str, overrides: Overrides) -> Session {
     let dir = tempfile::tempdir().expect("tmp");

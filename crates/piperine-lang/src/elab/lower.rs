@@ -14,9 +14,8 @@ use super::compound::EnumLayout;
 use super::control::LoopFrame;
 use super::returns::FunctionResult;
 use super::variants::Half;
-use super::consts::{Bindings, Folded};
+use super::consts::Bindings;
 use super::unroll::Expansion;
-use super::known::Flag;
 use super::elaborator::Elaboration;
 use super::selectors::{ArmCondition, ContributionRecord};
 use crate::msl::Span;
@@ -57,8 +56,31 @@ pub(super) struct Scope {
     pub(super) frame: usize,
     /// The `&str` params of the functions inlined at a call (`records.rs`), bound to their text.
     pub(super) texts: BTreeMap<DeclId, String>,
+    /// The handle parameters of the functions inlined at a call (`handles.rs`), each bound to the caller's argument: the
+    /// name of a port or a signal of the frame, or `gnd`.
+    pub(super) handles: BTreeMap<DeclId, ExprId>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
+    /// Code a core primitive evaluates at a converged solution (a `noise` density, a `delay` input): a `limit` there is
+    /// its argument, since limiting changes no iterate that has stopped moving (§14.7.4).
+    pub(super) at_solution: bool,
+    /// Code a primitive evaluates on its own, outside every statement of the `analog` block (a `noise` density, a
+    /// `delay` input, a `ddt` state): an `ac_stim` read there is also a statement of the block, which is where the
+    /// stimulus site is written (`analog.rs`).
+    pub(super) value_input: bool,
+    /// Code that is differentiated symbolically (a `ddx` value): a `fn` called there is expanded where it stands
+    /// (`expansion.rs`), not called.
+    pub(super) differentiated: bool,
+    /// The branches whose flow a differentiated value reads as a leaf though the module gives them no potential
+    /// contribution (`analog.rs`): the derivative may not read their value.
+    pub(super) flow_leaves: Vec<u32>,
+    /// The parameters and `let`s of the `fn` being expanded in a differentiated value, each the lowered expression it holds
+    /// (`expansion.rs`).
+    pub(super) values: BTreeMap<DeclId, LoweredExpr>,
+    /// The `Option` parameters and `let`s of the `fn` being expanded: the flag and the payload each holds.
+    pub(super) option_values: BTreeMap<DeclId, (LoweredExpr, LoweredExpr)>,
+    /// The forks the `fn` being expanded has made so far (`symbolic.rs`).
+    pub(super) forks: u32,
     /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
     /// and the functions it calls (a function's `freq_` is the caller's; a reaction reads 0).
     pub(super) analog: bool,
@@ -82,18 +104,11 @@ pub(super) struct Scope {
     /// The initializer of each local a plain `let` bound: a condition that reads the local reads
     /// what it holds (`selectors.rs`).
     pub(super) local_inits: BTreeMap<u32, LoweredExpr>,
-    /// Whether a value of this code may be unknown (§3.3): a reaction, or a function variant with
-    /// an argument that may be. A `let mut` there is flagged, so an assignment under an unknown
-    /// decision can merge (`control.rs`).
-    pub(super) may_be_unknown: bool,
     /// The loops the code being lowered sits in, innermost last (`control.rs`).
     pub(super) loops: Vec<LoopFrame>,
     /// What a `return` of the function being lowered gives (`returns.rs`); `None` outside a function
     /// whose body returns early.
     pub(super) result: Option<FunctionResult>,
-    /// The function each local bound to a function's name stands for: a call through the local with
-    /// an argument that may be unknown calls the flagged variant of it (`closures.rs`).
-    pub(super) fn_targets: BTreeMap<DeclId, DeclId>,
     /// The constant each loop variable of the unrolled analog loops the code sits in, and each
     /// parameter of the unrolled recursive calls it sits in, stands for (`unroll.rs`).
     pub(super) unrolled: Bindings,
@@ -111,8 +126,20 @@ pub(super) struct Scope {
 }
 
 impl Scope {
+    /// Takes over what a standalone scope made from a copy of this one's (`standalone_scope`) added: the `ac_stim` sites
+    /// and the statements that write them, the branches a flow read numbered, and the flow leaves. So a stimulus or a
+    /// flow read inside a value a primitive evaluates on its own (a `noise` density, a `delay` input, a `ddt` state, a
+    /// `ddx` value) is a site or a branch of the body. The `limit` sites it made stay its own: a `limit` there is read
+    /// at a solution (`at_solution`) or differentiated through, never evaluated.
+    pub(super) fn adopt_standalone(&mut self, standalone: &mut Scope) {
+        self.stims = standalone.stims.clone();
+        self.branches = standalone.branches.clone();
+        self.flow_leaves.append(&mut standalone.flow_leaves);
+        self.hoisted_steps.append(&mut standalone.hoisted_steps);
+    }
+
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -138,11 +165,29 @@ impl ValueTypes<'_> {
             // A struct, an enum, a tuple and an array are the arena's entries and their composition.
             Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) => self.arena.of(ty, |part| self.of(part)),
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => None,
+            // the elaborator reads types through the substitution (T32): a parameter never reaches the IR
+            Ty::Param(_) | Ty::GenericInteger { .. } => None,
         }
     }
 }
 
 impl Elaboration<'_, '_> {
+    /// The type the checker gave `expr`, with the generic parameters of the instance being lowered
+    /// replaced by their arguments: the one read of the type table of an expression (`ConstEval::typed`).
+    pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
+        self.consts.typed(expr).map(|ty| self.with_hand_written_widths(&ty))
+    }
+
+    /// The type of the binding `binding` under the substitution.
+    pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
+        self.consts.typed_local(binding).map(|ty| self.with_hand_written_widths(&ty))
+    }
+
+    /// The type the type node `ty` writes, under the substitution.
+    pub(super) fn typed_written(&self, ty: crate::pom::TypeId) -> Option<Ty> {
+        self.consts.typed_written(ty).map(|ty| self.with_hand_written_widths(&ty))
+    }
+
     /// The IR method a numeric row of Appendix H lowers to; `None` for the rows that lower
     /// elsewhere (`exp`, `ln`, `sqrt`, `abs` of `f64` are `Math`; `checked_*` and the `Option`
     /// and `bool` rows are pairs).
@@ -220,15 +265,31 @@ impl Elaboration<'_, '_> {
         self.locator.origin(self.design.decl_data(node.owner).file, node.span)
     }
 
-    /// `expr` lowered, or `None` after the diagnostics of what could not be.
+    /// `expr` lowered, or `None` after the diagnostics of what could not be. An expression that fails while nothing
+    /// has been reported is refused by name here, so no position (a statement, a definition, an event expression, a
+    /// value input) can drop it silently.
     pub(super) fn lower_expr(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
+        let lowered = self.lower_expr_unchecked(scope, expr);
+        if lowered.is_none() && self.diagnostics.is_empty() {
+            self.refuse_silent_failure(scope.file, self.design.expr_node(expr).span, "this expression");
+        }
+        lowered
+    }
+
+    /// `P0001` for something that failed to lower while no diagnostic was reported: the one place the elaborator says
+    /// "nothing vanishes silently".
+    pub(super) fn refuse_silent_failure(&mut self, file: FileId, span: Span, what: &str) {
+        self.unsupported(file, span, what);
+    }
+
+    fn lower_expr_unchecked(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
         let file = self.design.decl_data(node.owner).file;
         let origin = self.expr_origin(expr);
         // `!` is no value: a diverging expression is `()` until its position gives it a type (`exits.rs`).
-        let ty = match self.types.ty(expr) {
+        let ty = match self.typed(expr) {
             Some(Ty::Never) => Some(ValueType::Unit),
-            other => other.and_then(|t| self.value_type(t)),
+            other => other.and_then(|t| self.value_type(&t)),
         };
         let Some(ty) = ty else {
             self.unsupported(file, node.span, "an expression the type checker gave no value type");
@@ -239,9 +300,8 @@ impl Elaboration<'_, '_> {
             return self.lower_event_read(scope, expr);
         }
         if ty.is_integer() && self.constant_form(expr) {
-            return match self.consts.folded(expr, &Bindings::new()) {
-                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
-                Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
+            return match self.consts.value(expr, &Bindings::new()) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a constant expression");
                     None
@@ -249,7 +309,6 @@ impl Elaboration<'_, '_> {
             };
         }
         match &node.kind {
-            ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) => Some(self.unknown_expr(ty, origin)),
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
@@ -259,29 +318,30 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
-            ExprKind::Field { expr: recv, name, .. } if matches!(self.types.ty(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
+            ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
             ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),
             ExprKind::Array(items) => self.lower_array(scope, items, ty, origin),
             ExprKind::ArrayRepeat { elem, len } => self.lower_array_repeat(scope, *elem, *len, origin),
             ExprKind::Index { expr: base, index } => self.lower_index(scope, expr, *base, *index, origin),
+            // an operator the checker resolved to the `impl` function of an operator trait is a call of it (Appendix H.10)
+            ExprKind::Unary { expr: operand, .. } if let Some(Callee::Method(function)) = self.types.callee(expr) => self.lower_method_call(scope, expr, function, *operand, &[], origin),
+            ExprKind::Binary { lhs, rhs, .. } if let Some(Callee::Method(function)) = self.types.callee(expr) => self.lower_method_call(scope, expr, function, *lhs, &[*rhs], origin),
             ExprKind::Unary { op, expr: operand } => {
                 let op = match op {
                     UnOp::Neg => UnaryOp::Neg,
                     UnOp::Not => UnaryOp::Not,
                 };
                 let operand = self.lower_expr(scope, *operand)?;
-                let ty = self.flag(operand).wrap(ty);
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
-            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
-            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op, lhs, rhs } => {
                 // The right operand of `&&`/`||` runs only when the left does not decide: it is
                 // conditional exactly like an `if` arm.
                 let short_circuit = matches!(op, BinOp::And | BinOp::Or);
-                let right = *rhs;
                 let left = *lhs;
                 let lhs = self.lower_expr(scope, *lhs);
                 // `a && b` runs `b` when `a` holds, `a || b` when it does not.
@@ -293,21 +353,8 @@ impl Elaboration<'_, '_> {
                     scope.guards.pop();
                 }
                 let (lhs, rhs) = (lhs?, rhs?);
-                let flag = self.flags(&[lhs, rhs]);
-                let op = match (Self::binary_op(*op), flag) {
-                    // §3.3.12: over a value that may be unknown, `&&` and `||` give the table of
-                    // `&` and `|`; the IR's short-circuit forms take known operands only. A right
-                    // operand that can panic or emit must not run whatever the left gives, so it
-                    // is an `if` and the generated code merges it (§3.3.3, §1 rule 13).
-                    (op @ (BinaryOp::And | BinaryOp::Or), Flag::Flagged) => {
-                        if self.partial(right).is_some() {
-                            return Some(self.lower_short_circuit_as_if(op == BinaryOp::And, lhs, rhs, ty, origin));
-                        }
-                        if op == BinaryOp::And { BinaryOp::BitAnd } else { BinaryOp::BitOr }
-                    }
-                    (op, _) => op,
-                };
-                Some(self.emit(Expr::Binary { op, lhs, rhs }, flag.wrap(ty), origin))
+                let op = Self::binary_op(*op);
+                Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
             }
             ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, None, origin),
             // A condition that reads only key params and constants is folded: only the arm it
@@ -341,8 +388,6 @@ impl Elaboration<'_, '_> {
                 scope.decisions -= 1;
                 let (cond, then, otherwise) = (cond?, then?, otherwise?);
                 let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
-                // A condition that may be unknown is kept: the generated code decides it.
-                let ty = self.flags(&[cond, then, otherwise]).wrap(ty);
                 let whole = self.emit(Expr::If { cond, then, otherwise }, ty, origin);
                 self.note_branch(whole, cond, then, otherwise);
                 Some(whole)
@@ -355,25 +400,36 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
             ExprKind::While { cond, body } => self.lower_while(scope, *cond, body, origin),
-            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, matches!(self.types.ty(expr), Some(Ty::Never)), origin),
+            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, matches!(self.typed(expr), Some(Ty::Never)), origin),
             ExprKind::For { pat, iter, body } => self.lower_for(scope, *pat, *iter, body, origin),
             ExprKind::Break(value) => self.lower_break(scope, *value, node.span, origin),
             ExprKind::Continue => Some(self.lower_continue(origin)),
             ExprKind::Return(value) => self.lower_return(scope, *value, node.span, origin),
             ExprKind::Try(inner) => self.lower_try(scope, *inner, node.span, origin),
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
+            ExprKind::MethodCall { recv, args, .. } if let Some(Callee::Method(function)) = self.types.callee(expr) => {
+                let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_method_call(scope, expr, function, *recv, &arguments, origin)
+            }
+            ExprKind::MethodCall { recv, args, .. } if let Some(Callee::Bound { item }) = self.types.callee(expr) => {
+                let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_bound_call(scope, expr, item, *recv, &arguments, origin)
+            }
             ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some_and(Method::is_sequence_row) => {
                 let method = self.types.method(expr)?;
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_sequence_method(scope, expr, method, *recv, &args, ty, origin)
             }
-            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
+            ExprKind::MethodCall { recv, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
-                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                self.lower_flag_read(scope, expr, builtin, *recv, &args, ty, origin)
+                self.lower_builtin_read(scope, expr, builtin, *recv, ty, origin)
             }
-            ExprKind::MethodCall { recv, args, .. } => {
+            ExprKind::MethodCall { recv, args, method: method_name, .. } => {
                 let Some(method) = self.types.method(expr) else {
+                    // `x.encode()` of a `T: Repr` parameter has no method row: its levels are written out per instance
+                    if args.is_empty() && let Some(levels) = self.lower_parameter_encode(scope, expr, *recv, &method_name.text, origin.clone()) {
+                        return levels;
+                    }
                     self.unsupported(file, node.span, "a method outside the catalogue");
                     return None;
                 };
@@ -390,7 +446,6 @@ impl Elaboration<'_, '_> {
                             lowered.push(self.lower_expr(scope, arg.value));
                         }
                         let (receiver, args) = (receiver?, lowered.into_iter().collect::<Option<Vec<_>>>()?);
-                        let ty = self.flags(&args).or(self.flag(receiver)).wrap(ty);
                         return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
                     }
                     // Lowered as a flag and a payload from msl-digital T27 on.
@@ -406,14 +461,11 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
-                // §3.3.2: one unknown operand makes the result unknown.
-                let ty = self.flag(recv).wrap(ty);
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Cast { expr: operand, .. } => {
                 let operand = self.lower_expr(scope, *operand)?;
-                let flagged = self.flag(operand).wrap(ty.clone());
-                Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
+                Some(self.emit(Expr::Cast { expr: operand, to: ty.clone() }, ty, origin))
             }
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
             ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
@@ -435,6 +487,45 @@ impl Elaboration<'_, '_> {
     /// however many bodies call it), or of a core primitive or a probe (see `analog.rs`).
     fn lower_call(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], class: CallClass, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
+        // a `fn` called in a value that is differentiated is expanded where it stands (`expansion.rs`)
+        if scope.differentiated && class != CallClass::Probe && let Some(expanded) = self.expand_function_call(scope, expr) {
+            return expanded;
+        }
+        // a call of a generic function is typed (generics T20 to T23) and instantiated by T33 and T34: until
+        // then the elaborator names it and stops
+        if let Some(Callee::Function(function)) = self.types.callee(expr)
+            && self.design.decl_data(function).generics_span.is_some()
+        {
+            // a generic `extern` function types like any generic function but has no body to instantiate: its call is
+            // refused by name until the feature that runs it (`params-and-io`: `parse_table`, `parse_hex`, `table_model`)
+            if matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
+                let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                self.unsupported(scope.file, span, &format!("a call of the generic `extern` function `{name}`"));
+                return None;
+            }
+            // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
+            let instance = self.concrete_instance(expr)?;
+            // a function generic over a nature takes handles: inlined for the nature it is instantiated at
+            if self.is_inlined(instance.item) {
+                let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+                let inlined = self.inline_emitting_value(scope, instance.item, args, origin);
+                self.consts.set_substitution(outer);
+                return inlined;
+            }
+            let lowered = self.lower_arguments(scope, expr, instance.item)?;
+            let (id, ret) = self.request_instance(instance.item, instance.arguments, Half::Whole)?;
+            return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
+        }
+        // an associated function of a generic `impl` runs for the arguments the checker read from the call (`Logic::from(b)`)
+        if let Some(Callee::Function(function)) = self.types.callee(expr)
+            && self.is_generic_impl_item(function)
+            && let Some(recorded) = self.types.instantiation(expr).cloned()
+        {
+            let values = recorded.arguments.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect::<Option<Vec<_>>>()?;
+            let lowered = self.lower_arguments(scope, expr, function)?;
+            let (id, ret) = self.request_instance(function, values, Half::Whole)?;
+            return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
+        }
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
@@ -443,8 +534,7 @@ impl Elaboration<'_, '_> {
             (_, Some(Callee::Function(function))) if scope.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
-                let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
-                let (id, ret) = self.request(function, pattern, Half::Whole)?;
+                let (id, ret) = self.request(function, Half::Whole)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
@@ -454,8 +544,16 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None
             }
+            // A method of the project is typed (generics T25) and lowered by its own task (T35).
+            // `Tr::f(x, ..)` by path: the first argument is the receiver
+            (_, Some(Callee::Method(function))) if let Some((receiver, rest)) = args.split_first() => self.lower_method_call(scope, expr, function, *receiver, rest, origin),
+            (_, Some(Callee::Bound { item })) if let Some((receiver, rest)) = args.split_first() => self.lower_bound_call(scope, expr, item, *receiver, rest, origin),
+            (_, Some(Callee::Method(_) | Callee::Bound { .. })) => {
+                self.unsupported(scope.file, span, "a method call");
+                None
+            }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
-            (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
+            (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, origin),
             (_, None) if self.types.default_of(expr).is_some() => Some(self.emit(Expr::Default(ty.clone()), ty, origin)),
             (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && let Some(owner) = self.constructed_decl(*callee) => self.lower_constructor_call(scope, args, owner, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
@@ -478,7 +576,7 @@ impl Elaboration<'_, '_> {
         let mut lowered = Vec::new();
         let mut ok = true;
         for (param, slot) in params.iter().zip(binding) {
-            match self.types.local(*param).cloned() {
+            match self.typed_local(*param) {
                 Some(Ty::Option(payload)) => match self.lower_option_slot(scope, slot, &payload, expr) {
                     Some(pair) => lowered.extend(pair),
                     None => ok = false,
@@ -514,11 +612,10 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(binding);
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (file, span) = (data.file, data.span);
-        let Some(ty) = self.types.local(binding).and_then(|t| self.value_type(t)) else {
+        let Some(ty) = self.typed_local(binding).and_then(|t| self.value_type(&t)) else {
             self.unsupported(file, span, "a name whose type is not a value type");
             return None;
         };
-        let ty = if assignable { Self::mutable_type(scope, ty) } else { ty };
         let index = scope.locals.len() as u32;
         scope.locals.push(Local { name, ty, mutable: assignable });
         scope.local_index.insert(binding, index);
@@ -552,6 +649,7 @@ impl Elaboration<'_, '_> {
             let start = out.len();
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
+            let carried = std::mem::replace(&mut ok, true);
             match &node.kind {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 // `let x;`: a local first assigned later (§1.7.5, `control.rs`).
@@ -578,6 +676,11 @@ impl Elaboration<'_, '_> {
                     ok = false;
                 }
             }
+            // a statement that failed to lower while nothing was reported is refused by name: nothing vanishes silently (a failure that rests on an earlier diagnostic, such as an unreadable file, keeps that one)
+            if !ok && self.diagnostics.is_empty() {
+                self.refuse_silent_failure(file, node.span, "this statement");
+            }
+            ok &= carried;
             // a statement that is the value of its block leaves the flag to the code that takes the value
             if value.is_none() && scope.inline_exits.last_mut().is_some_and(|frame| std::mem::take(&mut frame.loop_flagged)) {
                 let origin = self.locator.origin(file, node.span);
@@ -594,8 +697,8 @@ impl Elaboration<'_, '_> {
     /// (one local per component). `false` after a diagnostic.
     fn lower_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: crate::pom::PatId, init: ExprId, file: FileId, span: Span) -> bool {
         match self.design.pat_node(pat).kind.clone() {
-            PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
-            PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
             // An iterator or a range holds no value: the name stands for the chain it was bound to (`iterators.rs`).
             PatKind::Ident { binding, sub: None, .. } if self.is_sequence_binding(binding) => {
                 scope.let_sources.insert(binding, init);
@@ -603,9 +706,6 @@ impl Elaboration<'_, '_> {
             }
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);
-                if let Some(function) = self.named_function(init) {
-                    scope.fn_targets.insert(binding, function);
-                }
                 scope.let_sources.insert(binding, init);
                 let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
                 scope.limit_name = name.map(|n| (self.peel_parens(init), n));
@@ -613,10 +713,7 @@ impl Elaboration<'_, '_> {
                 scope.limit_name = None;
                 match (local, init) {
                     (Some(local), Some(init)) => {
-                        // A local is what its initializer is: flagged when that may be unknown; a
-                        // `let mut` of code that may see unknowns is flagged whatever it starts as.
-                        let target = scope.locals[local as usize].ty.clone();
-                        let init = if scope.locals[local as usize].mutable { self.coerced_to(scope, init, &target) } else { init };
+                        // A local is what its initializer is.
                         let mutable = scope.locals[local as usize].mutable;
                         let ty = self.type_of(init);
                         scope.locals[local as usize].ty = ty;
@@ -694,16 +791,14 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The literal `Unknown` of type `ty`: a value with every level unknown, so flagged (§3.3.1).
-    pub(super) fn unknown_expr(&mut self, ty: ValueType, origin: Origin) -> LoweredExpr {
-        self.emit(Expr::Unknown, Flag::Flagged.wrap(ty), origin)
-    }
-
     /// A name: a `const` (folded), a param of the body (a read), a local.
     fn lower_path(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Path(path) = &node.kind else { return None };
         let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+        if let Some(levels) = self.consts.parameter_levels(expr) {
+            return Some(self.constant_expr(Constant::Int(i128::from(levels)), ty, origin));
+        }
         let Resolution::Decl(decl) = res else {
             self.unsupported(scope.file, node.span, "a built-in name used as a value");
             return None;
@@ -711,9 +806,8 @@ impl Elaboration<'_, '_> {
         match &self.design.decl_data(decl).kind {
             // A composite `const` is written out where it is read (`consts/imported.rs`).
             DeclKind::Const(_) if self.consts.is_composite_constant(decl) => self.lower_composite_constant(scope, decl, expr, ty, origin),
-            DeclKind::Const(_) => match self.consts.folded_constant(decl) {
-                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
-                Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
+            DeclKind::Const(_) => match self.consts.constant(decl) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const`");
                     None
@@ -737,7 +831,6 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
-                // A read of a carrier may be unknown (§3.3): its type is flagged.
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),
@@ -745,6 +838,8 @@ impl Elaboration<'_, '_> {
                     self.unsupported(scope.file, node.span, "a value input left out, read as a value");
                     None
                 }
+                // an array of carriers of length 0 read whole is the empty array (§1.2.3)
+                (None, None) if self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) => Some(self.emit(Expr::Array(Vec::new()), ty, origin)),
                 (None, None) => {
                     self.unsupported(scope.file, node.span, "a node or a port read as a value");
                     None
@@ -752,6 +847,9 @@ impl Elaboration<'_, '_> {
             },
             // The loop variable of an unrolled analog loop and the parameter of an expanded recursion
             // are the constant of this iteration or call (`unroll.rs`).
+            // a handle read: the carrier the caller passed (`handles.rs`)
+            DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.values.get(&decl).copied() => Some(value),
+            DeclKind::FnParam(_) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_expr(scope, bound),
             DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.unrolled.get(decl) => Some(self.constant_expr(value, ty, origin)),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {
                 Some(index) => {
@@ -770,6 +868,15 @@ impl Elaboration<'_, '_> {
                 }
                 None => {
                     self.unsupported(scope.file, node.span, "a name with no value here");
+                    None
+                }
+            },
+            // a const parameter read in the body of an instance is the constant of its argument (T33, GN-02)
+            DeclKind::GenericParam(_) => match self.consts.substitution().get(decl) {
+                Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value))) => Some(self.constant_expr(piperine_ir::Constant::Int(*value), ty, origin)),
+                Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Bool(flag))) => Some(self.constant_expr(piperine_ir::Constant::Bool(*flag), ty, origin)),
+                _ => {
+                    self.unsupported(scope.file, node.span, "a generic parameter read as a value");
                     None
                 }
             },

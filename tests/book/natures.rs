@@ -66,11 +66,10 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
 }
 
 #[test]
-fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net() {
-    // natures#2 (refused, S8): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
+fn the_signal_list_elaborates_and_only_the_net_nature_is_missing() {
+    // natures#2 (refused, the net `Sda`, L21; the array of carriers of L24 runs since composite-values phase C): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
     // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
-    // `P0001` (L24), an `Option` is not carried yet (E0112), `Logic` is a library struct the front end does
-    // not take as a type yet (P0001) and `Sda` is the model's own nature, declared further on in the
+    // `P0001` (L24) and `Sda` is the model's own nature, declared further on in the
     // chapter's example, so here it is unknown (E0161); the discrete, node and initial-value lines are
     // accepted. When the block runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
@@ -81,11 +80,19 @@ fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_t
     // has a `Default`, so the line `signal sda: Sda;` stays valid once every carrier starts at its default (phase A)
     let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    for (code, expected) in [("P0001", "an array of `Bit<bool>` is not supported yet"), ("P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet")] {
-        assert!(given.contains(&(code.to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
-    assert_eq!(given.len(), 2, "the array and `Logic<4>` only; `Option<u8>` is a carried type since composite-values: {given:?}");
-    Refusal::expect(chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "an array of `Bit<bool>` is not supported yet");
+    // `Logic<4>` is the library's four-state value since `explicit-unknowns` phase B, `Option<u8>` a carried type since
+    // composite-values phase B, `[Bit; 8]` an array of carriers since phase C (CV-23) and the `logic("10xx")` literal a
+    // carrier's initial value since phase C's fix round (the constant evaluator reads `logic` of a literal pattern):
+    // with a nature of the name `Sda` in scope every line of the list elaborates and the design runs. What the stand-in
+    // run reports is the listing's own floating nodes (`mid` and `vout` are connected to nothing, so the operating point
+    // has no equation for `vout`: `E0503`, a singular Jacobian), not a language refusal; the one thing the block still
+    // lacks to run on its own is the nature `Sda`, the model's own nature of the chapter (E0161 below, resolved-nets)
+    assert_eq!(
+        given,
+        vec![("E0503".to_string(), "the op analysis failed: Newton: E0503: the Jacobian is singular (SymbolicSingular { index: 0 }): node of Top.vout".to_string())],
+        "every line of the list elaborates; the run stops at the floating node `vout`: {given:?}"
+    );
+    Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "E0161", "cannot find `Sda` in this scope");
 }
 
 #[test]
@@ -93,8 +100,7 @@ fn the_open_drain_line_is_refused_until_a_nature_can_implement_resolve() {
     // natures#3 (refused, S8): the alarm.msl of the Book, whose nature `AlarmLine` implements
     // `Resolve<Driven>`; natures~e99c1920 "Today the command refuses the file and runs nothing" (refused);
     // natures~6a449552 "Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream" (refused: it
-    // needs the same nature). The names the file uses, `Driven`, `Resolve`, `Pullup` and the `Logic` behind
-    // them, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
+    // needs the same nature). The names the file uses, `Driven`, `Resolve` and `Pullup`, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
     let chapter = Chapter::read();
     let model = chapter.marked("alarm.msl", "natures#3");
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() };
@@ -127,7 +133,7 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
     let chapter = Chapter::read();
     let placing = "module Top(in clk: Bit) { signal b: Stream<u8>; signal d: Stream<u8>; let s = Slice::<u8>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    assert!(given.contains(&("P0001".to_string(), "generic struct `Stream` is not supported yet".to_string())), "{given:?}");
+    assert!(given.contains(&("P0001".to_string(), "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet".to_string())), "{given:?}");
     assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
     let generic = "module Top(in clk: Bit) { signal c: Bit; let s = Slice::<u8>(c, gnd, gnd); }\n";
     Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", generic).run(OperatingPoint::of_top()), "natures#8", "P0001", "generic module is not supported yet");
@@ -161,7 +167,7 @@ fn behavior_crosses_freely_inside_one_module() {
     // natures~5c7f5269: "Inside one module, behavior crosses freely: analog reads digital carriers, and
     // reactions probe voltages": one module whose reaction probes `v(vin)` and whose analog block reads the
     // carrier it committed through `known_or`
-    let source = "module Hold(vin: Electrical, vout: Electrical) { signal held: Bit<f64> = 0.0; }\ndigital for Hold { on at(1u) { held <- v(vin); } }\nanalog for Hold { v(vout) +> held.known_or(0.0); }\nmodule Source(p: Electrical, n: Electrical) { dc: f64 = 2.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; let s = Source(a, gnd); let h = Hold(a, b); }\n";
+    let source = "module Hold(vin: Electrical, vout: Electrical) { signal held: Bit<f64> = 0.0; }\ndigital for Hold { on at(1u) { held <- v(vin); } }\nanalog for Hold { v(vout) +> held; }\nmodule Source(p: Electrical, n: Electrical) { dc: f64 = 2.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; let s = Source(a, gnd); let h = Hold(a, b); }\n";
     let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(3e-6), ..Overrides::default() };
     let ran = Model::written("cross.msl", source).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     let last = ran.table.rows.len() - 1;

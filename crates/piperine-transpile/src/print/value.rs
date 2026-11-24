@@ -14,28 +14,23 @@
 //! contribution, has no lowering here and is `Error::Unsupported` with its form, path and
 //! origin.
 //!
-//! Phase B forms. A value that may be unknown is `rt::Flagged<T>`, an integer `rt::UInt<N>` or
-//! `rt::Int<N>`, all named by their `rt::` path in the text. An operand that is not unknown is
-//! lifted (`rt::Flagged::known(x)`) where the other operand, or the place it flows to, may be.
-//! An `if` on an unknown condition is the merge of §3.3.3: `c.choose(|| { A }, || { B })` in code
-//! that commits nothing (a function, a drive, an event, an arming), so a function holding one
-//! returns its value and a call to it is a plain call; in a reaction, an `if` whose arms commit or
-//! emit is `commits_.branch(c, |commits_| { A }, |commits_| { B })`, which also joins what the two
-//! paths committed. Analog code has no merge of duals and refuses such an `if`. In the digital printers a real is a plain `f64`; in an `analog` block and in an
-//! IR function it is `R`.
+//! Phase B forms. An integer is `rt::UInt<N>` or `rt::Int<N>`, named by its `rt::` path in the
+//! text. Every value is known, so an `if` is Rust's `if` and a carrier read is the value its pin
+//! decoded to; in the digital printers a real is a plain `f64`, in an `analog` block and in an IR
+//! function it is `R`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
-use piperine_ir::{Addend, AnalysisKind, LevelPart,
+use piperine_ir::{Addend, AnalysisKind,
     BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream, TypeData,
-    QuantityRole, Terminal, TypeKind, UnaryOp, ValueType,
+    QuantityRole, Terminal, UnaryOp, ValueType,
 };
 
 use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
-use crate::print::control::LoopFrame;
+use crate::print::carrier_array::{CarrierFacts, ElementRead};
 use crate::print::{ContributionSums, Text, TypeItems};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
@@ -87,21 +82,27 @@ pub struct ValuePrinter<'a> {
     /// Whether each local of the owner was declared `let mut`, by index: only that local prints
     /// `let mut` and is the target of an assignment (§1.5.12).
     pub(super) mutable: Vec<bool>,
+    /// Whether each local of the owner is a temporary the elaborator made (its IR name holds a `$`, which no
+    /// written identifier can), by index: such a local may go unread (a `match` temporary whose arm binds nothing).
+    synthesized: Vec<bool>,
     /// The result type of the function being printed; `None` for any other owner. A `return`
     /// lifts its value to it.
     pub(super) returns: Option<ValueType>,
     /// The function being printed; `None` for any other owner. A call it makes to a function on a
     /// call cycle with it passes a deeper `rt::Depth`.
     pub(super) function: Option<FunctionId>,
-    /// The loops whose body is being printed, innermost last: what `break`, `continue` and
-    /// `return` print as depends on the loop they leave.
-    pub(super) loops: RefCell<Vec<LoopFrame>>,
+    /// How many loops' bodies are being printed: a `break` or `continue` is Rust's, outside a loop it is refused.
+    pub(super) loops: Cell<u32>,
     /// The printed name of each param of the owner's body, by index; empty for a function.
     params: Vec<String>,
     /// The type each carrier of the owner's body holds, by index; empty for a function.
     carriers: Vec<ValueType>,
+    /// What the printer knows of each carrier of the owner's body, by index (arrays of carriers); empty for a function.
+    pub(super) facts: Vec<CarrierFacts>,
     /// The record streams of the owner's body, by index; empty for a function.
     streams: Vec<Stream>,
+    /// The stream each trace site of the owner's body writes, by site; empty for a function.
+    traces: Vec<u32>,
     /// The owner's origin: where an error with no expression of its own points.
     pub(super) origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
@@ -112,9 +113,6 @@ pub struct ValuePrinter<'a> {
     /// A real is a plain `f64` (the digital printers) rather than `R` (an `analog` block, an IR
     /// function).
     pub(super) plain: bool,
-    /// A real inside `rt::Flagged` is the code's own real `R` rather than a plain `f64`: the
-    /// value of a `cross` that may be unknown, whose probe tangents must survive (design C8).
-    flagged_reals: bool,
     /// Whether a commit has a place to go: the code of a reaction.
     pub(super) commits: bool,
     /// The carrier and `min_after` of each commit printed so far, in printing order: the order
@@ -124,9 +122,6 @@ pub struct ValuePrinter<'a> {
     /// the reaction then asks its `Commits` for the flow (`Commits::finish`, `Commits::flow`;
     /// msl-fixes FIX-01, §19 Resolution).
     finishes: Cell<bool>,
-    /// Whether the code printed so far holds an `if` that joins the commits of its arms
-    /// (`Commits::branch`): the reaction then builds its `Commits` with the carriers table.
-    pub(super) branches: Cell<bool>,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
@@ -149,6 +144,14 @@ pub struct Reads {
     pub flows: Vec<String>,
     /// By derivative site: the variable of its rate pin (`rate(D<k>)`, analog-structure AS-07).
     pub derivatives: Vec<String>,
+    /// By delay site: the variable of its output pin (`delay<k>.value`, analog-operators AO-02).
+    pub delays: Vec<String>,
+    /// By noise source: the variable of its input's `VALUE` (`noise<k>.value`, AO-03). A body
+    /// printed with none reads 0 where a source is read: a reaction or a guard (§14.8.5).
+    pub noises: Vec<String>,
+    /// By session parameter: the variable of its pin, an `Option<f64>` known when the host gave
+    /// the parameter (`simparam`, AO-07).
+    pub session_parameters: Vec<String>,
     /// By body param: the variable its pin's `PREVIOUS` was decoded into (`p.prev()`, §5.3.1).
     pub param_previous: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
@@ -166,21 +169,22 @@ impl<'a> ValuePrinter<'a> {
             locals: Self::names(f.locals(), &[]),
             local_types: f.locals().iter().map(|l| l.ty.clone()).collect(),
             mutable: f.locals().iter().map(|l| l.mutable).collect(),
+            synthesized: f.locals().iter().map(Self::is_synthesized).collect(),
             returns: Some(f.ret().clone()),
             function: Some(function),
-            loops: RefCell::new(Vec::new()),
+            loops: Cell::new(0),
             params: Vec::new(),
             carriers: Vec::new(),
+            facts: Vec::new(),
             streams: Vec::new(),
+            traces: Vec::new(),
             origin,
             analog: None,
             sums: None,
             plain: false,
-            flagged_reals: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
-            branches: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
@@ -194,21 +198,22 @@ impl<'a> ValuePrinter<'a> {
             locals: Vec::new(),
             local_types: Vec::new(),
             mutable: Vec::new(),
+            synthesized: Vec::new(),
             returns: None,
             function: None,
-            loops: RefCell::new(Vec::new()),
+            loops: Cell::new(0),
             params: Vec::new(),
             carriers: Vec::new(),
+            facts: Vec::new(),
             streams: Vec::new(),
+            traces: Vec::new(),
             origin: data.origin.clone(),
             analog: None,
             sums: None,
             plain,
-            flagged_reals: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
-            branches: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
@@ -225,27 +230,28 @@ impl<'a> ValuePrinter<'a> {
             locals: Self::names(body.locals(), &reserved),
             local_types: body.locals().iter().map(|l| l.ty.clone()).collect(),
             mutable: body.locals().iter().map(|l| l.mutable).collect(),
+            synthesized: body.locals().iter().map(Self::is_synthesized).collect(),
             returns: None,
             function: None,
-            loops: RefCell::new(Vec::new()),
+            loops: Cell::new(0),
             params,
             carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
+            facts: CarrierFacts::of_body(body),
             streams: body.streams().to_vec(),
+            traces: body.traces().iter().map(|t| t.stream).collect(),
             origin,
             analog: None,
             sums: None,
             plain: false,
-            flagged_reals: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
-            branches: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
 
     /// The printer of the code of a drive or an event of `body`: its locals are the body's, a
-    /// real is a plain `f64`, and an unknown `if` merges.
+    /// real is a plain `f64`.
     pub fn of_digital(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
         ValuePrinter { plain: true, ..Self::of_body(ir, body) }
     }
@@ -267,6 +273,7 @@ impl<'a> ValuePrinter<'a> {
             locals: Self::names(&reaction.locals, &reserved),
             local_types: reaction.locals.iter().map(|l| l.ty.clone()).collect(),
             mutable: reaction.locals.iter().map(|l| l.mutable).collect(),
+            synthesized: reaction.locals.iter().map(Self::is_synthesized).collect(),
             origin: reaction.origin.clone(),
             commits: true,
             ..base
@@ -281,12 +288,6 @@ impl<'a> ValuePrinter<'a> {
             .chain(body.nodes().iter().map(|n| Text::ident(&n.name)))
             .chain(body.carriers().iter().map(|c| Text::ident(&c.name)))
             .collect()
-    }
-
-    /// This printer with a real inside `rt::Flagged` kept as `R`, so arithmetic on a value that
-    /// may be unknown carries the tangent of the reads it uses.
-    pub fn with_flagged_reals(self) -> ValuePrinter<'a> {
-        ValuePrinter { flagged_reals: true, ..self }
     }
 
     /// This printer with the analog read forms printing as `reads` names them.
@@ -309,12 +310,6 @@ impl<'a> ValuePrinter<'a> {
         self.finishes.get()
     }
 
-    /// Whether the code printed so far joins the commits of an `if` on a value that may be
-    /// unknown.
-    pub fn branches(&self) -> bool {
-        self.branches.get()
-    }
-
     /// Whether the code printed so far reads the variable `name` (a param, node, carrier or
     /// environment read).
     pub fn uses(&self, name: &str) -> bool {
@@ -326,14 +321,18 @@ impl<'a> ValuePrinter<'a> {
         self.rust_type(ty, &self.path)
     }
 
-    /// The Rust type a pin of `ty` holds inside `rt::Flagged<…>`: a real is the plain `f64`
-    /// whatever the code's own real is.
+    /// The Rust type a pin of `ty` is decoded as: a real is the plain `f64` whatever the code's
+    /// own real is.
     pub fn pin_type(&self, ty: &ValueType) -> Result<String, Error> {
         match ty {
-            ValueType::F64 if self.flagged_reals && !self.plain => Ok("R".to_string()),
             ValueType::F64 => Ok("f64".to_string()),
             other => self.rust_type(other, &self.path),
         }
+    }
+
+    /// The expression that decodes the pin bytes `bytes` as a value of the Rust type `rust`.
+    pub(crate) fn pin_value(rust: &str, bytes: &str) -> String {
+        format!("<{rust} as rt::Carried>::from_pin({bytes})")
     }
 
     /// `rt::UInt::<N>::new(0)` or `rt::Int::<N>::new(0)`: the value of an integer param no one
@@ -352,12 +351,14 @@ impl<'a> ValuePrinter<'a> {
         name.to_string()
     }
 
-    /// The read `variable` of a carrier or its previous value, as the expression `e` types it: the
-    /// flagged variable itself, or, for a tuple, an array, a struct or an `Option` (a flag rides
-    /// only on a scalar), its value; an unknown one is refused by the name `source` the model writes
-    /// (`un`, `un.prev()`), not the printer's variable (`known_or_refuse`).
-    fn carried(&self, e: ExprId, variable: String, source: &str) -> String {
-        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or_refuse({source:?})") }
+    /// The read `variable` of a carrier or its previous value, as the code's own real when the
+    /// carrier holds one: the pin decodes at `f64`.
+    pub(super) fn carrier_value(&self, e: ExprId, variable: String) -> Piece {
+        if *self.ir.expr_type(e) == ValueType::F64 && !self.plain {
+            Piece::new(format!("R::constant({variable})"), Prec::Atom)
+        } else {
+            Piece::new(variable, Prec::Atom)
+        }
     }
 
     /// The printed name of local `i`.
@@ -411,7 +412,7 @@ impl<'a> ValuePrinter<'a> {
         let mut t = Text::new();
         t.comment(&printer.path, f.origin());
         t.line(&format!("fn {}{generic}({}) -> {ret} {{", Text::ident(f.name()), params.join(", ")));
-        let body = printer.function_body(f.body(), f.ret())?;
+        let body = printer.function_body(f.body())?;
         t.indented(|t| t.line(&body));
         t.line("}");
         Ok(t.finish())
@@ -444,7 +445,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// The body of a function: its statements, then its value.
-    fn function_body(&self, e: ExprId, ret: &ValueType) -> Result<String, Error> {
+    fn function_body(&self, e: ExprId) -> Result<String, Error> {
         match self.ir.expr(e) {
             Expr::Block { stmts, value } => {
                 let mut lines = Vec::with_capacity(stmts.len() + 1);
@@ -452,12 +453,12 @@ impl<'a> ValuePrinter<'a> {
                     lines.push(self.stmt(*s)?);
                 }
                 match value {
-                    Some(v) => lines.push(self.typed(*v, ret)?.text),
+                    Some(v) => lines.push(self.expr(*v)?),
                     None => {}
                 }
                 Ok(lines.join("\n"))
             }
-            _ => Ok(self.typed(e, ret)?.text),
+            _ => self.expr(e),
         }
     }
 
@@ -467,19 +468,13 @@ impl<'a> ValuePrinter<'a> {
         Ok(self.piece(e)?.text)
     }
 
-    /// `e` as an expression of type `want`: lifted to `rt::Flagged` when `want` may be unknown
-    /// and `e` is not.
-    pub fn expr_as(&self, e: ExprId, want: &ValueType) -> Result<String, Error> {
-        Ok(self.typed(e, want)?.text)
-    }
-
     /// `e` as the receiver of a method call: parenthesized unless it is an atom.
     pub fn operand(&self, e: ExprId) -> Result<String, Error> {
         Ok(self.piece(e)?.at(Prec::Atom))
     }
 
-    /// `e`, a `bool` that is never unknown, as an operand of `&&`.
-    pub fn known_condition(&self, e: ExprId) -> Result<String, Error> {
+    /// `e`, a `bool`, as an operand of `&&`.
+    pub fn condition(&self, e: ExprId) -> Result<String, Error> {
         Ok(self.piece(e)?.at(Prec::Compare))
     }
 
@@ -554,10 +549,10 @@ impl<'a> ValuePrinter<'a> {
     /// The expressions `expr` holds, statements included.
     pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => out.push(*expr),
-            Expr::KnownOr { value, default } => out.extend([*value, *default]),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => out.push(*expr),
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => out.push(*index),
             Expr::Unwrap { is, value, .. } => out.extend([*is, *value]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => out.extend([*a, *b]),
+            Expr::Same { a, b } => out.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => out.push(*expr),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
@@ -581,10 +576,12 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Probe { .. }
             | Expr::Env(_)
             | Expr::Int(_)
-            | Expr::Unknown
             | Expr::Carrier(_)
             | Expr::Flow { .. }
             | Expr::Derivative(_)
+            | Expr::Delay(_)
+            | Expr::Noise(_)
+            | Expr::SessionParameter { .. }
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
             | Expr::Previous(_)
@@ -614,31 +611,17 @@ impl<'a> ValuePrinter<'a> {
             .collect()
     }
 
-    /// Whether `ty` may be unknown.
-    pub(super) fn is_flagged(ty: &ValueType) -> bool {
-        matches!(ty, ValueType::Flagged(_))
-    }
-
-    /// `ty` without its flag.
-    pub(super) fn base(ty: &ValueType) -> &ValueType {
-        match ty {
-            ValueType::Flagged(inner) => inner,
-            other => other,
-        }
-    }
-
-    /// `ty` as the source spells it: `UInt<65>`, `Int<0>`, `Flagged<UInt<9>>`.
+    /// `ty` as the source spells it: `UInt<65>`, `Int<0>`.
     fn type_name(ty: &ValueType) -> String {
         match ty {
             ValueType::UInt(n) => format!("UInt<{n}>"),
             ValueType::Int(n) => format!("Int<{n}>"),
-            ValueType::Flagged(inner) => format!("Flagged<{}>", Self::type_name(inner)),
             other => other.to_string(),
         }
     }
 
     /// The Rust type of a value type: `R` (`f64` in plain code), `bool`, `()`, `rt::UInt<N>`,
-    /// `rt::Int<N>`, `rt::Flagged<T>`. A real inside `Flagged` is always the plain `f64`. A type
+    /// `rt::Int<N>`. A type
     /// Rust lacks is `Error::Unsupported` naming it: an integer wider than 64 bits (or of no
     /// width), a function type. (The IR has no `Float<16>` or `Float<128>`: the only real is
     /// `f64`, so there is nothing of those to refuse.)
@@ -654,10 +637,6 @@ impl<'a> ValuePrinter<'a> {
             }),
             ValueType::UInt(n) => Ok(format!("rt::UInt<{n}>")),
             ValueType::Int(n) => Ok(format!("rt::Int<{n}>")),
-            ValueType::Flagged(inner) => {
-                let inner = if **inner == ValueType::F64 && !self.flagged_reals { "f64".to_string() } else { self.rust_type(inner, path)? };
-                Ok(format!("rt::Flagged<{inner}>"))
-            }
             ValueType::Fn(params, ret) => self.function_type(params, ret, path),
             ValueType::Tuple(parts) => {
                 let parts: Result<Vec<String>, Error> = parts.iter().map(|part| self.rust_type(part, path)).collect();
@@ -698,25 +677,17 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
-    /// `e` lifted to `want`: `rt::Flagged::known(e)` when `want` may be unknown and `e` is not.
-    pub(super) fn typed(&self, e: ExprId, want: &ValueType) -> Result<Piece, Error> {
-        let piece = self.piece(e)?;
-        Ok(self.lift(piece, self.ir.expr_type(e), want))
-    }
-
-    /// `piece`, of type `from`, as a value of type `want`.
-    pub(super) fn lift(&self, piece: Piece, from: &ValueType, want: &ValueType) -> Piece {
-        if !Self::is_flagged(want) || Self::is_flagged(from) {
-            return piece;
-        }
-        let plain = if *from == ValueType::F64 && !self.plain && !self.flagged_reals { format!("{}.value()", piece.at(Prec::Atom)) } else { piece.text };
-        Piece::new(format!("rt::Flagged::known({plain})"), Prec::Atom)
-    }
-
-    /// `e` as a value that may be unknown.
-    pub(super) fn flagged(&self, e: ExprId) -> Result<Piece, Error> {
-        let want = ValueType::Flagged(Box::new(Self::base(self.ir.expr_type(e)).clone()));
-        self.typed(e, &want)
+    /// A `table_model` (or its slope) as a block: the model is built once, in a `static` of its own, from the samples and
+    /// the control; the value and the slope are read at the value of `x`, and the tangent of `x` goes through the slope
+    /// (`Real::compose`), so the derivative of a contribution is that of the interpolant (§22.2.15 rule 5).
+    fn table_piece(&self, x: ExprId, table: &[(piperine_ir::Real, piperine_ir::Real)], control: &piperine_ir::TableControl, slope_only: bool) -> Result<Piece, Error> {
+        let samples: Vec<String> = table.iter().map(|(a, v)| format!("({}, {})", Text::real(a.get()), Text::real(v.get()))).collect();
+        let at = self.piece(x)?.at(Prec::Atom);
+        let result = if slope_only { "x_.compose(model_.slope(x_.value()), 0.0)" } else { "x_.compose(model_.value(x_.value()), model_.slope(x_.value()))" };
+        Ok(Piece::new(
+            format!("{{ static TABLE_: std::sync::OnceLock<rt::TableModel> = std::sync::OnceLock::new(); let model_ = TABLE_.get_or_init(|| rt::TableModel::new(&[{}], \"{}\")); let x_ = {at}; {result} }}", samples.join(", "), control.text()),
+            Prec::Atom,
+        ))
     }
 
     pub(super) fn piece(&self, e: ExprId) -> Result<Piece, Error> {
@@ -742,53 +713,37 @@ impl<'a> ValuePrinter<'a> {
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
             // the event pin's `CHANGED` byte of this microstep, bound as a `bool` (abi.md §4.1)
             Expr::Fired(k) => atom(self.read(&Text::generated(&format!("event{k}_fired")))),
-            // the forms of §22.1, each a method of `rt::Flagged` (or the `Merge` trait, named by
-            // its path so no import decides it): every operand is lifted to a value that may be
-            // unknown
-            Expr::Level { value, index, part } => self.level(e, *value, *index, *part),
-            Expr::Merge { a, b } => atom(format!("rt::flag::Merge::merge({}, {})", self.flagged(*a)?.text, self.flagged(*b)?.text)),
-            Expr::Same { a, b } => atom(format!("{}.same({})", self.flagged(*a)?.at(Prec::Atom), self.flagged(*b)?.text)),
-            Expr::LevelCast { expr, to, tags } => self.level_cast(e, *expr, to, tags.as_deref()),
+            // the forms of §22.1: the levels of the operands, compared (`same`) or moved to another type (`cast`)
+            Expr::Same { a, b } => Ok(Piece::new(format!("{} == {}", self.levels(*a)?, self.levels(*b)?), Prec::Compare)),
+            Expr::LevelCast { expr, to, .. } => self.level_cast(*expr, to),
             Expr::Unwrap { is, value, message } => {
                 let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
             }
+            Expr::CarrierElement { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Value),
+            Expr::ElementPrevious { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Previous),
+            Expr::ElementChanged { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Changed),
+            Expr::Carrier(c) if self.facts.get(*c as usize).is_some_and(|f| f.count.is_some()) => self.whole_piece(e, *c),
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
-                Some(name) => atom(self.carried(e, self.read(name), name)),
+                Some(name) => Ok(self.carrier_value(e, self.read(name))),
                 None => Err(self.unsupported(e, "a carrier read")),
             },
-            Expr::Unknown => {
-                let ty = self.ir.expr_type(e);
-                let inner = match Self::base(ty) {
-                    ValueType::F64 if !self.flagged_reals => "f64".to_string(),
-                    other => self.rust_type(other, &format!("{} e{}", self.path, e.index()))?,
-                };
-                atom(format!("rt::Flagged::<{inner}>::unknown()"))
-            }
             Expr::Unary { op, expr } => {
                 let operand = self.piece(*expr)?.at(Prec::Atom);
                 let sign = if *op == UnaryOp::Neg { "-" } else { "!" };
                 Ok(Piece::new(format!("{sign}{operand}"), Prec::Unary))
             }
-            // an enum value that may be unknown on either side compares as a flagged scalar does
-            Expr::Binary { op, lhs, rhs } if self.is_aggregate_operand(*lhs) && !Self::is_flagged(self.ir.expr_type(*rhs)) => self.aggregate_comparison(e, *op, *lhs, *rhs),
+            Expr::Binary { op, lhs, rhs } if self.is_aggregate_operand(*lhs) => self.aggregate_comparison(e, *op, *lhs, *rhs),
             Expr::Binary { op, lhs, rhs } => self.binary(e, *op, *lhs, *rhs),
             Expr::If { cond, then, otherwise } => self.if_else(e, *cond, *then, *otherwise),
             Expr::Block { stmts, value } => {
-                let ty = self.ir.expr_type(e);
-                let lines = self.block_lines(stmts, *value, ty)?;
+                let lines = self.block_lines(stmts, *value)?;
                 let text = if lines.is_empty() { "{}".to_string() } else { format!("{{\n{}\n}}", Self::indent(&lines)) };
                 Ok(Piece::new(text, Prec::Low))
             }
             Expr::Call { function, args } => {
                 let params = self.ir.function(*function).params();
-                let mut printed = Vec::with_capacity(args.len());
-                for (i, a) in args.iter().enumerate() {
-                    printed.push(match params.get(i) {
-                        Some(p) => self.expr_as(*a, &p.ty)?,
-                        None => self.expr(*a)?,
-                    });
-                }
+                let mut printed = args.iter().map(|a| self.expr(*a)).collect::<Result<Vec<_>, Error>>()?;
                 printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
                 printed.extend(self.depth_argument(*function));
                 // a generic function called with no argument that fixes its `Real` type names it
@@ -798,8 +753,11 @@ impl<'a> ValuePrinter<'a> {
                 let ret = self.ir.function(*function).ret();
                 let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
                 // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
-                // generic call (`Flagged::known(f(x))`) leaves it open
-                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
+                // generic call leaves it open
+                // a scalar result alone, with arguments that hold no real (a method of an enum that returns an `f64`),
+                // leaves `R` open where the call is an argument of a generic function, so the call names it
+                let result_alone = !params.is_empty() && !params.iter().any(|p| items.holds_real(&p.ty));
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !result_alone && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
                 let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
@@ -813,18 +771,36 @@ impl<'a> ValuePrinter<'a> {
                     MathFn::Sqrt => "sqrt",
                     MathFn::Abs => "abs",
                 };
-                // unknown in, unknown out (§3.3.2): the function of the value when there is one
-                if Self::is_flagged(self.ir.expr_type(*arg)) {
-                    return atom(format!("{}.map(|v_| v_.{name}())", self.piece(*arg)?.at(Prec::Atom)));
-                }
                 atom(format!("{}.{name}()", self.piece(*arg)?.at(Prec::Atom)))
             }
+            Expr::Table { x, table, control } => self.table_piece(*x, table, control, false),
+            Expr::TableSlope { x, table, control } => self.table_piece(*x, table, control, true),
             // a closure is a function value, which is the reference `&dyn Fn` takes
             Expr::Closure { .. } => Ok(Piece::new(format!("&{}", self.closure(e)?), Prec::Unary)),
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
             Expr::Derivative(k) => match self.analog.as_ref().and_then(|r| r.derivatives.get(*k as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the rate of a derivative site")),
+            },
+            Expr::Delay(k) => match self.analog.as_ref().and_then(|r| r.delays.get(*k as usize)) {
+                Some(name) => atom(self.read(name)),
+                None => Err(self.unsupported(e, "the output of a delay site")),
+            },
+            // `simparam(name)`: the pin's value, `Some` when the host gave the parameter, else `None`; in a
+            // generic block its payload is an `R`
+            Expr::SessionParameter { parameter } => {
+                let Some(name) = self.analog.as_ref().and_then(|r| r.session_parameters.get(*parameter as usize)) else {
+                    return Err(self.unsupported(e, "a session parameter"));
+                };
+                let pin = self.read(name);
+                atom(if self.plain { pin } else { format!("{pin}.map(R::constant)") })
+            }
+            // §14.8.5: a reaction or a guard reads 0 (its printer names no noise input), as does
+            // every accepted solution of `analog`
+            Expr::Noise(k) => match self.analog.as_ref().map(|r| r.noises.get(*k as usize)) {
+                Some(Some(name)) => atom(self.read(name)),
+                Some(None) if self.analog.as_ref().is_some_and(|r| r.noises.is_empty()) => atom("0.0".to_string()),
+                _ => Err(self.unsupported(e, "the value of a noise source")),
             },
             Expr::ParamPrevious(p) => match self.analog.as_ref().and_then(|r| r.param_previous.get(*p as usize)) {
                 Some(name) => atom(self.read(name)),
@@ -835,10 +811,7 @@ impl<'a> ValuePrinter<'a> {
                 None => Err(self.unsupported(e, "the flow of a potential branch")),
             },
             Expr::Previous(c) => match self.analog.as_ref().and_then(|r| r.previous.get(*c as usize)) {
-                Some(name) => {
-                    let source = self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)).map_or(name.as_str(), String::as_str);
-                    atom(self.carried(e, self.read(name), &format!("{source}.prev()")))
-                }
+                Some(name) => Ok(self.carrier_value(e, self.read(name))),
                 None => Err(self.unsupported(e, "the previous value of a carrier")),
             },
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
@@ -850,38 +823,7 @@ impl<'a> ValuePrinter<'a> {
                 None => Err(self.unsupported(e, "ac_stim")),
             },
             Expr::Cast { expr, to } => self.cast(e, *expr, to),
-            Expr::Method { method, receiver, args } => self.method(e, *method, *receiver, args),
-            Expr::KnownOr { value, default } => {
-                if !Self::is_flagged(self.ir.expr_type(*value)) {
-                    return self.piece(*value);
-                }
-                let default_type = self.ir.expr_type(*default);
-                let d = self.piece(*default)?;
-                // a default that may itself be unknown gives its own flag (§22.1.1 rule 4)
-                if Self::is_flagged(default_type) {
-                    return atom(format!("{}.known_or_flagged({})", self.piece(*value)?.at(Prec::Atom), d.text));
-                }
-                if *default_type == ValueType::F64 && !self.plain && !self.flagged_reals {
-                    // the default is an `R`; the value is a plain `f64`
-                    atom(format!("R::constant({}.known_or({}.value()))", self.piece(*value)?.at(Prec::Atom), d.at(Prec::Atom)))
-                } else {
-                    atom(format!("{}.known_or({})", self.piece(*value)?.at(Prec::Atom), d.text))
-                }
-            }
-            Expr::IsKnown(value) => {
-                if Self::is_flagged(self.ir.expr_type(*value)) {
-                    atom(format!("{}.is_known()", self.piece(*value)?.at(Prec::Atom)))
-                } else {
-                    atom("true".to_string())
-                }
-            }
-            Expr::High(value) => {
-                if Self::is_flagged(self.ir.expr_type(*value)) {
-                    atom(format!("{}.high()", self.piece(*value)?.at(Prec::Atom)))
-                } else {
-                    self.piece(*value)
-                }
-            }
+            Expr::Method { method, receiver, args } => self.method(*method, *receiver, args),
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.loop_expr(e),
             Expr::Break(value) => self.leave_loop(e, *value),
             Expr::Continue => self.continue_loop(e),
@@ -908,55 +850,31 @@ impl<'a> ValuePrinter<'a> {
         Ok(format!("move |{}| {}", names.join(", "), self.expr(*body)?))
     }
 
-    /// One half of `value.level(index)` (§3.3.4): `.0` says the level is known, `.1` is its value.
-    /// The pair is of values that may be unknown; a known index makes both known (§3.3.14), and
-    /// the half is then the plain `bool` the IR types it as.
-    fn level(&self, e: ExprId, value: ExprId, index: ExprId, part: LevelPart) -> Result<Piece, Error> {
-        let half = if part == LevelPart::Is { 0 } else { 1 };
-        let call = format!("{}.level({}, {:?}).{half}", self.flagged(value)?.at(Prec::Atom), self.flagged(index)?.text, self.at(e));
-        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or(false)") };
-        Ok(Piece::new(text, Prec::Atom))
+    /// The levels of `e` as `rt::LevelWords`: what `same` compares and `cast` moves. A real of the
+    /// code's own type (`R`) is read at its value.
+    fn levels(&self, e: ExprId) -> Result<String, Error> {
+        // a call argument needs no parentheses; the `.value()` of a real binds to an atom
+        let real = *self.ir.expr_type(e) == ValueType::F64 && !self.plain;
+        let operand = self.piece(e)?.at(if real { Prec::Atom } else { Prec::Low });
+        let operand = if real { format!("{operand}.value()") } else { operand };
+        Ok(format!("rt::Carried::to_levels({operand})"))
     }
 
-    /// `cast::<A, B>(x)` (§22.1.3): the levels of `x` under `to`, `recast` with the tags `to`
-    /// decodes when it is an enum. A result the IR types as known has no tag that may be missing,
-    /// so it is the value itself.
-    fn level_cast(&self, e: ExprId, expr: ExprId, to: &ValueType, tags: Option<&[i128]>) -> Result<Piece, Error> {
+    /// `cast::<A, B>(x)` (§22.1.3): the levels of `x` under `to`, an `Option<B>`: `None` for a tag that
+    /// names no variant of an enum `to` (or of one in a struct or a payload of it).
+    fn level_cast(&self, expr: ExprId, to: &ValueType) -> Result<Piece, Error> {
         let target = self.pin_type(to)?;
-        let tags = match tags {
-            Some(tags) => format!("Some((&[{}][..], {}))", tags.iter().map(|t| format!("{t}i128")).collect::<Vec<_>>().join(", "), self.tag_levels(to)),
-            None => "None".to_string(),
-        };
-        let call = format!("{}.recast::<{target}>({tags})", self.flagged(expr)?.at(Prec::Atom));
-        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or_refuse(\"a `cast`\")") };
+        let cast = format!("<{target} as rt::Carried>::try_from_levels(&{})", self.levels(expr)?);
+        let text = if *to == ValueType::F64 && !self.plain { format!("{cast}.map(R::constant)") } else { cast };
         Ok(Piece::new(text, Prec::Atom))
-    }
-
-    /// The width of the tag of the enum `ty` in levels (§2 rule 5); 0 for any other type.
-    fn tag_levels(&self, ty: &ValueType) -> u32 {
-        match Self::base(ty) {
-            ValueType::Enum(id) => match &self.ir.type_data(*id).kind {
-                TypeKind::Enum { tag_levels, .. } => *tag_levels,
-                TypeKind::Struct { .. } => 0,
-            },
-            _ => 0,
-        }
-    }
-
-    /// `file:line:col` of `e`.
-    fn at(&self, e: ExprId) -> String {
-        let o = self.ir.expr_origin(e);
-        format!("{}:{}:{}", o.file, o.line, o.col)
     }
 
     /// `expr as to`.
     fn cast(&self, e: ExprId, expr: ExprId, to: &ValueType) -> Result<Piece, Error> {
         let from = self.ir.expr_type(expr);
-        let (source, target) = (Self::base(from), Self::base(to));
-        let flagged = Self::is_flagged(from);
-        // a real inside `Flagged` is a plain `f64`, so a mapped closure never sees an `R`
-        let generic_real = *source == ValueType::F64 && !self.plain && (!flagged || self.flagged_reals);
-        let operand = if flagged { "v_".to_string() } else { self.piece(expr)?.at(Prec::Atom) };
+        let (source, target) = (from, to);
+        let generic_real = *source == ValueType::F64 && !self.plain;
+        let operand = self.piece(expr)?.at(Prec::Atom);
         let converted = match (source, target) {
             (ValueType::UInt(_) | ValueType::Int(_), ValueType::UInt(_)) => {
                 self.integer_path(source, e)?;
@@ -978,16 +896,11 @@ impl<'a> ValuePrinter<'a> {
             (ValueType::Enum(_), ValueType::Int(_)) => format!("{}::new({operand} as i64)", self.integer_path(target, e)?),
             (ValueType::UInt(_) | ValueType::Int(_), ValueType::F64) => {
                 self.integer_path(source, e)?;
-                if self.plain || (flagged && !self.flagged_reals) { format!("{operand}.to_f64()") } else { format!("R::constant({operand}.to_f64())") }
+                if self.plain { format!("{operand}.to_f64()") } else { format!("R::constant({operand}.to_f64())") }
             }
             _ => return Err(self.unsupported(e, &format!("a cast from {from} to {to}"))),
         };
-        if flagged {
-            let source_text = self.piece(expr)?.at(Prec::Atom);
-            Ok(Piece::new(format!("{source_text}.map(|v_| {converted})"), Prec::Atom))
-        } else {
-            Ok(Piece::new(converted, Prec::Atom))
-        }
+        Ok(Piece::new(converted, Prec::Atom))
     }
 
     /// The width of integer type `ty`, checked to be in 1..=64.
@@ -999,39 +912,21 @@ impl<'a> ValuePrinter<'a> {
         })
     }
 
-    /// `receiver.method(args)`, each row by its MSL name (`Method::name`). A value that may be
-    /// unknown goes through `Flagged::map`, `zip` or `zip3`, so the result is unknown exactly when
-    /// an operand is (§3.3).
-    fn method(&self, e: ExprId, method: Method, receiver: ExprId, args: &[ExprId]) -> Result<Piece, Error> {
+    /// `receiver.method(args)`, each row by its MSL name (`Method::name`).
+    fn method(&self, method: Method, receiver: ExprId, args: &[ExprId]) -> Result<Piece, Error> {
         let name = method.name();
-        let operands: Vec<ExprId> = [receiver].into_iter().chain(args.iter().copied()).collect();
-        let flagged = operands.iter().any(|o| Self::is_flagged(self.ir.expr_type(*o)));
-        // `powi` takes a Rust `i32`; the IR's `i32` is an `rt::Int<32>`.
-        let exponent = |text: &str| if method == Method::Powi { format!("{text}.get() as i32") } else { text.to_string() };
-        if !flagged {
-            let mut printed = Vec::with_capacity(args.len());
-            for a in args {
-                let text = match (method, self.ir.expr(*a)) {
-                    // A literal exponent is an `i32` literal: analog code has no `rt::Int`.
-                    (Method::Powi, Expr::Int(v)) => format!("{v}_i32"),
-                    (Method::Powi, _) => exponent(&self.piece(*a)?.at(Prec::Atom)),
-                    _ => self.expr(*a)?,
-                };
-                printed.push(text);
-            }
-            return Ok(Piece::new(format!("{}.{name}({})", self.piece(receiver)?.at(Prec::Atom), printed.join(", ")), Prec::Atom));
+        let mut printed = Vec::with_capacity(args.len());
+        for a in args {
+            let text = match (method, self.ir.expr(*a)) {
+                // `powi` takes a Rust `i32`; the IR's `i32` is an `rt::Int<32>`. A literal exponent
+                // is an `i32` literal: analog code has no `rt::Int`.
+                (Method::Powi, Expr::Int(v)) => format!("{v}_i32"),
+                (Method::Powi, _) => format!("{}.get() as i32", self.piece(*a)?.at(Prec::Atom)),
+                _ => self.expr(*a)?,
+            };
+            printed.push(text);
         }
-        let mut printed = Vec::with_capacity(operands.len());
-        for o in &operands {
-            printed.push(self.flagged(*o)?.at(Prec::Atom));
-        }
-        let text = match printed.as_slice() {
-            [x] => format!("{x}.map(|x_| x_.{name}())"),
-            [x, y] => format!("{x}.zip({y}, |x_, y_| x_.{name}({}))", exponent("y_")),
-            [x, lo, hi] => format!("{x}.zip3({lo}, {hi}, |x_, lo_, hi_| x_.{name}(lo_, hi_))"),
-            _ => return Err(self.unsupported(e, &format!("`{name}` with {} arguments", args.len()))),
-        };
-        Ok(Piece::new(text, Prec::Atom))
+        Ok(Piece::new(format!("{}.{name}({})", self.piece(receiver)?.at(Prec::Atom), printed.join(", ")), Prec::Atom))
     }
 
     /// The Rust operator `op` prints as and how strongly it binds; `real` is a real in an `R`
@@ -1063,16 +958,8 @@ impl<'a> ValuePrinter<'a> {
     }
 
     fn binary(&self, e: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
-        let (lt, rt) = (self.ir.expr_type(lhs), self.ir.expr_type(rhs));
-        let flagged = Self::is_flagged(lt) || Self::is_flagged(rt);
-        if flagged && matches!(op, BinaryOp::And | BinaryOp::Or) {
-            return Err(self.unsupported(e, "`&&` or `||` over a value that may be unknown (the source lowers it to `&` or `|`)"));
-        }
-        let real = *Self::base(lt) == ValueType::F64 && !(flagged || self.plain);
+        let real = *self.ir.expr_type(lhs) == ValueType::F64 && !self.plain;
         let (symbol, prec) = self.operator(e, op, real)?;
-        if flagged {
-            return self.flagged_binary(op, symbol, prec, lhs, rhs);
-        }
         let (l, r) = match prec {
             Prec::Compare => (self.compared(lhs)?, self.compared(rhs)?),
             // a bit operator and a shift keep every operand parenthesized: Rust's precedence for
@@ -1082,37 +969,6 @@ impl<'a> ValuePrinter<'a> {
             }
             // left-associative: an equal-strength operand binds on the left, not on the right
             _ => (self.piece(lhs)?.at(prec), self.piece(rhs)?.at(Self::stronger(prec))),
-        };
-        Ok(Piece::new(format!("{l} {symbol} {r}"), prec))
-    }
-
-    /// A binary operation with an operand that may be unknown: both operands lifted, and an
-    /// operator of `rt::Flagged` (a comparison is a method returning `Flagged<bool>`).
-    fn flagged_binary(&self, op: BinaryOp, symbol: &str, prec: Prec, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
-        let method = match op {
-            BinaryOp::Lt => Some("less"),
-            BinaryOp::Le => Some("less_or_equal"),
-            BinaryOp::Gt => Some("greater"),
-            BinaryOp::Ge => Some("greater_or_equal"),
-            BinaryOp::Eq => Some("equal"),
-            BinaryOp::Ne => Some("not_equal"),
-            _ => None,
-        };
-        if let Some(method) = method {
-            if self.flagged_reals && !self.plain && *Self::base(self.ir.expr_type(lhs)) == ValueType::F64 {
-                // a dual compares by value
-                return Ok(Piece::new(
-                    format!("{}.zip({}, |x_, y_| x_.value() {symbol} y_.value())", self.flagged(lhs)?.at(Prec::Atom), self.flagged(rhs)?.text),
-                    Prec::Atom,
-                ));
-            }
-            return Ok(Piece::new(format!("{}.{method}({})", self.flagged(lhs)?.at(Prec::Atom), self.flagged(rhs)?.text), Prec::Atom));
-        }
-        let (l, r) = match prec {
-            Prec::BitAnd | Prec::BitOr | Prec::BitXor | Prec::Shift => {
-                (self.flagged(lhs)?.at(Prec::Unary), self.flagged(rhs)?.at(Prec::Unary))
-            }
-            _ => (self.flagged(lhs)?.at(prec), self.flagged(rhs)?.at(Self::stronger(prec))),
         };
         Ok(Piece::new(format!("{l} {symbol} {r}"), prec))
     }
@@ -1147,12 +1003,8 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// `if c {` arm `} else {` arm `}`; an `else` arm that is itself an `if` chains as `else if`,
-    /// and a unit `if` with no `else` to speak of has none. An `if` on a condition that may be
-    /// unknown is the merge of §3.3.3 (`merged`).
+    /// and a unit `if` with no `else` to speak of has none.
     fn if_else(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
-        if Self::is_flagged(self.ir.expr_type(cond)) {
-            return self.merged(e, cond, then, otherwise);
-        }
         let ty = self.ir.expr_type(e);
         let condition = if matches!(self.ir.expr(cond), Expr::If { .. } | Expr::Block { .. }) {
             // `if if a { b } else { c } { .. }` and `if { s; c } { .. }` are valid Rust; parentheses
@@ -1161,64 +1013,18 @@ impl<'a> ValuePrinter<'a> {
         } else {
             self.piece(cond)?.at(Prec::Or)
         };
-        let mut text = format!("if {condition} {}", Self::braced(&self.arm(then, ty)?));
+        let mut text = format!("if {condition} {}", Self::braced(&self.arm(then)?));
         match self.ir.expr(otherwise) {
             Expr::Unit if *ty == ValueType::Unit => {}
             // an arm that does nothing (a `match` arm with no contribution) prints no `else`
             Expr::Block { stmts, value: None } if stmts.is_empty() && *ty == ValueType::Unit => {}
-            // an `else if` chains only while its own condition is known: a merge is an
-            // expression, so it goes inside the `else` block
-            Expr::If { cond, then, otherwise: next } if !Self::is_flagged(self.ir.expr_type(*cond)) => {
+            Expr::If { cond, then, otherwise: next } => {
                 text.push_str(" else ");
                 text.push_str(&self.if_else(otherwise, *cond, *then, *next)?.text);
             }
-            _ => text.push_str(&format!(" else {}", Self::braced(&self.arm(otherwise, ty)?))),
+            _ => text.push_str(&format!(" else {}", Self::braced(&self.arm(otherwise)?))),
         }
         Ok(Piece::new(text, Prec::Low))
-    }
-
-    /// An `if` on a condition that may be unknown, the merge of §3.3.3: a known condition runs
-    /// one arm, an unknown one runs both and merges what they yield and, in a reaction, what they
-    /// commit. `c.choose(|| { A }, || { B })` when the arms commit and emit nothing, and
-    /// `commits_.branch(c, |commits_| { A }, |commits_| { B })` when they do, so each arm's
-    /// commits and records are a path of the reaction's `Commits`. In an `analog` block a real
-    /// that may be unknown is a plain `f64` (its tangent dropped), and in a `cross` argument it is
-    /// the code's own `R` (`Flagged<R>`, which merges as `Real::same_levels` says), so the same
-    /// `choose` serves every owner.
-    fn merged(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
-        if self.holds_unreachable_exit(then, otherwise) {
-            return Err(self.unsupported(e, "a `break`, `continue` or `return` under a value that may be unknown, outside the statements of its loop"));
-        }
-        if !self.ir.written_locals(e).is_empty() {
-            return self.merged_with_writes(e, cond, then, otherwise);
-        }
-        let ty = self.ir.expr_type(e);
-        let piece = self.piece(cond)?;
-        let joins = self.commits && (self.holds_effect(then) || self.holds_effect(otherwise));
-        // the arms print in source order, which is the order their commits are numbered
-        let (first, second) = (Self::indent(&self.arm(then, ty)?), Self::indent(&self.arm(otherwise, ty)?));
-        let text = if joins {
-            self.branches.set(true);
-            // an arm that makes no commit of its own leaves its `Commits` unnamed
-            let named = |arm: &str| if arm.contains("commits_") { "commits_" } else { "_" };
-            format!("commits_.branch({}, |{}| {{\n{first}\n}}, |{}| {{\n{second}\n}})", piece.text, named(&first), named(&second))
-        } else {
-            format!("{}.choose(|| {{\n{first}\n}}, || {{\n{second}\n}})", piece.at(Prec::Atom))
-        };
-        Ok(Piece::new(text, Prec::Atom))
-    }
-
-    /// Whether `e` holds a commit or an `emit!`: the arm of an `if` that does is a path of the
-    /// reaction's `Commits`, not a pure value.
-    pub(super) fn holds_effect(&self, e: ExprId) -> bool {
-        let mut exprs = vec![e];
-        while let Some(e) = exprs.pop() {
-            if self.ir.expr(e).statements().iter().any(|s| matches!(self.ir.stmt(*s), Stmt::Commit { .. } | Stmt::Emit { .. })) {
-                return true;
-            }
-            Self::children(self.ir, self.ir.expr(e), &mut exprs);
-        }
-        false
     }
 
     /// `lines` in a pair of braces, indented; `{}` when there is nothing inside.
@@ -1227,27 +1033,32 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// The inside of a pair of braces: a block's lines without its braces, any other expression
-    /// as it is, its value lifted to `want`.
-    pub(super) fn arm(&self, e: ExprId, want: &ValueType) -> Result<String, Error> {
+    /// as it is.
+    pub(super) fn arm(&self, e: ExprId) -> Result<String, Error> {
         match self.ir.expr(e) {
-            Expr::Block { stmts, value } => self.block_lines(stmts, *value, want),
-            _ => Ok(self.typed(e, want)?.text),
+            Expr::Block { stmts, value } => self.block_lines(stmts, *value),
+            _ => self.expr(e),
         }
     }
 
-    /// A block's statements, one per line, then its value lifted to `want`.
-    pub(super) fn block_lines(&self, stmts: &[StmtId], value: Option<ExprId>, want: &ValueType) -> Result<String, Error> {
+    /// A block's statements, one per line, then its value.
+    pub(super) fn block_lines(&self, stmts: &[StmtId], value: Option<ExprId>) -> Result<String, Error> {
         let mut lines = Vec::with_capacity(stmts.len() + 1);
         for s in stmts {
             lines.push(self.stmt(*s)?);
         }
         if let Some(v) = value {
-            lines.push(self.typed(v, want)?.text);
+            lines.push(self.expr(v)?);
         }
         Ok(lines.join("\n"))
     }
 
-    /// `e` as a statement: an `if` closes with its brace; a merge is a call and takes a `;`.
+    /// Whether `local` is a temporary of the elaborator rather than a name the author wrote.
+    fn is_synthesized(local: &Local) -> bool {
+        local.name.contains('$')
+    }
+
+    /// `e` as a statement: an `if` closes with its brace; anything else takes a `;`.
     pub(super) fn expression_statement(&self, e: ExprId) -> Result<String, Error> {
         let piece = self.piece(e)?;
         let block = matches!(self.ir.expr(e), Expr::If { .. }) && *self.ir.expr_type(e) == ValueType::Unit && piece.prec == Prec::Low;
@@ -1261,12 +1072,16 @@ impl<'a> ValuePrinter<'a> {
                 let Some(name) = self.locals.get(*local as usize) else {
                     return Err(self.unsupported(*init, "a let of a local out of range"));
                 };
-                let init = match self.local_types.get(*local as usize) {
-                    Some(ty) => self.expr_as(*init, ty)?,
-                    None => self.expr(*init)?,
-                };
+                let init = self.expr(*init)?;
                 // a deferred `let x;` starts at a placeholder its first assignment overwrites
-                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments, unused_variables)] let mut" } else { "let" };
+                // a temporary the elaborator makes for a `match` (`match$0.val`) is unread when its arm binds nothing (`Some(_)`)
+                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) {
+                    "#[allow(unused_assignments, unused_variables)] let mut"
+                } else if self.synthesized.get(*local as usize).copied().unwrap_or(false) {
+                    "#[allow(unused_variables)] let"
+                } else {
+                    "let"
+                };
                 // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
                 let annotation = match self.local_types.get(*local as usize) {
                     Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),
@@ -1285,8 +1100,9 @@ impl<'a> ValuePrinter<'a> {
             },
             Stmt::Assign { place, op, value } => self.assign(place, *op, *value),
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
+            Stmt::Trace { site, fields } => self.trace(s, *site, fields),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
-            Stmt::Commit { carrier, value, after } => {
+            Stmt::Commit { carrier, value, after, target } => {
                 if !self.commits {
                     return Err(Error::Unsupported {
                         form: "commit".into(),
@@ -1294,15 +1110,14 @@ impl<'a> ValuePrinter<'a> {
                         origin: self.ir.expr_origin(*value).clone(),
                     });
                 }
-                let Some(ty) = self.carriers.get(*carrier as usize) else {
+                if self.carriers.get(*carrier as usize).is_none() {
                     return Err(self.unsupported(*value, "a commit to a carrier out of range"));
-                };
-                let want = ValueType::Flagged(Box::new(ty.clone()));
-                let value = self.expr_as(*value, &want)?;
-                let statement = StatementPlan::commit(self.ir, *carrier, *after);
+                }
+                let statement = self.commit_statement(*value, *carrier, *after, target.as_ref())?;
+                let value = self.expr(*value)?;
                 let after = match after {
-                    Some(a) => self.expr_as(*a, &ValueType::Flagged(Box::new(ValueType::F64)))?,
-                    None => "rt::Flagged::known(0.0)".to_string(),
+                    Some(a) => self.expr(*a)?,
+                    None => "0.0".to_string(),
                 };
                 let index = {
                     let mut done = self.committed.borrow_mut();
@@ -1310,14 +1125,14 @@ impl<'a> ValuePrinter<'a> {
                     done.len() - 1
                 };
                 if value.contains("commits_") || after.contains("commits_") {
-                    // an `if` whose arms commit or emit is `commits_.branch(..)`, which borrows
-                    // `commits_` mutably: as an argument of `commits_.commit(..)` it would borrow
-                    // it twice. The arguments are evaluated first, in the order they print
+                    // a value that emits (a block that holds an `emit!`) borrows `commits_`
+                    // mutably: as an argument of `commits_.commit(..)` it would borrow it twice.
+                    // The arguments are evaluated first, in the order they print
                     let (value, after) = (Self::indent(&value), Self::indent(&after));
-                    let call = format!("commits_.commit({index}, value_, after_);");
+                    let call = self.commit_call(index, *carrier, target.as_ref(), "value_", "after_")?;
                     return Ok(format!("{{\n    let value_ =\n{value};\n    let after_ =\n{after};\n    {call}\n}}"));
                 }
-                Ok(format!("commits_.commit({index}, {value}, {after});"))
+                self.commit_call(index, *carrier, target.as_ref(), &value, &after)
             }
         }
     }
@@ -1339,8 +1154,59 @@ impl<'a> ValuePrinter<'a> {
         Ok(lines.join("\n"))
     }
 
+    /// A trace (`emit!` in `analog`, §19 rule 4): the record of its stream, its `BOOL` presence byte
+    /// set and each value field written where the layout puts it, stored in the `traces_` buffer of
+    /// the site; `terms` copies the buffer to the site's `TRACE` watch. A statement that does not
+    /// execute leaves the buffer empty, which is the empty record (abi.md A5). The text fields stay
+    /// in the IR.
+    fn trace(&self, s: StmtId, site: u32, fields: &[EmitField]) -> Result<String, Error> {
+        let origin = fields
+            .iter()
+            .find_map(|f| match f {
+                EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
+                EmitField::Text { .. } => None,
+            })
+            .unwrap_or_else(|| self.origin.clone());
+        let unsupported = |form: &str| Error::Unsupported { form: form.to_string(), path: format!("{} s{}", self.path, s.index()), origin: origin.clone() };
+        let Some(declared) = self.traces.get(site as usize).and_then(|stream| self.streams.get(*stream as usize)) else {
+            return Err(unsupported("a trace of a site the body does not have"));
+        };
+        let Some(layout) = RecordLayout::in_ir(self.ir, declared) else {
+            return Err(unsupported(&format!("a trace to stream `{}`, whose fields no pin holds", declared.name)));
+        };
+        let start = layout.trace_start();
+        let mut writes = Vec::new();
+        let mut texts = Vec::new();
+        for f in fields {
+            match f {
+                EmitField::Value { field, value } => {
+                    let (Some((offset, _)), Some(field_type)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
+                        return Err(unsupported(&format!("a trace of field {field} of stream `{}`, out of range", declared.name)));
+                    };
+                    let mut text = self.expr(*value)?;
+                    // a real is an `R` in a generic block: its value is what the record holds
+                    if field_type.ty == ValueType::F64 && !self.plain {
+                        text = format!("({text}).value()");
+                    }
+                    writes.push(format!("rt::Carried::write_pin({text}, &mut record_[{}..]); // {}", start + offset, field_type.name));
+                }
+                EmitField::Text { name, text } => texts.push(format!("{name} = {text:?}")),
+            }
+        }
+        let note = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
+        let mut lines = vec![format!("// trace to stream `{}` @ {}:{}:{}{note}", declared.name, origin.file, origin.line, origin.col)];
+        lines.push(format!("let mut record_ = [0u8; {}];", layout.trace_size()));
+        lines.push("record_[0] = 1;".to_string());
+        lines.extend(writes);
+        lines.push(format!("{}[{site}] = Some(record_.to_vec());", Self::TRACES));
+        Ok(lines.join("\n"))
+    }
+
+    /// The name of the buffer `terms_block` fills with the records of its trace sites.
+    pub const TRACES: &'static str = "traces_";
+
     /// An emit site (msl-digital A4): the record's bytes in its stream's layout (`RecordLayout`),
-    /// all zero first so a field the site leaves out has its known byte 0 (abi.md C5), each value
+    /// all zero first so a field the site leaves out has its zero (abi.md C5), each value
     /// field written where the layout puts it, and the record committed through the site's
     /// statement. The text fields stay in the IR (`Body::record_site`): a comment names them.
     fn emit(&self, s: StmtId, stream: u32, fields: &[EmitField]) -> Result<String, Error> {
@@ -1371,18 +1237,16 @@ impl<'a> ValuePrinter<'a> {
                     let (Some((offset, _)), Some(declared)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
                         return Err(unsupported(&format!("emit! of field {field} of stream `{}`, out of range", declared.name)));
                     };
-                    let mut value = self.typed(*value, &ValueType::Flagged(Box::new(declared.ty.clone())))?.at(Prec::Atom);
+                    let mut value = self.expr(*value)?;
                     if value.contains("commits_") {
-                        // a value that commits or emits is `commits_.branch(..)`: evaluated before
-                        // the record's own `commits_` calls, so that two never borrow it at once
+                        // a value that emits is evaluated before the record's own `commits_`
+                        // calls, so that two never borrow it at once
                         let name = format!("field{field}_");
                         evaluated.push(format!("let {name} =\n{};", Self::indent(&value)));
                         value = name;
                     }
-                    writes.push(format!("{value}.write(&mut record_[{offset}..]); // {}", declared.name));
+                    writes.push(format!("rt::Carried::write_pin({value}, &mut record_[{offset}..]); // {}", declared.name));
                     if declared.name == "finish" && stream_name == "sim" {
-                        // a `finish` that is unknown, or reached under unknown control, never ends
-                        // a run (§19 Resolution)
                         writes.push(format!("commits_.finish({value});"));
                         self.finishes.set(true);
                     }
@@ -1398,13 +1262,11 @@ impl<'a> ValuePrinter<'a> {
         let text = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
         let mut lines = vec![format!("// emit! to stream `{}` @ {}:{}:{}{text}", declared.name, origin.file, origin.line, origin.col)];
         lines.extend(evaluated);
-        lines.push(format!("let mut record_ = [0u8; {}];", layout.size));
+        // a stream with no value field writes nothing into its zero bytes
+        let binding = if writes.is_empty() { "let" } else { "let mut" };
+        lines.push(format!("{binding} record_ = [0u8; {}];", layout.size));
         lines.extend(writes);
-        // the record's own `maybe` (§19 rule 1): whether the code is on a path taken under unknown
-        // control; `record_with_maybe` knows where it is, to keep it when a merge panics
-        let maybe_at = layout.maybe_offset();
-        lines.push(format!("commits_.maybe().write(&mut record_[{maybe_at}..]);"));
-        lines.push(format!("commits_.record_with_maybe({index}, &record_, {maybe_at});"));
+        lines.push(format!("commits_.record({index}, &record_);"));
         Ok(lines.join("\n"))
     }
 
@@ -1552,64 +1414,59 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     }
 
     #[test]
-    fn each_new_row_prints_plain_and_flagged() {
+    fn each_new_row_prints_as_its_method() {
         // CAT-01 to CAT-03 (Appendix H): each row of `f64` and of the integers prints as the
-        // method of its MSL name on the receiver, and, over a value that may be unknown, through
-        // `Flagged::map`, `zip` or `zip3`; `powi` takes its `i32` exponent as a Rust `i32`;
+        // method of its MSL name on the receiver; `powi` takes its `i32` exponent as a Rust `i32`;
         // `unwrap` and `expect` are `rt::Unwrap::of` of the flag and the payload.
         let f = ValueType::F64;
         let (u8_, i8_, i32_, u32_) = (Ty::u(8), Ty::i(8), Ty::i(32), Ty::u(32));
-        let flag = Ty::flagged;
-        // (row, receiver, other operands, result type, plain text, flagged text)
-        type Row = (Method, ValueType, Vec<ValueType>, ValueType, &'static str, &'static str);
+        // (row, receiver, other operands, result type, text)
+        type Row = (Method, ValueType, Vec<ValueType>, ValueType, &'static str);
         let rows: Vec<Row> = vec![
-            (Method::Sin, f.clone(), vec![], f.clone(), "x.sin()", "x.map(|x_| x_.sin())"),
-            (Method::Cos, f.clone(), vec![], f.clone(), "x.cos()", "x.map(|x_| x_.cos())"),
-            (Method::Tan, f.clone(), vec![], f.clone(), "x.tan()", "x.map(|x_| x_.tan())"),
-            (Method::Asin, f.clone(), vec![], f.clone(), "x.asin()", "x.map(|x_| x_.asin())"),
-            (Method::Acos, f.clone(), vec![], f.clone(), "x.acos()", "x.map(|x_| x_.acos())"),
-            (Method::Atan, f.clone(), vec![], f.clone(), "x.atan()", "x.map(|x_| x_.atan())"),
-            (Method::Sinh, f.clone(), vec![], f.clone(), "x.sinh()", "x.map(|x_| x_.sinh())"),
-            (Method::Cosh, f.clone(), vec![], f.clone(), "x.cosh()", "x.map(|x_| x_.cosh())"),
-            (Method::Tanh, f.clone(), vec![], f.clone(), "x.tanh()", "x.map(|x_| x_.tanh())"),
-            (Method::Log10, f.clone(), vec![], f.clone(), "x.log10()", "x.map(|x_| x_.log10())"),
-            (Method::Log2, f.clone(), vec![], f.clone(), "x.log2()", "x.map(|x_| x_.log2())"),
-            (Method::Ceil, f.clone(), vec![], f.clone(), "x.ceil()", "x.map(|x_| x_.ceil())"),
-            (Method::Round, f.clone(), vec![], f.clone(), "x.round()", "x.map(|x_| x_.round())"),
-            (Method::Trunc, f.clone(), vec![], f.clone(), "x.trunc()", "x.map(|x_| x_.trunc())"),
-            (Method::Fract, f.clone(), vec![], f.clone(), "x.fract()", "x.map(|x_| x_.fract())"),
-            (Method::Signum, f.clone(), vec![], f.clone(), "x.signum()", "x.map(|x_| x_.signum())"),
-            (Method::IsNan, f.clone(), vec![], ValueType::Bool, "x.is_nan()", "x.map(|x_| x_.is_nan())"),
-            (Method::IsFinite, f.clone(), vec![], ValueType::Bool, "x.is_finite()", "x.map(|x_| x_.is_finite())"),
-            (Method::IsInfinite, f.clone(), vec![], ValueType::Bool, "x.is_infinite()", "x.map(|x_| x_.is_infinite())"),
-            (Method::Atan2, f.clone(), vec![f.clone()], f.clone(), "x.atan2(y)", "x.zip(y, |x_, y_| x_.atan2(y_))"),
-            (Method::Powf, f.clone(), vec![f.clone()], f.clone(), "x.powf(y)", "x.zip(y, |x_, y_| x_.powf(y_))"),
-            (Method::Hypot, f.clone(), vec![f.clone()], f.clone(), "x.hypot(y)", "x.zip(y, |x_, y_| x_.hypot(y_))"),
-            (Method::RemEuclid, f.clone(), vec![f.clone()], f.clone(), "x.rem_euclid(y)", "x.zip(y, |x_, y_| x_.rem_euclid(y_))"),
-            (Method::Powi, f.clone(), vec![i32_.clone()], f.clone(), "x.powi(y.get() as i32)", "x.zip(y, |x_, y_| x_.powi(y_.get() as i32))"),
-            (Method::IntAbs, i8_.clone(), vec![], i8_.clone(), "x.abs()", "x.map(|x_| x_.abs())"),
-            (Method::Signum, i8_.clone(), vec![], i8_.clone(), "x.signum()", "x.map(|x_| x_.signum())"),
-            (Method::Pow, u8_.clone(), vec![u32_.clone()], u8_.clone(), "x.pow(y)", "x.zip(y, |x_, y_| x_.pow(y_))"),
-            (Method::RemEuclid, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.rem_euclid(y)", "x.zip(y, |x_, y_| x_.rem_euclid(y_))"),
-            (Method::SaturatingAdd, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.saturating_add(y)", "x.zip(y, |x_, y_| x_.saturating_add(y_))"),
-            (Method::SaturatingSub, i8_.clone(), vec![i8_.clone()], i8_.clone(), "x.saturating_sub(y)", "x.zip(y, |x_, y_| x_.saturating_sub(y_))"),
-            (Method::SaturatingMul, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.saturating_mul(y)", "x.zip(y, |x_, y_| x_.saturating_mul(y_))"),
-            (Method::AddOverflows, u8_.clone(), vec![u8_.clone()], ValueType::Bool, "x.add_overflows(y)", "x.zip(y, |x_, y_| x_.add_overflows(y_))"),
-            (Method::SubOverflows, i8_.clone(), vec![i8_.clone()], ValueType::Bool, "x.sub_overflows(y)", "x.zip(y, |x_, y_| x_.sub_overflows(y_))"),
-            (Method::MulOverflows, u8_.clone(), vec![u8_.clone()], ValueType::Bool, "x.mul_overflows(y)", "x.zip(y, |x_, y_| x_.mul_overflows(y_))"),
+            (Method::Sin, f.clone(), vec![], f.clone(), "x.sin()"),
+            (Method::Cos, f.clone(), vec![], f.clone(), "x.cos()"),
+            (Method::Tan, f.clone(), vec![], f.clone(), "x.tan()"),
+            (Method::Asin, f.clone(), vec![], f.clone(), "x.asin()"),
+            (Method::Acos, f.clone(), vec![], f.clone(), "x.acos()"),
+            (Method::Atan, f.clone(), vec![], f.clone(), "x.atan()"),
+            (Method::Sinh, f.clone(), vec![], f.clone(), "x.sinh()"),
+            (Method::Cosh, f.clone(), vec![], f.clone(), "x.cosh()"),
+            (Method::Tanh, f.clone(), vec![], f.clone(), "x.tanh()"),
+            (Method::Log10, f.clone(), vec![], f.clone(), "x.log10()"),
+            (Method::Log2, f.clone(), vec![], f.clone(), "x.log2()"),
+            (Method::Ceil, f.clone(), vec![], f.clone(), "x.ceil()"),
+            (Method::Round, f.clone(), vec![], f.clone(), "x.round()"),
+            (Method::Trunc, f.clone(), vec![], f.clone(), "x.trunc()"),
+            (Method::Fract, f.clone(), vec![], f.clone(), "x.fract()"),
+            (Method::Signum, f.clone(), vec![], f.clone(), "x.signum()"),
+            (Method::IsNan, f.clone(), vec![], ValueType::Bool, "x.is_nan()"),
+            (Method::IsFinite, f.clone(), vec![], ValueType::Bool, "x.is_finite()"),
+            (Method::IsInfinite, f.clone(), vec![], ValueType::Bool, "x.is_infinite()"),
+            (Method::Atan2, f.clone(), vec![f.clone()], f.clone(), "x.atan2(y)"),
+            (Method::Powf, f.clone(), vec![f.clone()], f.clone(), "x.powf(y)"),
+            (Method::Hypot, f.clone(), vec![f.clone()], f.clone(), "x.hypot(y)"),
+            (Method::RemEuclid, f.clone(), vec![f.clone()], f.clone(), "x.rem_euclid(y)"),
+            (Method::Powi, f.clone(), vec![i32_.clone()], f.clone(), "x.powi(y.get() as i32)"),
+            (Method::IntAbs, i8_.clone(), vec![], i8_.clone(), "x.abs()"),
+            (Method::Signum, i8_.clone(), vec![], i8_.clone(), "x.signum()"),
+            (Method::Pow, u8_.clone(), vec![u32_.clone()], u8_.clone(), "x.pow(y)"),
+            (Method::RemEuclid, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.rem_euclid(y)"),
+            (Method::SaturatingAdd, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.saturating_add(y)"),
+            (Method::SaturatingSub, i8_.clone(), vec![i8_.clone()], i8_.clone(), "x.saturating_sub(y)"),
+            (Method::SaturatingMul, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.saturating_mul(y)"),
+            (Method::AddOverflows, u8_.clone(), vec![u8_.clone()], ValueType::Bool, "x.add_overflows(y)"),
+            (Method::SubOverflows, i8_.clone(), vec![i8_.clone()], ValueType::Bool, "x.sub_overflows(y)"),
+            (Method::MulOverflows, u8_.clone(), vec![u8_.clone()], ValueType::Bool, "x.mul_overflows(y)"),
         ];
         let mut b = IrBuilder::new();
         for (k, (method, recv, others, result, ..)) in rows.iter().enumerate() {
-            for flagged in [false, true] {
-                let at = |t: &ValueType| if flagged { flag(t.clone()) } else { t.clone() };
-                let mut params = vec![("x", at(recv))];
-                params.extend(others.iter().enumerate().map(|(i, t)| (["y", "z"][i], at(t))));
-                defined(&mut b, &format!("row{k}_{}", u8::from(flagged)), &params, at(result), |x| {
-                    let receiver = x.local(0, at(recv));
-                    let args: Vec<ExprId> = others.iter().enumerate().map(|(i, t)| x.local(i as u32 + 1, at(t))).collect();
-                    x.method(*method, receiver, args, at(result))
-                });
-            }
+            let mut params = vec![("x", recv.clone())];
+            params.extend(others.iter().enumerate().map(|(i, t)| (["y", "z"][i], t.clone())));
+            defined(&mut b, &format!("row{k}"), &params, result.clone(), |x| {
+                let receiver = x.local(0, recv.clone());
+                let args: Vec<ExprId> = others.iter().enumerate().map(|(i, t)| x.local(i as u32 + 1, t.clone())).collect();
+                x.method(*method, receiver, args, result.clone())
+            });
         }
         // A literal exponent prints as an `i32` literal (analog code has no `rt::Int`).
         defined(&mut b, "powi_literal", &[("x", f.clone())], f.clone(), |x| {
@@ -1623,17 +1480,15 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
             let o = x.origin();
             x.b.expr(Expr::Unwrap { is, value: v, message: None }, Ty::u(8), o)
         });
-        defined(&mut b, "expected", &[("is", ValueType::Bool), ("v", flag(u8_.clone()))], flag(u8_.clone()), |x| {
-            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, flag(Ty::u(8))));
+        defined(&mut b, "expected", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
+            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(8)));
             let o = x.origin();
-            x.b.expr(Expr::Unwrap { is, value: v, message: Some("need the \"reading\"".to_string()) }, flag(Ty::u(8)), o)
+            x.b.expr(Expr::Unwrap { is, value: v, message: Some("need the \"reading\"".to_string()) }, Ty::u(8), o)
         });
         let ir = Alone::finish(b);
-        for (k, (method, _, _, _, plain, flagged)) in rows.iter().enumerate() {
-            for (name, want) in [(format!("row{k}_0"), plain), (format!("row{k}_1"), flagged)] {
-                let text = function(&ir, &name);
-                assert!(text.lines().any(|l| l.trim() == *want), "{method:?}: `{want}` is the body of {name}:\n{text}");
-            }
+        for (k, (method, _, _, _, want)) in rows.iter().enumerate() {
+            let (name, text) = (format!("row{k}"), function(&ir, &format!("row{k}")));
+            assert!(text.lines().any(|l| l.trim() == *want), "{method:?}: `{want}` is the body of {name}:\n{text}");
         }
         assert!(function(&ir, "powi_literal").lines().any(|l| l.trim() == "x.powi(3_i32)"), "{}", function(&ir, "powi_literal"));
         assert!(function(&ir, "unwrapped").contains("rt::Unwrap::of(is, v, None)"), "{}", function(&ir, "unwrapped"));
@@ -1641,52 +1496,34 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     }
 
     #[test]
-    fn integer_and_flagged_expressions_print() {
+    fn integer_expressions_print() {
         let mut b = IrBuilder::new();
         let rev3 = Buck::rev3(&mut b);
-        let rev3_flagged = Buck::rev3_flagged(&mut b);
         Buck::dithered_width(&mut b, rev3);
-        Buck::dithered_width_flagged(&mut b, rev3_flagged);
-        let flag_u8 = Ty::flagged(Ty::u(8));
-        // §3.3.4: `x.known_or(7)`, `x.is_known()`, `p.high()`, and the literal `Unknown`
-        defined(&mut b, "or_seven", &[("x", flag_u8.clone())], Ty::u(8), |x| {
-            let v = x.local(0, Ty::flagged(Ty::u(8)));
-            let seven = x.int(7, Ty::u(8));
-            x.known_or(v, seven, Ty::u(8))
-        });
-        defined(&mut b, "known", &[("x", flag_u8.clone())], ValueType::Bool, |x| {
-            let v = x.local(0, Ty::flagged(Ty::u(8)));
-            x.is_known(v)
-        });
-        defined(&mut b, "level", &[("p", Ty::flagged(ValueType::Bool))], ValueType::Bool, |x| {
-            let v = x.local(0, Ty::flagged(ValueType::Bool));
-            x.high(v)
-        });
-        defined(&mut b, "nothing", &[], flag_u8.clone(), |x| x.unknown(Ty::flagged(Ty::u(8))));
-        // §1 rule 6: `-(a % b)` on `i16`; a cast from a flagged integer maps; a real cast to an
-        // integer takes the real's value; `min` and `clamp` of a flagged receiver zip
+        // §1 rule 6: `-(a % b)` on `i16`; a cast from an integer; a real cast to an integer takes
+        // the real's value; `min` and `clamp`
         defined(&mut b, "negated_rem", &[("a", Ty::i(16)), ("b", Ty::i(16))], Ty::i(16), |x| {
             let (a, c) = (x.local(0, Ty::i(16)), x.local(1, Ty::i(16)));
             let rem = x.bin(BinaryOp::Rem, a, c, Ty::i(16));
             x.un(UnaryOp::Neg, rem, Ty::i(16))
         });
-        defined(&mut b, "widen", &[("x", Ty::flagged(Ty::u(10)))], Ty::flagged(Ty::i(16)), |x| {
-            let v = x.local(0, Ty::flagged(Ty::u(10)));
-            x.cast(v, Ty::i(16), Ty::flagged(Ty::i(16)))
+        defined(&mut b, "widen", &[("x", Ty::u(10))], Ty::i(16), |x| {
+            let v = x.local(0, Ty::u(10));
+            x.cast(v, Ty::i(16), Ty::i(16))
         });
         defined(&mut b, "truncated", &[("x", ValueType::F64)], Ty::u(10), |x| {
             let v = x.local(0, ValueType::F64);
             x.cast(v, Ty::u(10), Ty::u(10))
         });
-        defined(&mut b, "capped", &[("x", Ty::flagged(Ty::u(8)))], Ty::flagged(Ty::u(8)), |x| {
-            let v = x.local(0, Ty::flagged(Ty::u(8)));
+        defined(&mut b, "capped", &[("x", Ty::u(8))], Ty::u(8), |x| {
+            let v = x.local(0, Ty::u(8));
             let cap = x.int(168, Ty::u(8));
-            x.method(Method::Min, v, vec![cap], Ty::flagged(Ty::u(8)))
+            x.method(Method::Min, v, vec![cap], Ty::u(8))
         });
-        defined(&mut b, "held", &[("x", Ty::flagged(Ty::i(32)))], Ty::flagged(Ty::i(32)), |x| {
-            let v = x.local(0, Ty::flagged(Ty::i(32)));
+        defined(&mut b, "held", &[("x", Ty::i(32))], Ty::i(32), |x| {
+            let v = x.local(0, Ty::i(32));
             let (lo, hi) = (x.int(0, Ty::i(32)), x.int(2880, Ty::i(32)));
-            x.method(Method::Clamp, v, vec![lo, hi], Ty::flagged(Ty::i(32)))
+            x.method(Method::Clamp, v, vec![lo, hi], Ty::i(32))
         });
         let ir = Alone::finish(b);
 
@@ -1716,56 +1553,16 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
 ";
         assert_eq!(function(&ir, "dithered_width"), dithered_text);
 
-        // the variant for a frame that may be unknown (msl-digital's `rev3~1`, `~` printing as
-        // `_v`): every operand is lifted to `Flagged`, the `i32` shift amount too
-        let rev3_flagged_text = "\
-// fn rev3~1 @ dpwm.msl:14:1
-fn rev3_v1(k: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<3>> {
-    (((k & rt::Flagged::known(rt::UInt::<3>::new(1))) << rt::Flagged::known(rt::Int::<32>::new(2))) | (k & rt::Flagged::known(rt::UInt::<3>::new(2)))) | ((k >> rt::Flagged::known(rt::Int::<32>::new(2))) & rt::Flagged::known(rt::UInt::<3>::new(1)))
-}
-";
-        assert_eq!(function(&ir, "rev3~1"), rev3_flagged_text);
-
-        // the same `if` on a comparison that may be unknown is the merge of §3.3.3: `choose` runs
-        // one arm, or both and merges them, and the function returns its value plain (no
-        // `Result`); the known branches are lifted to the `if`'s type
-        let dithered_flagged_text = "\
-// fn dithered_width~01 @ dpwm.msl:18:1
-fn dithered_width_v01(duty: rt::UInt<12>, frame: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<9>> {
-    let coarse = (duty >> rt::Int::<32>::new(3)).to_uint::<9>();
-    let fine = (duty & rt::UInt::<12>::new(7)).to_uint::<3>();
-    rev3_v1(frame).less(rt::Flagged::known(fine)).choose(|| {
-        rt::Flagged::known(coarse + rt::UInt::<9>::new(1))
-    }, || {
-        rt::Flagged::known(coarse)
-    })
-}
-";
-        assert_eq!(function(&ir, "dithered_width~01"), dithered_flagged_text);
-
-        // the unknown-value forms of §3.3.4 and the integer operators of §1
+        // the integer operators of §1
         let text = |name: &str| function(&ir, name).lines().skip(1).collect::<Vec<_>>().join("\n");
-        assert_eq!(text("or_seven"), "fn or_seven(x: rt::Flagged<rt::UInt<8>>) -> rt::UInt<8> {\n    x.known_or(rt::UInt::<8>::new(7))\n}");
-        assert_eq!(text("known"), "fn known(x: rt::Flagged<rt::UInt<8>>) -> bool {\n    x.is_known()\n}");
-        assert_eq!(text("level"), "fn level(p: rt::Flagged<bool>) -> bool {\n    p.high()\n}");
-        assert_eq!(text("nothing"), "fn nothing() -> rt::Flagged<rt::UInt<8>> {\n    rt::Flagged::<rt::UInt<8>>::unknown()\n}");
         assert_eq!(text("negated_rem"), "fn negated_rem(a: rt::Int<16>, b: rt::Int<16>) -> rt::Int<16> {\n    -(a % b)\n}");
-        assert_eq!(
-            text("widen"),
-            "fn widen(x: rt::Flagged<rt::UInt<10>>) -> rt::Flagged<rt::Int<16>> {\n    x.map(|v_| v_.to_int::<16>())\n}"
-        );
+        assert_eq!(text("widen"), "fn widen(x: rt::UInt<10>) -> rt::Int<16> {\n    x.to_int::<16>()\n}");
         assert_eq!(
             text("truncated"),
             "fn truncated<R: Real>(x: R) -> rt::UInt<10> {\n    rt::UInt::<10>::from_f64(x.value())\n}"
         );
-        assert_eq!(
-            text("capped"),
-            "fn capped(x: rt::Flagged<rt::UInt<8>>) -> rt::Flagged<rt::UInt<8>> {\n    x.zip(rt::Flagged::known(rt::UInt::<8>::new(168)), |x_, y_| x_.min(y_))\n}"
-        );
-        assert_eq!(
-            text("held"),
-            "fn held(x: rt::Flagged<rt::Int<32>>) -> rt::Flagged<rt::Int<32>> {\n    x.zip3(rt::Flagged::known(rt::Int::<32>::new(0)), rt::Flagged::known(rt::Int::<32>::new(2880)), |x_, lo_, hi_| x_.clamp(lo_, hi_))\n}"
-        );
+        assert_eq!(text("capped"), "fn capped(x: rt::UInt<8>) -> rt::UInt<8> {\n    x.min(rt::UInt::<8>::new(168))\n}");
+        assert_eq!(text("held"), "fn held(x: rt::Int<32>) -> rt::Int<32> {\n    x.clamp(rt::Int::<32>::new(0), rt::Int::<32>::new(2880))\n}");
     }
 
     #[test]
@@ -1773,7 +1570,7 @@ fn dithered_width_v01(duty: rt::UInt<12>, frame: rt::Flagged<rt::UInt<3>>) -> rt
         // RS-Q6: `UInt<N>` and `Int<N>` hold 1..=64 bits; the ABI's leaves end at 64. (The IR has
         // no `Float<16>` or `Float<128>`: its only real is `f64`, so no `Ir` holds one to refuse.)
         let at = Origin { file: "dpwm.msl".into(), line: 1, col: 1 };
-        for (ty, name) in [(Ty::u(65), "UInt<65>"), (Ty::i(65), "Int<65>"), (Ty::u(0), "UInt<0>"), (Ty::flagged(Ty::u(65)), "UInt<65>")] {
+        for (ty, name) in [(Ty::u(65), "UInt<65>"), (Ty::i(65), "Int<65>"), (Ty::u(0), "UInt<0>")] {
             let mut b = IrBuilder::new();
             let f = defined(&mut b, "wide", &[("x", ty.clone())], ValueType::Bool, |x| x.boolean(true));
             let ir = Alone::finish_unchecked(b);

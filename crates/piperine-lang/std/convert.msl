@@ -4,10 +4,10 @@ pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0;
     tr: f64 = 20p;
     let ramp = transition(
-        match d.known() {
-            Some(true) => 1.0,
-            Some(false) => 0.0,
-            None => 0.5,
+        if d {
+            1.0
+        } else {
+            0.0
         },
         0.0,
         tr,
@@ -39,17 +39,17 @@ pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
     vth: f64 = 0.6;
     hyst: f64 = 50m;
     signal seen: Bit = false; // the node, thresholded
-    let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ; // unknown strength: assume driven
+    let driving = d.others().s != Strength::HighZ;
     d = if driving {
-        Logic::Z
+        Drive::Z
     } else {
-        Logic::strong(seen)
+        Drive::strong(seen)
     };
     let ramp = transition(
-        match d.others().v.known() {
-            Some(true) => 1.0,
-            Some(false) => 0.0,
-            None => 0.5,
+        if d.others().v {
+            1.0
+        } else {
+            0.0
         },
         0.0,
         tr,

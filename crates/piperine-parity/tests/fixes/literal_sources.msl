@@ -32,12 +32,12 @@ pub module Osc(out clk: Bit = false) {
 digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 
 /// Commits 2.0 into `lv` at the first rising edge.
-module Drive(in clk: Bit, out lv: Bit<f64>) {}
+module Drive(in clk: Bit, out lv: Bit<f64> = 0.0) {}
 digital for Drive { on clk.rise() { lv <- 2.0; } }
 
 /// A current of `lv` mA, from the carrier alone.
 module CarrierSource(p: Electrical, in lv: Bit<f64>) {}
-analog for CarrierSource { i(gnd, p) +> lv.known_or(0.0) * 1m; }
+analog for CarrierSource { i(gnd, p) +> lv * 1m; }
 
 module CarrierBench() {
     signal a: Electrical;

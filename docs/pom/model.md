@@ -1280,7 +1280,7 @@ What a built-in is.
 | `Variant` | — | A built-in enum variant (`Some`, `Transient`, ...). |
 | `Fn` | — | A built-in function. |
 | `Module` | — | A built-in module placed as an instance (`ddt`, `delay`, `limit`, `noise`, `cross`, `at`). |
-| `Method` | — | A built-in method (`changed`, `prev`, `others`, `level`, `inflow`); reached only as a member, never as a name. |
+| `Method` | — | A built-in method (`changed`, `prev`, `others`, `inflow`); reached only as a member, never as a name. |
 | `Event` | — | A built-in event (`settle`). |
 | `Statement` | — | A built-in statement (`bound_step`). |
 | `Node` | — | A reference node (`gnd`). |
@@ -1577,7 +1577,7 @@ Shape: `pub kind: LitKind`, `pub span: Loc`.
 
 *enum*. The literal forms. `Int` keeps the text with its type suffix; `Float` keeps the SI-scaled value and the raw text (serialized as the raw text only: the value is recomputed from it on read, so `1e999` round-trips through JSON); `Str` keeps escapes unprocessed.
 
-Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`, `Unknown`.
+Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`.
 
 ### `UnOp`
 

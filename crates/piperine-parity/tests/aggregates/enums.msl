@@ -37,7 +37,7 @@ fn opt_array_sum(b: bool) -> u8 { match opt_array(b) { Some(a) => a[0] + a[1], N
 fn opt_enum(k: u8) -> Option<Msg> { if k == 0 { Some(Msg::Move(1, 2)) } else if k == 1 { Some(Msg::Say { len: 9 }) } else if k == 2 { Some(Msg::Quit) } else { None } }
 fn opt_enum_weight(k: u8) -> u8 { match opt_enum(k) { Some(Msg::Move(a, b)) => a * 10 + b, Some(Msg::Say { len }) => len, Some(Msg::Quit) => 1, None => 0 } }
 
-module OptionRows(in clk: Bit, out p0: Bit<u8>, out p1: Bit<u8>, out p2: Bit<u8>, out p3: Bit<u8>, out p4: Bit<u8>, out p5: Bit<u8>, out p6: Bit<u8>, out p7: Bit<bool>, out p8: Bit<u8>) {}
+module OptionRows(in clk: Bit, out p0: Bit<u8> = 0, out p1: Bit<u8> = 0, out p2: Bit<u8> = 0, out p3: Bit<u8> = 0, out p4: Bit<u8> = 0, out p5: Bit<u8> = 0, out p6: Bit<u8> = 0, out p7: Bit<bool> = false, out p8: Bit<u8> = 0) {}
 digital for OptionRows {
     on clk.rise() {
         p0 <- opt_tuple_weight(true); p1 <- opt_tuple_weight(false);
@@ -47,7 +47,7 @@ digital for OptionRows {
     }
 }
 
-module Rows(in clk: Bit, out v0: Bit<u8>, out v1: Bit<u8>, out v2: Bit<u8>, out v3: Bit<u8>, out v4: Bit<u8>, out v5: Bit<u8>, out v6: Bit<u8>, out v7: Bit<u8>, out v8: Bit<u8>, out v9: Bit<u8>, out v10: Bit<bool>, out v11: Bit<bool>, out c0: Bit<u8>, out c1: Bit<u8>, out c2: Bit<u8>, out c3: Bit<u8>, out c4: Bit<u8>, out o0: Bit<u8>, out o1: Bit<u8>, out o2: Bit<u8>, out o3: Bit<u8>, out o4: Bit<u8>, out o5: Bit<bool>) {}
+module Rows(in clk: Bit, out v0: Bit<u8> = 0, out v1: Bit<u8> = 0, out v2: Bit<u8> = 0, out v3: Bit<u8> = 0, out v4: Bit<u8> = 0, out v5: Bit<u8> = 0, out v6: Bit<u8> = 0, out v7: Bit<u8> = 0, out v8: Bit<u8> = 0, out v9: Bit<u8> = 0, out v10: Bit<bool> = false, out v11: Bit<bool> = false, out c0: Bit<u8> = 0, out c1: Bit<u8> = 0, out c2: Bit<u8> = 0, out c3: Bit<u8> = 0, out c4: Bit<u8> = 0, out o0: Bit<u8> = 0, out o1: Bit<u8> = 0, out o2: Bit<u8> = 0, out o3: Bit<u8> = 0, out o4: Bit<u8> = 0, out o5: Bit<bool> = false) {}
 digital for Rows {
     on clk.rise() {
         v0 <- size(Tx::Idle);

@@ -1,0 +1,26 @@
+//! An ideal step into the stdlib `slew` (analog-operators AO-13, Part VII §22.2.10): a source whose
+//! value is a `Bit<f64>` carrier, set from 0 to 1 at 1 us, so the step has no edge at all.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A potential that follows the carrier `level`.
+module Follower(p: Electrical, in level: Bit<f64>) {}
+analog for Follower { v(p, gnd) +> level; }
+
+/// Sets the carrier to 1 at 1 us: 0 before, 1 after, nothing between.
+module Stepper(out level: Bit<f64> = 0.0) {}
+digital for Stepper { on at(1u) { level <- 1.0; } }
+
+module SlewStepBench() {
+    signal level: Bit<f64>;
+    signal inp: Electrical;
+    signal o: Electrical;
+    let stepper = Stepper(level);
+    let source = Follower(inp, level);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for SlewStepBench { v(o) +> slew(v(inp), 1M, 1M); }

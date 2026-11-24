@@ -139,11 +139,12 @@ fn check_renders_every_diagnostic_and_exits_1() {
 }
 
 #[test]
-fn check_without_a_run_says_type_checking_needs_one() {
-    // CLI-14 AC 4: a project with no run is parsed and resolved only, and the line says so
+fn check_without_a_run_types_the_whole_package() {
+    // GN-08 AC 2 (S3; CLI-14 AC 4 moved): a project with no run is type-checked whole, so the line
+    // no longer says type checking needs a run
     let out = piperine_in(&fixture("no_run"), &["check"]);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
-    assert_eq!(text(&out.stdout), "ok: no_run (2 crates, 0 runs; type checking needs a run)\n");
+    assert_eq!(text(&out.stdout), "ok: no_run (2 crates, 0 runs)\n");
 }
 
 #[test]
@@ -800,4 +801,40 @@ fn test_passes_a_run_ended_by_finish() {
     let out = piperine_in(&fixture("finish_run"), &["test"]);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "PASS finish (1 checks)\n1 runs, 1 passed, 0 failed\n");
+}
+
+/// What a failed command printed on standard error.
+struct Stderr;
+
+impl Stderr {
+    /// The code lines of a failed command's standard error, one per diagnostic.
+    fn code_lines(out: &Output) -> Vec<String> {
+        text(&out.stderr).lines().filter(|l| l.len() == 5 && l.starts_with(['E', 'P'])).map(str::to_string).collect()
+    }
+}
+
+#[test]
+fn check_reports_one_error_per_unreached_item_kind() {
+    // GN-08 AC 1, 2: a library with no `[run]` and a variant with one; the `fn`, the module, the
+    // behavior block, the `const` and the `impl` function each fail with the code they have when
+    // reached (`E0180`), and nothing reaches any of them
+    for name in ["unreached_errors", "unreached_errors_run"] {
+        let out = piperine_in(&fixture(name), &["check"]);
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), "", "{name}");
+        assert_eq!(Stderr::code_lines(&out), ["E0180"; 5], "{name}: one diagnostic per item kind: {}", text(&out.stderr));
+    }
+}
+
+#[test]
+fn build_and_run_fail_with_the_check_diagnostic() {
+    // GN-09 AC 1: `build` and `run` fail with the diagnostics `check` prints, text and all
+    let fixture = fixture("unreached_errors_run");
+    let checked = piperine_on(&fixture, "interp", &["check"]);
+    assert_eq!(Stderr::code_lines(&checked), ["E0180"; 5]);
+    for command in ["build", "run"] {
+        let out = piperine_on(&fixture, "interp", &[command, "main"]);
+        assert_eq!(out.status.code(), Some(1), "{command}: {}", text(&out.stderr));
+        assert_eq!(text(&out.stderr), text(&checked.stderr), "{command} prints what check prints");
+    }
 }

@@ -2,11 +2,11 @@
 //! tuples, arrays, structs, enum variants with fields, `Option`s, ranges and iterators evaluate at
 //! elaboration to the value they have at run time.
 //!
-//! A composite is held by the evaluator as an entry of its own arena, named inside a [`Folded`] by
+//! A composite is held by the evaluator as an entry of its own arena, named inside a [`Constant`] by
 //! a `Constant::Aggregate` handle that means nothing outside the evaluator: the public entry points
 //! never give one out (`ConstEval::folded` and its kin refuse it), and [`ConstEval::tree`] gives the
 //! value as an owned [`ConstTree`] for the elaborator to turn into an IR constant. Every part is a
-//! `Folded`, so a part may be unknown (§3.3); a value is copied where it is used (§1.4.6), so an
+//! `Constant`; a value is copied where it is used (§1.4.6), so an
 //! entry is never changed: an assignment builds the composite again with the one part replaced.
 //!
 //! An iterator holds its elements (`iter()`, the adaptors and a range used as an iterator are
@@ -21,9 +21,9 @@ use piperine_ir::{AggregateId, Constant, Real};
 
 use super::super::compound::EnumLayout;
 use super::control::{Argument, FnValue};
-use super::{Bindings, ConstEval, ConstFault, Folded};
+use super::{Bindings, ConstEval, ConstFault};
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatId, PatKind, Resolution};
-use crate::types::{Method, Ty};
+use crate::types::{Method, Length, Nominal, Ty};
 
 /// What a composite value is made of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,14 +55,14 @@ pub(super) struct Composite {
     /// What it is made of.
     pub(super) kind: CompositeKind,
     /// Its parts.
-    pub(super) parts: Vec<Folded>,
+    pub(super) parts: Vec<Constant>,
 }
 
 /// A folded value with its composites taken apart, for the elaborator to turn into IR constants.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstTree {
-    /// A scalar, or a part that is unknown.
-    Scalar(Folded),
+    /// A scalar.
+    Scalar(Constant),
     /// A composite and its parts.
     Composite {
         /// What it is made of.
@@ -81,22 +81,36 @@ enum Step {
 }
 
 impl ConstEval<'_, '_> {
-    /// Adds the composite of `kind` and `parts`; the `Folded` that names it.
-    pub(super) fn make(&mut self, kind: CompositeKind, parts: Vec<Folded>) -> Folded {
+    /// Adds the composite of `kind` and `parts`; the `Constant` that names it.
+    pub(super) fn make(&mut self, kind: CompositeKind, parts: Vec<Constant>) -> Constant {
         self.composites.push(Composite { kind, parts });
-        Folded::Known(Constant::Aggregate(AggregateId((self.composites.len() - 1) as u32)))
+        Constant::Aggregate(AggregateId((self.composites.len() - 1) as u32))
     }
 
     /// The composite `value` names, when it names one.
-    pub(super) fn composite_of(&self, value: Folded) -> Option<&Composite> {
+    pub(super) fn composite_of(&self, value: Constant) -> Option<&Composite> {
         match value {
-            Folded::Known(Constant::Aggregate(id)) => self.composites.get(id.index()),
+            Constant::Aggregate(id) => self.composites.get(id.index()),
             _ => None,
         }
     }
 
+    /// The levels word the function `encode` of a hand-written `Repr` gives for the value `init` folds to: level `k`
+    /// is bit `k` (GN-05). The word is what a carrier of such a type is initialized with.
+    pub(in crate::elab) fn encoded_word(&mut self, init: ExprId, encode: DeclId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(init, bindings)?;
+        let levels = self.apply_function(init, encode, vec![Argument { value: Some(value), function: None }])?;
+        let (_, parts) = self.parts_of(init, levels, "the levels of an `encode`")?;
+        let mut word: i128 = 0;
+        for (level, part) in parts.iter().enumerate() {
+            let Constant::Bool(high) = part else { return Err(ConstFault::Unsupported { expr: init, what: "an `encode` that gives a level that is not a `bool`".to_string() }) };
+            word |= i128::from(*high) << level;
+        }
+        Ok(Constant::Int(word))
+    }
+
     /// The composite `value` names and its parts copied out, or a fault naming `expr`.
-    fn parts_of(&self, expr: ExprId, value: Folded, what: &str) -> Result<(CompositeKind, Vec<Folded>), ConstFault> {
+    fn parts_of(&self, expr: ExprId, value: Constant, what: &str) -> Result<(CompositeKind, Vec<Constant>), ConstFault> {
         match self.composite_of(value) {
             Some(composite) => Ok((composite.kind, composite.parts.clone())),
             None => Err(ConstFault::Unsupported { expr, what: format!("{what} that is not a composite value") }),
@@ -104,7 +118,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// The value `tree` describes, its composites added to this evaluator's own.
-    pub(super) fn adopt(&mut self, tree: &ConstTree) -> Folded {
+    pub(super) fn adopt(&mut self, tree: &ConstTree) -> Constant {
         match tree {
             ConstTree::Scalar(value) => *value,
             ConstTree::Composite { kind, parts } => {
@@ -115,32 +129,23 @@ impl ConstEval<'_, '_> {
     }
 
     /// `value` as a tree: its composites taken apart down to the scalars.
-    pub(super) fn export(&self, value: Folded) -> ConstTree {
+    pub(super) fn export(&self, value: Constant) -> ConstTree {
         match self.composite_of(value) {
             Some(composite) => ConstTree::Composite { kind: composite.kind, parts: composite.parts.iter().map(|part| self.export(*part)).collect() },
             None => ConstTree::Scalar(value),
         }
     }
 
-    /// The tree of the value of `expr` over `bindings`. A composite whole that is unknown is a
-    /// fault ([`ConstFault::Unknown`]); a part may be unknown.
+    /// The tree of the value of `expr` over `bindings`.
     pub fn tree(&mut self, expr: ExprId, bindings: &Bindings) -> Result<ConstTree, ConstFault> {
-        match self.fold(expr, bindings)? {
-            Folded::Unknown => Err(ConstFault::Unknown { expr }),
-            value => Ok(self.export(value)),
-        }
+        let value = self.fold(expr, bindings)?;
+        Ok(self.export(value))
     }
 
-    /// The tree of the value of the `const` item `decl`. A composite whole that is unknown is a
-    /// fault ([`ConstFault::Unknown`]) on its initializer.
+    /// The tree of the value of the `const` item `decl`.
     pub fn constant_tree(&mut self, decl: DeclId) -> Result<ConstTree, ConstFault> {
-        match self.fold_constant(decl)? {
-            Folded::Unknown => match &self.design.decl_data(decl).kind {
-                DeclKind::Const(crate::pom::ConstData { value: Some(expr), .. }) => Err(ConstFault::Unknown { expr: *expr }),
-                _ => Err(ConstFault::NoValue { decl }),
-            },
-            value => Ok(self.export(value)),
-        }
+        let value = self.fold_constant(decl)?;
+        Ok(self.export(value))
     }
 
     /// Whether the `const` item `decl` folds to a composite value.
@@ -151,22 +156,22 @@ impl ConstEval<'_, '_> {
     // ---- building ----------------------------------------------------------------------------
 
     /// `(a, b, ..)`: its operands evaluated in the order written.
-    pub(super) fn tuple_value(&mut self, items: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn tuple_value(&mut self, items: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let parts = items.iter().map(|item| self.fold(*item, bindings)).collect::<Result<Vec<_>, _>>()?;
         Ok(self.make(CompositeKind::Tuple, parts))
     }
 
     /// `[a, b, ..]`.
-    pub(super) fn array_value(&mut self, items: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn array_value(&mut self, items: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let parts = items.iter().map(|item| self.fold(*item, bindings)).collect::<Result<Vec<_>, _>>()?;
         Ok(self.make(CompositeKind::Array, parts))
     }
 
     /// `[x; N]`: `x` evaluated once, `N` copies of it.
-    pub(super) fn repeat_value(&mut self, expr: ExprId, element: ExprId, length: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let count = match self.types.integer_constant(length) {
+    pub(super) fn repeat_value(&mut self, expr: ExprId, element: ExprId, length: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let count = match self.integer(length) {
             Some(count) => count as usize,
-            None => match self.known(length, bindings)? {
+            None => match self.fold(length, bindings)? {
                 Constant::Int(count) if count >= 0 => count as usize,
                 _ => return Err(ConstFault::Unsupported { expr, what: "an array length that is not a non-negative integer".to_string() }),
             },
@@ -177,16 +182,16 @@ impl ConstEval<'_, '_> {
 
     /// `Name { field: value, .. }` of a struct or an enum variant: its fields in declaration order,
     /// evaluated in the order written (§1.3.11).
-    pub(super) fn struct_value(&mut self, expr: ExprId, path: crate::pom::PathId, inits: &[FieldInit], bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let owner = match self.types.ty(expr) {
-            Some(Ty::Struct(decl)) => *decl,
+    pub(super) fn struct_value(&mut self, expr: ExprId, path: crate::pom::PathId, inits: &[FieldInit], bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let owner = match self.typed(expr) {
+            Some(Ty::Struct(Nominal { decl, .. })) => decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => return Err(ConstFault::Unsupported { expr, what: "a struct expression that names neither a struct nor a variant".to_string() }),
             },
         };
         let layout: Vec<DeclId> = self.types.fields(owner).map(|fields| fields.iter().map(|f| f.decl).collect()).unwrap_or_default();
-        let mut parts = vec![Folded::Unknown; layout.len()];
+        let mut parts: Vec<Option<Constant>> = vec![None; layout.len()];
         for init in inits {
             let at = match init.res {
                 Resolution::Decl(field) => layout.iter().position(|f| *f == field),
@@ -195,19 +200,22 @@ impl ConstEval<'_, '_> {
             let Some(at) = at else {
                 return Err(ConstFault::Unsupported { expr, what: "a field the struct does not have".to_string() });
             };
-            parts[at] = self.fold(init.value, bindings)?;
+            parts[at] = Some(self.fold(init.value, bindings)?);
         }
+        let Some(parts) = parts.into_iter().collect::<Option<Vec<_>>>() else {
+            return Err(ConstFault::Unsupported { expr, what: "a struct expression that leaves a field out".to_string() });
+        };
         self.owned(expr, owner, parts)
     }
 
     /// `Name(a, b)` of a tuple struct or a variant with positional fields.
-    pub(super) fn constructor_value(&mut self, expr: ExprId, owner: DeclId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn constructor_value(&mut self, expr: ExprId, owner: DeclId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let parts = args.iter().map(|arg| self.fold(*arg, bindings)).collect::<Result<Vec<_>, _>>()?;
         self.owned(expr, owner, parts)
     }
 
     /// The value of the struct or variant `owner` with `parts`.
-    fn owned(&mut self, expr: ExprId, owner: DeclId, parts: Vec<Folded>) -> Result<Folded, ConstFault> {
+    fn owned(&mut self, expr: ExprId, owner: DeclId, parts: Vec<Constant>) -> Result<Constant, ConstFault> {
         match self.design.decl_data(owner).kind {
             DeclKind::Struct(_) => Ok(self.make(CompositeKind::Struct, parts)),
             DeclKind::Variant(_) => match EnumLayout::variant_tag(self.design, owner) {
@@ -240,7 +248,7 @@ impl ConstEval<'_, '_> {
 
     /// A unit struct or a unit variant of an enum with fields named as a value; `None` for any other
     /// name.
-    pub(super) fn unit_value(&mut self, decl: DeclId) -> Option<Folded> {
+    pub(super) fn unit_value(&mut self, decl: DeclId) -> Option<Constant> {
         match self.design.decl_data(decl).kind {
             DeclKind::Struct(_) => Some(self.make(CompositeKind::Struct, Vec::new())),
             DeclKind::Variant(_) if self.enum_has_fields(decl) => {
@@ -252,7 +260,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `Some(x)` or `None` named as a value; `None` for any other call or name.
-    pub(super) fn option_value(&mut self, expr: ExprId, bindings: &Bindings) -> Option<Result<Folded, ConstFault>> {
+    pub(super) fn option_value(&mut self, expr: ExprId, bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
         match &self.design.expr_node(expr).kind.clone() {
             ExprKind::Path(path) if self.builtin_name(*path) == Some("None") => Some(Ok(self.make(CompositeKind::Option, Vec::new()))),
             ExprKind::Call { callee, args, .. } if self.builtin_callee(*callee) == Some("Some") && args.len() == 1 => {
@@ -281,7 +289,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `lo..hi`, `lo..=hi`, `lo..`, `..hi`: a range value.
-    pub(super) fn range_value(&mut self, lo: Option<ExprId>, hi: Option<ExprId>, inclusive: bool, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn range_value(&mut self, lo: Option<ExprId>, hi: Option<ExprId>, inclusive: bool, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let mut parts = Vec::new();
         for bound in lo.iter().chain(hi.iter()) {
             parts.push(self.fold(*bound, bindings)?);
@@ -289,22 +297,35 @@ impl ConstEval<'_, '_> {
         Ok(self.make(CompositeKind::Range { low: lo.is_some(), high: hi.is_some(), inclusive }, parts))
     }
 
+    /// `logic("10xx")` (§22.1.4) written in a constant context: the `Logic<N>` struct whose two planes the literal pattern
+    /// names. A pattern that is no literal is a fault (it needs the text known where it is read).
+    pub(super) fn logic_literal(&mut self, expr: ExprId, args: &[ExprId]) -> Result<Constant, ConstFault> {
+        let text = match args.first().map(|arg| &self.design.expr_node(*arg).kind) {
+            Some(ExprKind::Lit(lit)) => lit.str_value(),
+            _ => None,
+        };
+        let Some(text) = text else { return Err(ConstFault::Unsupported { expr, what: "a `logic` pattern that is no literal".to_string() }) };
+        let pattern = crate::types::LogicPattern::parse(&text).map_err(|_| ConstFault::Unsupported { expr, what: "a `logic` pattern with a character that names no level".to_string() })?;
+        let (binary, value) = pattern.planes();
+        Ok(self.make(CompositeKind::Struct, vec![Constant::Int(binary as i128), Constant::Int(value as i128)]))
+    }
+
     /// `T::default()` (H.8 rule 4): `false`, zero, `None`, and the tuple, array or struct of defaults.
-    pub(super) fn default_value(&mut self, expr: ExprId, ty: &Ty) -> Result<Folded, ConstFault> {
+    pub(super) fn default_value(&mut self, expr: ExprId, ty: &Ty) -> Result<Constant, ConstFault> {
         match ty {
-            Ty::F64 => Ok(Folded::Known(Constant::Real(Real::new(0.0)))),
-            Ty::Bool => Ok(Folded::Known(Constant::Bool(false))),
-            Ty::UInt(_) | Ty::Int(_) => Ok(Folded::Known(Constant::Int(0))),
+            Ty::F64 => Ok(Constant::Real(Real::new(0.0))),
+            Ty::Bool => Ok(Constant::Bool(false)),
+            Ty::UInt(_) | Ty::Int(_) => Ok(Constant::Int(0)),
             Ty::Option(_) => Ok(self.make(CompositeKind::Option, Vec::new())),
             Ty::Tuple(items) => {
                 let parts = items.iter().map(|item| self.default_value(expr, item)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Tuple, parts))
             }
-            Ty::Array(element, count) => {
+            Ty::Array(element, Length::Fixed(count)) => {
                 let part = self.default_value(expr, element)?;
                 Ok(self.make(CompositeKind::Array, vec![part; *count as usize]))
             }
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields: Vec<Ty> = self.types.fields(*decl).map(|fields| fields.iter().map(|f| f.ty.clone()).collect()).unwrap_or_default();
                 let parts = fields.iter().map(|field| self.default_value(expr, field)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Struct, parts))
@@ -316,11 +337,8 @@ impl ConstEval<'_, '_> {
     // ---- reading -----------------------------------------------------------------------------
 
     /// `e.name` and `e.0` over a tuple or a struct.
-    pub(super) fn field_value(&mut self, expr: ExprId, recv: ExprId, name: &str, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn field_value(&mut self, expr: ExprId, recv: ExprId, name: &str, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let whole = self.fold(recv, bindings)?;
-        if whole == Folded::Unknown {
-            return Ok(Folded::Unknown);
-        }
         let (_, parts) = self.parts_of(expr, whole, "a field read of a value")?;
         let at = self.field_position(recv, name).ok_or(ConstFault::Unsupported { expr, what: "a field the value does not have".to_string() })?;
         parts.get(at).copied().ok_or(ConstFault::Unsupported { expr, what: "a field out of range".to_string() })
@@ -328,10 +346,10 @@ impl ConstEval<'_, '_> {
 
     /// The position of the field `name` of the tuple or struct `recv` is.
     fn field_position(&self, recv: ExprId, name: &str) -> Option<usize> {
-        match self.types.ty(recv)? {
+        match self.typed(recv)? {
             Ty::Tuple(_) => name.parse().ok(),
-            Ty::Struct(decl) => {
-                let fields = self.types.fields(*decl)?;
+            Ty::Struct(Nominal { decl, .. }) => {
+                let fields = self.types.fields(decl)?;
                 match name.parse::<usize>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),
                     _ => fields.iter().position(|f| f.name.as_deref() == Some(name)),
@@ -342,35 +360,31 @@ impl ConstEval<'_, '_> {
     }
 
     /// `a[i]` and `a[i..j]` over an array: an index out of range is a panic naming the expression
-    /// (§1 rule 11, §1.5.25); an index that is unknown reads the merge of the elements (§3.3.13).
-    pub(super) fn index_value(&mut self, expr: ExprId, base: ExprId, index: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    /// (§1 rule 11, §1.5.25);
+    pub(super) fn index_value(&mut self, expr: ExprId, base: ExprId, index: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let whole = self.fold(base, bindings)?;
-        if whole == Folded::Unknown {
-            return Ok(Folded::Unknown);
-        }
         let (_, elements) = self.parts_of(expr, whole, "an index into a value")?;
         let index_node = self.design.expr_node(index).kind.clone();
         if let ExprKind::Range { lo, hi, inclusive } = index_node {
             return self.slice_value(expr, &elements, (lo, hi, inclusive), bindings);
         }
         match self.fold(index, bindings)? {
-            Folded::Known(Constant::Int(at)) => match usize::try_from(at).ok().and_then(|at| elements.get(at)) {
+            Constant::Int(at) => match usize::try_from(at).ok().and_then(|at| elements.get(at)) {
                 Some(element) => Ok(*element),
                 None => Err(ConstFault::Panic { expr, what: format!("the index {at} is out of range for an array of {} elements (§1.5.25)", elements.len()) }),
             },
-            Folded::Known(_) => Err(ConstFault::Unsupported { expr, what: "an index that is not an integer".to_string() }),
-            Folded::Unknown => Ok(elements.iter().copied().reduce(Folded::merge).unwrap_or(Folded::Unknown)),
+            _ => Err(ConstFault::Unsupported { expr, what: "an index that is not an integer".to_string() }),
         }
     }
 
     /// `a[i..j]`: the array of the elements `i` to `j - 1`; a missing bound is the array's end.
-    fn slice_value(&mut self, expr: ExprId, elements: &[Folded], (lo, hi, inclusive): (Option<ExprId>, Option<ExprId>, bool), bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn slice_value(&mut self, expr: ExprId, elements: &[Constant], (lo, hi, inclusive): (Option<ExprId>, Option<ExprId>, bool), bindings: &Bindings) -> Result<Constant, ConstFault> {
         let bound = |this: &mut Self, bound: Option<ExprId>, default: usize| -> Result<usize, ConstFault> {
             match bound {
                 None => Ok(default),
                 // a bound written as a literal or a const name has no type of its own (§1.2.5, as an array length)
-                Some(bound) if let Some(at) = this.types.integer_constant(bound) => Ok(at as usize),
-                Some(bound) => match this.known(bound, bindings)? {
+                Some(bound) if let Some(at) = this.integer(bound) => Ok(at as usize),
+                Some(bound) => match this.fold(bound, bindings)? {
                     Constant::Int(at) if at >= 0 => Ok(at as usize),
                     _ => Err(ConstFault::Unsupported { expr, what: "a range index bound that is not a non-negative integer".to_string() }),
                 },
@@ -387,36 +401,22 @@ impl ConstEval<'_, '_> {
     // ---- comparison --------------------------------------------------------------------------
 
     /// Whether `a` and `b` are equal under the derived `==` (H.8 rule 2): the same variant and equal
-    /// parts, field by field. `None` when an unknown part decides.
-    pub(super) fn equal(&self, a: Folded, b: Folded) -> Option<bool> {
+    /// parts, field by field.
+    pub(super) fn equal(&self, a: Constant, b: Constant) -> bool {
         match (self.composite_of(a), self.composite_of(b)) {
-            (Some(x), Some(y)) => {
-                if x.kind != y.kind || x.parts.len() != y.parts.len() {
-                    return Some(false);
-                }
-                let mut unknown = false;
-                for (p, q) in x.parts.iter().zip(&y.parts) {
-                    match self.equal(*p, *q) {
-                        Some(false) => return Some(false),
-                        Some(true) => {}
-                        None => unknown = true,
-                    }
-                }
-                if unknown { None } else { Some(true) }
-            }
+            (Some(x), Some(y)) => x.kind == y.kind && x.parts.len() == y.parts.len() && x.parts.iter().zip(&y.parts).all(|(p, q)| self.equal(*p, *q)),
             (None, None) => match (a, b) {
-                (Folded::Known(Constant::Real(p)), Folded::Known(Constant::Real(q))) => Some(p.get() == q.get()),
-                (Folded::Known(p), Folded::Known(q)) => Some(p == q),
-                _ => None,
+                (Constant::Real(p), Constant::Real(q)) => p.get() == q.get(),
+                (p, q) => p == q,
             },
-            _ => Some(false),
+            _ => false,
         }
     }
 
     /// The order of `a` and `b` under the derived `PartialOrd` (H.8 rule 3, §1.5.23): fields in
     /// declaration order, a variant by its position then its fields, `None` below every `Some`.
-    /// The outer `None` is unknown; the inner one is unordered (a NaN).
-    pub(super) fn ordering(&self, a: Folded, b: Folded) -> Option<Option<Ordering>> {
+    /// `None` is unordered (a NaN).
+    pub(super) fn ordering(&self, a: Constant, b: Constant) -> Option<Ordering> {
         match (self.composite_of(a), self.composite_of(b)) {
             (Some(x), Some(y)) => {
                 let by_kind = match (x.kind, y.kind) {
@@ -425,39 +425,32 @@ impl ConstEval<'_, '_> {
                     _ => Ordering::Equal,
                 };
                 if by_kind != Ordering::Equal {
-                    return Some(Some(by_kind));
+                    return Some(by_kind);
                 }
                 for (p, q) in x.parts.iter().zip(&y.parts) {
-                    match self.ordering(*p, *q)? {
+                    match self.ordering(*p, *q) {
                         Some(Ordering::Equal) => {}
-                        other => return Some(other),
+                        other => return other,
                     }
                 }
-                Some(Some(x.parts.len().cmp(&y.parts.len())))
+                Some(x.parts.len().cmp(&y.parts.len()))
             }
-            (None, None) => match (a, b) {
-                (Folded::Known(p), Folded::Known(q)) => Some(Self::order(p, q).or_else(|| match (p, q) {
-                    (Constant::Bool(p), Constant::Bool(q)) => Some(p.cmp(&q)),
-                    _ => None,
-                })),
+            (None, None) => Self::order(a, b).or_else(|| match (a, b) {
+                (Constant::Bool(p), Constant::Bool(q)) => Some(p.cmp(&q)),
                 _ => None,
-            },
-            _ => Some(None),
+            }),
+            _ => None,
         }
     }
 
     /// `a op b` over two operands one of which is a composite: `==`, `!=`, `<`, `<=`, `>`, `>=`.
-    pub(super) fn composite_binary(&self, expr: ExprId, op: BinOp, a: Folded, b: Folded) -> Result<Folded, ConstFault> {
-        let holds = |value: bool| Ok(Folded::Known(Constant::Bool(value)));
+    pub(super) fn composite_binary(&self, expr: ExprId, op: BinOp, a: Constant, b: Constant) -> Result<Constant, ConstFault> {
+        let holds = |value: bool| Ok(Constant::Bool(value));
         match op {
-            BinOp::Eq | BinOp::Ne => match self.equal(a, b) {
-                Some(equal) => holds(equal == (op == BinOp::Eq)),
-                None => Ok(Folded::Unknown),
-            },
+            BinOp::Eq | BinOp::Ne => holds(self.equal(a, b) == (op == BinOp::Eq)),
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => match self.ordering(a, b) {
-                None => Ok(Folded::Unknown),
-                Some(None) => holds(false),
-                Some(Some(order)) => holds(match op {
+                None => holds(false),
+                Some(order) => holds(match op {
                     BinOp::Lt => order.is_lt(),
                     BinOp::Le => order.is_le(),
                     BinOp::Gt => order.is_gt(),
@@ -513,10 +506,7 @@ impl ConstEval<'_, '_> {
             None => value,
             Some(op) => {
                 let current = self.fold(target, bindings)?;
-                match (current, value) {
-                    (Folded::Known(a), Folded::Known(b)) => Folded::Known(self.known_binary(target, op, (target, a), (rhs, b))?),
-                    (a, b) => self.unknown_binary(target, op, a, b),
-                }
+                self.known_binary(target, op, (target, current), (rhs, value))?
             }
         };
         let Some(root) = self.locals.get(&local).copied() else {
@@ -526,9 +516,9 @@ impl ConstEval<'_, '_> {
         for step in steps {
             positions.push(match step {
                 Step::Field(at) => *at,
-                Step::Element(index) => match self.known(*index, bindings)? {
+                Step::Element(index) => match self.fold(*index, bindings)? {
                     Constant::Int(at) if at >= 0 => at as usize,
-                    _ => return Err(ConstFault::Unsupported { expr: *index, what: "an element index that is not a known non-negative integer".to_string() }),
+                    _ => return Err(ConstFault::Unsupported { expr: *index, what: "an element index that is not a non-negative integer".to_string() }),
                 },
             });
         }
@@ -538,7 +528,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `whole` with the part at `positions` replaced by `value`.
-    fn replaced(&mut self, expr: ExprId, whole: Folded, positions: &[usize], value: Folded) -> Result<Folded, ConstFault> {
+    fn replaced(&mut self, expr: ExprId, whole: Constant, positions: &[usize], value: Constant) -> Result<Constant, ConstFault> {
         let Some((&first, rest)) = positions.split_first() else { return Ok(value) };
         let (kind, mut parts) = self.parts_of(expr, whole, "an assignment into a value")?;
         let Some(part) = parts.get(first).copied() else {
@@ -553,7 +543,7 @@ impl ConstEval<'_, '_> {
     /// Whether `value` matches the pattern `pat` of a composite form (a tuple, a tuple struct, a
     /// struct, an array, `None`, a unit struct or a variant with fields); the names it binds are
     /// bound. `None` when the pattern is not one of those, so the scalar patterns decide.
-    pub(super) fn matches_composite(&mut self, pat: PatId, value: Folded, at: ExprId, bindings: &Bindings) -> Option<Result<bool, ConstFault>> {
+    pub(super) fn matches_composite(&mut self, pat: PatId, value: Constant, at: ExprId, bindings: &Bindings) -> Option<Result<bool, ConstFault>> {
         let kind = self.design.pat_node(pat).kind.clone();
         match &kind {
             PatKind::Tuple(pats) => Some(self.matches_parts(pats, value, at, bindings)),
@@ -621,11 +611,8 @@ impl ConstEval<'_, '_> {
 
     /// `value` against the struct or variant `owner`: the same variant (a struct has one shape), then
     /// `parts_match` over its parts.
-    fn matches_owner(&mut self, owner: Option<DeclId>, value: Folded, at: ExprId, _bindings: &Bindings, parts_match: impl FnOnce(&mut Self, Vec<Folded>) -> Result<bool, ConstFault>) -> Result<bool, ConstFault> {
+    fn matches_owner(&mut self, owner: Option<DeclId>, value: Constant, at: ExprId, _bindings: &Bindings, parts_match: impl FnOnce(&mut Self, Vec<Constant>) -> Result<bool, ConstFault>) -> Result<bool, ConstFault> {
         let Some(owner) = owner else { return Err(ConstFault::Unsupported { expr: at, what: "a pattern that names no struct or variant".to_string() }) };
-        if value == Folded::Unknown {
-            return Err(ConstFault::Unknown { expr: at });
-        }
         let (kind, parts) = self.parts_of(at, value, "a pattern over a value")?;
         match (self.design.decl_data(owner).kind.clone(), kind) {
             (DeclKind::Struct(_), CompositeKind::Struct) => parts_match(self, parts),
@@ -638,16 +625,13 @@ impl ConstEval<'_, '_> {
     }
 
     /// `(a, b, ..)` over a tuple.
-    fn matches_parts(&mut self, pats: &[PatId], value: Folded, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
-        if value == Folded::Unknown {
-            return Err(ConstFault::Unknown { expr: at });
-        }
+    fn matches_parts(&mut self, pats: &[PatId], value: Constant, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
         let (_, parts) = self.parts_of(at, value, "a tuple pattern over a value")?;
         self.matches_each(pats, &parts, at, bindings)
     }
 
     /// Each sub-pattern against the part at its position; `..` skips what lies between.
-    fn matches_each(&mut self, pats: &[PatId], parts: &[Folded], at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
+    fn matches_each(&mut self, pats: &[PatId], parts: &[Constant], at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
         let rest = pats.iter().position(|p| matches!(self.design.pat_node(*p).kind, PatKind::Range { lo: None, hi: None, .. }));
         let (before, after): (&[PatId], &[PatId]) = match rest {
             Some(at_rest) => (&pats[..at_rest], &pats[at_rest + 1..]),
@@ -670,10 +654,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `[a, .., z]`, `[h, rest @ ..]` over an array: with no `..`, the lengths agree.
-    fn matches_array(&mut self, pats: &[PatId], value: Folded, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
-        if value == Folded::Unknown {
-            return Err(ConstFault::Unknown { expr: at });
-        }
+    fn matches_array(&mut self, pats: &[PatId], value: Constant, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
         let (_, parts) = self.parts_of(at, value, "an array pattern over a value")?;
         let rest = pats.iter().position(|p| self.is_rest(*p));
         let Some(at_rest) = rest else {
@@ -711,10 +692,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `Some(p)` over an `Option`.
-    fn matches_option(&mut self, pats: &[PatId], value: Folded, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
-        if value == Folded::Unknown {
-            return Err(ConstFault::Unknown { expr: at });
-        }
+    fn matches_option(&mut self, pats: &[PatId], value: Constant, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
         let (_, parts) = self.parts_of(at, value, "a `Some` pattern over a value")?;
         match (parts.first(), pats) {
             (Some(part), [inner]) => self.matches(*inner, *part, at, bindings),
@@ -726,19 +704,19 @@ impl ConstEval<'_, '_> {
 
     /// The elements of the iterator, array or range `value` is, in order. A range without both
     /// bounds, or over floats, is not an iterator (H.6 rule 3).
-    pub(super) fn elements_of(&self, expr: ExprId, value: Folded) -> Result<Vec<Folded>, ConstFault> {
+    pub(super) fn elements_of(&self, expr: ExprId, value: Constant) -> Result<Vec<Constant>, ConstFault> {
         let (kind, parts) = self.parts_of(expr, value, "an iteration over a value")?;
         match kind {
             CompositeKind::Array => Ok(parts),
             CompositeKind::Range { low: true, high: true, inclusive } => match (parts[0], parts[1]) {
-                (Folded::Known(Constant::Int(first)), Folded::Known(Constant::Int(last))) => {
+                (Constant::Int(first), Constant::Int(last)) => {
                     let end = if inclusive { last + 1 } else { last };
                     if end.saturating_sub(first) > (1 << 24) {
                         return Err(ConstFault::Panic { expr, what: "an iteration over more than 2^24 values (§1 rule 11)".to_string() });
                     }
-                    Ok((first..end).map(|v| Folded::Known(Constant::Int(v))).collect())
+                    Ok((first..end).map(|v| Constant::Int(v)).collect())
                 }
-                _ => Err(ConstFault::Unknown { expr }),
+                _ => Err(ConstFault::Unsupported { expr, what: "a range whose bounds are not integers".to_string() }),
             },
             _ => Err(ConstFault::Unsupported { expr, what: "an iteration over a value that is not an array, a range or an iterator".to_string() }),
         }
@@ -746,7 +724,7 @@ impl ConstEval<'_, '_> {
 
     /// A row of Appendix H.5 to H.7 over an array, a range or an iterator: `Some` result, `None`
     /// when `method` is not one of those rows.
-    pub(super) fn sequence_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Folded, ConstFault>> {
+    pub(super) fn sequence_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
         let is_row = matches!(
             method,
             Method::ArrayLen | Method::ArrayIsEmpty | Method::ArrayIter | Method::ArrayContains | Method::ArrayFirst | Method::ArrayLast | Method::ArrayGet | Method::RangeContains | Method::RangeIsEmpty | Method::IteratorMap | Method::IteratorFilter | Method::IteratorFold | Method::IteratorSum | Method::IteratorCount | Method::IteratorZip | Method::IteratorEnumerate | Method::IteratorRev | Method::IteratorAny | Method::IteratorAll
@@ -760,33 +738,29 @@ impl ConstEval<'_, '_> {
     }
 
     /// `function` called on `values`.
-    fn call_with(&mut self, expr: ExprId, function: &FnValue, values: Vec<Folded>, bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let arguments = values.into_iter().map(|value| Argument { value, function: None }).collect();
+    fn call_with(&mut self, expr: ExprId, function: &FnValue, values: Vec<Constant>, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let arguments = values.into_iter().map(|value| Argument { value: Some(value), function: None }).collect();
         self.apply_value(expr, function.clone(), arguments, bindings)
     }
 
-    /// `function` called on `values`, its result a known `bool`.
-    fn test_with(&mut self, expr: ExprId, function: &FnValue, values: Vec<Folded>, bindings: &Bindings) -> Result<bool, ConstFault> {
+    /// `function` called on `values`, its result a `bool`.
+    fn test_with(&mut self, expr: ExprId, function: &FnValue, values: Vec<Constant>, bindings: &Bindings) -> Result<bool, ConstFault> {
         match self.call_with(expr, function, values, bindings)? {
-            Folded::Known(Constant::Bool(holds)) => Ok(holds),
-            Folded::Known(_) => Err(ConstFault::Unsupported { expr, what: "a closure that does not give a `bool`".to_string() }),
-            Folded::Unknown => Err(ConstFault::Unknown { expr }),
+            Constant::Bool(holds) => Ok(holds),
+            _ => Err(ConstFault::Unsupported { expr, what: "a closure that does not give a `bool`".to_string() }),
         }
     }
 
     /// The `Some`/`None` of an optional element.
-    fn optional(&mut self, element: Option<Folded>) -> Folded {
+    fn optional(&mut self, element: Option<Constant>) -> Constant {
         self.make(CompositeKind::Option, element.into_iter().collect())
     }
 
     /// One row, its receiver and arguments evaluated here.
-    fn run_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn run_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let receiver = self.fold(recv, bindings)?;
-        if receiver == Folded::Unknown {
-            return Ok(Folded::Unknown);
-        }
-        let known = |value: bool| Ok(Folded::Known(Constant::Bool(value)));
-        let count = |value: usize| Ok(Folded::Known(Constant::Int(value as i128)));
+        let known = |value: bool| Ok(Constant::Bool(value));
+        let count = |value: usize| Ok(Constant::Int(value as i128));
         match method {
             Method::ArrayLen => count(self.elements_of(expr, receiver)?.len()),
             Method::ArrayIsEmpty => known(self.elements_of(expr, receiver)?.is_empty()),
@@ -797,10 +771,8 @@ impl ConstEval<'_, '_> {
             Method::ArrayContains => {
                 let sought = self.fold(args[0], bindings)?;
                 for element in self.elements_of(expr, receiver)? {
-                    match self.equal(element, sought) {
-                        Some(true) => return known(true),
-                        Some(false) => {}
-                        None => return Ok(Folded::Unknown),
+                    if self.equal(element, sought) {
+                        return known(true);
                     }
                 }
                 known(false)
@@ -816,8 +788,8 @@ impl ConstEval<'_, '_> {
             Method::ArrayGet => {
                 let elements = self.elements_of(expr, receiver)?;
                 match self.fold(args[0], bindings)? {
-                    Folded::Known(Constant::Int(at)) => Ok(self.optional(usize::try_from(at).ok().and_then(|at| elements.get(at)).copied())),
-                    _ => Ok(Folded::Unknown),
+                    Constant::Int(at) => Ok(self.optional(usize::try_from(at).ok().and_then(|at| elements.get(at)).copied())),
+                    _ => Err(ConstFault::Unsupported { expr, what: "an index that is not an integer".to_string() }),
                 }
             }
             Method::RangeContains => self.range_contains(expr, receiver, args[0], bindings),
@@ -825,9 +797,8 @@ impl ConstEval<'_, '_> {
                 let (kind, parts) = self.parts_of(expr, receiver, "`is_empty` of a value")?;
                 match (kind, parts.as_slice()) {
                     (CompositeKind::Range { low: true, high: true, inclusive }, [lo, hi]) => match self.ordering(*lo, *hi) {
-                        Some(Some(order)) => known(!(if inclusive { order.is_le() } else { order.is_lt() })),
-                        Some(None) => known(true),
-                        None => Ok(Folded::Unknown),
+                        Some(order) => known(!(if inclusive { order.is_le() } else { order.is_lt() })),
+                        None => known(true),
                     },
                     _ => Err(ConstFault::Unsupported { expr, what: "`is_empty` of a range with a missing bound".to_string() }),
                 }
@@ -855,7 +826,7 @@ impl ConstEval<'_, '_> {
             }
             Method::IteratorEnumerate => {
                 let elements = self.elements_of(expr, receiver)?;
-                let pairs = elements.into_iter().enumerate().map(|(k, x)| self.make(CompositeKind::Tuple, vec![Folded::Known(Constant::Int(k as i128)), x])).collect();
+                let pairs = elements.into_iter().enumerate().map(|(k, x)| self.make(CompositeKind::Tuple, vec![Constant::Int(k as i128), x])).collect();
                 Ok(self.make(CompositeKind::Array, pairs))
             }
             Method::IteratorRev => {
@@ -869,7 +840,7 @@ impl ConstEval<'_, '_> {
 
     /// `map`, `filter`, `any` and `all`: the closure runs once per element in order; `any` and `all`
     /// stop at the element that decides (H.7 rule 10).
-    fn adapt(&mut self, expr: ExprId, method: Method, function: &FnValue, elements: Vec<Folded>, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn adapt(&mut self, expr: ExprId, method: Method, function: &FnValue, elements: Vec<Constant>, bindings: &Bindings) -> Result<Constant, ConstFault> {
         match method {
             Method::IteratorMap => {
                 let mut mapped = Vec::with_capacity(elements.len());
@@ -890,42 +861,39 @@ impl ConstEval<'_, '_> {
             Method::IteratorAny => {
                 for element in elements {
                     if self.test_with(expr, function, vec![element], bindings)? {
-                        return Ok(Folded::Known(Constant::Bool(true)));
+                        return Ok(Constant::Bool(true));
                     }
                 }
-                Ok(Folded::Known(Constant::Bool(false)))
+                Ok(Constant::Bool(false))
             }
             _ => {
                 for element in elements {
                     if !self.test_with(expr, function, vec![element], bindings)? {
-                        return Ok(Folded::Known(Constant::Bool(false)));
+                        return Ok(Constant::Bool(false));
                     }
                 }
-                Ok(Folded::Known(Constant::Bool(true)))
+                Ok(Constant::Bool(true))
             }
         }
     }
 
     /// `sum()`: the elements added with `+` from the first, starting from zero (H.7 rule 9).
-    fn sum(&mut self, expr: ExprId, receiver: Folded) -> Result<Folded, ConstFault> {
+    fn sum(&mut self, expr: ExprId, receiver: Constant) -> Result<Constant, ConstFault> {
         let elements = self.elements_of(expr, receiver)?;
-        let zero = match self.types.ty(expr) {
+        let zero = match self.typed(expr) {
             Some(Ty::F64) => Constant::Real(Real::new(0.0)),
             _ => Constant::Int(0),
         };
-        let mut total = Folded::Known(zero);
+        let mut total = zero;
         for element in elements {
-            total = match (total, element) {
-                (Folded::Known(a), Folded::Known(b)) => Folded::Known(self.known_binary(expr, BinOp::Add, (expr, a), (expr, b))?),
-                (a, b) => self.unknown_binary(expr, BinOp::Add, a, b),
-            };
+            total = self.known_binary(expr, BinOp::Add, (expr, total), (expr, element))?;
         }
         Ok(total)
     }
 
     /// `r.contains(x)` (H.6 rule 1): each bound the range has is tested; no float is in a range
     /// with a NaN bound.
-    fn range_contains(&mut self, expr: ExprId, range: Folded, sought: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn range_contains(&mut self, expr: ExprId, range: Constant, sought: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let value = self.fold(sought, bindings)?;
         let (kind, parts) = self.parts_of(expr, range, "`contains` of a value")?;
         let CompositeKind::Range { low, high, inclusive } = kind else {
@@ -935,40 +903,31 @@ impl ConstEval<'_, '_> {
         let mut bounds = parts.into_iter();
         if low {
             let lo = bounds.next().ok_or(ConstFault::Unsupported { expr, what: "a range with no low bound".to_string() })?;
-            match self.ordering(lo, value) {
-                None => return Ok(Folded::Unknown),
-                Some(order) => holds &= order.is_some_and(|o| o.is_le()),
-            }
+            holds &= self.ordering(lo, value).is_some_and(|o| o.is_le());
         }
         if high {
             let hi = bounds.next().ok_or(ConstFault::Unsupported { expr, what: "a range with no high bound".to_string() })?;
-            match self.ordering(value, hi) {
-                None => return Ok(Folded::Unknown),
-                Some(order) => holds &= order.is_some_and(|o| if inclusive { o.is_le() } else { o.is_lt() }),
-            }
+            holds &= self.ordering(value, hi).is_some_and(|o| if inclusive { o.is_le() } else { o.is_lt() });
         }
-        Ok(Folded::Known(Constant::Bool(holds)))
+        Ok(Constant::Bool(holds))
     }
 
     /// A method of `Option` that is not one of the sequence rows: `is_some`, `is_none`, `unwrap`,
     /// `expect`, `unwrap_or`, `unwrap_or_else`, `map`, `and_then` and `or` over a composite
     /// `Option`; `None` for any other method.
-    pub(super) fn option_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Folded, ConstFault>> {
-        if !matches!(method, Method::IsSome | Method::IsNone | Method::Unwrap | Method::Expect | Method::UnwrapOr | Method::UnwrapOrElse | Method::Map | Method::AndThen | Method::Or) || !matches!(self.types.ty(recv), Some(Ty::Option(_))) {
+    pub(super) fn option_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
+        if !matches!(method, Method::IsSome | Method::IsNone | Method::Unwrap | Method::Expect | Method::UnwrapOr | Method::UnwrapOrElse | Method::Map | Method::AndThen | Method::Or) || !matches!(self.typed(recv), Some(Ty::Option(_))) {
             return None;
         }
         Some(self.run_option_row(expr, method, recv, args, bindings))
     }
 
     /// One row of `Option`.
-    fn run_option_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+    fn run_option_row(&mut self, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let receiver = self.fold(recv, bindings)?;
-        if receiver == Folded::Unknown {
-            return Ok(Folded::Unknown);
-        }
         let (_, parts) = self.parts_of(expr, receiver, "an `Option` row over a value")?;
         let held = parts.first().copied();
-        let known = |value: bool| Ok(Folded::Known(Constant::Bool(value)));
+        let known = |value: bool| Ok(Constant::Bool(value));
         match (method, held) {
             (Method::IsSome, held) => known(held.is_some()),
             (Method::IsNone, held) => known(held.is_none()),

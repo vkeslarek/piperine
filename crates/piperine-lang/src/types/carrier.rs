@@ -1,9 +1,8 @@
 //! Discrete carriers (DIG-02, DIG-04): the type of a `signal` or a port of a discrete nature (`Bit<T>` or a project's),
-//! the types a carrier may hold (`E0112`), initial values (`E0210`), the flag reads `known`,
-//! `known_or`, `is_known`, `high`, and the history read `prev` (part II §5, part I §3.3).
+//! the types a carrier may hold (`E0112`), initial values (`E0210`) and the history read `prev` (part II §5, part I §3.3).
 //!
 //! A carrier has the type `Ty::Carrier { nature, value }`; reading it gives `value`. The checker reads
-//! the four flag reads, the two edges of `Bit` and `prev` as built-ins only when the name
+//! the two edges of `Bit` and `prev` as built-ins only when the name
 //! resolved to the stdlib's own item (§3.3.7): a project item of the same name is `P0001`.
 
 use crate::msl::{Diagnostic, Span};
@@ -11,19 +10,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode
 
 use super::check::Checker;
 use super::nature_rules::NatureRules;
-use super::{Builtin, Ty};
-
-/// The methods of a value or a carrier that are flag reads, by name.
-pub(super) fn flag_builtin(name: &str) -> Option<Builtin> {
-    match name {
-        "known" => Some(Builtin::Known),
-        "known_or" => Some(Builtin::KnownOr),
-        "is_known" => Some(Builtin::IsKnown),
-        "level" => Some(Builtin::Level),
-        "high" => Some(Builtin::High),
-        _ => None,
-    }
-}
+use super::{Builtin, Nominal, Ty};
 
 impl Checker<'_> {
     /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
@@ -83,6 +70,7 @@ impl Checker<'_> {
         if let Resolution::Decl(d) = self.design.type_resolution(ty)
             && matches!(self.design.decl_data(d).kind, DeclKind::Enum(_))
             && !self.derives(d, "Repr")
+            && self.impls.hand_written_repr(&Ty::enumeration(d)).is_none()
         {
             let name = self.design.decl_data(d).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             self.no_repr(file, node.span, &format!("enum `{name}`"));
@@ -95,12 +83,16 @@ impl Checker<'_> {
                 self.coded(file, "E0441", node.span, message, "an `Event` is not carried");
                 None
             }
-            Ty::Enum(e) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
+            Ty::Enum(Nominal { decl: e, .. }) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
                 let name = self.design.decl_data(*e).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if self.repr_levels(v).is_some() => Some(value),
+            // a type parameter bound by `Repr` is a type with one (`fn f<T: Repr>(a: Bit<T>)`, §3.8.6)
+            v if self.repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.bounds_of(*param).contains(&super::Bound::Repr)) => {
+                self.reach_hand_written_repr(v);
+                Some(value)
+            }
             other => {
                 let name = other.name(self.design);
                 self.no_repr(file, node.span, &name);
@@ -135,6 +127,8 @@ impl Checker<'_> {
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
+            // an array of carriers, or of conservative nodes (CV-23)
+            array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
             value @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
@@ -153,6 +147,11 @@ impl Checker<'_> {
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
             }
+            // an array of carriers reads as the array of their values; an array of nodes is the array itself
+            array @ Ty::Array(..) if array.is_carrier_element() => {
+                self.carriers.insert(decl, array.clone());
+                Some(array.read_value())
+            }
             node => Some(node),
         }
     }
@@ -161,11 +160,18 @@ impl Checker<'_> {
     pub(super) fn declared_port(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.declared_port(*inner),
+            // one element of an array of carriers or of nodes (CV-24): the carrier the element is, of the array's declaration
+            ExprKind::Index { expr: base, .. } => match self.declared_port(*base)? {
+                (decl, Ty::Array(element, _)) if element.is_carrier_element() => Some((decl, *element)),
+                _ => None,
+            },
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
                 let ty = match &self.design.decl_data(decl).kind {
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
+                    // a handle is the carrier the caller passes (§3.1.5)
+                    DeclKind::FnParam(_) => return self.handle_type(decl).map(|t| (decl, t)),
                     _ => return None,
                 };
                 self.port_type(ty).map(|t| (decl, t))
@@ -208,7 +214,7 @@ impl Checker<'_> {
     }
 
     /// Whether `f` is the stdlib's own item behind a built-in method (§3.3.7): a method of the
-    /// trait `Known`, or of the `impl Bit`.
+    /// `impl Bit` (`rise`, `fall`).
     pub(super) fn stdlib_builtin(&self, f: DeclId) -> Option<Builtin> {
         let data = self.design.decl_data(f);
         if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(f) {
@@ -217,33 +223,10 @@ impl Checker<'_> {
         let name = data.name.as_ref()?.text.as_str();
         let parent = data.parent.map(|p| self.design.decl_data(p))?;
         match (&parent.kind, name) {
-            (DeclKind::Trait(_), "known" | "known_or" | "is_known") if parent.name.as_ref().is_some_and(|n| n.text == "Known") => flag_builtin(name),
-            (DeclKind::Impl(_), "high") => Some(Builtin::High),
             (DeclKind::Impl(_), "rise") => Some(Builtin::Rise),
             (DeclKind::Impl(_), "fall") => Some(Builtin::Fall),
             _ => None,
         }
-    }
-
-    /// The flag read `builtin` applied to a receiver of type `recv_ty`: its result type, or
-    /// `None` when the receiver's type has no such read (`high` is the read of a `Bit`).
-    pub(super) fn flag_read(&mut self, expr: ExprId, builtin: Builtin, recv_ty: &Ty, args: &[Arg]) -> Option<Option<Ty>> {
-        if !self.repr_ok(recv_ty) || (builtin == Builtin::High && *recv_ty != Ty::Bool) {
-            return None;
-        }
-        let (params, result) = match builtin {
-            Builtin::Known => (vec![], Ty::Option(Box::new(recv_ty.clone()))),
-            Builtin::KnownOr => (vec![recv_ty.clone()], recv_ty.clone()),
-            Builtin::IsKnown | Builtin::High => (vec![], Ty::Bool),
-            // §22.1: level `k` of the value, `k: u32`; known when `k` is (§3.3.14).
-            Builtin::Level => (vec![Ty::UInt(32)], Ty::Option(Box::new(Ty::Bool))),
-            Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall | Builtin::Inflow => return None,
-        };
-        if self.apply(expr, &params, args).is_none() {
-            return Some(None);
-        }
-        self.builtins.insert(expr, builtin);
-        Some(Some(result))
     }
 
     /// The type a path's first segment names when it is the owner of an associated item
@@ -254,12 +237,14 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match (id.info().name, id.width()) {
                 ("fN", Some(64)) => Some(Ty::F64),
                 ("bool", _) => Some(Ty::Bool),
+                ("str", _) => Some(Ty::Str),
                 ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
                 ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
                 ("usize", _) => Some(Ty::UInt(64)),
                 ("isize", _) => Some(Ty::Int(64)),
                 _ => None,
             },
+            Resolution::Decl(decl) if self.parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
             _ => None,
@@ -279,6 +264,9 @@ impl Checker<'_> {
         }
         let file = self.file_of_expr(expr);
         let owner_type = self.path_owner_type(file, node.span, owner.res)?;
+        if let Ty::Param(param) = owner_type {
+            return self.parameter_width(param, file, node.span);
+        }
         let levels = self.repr_levels(&owner_type)?;
         self.widths.insert(expr, levels);
         Some(Ty::UInt(32))

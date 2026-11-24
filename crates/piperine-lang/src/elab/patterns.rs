@@ -9,14 +9,12 @@
 //! - over an `Option`, `None` is `!is`, `Some(p)` is `is` and `p` over the payload, `_` matches
 //!   every one and a name binds the whole `Option`.
 //!
-//! A test over a subject that may be unknown uses the bitwise `&` and `|`, which §3.3.12 gives the
-//! table of `&&` and `||` (`known.rs`). A pattern that matches every value has no test.
+//! A pattern that matches every value has no test.
 
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use super::selectors::ArmCondition;
 use crate::msl::Span;
@@ -87,7 +85,7 @@ impl Elaboration<'_, '_> {
             // A tuple, a tuple struct and a struct: each sub-pattern over its field (`aggregate.rs`).
             PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } => {
                 let read = self.read_subject(scope, subject, origin.clone())?;
-                let base = self.base_of(read);
+                let base = self.type_of(read);
                 match base {
                     ValueType::Enum(_) => self.test_variant_pattern(scope, subject, pat, &base, origin),
                     ValueType::Tuple(_) | ValueType::Struct(_) => self.test_aggregate_pattern(scope, subject, pat, &base, origin),
@@ -99,7 +97,7 @@ impl Elaboration<'_, '_> {
             }
             PatKind::Array(pats) => {
                 let read = self.read_subject(scope, subject, origin.clone())?;
-                let base = self.base_of(read);
+                let base = self.type_of(read);
                 self.test_array_pattern(scope, subject, pats, &base, origin)
             }
             PatKind::Lit(expr) => {
@@ -108,8 +106,7 @@ impl Elaboration<'_, '_> {
                     // `true` is the subject itself, `false` its negation.
                     Some(true) => Some(PatternTest::when(read)),
                     Some(false) => {
-                        let flag = self.flag(read);
-                        Some(PatternTest::when(self.emit(Expr::Unary { op: UnaryOp::Not, expr: read }, flag.wrap(ValueType::Bool), origin)))
+                        Some(PatternTest::when(self.emit(Expr::Unary { op: UnaryOp::Not, expr: read }, ValueType::Bool, origin)))
                     }
                     None => {
                         let value = self.lower_expr(scope, *expr)?;
@@ -132,10 +129,9 @@ impl Elaboration<'_, '_> {
     /// `subject == the value the path names`: a unit variant or a `const`.
     fn test_named_value(&mut self, scope: &mut Scope, subject: &Subject, res: Resolution, span: Span, origin: Origin) -> Option<PatternTest> {
         let read = self.read_subject(scope, subject, origin.clone())?;
-        let base = self.base_of(read);
-        // A known enum value is tested for its variant; one that may be unknown is compared with it,
-        // which is unknown as the value is (§3.3.12).
-        if let (Resolution::Decl(variant), ValueType::Enum(_), false) = (res, &base, matches!(self.type_of(read), ValueType::Flagged(_))) {
+        let base = self.type_of(read);
+        // An enum value is tested for its variant.
+        if let (Resolution::Decl(variant), ValueType::Enum(_)) = (res, &base) {
             if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) {
                 let position = EnumLayout::variant_tag(self.design, variant)? as u32;
                 return Some(PatternTest::when(self.emit(Expr::IsVariant { expr: read, variant: position }, ValueType::Bool, origin)));
@@ -160,12 +156,11 @@ impl Elaboration<'_, '_> {
         if everything {
             return Some(PatternTest { test: None, bindings });
         }
-        let flag = self.flags(&tests);
-        let op = if flag == Flag::Flagged { BinaryOp::BitOr } else { BinaryOp::Or };
+        let op = BinaryOp::Or;
         let mut tests = tests.into_iter();
         let first = tests.next()?;
         let test = tests.fold(first, |lhs, rhs| {
-            let ty = self.flags(&[lhs, rhs]).wrap(ValueType::Bool);
+            let ty = ValueType::Bool;
             self.emit(Expr::Binary { op, lhs, rhs }, ty, origin.clone())
         });
         Some(PatternTest { test: Some(test), bindings })
@@ -189,25 +184,15 @@ impl Elaboration<'_, '_> {
         Some(PatternTest::when(test))
     }
 
-    /// `lhs op rhs`, flagged when an operand is.
+    /// `lhs op rhs`.
     fn compared(&mut self, op: BinaryOp, lhs: LoweredExpr, rhs: LoweredExpr, origin: Origin) -> LoweredExpr {
-        let ty = self.flags(&[lhs, rhs]).wrap(ValueType::Bool);
+        let ty = ValueType::Bool;
         self.emit(Expr::Binary { op, lhs, rhs }, ty, origin)
     }
 
-    /// `lhs && rhs` of two tests: `&` where either may be unknown (§3.3.12).
+    /// `lhs && rhs` of two tests.
     pub(super) fn both(&mut self, lhs: LoweredExpr, rhs: LoweredExpr, origin: Origin) -> LoweredExpr {
-        let flag = self.flags(&[lhs, rhs]);
-        let op = if flag == Flag::Flagged { BinaryOp::BitAnd } else { BinaryOp::And };
-        self.emit(Expr::Binary { op, lhs, rhs }, flag.wrap(ValueType::Bool), origin)
-    }
-
-    /// The base type of `expr`, without its flag.
-    fn base_of(&self, expr: LoweredExpr) -> ValueType {
-        match self.type_of(expr) {
-            ValueType::Flagged(inner) => *inner,
-            other => other,
-        }
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs, rhs }, ValueType::Bool, origin)
     }
 
     /// A fresh read of the scrutinee.
@@ -249,7 +234,7 @@ impl Elaboration<'_, '_> {
             _ => Resolution::Unresolved,
         };
         if matches!(res, Resolution::Builtin(id) if id.info().name == "None") {
-            let ty = self.flag(present).wrap(ValueType::Bool);
+            let ty = ValueType::Bool;
             return Some(PatternTest::when(self.emit(Expr::Unary { op: UnaryOp::Not, expr: present }, ty, origin)));
         }
         match &node.kind {
@@ -284,7 +269,7 @@ impl Elaboration<'_, '_> {
             None => PatternTest::everything(),
         };
         let payload = self.read_pair(scope, subject, true, origin.clone())?;
-        let option = ValueType::Option(Box::new(self.base_of(payload)));
+        let option = ValueType::Option(Box::new(self.type_of(payload)));
         let value = self.emit(Expr::OptionPack { is: present, value: payload }, option, origin);
         found.bindings.push((binding, value));
         Some(found)
@@ -305,12 +290,12 @@ impl Elaboration<'_, '_> {
             PatKind::Path(path) => {
                 let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
                 let read = self.read_pair(scope, subject, true, origin.clone())?;
-                let base = self.base_of(read);
+                let base = self.type_of(read);
                 self.path_value(scope, res, &base, node.span, origin.clone())?
             }
             PatKind::Ident { res: res @ Resolution::Decl(_), sub: None, .. } => {
                 let read = self.read_pair(scope, subject, true, origin.clone())?;
-                let base = self.base_of(read);
+                let base = self.type_of(read);
                 self.path_value(scope, *res, &base, node.span, origin.clone())?
             }
             _ => {
@@ -365,13 +350,11 @@ impl Elaboration<'_, '_> {
     pub(super) fn assignable_copy(&mut self, scope: &mut Scope, binding: Option<DeclId>, variable: u32) -> Option<LoweredStmt> {
         let binding = binding.filter(|binding| self.types.is_assigned(*binding))?;
         let held = scope.locals[variable as usize].clone();
-        let ty = Self::mutable_type(scope, held.ty.clone());
         let copy = scope.locals.len() as u32;
-        scope.locals.push(Local { name: held.name, ty: ty.clone(), mutable: true });
+        scope.locals.push(Local { name: held.name, ty: held.ty.clone(), mutable: true });
         scope.local_index.insert(binding, copy);
         let origin = self.locator.origin(scope.file, self.design.decl_data(binding).span);
-        let read = self.emit(Expr::Local(variable), held.ty, origin);
-        let init = self.coerced_to(scope, read, &ty);
+        let init = self.emit(Expr::Local(variable), held.ty, origin);
         Some(self.stmt(Stmt::Let { local: copy, init }))
     }
 
@@ -429,7 +412,7 @@ impl Elaboration<'_, '_> {
     /// first; an `Option` to its flag and payload locals, or, with `share_option`, kept as the two
     /// expressions of its pair.
     pub(super) fn subject_of(&mut self, scope: &mut Scope, scrutinee: ExprId, share_option: bool) -> Option<(Subject, Vec<LoweredStmt>)> {
-        let option = matches!(self.types.ty(scrutinee), Some(Ty::Option(_)));
+        let option = matches!(self.typed(scrutinee), Some(Ty::Option(_)));
         if option && scope.no_locals {
             return Some((Subject::RereadPair(scrutinee), Vec::new()));
         }
@@ -525,7 +508,7 @@ impl Elaboration<'_, '_> {
         Self::leave_arm(scope, arm);
         let (taken, otherwise) = (taken?, otherwise?);
         let (taken, otherwise) = (self.fit_to(taken, &base), self.fit_to(otherwise, &base));
-        let ty = self.flags(&[test, taken, otherwise]).wrap(base);
+        let ty = base;
         let whole = self.emit(Expr::If { cond: test, then: taken, otherwise }, ty.clone(), origin.clone());
         if prelude.is_empty() {
             return Some(whole);
@@ -536,7 +519,7 @@ impl Elaboration<'_, '_> {
     /// `while let p = e { body }` as `loop { let s = e; if test(s, p) { let names; body } else { break } }`,
     /// `e` read again at each iteration.
     pub(super) fn lower_while_let(&mut self, scope: &mut Scope, pat: PatId, scrutinee: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
-        scope.loops.push(super::control::LoopFrame { value: ValueType::Unit });
+        scope.loops.push(super::control::LoopFrame);
         let looped = self.lower_while_let_body(scope, pat, scrutinee, body, &origin);
         scope.loops.pop();
         let body = looped?;
@@ -554,7 +537,7 @@ impl Elaboration<'_, '_> {
         let taken = self.bound_block(scope, lets, &body.stmts, body.span)?;
         let taken = self.fit_to(taken, &ValueType::Unit);
         let leave = self.emit_exit(Expr::Break(None), origin.clone());
-        let ty = self.flag(test).wrap(ValueType::Unit);
+        let ty = ValueType::Unit;
         let step = self.emit(Expr::If { cond: test, then: taken, otherwise: leave }, ty, origin.clone());
         stmts.push(self.stmt(Stmt::Expr(step)));
         Some(stmts)
@@ -569,12 +552,11 @@ impl Elaboration<'_, '_> {
         out.extend(prelude);
         if let Some(test) = matched.test {
             let origin = self.locator.origin(file, otherwise.span);
-            let flag = self.flag(test);
-            let failed = self.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, flag.wrap(ValueType::Bool), origin.clone());
+            let failed = self.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, ValueType::Bool, origin.clone());
             let Some(leave) = self.lower_block(scope, file, &otherwise.stmts, otherwise.span) else { return false };
             let leave = self.fit_to(leave, &ValueType::Unit);
             let nothing = self.emit(Expr::Unit, ValueType::Unit, origin.clone());
-            let guard = self.emit(Expr::If { cond: failed, then: leave, otherwise: nothing }, flag.wrap(ValueType::Unit), origin);
+            let guard = self.emit(Expr::If { cond: failed, then: leave, otherwise: nothing }, ValueType::Unit, origin);
             out.push(self.stmt(Stmt::Expr(guard)));
         }
         out.extend(self.binding_lets(&names));

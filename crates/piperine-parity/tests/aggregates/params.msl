@@ -9,7 +9,7 @@ digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 struct Gains { a: u8, b: f64 }
 
 // The defaults when a placement binds nothing.
-module Leaf(in clk: Bit, out q: Bit<u8>, out r: Bit<u8>, out s: Bit<u8>, out w: Bit<u8>) {
+module Leaf(in clk: Bit, out q: Bit<u8> = 0, out r: Bit<u8> = 0, out s: Bit<u8> = 0, out w: Bit<u8> = 0) {
     g: Gains = Gains { a: 3, b: 0.5 } where g.a > 0;
     t: (u8, u8) = (4, 5);
     arr: [u8; 3] = [1, 2, 3];

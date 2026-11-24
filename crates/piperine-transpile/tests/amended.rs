@@ -41,10 +41,7 @@ fn clock(w: &mut Wire) {
 
 /// The bytes of a known `f64` in its pin (abi.md P3, `REAL`: the value at 0, known at 8).
 fn real_bytes(v: f64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
+    v.to_le_bytes().to_vec()
 }
 
 /// An environment read at the origin of `x`.
@@ -178,7 +175,7 @@ fn hoisted(b: &mut IrBuilder, name: &str, extra: Option<&str>) -> BodyId {
     }
     let mut x = Dx::new(b, F, 5, 14);
     let clk = x.carrier(0, BIT);
-    b.drive(body, Drive { carrier: 1, value: clk, after: None, origin: Buck::origin(F, 5, 5) });
+    b.drive(body, Drive { carrier: 1, value: clk, after: None, origin: Buck::origin(F, 5, 5), element: None, path: vec![] });
     let gate = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 6, 8) });
     let mut x = Dx::new(b, F, 6, 40);
     let level = x.carrier(1, BIT);
@@ -188,9 +185,9 @@ fn hoisted(b: &mut IrBuilder, name: &str, extra: Option<&str>) -> BodyId {
     let mut x = Dx::new(b, F, 7, 50);
     let level = x.carrier(2, BIT);
     let bind = x.let_(0, level);
-    let local = x.local(0, digital::Ty::flagged(BIT));
+    let local = x.local(0, BIT);
     let commit = x.commit(3, local, None);
-    let locals = vec![Local { name: "match$0".into(), ty: digital::Ty::flagged(BIT), mutable: false }];
+    let locals = vec![Local { name: "match$0".into(), ty: BIT, mutable: false }];
     Buck::reaction(b, body, vec![up], vec![bind, commit], locals, F, 7);
     body
 }
@@ -245,12 +242,12 @@ fn timer(b: &mut IrBuilder, rearm: bool) -> BodyId {
     b.carrier(body, Buck::carrier("count", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 14));
     let mut x = Dx::new(b, F, 3, 11);
     let (t0, dt) = (x.carrier(0, REAL), x.carrier(1, REAL));
-    let at = x.bin(piperine_ir::BinaryOp::Add, t0, dt, digital::Ty::flagged(REAL));
+    let at = x.bin(piperine_ir::BinaryOp::Add, t0, dt, REAL);
     let at = b.event(body, Event { source: EventSource::At(at), guard: None, origin: Buck::origin(F, 3, 8) });
     let mut x = Dx::new(b, F, 3, 30);
     let count = x.carrier(2, u8.clone());
     let one = x.int(1, u8.clone());
-    let next = x.bin(piperine_ir::BinaryOp::Add, count, one, digital::Ty::flagged(u8));
+    let next = x.bin(piperine_ir::BinaryOp::Add, count, one, u8);
     let commit = x.commit(2, next, None);
     Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 3);
     if rearm {
@@ -276,8 +273,8 @@ fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
 fn at_fires_once_at_its_time() {
     // part IV §13 `at(t)`: the event fires once, at `t`. Armed at the start with t0 = 10 ns and
     // dt = 5 ns, it fires at 15 ns and the counter, which adds one per firing, reads 1 from then
-    // on (`Bit<u8>`: the value, then its known byte)
-    assert_eq!(counted(false), [(15 * NS, vec![1, 1])]);
+    // on (`Bit<u8>`: its value byte)
+    assert_eq!(counted(false), [(15 * NS, vec![1])]);
 }
 
 #[test]
@@ -285,14 +282,12 @@ fn a_rearmed_at_drops_the_earlier_firing() {
     // part IV §13: `at(t)` re-arms when `t` changes; abi.md C3: the arming statement is `REPLACE`,
     // so the firing armed for 15 ns is removed when `dt <- 20n` at 12 ns re-arms the timer for
     // t0 + dt = 30 ns: no firing at 15 ns, one at 30 ns
-    assert_eq!(counted(true), [(30 * NS, vec![1, 1])]);
+    assert_eq!(counted(true), [(30 * NS, vec![1])]);
 }
 
 /// What a timed signal `t` of `Late` holds when the clock first rises.
 #[derive(Clone, Copy)]
 enum Time {
-    /// Nothing ever writes it.
-    Unknown,
     /// `t <- <seconds>;`
     Fixed(f64),
     /// `t <- now();`
@@ -302,25 +297,22 @@ enum Time {
 /// `module <name>(in clk: Bit, out hit: Bit)`:
 ///
 /// ```text
-/// signal t: Bit<f64>;
-/// on clk.rise() { t <- <time>; }            // not for `Time::Unknown`
+/// signal t: Bit<f64> = -1.0;               // a time before every instant: armed for nothing
+/// on clk.rise() { t <- <time>; }
 /// on at(t) { hit <- true; }
 /// ```
 fn late(b: &mut IrBuilder, name: &str, time: Time) -> BodyId {
     let body = b.body(Buck::spec(name, F, 1));
     b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-    b.carrier(body, Buck::carrier("t", REAL, CarrierRole::Signal, None, F, 2, 5));
+    b.carrier(body, Buck::carrier("t", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(-1.0))), F, 2, 5));
     b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, None, F, 1, 35));
     let value = match time {
-        Time::Unknown => None,
-        Time::Fixed(v) => Some(Dx::new(b, F, 3, 25).real(v)),
-        Time::Now => Some(env(&mut Dx::new(b, F, 3, 25), Env::Time)),
+        Time::Fixed(v) => Dx::new(b, F, 3, 25).real(v),
+        Time::Now => env(&mut Dx::new(b, F, 3, 25), Env::Time),
     };
-    if let Some(value) = value {
-        let rise = Buck::rise(b, body, 0, F, 3, 8);
-        let commit = Dx::new(b, F, 3, 20).commit(1, value, None);
-        Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 3);
-    }
+    let rise = Buck::rise(b, body, 0, F, 3, 8);
+    let commit = Dx::new(b, F, 3, 20).commit(1, value, None);
+    Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 3);
     let t = Dx::new(b, F, 4, 11).carrier(1, REAL);
     let at = b.event(body, Event { source: EventSource::At(t), guard: None, origin: Buck::origin(F, 4, 8) });
     let mut x = Dx::new(b, F, 4, 20);
@@ -331,14 +323,13 @@ fn late(b: &mut IrBuilder, name: &str, time: Time) -> BodyId {
 }
 
 #[test]
-fn a_past_or_unknown_time_does_not_fire() {
+fn a_past_time_does_not_fire() {
     // a 100 MHz clock: its first rise is at 5 ns, the next at 15 ns, after the run
     let mut w = Wire::new();
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![Constant::Real(Real::new(100e6))], &[("clk", BIT)]);
     for (name, module, time) in [
         ("past", "Past", Time::Fixed(0.0)),
-        ("unknown", "Unknown", Time::Unknown),
         ("now", "Now", Time::Now),
         ("later", "Later", Time::Fixed(8e-9)),
     ] {
@@ -347,10 +338,8 @@ fn a_past_or_unknown_time_does_not_fire() {
         w.place(name, body, vec![], &[("clk", BIT), (&format!("{name}.t"), REAL), (&hit, BIT)]);
     }
     let seen = Built::new(w.finish()).run(12e-9, 1e-9);
-    // part IV §13: a time before the instant that arms it (0 armed at 5 ns) never fires, and an
-    // unknown time never fires
+    // part IV §13: a time before the instant that arms it (0 armed at 5 ns) never fires
     assert_eq!(seen.transient("past_hit"), []);
-    assert_eq!(seen.transient("unknown_hit"), []);
     // a time equal to the instant fires at its next microstep (abi.md C1: a delay of 0), so
     // within the same instant, 5 ns
     assert_eq!(seen.transient("now_hit"), [(5 * NS, HIGH.to_vec())]);
@@ -373,7 +362,7 @@ fn probe(b: &mut IrBuilder, emits: bool) -> BodyId {
     let mut x = Dx::new(b, F, 2, 22);
     let n = x.carrier(1, u8.clone());
     let one = x.int(1, u8.clone());
-    let next = x.bin(piperine_ir::BinaryOp::Add, n, one, digital::Ty::flagged(u8.clone()));
+    let next = x.bin(piperine_ir::BinaryOp::Add, n, one, u8.clone());
     let mut stmts = vec![x.commit(1, next, None)];
     if emits {
         let fields = vec![StreamField { name: "code".into(), ty: u8.clone() }, StreamField { name: "level".into(), ty: REAL }];
@@ -428,18 +417,14 @@ fn an_emit_commits_one_record_and_adds_no_microstep() {
             _ => None,
         })
         .collect();
-    // the layout of `trace` (msl-digital A4): `code` a `BYTE` at 0, `level` a `REAL` at 8, then
-    // the `maybe` of §19 rule 1 at 24, 32 bytes; the site writes `code = 7` (known), and `level`,
-    // which it leaves out, stays all zero, its known byte 0 (C5: "a field absent from a site is
-    // a field with its known byte 0"); `maybe` is written known and false: the reaction runs
-    // under known control (§19 rule 1)
-    let mut bytes = vec![0u8; 32];
-    bytes[..2].copy_from_slice(&[7, 1]);
-    bytes[24..26].copy_from_slice(&[0, 1]);
+    // the layout of `trace` (msl-digital A4): `code` a `BYTE` at 0, `level` an `F64` at 8, 16
+    // bytes; the site writes `code = 7`, and `level`, which it leaves out, stays all zero (C5)
+    let mut bytes = vec![0u8; 16];
+    bytes[0] = 7;
     assert_eq!(records, [(5 * NS / 2, bytes)]);
     // the commit beside it applies as before: n counts the rise (the clock's initial `false` at the
     // operating point is no rise), 0 to 1
-    assert_eq!(seen.transient("n"), [(5 * NS / 2, vec![1, 1])]);
+    assert_eq!(seen.transient("n"), [(5 * NS / 2, vec![1])]);
 
     // P7: a RECORD pin is QUIET, so its commit never keeps an instant's microstep loop alive:
     // every instant through the rise runs as many microsteps as without the emit
@@ -539,7 +524,7 @@ fn the_inductor_functions_pass_verify_partials() {
 /// on at(1n) { x <- 3; }
 /// on at(2n) { x <- 5; }
 /// on x.changed() { p <- x.prev(); }
-/// on x.changed() if x.prev().is_known() { g <- true; }
+/// on x.changed() if x.prev() > 2 { g <- true; }
 /// ```
 fn sequence(b: &mut IrBuilder) -> BodyId {
     let u8 = ValueType::UInt(8);
@@ -558,15 +543,17 @@ fn sequence(b: &mut IrBuilder) -> BodyId {
     let previous = |b: &mut IrBuilder, line, col| {
         let x = Dx::new(b, F, line, col);
         let o = x.origin();
-        x.b.expr(Expr::Previous(0), digital::Ty::flagged(u8.clone()), o)
+        x.b.expr(Expr::Previous(0), u8.clone(), o)
     };
     let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 4, 8) });
     let prev = previous(b, 4, 30);
     let commit = Dx::new(b, F, 4, 25).commit(1, prev, None);
     Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
     let prev = previous(b, 5, 26);
-    let known = Dx::new(b, F, 5, 26).is_known(prev);
-    let guarded = b.event(body, Event { source: EventSource::Changed(0), guard: Some(known), origin: Buck::origin(F, 5, 8) });
+    let mut x = Dx::new(b, F, 5, 26);
+    let two = x.int(2, u8.clone());
+    let above = x.bin(piperine_ir::BinaryOp::Gt, prev, two, ValueType::Bool);
+    let guarded = b.event(body, Event { source: EventSource::Changed(0), guard: Some(above), origin: Buck::origin(F, 5, 8) });
     let mut x = Dx::new(b, F, 5, 50);
     let yes = x.boolean(true);
     let commit = x.commit(2, yes, None);
@@ -582,11 +569,11 @@ fn a_previous_value_is_read_in_a_guard_and_in_a_reaction() {
     w.place("seq", body, vec![], &[("x", u8.clone()), ("p", u8), ("g", BIT)]);
     let seen = Built::new(w.finish()).run(4e-9, 1e-9);
     // x takes 3 at 1 ns and 5 at 2 ns
-    assert_eq!(seen.transient("x"), [(NS, vec![3, 1]), (2 * NS, vec![5, 1])]);
+    assert_eq!(seen.transient("x"), [(NS, vec![3]), (2 * NS, vec![5])]);
     // part II §5.3.8: the first commit is a change; `prev()` is the value before the most recent
-    // change, so unknown at the first (the carrier held no value before it):
-    // the reaction commits unknown to p at 1 ns (all-zero bytes, abi.md P3), and 3 at 2 ns
-    assert_eq!(seen.transient("p"), [(NS, vec![0, 0]), (2 * NS, vec![3, 1])]);
-    // the guard reads the same previous value: unknown at 1 ns (no firing), 3 at 2 ns
+    // change, so the initial value at the first (the carrier held no other before it): the
+    // reaction commits 0 to p at 1 ns, and 3 at 2 ns
+    assert_eq!(seen.transient("p"), [(NS, vec![0]), (2 * NS, vec![3])]);
+    // the guard reads the same previous value: 0 at 1 ns (no firing), 3 at 2 ns
     assert_eq!(seen.transient("g"), [(2 * NS, HIGH.to_vec())]);
 }

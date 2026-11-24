@@ -8,7 +8,8 @@ buck = { path = "../../../examples/buck" }
 
 # Five runs, one per family of scenarios (the stimulus of each is the host's, never the bench's).
 # Every run samples the same thirteen signals on a 10 ns grid and emits the monitors' `checks`;
-# `max_steps` is above the default budget because 5.2 ms of converter time takes about 6 M steps.
+# `max_steps` is above the default budget because 5.2 ms of converter time (`steady_state`) takes
+# 2 161 306 accepted steps (about 6 M before `transient-performance`); the five runs take 6 425 282 in all.
 
 [run.brownout]
 top = "Bench"

@@ -17,7 +17,7 @@ struct Device;
 impl Device {
     /// The source text of the device and its top.
     fn source(analog: &str) -> String {
-        format!("module M(p: Electrical, n: Electrical, in en: Bit) {{ k: f64 = 1.0; }}\nanalog for M {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal e: Bit; let m = M {{ }}(s, gnd, e); }}")
+        format!("module M(p: Electrical, n: Electrical, in en: Bit) {{ k: f64 = 1.0; }}\nanalog for M {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal e: Bit = false; let m = M {{ }}(s, gnd, e); }}")
     }
 
     /// The IR of `analog`, which must elaborate.
@@ -68,17 +68,17 @@ fn a_selector_on_a_carrier_or_the_environment_keeps_the_flow_unknown() {
     // potential contribution under no condition is a potential branch; a flow-only branch has no
     // unknown whatever selects it.
     for (selector, kinds) in [
-        ("if en.known_or(false) { v(p, n) +> 1.0; }", [BranchKind::Switch]),
+        ("if en { v(p, n) +> 1.0; }", [BranchKind::Switch]),
         ("if now() > 1u { v(p, n) +> 1.0; }", [BranchKind::Switch]),
         ("if analysis(Static) { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }", [BranchKind::Switch]),
         ("v(p, n) +> 1.0;", [BranchKind::Potential]),
-        ("if en.known_or(false) { i(p, n) +> 1.0; }", [BranchKind::Flow]),
+        ("if en { i(p, n) +> 1.0; }", [BranchKind::Flow]),
     ] {
         let ir = Device::ir(selector);
         assert_eq!(Device::kinds(&ir), kinds, "{selector}");
     }
     // The contributions keep their place: under the arm of the condition, not at the top.
-    let ir = Device::ir("if en.known_or(false) { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }");
+    let ir = Device::ir("if en { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }");
     let body = ir.bodies().find(|b| b.name() == "M").expect("M");
     let found: Vec<(QuantityRole, bool)> = body.contributions().iter().map(|c| (c.quantity, c.conditions[0].holds)).collect();
     assert_eq!(found, [(QuantityRole::Potential, true), (QuantityRole::Flow, false)]);
@@ -113,7 +113,7 @@ fn a_probe_in_the_selector_of_a_potential_capable_branch_is_e0414() {
         "if v(p) > 0.5 { v(p, n) +> 1.0; }",
         "v(p, n) +> 1.0; if v(p) > 0.5 { i(p, n) +> 1.0; }",
         "let hot = v(p) > 0.5; if hot { v(p, n) +> 1.0; }",
-        "if en.known_or(false) { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
+        "if en { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
     ] {
         let (codes, at, message) = refusal(analog);
         assert_eq!(codes, ["E0414"], "{analog}");
@@ -304,7 +304,7 @@ fn rows(ir: &Ir) -> Vec<(QuantityRole, Vec<(piperine_ir::Operator, bool)>)> {
 
 /// A device `M(p, n, in clk: Bit, out r: Bit<f64>)` with `items` in its body and `analog` as its `analog` block.
 fn charge_device(items: &str, analog: &str, digital: &str) -> String {
-    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
+    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit = false; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
 }
 
 #[test]
@@ -373,30 +373,19 @@ fn an_override_of_a_key_param_lowers_its_variant() {
 }
 
 #[test]
-fn the_section_18_diode_waits_for_params_and_io() {
-    // AS-05 AC 3 and 4 (Q2): the section 18 `Diode` as the spec writes it has `rs: Option<f64>`, an
-    // `Option` param that `params-and-io` (L28) owns. Until then it is refused by name, not mis-run:
-    // `P0001` naming the param type. The local `DiodeRs` (`tests/ngspice/diode_rs.msl`) proves the
-    // mechanism with a params-only `f64` selector.
+fn the_section_18_diode_type_checks_with_its_option_param() {
+    // AS-05 AC 3 and 4 (Q2), params-and-io PI-03 (GAPS L28 closed): the section 18 `Diode` as the spec writes it has
+    // `rs: Option<f64>`, an `Option` param, and a `match` over it in `analog`; it type checks and elaborates.
     let src = "module Diode(a: Electrical, k: Electrical) {\n    is: f64 = 1e-14 where is > 0.0;\n    rs: Option<f64>;\n    signal ai: Electrical;\n}\nanalog for Diode {\n    match rs {\n        Some(r) => { i(a, ai) +> v(a, ai) / r; }\n        None    => { v(a, ai) +> 0.0; }\n    }\n    i(ai, k) +> is * (v(ai, k) / vt()).exp();\n}\nmodule Top() { signal s: Electrical; let d = Diode { rs: Some(100.0) }(s, gnd); }";
-    let design = Elab::design(src);
-    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the Option param is refused");
-    assert_eq!(Elab::codes(&found), ["P0001"]);
-    assert!(found[0].diagnostic.message.contains("Option"), "the refusal names the param type: {}", found[0].diagnostic.message);
+    Elab::ir(src, "Top");
 }
 
 #[test]
-fn an_enum_param_is_refused_by_name_until_params_and_io() {
-    // CV round 2, finding 10 (GAPS L28, `md: Mode`): an enum param, unit or payload, with or without `Repr`, is `P0001`
-    // naming the enum type, never carried on to the transpiler read as an `f64`.
-    let items = "enum Mode { A, B }\n#[derive(Repr)]\nenum Kind { X(u8), Y }\n";
-    for (param, named) in [("m: Mode = Mode::A", "Mode"), ("k: Kind = Kind::Y", "Kind")] {
-        let src = format!("{items}module Top() {{ {param}; signal s: Electrical; }}");
-        let design = Elab::design(&src);
-        let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the enum param is refused");
-        assert_eq!(Elab::codes(&found), ["P0001"], "{param}");
-        assert!(found[0].diagnostic.message.contains(&format!("param of type `enum `{named}``")), "{param}: {}", found[0].diagnostic.message);
-    }
+fn a_payload_enum_param_elaborates() {
+    // PI-02, §8.1.15 ("a param's type is a value type"): an enum whose variants carry fields is a param type too (it was `P0001`
+    // naming the enum, CV round 2 finding 10, until params-and-io T30); its default and its binding fold to the variant.
+    let src = "#[derive(Repr)]\nenum Kind { X(u8), Y }\nmodule Child(o: Electrical) { k: Kind = Kind::Y; }\nmodule Top() { signal s: Electrical; let c = Child(s) { k: Kind::X(3) }; let d = Child(s); }";
+    Elab::ir(src, "Top");
 }
 
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
@@ -479,7 +468,7 @@ fn the_stdlib_idt_waits_for_generics() {
 fn the_water_model_waits_for_generics() {
     // AS-05 AC 2 (Q2): `Water` of Part IV section 13 reads `idt::<Heat>`, a generic instantiation: refused
     // by name until `generics` merges.
-    let src = "#[derive(Repr, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase.known_or(Phase::Liquid);\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
+    let src = "#[derive(Repr, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase;\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
     let design = Elab::design(src);
     let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic instantiation is refused");
     assert!(Elab::codes(&found).iter().all(|c| c == "P0001"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
@@ -503,9 +492,9 @@ fn a_param_value_let_may_read_another_let() {
 fn a_param_value_let_that_reads_a_probe_is_e0321() {
     // AS-12 AC 3 (§8.1.19): a `let` used as a param value that reads a probe, a carrier or the environment
     // has no value at elaboration: `E0321` at the use, naming the `let`.
-    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k.known_or(0.0);", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
+    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k;", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
         let lag = "module Lag(x: f64) -> f64 { signal y: State; potential(y) }\nanalog for Lag { flow(y) +> ddt(potential(y)) + potential(y) - x; }\n";
-        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
+        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64> = 0.0; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
         let err = Elab::run(&src, "Top").expect_err("the value has no constant");
         assert_eq!(Elab::codes(&err), ["E0321"], "{let_}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         let message = &err[0].diagnostic.message;

@@ -573,6 +573,10 @@ pub(super) fn path_diagnostic(design: &Design, segments: &[PathSegment], span: c
             if matches!(name.as_str(), "Clone" | "Copy" | "clone") {
                 return diagnostic.with_help(crate::msl::diag::COPY_HELP);
             }
+            // The name the explicit model of unknowns took out (§3.3): a value is always known.
+            if name == "Unknown" {
+                return diagnostic.with_help(crate::msl::diag::UNKNOWN_HELP);
+            }
             diagnostic
         }
         WalkError::Private { at } => {

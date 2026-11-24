@@ -49,8 +49,13 @@ enum ArgKind {
     Count { value: &'static str },
     /// `--<id> <value>`, given any number of times.
     Texts { value: &'static str },
-    /// `--<id> <path>=<value>`, given any number of times.
+    /// `--<id> <path>=<real>`, given any number of times.
     Param,
+    /// `--<id> <path>=<value>`, given any number of times: a real, or text the param's type reads (PI-01 to PI-03).
+    Given,
+    /// `--<id> <name>=<value>`, given any number of times; the value is checked when the run is
+    /// built, so a value that is no number is a `P0010` naming the entry, not a usage error.
+    Setting,
 }
 
 /// The parsers of the typed values of a flag.
@@ -67,19 +72,39 @@ impl Values {
         text.parse::<u32>().map_err(|_| format!("`{text}` is not a whole number"))
     }
 
-    /// The path and the real value of `--param`'s `text`, split at the last `=`.
-    fn param(text: &str) -> Result<(String, f64), String> {
-        let (path, value) = text.rsplit_once('=').ok_or_else(|| format!("`{text}` is not <path>=<value>"))?;
-        if path.is_empty() {
-            return Err(format!("`{text}` names no path"));
-        }
-        // a `bool` leaf of a composite param is given as `true` or `false`
-        let value = match value {
+    /// The path and the real value of a `<path>=<real>` flag's `text` (`--nodeset`), split at the last `=`; a flag is 1 or 0.
+    fn path_real(text: &str) -> Result<(String, f64), String> {
+        let (path, value) = Values::path_and_value(text)?;
+        let real = match value.as_str() {
             "true" => 1.0,
             "false" => 0.0,
             other => Values::real(other)?,
         };
-        Ok((path.to_string(), value))
+        Ok((path, real))
+    }
+
+    /// The path and the text of `--param`'s `text`, split at the last `=`: the text is kept whole, for the param's type to read
+    /// (an integer literal in a radix, a variant name, `None`, a number, a flag; PI-01 to PI-03, D24).
+    fn param(text: &str) -> Result<(String, String), String> {
+        Values::path_and_value(text)
+    }
+
+    /// `<path>=<value>` split at the last `=`; a text with no `=` or no path is refused.
+    fn path_and_value(text: &str) -> Result<(String, String), String> {
+        let (path, value) = text.rsplit_once('=').ok_or_else(|| format!("`{text}` is not <path>=<value>"))?;
+        if path.is_empty() {
+            return Err(format!("`{text}` names no path"));
+        }
+        Ok((path.to_string(), value.to_string()))
+    }
+
+    /// The name and the text of `--simparam`'s `text`, split at the first `=`.
+    fn setting(text: &str) -> Result<(String, String), String> {
+        let (name, value) = text.split_once('=').ok_or_else(|| format!("`{text}` is not <name>=<value>"))?;
+        if name.is_empty() {
+            return Err(format!("`{text}` names no session parameter"));
+        }
+        Ok((name.to_string(), value.to_string()))
     }
 }
 
@@ -112,7 +137,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "target", kind: ArgKind::Positional { required: false, many: false }, help: "a run name, or a .msl file" },
             ArgRow { id: "bench", kind: ArgKind::Path { value: "FILE" }, help: "the bench file; the root crate is this file" },
             ArgRow { id: "top", kind: ArgKind::Text { value: "MODULE" }, help: "the module without ports to elaborate" },
-            ArgRow { id: "analysis", kind: ArgKind::Text { value: "ANALYSIS" }, help: "op, dc, ac, transient, tf, pz or sens" },
+            ArgRow { id: "analysis", kind: ArgKind::Text { value: "ANALYSIS" }, help: "op, dc, ac, noise, transient, tf, pz, sens or pss" },
             ArgRow { id: "stop", kind: ArgKind::Real { value: "SECONDS" }, help: "transient: the end time" },
             ArgRow { id: "max-step", kind: ArgKind::Real { value: "SECONDS" }, help: "transient: the largest step" },
             ArgRow { id: "print-step", kind: ArgKind::Real { value: "SECONDS" }, help: "transient: the spacing of the printed rows" },
@@ -120,11 +145,11 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "from", kind: ArgKind::Real { value: "VALUE" }, help: "the first value of a sweep, or the first time kept" },
             ArgRow { id: "to", kind: ArgKind::Real { value: "VALUE" }, help: "the last value of a sweep" },
             ArgRow { id: "step", kind: ArgKind::Real { value: "VALUE" }, help: "dc: the sweep step" },
-            ArgRow { id: "per-decade", kind: ArgKind::Count { value: "N" }, help: "ac: points per decade" },
-            ArgRow { id: "points", kind: ArgKind::Count { value: "N" }, help: "ac: points in all" },
+            ArgRow { id: "per-decade", kind: ArgKind::Count { value: "N" }, help: "ac, noise: points per decade" },
+            ArgRow { id: "points", kind: ArgKind::Count { value: "N" }, help: "ac, noise: points in all" },
             ArgRow { id: "print", kind: ArgKind::Texts { value: "SIGNAL" }, help: "a signal to print (repeatable)" },
             ArgRow { id: "stream", kind: ArgKind::Texts { value: "STREAM" }, help: "a record stream to print (repeatable)" },
-            ArgRow { id: "param", kind: ArgKind::Param, help: "set a parameter before the run: <path>=<value> (repeatable)" },
+            ArgRow { id: "param", kind: ArgKind::Given, help: "set a parameter before the run: <path>=<value> (repeatable)" },
             ArgRow { id: "backend", kind: ArgKind::Text { value: "BACKEND" }, help: "the backend: rust or interp" },
             ArgRow { id: "csv", kind: ArgKind::Path { value: "FILE" }, help: "write the table as CSV to this file" },
             ArgRow { id: "records", kind: ArgKind::Path { value: "FILE" }, help: "write the records as JSON Lines to this file" },
@@ -140,8 +165,9 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
             ArgRow { id: "max-steps", kind: ArgKind::Count { value: "N" }, help: "the budget of attempts a transient may make (default 2000000)" },
             ArgRow { id: "nodeset", kind: ArgKind::Param, help: "seed an operating point's first iterate: <node>=<value> (repeatable)" },
-            ArgRow { id: "input", kind: ArgKind::Text { value: "SOURCE" }, help: "tf, pz: the voltage source that excites" },
-            ArgRow { id: "output", kind: ArgKind::Text { value: "NODE" }, help: "tf, pz: the node that is measured" },
+            ArgRow { id: "simparam", kind: ArgKind::Setting, help: "set a session parameter a design reads with simparam(): <name>=<value> (repeatable)" },
+            ArgRow { id: "input", kind: ArgKind::Text { value: "SOURCE" }, help: "tf, pz: the voltage source that excites; noise: the instance the noise is referred to" },
+            ArgRow { id: "output", kind: ArgKind::Text { value: "NODE" }, help: "tf, pz, noise: the node that is measured (noise: also v(a, b) or i(instance))" },
             ArgRow { id: "wrt", kind: ArgKind::Texts { value: "PARAM" }, help: "sens: a param to differentiate by (repeatable)" },
             ArgRow { id: "period", kind: ArgKind::Real { value: "SECONDS" }, help: "pss: the period of the drive" },
             ArgRow { id: "tstab", kind: ArgKind::Real { value: "SECONDS" }, help: "pss: the length of the transient that comes before the orbit (default 0)" },
@@ -186,7 +212,8 @@ const PROJECT: &str = "project";
 pub enum Invocation {
     Check { project: Option<PathBuf>, target: Option<PathBuf> },
     Build { project: Option<PathBuf>, runs: Vec<String>, verbose: bool },
-    Run { project: Option<PathBuf>, target: Option<String>, overrides: Overrides },
+    /// `refused` is the `P0010` of a flag value that is no number, raised when the command runs.
+    Run { project: Option<PathBuf>, target: Option<String>, overrides: Overrides, refused: Option<String> },
     Test { project: Option<PathBuf>, runs: Vec<String> },
     New { name: String },
     Clean { project: Option<PathBuf>, cache: bool },
@@ -248,7 +275,9 @@ impl Cli {
             ArgKind::Real { value } => arg.long(row.id).value_name(value).value_parser(Values::real).allow_negative_numbers(true).action(ArgAction::Set),
             ArgKind::Count { value } => arg.long(row.id).value_name(value).value_parser(Values::count).action(ArgAction::Set),
             ArgKind::Texts { value } => arg.long(row.id).value_name(value).action(ArgAction::Append),
-            ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::param).action(ArgAction::Append),
+            ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::path_real).action(ArgAction::Append),
+            ArgKind::Given => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::param).action(ArgAction::Append),
+            ArgKind::Setting => arg.long(row.id).value_name("NAME=VALUE").value_parser(Values::setting).action(ArgAction::Append),
         }
     }
 
@@ -274,7 +303,8 @@ impl Cli {
             points: count("points"),
             print: texts("print"),
             streams: texts("stream"),
-            params: m.get_many::<(String, f64)>("param").map(|v| v.cloned().collect()).unwrap_or_default(),
+            params: Vec::new(),
+            param_texts: Cli::given_params(m),
             backend: text("backend"),
             csv: path("csv"),
             records: path("records"),
@@ -295,7 +325,35 @@ impl Cli {
             period: real("period"),
             tstab: real("tstab"),
             nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
+            simparam: Cli::simparam_entries(m).0,
         }
+    }
+
+    /// The fault (`P0010`) of the first flag of `m` checked when the run is built whose value is no
+    /// number, naming it: a `--simparam` entry.
+    fn refusal(m: &clap::ArgMatches) -> Option<String> {
+        Cli::simparam_entries(m).1
+    }
+
+    /// The `--param` entries of `m`, in the order given.
+    fn given_params(m: &clap::ArgMatches) -> Vec<(String, String)> {
+        m.get_many::<(String, String)>("param").map(|v| v.cloned().collect()).unwrap_or_default()
+    }
+
+    /// The `--simparam` entries of `m` whose value is a number, in order, and the fault of the
+    /// first whose value is none (`P0010`, naming the entry).
+    fn simparam_entries(m: &clap::ArgMatches) -> (Vec<(String, f64)>, Option<String>) {
+        let mut readable = Vec::new();
+        let mut refused = None;
+        for (name, text) in m.get_many::<(String, String)>("simparam").into_iter().flatten() {
+            match Values::real(text) {
+                Ok(value) => readable.push((name.clone(), value)),
+                Err(why) => {
+                    refused.get_or_insert_with(|| format!("`--simparam {name}={text}`: {why}"));
+                }
+            }
+        }
+        (readable, refused)
     }
 
     /// The invocation `args` spell (the first is the program name), or `clap`'s error: a usage
@@ -317,7 +375,7 @@ impl Cli {
         Ok(match name {
             "check" => Invocation::Check { project: project(), target: text("target").map(PathBuf::from) },
             "build" => Invocation::Build { project: project(), runs: texts("runs"), verbose: flag("verbose") },
-            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Cli::overrides(m) },
+            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Cli::overrides(m), refused: Cli::refusal(m) },
             "test" => Invocation::Test { project: project(), runs: texts("runs") },
             "new" => Invocation::New { name: text("name").unwrap_or_default() },
             "clean" => Invocation::Clean { project: project(), cache: flag("cache") },
@@ -335,7 +393,7 @@ impl Cli {
             Invocation::Check { project, target } => CheckCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::New { name } => NewCommand { name: name.clone() }.execute(out, err),
             Invocation::Test { project, runs } => TestCommand { project: project.clone(), runs: runs.clone() }.execute(out, err),
-            Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
+            Invocation::Run { project, target, overrides, refused } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone(), refused: refused.clone() }.execute(out, err),
             Invocation::Info { project, target } => InfoCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::Fmt { project, files, check } => FmtCommand { project: project.clone(), files: files.clone(), check: *check }.execute(out, err),
         }
@@ -378,7 +436,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
-            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab", "simparam",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -394,6 +452,7 @@ mod tests {
             "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
             "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
             "--nodeset", "Top.b=0", "--input", "v1", "--output", "Top.out", "--wrt", "r1.r", "--wrt", "r2.r", "--period", "1e-3", "--tstab", "5e-3",
+            "--simparam", "gain=2", "--simparam", "bias=0.5",
         ];
         let Ok(Invocation::Run { target, overrides, .. }) = Cli::parse(args) else { panic!("the flags parse as a run") };
         assert_eq!(target.as_deref(), Some("x"));
@@ -412,7 +471,8 @@ mod tests {
             points: Some(20),
             print: vec!["a".into(), "b".into()],
             streams: vec!["s1".into(), "s2".into()],
-            params: vec![("r1.r".into(), 2000.0), ("c1.c".into(), 1e-9)],
+            params: vec![],
+            param_texts: vec![("r1.r".into(), "2000".into()), ("c1.c".into(), "1e-9".into())],
             backend: Some("interp".into()),
             csv: Some("o.csv".into()),
             records: Some("r.jsonl".into()),
@@ -433,6 +493,7 @@ mod tests {
             period: Some(1e-3),
             tstab: Some(5e-3),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
+            simparam: vec![("gain".into(), 2.0), ("bias".into(), 0.5)],
         };
         assert_eq!(overrides, want);
         // a flag not given leaves its field alone, and a bad value is a usage error
@@ -442,6 +503,17 @@ mod tests {
             let args: Vec<&str> = ["piperine", "run"].iter().chain(bad).copied().collect();
             assert!(Cli::parse(args).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_param_is_kept_as_text_for_its_type() {
+        // PI-01 to PI-03 (D24): `--param` keeps every value as the text it was written, a number included: the param's type reads
+        // it when the session opens (an integer literal in a radix, a variant name, `None`, a number, a flag).
+        let args = ["piperine", "run", "--param", "a.x=1e-9", "--param", "a.n=0x1F", "--param", "a.md=Slow", "--param", "a.rs=None", "--param", "a.f=true"];
+        let Ok(Invocation::Run { overrides, .. }) = Cli::parse(args) else { panic!("the params parse") };
+        assert!(overrides.params.is_empty(), "no `--param` is read as a real before its type is known");
+        let texts: Vec<(&str, &str)> = overrides.param_texts.iter().map(|(path, text)| (path.as_str(), text.as_str())).collect();
+        assert_eq!(texts, [("a.x", "1e-9"), ("a.n", "0x1F"), ("a.md", "Slow"), ("a.rs", "None"), ("a.f", "true")]);
     }
 
     #[test]

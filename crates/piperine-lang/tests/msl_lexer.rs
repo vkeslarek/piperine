@@ -168,8 +168,8 @@ fn keywords_reserved_vs_contextual() {
     ] {
         assert_eq!(one_token(word), Token::Ident(word.to_string()), "{word}");
     }
-    // `Unknown` is a literal token, not an identifier (A.3); `_` is the wildcard.
-    assert_eq!(one_token("Unknown"), Token::Unknown);
+    // `Unknown` is no token (explicit-unknowns, EU-02): an identifier like any other; `_` is the wildcard.
+    assert_eq!(one_token("Unknown"), Token::Ident("Unknown".into()));
     assert_eq!(one_token("unknown"), Token::Ident("unknown".into()));
     assert_eq!(one_token("_"), Token::Punct(Punct::Underscore));
     assert_eq!(one_token("_x"), Token::Ident("_x".into()));

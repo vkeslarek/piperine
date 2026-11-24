@@ -81,15 +81,15 @@ digital for Dpwm {
         } else {
             count + 1
         };
-        let enabled = run.known_or(false);
+        let enabled = run;
         // The wrap latches the dithered width of the new period and clears the cut flags.
         let w = if wrap {
-            dithered_width(duty.known_or(0), frame + 1)
+            dithered_width(duty, frame + 1)
         } else {
             width
         };
-        let hs_trip = !wrap && (hs_cut || (hs && oc.known_or(true))); // unknown `oc`: assume a trip
-        let ls_trip = !wrap && (ls_cut || (ls && sink_oc.known_or(true)));
+        let hs_trip = !wrap && (hs_cut || (hs && oc));
+        let ls_trip = !wrap && (ls_cut || (ls && sink_oc));
         let hs_next = enabled && !hs_trip && next < w;
         let off_at = if wrap {
             w

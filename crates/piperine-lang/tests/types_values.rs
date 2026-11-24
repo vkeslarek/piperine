@@ -266,8 +266,8 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
     assert_eq!(codes_of(&d), ["P0001", "E0180"]);
     assert_eq!(snippet(&src, &d[1]), "true");
 
-    // A generic function is refused and its body is checked as well.
-    let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g(1.0);");
+    // A generic function used as a value is refused (its calls are typed, generics T20) and its body is checked as well.
+    let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g;");
     assert_eq!(codes_of(&d), ["P0001", "E0180"]);
     assert!(d[0].diagnostic.message.contains("generic function"));
     assert_eq!(snippet(&src, &d[1]), "true");
@@ -554,4 +554,59 @@ fn include_str_in_a_const_is_a_str() {
     let (src, d) = diagnostics("const T: f64 = include_str!(\"data.txt\");", "let a = T;");
     assert_eq!(codes_of(&d), ["E0180"], "{src}");
     assert_eq!(snippet(&src, &d[0]), "include_str!(\"data.txt\")");
+}
+
+#[test]
+fn a_borrow_outside_a_call_argument_is_not_e0102() {
+    // PI-13, value-semantics V1 (G.71): `E0102` is retired, so a `&` in the position it used to
+    // guard (outside a call argument) never raises it; the form is refused by another code or
+    // by the parser, and the guard of spec codes lists no row for `E0102`.
+    let src = source("", "let x = 1.0; let r = &x;");
+    let design = support::build(&src);
+    let mut found = support::codes(&design);
+    if let Err(diagnostics) = Types::check(&design, "Top") {
+        found.extend(codes_of(&diagnostics));
+    }
+    assert!(!found.is_empty(), "a `&` outside a call argument is refused: {src}");
+    assert!(found.iter().all(|code| code != "E0102"), "E0102 is retired (value-semantics V1): {found:?}");
+}
+
+#[test]
+fn a_named_emitting_fn_where_emit_is_not_allowed_is_e0122() {
+    // PI-12 AC 3 (§3 table, §6): a named function that reaches `emit!`, called in a module body or a const context, is
+    // `E0122` naming the function and its class; `emit!` written there is `E0601`, and the same call is allowed in `analog`
+    // reactions (`types_events`).
+    let items = "fn note(x: f64) -> f64 { emit!(\"trace\", v = x); x }\nfn through(x: f64) -> f64 { note(x) }\n";
+    for (src, at) in [
+        (format!("{items}module Top() {{ let y = note(1.0); }}"), "note(1.0)"),
+        (format!("{items}module Top() {{ let y = through(1.0); }}"), "through(1.0)"),
+        (format!("{items}const C: f64 = note(1.0);\nmodule Top() {{ k: f64 = C; }}"), "note(1.0)"),
+    ] {
+        let design = design_of(&src);
+        let found = Types::check(&design, "Top").expect_err("the call is refused");
+        assert_eq!(codes_of(&found), ["E0122"], "{src}");
+        assert_eq!(snippet(&src, &found[0]), at, "{src}");
+        let message = &found[0].diagnostic.message;
+        assert!(message.contains("`note`") || message.contains("`through`"), "names the function: {message}");
+        assert!(message.contains("emitting"), "names the class: {message}");
+    }
+}
+
+#[test]
+fn a_named_solve_reading_fn_in_a_const_is_e0122() {
+    // PI-12 AC 3 (§3 table): a named function that reads the solve (`now()`, directly or through another function), called in a
+    // const context, is `E0122` naming the function and the class; `now()` written there is `E0323`, and the call is allowed in `analog`.
+    let items = "fn clock() -> f64 { now() }\nfn later() -> f64 { clock() }\n";
+    for (src, at, name) in [
+        (format!("{items}const C: f64 = clock();\nmodule Top() {{ k: f64 = C; }}"), "clock()", "clock"),
+        (format!("{items}module Top() {{ k: f64 = later(); }}"), "later()", "later"),
+    ] {
+        let design = design_of(&src);
+        let found = Types::check(&design, "Top").expect_err("the call is refused");
+        assert_eq!(codes_of(&found), ["E0122"], "{src}");
+        assert_eq!(snippet(&src, &found[0]), at, "{src}");
+        assert!(found[0].diagnostic.message.contains(&format!("`{name}`")) && found[0].diagnostic.message.contains("solve-reading"), "{}", found[0].diagnostic.message);
+    }
+    let src = source(items, "let t = clock();");
+    Types::check(&design_of(&src), "Top").expect("a solve-reading function is callable in `analog`");
 }

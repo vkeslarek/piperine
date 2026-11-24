@@ -8,7 +8,6 @@ use super::traits::Trait;
 use super::{Checker, Ctx, Task, Walk};
 use crate::ids::ExprId;
 use crate::model::{AggregateData, BinaryOp, Constant, Derives, Expr, FieldsForm, LevelPart, Origin, Place, Projection, TypeData, TypeKind, ValueType};
-use crate::typing::Typing;
 
 impl Checker<'_> {
     /// Checks each entry of the type arena, then the arena's containment as a whole.
@@ -123,7 +122,6 @@ impl Checker<'_> {
                 }
                 ValueType::Tuple(parts) => stack.extend(parts.clone()),
                 ValueType::Array(element, _) | ValueType::Option(element) => stack.push(*element.clone()),
-                ValueType::Flagged(inner) => stack.push(*inner.clone()),
                 ValueType::F64 | ValueType::Bool | ValueType::Unit | ValueType::Fn(..) | ValueType::UInt(_) | ValueType::Int(_) => {}
             }
         }
@@ -334,7 +332,7 @@ impl Checker<'_> {
 
     /// Whether `kind` is an operator with an aggregate operand.
     pub(super) fn operates_on_aggregates(&self, kind: &Expr) -> bool {
-        matches!(kind, Expr::Binary { lhs, rhs, .. } if [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(|t| Checker::is_aggregate(Typing::base(t)))))
+        matches!(kind, Expr::Binary { lhs, rhs, .. } if [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(|t| Checker::is_aggregate(t))))
     }
 
     /// A comparison of aggregates (§1.3.10): `==` and `!=` need `PartialEq`, `<`, `<=`, `>` and `>=`
@@ -344,10 +342,8 @@ impl Checker<'_> {
         let Expr::Binary { op, lhs, rhs } = &data.kind else { return };
         let origin = data.origin.clone();
         if first {
-            // An enum value that may be unknown compares to a value that may be unknown (§3.3.2).
-            let unknown = [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(Typing::flagged));
-            self.own(w, &origin, &data.ty, &Typing::flag(ValueType::Bool, unknown));
-            if let (Some(l), Some(r)) = (self.ty(*lhs).map(Typing::base), self.ty(*rhs).map(Typing::base)) {
+            self.own(w, &origin, &data.ty, &ValueType::Bool);
+            if let (Some(l), Some(r)) = (self.ty(*lhs), self.ty(*rhs)) {
                 let needed = match op {
                     BinaryOp::Eq | BinaryOp::Ne => Some(Trait::PartialEq),
                     BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => Some(Trait::PartialOrd),
@@ -376,7 +372,7 @@ impl Checker<'_> {
     /// An index has an integer type.
     fn integer_index(&mut self, w: &Walk, index: ExprId, what: &str) {
         if let Some(ty) = self.ty(index) {
-            if !Typing::base(ty).is_integer() {
+            if !ty.is_integer() {
                 let origin = self.expr_origin(index);
                 self.wrong(w, origin, format!("{what} must have an integer type, found {ty}"));
             }

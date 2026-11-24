@@ -55,10 +55,9 @@ impl Switching {
         b.stmt(Stmt::Expr(expr))
     }
 
-    /// `en.high()` of the carrier `en`.
+    /// A read of the `bool` carrier `en`.
     pub fn carrier_high(b: &mut IrBuilder) -> ExprId {
-        let read = b.expr(Expr::Carrier(0), ValueType::Flagged(Box::new(ValueType::Bool)), Self::at());
-        b.expr(Expr::High(read), ValueType::Bool, Self::at())
+        b.expr(Expr::Carrier(0), ValueType::Bool, Self::at())
     }
 
     /// `<quantity>(a, gnd) +> 2.0 * rate(D<k>);`
@@ -106,7 +105,7 @@ impl Switching {
             analog: Some(analog),
             children: vec![],
         });
-        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
         for site in derivatives {
             b.derivative(body, site);
         }
@@ -120,7 +119,7 @@ impl Switching {
         ir
     }
 
-    /// `if en.high() { v(a, gnd) +> 1.0; } else { i(a, gnd) +> 2.0; }`: a switch branch.
+    /// `if en { v(a, gnd) +> 1.0; } else { i(a, gnd) +> 2.0; }`: a switch branch.
     pub fn on_the_carrier(b: &mut IrBuilder) -> Written {
         let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
         Written { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![flow])], ..Written::default() }
@@ -166,10 +165,10 @@ impl ParamEvents {
         let mut b = IrBuilder::new();
         let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };
         let value = value(&mut b);
-        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None });
+        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None, target: None });
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone() });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
         let event = b.event(body, Event { source: EventSource::ParamChanged(0), guard: None, origin: Self::at() });
         b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
         let top = b.next_instance_id();
@@ -189,8 +188,8 @@ impl ParamEvents {
         let value = b.expr(Expr::ParamPrevious(0), ValueType::F64, Self::at());
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::F64, role: CarrierRole::Out, init: None, origin: origin.clone() });
-        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at() });
+        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::F64, role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
+        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at(), element: None, path: vec![] });
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: ValueType::F64, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });

@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_lang::msl::{Diagnostic, Span};
 use toml::Spanned;
 use toml::de::{DeString, DeTable, DeValue};
@@ -28,14 +29,17 @@ pub enum Analysis {
     Pz { input: String, output: String },
     /// The DC sensitivity (ngspice `.sens`) of the printed signals with respect to each param of `wrt`.
     Sens { wrt: Vec<String> },
+    /// The noise analysis: the density of `output` from `from` to `to` hertz; with `input`, also
+    /// referred to that source instance (AO-05).
+    Noise { output: String, input: Option<String>, from: f64, to: f64, grid: Grid },
     /// The periodic steady state of a circuit driven with period `period`; the orbit starts at
     /// `tstab` (a transient of that length comes first). `max_step` bounds the steps of a shot.
     Pss { period: f64, tstab: f64, max_step: Option<f64>, print_step: Option<f64> },
 }
 
 impl Analysis {
-    /// The eight names a user writes, in the order they are listed.
-    pub const NAMES: [&'static str; 8] = ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"];
+    /// The nine names a user writes, in the order they are listed.
+    pub const NAMES: [&'static str; 9] = ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss", "noise"];
 
     /// The names as a fault lists them: each in backquotes, comma separated.
     fn listed() -> String {
@@ -53,6 +57,7 @@ impl Analysis {
             Analysis::Pz { .. } => "pz",
             Analysis::Sens { .. } => "sens",
             Analysis::Pss { .. } => "pss",
+            Analysis::Noise { .. } => "noise",
         }
     }
 }
@@ -103,6 +108,13 @@ pub struct Options {
     /// The node values that seed the first Newton iterate of an operating point: a path and a
     /// value each, in the order given.
     pub nodeset: Vec<(String, f64)>,
+    /// The session parameters a design reads with `simparam("name")`, in the order given: a name
+    /// and a value each (the key `simparam`, the flag `--simparam`).
+    pub session_parameters: Vec<(String, f64)>,
+    /// Which scheduled instants the digital engine lands the analog step on. A host's choice of
+    /// the solver's reference mode (`Declared`): no run key, no flag names it, so a run table never
+    /// gives it and it stays `None` (the solver's `Observable`).
+    pub time_point_rule: Option<TimePointRule>,
 }
 
 /// The settings the command line gives, one per key of a run table; `None` (or empty) leaves
@@ -124,6 +136,9 @@ pub struct Overrides {
     pub print: Vec<String>,
     pub streams: Vec<String>,
     pub params: Vec<(String, f64)>,
+    /// `--param` values given as text, read by the param's type (PI-01 to PI-03, D24): an integer
+    /// literal in a radix, a variant name, `None`. Applied after `params`.
+    pub param_texts: Vec<(String, String)>,
     pub backend: Option<String>,
     pub csv: Option<PathBuf>,
     pub records: Option<PathBuf>,
@@ -151,6 +166,8 @@ pub struct Overrides {
     pub tstab: Option<f64>,
     /// `--nodeset <path>=<value>`: an entry replaces the table's entry of the same path.
     pub nodeset: Vec<(String, f64)>,
+    /// `--simparam <name>=<value>`, repeatable: an entry replaces the table's entry of the same name.
+    pub simparam: Vec<(String, f64)>,
 }
 
 /// One run request, validated.
@@ -163,6 +180,8 @@ pub struct RunSpec {
     pub print: Vec<String>,
     pub streams: Vec<String>,
     pub params: Vec<(String, f64)>,
+    /// The params given as text, read by their type when the session opens (`Overrides::param_texts`).
+    pub param_texts: Vec<(String, String)>,
     pub backend: Option<String>,
     pub csv: Option<PathBuf>,
     pub records: Option<PathBuf>,
@@ -216,6 +235,7 @@ struct Keys {
     print: Vec<String>,
     streams: Vec<String>,
     params: Vec<(String, f64)>,
+    param_texts: Vec<(String, String)>,
     backend: Option<Given<String>>,
     csv: Option<Given<PathBuf>>,
     records: Option<Given<PathBuf>>,
@@ -236,7 +256,11 @@ struct Keys {
     period: Option<Given<f64>>,
     tstab: Option<Given<f64>>,
     nodeset: Vec<(String, f64)>,
+    simparam: Vec<(String, f64)>,
 }
+
+/// The names `simparam` may not set: each has its own key (a solver option or the temperatures).
+const OPTION_NAMES: [&str; 5] = ["reltol", "abstol", "vntol", "trtol", "temp"];
 
 /// The lowest temperature, degrees Celsius: `temp` must be above it.
 const ABSOLUTE_ZERO: f64 = -273.15;
@@ -246,10 +270,10 @@ type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
 /// HII-01.
-const RUN_KEYS: [&str; 35] = [
+const RUN_KEYS: [&str; 36] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
     "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
-    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab",
+    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab", "simparam",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
@@ -411,6 +435,16 @@ impl Source {
                     keys.nodeset.push((path.get_ref().to_string(), n));
                 }
             }
+            "simparam" => {
+                let table = v.as_table().ok_or_else(|| wrong("a table of names and numbers"))?;
+                for (entry, n) in entries(table) {
+                    let Some(number) = number(n.get_ref()) else {
+                        let message = format!("`simparam` entry `{}` must be a number, found {}", entry.get_ref(), n.get_ref().type_str());
+                        return Err(self.fault(Some(span(entry.span())), message, "not a number"));
+                    };
+                    keys.simparam.push((entry.get_ref().to_string(), number));
+                }
+            }
             _ => {
                 let message = format!("unknown key `{name}` in a run: a run takes {}", RUN_KEYS.join(", "));
                 return Err(self.fault(Some(span(key.span())), message, "not a key of a run"));
@@ -473,7 +507,14 @@ impl Keys {
         if !o.streams.is_empty() {
             self.streams = o.streams.clone();
         }
+        for (entry, value) in &o.simparam {
+            match self.simparam.iter_mut().find(|(n, _)| n == entry) {
+                Some(found) => found.1 = *value,
+                None => self.simparam.push((entry.clone(), *value)),
+            }
+        }
         self.params.extend(o.params.iter().cloned());
+        self.param_texts.extend(o.param_texts.iter().cloned());
         self
     }
 
@@ -535,6 +576,7 @@ impl Keys {
             "op" => &[],
             "dc" => &["sweep", "from", "to", "step", "plot"],
             "ac" => &["from", "to", "per_decade", "points", "plot"],
+            "noise" => &["output", "input", "from", "to", "per_decade", "points"],
             "transient" => &["stop", "max_step", "print_step", "from", "plot"],
             "tf" | "pz" => &["input", "output"],
             "sens" => &["wrt"],
@@ -558,16 +600,22 @@ impl Keys {
         for (key, given) in [("reltol", &self.reltol), ("abstol", &self.abstol), ("vntol", &self.vntol), ("trtol", &self.trtol), ("resolution", &self.resolution)] {
             positive(key, given)?;
         }
-        if let Some(Given { value, at }) = &self.temp {
-            if !(*value > ABSOLUTE_ZERO) {
-                let message = format!("run `{name}`: `temp` must be greater than {ABSOLUTE_ZERO} (degrees Celsius), found {value}");
-                return Err(fault(*at, message, "not above absolute zero"));
+        for (key, given) in [("temp", &self.temp)] {
+            if let Some(Given { value, at }) = given {
+                if !(*value > ABSOLUTE_ZERO) {
+                    let message = format!("run `{name}`: `{key}` must be greater than {ABSOLUTE_ZERO} (degrees Celsius), found {value}");
+                    return Err(fault(*at, message, "not above absolute zero"));
+                }
             }
         }
         for (key, given) in [("maxrounds", &self.maxrounds), ("maxmicro", &self.maxmicro), ("max_steps", &self.max_steps)] {
             if let Some(Given { value: 0, at }) = given {
                 return Err(fault(*at, format!("run `{name}`: `{key}` must be a whole number of at least 1, found 0"), "less than 1"));
             }
+        }
+        if let Some((entry, _)) = self.simparam.iter().find(|(entry, _)| OPTION_NAMES.contains(&entry.as_str())) {
+            let message = format!("run `{name}`: `simparam` may not set `{entry}`: it has its own key and flag");
+            return Err(fault(self.name_at, message, "an option's name"));
         }
         let parsed = match analysis.value.as_str() {
             "op" => Analysis::Op,
@@ -585,7 +633,9 @@ impl Keys {
                 }
                 Analysis::Dc { sweep: sweep.value.clone(), from: from.value, to: to.value, step: step.value }
             }
-            "ac" => {
+            "ac" | "noise" => {
+                // The article the analysis name takes in a message: "an `ac` run", "a `noise` run".
+                let article = if analysis.value == "ac" { "an" } else { "a" };
                 let grid = match (&self.per_decade, &self.points) {
                     (Some(n), None) if n.value > 0 => Grid::PerDecade(n.value),
                     (None, Some(n)) if n.value > 0 => Grid::Points(n.value),
@@ -593,16 +643,16 @@ impl Keys {
                         return Err(fault(n.at, format!("run `{name}`: `per_decade` or `points` must be greater than 0"), "not greater than 0"));
                     }
                     (Some(_), Some(p)) => {
-                        let message = format!("run `{name}`: an `ac` run gives exactly one of `per_decade` and `points`, not both");
+                        let message = format!("run `{name}`: {article} `{}` run gives exactly one of `per_decade` and `points`, not both", analysis.value);
                         return Err(fault(p.at.or(self.name_at), message, "both grids"));
                     }
                     (None, None) => {
-                        let message = format!("run `{name}`: an `ac` run gives exactly one of `per_decade` and `points`");
+                        let message = format!("run `{name}`: {article} `{}` run gives exactly one of `per_decade` and `points`", analysis.value);
                         return Err(fault(self.name_at, message, "no grid"));
                     }
                 };
-                let from = self.from.as_ref().ok_or_else(|| missing("from", "ac"))?;
-                let to = self.to.as_ref().ok_or_else(|| missing("to", "ac"))?;
+                let from = self.from.as_ref().ok_or_else(|| missing("from", &analysis.value))?;
+                let to = self.to.as_ref().ok_or_else(|| missing("to", &analysis.value))?;
                 if !(from.value > 0.0) {
                     return Err(fault(from.at, format!("run `{name}`: `from` must be greater than 0, found {}", from.value), "not greater than 0"));
                 }
@@ -610,7 +660,12 @@ impl Keys {
                     let message = format!("run `{name}`: `to` ({}) is less than `from` ({})", to.value, from.value);
                     return Err(fault(to.at, message, "less than `from`"));
                 }
-                Analysis::Ac { from: from.value, to: to.value, grid }
+                if analysis.value == "ac" {
+                    Analysis::Ac { from: from.value, to: to.value, grid }
+                } else {
+                    let output = self.output.as_ref().ok_or_else(|| missing("output", "noise"))?;
+                    Analysis::Noise { output: output.value.clone(), input: self.input.as_ref().map(|g| g.value.clone()), from: from.value, to: to.value, grid }
+                }
             }
             "tf" | "pz" => {
                 let input = self.input.as_ref().ok_or_else(|| missing("input", &analysis.value))?;
@@ -669,6 +724,7 @@ impl Keys {
             print: self.print.clone(),
             streams: self.streams.clone(),
             params: self.params.clone(),
+            param_texts: self.param_texts.clone(),
             backend: self.backend.as_ref().map(|g| g.value.clone()),
             csv: self.csv.as_ref().map(|g| g.value.clone()),
             records: self.records.as_ref().map(|g| g.value.clone()),
@@ -685,6 +741,8 @@ impl Keys {
                 maxmicro: self.maxmicro.as_ref().map(|g| g.value),
                 max_steps: self.max_steps.as_ref().map(|g| g.value),
                 nodeset: self.nodeset.clone(),
+                session_parameters: self.simparam.clone(),
+                time_point_rule: None,
             },
             keys: self,
             source,
@@ -830,7 +888,7 @@ points = 5
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
         // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
         // of HII-01 and `max_steps` (HII-01 amendment), no more
-        assert_eq!(RUN_KEYS.len(), 35);
+        assert_eq!(RUN_KEYS.len(), 36);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }
@@ -1018,6 +1076,8 @@ points = 5
             maxmicro: Some(500),
             max_steps: Some(4_000_000),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
+            session_parameters: vec![],
+            time_point_rule: None,
         }
     }
 
@@ -1187,7 +1247,7 @@ points = 5
     #[test]
     fn the_eight_analysis_names() {
         // HII-08 AC 3: eight names, in the order listed, each written in an unknown-analysis fault
-        assert_eq!(Analysis::NAMES, ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"]);
+        assert_eq!(Analysis::NAMES, ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss", "noise"]);
         let f = fault("[run.a]\nanalysis = \"tran\"\nstop = 1e-3\n");
         let (_, message, _) = located(&f);
         for name in Analysis::NAMES {

@@ -484,19 +484,18 @@ fn a_fatal_run_prints_its_msg_and_exits_1() {
 }
 
 #[test]
-fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
-    // US-05 AC 1, 2: `d` is never driven, so `if d { emit!(..) }` is reached under unknown
-    // control: its record line ends with `maybe=true`, JSON Lines carry `"maybe":true`; the
-    // `emit!` under known control prints no `maybe` at all
-    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
+fn a_guarded_record_prints_when_its_guard_holds_and_no_record_carries_a_maybe() {
+    // US-05 AC 1, 2 (explicit-unknowns T29): `d` starts false and is never driven, so `if d { emit!(..) }` does
+    // not run and writes no record; the `emit!` outside the guard is a plain record: no line prints `maybe`
+    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("maybe.msl"), design).expect("maybe.msl");
     let args = ["run", "maybe.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
     let out = piperine_in(dir.path(), shared_cache(), &args);
     let stdout = stdout_of(&out);
     let line = |stream: &str| stdout.lines().find(|l| l.contains(&format!(" {stream} "))).unwrap_or_else(|| panic!("no `{stream}` record in:\n{stdout}")).to_string();
-    assert!(line("unsure").ends_with(" n=1 maybe=true"), "{}", line("unsure"));
-    assert!(line("sure").ends_with(" n=1") && !line("sure").contains("maybe"), "{}", line("sure"));
+    assert!(!stdout.contains(" unsure "), "the guard is false, so the record is not written:\n{stdout}");
+    assert!(line("sure").ends_with(" n=1") && !stdout.contains(" maybe="), "{}", line("sure"));
 }
 
 #[test]
@@ -518,7 +517,7 @@ fn run_of_a_top_with_a_node_port_is_e0810() {
 /// at each rising edge of a clock, and a record that writes the same values.
 const COMPOSITES: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
 pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
-module Logger(in clk: Bit, out mode: Bit<Mode>, out pair: Bit<Pair>, out tx: Bit<Tx>, out v: Bit<[u8; 2]>) {}\n\
+module Logger(in clk: Bit, out mode: Bit<Mode> = Mode::Idle, out pair: Bit<Pair> = Pair { a: 0, b: false }, out tx: Bit<Tx> = Tx::Idle, out v: Bit<[u8; 2]> = [0, 0]) {}\n\
 digital for Logger {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n        v <- [3, 4];\n        emit!(\"sample\", pair = Pair { a: 7, b: true }, tx = Tx::Data { n: 5 }, arr = [1u8, 2]);\n    }\n}\n\
 module Top() {\n    signal clk: Bit;\n    signal mode: Bit<Mode>;\n    signal pair: Bit<Pair>;\n    signal tx: Bit<Tx>;\n    signal v: Bit<[u8; 2]>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, mode, pair, tx, v);\n}\n";
 
@@ -578,6 +577,98 @@ fn composites_print_in_each_output_format() {
     }
 }
 
+/// A design with an array of carriers `v` whose element 1 takes 4 at the first rising edge, and an array of nodes `bl`.
+const ARRAYS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Memory(in clk: Bit) { signal v: [Bit<u8>; 3] = [7; 3]; signal n: Bit<u8> = 0; }\n\
+digital for Memory { on clk.rise() { emit!(\"sample\", v = v, one = v[1]); n <- n + 1; if n == 0 { v[1] <- 4; } } }\n\
+module Ladder(feed: Electrical) { signal bl: [Electrical; 2]; }\n\
+analog for Ladder { v(bl[0], gnd) +> 2.0; i(bl[0], bl[1]) +> v(bl[0], bl[1]) / 1000.0; i(bl[1], gnd) +> v(bl[1], gnd) / 1000.0; }\n\
+module Top() { signal clk: Bit; let osc = Osc(clk) { f: 200M }; let memory = Memory(clk); let ladder = Ladder(gnd); }\n";
+
+/// `piperine run` over `ARRAYS`.
+struct ArrayRun;
+
+impl ArrayRun {
+    /// The output of printing `print`, with `files` writing a CSV and a plot instead of printing only the table.
+    fn of(print: &[&str], files: bool) -> (String, tempfile::TempDir) {
+        let dir = written(&[("bench.msl", ARRAYS)]);
+        let mut args: Vec<String> = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9"].iter().map(|s| s.to_string()).collect();
+        for signal in print {
+            args.extend(["--print".to_string(), signal.to_string()]);
+        }
+        if files {
+            args.extend(["--csv", "out.csv", "--plot", "out.svg", "--records", "out.jsonl"].iter().map(|s| s.to_string()));
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        (stdout, dir)
+    }
+}
+
+#[test]
+fn an_array_of_carriers_prints_by_element_and_whole_in_every_format() {
+    // CV-28 AC 1, AC 2, CV-21 (Q2 (c)): `Top.memory.v[1]` prints that element alone, `Top.memory.v` the whole array in literal
+    // syntax in the text table, and CSV and the plot take one column per element; an array of nodes is one column per node
+    let (stdout, _) = ArrayRun::of(&["Top.memory.v[1]", "Top.memory.v"], false);
+    let header = stdout.lines().find(|l| l.starts_with("time")).unwrap_or_else(|| panic!("no table in\n{stdout}"));
+    assert_eq!(cells(header)[1], "Top.memory.v[1]", "{stdout}");
+    let last = stdout.lines().rev().find(|l| !l.is_empty()).expect("a row");
+    assert_eq!(cells(last)[1], "4", "the element committed at the first edge: {last}");
+    assert!(last.contains("[7, 4, 7]"), "the whole array in literal syntax: {last}");
+    let (_, dir) = ArrayRun::of(&["Top.memory.v", "Top.ladder.bl"], true);
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.memory.v[0],Top.memory.v[1],Top.memory.v[2],Top.ladder.bl[0],Top.ladder.bl[1]"), "one CSV column per element and per node: {csv}");
+    let final_row = rows.last().expect("a CSV row");
+    assert!(final_row.contains(",7,4,7,"), "the elements of the last row: {final_row}");
+    // the record lines of `emit!("sample", v = v, one = v[1])`: the whole array in literal syntax and the element as a number, at the
+    // first edge (before its commit) and at the second (after it); JSON Lines holds the array as an array
+    let (stdout, _) = ArrayRun::of(&["Top.memory.v"], false);
+    let records: Vec<&str> = stdout.lines().filter(|l| l.contains(" sample ")).collect();
+    assert_eq!(records.len(), 2, "one record per rising edge in 10 ns: {stdout}");
+    assert!(records[0].contains("v=[7, 7, 7]") && records[0].contains("one=7"), "the first edge reads the initial elements: {}", records[0]);
+    assert!(records[1].contains("v=[7, 4, 7]") && records[1].contains("one=4"), "the second reads the committed element: {}", records[1]);
+    let json = std::fs::read_to_string(dir.path().join("out.jsonl")).expect("out.jsonl");
+    let lines: Vec<&str> = json.lines().collect();
+    assert_eq!(lines.len(), 2, "one JSON line per record: {json}");
+    assert!(lines[0].contains("\"v\":[7,7,7]") && lines[0].contains("\"one\":7"), "{}", lines[0]);
+    assert!(lines[1].contains("\"v\":[7,4,7]") && lines[1].contains("\"one\":4"), "{}", lines[1]);
+    let svg = std::fs::read_to_string(dir.path().join("out.svg")).expect("out.svg");
+    for series in ["Top.memory.v[1]", "Top.ladder.bl[1]"] {
+        assert!(svg.contains(&format!("data-signal=\"{series}\"")), "the plot has `{series}`: {svg}");
+    }
+}
+
+/// A design whose carrier `o` holds an `Option<u8>` that starts at `None` and takes `Some(7)` at the
+/// first rising edge of a clock.
+const OPTIONS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out o: Bit<Option<u8>>) {}\n\
+digital for Logger {\n    on clk.rise() {\n        emit!(\"seen\", o = o);\n        o <- Some(7);\n        emit!(\"set\", o = Some(7));\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal o: Bit<Option<u8>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, o);\n}\n";
+
+#[test]
+fn an_option_cell_prints_none_or_the_value() {
+    // EU-15 AC 5 (explicit-unknowns T39): an absent `Option` is written `None`, a present one `Some(x)`,
+    // and no format has an unknown cell: the text table and CSV (one column per leaf, `some` and `value`);
+    // the record line and JSON Lines (`None` as `None` and `null`, `Some` as its payload) are held by an `emit!`
+    // field of type `Option` (§19 rule 11): the record before the commit is `None`, after it `Some(7)`
+    let dir = written(&[("bench.msl", OPTIONS)]);
+    let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o"];
+    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
+    assert!(table.get(1).is_some_and(|row| row.ends_with("None")), "the first row holds the initial `None`: {table:?}");
+    assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("Some(7)")), "the last row holds the committed value: {table:?}");
+    assert!(!table.iter().any(|row| row.split_whitespace().any(|cell| cell == "x")), "no unknown cell: {stdout}");
+    assert!(stdout.lines().any(|l| l.contains("Top.logger seen o=None")), "the record of an absent `Option` field: {stdout}");
+    assert!(stdout.lines().any(|l| l.contains("Top.logger set o=Some(7)")), "the record of a present one is `Some`: {stdout}");
+    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o", "--csv", "out.csv"]);
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.o.some,Top.o.value"), "one CSV column per leaf: {csv}");
+    assert_eq!(rows.next().map(|row| row.split(',').skip(1).collect::<Vec<_>>()), Some(vec!["false", ""]), "an absent Option has no `value` leaf: {csv}");
+    assert!(csv.lines().last().is_some_and(|row| row.ends_with(",true,7")), "the last row is `Some(7)`: {csv}");
+}
+
 #[test]
 fn a_leaf_path_prints_that_leaf_alone() {
     // CV-21 AC 2: a printed path that names a field or an element prints that leaf and nothing else
@@ -588,4 +679,63 @@ fn a_leaf_path_prints_that_leaf_alone() {
     assert_eq!(&cells(last)[1..], ["7", "5", "4"], "each leaf alone: {last}");
     let table = run.stdout.split("\n\n").nth(1).expect("a table after the records");
     assert!(!table.contains("Pair {") && !table.contains("Tx::"), "no whole value in the table: {table}");
+}
+
+/// A lone bench: 1 V behind 1 kOhm into a load of `n` mS, `n` an integer param of 4 by default.
+const COUNTED: &str = "pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\
+    pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\
+    module Load(p: Electrical) { n: u8 = 4; }\nanalog for Load { i(p, gnd) +> (n as f64) * v(p) / 1k; }\n\
+    module Top() { signal src: Electrical; signal a: Electrical; let v1 = Vsource(src, gnd); let r1 = Resistor(src, a) { r: 1k }; let l = Load(a); }\n";
+
+#[test]
+fn param_of_an_integer_from_the_command_line_reads_from_the_start() {
+    // PI-01 AC 5 (D24): `--param l.n=6` is the load of the run from its operating point, v(a) = 1 / (1 + n); the default
+    // n = 4 gives 0.2 V, and the literal `0x6` and `6` are the same value.
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("counted.msl");
+    std::fs::write(&file, COUNTED).expect("write");
+    let file = file.to_str().expect("utf-8 path");
+    let volts = |extra: &[&str]| {
+        let args: Vec<&str> = ["run", file, "--analysis", "op", "--print", "a"].iter().chain(extra).copied().collect();
+        let out = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+        let row = out.lines().find(|l| l.starts_with("Top.a")).unwrap_or_else(|| panic!("no row of `a` in\n{out}")).to_string();
+        cells(&row)[1].parse::<f64>().expect("a number")
+    };
+    assert!(close(volts(&[]), 1.0 / 5.0, 1e-6), "the default n = 4");
+    assert!(close(volts(&["--param", "l.n=6"]), 1.0 / 7.0, 1e-6), "n = 6 from the start");
+    assert!(close(volts(&["--param", "l.n=0x6"]), 1.0 / 7.0, 1e-6), "the literal `0x6` is 6");
+    // PI-01 AC 4, D24: what is no integer literal of the type and range is `E0802` naming the param and the value, a number included
+    for bad in ["300", "6.5", "1e1", "-1"] {
+        let entry = format!("l.n={bad}");
+        let refused = piperine_in(dir.path(), shared_cache(), &["run", file, "--analysis", "op", "--param", &entry]);
+        assert_ne!(refused.status.code(), Some(0), "`{bad}` is no `u8`");
+        assert!(text(&refused.stderr).contains("E0802") && text(&refused.stderr).contains("l.n") && text(&refused.stderr).contains(bad), "{bad}: {}", text(&refused.stderr));
+    }
+}
+
+/// A design whose carrier `l` holds a `Logic<4>` that starts at `xxxx` and takes `10xz` at the first rising edge of a clock,
+/// and a record that writes two four-state values.
+const LOGICS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out l: Bit<Logic<4>>) {}\n\
+digital for Logger {\n    on clk.rise() {\n        l <- logic(\"10xz\");\n        emit!(\"sample\", w = logic(\"10xz\"), n = Logic::from(0b0110u4));\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal l: Bit<Logic<4>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, l);\n}\n";
+
+#[test]
+fn a_logic_cell_prints_its_pattern() {
+    // EU-15 AC 4 (explicit-unknowns T47, C63): a `Logic<4>` cell is its four characters of `0`, `1`, `x`, `z`, highest level
+    // first, in the text table (`xxxx` before the commit, `10xz` after), the record line and JSON Lines, and CSV
+    let dir = written(&[("bench.msl", LOGICS)]);
+    let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l"];
+    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
+    assert!(table.get(1).is_some_and(|row| row.ends_with("xxxx")), "the first row holds the initial `xxxx`: {table:?}");
+    assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("10xz")), "the last row holds the committed pattern: {table:?}");
+    let record = stdout.lines().find(|l| l.contains(" sample ")).unwrap_or_else(|| panic!("no record in\n{stdout}"));
+    assert!(record.contains("w=10xz") && record.contains("n=0110"), "the record line: {record}");
+    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l", "--csv", "out.csv", "--records", "out.jsonl"]);
+    let json = std::fs::read_to_string(dir.path().join("out.jsonl")).expect("out.jsonl");
+    let line = json.lines().next().unwrap_or_else(|| panic!("no JSON line"));
+    assert!(line.contains("\"w\":\"10xz\"") && line.contains("\"n\":\"0110\""), "the JSON line: {line}");
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    assert!(csv.lines().last().is_some_and(|row| row.ends_with(",10xz")), "the last CSV row: {csv}");
 }

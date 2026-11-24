@@ -30,6 +30,8 @@ pub struct PinSpec<'a> {
     pub init: &'a [u8],
     pub check: u32,
     pub abstol: [f64; 2],
+    /// 0: one carrier; `>= 1`: an array pin of this many elements of `layout` (a `DISCRETE` pin).
+    pub count: u64,
 }
 
 impl<'a> PinSpec<'a> {
@@ -61,6 +63,7 @@ impl<'a> PinSpec<'a> {
             init: &[],
             check: 0,
             abstol: [0.0, 0.0],
+            count: 0,
         }
     }
 }
@@ -106,6 +109,8 @@ pub struct FunctionSpec<'a> {
     pub reads: Vec<Cell>,
     pub writes: Vec<Cell>,
     pub partials: Vec<Partial>,
+    /// Empty, or one element per read (`Function.elements`).
+    pub elements: Vec<u64>,
 }
 
 /// One reaction.
@@ -117,6 +122,8 @@ pub struct ReactionSpec<'a> {
     pub on: Vec<u32>,
     pub reads: Vec<Cell>,
     pub writes: Vec<Statement>,
+    /// Empty, or one element per read (`Reaction.elements`).
+    pub elements: Vec<u64>,
 }
 
 /// A shape and the storage of everything it points to.
@@ -138,6 +145,7 @@ pub struct ShapeBuf {
     partials: Vec<Box<[Partial]>>,
     statements: Vec<Box<[Statement]>>,
     events: Vec<Box<[u32]>>,
+    elements: Vec<Box<[u64]>>,
 }
 
 impl Default for ShapeBuf {
@@ -177,6 +185,7 @@ impl ShapeBuf {
             partials: Vec::new(),
             statements: Vec::new(),
             events: Vec::new(),
+            elements: Vec::new(),
         }
     }
 
@@ -210,8 +219,6 @@ impl ShapeBuf {
                 leaf: f.leaf,
                 offset: f.offset,
                 count: f.count,
-                flags: f.flags,
-                known: f.known,
             })
             .collect();
         let owned: Box<[Field<'static>]> = fields.into();
@@ -241,6 +248,7 @@ impl ShapeBuf {
             init: self.bytes(p.init),
             check: p.check,
             abstol: p.abstol,
+            count: p.count,
         };
         let i = index(self.pins.len());
         self.pins.push(pin);
@@ -300,6 +308,7 @@ impl ShapeBuf {
             reads: Self::list(&mut self.cells, &f.reads),
             writes: Self::list(&mut self.cells, &f.writes),
             partials: Self::list(&mut self.partials, &f.partials),
+            elements: Self::list(&mut self.elements, &f.elements),
         };
         let i = index(self.functions.len());
         self.functions.push(function);
@@ -316,6 +325,7 @@ impl ShapeBuf {
             on: Self::list(&mut self.events, &r.on),
             reads: Self::list(&mut self.cells, &r.reads),
             writes: Self::list(&mut self.statements, &r.writes),
+            elements: Self::list(&mut self.elements, &r.elements),
         };
         let i = index(self.reactions.len());
         self.reactions.push(reaction);

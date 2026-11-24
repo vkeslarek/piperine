@@ -1,0 +1,29 @@
+//! The arguments of a function that returns `Event` bind as those of any call (§3.2, §13 rule 7, UE-04): a named one in
+//! its place, a left-out optional one as `None`, a value written for an `Option` as its `Some`.
+
+/// Fires on a rise of `c` while `a` (true when left out) and `b` (false when left out) hold.
+pub fn edge(c: Bit, a: Option<bool>, b: Option<bool>) -> Event { c.rise() && a.unwrap_or(true) && b.unwrap_or(false) }
+
+/// `clk` rises at 10 ns and 30 ns and falls at 20 ns.
+module Clock(out clk: Bit = false) {}
+digital for Clock {
+    on at(10n) { clk <- true; }
+    on at(20n) { clk <- false; }
+    on at(30n) { clk <- true; }
+}
+
+/// One reaction per way of writing the arguments.
+module Edges(in clk: Bit) {}
+digital for Edges {
+    on edge(clk, b: Some(true)) { emit!("named", t = now()); }
+    on edge(clk, Some(false), Some(true)) { emit!("positional", t = now()); }
+    on edge(clk, a: Some(true), b: Some(true)) { emit!("both", t = now()); }
+    on edge(clk) { emit!("neither", t = now()); }
+}
+
+/// The clock and the reactions over it.
+module ArgumentsBench() {
+    signal clk: Bit;
+    let clock = Clock(clk);
+    let edges = Edges(clk);
+}

@@ -19,14 +19,20 @@ None of these is decided. Each has a recommendation; the spec is written to the 
 
 Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `noise` (L45) and so `white_noise`, `flicker_noise` and `noise_table`, `simparam` (L47), and `emit!` in `analog` (L49). The solver already has the analyses and the ABI vocabulary for them (`op::DELAY`, `input::NOISE`, `global::NAMED`, `watch::TRACE`, `analyses/noise.rs`), but nothing in the language reaches them, so no host can run a noise analysis (H2: `host-ii` left it out because every density would be zero) and `tnom` waits for `simparam` (`host-ii`). The convergence tolerance of a user nature and compatible natures at one node are never exercised from source (U7).
 
+**Criteria added in the closing round, pending user review.** The implementer appended these to approved requirements, and the user has not seen them: AO-01 AC 10 (`ddx` through a `fn`, reworded in round 2) and AC 11 (the flow of a branch with no potential contribution, reworded in round 2), AO-03 AC 9 (a `limit` read by a `noise` or `delay` input), AO-09 AC 8 (`emit!` through a `fn`) and the edge case of `freq()` reached through a `fn` from a definition or an `at`. Round 2 added AO-01 AC 12, AO-02 AC 8 and AO-03 AC 10 (`ac_stim` read by a `ddx` value, a `delay` input and a `noise` density), each from §14.3.1. Each is marked where it stands.
+
+**Proposed amendment of Part IV §14.2.3, proposed, pending user review.** Not written into `docs/spec/`: the user decides. Today §14.2.3 says "The derivative is symbolic" and nothing of what a `fn` called in `e` may hold; the implementation differentiates the forms below and refuses the rest by name (GAPS L73, L74, owner `spec-closure`). Proposed text, to follow the paragraph's last sentence:
+
+> A `fn` called in `e` is differentiated through its body, run symbolically. These forms are differentiated: a `let` of a name, an assignment, an `if` (an early `return` in its branch included), a `for` over a range whose bounds are constant in the analysis, a recursion whose decisions are constant in the analysis, a parameter of type `Option`, `str` or a handle, a method, a generic function, and a struct or tuple written out and read by field. A `while`, a `loop`, a `break`, a `continue`, a `for` whose bounds are not constant, an `if let`, a `let` of a pattern, an assignment to a field or an element, an array read by an index, and a call made for its effect have no finite symbolic reading and are `P0001`. The flow of a branch the module gives no potential contribution is a probe like any other: it contributes 1 against itself; a derivative that still reads the value of that flow is `P0001` until a solve reads such a flow.
+
 ## Goals
 
-- [ ] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them.
-- [ ] `white_noise` and `flicker_noise` run; `noise_table` runs once its dependencies merge.
-- [ ] `analysis = "noise"` runs from a run table and from the command line, and agrees with ngspice `.noise` on `noise_rc`, `noise_switch` and a new `noise_diode` twin.
-- [ ] `tnom` is a session option, read by `simparam`, proven against ngspice on a new `tnom_res` twin.
-- [ ] A user nature's `abstol` and compatible natures at one node are exercised from `.msl` source.
-- [ ] The 7 existing twins print the bytes they print today.
+- [x] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them (`emit!` through a `fn` is the trace of its call, closing round; `simparam` is an `Option<f64>`, user 2026-11-23).
+- [x] `white_noise` and `flicker_noise` run; `noise_table` stays refused by name with the generics group of GAPS L58 until `generics` merges (AO-04 AC 3 is a `WHERE` criterion).
+- [x] `analysis = "noise"` runs from a run table and from the command line, and agrees with ngspice `.noise` on `noise_rc` and a new `noise_diode` twin; `noise_switch` is held to its closed form where ngspice reads a closed switch as open, and agrees with `noise_switch_off.cir` once opened (AO-06 AC 2 amended).
+- [x] (Withdrawn, user 2026-11-23) `tnom` is no session option: it is a per-instance model param, proven against ngspice on a new `tnom_res` twin.
+- [x] A user nature's `abstol` and compatible natures at one node are exercised from `.msl` source.
+- [x] The 7 existing twins print the bytes they print today.
 
 ## Out of Scope
 
@@ -86,6 +92,9 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 7. IF the second argument is not a potential or flow probe of a branch of the module (`p.inflow()`, any other expression) THEN the system SHALL report `E0451`.
 8. IF `ddx` is written outside `analog`, or in a body `let` or value input that a definition or a reaction reads THEN the system SHALL report `E0450`.
 9. WHEN an AC sweep linearizes a contribution `i(o, gnd) +> ddx(id, v(a, k)) * v(in);` THEN the system SHALL use the value of `ddx` at the operating point: the gain `|v(o)/v(in)|` equals that value times the load of `o`, within `AC_MAGNITUDE`.
+10. WHEN `e` calls a `fn` (`ddx(shockley(v(a, k), is, nvt), v(a, k))`) THEN the system SHALL differentiate its body with the parameters read as the arguments, so the result equals the derivative of the same expression written in place. The body is run symbolically: a `let`, an assignment, an `if` with an early `return`, a `for` over constant bounds, a parameter of type `Option`, `str` or a handle, a method, a generic `fn` and a recursion that folds are differentiated; a form with no finite symbolic reading (a `while`, a `break`, a `for` whose bounds do not fold) SHALL be `P0001` naming it (GAPS L74). (Added in the closing round, pending user review, finding 26: a `fn` call was refused; reworded in round 2, finding 35: the criterion no longer writes the narrowing of the first implementation.)
+11. WHEN the second argument is the flow of a branch the module gives no potential contribution THEN the system SHALL differentiate `e` against that flow as against any probe: a probe of the same flow contributes 1, the reversed branch -1, any other quantity is held constant (§14.2.3): `ddx(5.0 * i(a, gnd), i(a, gnd))` is 5 and `ddx(3.0 * v(a, gnd), i(a, gnd))` is 0; a derivative that still reads the value of that flow (`ddx(i * i, i)`) SHALL be `P0001` naming it (GAPS L73). (Added in the closing round, finding 26, pending user review; reworded in round 2, finding 36: the first wording gave 0 without reading `e`.)
+12. WHEN the value of a `ddx` reads `ac_stim` (`ddx(ac_stim(2.0) * v(a, gnd) + 3.0 * v(a, gnd), v(a, gnd))`) THEN the system SHALL run it: the stimulus is no function of the probe, so its derivative is 0 and the result is `ac_stim(2.0) + 3.0`: 3 at the operating point and the stimulus 2 in an AC sweep (§14.3.1, §14.2.3). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Independent Test**: transpile tests against the closed forms; elaboration tests for `E0450` and `E0451`.
 
@@ -99,13 +108,14 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 **Acceptance Criteria** (AO-02, L44):
 
-1. WHEN `v(out) +> 0.5 * delay(v(src), 1u);` runs a transient THEN the system SHALL agree with a new twin `delay_tline` (`tests/ngspice/delay_tline.cir`: the same source into a lossless line `T` with `Z0` = 50 Ω, `TD` = 1 µs, matched at both ends) under `TRAN_VOLTAGE` at every print row.
+1. WHEN `v(out) +> 0.5 * delay(v(src), 1.05u);` runs a transient THEN the system SHALL agree with a new twin `delay_tline` (`tests/e2e/twins/delay_tline.cir`: the same source into a lossless line `T` with `Z0` = 50 Ω, `TD` = 1.05 µs, matched at both ends) under `TRAN_VOLTAGE` at every print row. (Amended in T39, coordinator ruling 2026-11-23, pending user review: the twin's `delay` is 1.05 µs, not 1 µs. With `TD = 1u` ngspice-47 prints 7.5398e-4 V at t = 1.0 us, the print row where the delayed sine first arrives, where the exact matched line gives 0; that is 0.75 mV against a zero golden, outside `TRAN_VOLTAGE`'s 1e-6 absolute bound. 1.05 µs keeps the kink between print rows and tests the same operator; `tests/e2e/twins/delay_tline.msl` and its `.cir` both use it.)
 2. WHEN the time is less than `td` THEN the system SHALL give the value `x` had at the operating point.
 3. WHEN an operating point evaluates `delay(x, td)` THEN the system SHALL give `x`, and WHEN `td` is 0 in any solve THEN `x`.
 4. WHEN `delay(x, td, max)` is given a `td` that varies during the analysis THEN the system SHALL read `x` as it was `td` ago, and as it was `max` ago while `td` exceeds `max`.
 5. IF `delay` has no `max` and its `td` is not constant during an analysis after value inputs are substituted THEN the system SHALL report `E0452` at elaboration naming the instance.
 6. IF `td` is negative, or `max` is not positive, during a run THEN the system SHALL fail the run with `E0453` naming the instance.
-7. WHEN `delay_tline` is swept in AC THEN the system SHALL give `0.5 · exp(−jω · 1 µs)` and agree with ngspice under `AC_MAGNITUDE` and `AC_PHASE`.
+7. WHEN `delay_tline` is swept in AC THEN the system SHALL give `0.5 · exp(−jω · 1.05 µs)` (the twin's `td`, AC 1) and agree with ngspice under `AC_MAGNITUDE` and `AC_PHASE`.
+8. WHEN a `delay` input reads `ac_stim` (`delay(ac_stim(2.0, 0.5), 1u)`) THEN the system SHALL give, in an AC sweep, the phasor of the stimulus turned by the delay, `2 · exp(j (0.5 − ω · td))`, and 0 at the operating point (§14.3.1, §11.1.5). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Independent Test**: `cargo test -p piperine-parity --test parity_tran --test parity_ac` for `delay_tline`; elaboration tests for `E0452`.
 
@@ -127,6 +137,8 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 6. IF `psd` is negative or not finite at a frequency of a noise sweep THEN the system SHALL fail the analysis with `E0454` naming the instance and the frequency.
 7. WHEN a reaction or an event argument reads a `noise` result THEN the system SHALL give 0.
 8. WHEN two sources share a `name` THEN the system SHALL keep them independent: the name groups, it does not correlate.
+9. WHEN a `noise` density or a `delay` input reads a `let` bound to a `limit` THEN the system SHALL read it as the `limit`'s argument: both are evaluated at a solution, where the limited iterate is the unlimited one (§14.7.4). (Added in the closing round, pending user review, finding 26: the form was refused as "a `let` inside a `noise`".)
+10. WHEN a `noise` density reads `ac_stim` THEN the system SHALL give 0 for it in a noise sweep and its operating point: the stimulus is the small-signal drive of an AC sweep, which a noise run does not carry (§14.3.1, §16.2). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Acceptance Criteria** (AO-04, the stdlib noise modules):
 
@@ -158,7 +170,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 **Acceptance Criteria** (AO-06, against ngspice `.noise`):
 
 1. WHEN the twin `noise_rc.msl` (the `noise_rc.cir` circuit, its resistor carrying `white_noise(4.0 * K_B * temperature() / r, "thermal")`) runs THEN `onoise` SHALL agree with ngspice's `onoise_spectrum` at every frequency, and `onoise_total` with ngspice's, under the new noise contract.
-2. WHEN the twin `noise_switch.msl` (a resistive switch whose thermal source follows its on resistance) runs THEN `onoise` SHALL agree with `noise_switch.cir` under the same contract.
+2. WHEN the twin `noise_switch.msl` (a resistive switch whose thermal source follows its on resistance) runs closed THEN `onoise` SHALL equal the closed form `sqrt(4 k T (1 kohm || ron))`, and WHEN its control is opened THEN `onoise` SHALL agree with `noise_switch_off.cir` under the same contract. (Amended in T41, coordinator ruling 2026-11-23, pending user review; the implementer's amendment, the user has not confirmed it. Evidence on ngspice-47: `noise_switch.cir` prints `onoise_spectrum` 3.88190044e-9 at every point, byte-equal to `noise_switch_off.cir` (`sqrt(4kT(1k||10k))`, the open switch), while the same netlist's `op` gives `v(a)` = 9.990010e-4 (closed) and an `ac` alone gives 0.9090909, the open divider: ngspice's SW reads the open state in every small-signal analysis. The closed state is held to `sqrt(4kT(1k||ron))` = 1.286838e-10 at 300.15 K, the open state to ngspice, in `noise_switch` and `noise_switch_open_agrees_with_ngspice`. ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so `noise_switch.cir` cannot be the oracle of the closed state; see `parity_noise.rs::noise_switch`.)
 3. WHEN a new twin `noise_diode` (a diode biased by a current source, with shot noise `2qI` and flicker noise `kf·I^af/f`, against ngspice's `D` with `kf`, `af`) runs THEN `onoise` SHALL agree under the same contract.
 4. WHERE the ngspice comparison is disabled the three twins SHALL still run and print the harness's skip line.
 
@@ -174,18 +186,17 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 **Acceptance Criteria** (AO-07, `simparam`, L47, Q4):
 
-1. WHEN `simparam("vth0", Some(0.5))` is evaluated and the run gives `simparam = { vth0 = 0.7 }` THEN the system SHALL give 0.7, and 0.5 when the run gives none.
-2. WHEN `simparam("reltol", None)` is evaluated THEN the system SHALL give the run's `reltol`, or the default the solver uses when the run gives none.
-3. IF `simparam(name)` has no default and the session has no parameter `name` THEN the system SHALL fail at the start of the analysis with `E0456` naming `name`.
+1. WHEN `simparam("vth0")` is evaluated and the run gives `simparam = { vth0 = 0.7 }` THEN the system SHALL give `Some(0.7)`, and `None` when the run gives none. (Amended, user 2026-11-23: an `Option<f64>`, no default argument.)
+2. WHEN `simparam("reltol")` is evaluated THEN the system SHALL give `Some` of the run's `reltol`, or of the default the solver uses when the run gives none.
+3. WHEN `simparam(name)` names no session parameter THEN the system SHALL give `None`; `E0456` is retired.
 4. The system SHALL accept `simparam` in every run-time position, definitions and selectors included, and SHALL give it one value for the whole analysis (§14.4.1).
 5. The system SHALL give the key `simparam` the repeatable flag `--simparam <name>=<value>`; IF a value is not a number THEN the system SHALL report `P0010` naming the entry.
 
-**Acceptance Criteria** (AO-08, `tnom`, Q4, Q6):
+**Acceptance Criteria** (AO-08, `tnom`; **withdrawn**, user 2026-11-23: "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp"):
 
-1. The system SHALL accept the key `tnom` in a run table and the flag `--tnom`, in °C, 27 when absent.
-2. IF `tnom` is not a number greater than −273.15 THEN the system SHALL report `P0010` naming the key.
-3. WHEN `simparam("tnom", None)` is evaluated THEN the system SHALL give the run's `tnom` in °C.
-4. WHEN a new twin `tnom_res` (a divider whose resistor has `tc1`, written `r * (1.0 + tc1 * (temperature() - 273.15 - simparam("tnom", None)))`, against ngspice with `.options tnom=50 temp=27`) runs with `tnom = 50` and `temp = 27` THEN the system SHALL agree with ngspice under `DC_VOLTAGE`.
+1. The system SHALL accept no run key `tnom` and no flag `--tnom`; the nominal temperature is a per-instance model param (default 300.15 K).
+2. WHEN `simparam("tnom")` is evaluated THEN the system SHALL give `None`.
+3. WHEN a new twin `tnom_res` (a divider whose resistor has `tc1` and its own `tnom`, written `r * (1.0 + tc1 * (temperature() - tnom))`, set to 323.15 K, against ngspice with `.options tnom=50 temp=27`) runs at 27 C THEN the system SHALL agree with ngspice under `DC_VOLTAGE`.
 
 **Independent Test**: transpile tests; `cargo test -p piperine-parity --test parity_op` for `tnom_res`.
 
@@ -206,6 +217,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 5. IF a site reached from `analog`, directly or through a `fn`, writes the stream `sim` or `checks` (`require(..)` in `analog` included) THEN the system SHALL report `E0603` naming the site.
 6. WHEN a run does not name a trace stream in `streams` THEN the system SHALL record none of its records (Q5); WHEN it names one THEN the system SHALL deliver every record of it.
 7. The system SHALL NOT let a trace record change any carrier, solve or event (§19 rule 9).
+8. WHEN an `analog` block calls a `fn` that reaches `emit!` on another stream than `sim` and `checks` THEN the system SHALL write the records the same `emit!` written in the block writes, the call inlined where it stands (§19 rule 10). (Added in the closing round, pending user review: GAPS L72, which the feature found, is closed rather than left ownerless.)
 
 **Independent Test**: a transpile test over a diode whose Newton path is known, counting records per iteration; elaboration tests for `E0603`.
 
@@ -223,6 +235,8 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 2. WHEN a branch is of a nature whose flow `abstol` is 1n THEN the bound circuit SHALL give its flow unknown and its row the tolerance 1n.
 3. WHEN a port of `Electrical` and a port of a compatible nature `HvElectrical` (same potential and flow names, potential `abstol` 1m) meet at one node THEN the system SHALL give that node the smaller potential `abstol` (1 µV), and the operating point of a divider made of one resistor of each nature SHALL equal the all-`Electrical` divider within `DC_VOLTAGE`.
 4. IF two natures whose flow names differ meet at a port THEN the system SHALL report `E0251`.
+5. WHEN a branch's nature gives a flow `abstol` and the session gives `abstol` THEN the bound circuit SHALL give the branch's flow unknown and its row the smaller of the two (a nature can only tighten the session value; AC 2 reads the nature's value where it is the smaller), decided 2026-11-22.
+6. WHEN a nature's `abstol` and the session's value both apply THEN the bound circuit SHALL give the unknown and its row the smaller of the two, for nodes (`vntol` against the potential `abstol`) and for branches (`abstol` against the flow `abstol`): a nature only tightens, and `--vntol` and `--abstol` always take effect. The user chose it on 2026-11-22 ("Menor dos dois"). A looser nature, such as `HvElectrical`'s 1 mV, no longer loosens the default, and AC 1 and AC 2 read "carries" for the nature's value and "effective" for the smaller.
 
 **Independent Test**: a `piperine-api` test that binds the designs and reads the bound circuit's tolerances, plus the divider's operating point.
 
@@ -253,6 +267,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 **Acceptance Criteria** (AO-13, from analog-structure, user 2026-11-19):
 
 1. WHEN the stdlib `slew(v(in), 1M, 1M)` follows a 0 to 1 V ideal step (a carrier change at 1 µs, no edge) THEN the system SHALL give 0 V before 1 µs, a ramp of 1 V/µs and 1 V from 2 µs, within `TRAN_VOLTAGE`. Today §15.2 rule 4 fires a jump's crossing after the solve of the step that reads the jump, so the output passes the jump in one step; the fix is to retake the step when a jump-crossing flips a carrier that `analog` reads (a change to §15.2 rule 4 and the engine).
+2. WHEN the step that arrives at a time point reads a settle commit (§15 S2, S3) and a crossing it makes changes a carrier `analog` reads THEN the system SHALL retake that step like any step that reads a jump, and WHEN an instant is retaken THEN its settle phase SHALL run once, after its last round, and the settle commits it holds SHALL be the ones delivered to the analog side (§15 step 4).
 
 ---
 
@@ -262,7 +277,8 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 - WHEN a design has no noise source THEN a noise run SHALL print `onoise` = 0 at every frequency and succeed.
 - WHEN `delay`'s `td` is exactly `max` THEN the system SHALL read `x` as it was `max` ago.
 - WHEN `ddx`'s `e` does not read the probe at all THEN the system SHALL give 0.
-- WHEN `simparam` is called with a name the run gives and a default THEN the system SHALL give the run's value.
+- WHEN `simparam` is called with a name the run gives and `.unwrap_or(default)` is applied to it THEN the system SHALL give the run's value, and the default when the run gives none (`simparam` has no default argument, user 2026-11-23).
+- WHEN a definition or an `at` argument reaches `freq()` through a `fn` THEN the system SHALL report `E0336` or `E0442` (§8.2.5, §13 rule 11), as it does for a direct read: the form is an error of the language, and the IR's ambient-reads check is its backstop. (Added in the closing round, pending user review.)
 - WHEN a trace site's fields differ in type from another site of the same stream THEN the system SHALL report the error of §19 rule 12, as for reaction records.
 
 ---
@@ -271,20 +287,21 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| AO-01 | P1: `ddx` | - | Pending |
-| AO-02 | P1: `delay` | - | Pending |
-| AO-03 | P1: noise sources | - | Pending |
-| AO-04 | P1: noise sources | - | Pending |
-| AO-05 | P1: a noise analysis from the host | - | Pending |
-| AO-06 | P1: a noise analysis from the host | - | Pending |
-| AO-07 | P1: session parameters | - | Pending |
-| AO-08 | P1: session parameters | - | Pending |
-| AO-09 | P1: trace records | - | Pending |
-| AO-10 | P2: tolerances of user natures | - | Pending |
-| AO-11 | P2: interpreter, parity, documents | - | Pending |
-| AO-12 | P2: interpreter, parity, documents | - | Pending |
+| AO-01 | P1: `ddx` | 5, 7 | Done |
+| AO-02 | P1: `delay` | 3, 5, 7, 8 | Done |
+| AO-03 | P1: noise sources | 5, 6, 7 | Done |
+| AO-04 | P1: noise sources | 5, 6, 7, 8 | Done |
+| AO-05 | P1: a noise analysis from the host | 2, 4, 8 | Done |
+| AO-06 | P1: a noise analysis from the host | 2, 4, 8 | Done |
+| AO-07 | P1: session parameters | 4, 7 | Done |
+| AO-08 | P1: session parameters | 4, 7, 8 (withdrawn) | Done |
+| AO-09 | P1: trace records | 5, 6, 7 | Done |
+| AO-10 | P2: tolerances of user natures | 3 | Done |
+| AO-11 | P2: interpreter, parity, documents | 6, 8 | Done |
+| AO-12 | P2: interpreter, parity, documents | 8 | Done |
+| AO-13 | P1: `slew` limits an ideal step | 3 | Done |
 
-**Coverage:** 12 total, 0 mapped to tasks, 12 unmapped (no tasks yet).
+**Coverage:** 13 total, 13 mapped to tasks and Done (AO-08 withdrawn by the user decision of 2026-11-23, its twin kept as a model-param twin).
 
 ## Gaps closed
 
@@ -293,7 +310,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 | L43 | `ddx` | AO-01 |
 | L44 | `delay` | AO-02 |
 | L45 | `noise`, `white_noise`, `flicker_noise`, `noise_table` | AO-03 (core), AO-04 AC 1, 2 (`white_noise`, `flicker_noise`), AO-04 AC 3 (`noise_table`, once `generics`, `composite-values` and `params-and-io` merge) |
-| L47 (`simparam`; `tnom`, deferred by `host-ii`) | `simparam` and the `tnom` session option | AO-07, AO-08. `freq()` stays with `msl-fixes` |
+| L47 (`simparam`; `tnom`, deferred by `host-ii`) | `simparam` as an `Option<f64>`; no run `tnom` (a per-instance model param) | AO-07, AO-08 (withdrawn). `freq()` stays with `msl-fixes` |
 | L49 | trace records: `emit!` in `analog` | AO-09 |
 | H2 (noise analysis) | `analysis = "noise"` through `piperine-api` and the command line, proven against ngspice `.noise` | AO-05, AO-06 |
 | U7 | a user nature's `abstol` in the convergence test; compatible natures at one node | AO-10 |
@@ -325,7 +342,11 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 ## Success Criteria
 
-- [ ] `piperine run --analysis noise` prints `onoise` for `noise_rc`, `noise_switch` and `noise_diode` that agrees with ngspice under one documented contract.
-- [ ] `delay_tline` and `tnom_res` agree with ngspice; `ddx`, `simparam` and traces match their closed forms.
-- [ ] The 7 existing twins print the bytes they printed before.
-- [ ] `cargo build --workspace` has no warning and `cargo test --workspace` passes.
+- [x] `piperine run --analysis noise` prints `onoise` for `noise_rc`, `noise_switch` and `noise_diode`; `noise_rc` and `noise_diode` agree with ngspice under the one documented contract `NOISE`, `noise_switch` with its closed form and, opened, with ngspice (T41).
+- [x] `delay_tline` and `tnom_res` agree with ngspice; `ddx`, `simparam` and traces match their closed forms.
+- [x] The 7 existing twins print the bytes they printed before.
+- [x] `cargo build` of the crates the Build line names has no warning of this feature (one pre-existing warning, `tests/book/types.rs` `Reached::run`, is untouched and came with `explicit-unknowns`) and `cargo test --workspace --exclude piperine-lang-server` passes (`piperine-lang-server` does not build: GAPS B3).
+
+---
+
+**Amendment, user decision 2026-11-23:** "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp". The core keeps only the run temperature; `tnom` is a per-instance model param and not a session or run key, and `dtemp` is no core mechanism. AO-08 and the `tnom` rows of Q4, Q6 and D13 are withdrawn; task T45 removes what B1 to B3 delivered.

@@ -1,7 +1,6 @@
 //! `Ir::check`: the invariants a correct builder sequence guarantees, verified over the arenas.
 //! The digital forms add their own: a body writes only the carriers it may (never an `in`
-//! port), a carrier has a drive or commits, never both, `analog` reads a carrier only through
-//! `known_or`, `is_known` and `high` (§3.3.5), a reaction waits on events of its body, a commit
+//! port), a carrier has a drive or commits, never both, a reaction waits on events of its body, a commit
 //! sits in a reaction, a `cross` watches a real, and a carrier's initial value is a value of its
 //! type (an integer within its `N`-bit range). A contribution may stand anywhere inside the
 //! `analog` block (under an `if`, in a nested block) but in a closure, a function or a
@@ -26,14 +25,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::contributions::Contributions;
-use crate::ids::{ExprId, FunctionId, StmtId};
+use crate::ids::{ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
-    TypeKind, ValueType,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, Projection, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
+    FunctionData, ReprForm, TypeData, TypeKind, ValueType,
 };
 use crate::typing::Typing;
 
 mod aggregates;
+mod carrier_array;
 mod traits;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
@@ -82,12 +82,22 @@ struct Owner {
     stims: usize,
     /// The carried types of the body's carriers.
     carriers: Vec<ValueType>,
+    /// The element count of each carrier that is an array of carriers, parallel to `carriers`.
+    counts: Vec<Option<u64>>,
     /// The field types of each of the body's streams.
     streams: Vec<Vec<ValueType>>,
     /// The number of the body's events.
     events: usize,
     /// The number of the body's derivative sites.
     derivatives: usize,
+    /// The number of the body's delay sites.
+    delays: usize,
+    /// The number of the body's noise sources.
+    noise_sources: usize,
+    /// The number of the body's session parameters.
+    session_parameters: usize,
+    /// The record stream of each of the body's trace sites.
+    traces: Vec<u32>,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
     /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
@@ -97,6 +107,30 @@ struct Owner {
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
     analog: bool,
+    /// A value a primitive evaluates on its own (a derivative state, a delay input, a noise density): it may read an
+    /// `ac_stim` site, which a statement of the `analog` block writes.
+    value_input: bool,
+}
+
+/// Which element of its carrier a write names, as far as the IR says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementWritten {
+    /// The whole carrier (or its only value).
+    Whole,
+    /// One element, known.
+    Constant(u64),
+    /// An element chosen at run time: any of them.
+    Dynamic,
+}
+
+impl ElementWritten {
+    /// Whether two writes of one carrier can reach one element.
+    fn overlaps(self, other: ElementWritten) -> bool {
+        match (self, other) {
+            (ElementWritten::Constant(a), ElementWritten::Constant(b)) => a == b,
+            _ => true,
+        }
+    }
 }
 
 /// The state of one walk: one owner's code, every root of it sharing the memo.
@@ -169,6 +203,11 @@ impl<'a> Checker<'a> {
         match (ty, value) {
             (_, Constant::Aggregate(id)) => self.ir.aggregates.get(id.index()).is_some_and(|data| data.ty == *ty),
             (ValueType::Bool, Constant::Bool(_)) | (ValueType::F64, Constant::Real(_)) => true,
+            // a type with a hand-written `Repr` is initialized by its levels, the word `encode` gives (GN-05)
+            (ValueType::Struct(id) | ValueType::Enum(id), Constant::Int(levels)) => match self.ir.types.get(id.index()).map(|data| data.repr) {
+                Some(ReprForm::HandWritten { width, .. }) => width < 128 && (0..1i128 << width).contains(&levels),
+                _ => false,
+            },
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
             }
@@ -222,7 +261,7 @@ impl<'a> Checker<'a> {
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
             Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } | Stmt::Assign { value, .. } => Some(*value),
-            Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => fields.iter().find_map(|f| match f {
                 EmitField::Value { value, .. } => Some(*value),
                 EmitField::Text { .. } => None,
             }),
@@ -281,11 +320,20 @@ impl<'a> Checker<'a> {
                     self.expr_id(&item, &site.origin, id);
                 }
             }
+            for site in &body.delays {
+                for id in [site.input, site.time].into_iter().chain(site.maximum) {
+                    self.expr_id(&item, &site.origin, id);
+                }
+            }
+            for source in &body.noise_sources {
+                self.expr_id(&item, &source.origin, source.density);
+            }
             for site in &body.limits {
                 if let Some(enabled) = site.enabled {
                     self.expr_id(&item, &site.origin, enabled);
                 }
             }
+            self.carrier_arrays(&item, body);
             for drive in &body.drives {
                 if drive.carrier as usize >= body.carriers.len() {
                     self.report(item.clone(), drive.origin.clone(), format!("drive of carrier {}, out of range ({} carriers)", drive.carrier, body.carriers.len()));
@@ -345,6 +393,11 @@ impl<'a> Checker<'a> {
         for function in &ir.functions {
             let item = format!("function {}", function.name);
             self.expr_id(&item, &function.origin, function.body);
+            if let Some(instance) = &function.instance
+                && !instance.names(&function.name)
+            {
+                self.report(item, function.origin.clone(), format!("a generic instance of `{}` is named `{}`, not `{}`", instance.item, instance.name(), function.name));
+            }
         }
         for (i, data) in ir.exprs.iter().enumerate() {
             let item = format!("expr {i}");
@@ -368,13 +421,16 @@ impl<'a> Checker<'a> {
                         self.expr_id(&item, &origin, a.value);
                     }
                 }
-                Stmt::Commit { value, after, .. } => {
+                Stmt::Commit { value, after, target, .. } => {
                     self.expr_id(&item, &origin, *value);
                     if let Some(after) = after {
                         self.expr_id(&item, &origin, *after);
                     }
+                    for index in target.iter().flat_map(crate::model::CommitTarget::index_operands) {
+                        self.expr_id(&item, &origin, index);
+                    }
                 }
-                Stmt::Emit { fields, .. } => {
+                Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => {
                     for f in fields {
                         if let EmitField::Value { value, .. } = f {
                             self.expr_id(&item, &origin, *value);
@@ -477,6 +533,7 @@ impl<'a> Checker<'a> {
     fn child_carrier_ids(&mut self, body: &BodyData) {
         let ir = self.ir;
         let item = format!("body {}", body.name);
+        self.child_windows(&item, body);
         for (ci, bound) in body.child_carriers.iter().enumerate() {
             if bound.is_empty() {
                 continue;
@@ -510,12 +567,10 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
-            Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => exprs.extend([*a, *b]),
+            Expr::Same { a, b } => exprs.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => exprs.push(*expr),
-            Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
             Expr::Method { receiver, args, .. } => {
                 exprs.push(*receiver);
@@ -538,7 +593,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -557,6 +612,7 @@ impl<'a> Checker<'a> {
                 exprs.push(*mag);
                 exprs.extend(phase);
             }
+            Expr::SessionParameter { .. } => {}
         }
         for e in exprs {
             self.expr_id(item, origin, e);
@@ -803,6 +859,8 @@ impl<'a> Checker<'a> {
                     );
                 } else if let Some(init) = c.init
                     && !self.holds(&c.ty, init)
+                    // an array carrier's initial value is one element (`[x; K]`) or every element (`[a, b, c]`)
+                    && !c.count.is_some_and(|count| self.holds(&ValueType::Array(Box::new(c.ty.clone()), count), init))
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),
@@ -834,6 +892,45 @@ impl<'a> Checker<'a> {
                 self.report(item, origin, what);
             }
         }
+        for (index, data) in ir.types.iter().enumerate() {
+            self.type_instance(data);
+            self.hand_written_repr(index, data);
+        }
+    }
+
+    /// A type that is a generic instance is named `item<arguments>`.
+    fn type_instance(&mut self, data: &TypeData) {
+        if let Some(instance) = &data.instance
+            && data.name != instance.type_name()
+        {
+            self.report(format!("type {}", data.name), data.origin.clone(), format!("a generic instance of `{}` is named `{}`, not `{}`", instance.item, instance.type_name(), data.name));
+        }
+    }
+
+    /// A hand-written `Repr` (GN-05): `encode` takes the type and returns `[bool; width]`, `decode`
+    /// takes `[bool; width]` and returns `Option` of the type, and `width` is at least one level.
+    fn hand_written_repr(&mut self, index: usize, data: &TypeData) {
+        let ReprForm::HandWritten { width, encode, decode } = data.repr else { return };
+        let item = format!("type {}", data.name);
+        let own = match data.kind {
+            TypeKind::Struct { .. } => ValueType::Struct(TypeId(index as u32)),
+            TypeKind::Enum { .. } => ValueType::Enum(TypeId(index as u32)),
+        };
+        let levels = ValueType::Array(Box::new(ValueType::Bool), u64::from(width));
+        if width == 0 {
+            self.report(item.clone(), data.origin.clone(), "a hand-written Repr has at least one level".to_string());
+        }
+        let (Some(encode), Some(decode)) = (self.ir.functions.get(encode.index()), self.ir.functions.get(decode.index())) else {
+            self.report(item, data.origin.clone(), "a hand-written Repr names a function outside the arena".to_string());
+            return;
+        };
+        let takes = |function: &FunctionData, ty: &ValueType| function.params.len() == 1 && function.params[0].ty == *ty;
+        if !takes(encode, &own) || encode.ret != levels {
+            self.report(item.clone(), data.origin.clone(), format!("the encode of a hand-written Repr takes {own} and returns {levels}, `{}` does not", encode.name));
+        }
+        if !takes(decode, &levels) || decode.ret != ValueType::Option(Box::new(own.clone())) {
+            self.report(item, data.origin.clone(), format!("the decode of a hand-written Repr takes {levels} and returns Option<{own}>, `{}` does not", decode.name));
+        }
     }
 
     /// What is wrong with `ty`, read through function types and aggregate parts.
@@ -844,10 +941,6 @@ impl<'a> Checker<'a> {
                 ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
                     return Some(format!("type {t} has a width outside 1..=64"));
                 }
-                ValueType::Flagged(inner) if !Typing::laid_out(inner) => {
-                    return Some(format!("type {t}: only `bool`, `f64` and an integer type may be unknown"));
-                }
-                ValueType::Flagged(inner) => stack.push(inner),
                 ValueType::Fn(params, ret) => {
                     stack.extend(params);
                     stack.push(ret);
@@ -891,9 +984,9 @@ impl<'a> Checker<'a> {
                     Stmt::Expr(e) => stack_e.push(*e),
                     Stmt::Assign { value, .. } => stack_e.push(*value),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
-                    Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
+                    Stmt::Commit { value, after, target, .. } => stack_e.extend([*value].into_iter().chain(*after).chain(target.iter().flat_map(crate::model::CommitTarget::index_operands))),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
-                    Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
+                    Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),
                         EmitField::Text { .. } => None,
                     })),
@@ -908,12 +1001,11 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+                Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
-                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
+                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
-                Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
-                Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => stack_e.extend([*a, *b]),
+                Expr::Same { a, b } => stack_e.extend([*a, *b]),
                 Expr::LevelCast { expr, .. } => stack_e.push(*expr),
                 Expr::If { cond, then, otherwise } => stack_e.extend([*cond, *then, *otherwise]),
                 Expr::Block { stmts, value } => {
@@ -923,12 +1015,13 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
                 Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
                 Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
+                Expr::SessionParameter { .. } => {}
             }
         }
         (out_e, out_s)
@@ -971,7 +1064,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -1033,7 +1126,6 @@ impl<'a> Checker<'a> {
         let ir = self.ir;
         for body in &ir.bodies {
             self.writes(body);
-            self.analog_reads(body);
             self.ambient_reads(body);
             let item = format!("body {}", body.name);
             for (k, reaction) in body.reactions.iter().enumerate() {
@@ -1045,7 +1137,7 @@ impl<'a> Checker<'a> {
             }
             for (k, event) in body.events.iter().enumerate() {
                 if let EventSource::Cross { e, ttol, etol } = event.source {
-                    if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
+                    if let Some(ty) = self.ty(e).filter(|t| **t != ValueType::F64) {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("a `cross` watches a real, found {ty}"));
                     }
                     for (name, tol) in [("ttol", ttol), ("etol", etol)] {
@@ -1067,7 +1159,7 @@ impl<'a> Checker<'a> {
                     }
                 }
                 if let EventSource::At(e) = event.source {
-                    if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
+                    if let Some(ty) = self.ty(e).filter(|t| **t != ValueType::F64) {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("an `at` waits for a time, an `f64`, found {ty}"));
                     }
                     for read in self.reach_calls(&[e]) {
@@ -1092,12 +1184,14 @@ impl<'a> Checker<'a> {
             // A commit anywhere but in a reaction: the analog block, a `where`, a drive, an event.
             let mut roots: Vec<ExprId> = body.params.iter().filter_map(|p| p.check).collect();
             roots.extend(body.derivatives.iter().flat_map(|d| [d.state].into_iter().chain(d.abstol)));
+            roots.extend(body.noise_sources.iter().map(|n| n.density));
+            roots.extend(body.delays.iter().flat_map(|d| [d.input, d.time].into_iter().chain(d.maximum)));
             roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
             roots.extend(body.events.iter().flat_map(|e| {
                 let cross = match e.source {
                     EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
                     EventSource::At(x) => [Some(x), None, None],
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => [None; 3],
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => [None; 3],
                 };
                 cross.into_iter().flatten().chain(e.guard)
             }));
@@ -1138,11 +1232,11 @@ impl<'a> Checker<'a> {
                 self.report(format!("{item} drive {}", c.name), drive.origin.clone(), format!("drives the reached carrier {}: a child's carrier is read only", c.name));
             }
         }
-        let mut committed: BTreeSet<u32> = BTreeSet::new();
+        let mut committed: Vec<(u32, ElementWritten)> = Vec::new();
         for (k, reaction) in body.reactions.iter().enumerate() {
             let (_, stmts) = self.reach(&reaction.stmts, &[]);
             for (s, carrier) in self.commits(&stmts) {
-                committed.insert(carrier);
+                committed.push((carrier, self.element_written(&self.ir.stmts[s.index()])));
                 if let Some(c) = input(carrier) {
                     let origin = self.stmt_origin(&self.ir.stmts[s.index()]);
                     self.report(format!("{item} reaction {k}"), origin, format!("commits to the `in` port {}: an input is written outside the body", c.name));
@@ -1153,45 +1247,31 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        let driven: BTreeSet<u32> = body.drives.iter().map(|d| d.carrier).collect();
-        for c in driven.intersection(&committed) {
-            if let Some(carrier) = body.carriers.get(*c as usize) {
+        // a definition and a commit of one carrier, or of one element of an array carrier (CV-25 AC 3: two elements
+        // are two carriers), never both; a commit whose element is not constant may reach any element
+        let mut clashing: BTreeSet<u32> = BTreeSet::new();
+        for drive in &body.drives {
+            let written = drive.element.map_or(ElementWritten::Whole, ElementWritten::Constant);
+            if committed.iter().any(|(carrier, other)| *carrier == drive.carrier && written.overlaps(*other)) {
+                clashing.insert(drive.carrier);
+            }
+        }
+        for c in clashing {
+            if let Some(carrier) = body.carriers.get(c as usize) {
                 self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} has both a drive and a commit", carrier.name));
             }
         }
     }
 
-    /// §3.3.5: `analog` reads a carrier only as the receiver of `known_or`, `is_known` or `high`.
-    fn analog_reads(&mut self, body: &BodyData) {
-        let Some(analog) = &body.analog else { return };
-        let (exprs, _) = self.reach(analog, &[]);
-        let ir = self.ir;
-        let mut allowed: HashSet<ExprId> = HashSet::new();
-        for e in &exprs {
-            // `level` and `same` read the flag and give a known result for a known index (§3.3.14,
-            // §22.1.4), as `known_or`, `is_known` and `high` do (§3.3.5, §3.3.6)
-            let reads: Vec<ExprId> = match &ir.exprs[e.index()].kind {
-                Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) | Expr::Level { value: read, .. } => vec![*read],
-                Expr::Same { a, b } => vec![*a, *b],
-                _ => Vec::new(),
-            };
-            for read in reads {
-                if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_) | Expr::Previous(_))) {
-                    allowed.insert(read);
-                }
-            }
-        }
-        for e in exprs {
-            let (c, read) = match ir.exprs[e.index()].kind {
-                Expr::Carrier(c) => (c, "carrier"),
-                Expr::Previous(c) => (c, "the previous value of carrier"),
-                _ => continue,
-            };
-            if !allowed.contains(&e) {
-                let name = body.carriers.get(c as usize).map_or_else(|| format!("{c}"), |c| c.name.clone());
-                let origin = self.expr_origin(e);
-                self.report(format!("body {}", body.name), origin, format!("`analog` reads {read} {name} outside `known_or`, `is_known` and `high` (§3.3.5)"));
-            }
+    /// The element of its carrier a commit writes.
+    fn element_written(&self, stmt: &Stmt) -> ElementWritten {
+        let Stmt::Commit { target, .. } = stmt else { return ElementWritten::Whole };
+        match target.as_ref().and_then(|t| t.element) {
+            None => ElementWritten::Whole,
+            Some(index) => match self.ir.exprs.get(index.index()).map(|d| &d.kind) {
+                Some(Expr::Int(n)) if *n >= 0 => ElementWritten::Constant(*n as u64),
+                _ => ElementWritten::Dynamic,
+            },
         }
     }
 
@@ -1216,13 +1296,19 @@ impl<'a> Checker<'a> {
                 limit_guards: body.limits.iter().map(|s| s.enabled.is_some()).collect(),
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
+                counts: body.carriers.iter().map(|c| c.count).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
+                delays: body.delays.len(),
+                noise_sources: body.noise_sources.len(),
+                session_parameters: body.session_parameters.len(),
+                traces: body.traces.iter().map(|t| t.stream).collect(),
                 reaction: false,
                 event: None,
                 in_body: true,
                 analog,
+                value_input: false,
             };
             for param in &body.params {
                 let Some(check) = param.check else { continue };
@@ -1255,7 +1341,14 @@ impl<'a> Checker<'a> {
                 let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
                 let mut w = Walk::new(owner(false, format!("body {} drive {name}", body.name)), 0);
                 if let Some(c) = body.carriers.get(drive.carrier as usize) {
-                    self.carried(&w, drive.value, &c.ty, "the value of a drive");
+                    if let Some(written) = self.drive_type(&w, &drive.origin, drive.carrier, &c.ty, drive.element, &drive.path) {
+                        self.carried(&w, drive.value, &written, "the value of a drive");
+                    }
+                }
+                for step in &drive.path {
+                    if let Projection::Index(index) = step {
+                        self.walk(&mut w, Task::Expr(*index, Ctx::top()));
+                    }
                 }
                 self.walk(&mut w, Task::Expr(drive.value, Ctx::top()));
                 if let Some(after) = drive.after {
@@ -1274,6 +1367,9 @@ impl<'a> Checker<'a> {
                         }
                     }
                     EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
+                    EventSource::ElementChanged { carrier, element } => {
+                        self.element_event(&format!("body {} event {k}", body.name), &event.origin, body, carrier, element)
+                    }
                     EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
                 if let Some(guard) = event.guard {
@@ -1288,13 +1384,25 @@ impl<'a> Checker<'a> {
                 self.walk(&mut w, Task::Expr(enabled, Ctx::top()));
             }
             for (k, site) in body.derivatives.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} derivative {k}", body.name)), 0);
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} derivative {k}", body.name)) }, 0);
                 self.expect(&w, site.state, &ValueType::F64);
                 self.walk(&mut w, Task::Expr(site.state, Ctx::top()));
                 if let Some(abstol) = site.abstol {
                     self.expect(&w, abstol, &ValueType::F64);
                     self.walk(&mut w, Task::Expr(abstol, Ctx::top()));
                 }
+            }
+            for (k, site) in body.delays.iter().enumerate() {
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} delay {k}", body.name)) }, 0);
+                for id in [site.input, site.time].into_iter().chain(site.maximum) {
+                    self.expect(&w, id, &ValueType::F64);
+                    self.walk(&mut w, Task::Expr(id, Ctx::top()));
+                }
+            }
+            for (k, source) in body.noise_sources.iter().enumerate() {
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} noise source {k}", body.name)) }, 0);
+                self.expect(&w, source.density, &ValueType::F64);
+                self.walk(&mut w, Task::Expr(source.density, Ctx::top()));
             }
             for (k, reaction) in body.reactions.iter().enumerate() {
                 let item = format!("body {} reaction {k}", body.name);
@@ -1324,13 +1432,19 @@ impl<'a> Checker<'a> {
                 limit_guards: Vec::new(),
                 stims: 0,
                 carriers: Vec::new(),
+                counts: Vec::new(),
                 streams: Vec::new(),
                 events: 0,
                 derivatives: 0,
+                delays: 0,
+                noise_sources: 0,
+                session_parameters: 0,
+                traces: Vec::new(),
                 reaction: false,
                 event: None,
                 in_body: false,
                 analog: false,
+                value_input: false,
             };
             let mut w = Walk::new(owner, function.params.len());
             self.expect(&w, function.body, &function.ret);
@@ -1471,15 +1585,47 @@ impl<'a> Checker<'a> {
                     next.push(Task::Expr(a.value, ctx));
                 }
             }
-            Stmt::Commit { carrier, value, after } => {
+            Stmt::Commit { carrier, value, after, target } => {
                 match w.owner.carriers.get(*carrier as usize).cloned() {
-                    Some(ty) => self.carried(w, *value, &ty, "the value of a commit"),
+                    Some(ty) => {
+                        if let Some(written) = self.commit_type(w, &origin, *carrier, &ty, target.as_ref()) {
+                            self.carried(w, *value, &written, "the value of a commit");
+                        }
+                    }
                     None => self.report(w.owner.item.clone(), origin.clone(), format!("commit to carrier {carrier}, out of range ({} carriers)", w.owner.carriers.len())),
                 }
                 next.push(Task::Expr(*value, ctx));
+                if let Some(target) = target {
+                    next.extend(target.index_operands().map(|index| Task::Expr(index, ctx)));
+                }
                 if let Some(after) = after {
                     self.carried(w, *after, &ValueType::F64, "the delay of a commit");
                     next.push(Task::Expr(*after, ctx));
+                }
+            }
+            Stmt::Trace { site, fields } => {
+                // A trace is written where the analog block executes it: not in a function, a
+                // closure, a loop or a reaction.
+                if !w.owner.analog {
+                    self.report(w.owner.item.clone(), origin.clone(), "a trace outside the analog block of a body".to_string());
+                } else if ctx.closure {
+                    self.report(w.owner.item.clone(), origin.clone(), "a trace inside a closure".to_string());
+                }
+                let Some(stream) = w.owner.traces.get(*site as usize).copied() else {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("trace of site {site}, out of range ({} sites)", w.owner.traces.len()));
+                    return;
+                };
+                let Some(types) = w.owner.streams.get(stream as usize).cloned() else {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("trace site {site} names stream {stream}, out of range ({} streams)", w.owner.streams.len()));
+                    return;
+                };
+                for f in fields {
+                    let EmitField::Value { field, value } = f else { continue };
+                    match types.get(*field as usize) {
+                        Some(ty) => self.carried(w, *value, ty, "the value of a trace field"),
+                        None => self.report(w.owner.item.clone(), origin.clone(), format!("trace writes field {field} of stream {stream}, out of range ({} fields)", types.len())),
+                    }
+                    next.push(Task::Expr(*value, ctx));
                 }
             }
             Stmt::Emit { stream, fields } => {
@@ -1522,11 +1668,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `id`, a value written to a carrier of type `want` (or a delay, `want` being `f64`), may be
-    /// known or unknown: its type is `want` or `want` flagged.
+    /// `id`, a value written to a carrier of type `want` (or a delay, `want` being `f64`): its type
+    /// is `want`.
     fn carried(&mut self, w: &Walk, id: ExprId, want: &ValueType, position: &str) {
         if let Some(got) = self.ty(id) {
-            if Typing::base(got) != want {
+            if got != want {
                 let origin = self.expr_origin(id);
                 self.wrong(w, origin, format!("{position} must be {want}, found {got}"));
             }
@@ -1649,19 +1795,6 @@ impl<'a> Checker<'a> {
                 let short = matches!(op, BinaryOp::And | BinaryOp::Or);
                 next.push(Task::Expr(*rhs, Ctx { conditional: ctx.conditional || short, ..ctx }));
             }
-            Expr::If { cond, then, otherwise } if [*cond, *then, *otherwise].iter().any(|e| self.ty(*e).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
-                if first {
-                    let want = match (self.ty(*cond), self.ty(*then), self.ty(*otherwise)) {
-                        (Some(c), Some(t), Some(o)) => Typing::if_(c, t, o),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "an `if`");
-                }
-                next.push(Task::Expr(*cond, ctx));
-                let arm = Ctx { conditional: true, ..ctx };
-                next.push(Task::Expr(*then, arm));
-                next.push(Task::Expr(*otherwise, arm));
-            }
             Expr::If { cond, then, otherwise } => {
                 if first {
                     self.want(w, *cond, &ValueType::Bool, "condition of an `if`");
@@ -1704,14 +1837,6 @@ impl<'a> Checker<'a> {
                 }
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
-            Expr::Math { args, .. } if args.iter().any(|a| self.ty(*a).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
-                if first {
-                    let arg_types: Option<Vec<&ValueType>> = args.iter().map(|a| self.ty(*a)).collect();
-                    let want = arg_types.and_then(|t| Typing::math(&t));
-                    self.typed(w, &origin, ty, want, "a math function");
-                }
-                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
-            }
             Expr::Math { args, .. } => {
                 if first {
                     self.own(w, &origin, ty, &ValueType::F64);
@@ -1723,6 +1848,18 @@ impl<'a> Checker<'a> {
                     }
                 }
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
+            }
+            // `table_model` (§22.2.15): an `f64` read at an `f64`, of a table of at least two samples whose abscissae
+            // strictly increase (elaboration reports `E0704`; the IR is held to the same rule).
+            Expr::Table { x, table, .. } | Expr::TableSlope { x, table, .. } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    self.want(w, *x, &ValueType::F64, "argument of a table model");
+                    if table.len() < 2 || table.windows(2).any(|pair| pair[0].0.get() >= pair[1].0.get()) {
+                        self.wrong(w, origin.clone(), "a table model needs two or more samples with strictly increasing abscissae".to_string());
+                    }
+                }
+                next.push(Task::Expr(*x, ctx));
             }
             Expr::Closure { params, body } => {
                 let outside = w.bound.clone();
@@ -1845,44 +1982,6 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*receiver, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
-            Expr::Unknown => {
-                if first && !matches!(ty, ValueType::Flagged(_)) {
-                    self.wrong(w, origin, format!("the literal `Unknown` must have a flagged type, found {ty}"));
-                }
-            }
-            Expr::KnownOr { value, default } => {
-                if first {
-                    let want = match (self.ty(*value), self.ty(*default)) {
-                        (Some(v), Some(d)) => Typing::known_or(v, d),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "`known_or`");
-                }
-                next.push(Task::Expr(*value, ctx));
-                next.push(Task::Expr(*default, ctx));
-            }
-            Expr::Level { value, index, .. } => {
-                if first {
-                    let want = match (self.ty(*value), self.ty(*index)) {
-                        (Some(v), Some(i)) => Typing::level(v, i),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "`level`");
-                }
-                next.push(Task::Expr(*value, ctx));
-                next.push(Task::Expr(*index, ctx));
-            }
-            Expr::Merge { a, b } => {
-                if first {
-                    let want = match (self.ty(*a), self.ty(*b)) {
-                        (Some(a), Some(b)) => Typing::merge(a, b),
-                        _ => None,
-                    };
-                    self.typed(w, &origin, ty, want, "`merge`");
-                }
-                next.push(Task::Expr(*a, ctx));
-                next.push(Task::Expr(*b, ctx));
-            }
             Expr::Same { a, b } => {
                 if first {
                     let want = match (self.ty(*a), self.ty(*b)) {
@@ -1894,9 +1993,9 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*a, ctx));
                 next.push(Task::Expr(*b, ctx));
             }
-            Expr::LevelCast { expr, to, tags } => {
+            Expr::LevelCast { expr, to, .. } => {
                 if first {
-                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some(), &self.ir.types));
+                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, &self.ir.types));
                     self.typed(w, &origin, ty, want, "`cast`");
                 }
                 next.push(Task::Expr(*expr, ctx));
@@ -1907,7 +2006,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "the previous value of a param outside a body".to_string());
                     } else {
                         match w.owner.params.get(*p as usize) {
-                            // A param is known: its previous value has its type, never flagged.
+                            // A param's previous value has its type.
                             Some(param) => self.own(w, &origin, ty, &param.clone()),
                             None => self.wrong(w, origin, format!("previous value of param {p}, out of range ({} params)", w.owner.params.len())),
                         }
@@ -1921,6 +2020,36 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a derivative read outside a body".to_string());
                     } else if *k as usize >= w.owner.derivatives {
                         self.wrong(w, origin, format!("derivative read of site {k}, out of range ({} sites)", w.owner.derivatives));
+                    }
+                }
+            }
+            Expr::Delay(k) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a delay read outside a body".to_string());
+                    } else if *k as usize >= w.owner.delays {
+                        self.wrong(w, origin, format!("delay read of site {k}, out of range ({} sites)", w.owner.delays));
+                    }
+                }
+            }
+            Expr::Noise(k) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a noise read outside a body".to_string());
+                    } else if *k as usize >= w.owner.noise_sources {
+                        self.wrong(w, origin, format!("noise read of source {k}, out of range ({} sources)", w.owner.noise_sources));
+                    }
+                }
+            }
+            Expr::SessionParameter { parameter } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::Option(Box::new(ValueType::F64)));
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a session parameter read outside a body".to_string());
+                    } else if *parameter as usize >= w.owner.session_parameters {
+                        self.wrong(w, origin, format!("session parameter read {parameter}, out of range ({} parameters)", w.owner.session_parameters));
                     }
                 }
             }
@@ -1952,7 +2081,11 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "carrier read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
+                            // an array of carriers read whole is the array of its elements' values (CV-24)
+                            Some(c) => match w.owner.counts.get(*i as usize).copied().flatten() {
+                                Some(count) => self.own(w, &origin, ty, &ValueType::Array(Box::new(c.clone()), count)),
+                                None => self.own(w, &origin, ty, &Typing::read_of(c)),
+                            },
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -1964,11 +2097,32 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a previous-value read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
+                            Some(_) if w.owner.counts.get(*i as usize).copied().flatten().is_some() => {
+                                self.wrong(w, origin, format!("previous value of carrier {i}, an array of carriers: read one element's"));
+                            }
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
                             None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
                 }
+            }
+            Expr::CarrierElement { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element read", *carrier, *index, ty, false);
+                }
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::ElementPrevious { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element's previous value", *carrier, *index, ty, false);
+                }
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::ElementChanged { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element's `changed()`", *carrier, *index, ty, true);
+                }
+                next.push(Task::Expr(*index, ctx));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.looping(w, id, first, ctx, next),
             Expr::Break(value) => {
@@ -2019,16 +2173,8 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*callee, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)=> {
                 self.aggregate_form(w, id, first, ctx, next);
-            }
-            Expr::IsKnown(value) | Expr::High(value) => {
-                if first {
-                    let high = matches!(data.kind, Expr::High(_));
-                    let what = if high { "`high`" } else { "`is_known`" };
-                    self.typed(w, &origin, ty, self.ty(*value).and_then(|v| Typing::flag_read(high, v)), what);
-                }
-                next.push(Task::Expr(*value, ctx));
             }
         }
         next.push(Task::Exit(id));
@@ -2135,7 +2281,7 @@ impl<'a> Checker<'a> {
     /// context, range, and the distinct expressions that use it.
     fn site(&mut self, w: &mut Walk, user: ExprId, origin: &Origin, kind: &str, site: u32, ctx: Ctx) {
         let count = if kind == "limit" { w.owner.limits } else { w.owner.stims };
-        if !w.owner.analog {
+        if !w.owner.analog && !(kind == "ac_stim" && w.owner.value_input) {
             self.wrong(w, origin.clone(), format!("{kind} outside the analog block of a body"));
         } else if ctx.closure {
             self.wrong(w, origin.clone(), format!("{kind} inside a closure"));

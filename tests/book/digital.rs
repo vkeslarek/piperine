@@ -1,7 +1,6 @@
 //! Scope: chapter 9 of the Book, "Digital behavior" (feature `root-e2e`, RE-02 and RE-03): the counter
 //! and its 257 `state` records, the set-reset latch, the multiply-accumulate pipeline, the debouncer
-//! and the PWM (their integer params are refused today, asserted refused; their numbers are held on the
-//! same designs with the param written as a literal), the checks and `finish()`, the monitors, and the
+//! and the PWM (their integer params run since params-and-io, T35: the Book's own text, no param written as a literal), the checks and `finish()`, the monitors, and the
 //! eight mistakes of the chapter's table, run through `piperine::`. Each test opens with the inventory
 //! ids it holds, from `tests/book/inventory.tsv`.
 
@@ -54,18 +53,15 @@ impl Oscillator {
 }
 
 /// The debouncer of the chapter with its two refused forms written as the compiler accepts them: the
-/// param `n` as the literal 4, (the button is a plain bool).
+/// param `n` of the Book (4), (the button is a plain bool).
 struct Debouncer;
 
 impl Debouncer {
-    /// The debouncer's file with `n` as a literal and `bench` in place of the
+    /// The debouncer's file as the Book writes it, with `bench` in place of the
     /// bench's timed reactions.
     fn accepted(chapter: &Chapter, bench: &str) -> Model {
         let text = chapter.text("digital#7");
-        let text = Edit::replace(&text, "    n: u8 = 4 where n >= 1;\n", "");
-        let text = Edit::replace(&text, "run + 1 >= n", "run + 1 >= 4");
-        let text = Edit::replace(&text, " { n: 4 }", "");
-                let text = Edit::replace(&text, "    on at(2.0m) { button <- true; }\n    on at(2.2m) { button <- false; }\n    on at(2.4m) { button <- true; }\n", bench);
+        let text = Edit::replace(&text, "    on at(2.0m) { button <- true; }\n    on at(2.2m) { button <- false; }\n    on at(2.4m) { button <- true; }\n", bench);
         Model::written("debounce.msl", &text)
     }
 
@@ -82,24 +78,17 @@ impl Debouncer {
     }
 }
 
-/// The PWM of the chapter with its integer param written as the literal 100, and its checker.
+/// The PWM of the chapter and its checker, as the Book writes them.
 struct Generator;
 
 impl Generator {
-    /// The PWM file with `period` as a literal; `with_check` places the checker (also with its two
-    /// integer params as literals) beside the generator.
+    /// The PWM file; `with_check` places the checker beside the generator.
     fn accepted(chapter: &Chapter, with_check: bool) -> Model {
         let text = chapter.text("digital#11");
-        let text = Edit::replace(&text, "    period: u8 = 100 where period >= 2;\n", "");
-        let text = Edit::replace(&text, "count == period - 1", "count == 99");
-        let mut text = Edit::replace(&text, " { period: 100 }", "");
+        let mut text = text;
         if with_check {
-            text = Edit::replace(&text, "let pulse = Pwm(clk, duty, pwm, wrap);", "let pulse = Pwm(clk, duty, pwm, wrap);\n    let chk = PwmCheck(clk, wrap, pwm);");
-            let check = chapter.text("digital#14");
-            let check = Edit::replace(&check, "    limit: u8 = 90;\n    cycles: u32 = 20;\n", "");
-            let check = Edit::replace(&check, "high <= limit", "high <= 90");
-            let check = Edit::replace(&check, "seen + 1 >= cycles", "seen + 1 >= 20");
-            text = format!("{text}\n{check}");
+            text = Edit::replace(&text, "let pulse = Pwm(clk, duty, pwm, wrap) { period: 100 };", "let pulse = Pwm(clk, duty, pwm, wrap) { period: 100 };\n    let chk = PwmCheck(clk, wrap, pwm);");
+            text = format!("{text}\n{}", chapter.text("digital#14"));
         }
         Model::written("pwm.msl", &text)
     }
@@ -262,26 +251,29 @@ fn the_phase_detector_runs_assignment_and_events_read_as_bools() {
 }
 
 #[test]
-fn the_debouncer_is_refused_for_its_integer_param_alone() {
-    // digital#7 (refused): the debouncer's file (`debounce.msl`); digital#10 holds its listing;
-    // digital~bc5825b1 "One thing in it is not compiled yet, a param of an integer type (n: u8), so today
-    // the command refuses the file there and runs nothing"; digital~d7032a06 (the same form);
-    // digital~d1d69398 "That stops the debouncer and the PWM for now ...; the counter runs" (the counter:
-    // the test of digital#1). The form is `P0001` (L28); with the param written as a literal the file
-    // runs
+fn the_debouncer_pwm_and_pwm_check_print_their_records() {
+    // digital#7, digital#11 and digital#14 (run, L28 closed by params-and-io PI-01): the Book's own files, their
+    // integer params `n: u8`, `period: u8`, `limit: u8` and `cycles: u32` unedited, build and print the records the
+    // listings of digital#10 and digital#13 show: digital~c92f9704 "the output flipped once, at the fourth clean sample"
     let chapter = Chapter::read();
-    let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(7e-3), streams: vec!["flip".to_string()], ..Overrides::default() };
-    let model = chapter.marked("debounce.msl", "digital#7");
-    Refusal::expect(model.run(overrides.clone()), "digital#7", "P0001", "param of type `u8` is not supported yet");
-    let text = chapter.text("digital#7");
-    let literal = Edit::replace(&Edit::replace(&Edit::replace(&text, "    n: u8 = 4 where n >= 1;\n", ""), "run + 1 >= n", "run + 1 >= 4"), " { n: 4 }", "");
-    Model::written("debounce.msl", &literal).run(overrides).unwrap_or_else(|failure| panic!("the file runs with `n` as a literal: {failure:#}"));
+    let debounce = Overrides { analysis: Some("transient".to_string()), stop: Some(7e-3), streams: vec!["flip".to_string()], ..Overrides::default() };
+    let flips = chapter.marked("debounce.msl", "digital#7").run(debounce).unwrap_or_else(|failure| panic!("digital#7 runs with its integer param: {failure:#}"));
+    assert_eq!(flips.stream("flip").len(), 1, "the output flipped once");
+    Printed::holds("5.500000e-3", flips.stream("flip")[0].time, "the fourth clean sample");
+
+    let pwm = Overrides { analysis: Some("transient".to_string()), stop: Some(450e-6), streams: vec!["cycle".to_string()], ..Overrides::default() };
+    let cycles = chapter.marked("pwm.msl", "digital#11").run(pwm).unwrap_or_else(|failure| panic!("digital#11 runs with its integer param: {failure:#}"));
+    let duties: Vec<&Field> = cycles.stream("cycle").iter().map(|record| Fields::of(record, "duty")).collect();
+    assert_eq!(duties, [&Field::Int(25), &Field::Int(25), &Field::Int(60), &Field::Int(60)], "one record per period, the duty word of the cycle");
+
+    // digital#14 placed in the bench as digital~a0ca3f9d says: its `limit: u8` and `cycles: u32` take their defaults
+    let checked = Generator::accepted(&chapter, true).run(Commands::transient(3e-3)).unwrap_or_else(|failure| panic!("digital#14 runs with its integer params: {failure:#}"));
+    assert_eq!(checked.stream("checks").len(), 20, "one `duty_limit` check per wrap, twenty cycles");
 }
 
 #[test]
 fn the_debouncer_flips_once_at_the_fourth_clean_sample() {
-    // The debouncer of digital#7 with `n` as the literal 4 (digital#7 refuses the
-    // Book's text): digital~6733ba9f "Once it runs, it prints one record line: the output flipped once, at
+    // The debouncer of digital#7 as the Book writes it, `n` of 4: digital~c92f9704 "It prints one record line: the output flipped once, at
     // the fourth clean sample, @5.500000e-3 Press.db flip t=5.500000e-3 to=true"; digital~9d7f8cfe "its three
     // timed reactions are the stimulus: the button starts low, bounces high at 2.0 ms, low at 2.2 ms, and
     // high for good at 2.4 ms"; digital~7f3906df "The clock is 1 kHz, so it samples at 0.5, 1.5, 2.5 ms and
@@ -325,18 +317,8 @@ fn a_press_released_before_the_fourth_sample_gives_no_flip() {
 }
 
 #[test]
-fn the_pwm_is_refused_for_its_integer_param() {
-    // digital#11 (refused): the PWM's file (`pwm.msl`); digital#13 holds its listing; digital~bdd2508f "Its
-    // period is a param of an integer type, which the compiler does not take yet, so today the command
-    // refuses the file and runs nothing": `P0001` (L28)
-    let chapter = Chapter::read();
-    let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(450e-6), streams: vec!["cycle".to_string()], ..Overrides::default() };
-    Refusal::expect(chapter.marked("pwm.msl", "digital#11").run(overrides), "digital#11", "P0001", "param of type `u8` is not supported yet");
-}
-
-#[test]
 fn the_pwm_latches_its_duty_word_at_the_wrap() {
-    // The PWM of digital#11 with `period` as the literal 100: digital~107c5906 "A counter that wraps every
+    // The PWM of digital#11 as the Book writes it, `period` of 100: digital~107c5906 "A counter that wraps every
     // period clocks, and an output that is high while the count is below a duty word"; digital~0727161d
     // "With a 1 MHz clock the PWM runs at 10 kHz, and the cycle stream has one record per period carrying
     // the duty word that period will use": the records at 99.5, 199.5, 299.5 and 399.5 us carry duty 25,
@@ -355,23 +337,8 @@ fn the_pwm_latches_its_duty_word_at_the_wrap() {
 }
 
 #[test]
-fn the_pwm_check_is_refused_for_its_integer_params() {
-    // digital#14 (refused): `PwmCheck`, with `limit: u8` and `cycles: u32`; digital~a0ca3f9d "With the check
-    // placed in the bench, piperine run pwm.msl ... stops by itself at the twentieth cycle" (refused with
-    // it: the bench does not run as the Book writes it): both params are `P0001` (L28)
-    let chapter = Chapter::read();
-    let after = "module Top() { signal clk: Bit; signal wrap: Bit; signal pwm: Bit; let c = PwmCheck(clk, wrap, pwm); }\n";
-    let model = chapter.wrapped("check.msl", "", "digital#14", after);
-    let given = Refusal::of(model.run(Commands::transient_of("Top", 1e-6)), "digital#14");
-    for expected in ["param of type `u8` is not supported yet", "param of type `u32` is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
-    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#14", "P0001", "param of type `u32` is not supported yet");
-}
-
-#[test]
 fn the_check_passes_every_cycle_and_ends_the_run_at_the_twentieth() {
-    // The PWM bench of digital#11 with the checker of digital#14, their integer params written as literals:
+    // The PWM bench of digital#11 with the checker of digital#14, their integer params as the Book writes them:
     // the rest of digital~a0ca3f9d "prints each failing checks record as it is written (add --all-checks to
     // see the passing ones too) and stops by itself at the twentieth cycle": no failing record, twenty
     // passing `require` records, and a `sim` record `finish` at the twentieth wrap, 1900.5 us, where the
@@ -527,7 +494,7 @@ fn e0430_a_bit_is_a_level_not_an_event() {
     // (E0430): on enable { ... } has no 'when'": say which change: on clk.rise()
     let faulty = Faulty::elaborating("digital~54ec481d", "module Top(in clk: Bit) {}\ndigital for Top { on clk { } }\n", "Top");
     assert_eq!(faulty.first("E0430").message, "the head of `on` has type `bool`: it must be an `Event`; a `bool` alone is not an event (§12.1.10)");
-    let fixed = Model::written("fixed.msl", "module Top(in clk: Bit) {}\ndigital for Top { on clk.rise() { } }\n").run(Faulty::operating_point_of("Top"));
+    let fixed = Model::written("fixed.msl", "module Top(in clk: Bit = false) {}\ndigital for Top { on clk.rise() { } }\n").run(Faulty::operating_point_of("Top"));
     assert!(fixed.is_ok(), "`clk.rise()` is an event");
 }
 
@@ -578,7 +545,7 @@ fn e0350_an_instance_is_not_placed_inside_a_reaction() {
 fn e0501_a_clock_with_no_delay_never_goes_quiet() {
     // digital~5c44f01d and digital~6b910006: "E0501 on clk.changed() { clk <- !clk; }": a run error, with no
     // delay the microsteps at one time never go quiet. "Add after 0.5 / f": the Osc of chapter 5 runs
-    let source = "module Top() { signal clk: Bit; }\ndigital for Top { on clk.changed() { clk <- !clk; } on at(1n) { clk <- true; } }\n";
+    let source = "module Top() { signal clk: Bit = false; }\ndigital for Top { on clk.changed() { clk <- !clk; } on at(1n) { clk <- true; } }\n";
     let given = Refusal::of(Model::written("spin.msl", source).run(Commands::transient_of("Top", 1e-6)), "digital~5c44f01d");
     assert_eq!(given.len(), 1, "{given:?}");
     assert_eq!(given[0].0, "E0501");

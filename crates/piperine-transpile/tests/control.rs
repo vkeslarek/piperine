@@ -19,7 +19,7 @@ use std::sync::{Mutex, OnceLock};
 use alone::Alone;
 use digital::{Buck, Dx, Ty};
 use piperine_abi::caller::{Commit, Handle};
-use piperine_abi::raw::{Module, cell, commit_flag, status};
+use piperine_abi::raw::{Module, cell, status};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Expr, ExprId, FunctionId, FunctionSpec, Ir, IrBuilder, Local, Origin, Place, Stmt, StmtId, ValueType};
 use piperine_plan::Modules;
 use piperine_transpile::print::ValuePrinter;
@@ -179,64 +179,6 @@ impl Functions {
         let body = x.block(vec![let_y, looped], Some(result), ValueType::F64);
         Functions::define(&mut b, "doubled", 40, locals, 2, ValueType::F64, body);
 
-        Alone::finish(b)
-    }
-
-    /// `spin` and `clamp_up`, over values that may be unknown, and the MSL each transcribes.
-    fn unknown_library() -> Ir {
-        let (byte, flag) = (Ty::flagged(Ty::u(8)), Ty::flagged(ValueType::Bool));
-        let mut b = IrBuilder::new();
-
-        // control.msl:60  fn clamp_up(c: Bit, a: Bit<u8>) -> Bit<u8> { let mut x = a; if c { x = 5; } x }
-        let locals = vec![Functions::local("c", flag.clone(), false), Functions::local("a", byte.clone(), false), Functions::local("x", byte.clone(), true)];
-        let mut x = Dx::new(&mut b, FILE, 61, 5);
-        let a = x.local(1, byte.clone());
-        let let_x = x.let_(2, a);
-        let c = x.local(0, flag.clone());
-        let five = Lit::flagged(&mut x, 5);
-        let set = Functions::assign(&mut b, 2, None, five);
-        let mut x = Dx::new(&mut b, FILE, 62, 5);
-        let branch = x.when(c, vec![set], None);
-        let branch = x.stmt(branch);
-        let result = x.local(2, byte.clone());
-        let body = x.block(vec![let_x, branch], Some(result), byte.clone());
-        Functions::define(&mut b, "clamp_up", 60, locals, 2, byte.clone(), body);
-
-        // control.msl:70 and 80, one function each over the same loop:
-        //     fn spin(stop: Bit) -> Bit<u8> {
-        //         let mut i = 0; let mut tag = 0;
-        //         loop { i += 1; tag = 7; if stop { break; } if i == 3 { break; } }
-        //         i                                   // `spin_tag` returns `tag`
-        //     }
-        for (name, line, answer) in [("spin", 70, 1u32), ("spin_tag", 80, 2u32)] {
-            let locals = vec![Functions::local("stop", flag.clone(), false), Functions::local("i", byte.clone(), true), Functions::local("tag", byte.clone(), true)];
-            let mut x = Dx::new(&mut b, FILE, line + 1, 5);
-            let (zero, zero_again) = (Lit::flagged(&mut x, 0), Lit::flagged(&mut x, 0));
-            let (let_i, let_tag) = (x.let_(1, zero), x.let_(2, zero_again));
-            let (one, seven) = (x.int(1, Ty::u(8)), Lit::flagged(&mut x, 7));
-            let count = Functions::assign(&mut b, 1, Some(BinaryOp::Add), one);
-            let mark = Functions::assign(&mut b, 2, None, seven);
-            let mut x = Dx::new(&mut b, FILE, line + 2, 9);
-            let stop = x.local(0, flag.clone());
-            let leave = Functions::control(&mut b, Expr::Break(None), ValueType::Unit, line + 2);
-            let leave = b.stmt(Stmt::Expr(leave));
-            let mut x = Dx::new(&mut b, FILE, line + 2, 9);
-            let if_stop = x.when(stop, vec![leave], None);
-            let if_stop = x.stmt(if_stop);
-            let (i, three) = (x.local(1, byte.clone()), x.int(3, Ty::u(8)));
-            let is_three = x.bin(BinaryOp::Eq, i, three, flag.clone());
-            let leave = Functions::control(&mut b, Expr::Break(None), ValueType::Unit, line + 3);
-            let leave = b.stmt(Stmt::Expr(leave));
-            let mut x = Dx::new(&mut b, FILE, line + 3, 9);
-            let if_three = x.when(is_three, vec![leave], None);
-            let if_three = x.stmt(if_three);
-            let looped = Functions::control(&mut b, Expr::Loop { body: vec![count, mark, if_stop, if_three] }, ValueType::Unit, line + 2);
-            let looped = b.stmt(Stmt::Expr(looped));
-            let mut x = Dx::new(&mut b, FILE, line + 5, 5);
-            let result = x.local(answer, byte.clone());
-            let body = x.block(vec![let_i, let_tag, looped], Some(result), byte.clone());
-            Functions::define(&mut b, name, line, locals, 1, byte.clone(), body);
-        }
         Alone::finish(b)
     }
 
@@ -421,91 +363,7 @@ fn a_known_loop_past_the_bound_panics_naming_it() {
     assert!(out.contains("loop @ control.msl:52:1") && out.contains("16777216"), "{out}");
 }
 
-// ---- T9: unknown decisions (CV-08) ---------------------------------------------------------------
-
-/// Literals of the IR's own forms.
-struct Lit;
-
-impl Lit {
-    /// A `u8` literal that may be unknown, known to be `value`: `merge(value, value)`, which the IR
-    /// types `Flagged<u8>` (§22.1.2 rule 2).
-    fn flagged(x: &mut Dx<'_>, value: i128) -> ExprId {
-        let (a, b) = (x.int(value, Ty::u(8)), x.int(value, Ty::u(8)));
-        x.merge(a, b, Ty::flagged(Ty::u(8)))
-    }
-}
-
-/// A value of the model that may be unknown: `None` is unknown.
-type Level = Option<u64>;
-
-/// A value that may be unknown, as the model computes it and as the generated program writes it.
-struct LevelText;
-
-impl LevelText {
-    /// The merge of two values that may be unknown (§3.3.3): equal known values are kept.
-    fn merged(a: Level, b: Level) -> Level {
-        if a == b { a } else { None }
-    }
-
-    fn show(v: Level) -> String {
-        v.map_or("?".to_string(), |v| v.to_string())
-    }
-
-    /// The program text of a `Flagged<UInt<8>>` that is `v`.
-    fn byte_text(v: Level) -> String {
-        v.map_or("rt::Flagged::<rt::UInt<8>>::unknown()".to_string(), |v| format!("rt::Flagged::known(rt::UInt::<8>::new({v}))"))
-    }
-
-    /// The program text of a `Flagged<bool>` that is `v`.
-    fn flag_text(v: Option<bool>) -> String {
-        v.map_or("rt::Flagged::<bool>::unknown()".to_string(), |v| format!("rt::Flagged::known({v})"))
-    }
-}
-
-#[test]
-fn unknown_decisions_merge_written_locals_and_loop_exits() {
-    // §3.3.3: `if c { x = 5; } x` with `c` unknown is the merge of both paths' `x`; a loop whose
-    // `break` decision is unknown leaves at each iteration that may be the last, and the code after
-    // it sees the merge of those exits, each local merged level by level
-    let ir = Functions::unknown_library();
-    let functions = Functions::printed(&ir);
-    let text = functions.join("\n");
-    // the arms hand back their value and the locals they write; the loop is `rt::Unrolled`
-    assert!(text.contains(".choose(|| {"), "{text}");
-    assert!(text.contains("let (_, merge_out0_) ="), "{text}");
-    assert!(text.contains("rt::Unrolled::<_, (), ()>::run(\"loop @ control.msl:72:1\", (i, tag), |(mut i, mut tag)| {"), "{text}");
-    assert!(text.contains("outcome_.exit()"), "{text}");
-
-    let (mut main, mut expected) = (String::from("fn show(v: rt::Flagged<rt::UInt<8>>) -> String {\n    if v.is_known() { v.known_or(rt::UInt::<8>::new(0)).get().to_string() } else { \"?\".to_string() }\n}\nfn main() {\n"), Vec::new());
-    // clamp_up: the model is the same `if` over `Level`
-    for c in [Some(true), Some(false), None] {
-        for a in [Some(5), Some(6), None] {
-            main += &format!("    println!(\"clamp_up {{}}\", show(clamp_up({}, {})));\n", LevelText::flag_text(c), LevelText::byte_text(a));
-            let then = Some(5);
-            let model = match c {
-                Some(true) => then,
-                Some(false) => a,
-                None => LevelText::merged(then, a),
-            };
-            expected.push(format!("clamp_up {}", LevelText::show(model)));
-        }
-    }
-    // spin: the loop leaves at iteration 1 when `stop`, otherwise at 3; `tag` is 7 on every exit
-    for stop in [Some(true), Some(false), None] {
-        main += &format!("    println!(\"spin {{}}\", show(spin({})));\n", LevelText::flag_text(stop));
-        main += &format!("    println!(\"spin_tag {{}}\", show(spin_tag({})));\n", LevelText::flag_text(stop));
-        let count = match stop {
-            Some(true) => Some(1),
-            Some(false) => Some(3),
-            None => LevelText::merged(Some(1), Some(3)),
-        };
-        expected.push(format!("spin {}", LevelText::show(count)));
-        expected.push(format!("spin_tag {}", LevelText::show(LevelText::merged(Some(7), Some(7)))));
-    }
-    main += "}\n";
-    let out = Probe::run(&functions, &main);
-    assert_eq!(out.lines().collect::<Vec<_>>(), expected.iter().map(String::as_str).collect::<Vec<_>>());
-}
+// ---- T9: a loop of a reaction (CV-08) ----------------------------------------------------------------
 
 /// The compiled `Looper` design, built once.
 struct Design {
@@ -515,8 +373,7 @@ struct Design {
 }
 
 impl Design {
-    /// The `Looper` body (control.msl:90): a loop that commits, with an exit on an input that may be
-    /// unknown.
+    /// The `Looper` body (control.msl:90): a loop that commits, with an exit on an input.
     ///
     /// ```text
     /// on clk.rise() {
@@ -525,14 +382,14 @@ impl Design {
     /// }
     /// ```
     fn looper(b: &mut IrBuilder) -> BodyId {
-        let byte = Ty::flagged(Ty::u(8));
+        let byte = Ty::u(8);
         let body = b.body(Buck::spec("Looper", FILE, 90));
         for (name, ty, role, col) in [("clk", ValueType::Bool, CarrierRole::In, 20), ("stop", ValueType::Bool, CarrierRole::In, 30), ("q", Ty::u(8), CarrierRole::Out, 40)] {
             b.carrier(body, Buck::carrier(name, ty, role, None, FILE, 90, col));
         }
         let rise = Buck::rise(b, body, 0, FILE, 91, 8);
         let mut x = Dx::new(b, FILE, 92, 9);
-        let zero = Lit::flagged(&mut x, 0);
+        let zero = x.int(0, Ty::u(8));
         let let_i = x.let_(0, zero);
         let i = x.local(0, byte.clone());
         let commit = x.commit(2, i, None);
@@ -546,7 +403,7 @@ impl Design {
         let step = Functions::assign(b, 0, Some(BinaryOp::Add), one);
         let mut x = Dx::new(b, FILE, 95, 9);
         let (i, two) = (x.local(0, byte.clone()), x.int(2, Ty::u(8)));
-        let is_two = x.bin(BinaryOp::Eq, i, two, Ty::flagged(ValueType::Bool));
+        let is_two = x.bin(BinaryOp::Eq, i, two, ValueType::Bool);
         let leave = Functions::control(b, Expr::Break(None), ValueType::Unit, 95);
         let leave = b.stmt(Stmt::Expr(leave));
         let mut x = Dx::new(b, FILE, 95, 9);
@@ -579,17 +436,17 @@ impl Design {
     }
 }
 
-/// The reaction of the `Looper` design, run with an input that may be unknown.
+/// The reaction of the `Looper` design, run with its `stop` input.
 struct LooperReaction;
 
 impl LooperReaction {
-    /// The bytes of a `Bit<u8>` or `Bit` pin holding `value` (known), or unknown (two zero bytes).
-    fn pin(value: Option<u8>) -> Vec<u8> {
-        value.map_or(vec![0, 0], |v| vec![v, 1])
+    /// The bytes of a `Bit<u8>` or `Bit` pin holding `value`: the value.
+    fn pin(value: u8) -> Vec<u8> {
+        vec![value]
     }
 
-    /// Runs the reaction with `stop` and returns what it committed: statement, bytes, delay, flags.
-    fn run_reaction(stop: Option<u8>) -> Vec<(u32, Vec<u8>, f64, u32)> {
+    /// Runs the reaction with `stop` and returns what it committed: statement, bytes, delay.
+    fn run_reaction(stop: u8) -> Vec<(u32, Vec<u8>, f64)> {
         let mut handle = Handle::create(Design::module(), &[]).expect("an instance");
         let shape = handle.shape();
         let reaction = *shape.reactions.get(0).expect("one reaction");
@@ -598,9 +455,8 @@ impl LooperReaction {
             assert_eq!(c.kind, cell::PIN, "a reaction of this body reads pins");
             let name = shape.pins.get(c.index as usize).expect("a pin").name.as_str().to_string();
             input.push(match name.as_str() {
-                "clk" => LooperReaction::pin(Some(1)),
+                "clk" => LooperReaction::pin(1),
                 "stop" => LooperReaction::pin(stop),
-                "resolution" => 1e-15f64.to_le_bytes().iter().copied().chain([1]).chain([0; 7]).collect(),
                 other => panic!("the reaction reads `{other}`"),
             });
         }
@@ -608,7 +464,7 @@ impl LooperReaction {
         let mut made = Vec::new();
         handle
             .react(0, &reads, &mut |c: Commit<'_>| {
-                made.push((c.statement, c.bytes.to_vec(), c.after, c.flags));
+                made.push((c.statement, c.bytes.to_vec(), c.after));
                 status::OK
             })
             .expect("the reaction runs");
@@ -617,15 +473,12 @@ impl LooperReaction {
 }
 
 #[test]
-fn a_reaction_loop_committing_after_an_unknown_decision_commits_maybe() {
-    // MD-70, §13 rule 1: the first iteration commits `q <- 0` before any decision (definite); the
-    // `stop` that may be unknown splits the loop, and what the iterations after it commit may not
-    // happen, so `q <- 1` is a `MAYBE | MERGE` commit. With `stop` known the loop is Rust's and
-    // every commit is plain
-    let maybe_merge = commit_flag::MAYBE | commit_flag::MERGE;
-    assert_eq!(LooperReaction::run_reaction(None), [(0, LooperReaction::pin(Some(0)), 0.0, 0), (0, LooperReaction::pin(Some(1)), 0.0, maybe_merge)]);
-    assert_eq!(LooperReaction::run_reaction(Some(0)), [(0, LooperReaction::pin(Some(0)), 0.0, 0), (0, LooperReaction::pin(Some(1)), 0.0, 0)]);
-    assert_eq!(LooperReaction::run_reaction(Some(1)), [(0, LooperReaction::pin(Some(0)), 0.0, 0)]);
+fn a_reaction_loop_commits_on_every_iteration_it_runs() {
+    // §13: the first iteration commits `q <- 0`, then `stop` decides: low, the loop goes on, `i`
+    // becomes 1 and `q <- 1` is committed, then `i == 2` leaves it; high, the loop leaves after
+    // the first commit
+    assert_eq!(LooperReaction::run_reaction(0), [(0, LooperReaction::pin(0), 0.0), (0, LooperReaction::pin(1), 0.0)]);
+    assert_eq!(LooperReaction::run_reaction(1), [(0, LooperReaction::pin(0), 0.0)]);
 }
 
 // ---- T10: function values and recursion (CV-05 to CV-07) -------------------------------------------------

@@ -26,9 +26,18 @@ use piperine_abi::layout::{BIT, F64};
 
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use crate::pin::PinLayout;
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
+use piperine_abi::raw::{Cell, DEFAULT, Field, GROUND, Layout, List, Partial, Str, WHOLE, ambient, cell, global, input, leaf, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_ir::{AnalysisKind, Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
+use piperine_ir::{AnalysisKind, Body, Branch, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
+
+const SESSION_VALUE: Str = Str::from_static("v");
+const SESSION_KNOWN: Str = Str::from_static("known");
+static SESSION_FIELDS: [Field; 2] = [Field { name: SESSION_VALUE, leaf: leaf::F64, offset: 0, count: 1 }, Field { name: SESSION_KNOWN, leaf: leaf::BOOL, offset: 8, count: 1 }];
+
+/// The layout of the pin of a session parameter: `{ v: F64 @0, known: BOOL @8 }`. The solver writes
+/// the value and sets `known` when the host gave the parameter; an absent `OPTIONAL` pin is all zero,
+/// so `known` is 0 and the read is `None`.
+pub static SESSION_PARAMETER: Layout = Layout { size: 16, align: 8, fields: List::from_slice(&SESSION_FIELDS) };
 
 /// What one term of the shape computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +58,13 @@ pub enum Term {
     /// A derivative site's `DDT {u, GROUND}` term of value `-x`, `x` being the site's state; it
     /// names the site's `abstol` pin when the site has one.
     DerivativeState(u32),
+    /// A delay site's `FLOW {u, GROUND}` term, `u` being its output pin `delay<k>.value` (abi.md
+    /// A1: the row `u - op(x) = 0`).
+    DelayOutput(u32),
+    /// A delay site's `DELAY {u, GROUND}` term of value `-x`, `x` being the site's input; its
+    /// `TIME` is written by `terms` (`Target::DelayTime`) and its `max` is the pin
+    /// `delay<k>.max`.
+    DelayHistory(u32),
 }
 
 /// What a function computes: one walk of the `analog` block in one mode.
@@ -73,6 +89,10 @@ pub enum Mode {
     Cap(u32),
     /// The `abstol` of derivative site `k`: its tolerance pin.
     DerivativeAbstol(u32),
+    /// The density of noise source `k`: its `PSD`, read only by a noise sweep.
+    Noise(u32),
+    /// The `max` of delay site `k`: its bound pin (`td` itself when the site gives none).
+    DelayMaximum(u32),
     /// The `ttol` of `cross` event `k`: its tolerance pin.
     Ttol(u32),
     /// The `etol` of `cross` event `k`: its tolerance pin.
@@ -94,10 +114,16 @@ pub enum Source {
     /// A derivative site's rate pin `d<k>.rate` (abi.md A1's private pin `u`): a continuous
     /// unknown that is 0 in an equilibrium solve.
     Derivative(u32),
+    /// A delay site's output pin `delay<k>.value` (abi.md A1's private pin `u`): a continuous
+    /// unknown that is `x` in an equilibrium solve.
+    Delay(u32),
     /// A `limit` site's input `VALUE`.
     LimitValue(u32),
     /// An `ac_stim` site's input `VALUE`.
     StimValue(u32),
+    /// A noise source's input `VALUE`: 0 in every solve, the source's input in a noise sweep
+    /// (abi.md A2).
+    NoiseValue(u32),
     Param(u32),
     /// The `PREVIOUS` of a param's pin: its bytes before the host's most recent `set` of it
     /// (`p.prev()`, §5.3.1). Between `Param` and `ParamChanged`, as a carrier's three reads are.
@@ -136,25 +162,41 @@ pub enum Source {
     /// The `CHANGED` byte of the event pin of event `k`: whether the event fired in this
     /// microstep (`Expr::Fired`, abi.md §4.1).
     Fired(u32),
-    /// The `GLOBAL` `RESOLUTION` pin: the session's tick length in seconds. A reaction that
-    /// decides on a value that may be unknown reads it, to key its commits by the instant they
-    /// come due (§3.3.3, abi.md C1).
-    Resolution,
     /// The `CHANGED` byte of the `GLOBAL` `SETTLE` pin: whether the settle phase of this
     /// instant is running (§15 step 4). The event function of each `settle` event reads it
     /// (§13 rule 17).
     Settle,
+    /// The `VALUE` of the `GLOBAL NAMED` pin of session parameter `k`: an `Option<f64>`, known
+    /// when the host gave the parameter. Discrete, constant during an analysis (§14.4.1).
+    SessionParameter(u32),
+    /// An array carrier read whole, or at a run-time element, whatever the part (`x`, `x[i]`, `x[i].prev()`,
+    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read
+    /// only (abi.md §3: a function never takes a `WHOLE` read); the cell names the pin with `element` `WHOLE`.
+    Whole(u32),
+    /// One constant element of an array carrier: `(carrier, element, part)`, a cell naming the
+    /// element (`Function.elements`, `Reaction.elements`).
+    Element(u32, u64, u32),
 }
 
 impl Source {
+    /// The element a cell of this read names: `WHOLE` for a whole array read, the element for a
+    /// constant element read, 0 for every other read (abi.md §3).
+    pub fn element(self) -> u64 {
+        match self {
+            Source::Whole(..) => WHOLE,
+            Source::Element(_, element, _) => element,
+            _ => 0,
+        }
+    }
+
     /// A continuous pin: read as 0 by the affine rule (INT-12).
     pub fn is_pin(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_))
     }
 
     /// A read the walk carries a tangent for.
     pub fn is_differentiable(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::LimitValue(_) | Source::StimValue(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_))
     }
 }
 
@@ -174,6 +216,8 @@ pub enum Target {
     EventPin(u32),
     /// Drive `k`'s undelayed pin.
     Delayed(u32),
+    /// The pin drive `k` of one element of an array carrier writes (`Pins::element_drives`).
+    ElementDrive(u32),
     /// The event pin of the `changed` event of drive `k`'s undelayed pin.
     DelayedEventPin(u32),
     /// The `CROSS` watch of event `k`.
@@ -190,6 +234,14 @@ pub enum Target {
     Etol(u32),
     /// The `abstol` pin of derivative site `k`.
     DerivativeAbstol(u32),
+    /// The `PSD` of noise source `k`'s input.
+    NoiseDensity(u32),
+    /// The `TRACE` watch of trace site `k` (a write of `terms`).
+    Trace(u32),
+    /// The `TIME` of the `DELAY` term of delay site `k` (a write of `terms`).
+    DelayTime(u32),
+    /// The `max` pin of delay site `k`.
+    DelayMaximum(u32),
     /// The `RECORD` pin of stream `s` (a statement of a reaction that emits).
     Record(u32),
 }
@@ -249,11 +301,25 @@ impl ReadSet {
     /// differentiable read) and the carriers whose previous value it reads (`c.prev()`, A7).
     pub(crate) fn target(body: Body<'_>, target: Query) -> ReadSet {
         let mut set = ReadSet::of(&body.dependencies(target));
-        set.0.extend(body.carrier_reads(target).into_iter().map(Source::Carrier));
+        let carrier = |c: u32, plain: Source| {
+            if body.carriers().get(c as usize).is_some_and(|x| x.count.is_some()) { Source::Whole(c) } else { plain }
+        };
+        set.0.extend(body.carrier_reads(target).into_iter().map(|c| carrier(c, Source::Carrier(c))));
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
-        set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
+        set.0.extend(body.previous_reads(target).into_iter().map(|c| carrier(c, Source::CarrierPrevious(c))));
+        set.0.extend(body.whole_changed_reads(target).into_iter().map(Source::Whole));
+        set.0.extend(body.element_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::VALUE)));
+        set.0.extend(body.element_previous_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::PREVIOUS)));
+        set.0.extend(body.element_changed_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::CHANGED)));
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
+        set.0.extend(body.delay_reads(target).into_iter().map(Source::Delay));
+        // A noise source's input is read by the analog evaluation alone (abi.md §4.2): a check, an
+        // event, a drive or a reaction reads 0 there, which is the value at every accepted solution.
+        if matches!(target, Query::Flow(_) | Query::Charge(_) | Query::Limit(_) | Query::Stim(_) | Query::Derivative(_) | Query::DelayInput(_) | Query::DelayTime(_) | Query::DelayMaximum(_) | Query::NoiseDensity(_) | Query::Trace(_)) {
+            set.0.extend(body.noise_reads(target).into_iter().map(Source::NoiseValue));
+        }
+        set.0.extend(body.session_parameter_reads(target).into_iter().map(Source::SessionParameter));
         set.0.extend(body.param_previous_reads(target).into_iter().map(Source::ParamPrevious));
         set
     }
@@ -276,6 +342,8 @@ pub struct Pins {
     pub branches: Vec<Option<u32>>,
     /// The rate pin `d<k>.rate` of each derivative site, after the branch flow pins.
     pub derivatives: Vec<u32>,
+    /// The output pin `delay<k>.value` of each delay site, after the derivative rate pins.
+    pub delays: Vec<u32>,
     pub temperature: Option<u32>,
     /// The `GLOBAL` pin of each analysis kind the body reads, in `AnalysisKind` order, after the
     /// temperature pin.
@@ -311,15 +379,23 @@ pub struct Pins {
     pub tolerances: Vec<(Option<u32>, Option<u32>)>,
     /// The `CAP` watch of each `bound_step` site, as `(site, watch)`, after the `CROSS` watches.
     pub caps: Vec<(u32, u32)>,
-    /// The `GLOBAL` `RESOLUTION` pin, after the tolerance pins, when a reaction of the body
-    /// decides on a value that may be unknown.
-    pub resolution: Option<u32>,
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
     pub derivative_abstols: Vec<Option<u32>>,
-    /// The `GLOBAL` `SETTLE` pin, after the derivative abstol pins, when the body has a `settle`
+    /// The private `F64` pin `delay<k>.max` of each delay site, after the derivative abstol pins.
+    pub delay_maxima: Vec<u32>,
+    /// The `GLOBAL` `SETTLE` pin, after the delay `max` pins, when the body has a `settle`
     /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
     pub settle: Option<u32>,
+    /// The `PORT` pin `drive:<carrier>[<element>]` of each drive of one element of an array carrier, after the `SETTLE`
+    /// pin; `None` for any other drive. It is bound to that element of the array net by a window (abi.md §3: a
+    /// function writes one element through a scalar pin).
+    pub element_drives: Vec<Option<u32>>,
+    /// The `TRACE` watch of each trace site, after the `CAP` watches.
+    pub traces: Vec<u32>,
+    /// The `GLOBAL NAMED` pin of each session parameter the body reads, named the parameter,
+    /// after every other pin.
+    pub session_parameters: Vec<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -368,6 +444,31 @@ impl Pins {
         self.derivatives.get(k as usize).copied().unwrap_or(GROUND)
     }
 
+    /// The `TRACE` watch of trace site `k`; `GROUND` for a site the body does not have.
+    pub fn trace(&self, k: u32) -> u32 {
+        self.traces.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The pin of session parameter `k`; `GROUND` for a parameter the body does not have.
+    pub fn session_parameter(&self, k: u32) -> u32 {
+        self.session_parameters.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The output pin of delay site `k`; `GROUND` for a site the body does not have.
+    pub fn delay(&self, k: u32) -> u32 {
+        self.delays.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The `max` pin of delay site `k`; `DEFAULT` for a site the body does not have.
+    pub fn delay_maximum(&self, k: u32) -> u32 {
+        self.delay_maxima.get(k as usize).copied().unwrap_or(DEFAULT)
+    }
+
+    /// The pin drive `k` of one element writes; `GROUND` for a drive of a whole carrier.
+    pub fn element_drive(&self, k: u32) -> u32 {
+        self.element_drives.get(k as usize).copied().flatten().unwrap_or(GROUND)
+    }
+
     /// The `abstol` pin of derivative site `k`; `DEFAULT` when it has none.
     pub fn derivative_abstol(&self, k: u32) -> u32 {
         self.derivative_abstols.get(k as usize).copied().flatten().unwrap_or(DEFAULT)
@@ -409,6 +510,12 @@ pub struct BodyPlan {
 }
 
 impl BodyPlan {
+    /// The bytes of an `f64` the pin holds: a NaN is always the library's own, `f64::NAN` (`0x7ff8..`), so the plan and the
+    /// generated library agree on the bits of a param that folded to NaN (`0.0 / 0.0` folds to `0xfff8..`).
+    fn real_bytes(value: f64) -> Vec<u8> {
+        if value.is_nan() { f64::NAN.to_le_bytes().to_vec() } else { value.to_le_bytes().to_vec() }
+    }
+
     /// Plans `body`. The body comes from an `Ir` that passes `check()`.
     pub fn new(body: Body<'_>) -> BodyPlan {
         let ir = body.ir();
@@ -421,8 +528,8 @@ impl BodyPlan {
             .params()
             .iter()
             .map(|p| match p.default {
-                Some(Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
-                Some(Constant::Bool(b)) => vec![u8::from(b), 1],
+                Some(Constant::Real(r)) => Self::real_bytes(r.get()),
+                Some(Constant::Bool(b)) => vec![u8::from(b)],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
                 // A composite param has the layout and bytes of a composite carrier (`composite.rs`).
@@ -436,6 +543,7 @@ impl BodyPlan {
             + body.nodes().len()
             + body.branches().iter().filter(|b| b.kind != BranchKind::Flow).count()
             + body.derivatives().len()
+            + body.delays().len()
             + usize::from(Self::reads_temperature(body))
             + Self::reads_analysis(body).len();
         let mut next_check = pin_count as u32;
@@ -450,6 +558,8 @@ impl BodyPlan {
             let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
                 ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
+                // a unit enum is its tag (PI-02)
+                ty @ ValueType::Enum(_) => CarrierLayout::in_ir(ir, ty).unwrap_or(&F64),
                 _ => &F64,
             };
             let layout = composite_layout.as_ref().unwrap_or(scalar);
@@ -470,7 +580,7 @@ impl BodyPlan {
         // Body nodes, ports and signals alike, with their nature's tolerances.
         let nodes = body.params().len() as u32;
         let inits: Vec<Vec<u8>> =
-            body.nodes().iter().map(|n| n.init.map_or_else(Vec::new, |r| r.get().to_le_bytes().to_vec())).collect();
+            body.nodes().iter().map(|n| n.init.map_or_else(Vec::new, |r| Self::real_bytes(r.get()))).collect();
         for (n, init) in body.nodes().iter().zip(&inits) {
             let nature = ir.nature(n.nature);
             let abstol = [nature.potential().abstol.get(), nature.flow().map_or(0.0, |q| q.abstol.get())];
@@ -488,7 +598,8 @@ impl BodyPlan {
                 // A switch branch has a potential branch's private flow unknown (§11 rule 2).
                 BranchKind::Potential | BranchKind::Switch => {
                     let at = branch_origin(b);
-                    Some(s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("b{b}.flow"), role::PRIVATE) }))
+                    let abstol = Self::branch_abstol(body, branch);
+                    Some(s.pin(PinSpec { origin: &at, abstol, ..PinSpec::continuous(&format!("b{b}.flow"), role::PRIVATE) }))
                 }
             });
         }
@@ -503,6 +614,8 @@ impl BodyPlan {
                 s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("d{k}.rate"), role::PRIVATE) })
             })
             .collect();
+
+        let delays = Self::delay_pins(&mut s, body);
 
         let temperature = Self::reads_temperature(body).then(|| {
             let at = origin(body.origin());
@@ -540,15 +653,19 @@ impl BodyPlan {
         let rearms = Digital::rearm_pins(&mut s, body);
         let records = Digital::record_pins(&mut s, body);
         let tolerances = Digital::tolerance_pins(&mut s, body);
-        let resolution = Digital::resolution_pin(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
+        let delay_maxima = Digital::delay_maximum_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
+        let element_drives = Digital::element_drive_pins(&mut s, body);
+        let session_parameters = Self::session_parameter_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
+        let traces = Digital::trace_watches(&mut s, body);
         let pins = Pins {
             nodes,
             branches,
             derivatives,
+            delays,
             temperature,
             analysis,
             checks,
@@ -563,9 +680,12 @@ impl BodyPlan {
             records,
             tolerances,
             caps,
-            resolution,
             derivative_abstols,
+            delay_maxima,
             settle,
+            element_drives,
+            traces,
+            session_parameters,
         };
 
         // Terms, branch by branch.
@@ -609,6 +729,8 @@ impl BodyPlan {
             term(&format!("d{k}.state"), op::DDT, pins.derivative_abstol(k), Term::DerivativeState(k));
         }
 
+        Self::delay_terms(&mut s, body, &pins, &mut terms);
+
         // Inputs: limits, then stimuli, each named after its site.
         for site in body.limits() {
             let at = origin(&site.origin);
@@ -618,6 +740,8 @@ impl BodyPlan {
             let at = origin(&site.origin);
             s.input(InputSpec { name: &site.name, origin: &at, kind: input::STIM });
         }
+
+        Self::noise_inputs(&mut s, body);
 
         // Functions: one per site, then the terms.
         let mut functions = Vec::new();
@@ -641,27 +765,8 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, &format!("stim:{k}"), &origin(&site.origin), &plan);
             functions.push(plan);
         }
-        if !terms.is_empty() {
-            let sets: Vec<ReadSet> = terms.iter().map(|t| Self::term_set(body, *t)).collect();
-            let mut all = ReadSet::default();
-            for set in &sets {
-                all.union(set);
-            }
-            let writes = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
-            let mut plan = Self::function(Mode::Terms, &all, writes);
-            plan.affine = terms
-                .iter()
-                .map(|t| match t {
-                    Term::Flow(b) => body.is_affine(*b),
-                    // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
-                    Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
-                    Term::Current(_) | Term::DerivativeRate(_) => true,
-                    Term::Charge(_) | Term::DerivativeState(_) => false,
-                })
-                .collect();
-            Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
-            functions.push(plan);
-        }
+        Self::noise_functions(&mut s, &pins, &terms, body, &mut functions);
+        Self::terms_function(&mut s, &pins, &terms, body, &mut functions);
         for (p, param) in body.params().iter().enumerate() {
             if param.check.is_none() {
                 continue;
@@ -688,9 +793,142 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, &format!("d{k}.abstol"), &origin(&site.origin), &plan);
             functions.push(plan);
         }
+        Self::delay_functions(&mut s, &pins, &terms, body, &mut functions);
         let reactions = Digital::reactions(&mut s, &pins, body);
 
         BodyPlan { shape: s.freeze(), functions, reactions }
+    }
+
+    /// The `file:line:col` text of `origin`, as a shape names where a pin, term or function comes from.
+    fn origin_text(origin: &Origin) -> String {
+        format!("{}:{}:{}", origin.file, origin.line, origin.col)
+    }
+
+    /// One private output pin per delay site, after the rate pins (abi.md A1).
+    fn delay_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body
+            .delays()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let at = Self::origin_text(&site.origin);
+                s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("delay{k}.value"), role::PRIVATE) })
+            })
+            .collect()
+    }
+
+    /// Delay sites: the output term `u` and the history term `-x` that carries `TIME` and `max`, after the derivative terms.
+    fn delay_terms(s: &mut ShapeBuf, body: Body<'_>, pins: &Pins, terms: &mut Vec<Term>) {
+        for (k, site) in body.delays().iter().enumerate() {
+            let (k, at) = (k as u32, Self::origin_text(&site.origin));
+            let output = pins.delay(k);
+            let max = pins.delay_maximum(k);
+            let mut term = |name: &str, operator: u32, max: u32, what: Term| {
+                s.term(TermSpec { name, origin: &at, op: operator, plus: output, minus: GROUND, abstol: DEFAULT, max });
+                terms.push(what);
+            };
+            term(&format!("delay{k}.value"), op::FLOW, DEFAULT, Term::DelayOutput(k));
+            term(&format!("delay{k}.history"), op::DELAY, max, Term::DelayHistory(k));
+        }
+    }
+
+    /// One `NOISE` input per noise source, named by its group.
+    fn noise_inputs(s: &mut ShapeBuf, body: Body<'_>) {
+        for source in body.noise_sources() {
+            let at = Self::origin_text(&source.origin);
+            // the input is named by the source's group, so the host reports the sources that share
+            // a name as one group; an unnamed source has no name (the host groups it by instance)
+            s.input(InputSpec { name: source.group.as_deref().unwrap_or(""), origin: &at, kind: input::NOISE });
+        }
+
+    }
+
+    /// One density function per noise source.
+    fn noise_functions(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
+        for (k, source) in body.noise_sources().iter().enumerate() {
+            let k = k as u32;
+            // the density is read at a frequency of the sweep: the function always reads `FREQ`, so
+            // a fault names it
+            let mut set = ReadSet::target(body, Query::NoiseDensity(k));
+            set.0.insert(Source::Freq);
+            let plan = Self::function(Mode::Noise(k), &set, vec![(Target::NoiseDensity(k), None)]);
+            Self::declare(s, pins, terms, body, &format!("noise:{k}"), &Self::origin_text(&source.origin), &plan);
+            functions.push(plan);
+        }
+    }
+
+    /// One bound function per delay site, for the history the solver keeps.
+    fn delay_functions(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
+        for (k, site) in body.delays().iter().enumerate() {
+            let k = k as u32;
+            // without a `max` the bound is `td` itself (D4)
+            let set = ReadSet::target(body, if site.maximum.is_some() { Query::DelayMaximum(k) } else { Query::DelayTime(k) });
+            let plan = Self::function(Mode::DelayMaximum(k), &set, vec![(Target::DelayMaximum(k), None)]);
+            Self::declare(s, pins, terms, body, &format!("delay{k}.max"), &Self::origin_text(&site.origin), &plan);
+            functions.push(plan);
+        }
+    }
+
+    /// The one function that writes every term, the delay times and the trace records, when the body has any.
+    fn terms_function(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
+        if terms.is_empty() && body.traces().is_empty() {
+            return;
+        }
+        let sets: Vec<ReadSet> = terms.iter().map(|t| Self::term_set(body, *t)).collect();
+        let mut all = ReadSet::default();
+        for set in &sets {
+            all.union(set);
+        }
+        // `terms` also writes the `TIME` of each delay, `min(td, max)`: it reads what `td` and
+        // `max` read, like any other input
+        let times: Vec<ReadSet> = (0..body.delays().len() as u32)
+            .map(|k| {
+                let mut set = ReadSet::target(body, Query::DelayTime(k));
+                set.union(&ReadSet::target(body, Query::DelayMaximum(k)));
+                set
+            })
+            .collect();
+        for set in &times {
+            all.union(set);
+        }
+        // and the record of each trace site, which reads what its fields read
+        let traced: Vec<ReadSet> = (0..body.traces().len() as u32).map(|k| ReadSet::target(body, Query::Trace(k))).collect();
+        for set in &traced {
+            all.union(set);
+        }
+        let mut writes: Vec<(Target, Option<&ReadSet>)> = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
+        writes.extend((0..times.len() as u32).map(|k| (Target::DelayTime(k), None)));
+        writes.extend((0..traced.len() as u32).map(|k| (Target::Trace(k), None)));
+        let mut plan = Self::function(Mode::Terms, &all, writes);
+        plan.affine = terms
+            .iter()
+            .map(|t| match t {
+                Term::Flow(b) => body.is_affine(*b),
+                // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
+                Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
+                Term::Current(_) | Term::DerivativeRate(_) | Term::DelayOutput(_) => true,
+                Term::Charge(_) | Term::DerivativeState(_) | Term::DelayHistory(_) => false,
+            })
+            .chain(std::iter::repeat_n(false, times.len() + traced.len()))
+            .collect();
+        Self::declare(s, pins, terms, body, "terms", &Self::origin_text(body.origin()), &plan);
+        functions.push(plan);
+    }
+
+    /// Adds one `GLOBAL NAMED` pin per session parameter of the body, named the parameter, holding
+    /// the layout [`SESSION_PARAMETER`] (the value, then a `known` byte the solver sets when the host
+    /// gave the parameter): always `OPTIONAL`: a host that gives none leaves the pin unknown, and the
+    /// read is `None` (user decision 2026-11-23: `simparam(name)` is an `Option<f64>`).
+    fn session_parameter_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.session_parameters()
+            .iter()
+            .map(|parameter| {
+                let at = format!("{}:{}:{}", parameter.origin.file, parameter.origin.line, parameter.origin.col);
+                let flags = pin_flag::OPTIONAL;
+                let spec = PinSpec::discrete(&parameter.name, role::GLOBAL, &SESSION_PARAMETER);
+                s.pin(PinSpec { origin: &at, global: global::NAMED, flags, ..spec })
+            })
+            .collect()
     }
 
     /// What term `t` reads.
@@ -701,6 +939,8 @@ impl BodyPlan {
             Term::Current(b) => ReadSet([Source::BranchFlow(b)].into_iter().collect()),
             Term::DerivativeRate(k) => ReadSet([Source::Derivative(k)].into_iter().collect()),
             Term::DerivativeState(k) => ReadSet::target(body, Query::Derivative(k)),
+            Term::DelayOutput(k) => ReadSet([Source::Delay(k)].into_iter().collect()),
+            Term::DelayHistory(k) => ReadSet::target(body, Query::DelayInput(k)),
             Term::Eq(b) => {
                 let mut set = ReadSet::target(body, Query::Flow(b));
                 let branch = &body.branches()[b as usize];
@@ -739,9 +979,17 @@ impl BodyPlan {
     /// Adds `plan` to the shape as function `name`.
     pub(crate) fn declare(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, name: &str, origin: &str, plan: &FunctionPlan) {
         let limits = body.limits().len() as u32;
+        let stims = body.stims().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
-        let reads = plan.reads.iter().map(|r| Self::read(pins, limits, *r)).collect();
+        if let Some(Source::Whole(carrier)) = plan.reads.iter().find(|r| matches!(r, Source::Whole(..))) {
+            panic!(
+                "body {}: function {name} reads array carrier {carrier} whole or at a run-time element, which only a reaction can (abi.md §3); the elaborator refuses it",
+                body.name()
+            )
+        }
+        let reads = plan.reads.iter().map(|r| Self::read(pins, limits, stims, *r)).collect();
+        let elements = Self::elements(&plan.reads);
         let writes = plan
             .writes
             .iter()
@@ -756,6 +1004,7 @@ impl BodyPlan {
                 // abi.md §4.1: an event pin is written through its `CHANGED` byte (nonzero fires it).
                 Target::EventPin(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
                 Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
+                Target::ElementDrive(k) => value(cell::PIN, pins.element_drive(k)),
                 Target::DelayedEventPin(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event), part::CHANGED),
                 Target::Watch(k) => value(cell::WATCH, pins.watches.get(k as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
@@ -765,24 +1014,35 @@ impl BodyPlan {
                 Target::Ttol(k) => value(cell::PIN, pins.ttol(k)),
                 Target::Etol(k) => value(cell::PIN, pins.etol(k)),
                 Target::DerivativeAbstol(k) => value(cell::PIN, pins.derivative_abstol(k)),
+                Target::Trace(k) => value(cell::WATCH, pins.trace(k)),
+                Target::NoiseDensity(k) => at(cell::INPUT, limits + stims + k, part::PSD),
+                Target::DelayTime(k) => at(cell::TERM, terms.iter().position(|x| *x == Term::DelayHistory(k)).unwrap_or(usize::MAX) as u32, part::TIME),
+                Target::DelayMaximum(k) => value(cell::PIN, pins.delay_maximum(k)),
             })
             .collect();
         let partials =
             plan.partials.iter().map(|(w, slot)| Partial { write: *w as u32, to: 0, read: *slot as u32, at: 0 }).collect();
-        s.function(FunctionSpec { name, origin, reads, writes, partials, ..FunctionSpec::default() });
+        s.function(FunctionSpec { name, origin, reads, writes, partials, elements, ..FunctionSpec::default() });
+    }
+
+    /// The `elements` list of `reads` (abi.md §3): one element per read, or empty when no read names one.
+    pub(crate) fn elements(reads: &[Source]) -> Vec<u64> {
+        if reads.iter().all(|r| r.element() == 0) { Vec::new() } else { reads.iter().map(|r| r.element()).collect() }
     }
 
     /// The cell a read names; `limits` is the body's count of `limit` sites (the `STIM` inputs
-    /// follow them).
-    pub(crate) fn read(pins: &Pins, limits: u32, r: Source) -> Cell {
+    /// follow them) and `stims` its count of `ac_stim` sites (the `NOISE` inputs follow those).
+    pub(crate) fn read(pins: &Pins, limits: u32, stims: u32, r: Source) -> Cell {
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
         match r {
             Source::Node(i) => value(cell::PIN, pins.node(i)),
             Source::BranchFlow(b) => value(cell::PIN, pins.branches[b as usize].unwrap_or(GROUND)),
             Source::Derivative(k) => value(cell::PIN, pins.derivative(k)),
+            Source::Delay(k) => value(cell::PIN, pins.delay(k)),
             Source::LimitValue(k) => value(cell::INPUT, k),
             Source::StimValue(k) => value(cell::INPUT, limits + k),
+            Source::NoiseValue(k) => value(cell::INPUT, limits + stims + k),
             Source::Param(i) => value(cell::PIN, i),
             Source::ParamPrevious(i) => at(cell::PIN, i, part::PREVIOUS),
             Source::ParamChanged(i) => at(cell::PIN, i, part::CHANGED),
@@ -803,8 +1063,10 @@ impl BodyPlan {
             Source::Freq => value(cell::AMBIENT, ambient::FREQ),
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
-            Source::Resolution => value(cell::PIN, pins.resolution.unwrap_or(GROUND)),
             Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
+            Source::SessionParameter(k) => value(cell::PIN, pins.session_parameter(k)),
+            Source::Whole(c) => value(cell::PIN, pins.carrier(c)),
+            Source::Element(c, _, part) => at(cell::PIN, pins.carrier(c), part),
         }
     }
 
@@ -842,6 +1104,26 @@ impl BodyPlan {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The tolerances of a branch's private flow unknown, `[potential, flow]` as a node pin's are:
+    /// the smaller of the two ends' natures' `abstol` (§17.1 rules 1 and 2 give a branch unknown
+    /// and its row the nature's flow `abstol`). An end that is ground contributes none; a branch
+    /// between two grounds, or of a nature without `flow`, leaves the slot zero (the session's).
+    fn branch_abstol(body: Body<'_>, branch: &Branch) -> [f64; 2] {
+        let ir = body.ir();
+        let mut abstol = [0.0_f64; 2];
+        for end in [branch.plus, branch.minus] {
+            let Terminal::Node(i) = end else { continue };
+            let nature = ir.nature(body.nodes()[i as usize].nature);
+            let ends = [nature.potential().abstol.get(), nature.flow().map_or(0.0, |q| q.abstol.get())];
+            for (slot, tolerance) in abstol.iter_mut().zip(ends) {
+                if tolerance > 0.0 && (*slot == 0.0 || tolerance < *slot) {
+                    *slot = tolerance;
+                }
+            }
+        }
+        abstol
     }
 
     /// Whether any target of the body reads `temperature()`.
@@ -886,6 +1168,9 @@ impl BodyPlan {
             .chain(n(body.reactions().len()).map(Query::Reaction))
             .chain(Self::bound_steps(body).into_iter().map(Query::BoundStep))
             .chain(n(body.derivatives().len()).flat_map(|k| [Query::Derivative(k), Query::DerivativeAbstol(k)]))
+            .chain(n(body.noise_sources().len()).map(Query::NoiseDensity))
+            .chain(n(body.traces().len()).map(Query::Trace))
+            .chain(n(body.delays().len()).flat_map(|k| [Query::DelayInput(k), Query::DelayTime(k), Query::DelayMaximum(k)]))
             .collect()
     }
 

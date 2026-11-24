@@ -49,7 +49,7 @@ use std::sync::OnceLock;
 
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
-use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp, ValueType};
+use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
 use control::LoopFrame;
 
 /// The index of a branch in its body (`Body::branches`).
@@ -95,6 +95,16 @@ pub enum Target {
     Derivative(u32),
     /// The `abstol` of a derivative site; empty when the site has none.
     DerivativeAbstol(u32),
+    /// The delayed quantity of a delay site (`Body::delays`).
+    DelayInput(u32),
+    /// The delay time of a delay site.
+    DelayTime(u32),
+    /// The `max` of a delay site; empty when the site has none.
+    DelayMaximum(u32),
+    /// The power density of a noise source (`Body::noise_sources`).
+    NoiseDensity(u32),
+    /// Everything a trace site (`Body::traces`) writes: the values of its fields.
+    Trace(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -109,6 +119,12 @@ pub struct Deps {
     pub env: Vec<Env>,
     pub limits: Vec<SiteIndex>,
     pub stims: Vec<SiteIndex>,
+    /// Delay sites whose output (`Expr::Delay`) is read, by index (`Body::delays`).
+    pub delays: Vec<u32>,
+    /// Noise sources whose value (`Expr::Noise`) is read, by index (`Body::noise_sources`).
+    pub noise_sources: Vec<u32>,
+    /// Session parameters read (`Expr::SessionParameter`), by index (`Body::session_parameters`).
+    pub session_parameters: Vec<u32>,
 }
 
 impl<'a> Body<'a> {
@@ -128,6 +144,27 @@ impl<'a> Body<'a> {
     /// sorted, through locals and function calls: the flow part of its dependency set.
     pub fn flow_reads(&self, target: Target) -> Vec<u32> {
         self.sources_of(target).flows.iter().copied().collect()
+    }
+
+    /// The constant elements of array carriers whose value `target` reads (`mem[3]`), as
+    /// `(carrier, element)`, sorted: a run-time index reads the whole carrier (`carrier_reads`).
+    pub fn element_reads(&self, target: Target) -> Vec<(u32, u64)> {
+        self.sources_of(target).elements.iter().copied().collect()
+    }
+
+    /// The constant elements whose previous value `target` reads (`mem[3].prev()`), sorted.
+    pub fn element_previous_reads(&self, target: Target) -> Vec<(u32, u64)> {
+        self.sources_of(target).element_previous.iter().copied().collect()
+    }
+
+    /// The constant elements whose `changed` byte `target` reads (`mem[3].changed()`), sorted.
+    pub fn element_changed_reads(&self, target: Target) -> Vec<(u32, u64)> {
+        self.sources_of(target).element_changed.iter().copied().collect()
+    }
+
+    /// The array carriers whose `changed` byte `target` reads at a run-time element, sorted.
+    pub fn whole_changed_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).whole_changed.iter().copied().collect()
     }
 
     /// The carriers whose previous value (`Expr::Previous`) `target` reads, by index
@@ -164,18 +201,28 @@ impl<'a> Body<'a> {
         self.sources_of(target).derivatives.iter().copied().collect()
     }
 
+    /// The session parameters `target` reads (`Expr::SessionParameter`), by index
+    /// (`Body::session_parameters`), sorted, through locals and function calls.
+    pub fn session_parameter_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).session_parameters.iter().copied().collect()
+    }
+
+    /// The noise sources whose value (`Expr::Noise`) `target` reads, by index
+    /// (`Body::noise_sources`), sorted, through locals and function calls.
+    pub fn noise_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).noises.iter().copied().collect()
+    }
+
+    /// The delay sites whose output (`Expr::Delay`) `target` reads, by index (`Body::delays`),
+    /// sorted, through locals and function calls.
+    pub fn delay_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).delays.iter().copied().collect()
+    }
+
     /// The events whose `fired` byte `target` reads (`Expr::Fired`), by index (`Body::events`),
     /// sorted, through locals and function calls.
     pub fn fired_reads(&self, target: Target) -> Vec<u32> {
         self.sources_of(target).fired.iter().copied().collect()
-    }
-
-    /// Whether `target` takes a decision on a value that may be unknown, through locals and
-    /// function calls: an `if` or a `while` whose condition is `Flagged`, which is also what a
-    /// `match` and a short-circuit operand over such a value lower to (§3.3.3). The commits and records of a
-    /// reaction that does are joined across the paths the decision opens.
-    pub fn decides_on_unknown(&self, target: Target) -> bool {
-        self.sources_of(target).unknown_control
     }
 
     fn sources_of(&self, target: Target) -> &'a Sources {
@@ -197,6 +244,11 @@ impl<'a> Body<'a> {
             Target::Etol(i) => (&deps.etols, i, "event"),
             Target::Derivative(i) => (&deps.derivative_states, i, "derivative site"),
             Target::DerivativeAbstol(i) => (&deps.derivative_abstols, i, "derivative site"),
+            Target::DelayInput(i) => (&deps.delay_inputs, i, "delay site"),
+            Target::DelayTime(i) => (&deps.delay_times, i, "delay site"),
+            Target::DelayMaximum(i) => (&deps.delay_maxima, i, "delay site"),
+            Target::NoiseDensity(i) => (&deps.noise_densities, i, "noise source"),
+            Target::Trace(i) => (&deps.traces, i, "trace site"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -260,6 +312,11 @@ pub(crate) struct BodyDeps {
     etols: Vec<Sources>,
     derivative_states: Vec<Sources>,
     derivative_abstols: Vec<Sources>,
+    delay_inputs: Vec<Sources>,
+    delay_times: Vec<Sources>,
+    delay_maxima: Vec<Sources>,
+    noise_densities: Vec<Sources>,
+    traces: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -276,12 +333,24 @@ struct Sources {
     previous: BTreeSet<u32>,
     /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
     fired: BTreeSet<u32>,
-    /// Whether an `if` with a `Flagged` condition is evaluated (`Body::decides_on_unknown`).
-    unknown_control: bool,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
     derivatives: BTreeSet<u32>,
+    /// The delay sites whose output is read (`Expr::Delay`).
+    delays: BTreeSet<u32>,
+    /// The noise sources whose value is read (`Expr::Noise`).
+    noises: BTreeSet<u32>,
+    /// The session parameters whose value is read (`Expr::SessionParameter`).
+    session_parameters: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
     param_previous: BTreeSet<u32>,
+    /// The constant elements of an array carrier whose value is read (`mem[3]`), as `(carrier, element)`.
+    elements: BTreeSet<(u32, u64)>,
+    /// The constant elements whose previous value is read (`mem[3].prev()`).
+    element_previous: BTreeSet<(u32, u64)>,
+    /// The constant elements whose `changed` byte is read (`mem[3].changed()`).
+    element_changed: BTreeSet<(u32, u64)>,
+    /// The array carriers whose `changed` byte is read at a run-time element (`mem[i].changed()`).
+    whole_changed: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -295,9 +364,15 @@ impl Sources {
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
-        self.unknown_control |= other.unknown_control;
         self.derivatives.extend(&other.derivatives);
+        self.delays.extend(&other.delays);
+        self.noises.extend(&other.noises);
+        self.session_parameters.extend(&other.session_parameters);
         self.param_previous.extend(&other.param_previous);
+        self.elements.extend(&other.elements);
+        self.element_previous.extend(&other.element_previous);
+        self.element_changed.extend(&other.element_changed);
+        self.whole_changed.extend(&other.whole_changed);
     }
 
     fn to_deps(&self) -> Deps {
@@ -307,6 +382,9 @@ impl Sources {
             env: self.env.iter().copied().collect(),
             limits: self.limits.iter().copied().collect(),
             stims: self.stims.iter().copied().collect(),
+            delays: self.delays.iter().copied().collect(),
+            noise_sources: self.noises.iter().copied().collect(),
+            session_parameters: self.session_parameters.iter().copied().collect(),
         }
     }
 }
@@ -389,6 +467,8 @@ enum Task {
     Addend { branch: u32, operator: Operator, at: ExprId },
     /// The step of a `bound_step` site (its value on the stack).
     Cap(u32),
+    /// A field of a trace site (its value on the stack).
+    Trace(u32),
     /// The condition of the `if` `0` is on the value stack: keep it for its arms.
     Hold(ExprId),
     /// The walk enters an arm of the `if` `0`: its condition encloses what the arm contributes.
@@ -439,6 +519,8 @@ struct Walk<'a> {
     reads: Option<Sources>,
     /// The step of each `bound_step` site, grown as sites are met.
     caps: Vec<Sources>,
+    /// What each trace site writes, by site.
+    traces: Vec<Sources>,
     /// The condition of each `if` whose arms are being walked, by the `if`'s expression id.
     held: HashMap<ExprId, Value>,
     /// The conditions of the arms enclosing the statement being walked, outermost first: what a
@@ -469,6 +551,7 @@ impl<'a> Walk<'a> {
             stims: vec![Sources::default(); data.stims.len()],
             reads: None,
             caps: Vec::new(),
+            traces: vec![Sources::default(); data.traces.len()],
             held: HashMap::new(),
             enclosing: Vec::new(),
             frames: Vec::new(),
@@ -519,19 +602,19 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             ttols.push(one(match event.source {
                 EventSource::Cross { ttol, .. } => ttol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             etols.push(one(match event.source {
                 EventSource::Cross { etol, .. } => etol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             guards.push(one(event.guard));
         }
@@ -545,6 +628,10 @@ impl<'a> Walk<'a> {
         };
         let derivative_states: Vec<Sources> = data.derivatives.iter().map(|d| one(Some(d.state))).collect();
         let derivative_abstols: Vec<Sources> = data.derivatives.iter().map(|d| one(d.abstol)).collect();
+        let delay_inputs: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.input))).collect();
+        let delay_times: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.time))).collect();
+        let delay_maxima: Vec<Sources> = data.delays.iter().map(|d| one(d.maximum)).collect();
+        let noise_densities: Vec<Sources> = data.noise_sources.iter().map(|n| one(Some(n.density))).collect();
         let mut reactions = Vec::with_capacity(data.reactions.len());
         for reaction in &data.reactions {
             walk.scopes = vec![Scope::new(owner.clone(), true, reaction.locals.len())];
@@ -586,6 +673,11 @@ impl<'a> Walk<'a> {
             etols,
             derivative_states,
             derivative_abstols,
+            delay_inputs,
+            delay_times,
+            delay_maxima,
+            noise_densities,
+            traces: walk.traces,
         }
     }
 
@@ -674,6 +766,12 @@ impl<'a> Walk<'a> {
                         Operator::Ddt => self.charge[b].join(&value.sources),
                     }
                 }
+                Task::Trace(site) => {
+                    let value = self.pop();
+                    if let Some(slot) = self.traces.get_mut(site as usize) {
+                        slot.join(&value.sources);
+                    }
+                }
                 Task::Cap(site) => {
                     let value = self.pop();
                     if self.caps.len() <= site as usize {
@@ -728,16 +826,27 @@ impl<'a> Walk<'a> {
                     next.push(Task::Addend { branch: *branch, operator: addend.operator, at: addend.value });
                 }
             }
-            Stmt::Commit { value, after, .. } => {
+            Stmt::Commit { value, after, target, .. } => {
                 next.extend([Task::Expr(*value), Task::Discard]);
                 if let Some(after) = after {
                     next.extend([Task::Expr(*after), Task::Discard]);
+                }
+                // the element and the value-array indexes of the target are read too (an element commit at a run-time index)
+                for index in target.iter().flat_map(crate::model::CommitTarget::index_operands) {
+                    next.extend([Task::Expr(index), Task::Discard]);
                 }
             }
             Stmt::Emit { fields, .. } => {
                 for f in fields {
                     if let EmitField::Value { value, .. } = f {
                         next.extend([Task::Expr(*value), Task::Discard]);
+                    }
+                }
+            }
+            Stmt::Trace { site, fields } => {
+                for f in fields {
+                    if let EmitField::Value { value, .. } = f {
+                        next.extend([Task::Expr(*value), Task::Trace(*site)]);
                     }
                 }
             }
@@ -780,7 +889,7 @@ impl<'a> Walk<'a> {
         }
         let in_body = self.scope().in_body;
         match &ir.exprs[id.index()].kind {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => return self.done(id, Value::constant()),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) => return self.done(id, Value::constant()),
             Expr::Local(i) => {
                 let value = match self.scope().locals.get(*i as usize) {
                     Some(Some(value)) => value.clone(),
@@ -852,6 +961,35 @@ impl<'a> Walk<'a> {
                 sources.derivatives.insert(*k);
                 return self.done(id, Value::of(sources, Class::Affine));
             }
+            Expr::Delay(k) => {
+                if !in_body {
+                    self.refuse(id, "delay read outside a body");
+                }
+                // The output of a site is one more unknown of the system, as a flow is: it
+                // reaches a sum affinely.
+                let mut sources = Sources::default();
+                sources.delays.insert(*k);
+                return self.done(id, Value::of(sources, Class::Affine));
+            }
+            Expr::SessionParameter { parameter } => {
+                if !in_body {
+                    self.refuse(id, "session parameter read outside a body");
+                }
+                // constant during an analysis: the sum sees a constant
+                let mut sources = Sources::default();
+                sources.session_parameters.insert(*parameter);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
+            Expr::Noise(k) => {
+                if !in_body {
+                    self.refuse(id, "noise read outside a body");
+                }
+                // The value of a source is an input that no node potential moves: it is a
+                // constant of the sum.
+                let mut sources = Sources::default();
+                sources.noises.insert(*k);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Probe { plus, minus } => {
                 if !in_body {
                     self.refuse(id, "probe outside a body");
@@ -864,9 +1002,8 @@ impl<'a> Walk<'a> {
                 }
                 return self.done(id, Value::of(sources, Class::Affine));
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Task::Expr(*expr)),
-            Expr::KnownOr { value, default } => next.extend([Task::Expr(*value), Task::Expr(*default)]),
-            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
             Expr::LevelCast { expr, .. } => next.push(Task::Expr(*expr)),
             Expr::Unwrap { is, value, .. } => next.extend([Task::Expr(*is), Task::Expr(*value)]),
             Expr::Method { receiver, args, .. } => {
@@ -890,7 +1027,7 @@ impl<'a> Walk<'a> {
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
             // An aggregate is one abstract value: what its parts read (`finish`).
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                 next.extend(ir.exprs[id.index()].kind.operands().into_iter().map(Task::Expr));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
@@ -955,7 +1092,7 @@ impl<'a> Walk<'a> {
                 let l = self.pop();
                 Walk::binary(*op, l, r)
             }
-            Expr::If { cond, .. } => {
+            Expr::If { .. } => {
                 let o = self.pop();
                 let t = self.pop();
                 let c = self.pop();
@@ -963,7 +1100,6 @@ impl<'a> Walk<'a> {
                 let mut sources = c.sources;
                 sources.join(&t.sources);
                 sources.join(&o.sources);
-                sources.unknown_control |= matches!(ir.exprs[cond.index()].ty, ValueType::Flagged(_));
                 Value::of(sources, class)
             }
             Expr::Block { value, .. } => match value {
@@ -983,11 +1119,11 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(1 + args.len());
                 Value::nonlinear(&values)
             }
-            Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::LevelCast { .. } => {
+            Expr::Cast { .. } | Expr::LevelCast { .. } => {
                 let value = self.pop();
                 Value::nonlinear([&value])
             }
-            Expr::KnownOr { .. } | Expr::Unwrap { .. } | Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } => {
+            Expr::Unwrap { .. } | Expr::Same { .. } => {
                 let values = self.pop_n(2);
                 Value::nonlinear(&values)
             }
@@ -995,8 +1131,26 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(1 + args.len());
                 Value::nonlinear(&values)
             }
+            // An element read is a read of its carrier (CV-24) and of what its index reads.
+            Expr::CarrierElement { carrier, index } | Expr::ElementPrevious { carrier, index } | Expr::ElementChanged { carrier, index } => {
+                let values = self.pop_n(1);
+                let mut value = Value::nonlinear(&values);
+                let constant = match ir.exprs[index.index()].kind {
+                    Expr::Int(element) => u64::try_from(element).ok(),
+                    _ => None,
+                };
+                match (&ir.exprs[id.index()].kind, constant) {
+                    (Expr::ElementPrevious { .. }, Some(element)) => value.sources.element_previous.insert((*carrier, element)),
+                    (Expr::ElementPrevious { .. }, None) => value.sources.previous.insert(*carrier),
+                    (Expr::ElementChanged { .. }, Some(element)) => value.sources.element_changed.insert((*carrier, element)),
+                    (Expr::ElementChanged { .. }, None) => value.sources.whole_changed.insert(*carrier),
+                    (_, Some(element)) => value.sources.elements.insert((*carrier, element)),
+                    (_, None) => value.sources.carriers.insert(*carrier),
+                };
+                value
+            }
             // An aggregate and each of its projections read everything its parts read.
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
                 let values = self.pop_n(ir.exprs[id.index()].kind.operands().len());
                 Value::nonlinear(&values)
             }
@@ -1027,7 +1181,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

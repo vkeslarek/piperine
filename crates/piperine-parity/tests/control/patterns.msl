@@ -29,7 +29,7 @@ fn small_sum(limit: u8) -> u8 {
     sum
 }
 
-module Rows(in clk: Bit, out g0: Bit<u8>, out g1: Bit<u8>, out g2: Bit<u8>, out g3: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>, out r2: Bit<u8>, out r3: Bit<u8>, out r4: Bit<u8>, out r5: Bit<u8>, out q0: Bit<u8>, out q1: Bit<u8>, out q2: Bit<u8>, out q3: Bit<u8>, out o0: Bit<u8>, out o1: Bit<u8>, out o2: Bit<u8>, out o3: Bit<u8>, out a0: Bit<u8>, out a1: Bit<u8>, out a2: Bit<u8>, out p0: Bit<u8>, out p1: Bit<u8>, out p2: Bit<u8>, out p3: Bit<u8>, out l0: Bit<u8>, out l1: Bit<u8>, out l2: Bit<u8>, out l3: Bit<u8>, out l4: Bit<u8>, out l5: Bit<u8>, out l6: Bit<u8>, out l7: Bit<u8>, out l8: Bit<u8>, out l9: Bit<u8>, out w0: Bit<u8>, out t0: Bit<u8>, out t1: Bit<u8>) {}
+module Rows(in clk: Bit, out g0: Bit<u8> = 0, out g1: Bit<u8> = 0, out g2: Bit<u8> = 0, out g3: Bit<u8> = 0, out r0: Bit<u8> = 0, out r1: Bit<u8> = 0, out r2: Bit<u8> = 0, out r3: Bit<u8> = 0, out r4: Bit<u8> = 0, out r5: Bit<u8> = 0, out q0: Bit<u8> = 0, out q1: Bit<u8> = 0, out q2: Bit<u8> = 0, out q3: Bit<u8> = 0, out o0: Bit<u8> = 0, out o1: Bit<u8> = 0, out o2: Bit<u8> = 0, out o3: Bit<u8> = 0, out a0: Bit<u8> = 0, out a1: Bit<u8> = 0, out a2: Bit<u8> = 0, out p0: Bit<u8> = 0, out p1: Bit<u8> = 0, out p2: Bit<u8> = 0, out p3: Bit<u8> = 0, out l0: Bit<u8> = 0, out l1: Bit<u8> = 0, out l2: Bit<u8> = 0, out l3: Bit<u8> = 0, out l4: Bit<u8> = 0, out l5: Bit<u8> = 0, out l6: Bit<u8> = 0, out l7: Bit<u8> = 0, out l8: Bit<u8> = 0, out l9: Bit<u8> = 0, out w0: Bit<u8> = 0, out t0: Bit<u8> = 0, out t1: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         g0 <- guard_class(-3); g1 <- guard_class(0); g2 <- guard_class(4); g3 <- guard_class(5);
@@ -54,7 +54,7 @@ digital for Rows {
     }
 }
 
-module OptionRows(in clk: Bit, out s0: Bit<u8>, out s1: Bit<u8>, out s2: Bit<u8>, out s3: Bit<u8>, out s4: Bit<u8>, out s5: Bit<u8>, out s6: Bit<u8>, out s7: Bit<u8>, out s8: Bit<u8>, out s9: Bit<u8>, out s10: Bit<u8>, out s11: Bit<u8>, out s12: Bit<u8>, out s13: Bit<u8>, out m0: Bit<u8>, out m1: Bit<u8>, out m2: Bit<u8>, out m3: Bit<u8>, out m4: Bit<u8>, out m5: Bit<u8>, out m6: Bit<u8>, out m7: Bit<u8>) {}
+module OptionRows(in clk: Bit, out s0: Bit<u8> = 0, out s1: Bit<u8> = 0, out s2: Bit<u8> = 0, out s3: Bit<u8> = 0, out s4: Bit<u8> = 0, out s5: Bit<u8> = 0, out s6: Bit<u8> = 0, out s7: Bit<u8> = 0, out s8: Bit<u8> = 0, out s9: Bit<u8> = 0, out s10: Bit<u8> = 0, out s11: Bit<u8> = 0, out s12: Bit<u8> = 0, out s13: Bit<u8> = 0, out m0: Bit<u8> = 0, out m1: Bit<u8> = 0, out m2: Bit<u8> = 0, out m3: Bit<u8> = 0, out m4: Bit<u8> = 0, out m5: Bit<u8> = 0, out m6: Bit<u8> = 0, out m7: Bit<u8> = 0) {}
 digital for OptionRows {
     on clk.rise() {
         s0 <- option_exact(Some(1)); s1 <- option_exact(Some(3)); s2 <- option_exact(Some(200)); s3 <- option_exact(None); s4 <- option_exact(Some(5));

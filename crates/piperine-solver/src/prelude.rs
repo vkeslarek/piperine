@@ -22,7 +22,7 @@ pub use crate::core::net::{Net, NetKind};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;
-pub use crate::analyses::noise::{NoiseAnalysisOptions, NoiseKind};
+pub use crate::analyses::noise::{FlowOutput, NoiseAnalysisOptions, NoiseKind};
 pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analyses::pz::{PoleZeroOptions, PoleZeroSolver};
@@ -37,6 +37,7 @@ pub use crate::analyses::Context;
 pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 pub use crate::protocol::{StepObserver, StepView};
+pub use piperine_digital_solver::landing::TimePointRule;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
 pub use piperine_analog_solver::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};

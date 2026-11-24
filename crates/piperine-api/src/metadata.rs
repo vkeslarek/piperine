@@ -3,7 +3,7 @@
 //! structural; the top's ports with their direction and type; every record stream with its
 //! fields. The value of a param is the one the run uses (a `set` of the request is applied).
 
-use piperine_ir::{CarrierRole, Constant, Ir, NodeRole};
+use piperine_ir::{CarrierRole, Constant, Ir, NodeRole, ValueType};
 
 use crate::composite::CellShape;
 use crate::params::Params;
@@ -61,17 +61,24 @@ impl Metadata {
             for (i, param) in body.params().iter().enumerate() {
                 let path = format!("{}.{}", instance.path(), param.name);
                 let current = held.get(instance.path(), &param.name);
-                let composite = if param.ty.is_composite() {
+                let composite = if ir.is_composite_value(&param.ty) {
                     CellShape::of(ir, &param.ty).zip(held.composite_bytes(instance.path(), &param.name)).and_then(|(shape, bytes)| shape.decode(bytes).ok())
+                } else if let (ValueType::Enum(_), Some(tag)) = (&param.ty, current) {
+                    // a unit enum param is its tag (PI-02), shown as the variant's name
+                    CellShape::of(ir, &param.ty).and_then(|shape| match &shape {
+                        CellShape::Enum { tag_width, .. } => shape.decode(&(tag as i128).to_le_bytes()[..*tag_width]).ok(),
+                        _ => None,
+                    })
                 } else {
                     None
                 };
-                let value = match (instance.param(i), current) {
-                    _ if composite.is_some() => composite.unwrap_or(Cell::Unknown),
-                    (Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
-                    (Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
-                    (Some(_), Some(now)) => Cell::Real(now),
-                    _ => Cell::Unknown,
+                let value = match (composite, instance.param(i), current) {
+                    (Some(value), _, _) => value,
+                    (None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
+                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(held.exact_integer(instance.path(), &param.name).unwrap_or(now as i128)),
+                    (None, Some(_), Some(now)) => Cell::Real(now),
+                    // a param with no default holds no value until a placement gives it one: the absent cell
+                    (None, _, _) => Cell::Absent,
                 };
                 params.push(ParamInfo {
                     name: param.name.clone(),
@@ -91,7 +98,9 @@ impl Metadata {
         }
         for carrier in body.carriers().iter().filter(|c| c.role != CarrierRole::Signal) {
             let direction = if carrier.role == CarrierRole::In { "in" } else { "out" };
-            declared.push((&carrier.origin, PortInfo { name: carrier.name.clone(), direction, ty: carrier.ty.to_string() }));
+            // a port of an array of carriers shows its length: `[bool; 4]`
+            let ty = carrier.count.map_or_else(|| carrier.ty.to_string(), |count| format!("[{}; {count}]", carrier.ty));
+            declared.push((&carrier.origin, PortInfo { name: carrier.name.clone(), direction, ty }));
         }
         declared.sort_by_key(|(origin, _)| (origin.file.clone(), origin.line, origin.col));
         let ports = declared.into_iter().map(|(_, port)| port).collect();
@@ -103,5 +112,28 @@ impl Metadata {
             }
         }
         Metadata { params, ports, streams }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use piperine_ir::{BodySpec, InstanceSpec, IrBuilder, Origin, Param, ValueType};
+
+    #[test]
+    fn a_param_no_placement_gave_a_value_is_the_absent_cell() {
+        // part VIII: a param with no value shows the absent cell (an empty field, `null` in JSON), never an empty text
+        // standing in for a value; a param that has one shows it
+        let origin = Origin { file: "top.msl".into(), line: 1, col: 1 };
+        let mut b = IrBuilder::new();
+        let param = |name: &str| Param { name: name.into(), ty: ValueType::F64, default: None, check: None, structural: false, origin: origin.clone() };
+        let body = b.body(BodySpec { name: "Top".into(), origin: origin.clone(), params: vec![param("given"), param("missing")], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(piperine_ir::Real::new(2.0))], origin });
+        let ir = b.finish(top);
+        let metadata = Metadata::of(&ir, &Params::of(&ir));
+        let values: Vec<(&str, &Cell)> = metadata.params.iter().map(|p| (p.name.as_str(), &p.value)).collect();
+        assert_eq!(values.len(), 2, "{values:?}");
+        assert!(values.iter().any(|(name, value)| *name == "missing" && **value == Cell::Absent), "{values:?}");
+        assert!(values.iter().all(|(_, value)| **value != Cell::Text(String::new())), "no empty text stands for a value: {values:?}");
     }
 }

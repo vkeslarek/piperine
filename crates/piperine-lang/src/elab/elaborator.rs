@@ -104,6 +104,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) templates: super::templates::Templates,
     /// The IR type each reached struct and enum has (`types.rs`).
     pub(super) type_arena: super::types::TypeArena,
+    /// Every trait and `impl` of the design: what a call through a bound resolves against (`methods.rs`).
+    pub(super) impls: crate::types::ImplTable<'d>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -139,6 +141,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             cycles: CallCycles::default(),
             templates: super::templates::Templates::default(),
             type_arena: super::types::TypeArena::default(),
+            impls: crate::types::ImplTable::new(design),
             diagnostics: Vec::new(),
         }
     }
@@ -169,7 +172,14 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.lower_pending_bodies();
         self.pad_child_nodes();
         let top_instance = self.place_top(top);
+        let reprs = self.lower_hand_written_reprs();
         self.add_functions();
+        self.set_hand_written_reprs(reprs);
+        // the last net: an elaboration that placed no top and said nothing is refused by name, never an empty `Err`
+        if top_instance.is_none() && self.diagnostics.is_empty() {
+            let (file, span) = (self.design.decl_data(top).file, self.design.decl_data(top).span);
+            self.refuse_silent_failure(file, span, "the top module (its elaboration failed without a diagnostic)");
+        }
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);

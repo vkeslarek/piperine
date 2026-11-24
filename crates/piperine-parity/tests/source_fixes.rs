@@ -32,12 +32,9 @@ fn project(file: &str) -> Project {
     Project::new(&path)
 }
 
-/// The 16 bytes of a known `f64` carrier value: the value, then the known byte.
+/// The eight bytes of an `f64` carrier value.
 fn real_bytes(v: f64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
+    v.to_le_bytes().to_vec()
 }
 
 /// What `top` of `file` commits to the carrier `path` in a 10 ns transient: the one change at

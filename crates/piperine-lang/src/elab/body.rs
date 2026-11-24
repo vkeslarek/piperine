@@ -11,6 +11,7 @@ use super::elaborator::Elaboration;
 use super::structural::BodyKey;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId};
+use crate::types::Ty;
 
 /// A param of a module, as placement needs it.
 #[derive(Clone)]
@@ -65,12 +66,24 @@ impl Elaboration<'_, '_> {
                             continue;
                         }
                     },
-                    None => None,
+                    None => self.absent_option(p.ty),
                 };
                 plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
             }
             self.param_plans.insert(*module, plans);
         }
+    }
+
+    /// The default of an `Option` param written with none: `None` (§3.2.10, PI-03 AC 1, explicit-unknowns
+    /// EU-06 AC 1), so an instance that binds nothing reads the absent case. Any other type has no
+    /// default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`), so the param is required.
+    fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
+        let written = self.typed_written(ty)?;
+        if !matches!(written, crate::types::Ty::Option(_)) {
+            return None;
+        }
+        let stored = self.stored_type(&written)?;
+        self.default_constant(&written, &stored)
     }
 
     /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
@@ -83,6 +96,7 @@ impl Elaboration<'_, '_> {
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
         self.body_keys = keys.clone();
+        self.consts.set_frame_params(keys.clone());
         self.index_children(module);
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
@@ -143,13 +157,24 @@ impl Elaboration<'_, '_> {
         let DeclKind::Param(p) = &data.kind else { return None };
         let plan = self.param_plans.get(&module)?.iter().find(|plan| plan.decl == param)?.clone();
         // A param of module type holds its template's number (`templates.rs`).
-        let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_type(data.file, p.ty)? };
+        let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_param_type(data.file, p.ty)? };
         let check = match p.where_ {
             Some(cond) => Some(self.lower_expr(scope, cond)?),
             None => None,
         };
         let structural = self.keys.is_key(module, param);
         Some(Param { name: plan.name, ty, default: plan.default, check, structural, origin: self.locator.decl(param) })
+    }
+
+    /// The type a param of the declared type `ty` holds: one value, an `Option` kept whole as `ValueType::Option`
+    /// (its pin is `{ some, v }`, explicit-unknowns P5), unpacked into its halves where a read needs them.
+    fn lower_param_type(&mut self, file: crate::pom::FileId, ty: crate::pom::TypeId) -> Option<ValueType> {
+        let stored = self.typed_written(ty).and_then(|t| self.stored_type(&t));
+        if stored.is_none() {
+            let span = self.design.type_node(ty).span;
+            self.unsupported(file, span, "a param of a type that has no value in the IR");
+        }
+        stored
     }
 
     /// The values the params a frame's initial values may read take: the body's key params for the body's
@@ -165,16 +190,34 @@ impl Elaboration<'_, '_> {
         bindings
     }
 
+    /// Lowers code of `frame` from here on: `scope` reads its names and the types read its params. The state of the
+    /// frame left comes back with `leave_frame`.
+    pub(super) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
+        let params = self.frame_bindings(frame);
+        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params) }
+    }
+
+    /// Back to the frame `entry` left.
+    pub(super) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
+        scope.frame = entry.outer;
+        self.consts.set_frame_params(entry.params);
+    }
+
     /// The nodes of a module, ports first and then signals, each with its nature and initial value,
     /// added to the structure of the body and named in frame 0. A discrete carrier is not a node
     /// (`carriers.rs`).
     fn lower_nodes(&mut self, module: DeclId) {
         let children = self.design.decl_data(module).children.clone();
-        let node = |c: &DeclId| self.types.carrier(*c).is_none();
+        let node = |c: &DeclId| self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
-            if let Some(terminal) = self.add_node(decl, role, "", 0) {
+            if self.types.node_array(decl).is_some() {
+                if let Some((shape, first)) = self.add_node_array(decl, role, "", 0) {
+                    self.frames[0].nodes.insert(decl, first);
+                    self.frames[0].node_shapes.insert(decl, shape);
+                }
+            } else if let Some(terminal) = self.add_node(decl, role, "", 0) {
                 self.frames[0].nodes.insert(decl, terminal);
             }
         }
@@ -191,12 +234,26 @@ impl Elaboration<'_, '_> {
     fn lower_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
         let data = self.design.decl_data(decl).clone();
         let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
+        self.lower_node_named(decl, role, &name, frame)
+    }
+
+    /// The node `decl` named `name` in the body: one node, or one element of an array of nodes (`carrier_arrays.rs`).
+    pub(super) fn lower_node_named(&mut self, decl: DeclId, role: NodeRole, name: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
+        let data = self.design.decl_data(decl).clone();
+        let name = name.to_string();
         let (ty, init) = match &data.kind {
             DeclKind::Port(p) => (p.ty, None),
             DeclKind::Signal(s) => (s.ty, s.init),
             _ => return None,
         };
-        let nature = self.design.nature_of(ty).and_then(|n| self.nature(n))?;
+        let nature = match self.types.node_array(decl).map(|t| t.innermost().clone()) {
+            Some(Ty::Node(nature)) => self.nature(nature)?,
+            _ => self.design.nature_of(ty).and_then(|n| self.nature(n))?,
+        };
+        let init = match (init, self.types.node_array(decl).is_some()) {
+            (_, true) => None,
+            (init, false) => init,
+        };
         let init = match init {
             Some(expr) => match self.consts.value(expr, &self.frame_bindings(frame)) {
                 Ok(Constant::Real(value)) => Some(value),
@@ -223,4 +280,12 @@ impl Elaboration<'_, '_> {
         let node = BodyNode { name: name.clone(), nature, role, init, origin: origin.clone() };
         Some((node, NodePlan { name, role, nature, init, origin }))
     }
+}
+
+/// The frame a lowering left when it entered another (`Elaboration::enter_frame`).
+pub(super) struct FrameEntry {
+    /// The frame `scope` read before.
+    outer: usize,
+    /// The module params the types read before.
+    params: Bindings,
 }

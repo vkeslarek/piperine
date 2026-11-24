@@ -15,7 +15,6 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Place, S
 
 use super::compound::Pair;
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use crate::msl::Span;
 use crate::pom::{BlockNode, ExprId, ExprKind, PatId, PatKind, Resolution};
@@ -105,8 +104,6 @@ pub(super) struct Prepared {
 
 /// The statements of a loop body being built and the guards the later ones sit under.
 struct LoopBody {
-    /// Where the loop is written.
-    span: Span,
     /// The statements, in order.
     stmts: Vec<LoweredStmt>,
     /// Each `filter` condition and the number of statements before it.
@@ -135,7 +132,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn sequence(&mut self, scope: &Scope, expr: ExprId) -> Option<Sequence> {
         let expr = self.peel_parens(expr);
         let node = self.design.expr_node(expr).clone();
-        if matches!(self.types.ty(expr), Some(Ty::Array(..))) {
+        if matches!(self.typed(expr), Some(Ty::Array(..))) {
             return Some(Sequence { source: Source::Array(expr), adaptors: Vec::new() });
         }
         match &node.kind {
@@ -176,7 +173,7 @@ impl Elaboration<'_, '_> {
 
     /// `let name = <iterator or range>;` binds no value: the name stands for the chain.
     pub(super) fn is_sequence_binding(&self, binding: crate::pom::DeclId) -> bool {
-        matches!(self.types.local(binding), Some(Ty::Iterator { .. } | Ty::Range { .. }))
+        matches!(self.typed_local(binding), Some(Ty::Iterator { .. } | Ty::Range { .. }))
     }
 
     /// Evaluates the source of `sequence` and its adaptors' state into `prelude`: the array and the
@@ -187,7 +184,7 @@ impl Elaboration<'_, '_> {
             Source::Array(array) => {
                 let value = self.lower_expr(scope, *array)?;
                 let ValueType::Array(element, count) = self.type_of(value) else {
-                    self.unsupported(scope.file, self.design.expr_node(*array).span, "an array that may be unknown");
+                    self.unsupported(scope.file, self.design.expr_node(*array).span, "an array that is not an array value");
                     return None;
                 };
                 let local = self.hold(scope, prelude, "array", value);
@@ -196,8 +193,8 @@ impl Elaboration<'_, '_> {
             Source::Range { lo, hi, inclusive } => {
                 let (low, high) = (self.lower_expr(scope, *lo)?, self.lower_expr(scope, *hi)?);
                 let element = self.type_of(low);
-                if self.flags(&[low, high]) == Flag::Flagged || !element.is_integer() {
-                    self.unsupported(scope.file, self.design.expr_node(*lo).span, "a range of values that may be unknown, or of anything but integers");
+                if !element.is_integer() {
+                    self.unsupported(scope.file, self.design.expr_node(*lo).span, "a range of anything but integers");
                     return None;
                 }
                 let (low_local, high_local) = (self.hold(scope, prelude, "low", low), self.hold(scope, prelude, "high", high));
@@ -362,12 +359,8 @@ impl Elaboration<'_, '_> {
         self.read(scope, local, origin)
     }
 
-    /// `value` held in a local of the loop body, refused when it may be unknown.
+    /// `value` held in a local of the loop body.
     fn bind_element(&mut self, scope: &mut Scope, body: &mut LoopBody, what: &str, value: LoweredExpr, origin: &Origin) -> Option<LoweredExpr> {
-        if self.flag(value) == Flag::Flagged {
-            self.unsupported(scope.file, body.span, "an iterator over values that may be unknown");
-            return None;
-        }
         let local = self.hold(scope, &mut body.stmts, what, value);
         Some(self.read(scope, local, origin))
     }
@@ -400,9 +393,7 @@ impl Elaboration<'_, '_> {
         match node.kind {
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding)?;
-                let target = scope.locals[local as usize].ty.clone();
-                let init = self.coerced_to(scope, value, &target);
-                stmts.push(self.stmt(Stmt::Let { local, init }));
+                stmts.push(self.stmt(Stmt::Let { local, init: value }));
                 Some(())
             }
             PatKind::Wild => Some(()),
@@ -463,10 +454,10 @@ impl Elaboration<'_, '_> {
         let prepared = self.prepare(scope, &sequence, &mut stmts, &origin, span)?;
         let counter = self.position_local(scope);
         let j = self.read(scope, counter, &origin);
-        let mut loop_body = LoopBody { span, stmts: Vec::new(), guards: Vec::new() };
+        let mut loop_body = LoopBody { stmts: Vec::new(), guards: Vec::new() };
         let element = self.element(scope, &prepared, prepared.stages.len(), j, &mut loop_body, &origin)?;
         self.bind_pattern(scope, pat, element, &mut loop_body.stmts)?;
-        let user = self.lower_loop_body(scope, body, ValueType::Unit)?;
+        let user = self.lower_loop_body(scope, body)?;
         loop_body.stmts.extend(user);
         let guarded = self.guarded(loop_body, &origin);
         stmts.push(self.position_loop(scope, &prepared, counter, guarded, &origin));
@@ -546,7 +537,7 @@ impl Elaboration<'_, '_> {
         };
         let counter = self.position_local(scope);
         let j = self.read(scope, counter, &origin);
-        let mut body = LoopBody { span, stmts: Vec::new(), guards: Vec::new() };
+        let mut body = LoopBody { stmts: Vec::new(), guards: Vec::new() };
         let element = self.element(scope, &prepared, prepared.stages.len(), j, &mut body, &origin)?;
         let own = Place { local: accumulator, path: Vec::new() };
         match consumer {
@@ -659,7 +650,7 @@ impl Elaboration<'_, '_> {
         let usize_ty = ValueType::UInt(64);
         let array = self.lower_expr(scope, recv)?;
         let ValueType::Array(_, count) = self.type_of(array) else {
-            self.unsupported(scope.file, self.design.expr_node(recv).span, "an array that may be unknown");
+            self.unsupported(scope.file, self.design.expr_node(recv).span, "a value that is not an array");
             return None;
         };
         let literal = |this: &mut Self, value: bool| this.emit(Expr::Bool(value), ValueType::Bool, origin.clone());

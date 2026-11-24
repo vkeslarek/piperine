@@ -1,6 +1,6 @@
 //! `RealLift`: a value of a composite type that holds a real, read from a pin at `f64`, as the
 //! same value at the real of generic code (`R`, `Dual<N>`): each `f64` leaf becomes
-//! `S::constant(leaf)`. An `analog` block is generic over its real, and a composite param is the
+//! `S::constant(leaf)` (`Dual::<N>::constant(leaf)` at a dual). An `analog` block is generic over its real, and a composite param is the
 //! bytes of a pin, which decode at `f64` (CV-18, a read in every block).
 
 use crate::Error;
@@ -27,7 +27,6 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
             ValueType::Unit => "()".to_string(),
             ValueType::UInt(n) => format!("rt::UInt<{n}>"),
             ValueType::Int(n) => format!("rt::Int<{n}>"),
-            ValueType::Flagged(inner) => self.concrete_type(inner),
             ValueType::Fn(..) => "()".to_string(),
             ValueType::Tuple(parts) => {
                 let parts: Vec<String> = parts.iter().map(|part| self.concrete_type(part)).collect();
@@ -49,7 +48,7 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
             return source.to_string();
         }
         match ty {
-            ValueType::F64 => format!("{real}::constant({source})"),
+            ValueType::F64 => format!("{}::constant({source})", real.replacen('<', "::<", 1)),
             ValueType::Tuple(parts) => {
                 let items: Vec<String> = parts.iter().enumerate().map(|(k, part)| self.expr(part, &format!("tuple{depth}_.{k}"), real, depth + 1)).collect();
                 let tail = if items.len() == 1 { format!("({},)", items[0]) } else { format!("({})", items.join(", ")) };
@@ -60,7 +59,7 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
                 format!("({source}).map(|element{depth}_| {inner})")
             }
             ValueType::Struct(_) | ValueType::Enum(_) => format!("({source}).lift::<{real}>()"),
-            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) | ValueType::Flagged(_) => source.to_string(),
+            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) => source.to_string(),
         }
     }
 
@@ -72,7 +71,7 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
             format!("/// MSL `{}` at the real `S`: each `f64` leaf is `S::constant(leaf)`.", data.path),
             "#[allow(dead_code)]".to_string(),
             format!("impl {name}<f64> {{"),
-            format!("    pub fn lift<S: Real>(self) -> {name}<S> {{"),
+            format!("    pub fn lift<S: rt::Real>(self) -> {name}<S> {{"),
         ];
         match &data.kind {
             TypeKind::Struct { form, fields } => {

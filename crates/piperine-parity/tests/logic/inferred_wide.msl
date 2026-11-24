@@ -1,0 +1,13 @@
+//! A `logic` pattern of 70 characters infers a `Logic<70>`, which has two integer planes wider than 64 bits: the one
+//! `P0001` naming the type and the width (`GAPS.md` L13), as for a written `Logic<70>`.
+
+module Bench() {
+    signal clk: Bit;
+    signal t: Bit = false;
+}
+digital for Bench {
+    on clk.rise() {
+        let a = logic("1111111111111111111111111111111111111111111111111111111111111111111111");
+        t <- a.is_high();
+    }
+}

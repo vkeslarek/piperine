@@ -199,14 +199,14 @@ fn parent_clocked(bound: bool, init: Option<bool>) -> Ir {
         ..Buck::spec("Top", "top.msl", 1)
     });
     let init = init.map(Constant::Bool);
-    b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: at() });
+    b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: at(), count: None });
     // the ports of `Dff` are clk, d, q: clk and d on the signal, q on a net of the top
     let bindings = if bound { vec![Some(0), Some(0), None] } else { vec![None, None, None] };
     b.bind_child_carriers(top_body, 0, bindings);
     let changed = b.event(top_body, Event { source: EventSource::Changed(0), guard: None, origin: at() });
     let mut x = digital::Dx::new(&mut b, "top.msl", 6, 40);
     let clk = x.carrier(0, ValueType::Bool);
-    let toggled = x.un(UnaryOp::Not, clk, digital::Ty::flagged(ValueType::Bool));
+    let toggled = x.un(UnaryOp::Not, clk, ValueType::Bool);
     let half = x.real(2.5e-9);
     let commit = x.commit(0, toggled, Some(half));
     b.reaction(top_body, Reaction { on: vec![changed], stmts: vec![commit], locals: vec![], origin: at() });
@@ -265,6 +265,6 @@ fn a_net_starts_at_its_own_init() {
     };
     assert_eq!(clk_at_start(Some(false)), LOW, "the net's init, false");
     assert_eq!(clk_at_start(Some(true)), HIGH, "the net's init, true");
-    // with no init the net holds no value at (0, 0): all zero, unknown (abi.md P3)
-    assert_eq!(clk_at_start(None), [0, 0]);
+    // with no init the net holds its zero bytes at (0, 0) (abi.md P3)
+    assert_eq!(clk_at_start(None), [0]);
 }

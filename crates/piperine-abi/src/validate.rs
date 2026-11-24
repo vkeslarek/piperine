@@ -9,7 +9,7 @@ use std::fmt;
 
 use crate::layout::{F64, layout_eq, leaf_size};
 use crate::raw::{
-    Cell, DEFAULT, Function, GROUND, Layout, Pin, Reaction, Shape, Str, ambient, cell, field_flag, fn_flag, global,
+    Cell, List, WHOLE, DEFAULT, Function, GROUND, Layout, Pin, Reaction, Shape, Str, ambient, cell, fn_flag, global,
     input, kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
 };
 
@@ -60,11 +60,18 @@ pub enum Rule {
     CheckNotBool,
     /// `PREVIOUS` or `CHANGED` of a `QUIET` pin read by a reaction (P7).
     QuietChangeRead,
+    /// An array pin (`count >= 1`) that is not `DISCRETE` (§3.1, arrays of carriers).
+    ArrayNotDiscrete,
+    /// An array pin's `init` that is neither one element nor `count` elements long (§3.1).
+    ArrayInitLength,
+    /// A read element at or past its pin's `count`, `WHOLE` on a pin that is no array or in a function, or an
+    /// `elements` list of another length than `reads` (§3, arrays of carriers).
+    ElementOutOfRange,
 }
 
 impl Rule {
     /// Every rule, in the order of the spec's list.
-    pub const ALL: [Rule; 20] = [
+    pub const ALL: [Rule; 23] = [
         Rule::UnknownConstant,
         Rule::IndexOutOfRange,
         Rule::KindRole,
@@ -85,6 +92,9 @@ impl Rule {
         Rule::ContinuousNotF64,
         Rule::CheckNotBool,
         Rule::QuietChangeRead,
+        Rule::ArrayNotDiscrete,
+        Rule::ArrayInitLength,
+        Rule::ElementOutOfRange,
     ];
 
     fn sentence(self) -> &'static str {
@@ -111,6 +121,9 @@ impl Rule {
             Rule::ContinuousNotF64 => "a continuous pin whose layout is not one F64",
             Rule::CheckNotBool => "a check that is not a discrete BOOL pin",
             Rule::QuietChangeRead => "PREVIOUS or CHANGED of a QUIET pin read by a reaction",
+            Rule::ArrayNotDiscrete => "an array pin that is not DISCRETE",
+            Rule::ArrayInitLength => "an array pin's init that is neither one element nor count elements",
+            Rule::ElementOutOfRange => "a read element past its pin's count, or a misplaced WHOLE read",
         }
     }
 }
@@ -147,6 +160,8 @@ pub(crate) enum CellBytes<'s> {
     Byte,
     I64,
     Layout(&'s Layout<'s>),
+    /// A `WHOLE` read of an array pin: the cell holds an `ArrayView`.
+    View,
 }
 
 impl CellBytes<'_> {
@@ -154,7 +169,7 @@ impl CellBytes<'_> {
     fn f64_at(self, at: u32) -> bool {
         match self {
             CellBytes::F64 => at == 0,
-            CellBytes::Byte | CellBytes::I64 => false,
+            CellBytes::Byte | CellBytes::I64 | CellBytes::View => false,
             CellBytes::Layout(l) => l.fields.iter().any(|f| {
                 f.leaf == leaf::F64 && at >= f.offset && (at - f.offset).is_multiple_of(8) && (at - f.offset) / 8 < f.count
             }),
@@ -185,6 +200,14 @@ impl Entry<'_> {
             origin: self.origin.as_str().to_string(),
             detail,
         }
+    }
+
+    /// An `elements` list is empty or has one entry per read.
+    fn check_elements(&self, reads: usize, elements: List<u64>) -> Result<(), ShapeError> {
+        if elements.len() != 0 && elements.len() != reads {
+            return Err(self.fail(Rule::ElementOutOfRange, format!("{} elements for {reads} reads", elements.len())));
+        }
+        Ok(())
     }
 }
 
@@ -354,6 +377,22 @@ fn check_pin(shape: &Shape, pin: &Pin) -> Result<(), ShapeError> {
     if pin.kind == kind::CONTINUOUS && !layout_eq(&pin.layout, &F64) {
         return Err(e.fail(Rule::ContinuousNotF64, format!("layout of {} bytes", pin.layout.size)));
     }
+    if pin.count > 0 {
+        if pin.kind != kind::DISCRETE {
+            return Err(e.fail(Rule::ArrayNotDiscrete, format!("count {} on kind {}", pin.count, pin.kind)));
+        }
+        let element = pin.layout.size as u64;
+        let init = pin.init.len as u64;
+        if pin.flags & pin_flag::HAS_INIT != 0
+            && init != element
+            && Some(init) != element.checked_mul(pin.count)
+        {
+            return Err(e.fail(
+                Rule::ArrayInitLength,
+                format!("init of {init} bytes for {} elements of {element} bytes", pin.count),
+            ));
+        }
+    }
     if pin.flags & pin_flag::HAS_CHECK != 0 {
         let Some(check) = shape.pins.get(pin.check as usize) else {
             return Err(e.fail(Rule::IndexOutOfRange, format!("check = {}", pin.check)));
@@ -371,12 +410,8 @@ fn check_layout(e: &Entry<'_>, layout: &Layout) -> Result<(), ShapeError> {
         let Some(width) = leaf_size(f.leaf) else {
             return Err(e.fail(Rule::UnknownConstant, format!("field {} leaf {}", f.name.as_str(), f.leaf)));
         };
-        if !known_bits(f.flags, field_flag::HAS_KNOWN) {
-            return Err(e.fail(Rule::UnknownConstant, format!("field {} flags {:#x}", f.name.as_str(), f.flags)));
-        }
         let end = f.offset as u64 + width as u64 * f.count as u64;
-        let known_end = f.known as u64 + f.count as u64;
-        if end > layout.size as u64 || (f.flags & field_flag::HAS_KNOWN != 0 && known_end > layout.size as u64) {
+        if end > layout.size as u64 {
             return Err(e.fail(
                 Rule::IndexOutOfRange,
                 format!("field {} lies past the layout's {} bytes", f.name.as_str(), layout.size),
@@ -390,6 +425,7 @@ fn check_layout(e: &Entry<'_>, layout: &Layout) -> Result<(), ShapeError> {
 pub(crate) fn cell_bytes<'s>(
     shape: &'s Shape,
     c: &Cell,
+    element: u64,
     access: Access,
 ) -> Result<CellBytes<'s>, (Rule, String)> {
     if !known(c.kind, CELLS) {
@@ -404,6 +440,19 @@ pub(crate) fn cell_bytes<'s>(
     match c.kind {
         cell::PIN => {
             let Some(pin) = shape.pins.get(c.index as usize) else { return out_of_range() };
+            if element != 0 {
+                let array = pin.kind == kind::DISCRETE && pin.count > 0;
+                let in_range = element == WHOLE && access == Access::ReactionRead || element < pin.count;
+                if !(array && in_range && read) {
+                    return Err((
+                        Rule::ElementOutOfRange,
+                        format!("element {element} of pin {} of {} elements", pin.name.as_str(), pin.count),
+                    ));
+                }
+                if element == WHOLE {
+                    return Ok(CellBytes::View);
+                }
+            }
             match (pin.kind, c.part, read) {
                 (kind::CONTINUOUS, part::VALUE, true) => Ok(CellBytes::F64),
                 (kind::DISCRETE, part::VALUE, _) | (kind::DISCRETE, part::PREVIOUS, true) => {
@@ -475,13 +524,14 @@ fn check_function(shape: &Shape, f: &Function) -> Result<(), ShapeError> {
     if !known_bits(f.flags, fn_flag::OWNS_CORRECTION) {
         return Err(e.fail(Rule::UnknownConstant, format!("flags {:#x}", f.flags)));
     }
+    e.check_elements(f.reads.len(), f.elements)?;
     let mut reads = Vec::with_capacity(f.reads.len());
-    for c in f.reads.iter() {
-        reads.push(cell_bytes(shape, c, Access::FunctionRead).map_err(|(rule, d)| e.fail(rule, d))?);
+    for (i, c) in f.reads.iter().enumerate() {
+        reads.push(cell_bytes(shape, c, f.elements.get(i).copied().unwrap_or(0), Access::FunctionRead).map_err(|(rule, d)| e.fail(rule, d))?);
     }
     let mut writes = Vec::with_capacity(f.writes.len());
     for c in f.writes.iter() {
-        writes.push(cell_bytes(shape, c, Access::FunctionWrite).map_err(|(rule, d)| e.fail(rule, d))?);
+        writes.push(cell_bytes(shape, c, 0, Access::FunctionWrite).map_err(|(rule, d)| e.fail(rule, d))?);
     }
     for (i, p) in f.partials.iter().enumerate() {
         let (Some(w), Some(r)) = (writes.get(p.write as usize), reads.get(p.read as usize)) else {
@@ -563,8 +613,9 @@ fn check_reaction(shape: &Shape, r: &Reaction) -> Result<(), ShapeError> {
             return Err(e.fail(Rule::ReactionOnNonEvent, format!("on pin {}", pin.name.as_str())));
         }
     }
-    for c in r.reads.iter() {
-        cell_bytes(shape, c, Access::ReactionRead).map_err(|(rule, d)| e.fail(rule, d))?;
+    e.check_elements(r.reads.len(), r.elements)?;
+    for (i, c) in r.reads.iter().enumerate() {
+        cell_bytes(shape, c, r.elements.get(i).copied().unwrap_or(0), Access::ReactionRead).map_err(|(rule, d)| e.fail(rule, d))?;
         let quiet = shape.pins.get(c.index as usize).is_some_and(|p| p.flags & (pin_flag::QUIET | pin_flag::RECORD) != 0);
         if c.kind == cell::PIN && quiet && (c.part == part::PREVIOUS || c.part == part::CHANGED) {
             return Err(e.fail(Rule::QuietChangeRead, format!("reads part {} of quiet pin {}", c.part, c.index)));
@@ -625,12 +676,12 @@ fn check_lists(shape: &Shape) -> Result<(), ShapeError> {
         }
     }
     for f in shape.functions.iter() {
-        if !(f.reads.is_readable() && f.writes.is_readable() && f.partials.is_readable()) {
+        if !(f.reads.is_readable() && f.writes.is_readable() && f.partials.is_readable() && f.elements.is_readable()) {
             return Err(unreadable(format!("function {}", f.name.as_str()), &f.origin, "reads, writes or partials"));
         }
     }
     for r in shape.reactions.iter() {
-        if !(r.on.is_readable() && r.reads.is_readable() && r.writes.is_readable()) {
+        if !(r.on.is_readable() && r.reads.is_readable() && r.writes.is_readable() && r.elements.is_readable()) {
             return Err(unreadable(format!("reaction {}", r.name.as_str()), &r.origin, "on, reads or writes"));
         }
     }

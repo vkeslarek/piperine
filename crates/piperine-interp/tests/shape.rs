@@ -397,7 +397,7 @@ fn a_where_declares_a_check_pin_and_function() {
     assert_eq!(r.flags & pin_flag::HAS_CHECK, pin_flag::HAS_CHECK);
     assert_eq!(r.check, 3, "the param's check is the check pin");
     let check = resistor.pins.get(3).copied().unwrap();
-    assert_eq!((check.kind, check.role, check.layout.size), (kind::DISCRETE, role::PRIVATE, 2), "a private BIT");
+    assert_eq!((check.kind, check.role, check.layout.size), (kind::DISCRETE, role::PRIVATE, 1), "a private BIT");
     // `check:r` reads the param alone and writes the check pin
     let (reads, writes, partials) = view.function("check:r");
     assert_eq!(reads, [Cells::pin(0)]);
@@ -414,12 +414,12 @@ fn a_where_declares_a_check_pin_and_function() {
         assert_eq!(reads, [Cells::pin(diode.pin_index(p))]);
         assert_eq!(writes, [Cells::pin(diode.pin_index(&format!("check:{p}")))]);
     }
-    // the function writes the bit: r > 0 is known true, r <= 0 known false
+    // the function writes the bit: r > 0 is true, r <= 0 false
     let h = m.instance("Resistor");
     let k = Check::index(&m);
-    for (r, want) in [(1000.0, [1u8, 1]), (-1.0, [0, 1]), (0.0, [0, 1])] {
+    for (r, want) in [(1000.0, [1u8]), (-1.0, [0]), (0.0, [0])] {
         let bytes = Check::bytes(r);
-        let mut out = [0u8; 2];
+        let mut out = [0u8; 1];
         h.eval(k, &[&bytes[..]], &mut [&mut out[..]], &[], &mut []).expect("check");
         assert_eq!(out, want, "r = {r}");
     }

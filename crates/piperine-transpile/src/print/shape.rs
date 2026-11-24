@@ -7,9 +7,9 @@
 
 use std::collections::BTreeSet;
 
-use piperine_abi::layout::{BIT, BYTE, F64, NONE, REAL, layout_eq};
+use piperine_abi::layout::{BIT, BYTE, F64, NONE, layout_eq};
 use piperine_abi::raw::{
-    Cell, DEFAULT, Field, GROUND, Layout, Partial, Shape, Statement, ambient, cell, field_flag, fn_flag, global, input,
+    Cell, DEFAULT, Field, GROUND, Layout, Partial, Shape, Statement, ambient, cell, fn_flag, global, input,
     kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
 };
 
@@ -53,7 +53,6 @@ const LEAVES: &[Named] = &[
     ("F32", leaf::F32),
     ("F64", leaf::F64),
 ];
-const FIELD_FLAGS: &[Named] = &[("HAS_KNOWN", field_flag::HAS_KNOWN)];
 const OPS: &[Named] = &[("FLOW", op::FLOW), ("DDT", op::DDT), ("DELAY", op::DELAY)];
 const INPUTS: &[Named] = &[("LIMIT", input::LIMIT), ("NOISE", input::NOISE), ("STIM", input::STIM)];
 const WATCHES: &[Named] = &[("VAR", watch::VAR), ("CROSS", watch::CROSS), ("CAP", watch::CAP), ("TRACE", watch::TRACE)];
@@ -162,6 +161,7 @@ impl ShapePrinter {
                 self.cells(t, shape, "writes", &writes);
                 let partials: Vec<Partial> = f.partials.iter().copied().collect();
                 self.partials(t, shape, &reads, &writes, &partials);
+                Self::elements(t, &f.elements.iter().copied().collect::<Vec<u64>>());
                 t.line("..FunctionSpec::default()");
             });
             t.line("});");
@@ -182,6 +182,7 @@ impl ShapePrinter {
                 self.cells(t, shape, "reads", &reads);
                 let statements: Vec<Statement> = r.writes.iter().copied().collect();
                 self.statements(t, shape, &statements);
+                Self::elements(t, &r.elements.iter().copied().collect::<Vec<u64>>());
                 t.line("..ReactionSpec::default()");
             });
             t.line("});");
@@ -190,6 +191,16 @@ impl ShapePrinter {
         let mut text = t.finish();
         text.pop();
         text
+    }
+
+    /// The `elements:` field of a function or reaction: one element per read (`u64::MAX` is a `WHOLE` read), omitted
+    /// when no read names an element.
+    fn elements(t: &mut Text, elements: &[u64]) {
+        if elements.is_empty() {
+            return;
+        }
+        let each: Vec<String> = elements.iter().map(|e| if *e == u64::MAX { "piperine_abi::raw::WHOLE".to_string() } else { e.to_string() }).collect();
+        t.line(&format!("elements: vec![{}],", each.join(", ")));
     }
 
     /// The arguments of `s.pin(…)`: the base constructor of the pin's kind, with every field
@@ -230,6 +241,9 @@ impl ShapePrinter {
         if p.check != 0 {
             fields.push(format!("check: {}", p.check));
         }
+        if p.count != 0 {
+            fields.push(format!("count: {}", p.count));
+        }
         if p.abstol.iter().any(|a| a.to_bits() != 0) {
             fields.push(format!("abstol: [{}, {}]", Text::real(p.abstol[0]), Text::real(p.abstol[1])));
         }
@@ -241,7 +255,7 @@ impl ShapePrinter {
         let same = |s: &Layout<'_>| {
             layout_eq(l, s) && l.fields.iter().zip(s.fields.iter()).all(|(a, b)| a.name.as_str() == b.name.as_str())
         };
-        [("F64", &F64), ("BIT", &BIT), ("REAL", &REAL), ("BYTE", &BYTE), ("NONE", &NONE)]
+        [("F64", &F64), ("BIT", &BIT), ("BYTE", &BYTE), ("NONE", &NONE)]
             .into_iter()
             .find_map(|(name, s)| same(s).then_some(name))
     }
@@ -252,7 +266,6 @@ impl ShapePrinter {
             self.uses.insert(match name {
                 "F64" => "piperine_abi::layout::F64",
                 "BIT" => "piperine_abi::layout::BIT",
-                "REAL" => "piperine_abi::layout::REAL",
                 "BYTE" => "piperine_abi::layout::BYTE",
                 _ => "piperine_abi::layout::NONE",
             });
@@ -267,13 +280,11 @@ impl ShapePrinter {
 
     fn field(&mut self, f: &Field<'_>) -> String {
         format!(
-            "Field {{ name: Str::from_static({:?}), leaf: {}, offset: {}, count: {}, flags: {}, known: {} }}",
+            "Field {{ name: Str::from_static({:?}), leaf: {}, offset: {}, count: {} }}",
             f.name.as_str(),
             self.named("leaf", LEAVES, f.leaf),
             f.offset,
             f.count,
-            self.flags("field_flag", FIELD_FLAGS, f.flags),
-            f.known,
         )
     }
 
@@ -337,7 +348,6 @@ impl ShapePrinter {
             "global" => "piperine_abi::raw::global",
             "pin_flag" => "piperine_abi::raw::pin_flag",
             "leaf" => "piperine_abi::raw::leaf",
-            "field_flag" => "piperine_abi::raw::field_flag",
             "op" => "piperine_abi::raw::op",
             "input" => "piperine_abi::raw::input",
             "watch" => "piperine_abi::raw::watch",
@@ -443,7 +453,7 @@ impl ShapePrinter {
 mod tests {
     use piperine_abi::layout::{BIT, F64};
     use piperine_abi::raw::{
-        Cell, DEFAULT, Field, Layout, List, Shape, Statement, Str, cell, field_flag, leaf, part, role, statement_flag, watch,
+        Cell, DEFAULT, Field, Layout, List, Shape, Statement, Str, cell, leaf, part, role, statement_flag, watch,
     };
     use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
     use piperine_ir::IrBuilder;
@@ -507,8 +517,8 @@ mod tests {
 
         // a shape with what M1 shapes lack: an event pin, a custom layout, a watch, a reaction
         let u9_fields =
-            [Field { name: Str::from_static("v"), leaf: leaf::U16, offset: 0, count: 1, flags: field_flag::HAS_KNOWN, known: 2 }];
-        let u9 = Layout { size: 4, align: 2, fields: List::from_slice(&u9_fields) };
+            [Field { name: Str::from_static("v"), leaf: leaf::U16, offset: 0, count: 1 }];
+        let u9 = Layout { size: 2, align: 2, fields: List::from_slice(&u9_fields) };
         let mut s = ShapeBuf::new();
         let clk = s.pin(PinSpec { origin: "dff.msl:1:20", ..PinSpec::discrete("clk", role::PORT, &BIT) });
         s.pin(PinSpec { origin: "dff.msl:2:5", ..PinSpec::discrete("count", role::PRIVATE, &u9) });
@@ -520,7 +530,7 @@ mod tests {
             origin: "dff.msl:4:5",
             on: vec![ev],
             reads: vec![Cell { kind: cell::PIN, index: x, part: part::VALUE }],
-            writes: vec![Statement { pin: clk, offset: 0, len: 2, flags: statement_flag::LATER, min_after: 1e-9 }],
+            writes: vec![Statement { pin: clk, offset: 0, len: 1, flags: statement_flag::LATER, min_after: 1e-9 }],
             ..ReactionSpec::default()
         });
         let frozen = s.freeze();
@@ -528,6 +538,6 @@ mod tests {
         let text = ShapePrinter::new().prototype(frozen.shape());
         assert!(text.contains("PinSpec::event(\"event:0\", role::PRIVATE)"), "{text}");
         assert!(text.contains("flags: statement_flag::LATER, min_after: 1e-9"), "{text}");
-        assert!(text.contains("leaf: leaf::U16, offset: 0, count: 1, flags: field_flag::HAS_KNOWN, known: 2"), "{text}");
+        assert!(text.contains("leaf: leaf::U16, offset: 0, count: 1 }"), "{text}");
     }
 }

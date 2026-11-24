@@ -49,7 +49,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
         // 0 is the value it already holds, so it commits nothing visible
         let changes = transient(&seen, &format!("AdcBench.code{i}"));
         let wanted: Vec<(i64, Vec<u8>)> =
-            if code == 0 { vec![] } else { vec![(sample + 500 * NS, vec![code.to_le_bytes()[0], code.to_le_bytes()[1], 1, 0])] };
+            if code == 0 { vec![] } else { vec![(sample + 500 * NS, code.to_le_bytes().to_vec())] };
         assert_eq!(changes, wanted, "code of {v} V");
         // `done` is true from `tconv` for `tstrobe` (5 ns)
         assert_eq!(

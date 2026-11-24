@@ -32,12 +32,11 @@ module FatalBench() {
     let f = Fataler(a, k);
 }
 
-/// `finish` written with a false field at 1 ns, and a `sim` record whose `finish` is unknown:
-/// neither ends the run.
+/// `finish` written with a false field at 1 ns and again at 2 ns: neither ends the run.
 module Idle(a: Electrical, out k: Bit<f64> = 0.0) {}
 digital for Idle {
     on at(1n) { emit!("sim", finish = false); }
-    on at(2n) { let u: bool = Unknown; emit!("sim", finish = u); }
+    on at(2n) { emit!("sim", finish = false); }
     on at(3n) { k <- 9.0; }
 }
 

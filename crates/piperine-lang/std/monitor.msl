@@ -50,7 +50,7 @@ pub module Hold<T: Repr>(in clk: Bit, in d: Bit<T>) {
 }
 
 digital<T> for Hold<T> {
-    on d.changed() && clk && d.prev().is_known() {
+    on d.changed() && clk {
         require("hold", !clk.changed() && high_for >= th);
     }
 }
@@ -66,9 +66,9 @@ digital for MinPulse {
     }
 }
 
-pub module inertial<T: Repr>(in x: Bit<T>, tpd: f64) -> T {
+pub module inertial<T: Repr + Default>(in x: Bit<T>, tpd: f64) -> T {
     signal y: Bit<T>;
-    signal seen: Bit<f64>;
+    signal seen: Bit<f64> = 0.0;
     y
 }
 
@@ -89,9 +89,9 @@ pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
     toff: f64 = 300p;
     y = inertial(
         if oe {
-            Logic::strong(d)
+            Drive::strong(d)
         } else {
-            Logic::Z
+            Drive::Z
         },
         if oe {
             ton

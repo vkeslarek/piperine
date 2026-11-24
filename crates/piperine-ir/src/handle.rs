@@ -3,8 +3,9 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, TypeKind, ValueType, AggregateData,
+    CarrierWindow, EmptyArray, NodeArray,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, TraceSite, PartialDerivative, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
@@ -27,10 +28,13 @@ impl Ir {
 
     /// The scalar a pin holds for a value of `ty`: an enum whose variants have no fields is its tag
     /// (§2 rule 5), `UInt<tag_levels>`, so carried bytes are the tag's; any other type is itself.
-    /// A flag is the pin's known byte, not part of the type.
     pub fn carried(&self, ty: &ValueType) -> ValueType {
         match ty {
-            ValueType::Flagged(inner) => self.carried(inner),
+            // an enum whose `Repr` the author wrote is its levels word (GN-05)
+            ValueType::Enum(id) if matches!(self.types[id.index()].repr, ReprForm::HandWritten { width, .. } if width <= 64) => match self.types[id.index()].repr {
+                ReprForm::HandWritten { width, .. } => ValueType::UInt(width),
+                ReprForm::Derived => ty.clone(),
+            },
             ValueType::Enum(id) => match &self.types[id.index()].kind {
                 TypeKind::Enum { tag_levels, variants } if *tag_levels > 0 && variants.iter().all(|v| v.fields.is_empty()) => ValueType::UInt(*tag_levels),
                 _ => ty.clone(),
@@ -43,7 +47,6 @@ impl Ir {
     /// `(u8, bool)`, `Option<u8>`. A type the source cannot write is spelt as `Display` spells it.
     pub fn written(&self, ty: &ValueType) -> String {
         match ty {
-            ValueType::Flagged(inner) => self.written(inner),
             ValueType::Tuple(parts) => {
                 let parts: Vec<String> = parts.iter().map(|part| self.written(part)).collect();
                 if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) }
@@ -52,6 +55,15 @@ impl Ir {
             ValueType::Option(inner) => format!("Option<{}>", self.written(inner)),
             ValueType::Struct(id) | ValueType::Enum(id) => self.types[id.index()].name.clone(),
             other => other.to_string(),
+        }
+    }
+
+    /// Whether a value of `ty` is a whole of parts a param or a pin holds as bytes: a tuple, an array, a struct, an `Option`
+    /// or an enum some variant of which has fields. A unit enum is its tag and is not one (PI-02).
+    pub fn is_composite_value(&self, ty: &ValueType) -> bool {
+        match ty {
+            ValueType::Enum(id) => matches!(&self.types[id.index()].kind, TypeKind::Enum { variants, .. } if variants.iter().any(|variant| !variant.fields.is_empty())),
+            other => other.is_composite(),
         }
     }
 
@@ -296,6 +308,53 @@ impl<'a> Body<'a> {
         &self.data().derivatives
     }
 
+    /// The delay sites, by index (`Expr::Delay`).
+    pub fn delays(&self) -> &'a [DelaySite] {
+        &self.data().delays
+    }
+
+    /// The noise sources, by index (`Expr::Noise`).
+    pub fn noise_sources(&self) -> &'a [NoiseSource] {
+        &self.data().noise_sources
+    }
+
+    /// The session parameters the body reads, by index (`Expr::SessionParameter`).
+    pub fn session_parameters(&self) -> &'a [SessionParameter] {
+        &self.data().session_parameters
+    }
+
+    /// The `ddx` calls the elaborator differentiated, by index.
+    pub fn partial_derivatives(&self) -> &'a [PartialDerivative] {
+        &self.data().partial_derivatives
+    }
+
+    /// The text fields of trace site `site`, as `(name, text)`, in source order: what the site's
+    /// `emit!` wrote that never crosses the ABI. Empty for a site the body does not have.
+    pub fn trace_texts(&self, site: u32) -> Vec<(&'a str, &'a str)> {
+        let ir = self.ir;
+        let analog = self.data().analog.as_deref().unwrap_or(&[]);
+        Statements::of(ir, analog)
+            .into_iter()
+            .find_map(|id| match ir.stmt(id) {
+                Stmt::Trace { site: s, fields } if *s == site => Some(
+                    fields
+                        .iter()
+                        .filter_map(|f| match f {
+                            EmitField::Text { name, text } => Some((name.as_str(), text.as_str())),
+                            EmitField::Value { .. } => None,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The trace sites, by index (`Stmt::Trace`).
+    pub fn traces(&self) -> &'a [TraceSite] {
+        &self.data().traces
+    }
+
     /// The authored placements, in source order.
     pub fn children(&self) -> &'a [Child] {
         &self.data().children
@@ -326,6 +385,22 @@ impl<'a> Body<'a> {
     /// The discrete carriers, ports first, then signals.
     pub fn carriers(&self) -> &'a [Carrier] {
         &self.data().carriers
+    }
+
+    /// The arrays declared with no element: no carrier and no node stand for them.
+    pub fn empty_arrays(&self) -> &'a [EmptyArray] {
+        &self.data().empty_arrays
+    }
+
+    /// The arrays of nodes: each names consecutive entries of the body's nodes.
+    pub fn node_arrays(&self) -> &'a [NodeArray] {
+        &self.data().node_arrays
+    }
+
+    /// The part of an array of carriers each carrier port of child `child` is given, parallel to the child's carrier
+    /// bindings; empty for a child with none, or out of range.
+    pub fn child_windows(&self, child: usize) -> &'a [Option<CarrierWindow>] {
+        self.data().child_windows.get(child).map_or(&[], Vec::as_slice)
     }
 
     /// The definitions of carriers, in source order.
@@ -453,6 +528,11 @@ impl<'a> Function<'a> {
 
     pub fn body(&self) -> ExprId {
         self.data().body
+    }
+
+    /// The generic item this function instantiates, `None` for a function as written.
+    pub fn instance(&self) -> Option<&'a GenericInstance> {
+        self.data().instance.as_ref()
     }
 }
 

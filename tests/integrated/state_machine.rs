@@ -165,11 +165,11 @@ impl Timeline {
     fn of(ran: &CompletedRun) -> Timeline {
         let enabled = PrintedColumn::integers(&ran.table, "en");
         let over = PrintedColumn::integers(&ran.table, "ov");
-        let read = |rows: &[(f64, Option<i128>)], row: usize, name: &str| rows[row].1.unwrap_or_else(|| panic!("`{name}` is unknown at row {row}")) == 1;
+        let read = |rows: &[(f64, i128)], row: usize| rows[row].1 == 1;
         let mut machine = PhaseMachine::new();
         let mut after_edge = Vec::new();
         for edge in 1..=Timeline::EDGES {
-            machine.step(read(&enabled, edge - 1, "en"), read(&over, edge - 1, "ov"));
+            machine.step(read(&enabled, edge - 1), read(&over, edge - 1));
             after_edge.push(machine);
         }
         Timeline { after_edge }
@@ -246,10 +246,10 @@ impl Printed {
     }
 
     /// The value of each row of `name`: the declaration index of the variant an enum column prints, the
-    /// integer or the 0 or 1 of any other; an unknown row panics.
+    /// integer or the 0 or 1 of any other.
     fn column(ran: &CompletedRun, name: &str) -> Vec<i128> {
         if !["phase", "fault"].contains(&name) {
-            return PrintedColumn::integers(&ran.table, name).into_iter().enumerate().map(|(row, (_, value))| value.unwrap_or_else(|| panic!("`{name}` is unknown at row {row}"))).collect();
+            return PrintedColumn::integers(&ran.table, name).into_iter().map(|(_, value)| value).collect();
         }
         let column = NamedColumn::find(&ran.table, name);
         ran.table

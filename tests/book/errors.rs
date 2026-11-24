@@ -41,7 +41,7 @@ impl AmbiguousPackage {
 
 /// The bench the Book asks for: a module without ports that places the faulty sample-and-hold,
 /// "because checking starts from a top and works its way down".
-const SAMPLE_HOLD_BENCH: &str = "module Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    signal c: Bit;\n    let h = SampleHold(a, b, c);\n}\n";
+const SAMPLE_HOLD_BENCH: &str = "module Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    signal c: Bit = false;\n    let h = SampleHold(a, b, c);\n}\n";
 
 #[test]
 fn a_refusal_that_runs_fails_naming_its_row() {
@@ -58,12 +58,11 @@ fn a_refusal_that_runs_fails_naming_its_row() {
 fn the_worked_sample_hold_is_refused_with_its_three_codes() {
     // errors#3: the Book's faulty sample-and-hold, placed in a bench, "has three mistakes that
     // elaboration finds": E0310 on `clk: Bit`, E0210 on `= 0`, E0430 on `on clk`, sorted by position. The
-    // earlier front end adds a fourth, E0150 for the direct read `+> held` (S8), which the Book's text does
-    // not have: it is left out of the comparison
+    // direct read `+> held` is no error (part I section 3.3.6), so the run gives these three and no other
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "errors#3");
-    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).filter(|code| *code != "E0150").collect();
+    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
     assert_eq!(codes, ["E0310", "E0210", "E0430"], "the three mistakes, top to bottom: {given:?}");
     Refusal::expect(model.run(Faulty::operating_point_of("Top")), "errors#3", "E0310", "a port of a discrete nature takes `in` or `out` (§8.1.5)");
 }
@@ -100,7 +99,7 @@ fn the_ambiguous_name_diagnostic_has_the_parts_the_book_shows() {
 
 /// A fixed model of the worked example: the three lines the Book gives, with a source on `vin` so the
 /// operating point has a solution.
-const SAMPLE_HOLD_FIXED: &str = "module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) {\n    signal held: Bit<f64> = 0.0;\n}\ndigital for SampleHold {\n    on clk.rise() { held <- v(vin); }\n}\nanalog for SampleHold {\n    v(vout) +> held.known_or(0.0);\n}\nmodule Source(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    signal c: Bit;\n    let s = Source(a, gnd);\n    let h = SampleHold(a, b, c);\n}\n";
+const SAMPLE_HOLD_FIXED: &str = "module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) {\n    signal held: Bit<f64> = 0.0;\n}\ndigital for SampleHold {\n    on clk.rise() { held <- v(vin); }\n}\nanalog for SampleHold {\n    v(vout) +> held;\n}\nmodule Source(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    signal c: Bit = false;\n    let s = Source(a, gnd);\n    let h = SampleHold(a, b, c);\n}\n";
 
 impl Chapter {
     /// The diagnostics the worked example gives, with the source they point into.
@@ -125,19 +124,17 @@ fn e0430_is_found_on_the_head_of_the_worked_example_s_reaction() {
 }
 
 #[test]
-fn e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example() {
-    // errors~4cc71bd2: "E0150 on `+> held`: `analog` reads a digital carrier without saying what
-    // unknown means": the label sits on `held`, and the message says what the read lacks
+fn the_read_of_the_carrier_in_the_worked_example_is_no_error() {
+    // errors~4cc71bd2 (the former E0150 row, "on `+> held`: `analog` reads a digital carrier without saying what
+    // unknown means"): the read is the value, so the worked example's `held` is pointed at by no diagnostic
     let worked = Chapter::read().worked_example("errors~4cc71bd2");
-    assert_eq!(worked.pointed_at("E0150"), "held");
-    assert!(worked.first("E0150").message.contains("other than through `known`, `known_or`, `is_known` or `high`"), "{}", worked.first("E0150").message);
+    assert!(worked.given.iter().all(|reported| reported.code != "E0150"), "no E0150: {:?}", worked.given.iter().map(|reported| &reported.code).collect::<Vec<_>>());
 }
 
 #[test]
 fn the_three_fixes_make_the_worked_example_elaborate() {
     // errors~2db98d22: "Fix the three lines and the same command prints one `ok` line and exits with
-    // 0": `in clk`, `= 0.0` and `on clk.rise()` leave no diagnostic (the model carries the gate the earlier front end
-    // still asks for on `+> held`, S8) and the operating
+    // 0": `in clk`, `= 0.0` and `on clk.rise()` leave no diagnostic and the operating
     // point runs (the `ok` line and the exit status are the binary's, `piperine-cli/commands`)
     let ran = Model::written("sample_hold.msl", SAMPLE_HOLD_FIXED).run(Faulty::operating_point_of("Top"));
     let table = ran.unwrap_or_else(|failure| panic!("the fixed example is refused: {failure}")).table;
@@ -145,27 +142,17 @@ fn the_three_fixes_make_the_worked_example_elaborate() {
 }
 
 #[test]
-fn without_an_initial_value_the_output_sits_at_zero_volts() {
-    // errors~2b0048e8 ("Try it"): declare `held` without `= 0.0`; it still compiles and `vout` sits at
-    // 0 V before the first clock edge: `held` is unknown and `known_or(0.0)` said what unknown means
-    let source = SAMPLE_HOLD_FIXED.replace("signal held: Bit<f64> = 0.0;", "signal held: Bit<f64>;");
-    assert_ne!(source, SAMPLE_HOLD_FIXED, "the initial value is gone");
-    let ran = Model::written("sample_hold.msl", &source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
-    let row = ran.table.rows.iter().position(|row| row[0] == piperine::Cell::Text("Top.b".to_string())).expect("the table has `vout`");
-    assert_eq!(ran.real(row, "value"), 0.0, "vout sits at 0 V");
-}
-
-#[test]
-fn a_reaction_on_a_changed_unknown_emits_the_inputs() {
-    // errors~473f7809: "A reaction on `q.changed() && !q.is_known()` that emits the inputs of `q`":
-    // `sum` becomes unknown when `b` is, and the reaction emits `a = 3` and `b` unknown
-    let source = "module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, out sum: Bit<u8> = 0) {}\ndigital for Adder {\n    on clk.rise() { sum <- a + b; }\n    on sum.changed() && !sum.is_known() { emit!(\"lost\", a = a, b = b); }\n}\nmodule Top(in b: Bit<u8>) {\n    signal clk: Bit = false;\n    signal sum: Bit<u8>;\n    let add = Adder(clk, 3, b, sum);\n}\ndigital for Top { on at(1u) { clk <- true; } }\n";
+fn a_reaction_on_a_changed_carrier_emits_the_inputs() {
+    // errors~4a35ef2c: "A reaction on `q.changed()` that emits the inputs of `q`": `sum` changes at the
+    // start (its first value) and at the clock edge, and each record names `a` and `b`, the inputs of the sum
+    let source = "module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, out sum: Bit<u8> = 0) {}\ndigital for Adder {\n    on clk.rise() { sum <- a + b; }\n    on sum.changed() { emit!(\"lost\", a = a, b = b); }\n}\nmodule Top() {\n    signal clk: Bit = false;\n    signal sum: Bit<u8>;\n    signal b: Bit<u8> = 4;\n    let add = Adder(clk, 3, b, sum);\n}\ndigital for Top { on at(1u) { clk <- true; } }\n";
     let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
     let ran = Model::written("adder.msl", source).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     let lost = ran.stream("lost");
-    assert_eq!(lost.len(), 1, "one record: {:?}", ran.records);
-    assert_eq!(lost[0].fields, [("a".to_string(), piperine::Field::Int(3)), ("b".to_string(), piperine::Field::Unknown)]);
-    assert!((lost[0].time - 1e-6).abs() < 1e-12, "at the clock edge: {}", lost[0].time);
+    assert_eq!(lost.len(), 2, "one record at the start and one at the edge: {:?}", ran.records);
+    assert!(lost[0].time.abs() < 1e-12, "the first value is the first change: {}", lost[0].time);
+    assert_eq!(lost[1].fields, [("a".to_string(), piperine::Field::Int(3)), ("b".to_string(), piperine::Field::Int(4))]);
+    assert!((lost[1].time - 1e-6).abs() < 1e-12, "at the clock edge: {}", lost[1].time);
 }
 
 #[test]
@@ -218,10 +205,11 @@ fn e0143_is_a_default_in_a_signature_or_an_overload() {
 }
 
 #[test]
-fn e0150_is_an_analog_read_of_a_digital_carrier() {
-    // errors~39a9371d: "E0150: `analog` reads a digital carrier without `known_or` / `high()`"
+fn an_analog_read_of_a_digital_carrier_is_no_error() {
+    // errors~39a9371d (the former E0150 row): `analog` reads a digital carrier without `known_or` or `high()`, and
+    // the worked example's read of `held` is not reported
     let worked = Chapter::read().worked_example("errors~39a9371d");
-    assert!(worked.first("E0150").message.contains("an `analog` block reads the discrete carrier `held`"), "{}", worked.first("E0150").message);
+    assert!(worked.given.iter().all(|reported| reported.code != "E0150"), "no E0150: {:?}", worked.given.iter().map(|reported| &reported.code).collect::<Vec<_>>());
 }
 
 #[test]
@@ -450,7 +438,7 @@ fn e0504_is_a_step_after_a_digital_change_that_does_not_converge() {
     // simulation~17c534dc "... a Newton failure there ends the run with E0508, or with E0504 when the step
     // is the one right after a digital change, which then names the carrier that changed" (the E0508 half
     // is the test of that code, below)
-    let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical, in go: Bit) {{ }}\nanalog for Chatter {{ i(p, n) +> if go.high() {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; signal go: Bit = false; let r1 = R(n, gnd); let c = Chatter(n, gnd, go); }}\ndigital for Top {{ on at(5e-7) {{ go <- true; }} }}\n");
+    let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical, in go: Bit) {{ }}\nanalog for Chatter {{ i(p, n) +> if go {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; signal go: Bit = false; let r1 = R(n, gnd); let c = Chatter(n, gnd, go); }}\ndigital for Top {{ on at(5e-7) {{ go <- true; }} }}\n");
     let faulty = Faulty::running("errors~5c44ed1d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0504");
     assert!(run.message.contains("it reads the delivery of Top.go") && run.message.contains("at t = 5.0000000"), "{}", run.message);
@@ -495,14 +483,14 @@ fn e0210_is_found_on_the_initial_value_of_the_worked_example() {
 }
 
 #[test]
-fn e0187_is_not_raised_for_a_signal_with_no_first_value_yet() {
+fn e0187_names_the_signal_and_default_when_a_real_has_no_first_value() {
     // errors~39ba3a1d (the E0187 row of the codes table) and errors~385c354c ("Try it": declare `held` without
-    // any first value; which error do you expect? E0187, naming `held` and `Default`): both `unraised` (S8).
-    // The earlier front end starts such a signal unknown, so the model still compiles and `vout` sits at 0 V
-    // before the first edge; the test fails when E0187 is raised
+    // any first value; which error do you expect? E0187, naming `held` and `Default`): a real number has no
+    // default value, so the first value must be written
     let source = SAMPLE_HOLD_FIXED.replace("signal held: Bit<f64> = 0.0;", "signal held: Bit<f64>;");
     assert_ne!(source, SAMPLE_HOLD_FIXED, "the initial value is gone");
-    let ran = Model::written("sample_hold.msl", &source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
-    let row = ran.table.rows.iter().position(|row| row[0] == piperine::Cell::Text("Top.b".to_string())).expect("the table has `vout`");
-    assert_eq!(ran.real(row, "value"), 0.0, "vout sits at 0 V");
+    let given = Refusal::reported_by(Model::written("sample_hold.msl", &source).run(Faulty::operating_point_of("Top")), "errors~385c354c");
+    assert_eq!(given.len(), 1, "{} diagnostics", given.len());
+    assert_eq!(given[0].code, "E0187");
+    assert!(given[0].message.starts_with("`held` has no initial value and its type `f64` does not implement `Default`"), "{}", given[0].message);
 }

@@ -654,7 +654,7 @@ fn walk_block(design: &Design, block: &crate::pom::body::BlockNode, out: &mut Ve
 }
 
 fn walk_expr(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {
-    crate::stack::deep(|| walk_expr_inner(design, id, out))
+    crate::stack::Stack::deep(|| walk_expr_inner(design, id, out))
 }
 
 fn walk_expr_inner(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {

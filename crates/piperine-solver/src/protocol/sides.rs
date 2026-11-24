@@ -18,16 +18,39 @@ pub struct Boundary {
     pub bytes: Vec<u8>,
 }
 
+/// Why the discrete side stopped before an instant: the protocol's own copy of the sub-solver's
+/// cause, so the seam names no type of either sub-solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LandingCause {
+    /// A carrier the analog side reads changed at a microstep of the instant.
+    AnalogReadChanged,
+    /// A firing reaction reads a continuous pin itself.
+    ContinuousRead,
+    /// A firing reaction is flagged by the static reach analysis only.
+    DeclaredReach,
+    /// A firing reaction is `IRREVERSIBLE` (R6).
+    Irreversible,
+    /// A host waiter's event fired (R7).
+    HostWaiter,
+}
+
+impl LandingCause {
+    /// Whether the instant is a time point of §17.2 rule 2: false for `Irreversible` and
+    /// `HostWaiter`, which land the step without making the instant a time point.
+    pub fn is_time_point(&self) -> bool {
+        !matches!(self, LandingCause::Irreversible | LandingCause::HostWaiter)
+    }
+}
+
 /// How far `DiscreteSide::advance` got (abi.md §5 step 2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Advance {
     /// Every due instant strictly before the target ran; none was a landing.
     Reached,
-    /// The first instant at `tick` must be a landing: R4 makes it a time point
-    /// (`time_point = true`) or it fires an `IRREVERSIBLE` reaction, a host
-    /// waiter included (`time_point = false`). That instant is untouched (the
+    /// The first instant at `tick` must be a landing, for `cause`: R4 makes it a time point, or
+    /// it fires an `IRREVERSIBLE` reaction, a host waiter included. That instant is untouched (the
     /// side restored its sub-checkpoint `c_s`); every instant before it ran.
-    Landing { tick: Tick, time_point: bool },
+    Landing { tick: Tick, cause: LandingCause },
     /// A reaction at `tick` returned `FINISH`: the step lands there and the
     /// analysis ends after that instant, which is a time point. As for
     /// `Landing`, the instant itself is untouched.
@@ -74,6 +97,17 @@ pub struct Outcome {
     /// solve that arrives at the next time point reads them (§15 S2). Not yet applied on the
     /// discrete side, so no `boundary` entry repeats them.
     pub settle_boundary: Vec<Boundary>,
+}
+
+impl Outcome {
+    /// Joins the outcome `settled` of the settle phase run after the instant's rounds: what the
+    /// phase changed and finished is added, and the settle commits it reports are the ones held.
+    pub(super) fn absorb_settle(&mut self, settled: Outcome) {
+        self.boundary.extend(settled.boundary);
+        self.host_param_write |= settled.host_param_write;
+        self.finish |= settled.finish;
+        self.settle_boundary = settled.settle_boundary;
+    }
 }
 
 /// The discrete side's answer to a host write checked on a shadow (abi.md P6).
@@ -126,6 +160,22 @@ pub struct Accepted {
     pub samples: Vec<f64>,
 }
 
+/// A new origin of the clock the owner and the analog side share: the owner counts ticks from the
+/// `epoch` it keeps and passes every time to the analog side as seconds since it. Past 2^52 ticks
+/// (about 4.5 s at 1 fs) an `f64` second can no longer tell neighbouring ticks apart, so the
+/// owner moves the origin forward to the accepted tick and the times it passes stay small (the
+/// analog side keeps its own times, sums of controller steps, small the same way).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Origin {
+    /// How far the origin moved, in seconds.
+    pub moved: f64,
+    /// The time of the new origin since the start of the run, for what reads absolute time (a
+    /// device's `$abstime`, a recorded step).
+    pub time: f64,
+    /// The stop time, in seconds since the new origin.
+    pub stop: f64,
+}
+
 /// The analysis an observation belongs to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AnalysisKind {
@@ -160,10 +210,6 @@ pub enum ObservationKind {
     Record { site: Option<(u32, u32)>, bytes: Vec<u8> },
     /// A `TRACE` watch written in Newton iteration `iteration`.
     Trace { iteration: u32, bytes: Vec<u8> },
-    /// A relaxation step that still moved after its last pass (spec §8.2.3 step 4, abi.md §9 D1):
-    /// the moving levels were made unknown. One per step; `nets` names every `RELAX` net of the
-    /// step in name order, and the observation's path is the first of them.
-    Unsettled { nets: Vec<String> },
 }
 
 /// The discrete sub-solver as the owner drives it.
@@ -179,6 +225,20 @@ pub trait DiscreteSide {
     fn advance(&mut self, to: Tick) -> Result<Advance>;
     /// Commits a firing of event pin `net` due at microstep 0 of `at` (C6).
     fn fire(&mut self, net: u32, at: Tick) -> Result<()>;
+    /// Reopens the instant `at` that `run_instant` just ran to its end, so the next `run_instant(at)`
+    /// and a `fire` made before it continue its microstep numbering: at the microstep after its last
+    /// one (`next_microstep`) or at its last one (the settle phase after the rounds, §19 Resolution).
+    /// A side that does not number its microsteps does nothing.
+    fn reopen(&mut self, _at: Tick, _next_microstep: bool) {}
+    /// Whether the instant `at` would do nothing: no commit is due at it, none of its instants is
+    /// suspended, no function waits to run and no reaction listens to `settle`. The owner then
+    /// skips it (`pass_instant`) when no crossing fired there. A side that cannot tell answers
+    /// `false`, which runs every instant.
+    fn is_idle_at(&self, _at: Tick) -> bool {
+        false
+    }
+    /// Moves the side's clock to `at` in place of an instant `is_idle_at` found idle.
+    fn pass_instant(&mut self, _at: Tick) {}
     /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
     /// the accepted continuous values reactions read; `limit` bounds each
     /// reaction's `HORIZON` (R5): `limit.crossing` for one a `CROSS` watch can
@@ -214,6 +274,25 @@ pub trait DiscreteSide {
     fn net(&self, _id: u32) -> Option<&[u8]> {
         None
     }
+    /// A discrete net's bytes as the host prints them: [`net`](DiscreteSide::net), or for an array net the bytes of
+    /// every element one after another (an element never committed is its initial value), built per call.
+    fn net_bytes(&self, id: u32) -> Option<std::borrow::Cow<'_, [u8]>> {
+        self.net(id).map(std::borrow::Cow::Borrowed)
+    }
+}
+
+/// What bounded the step the analog side last proposed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProposalBound {
+    /// The step controller's own choice.
+    #[default]
+    Controller,
+    /// The step was cut to the analog side's `max_step`.
+    MaxStep,
+    /// The step was cut to a `bound_step` cap.
+    Cap,
+    /// The step was cut to the stop time.
+    Stop,
 }
 
 /// The analog sub-solver as the owner drives it.
@@ -228,19 +307,29 @@ pub trait AnalogSide {
     /// The next step's end (step control, `CAP` watches), at most `stop`. `next_due` is the next
     /// scheduled time point in seconds (the discrete side's next queued commit), when there is one.
     fn propose(&mut self, now: f64, stop: f64, next_due: Option<f64>) -> f64;
+    /// What bounded the step the last `propose` returned.
+    fn proposal_bound(&self) -> ProposalBound {
+        ProposalBound::Controller
+    }
     /// Updates the analog copy of discrete values after the accepted solution
     /// at the instant that changed them; `restart` says how the next step starts.
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart);
     /// Solves a step to `to` on the current copy of discrete values (the left
-    /// value at a scheduled instant); `exempt` skips the truncation test (a
-    /// step that lands on a scheduled instant, as at a breakpoint).
-    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt>;
+    /// value at a scheduled instant); `landing` says the step ends exactly on
+    /// `to` (a scheduled instant, as at a breakpoint) and not on this side's own proposal.
+    fn attempt(&mut self, to: f64, landing: bool) -> Result<Attempt>;
     /// Accepts the last converged attempt.
     fn accept(&mut self) -> Result<Accepted>;
     /// Solves the equilibrium (`STATIC = 1`) and evaluates watches there.
     fn equilibrium(&mut self) -> Result<Accepted>;
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
+    /// Takes back the last `accept` and puts the side back as `mark` found it, so the same step
+    /// can be attempted again after a delivery (§15.2 rule 4). A side whose `accept` keeps nothing
+    /// beyond what `restore` undoes needs no more than the default.
+    fn retake(&mut self, mark: &Self::Mark) {
+        self.restore(mark);
+    }
     /// Moves the trace records of the attempts since the last drain into `out`.
     fn drain_traces(&mut self, out: &mut Vec<Observation>);
     /// The solution as it stands, indexed as `AnalogReference::idx` (empty: the side does not
@@ -248,6 +337,10 @@ pub trait AnalogSide {
     fn solution(&self) -> &[f64] {
         &[]
     }
+    /// Moves the origin of the side's clock: every time it holds, and every time it is given from
+    /// now on, is seconds since `origin`. Called between steps and only past 2^52 ticks, so no run
+    /// shorter than that sees it. A side that keeps no clock needs nothing.
+    fn rebase(&mut self, _origin: Origin) {}
     /// The time of the last accepted step as the side keeps it (`None`: it keeps none, and the
     /// owner's own time of the step stands). The two differ in the last bit, since the owner's
     /// is a whole number of ticks and the side's is a sum of its steps.

@@ -39,7 +39,7 @@ across files. Appendices are lettered A–H; their items are cited as `A.2`, `B.
 | --- | --- |
 | `§8.2.3` | rule 3 of subsection 8.2 |
 | `§11 rule 3` | rule 3 of a top-level section; `§11.3` would name a subsection |
-| `§15 step 3.4`, `§16 step 2` | a step of the procedure of §15 or §16 |
+| `§15 step 3.3`, `§16 step 2` | a step of the procedure of §15 or §16 |
 | `§15 T2`, `§15 I3`, `§15 S1`, `§16 O2`, `§16 H4`, `§17.2 A3` | an item of a lettered list of [Part V](part_v_execution.md): ticks, invariants, settle commit, operating point, held nodes, advance |
 | `§22.2.12 rule 1` | a rule of a standard-library entry |
 | `A.2 rule 3`, `B.3.3 item 4` | a rule or item of an appendix |

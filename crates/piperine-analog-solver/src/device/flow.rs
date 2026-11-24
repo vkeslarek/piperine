@@ -7,42 +7,84 @@
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
 
-use super::assembly::InstanceState;
-use super::plan::TermPlan;
+use piperine_abi::raw::input;
 
-/// A term at the iterate: its value and its partials against continuous
-/// pins, one entry per declared partial (zeros included, so the positions
-/// are the same in every solve).
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Linear {
+use super::assembly::InstanceState;
+use super::plan::{InstancePlan, TermPlan};
+
+/// A term at the iterate: its value, and a view over its partials against continuous pins (one
+/// per declared partial, zeros included, so the positions are the same in every solve). The
+/// partials are read from the writer's last call when asked for, so a term costs no allocation.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Linear<'a> {
     pub v: f64,
-    pub cols: Vec<(AnalogReference, f64)>,
+    /// The plan and state the partials are read from; `None` for a term nothing writes.
+    source: Option<Source<'a>>,
+    /// The factor every partial is scaled by (1 unless the term is a `DELAY`'s).
+    weight: f64,
 }
 
-impl Linear {
+/// Where a [`Linear`]'s partials live.
+#[derive(Clone, Copy, Debug)]
+struct Source<'a> {
+    term: &'a TermPlan,
+    instance: &'a InstancePlan,
+    state: &'a InstanceState,
+}
+
+impl<'a> Linear<'a> {
+    /// A term with no value: no partials.
+    pub fn none() -> Self {
+        Self { v: 0.0, source: None, weight: 1.0 }
+    }
+
+    /// Term `term` of `instance` with value `v`, its partials read from `state`.
+    pub fn of(v: f64, term: &'a TermPlan, instance: &'a InstancePlan, state: &'a InstanceState) -> Self {
+        Self { v, source: Some(Source { term, instance, state }), weight: 1.0 }
+    }
+
+    /// This term with value `v` and every partial multiplied by `weight`.
+    pub fn scaled(&self, v: f64, weight: f64) -> Self {
+        Self { v, source: self.source, weight: self.weight * weight }
+    }
+
+    /// The partials as `(column, g)`: the direct ones in declaration order, then, for each
+    /// limit the value reads, the limit's own partials against the unknowns scaled by the
+    /// value's partial against the limit.
+    pub fn cols(&self) -> impl Iterator<Item = (&'a AnalogReference, f64)> + use<'a> {
+        let weight = self.weight;
+        self.source.into_iter().flat_map(move |Source { term, instance, state }| {
+            let (writer, _) = term.value.expect("a term with a source has a writer");
+            let jac = &state.fns[writer].jac;
+            let direct = term.direct.iter().map(move |(p, column)| (column, weight * jac[*p]));
+            let through = term.via.iter().flat_map(move |(p, input)| {
+                let x = &instance.inputs[*input];
+                let proposer = x.proposed.filter(|_| x.kind == input::LIMIT);
+                proposer.into_iter().flat_map(move |(proposer, _)| {
+                    let g = jac[*p];
+                    x.p.iter().map(move |(pp, column)| (column, weight * (g * state.fns[proposer].jac[*pp])))
+                })
+            });
+            direct.chain(through)
+        })
+    }
+
     /// `Σ g_j·x_j` over the iterate. `piperine-interp`'s affine rule (INT-12) writes a linear row as `c + this fold`; its test `an_affine_term_is_constant_plus_folded_products` fails if the fold order changes.
     pub fn dot(&self, x: &[f64]) -> f64 {
-        self.cols.iter().fold(0.0, |s, (c, g)| s + g * x[c.idx().expect("a column is an unknown")])
+        self.cols().fold(0.0, |s, (c, g)| s + g * x[c.idx().expect("a column is an unknown")])
     }
-}
-
-/// Term `t`'s value and direct partials from the last call of its writer.
-pub(crate) fn direct(t: &TermPlan, st: &InstanceState) -> Linear {
-    let Some((fi, w)) = t.value else { return Linear::default() };
-    let f = &st.fns[fi];
-    Linear { v: f.f64(w), cols: t.direct.iter().map(|(p, c)| (c.clone(), f.jac[*p])).collect() }
 }
 
 /// Adds `weight·g_j` at (`plus`, `j`) and its negative at (`minus`, `j`),
 /// and `rhs` to the right side of `plus` and its negative to `minus`.
 pub(crate) fn stamp_rows(
     t: &TermPlan,
-    lin: &Linear,
+    lin: &Linear<'_>,
     weight: f64,
     rhs: f64,
     out: &mut Vec<Stamp<AnalogReference, f64>>,
 ) {
-    for (c, g) in &lin.cols {
+    for (c, g) in lin.cols() {
         let g = weight * g;
         if let Some(p) = &t.plus {
             out.push(Stamp::Matrix(p.clone(), c.clone(), g));
@@ -60,6 +102,6 @@ pub(crate) fn stamp_rows(
 }
 
 /// The Norton stamps of a `FLOW` term at iterate `x`.
-pub(crate) fn stamp_flow(t: &TermPlan, lin: &Linear, x: &[f64], out: &mut Vec<Stamp<AnalogReference, f64>>) {
+pub(crate) fn stamp_flow(t: &TermPlan, lin: &Linear<'_>, x: &[f64], out: &mut Vec<Stamp<AnalogReference, f64>>) {
     stamp_rows(t, lin, 1.0, -(lin.v - lin.dot(x)), out);
 }

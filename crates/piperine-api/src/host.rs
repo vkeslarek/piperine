@@ -89,6 +89,9 @@ impl Session {
         let param = target.param.clone();
         param.refuse_structural(self.ir())?;
         self.ready_for(at, &action)?;
+        if target.leaf.is_none() {
+            self.params.refuse_unfit(&param.instance, &param.param, value)?;
+        }
         if let Some(leaf) = &target.leaf {
             // a leaf of a composite param is written whole, before the run: a timed write of one leaf
             // would need the schedule to hold the bytes of the rest
@@ -96,7 +99,7 @@ impl Session {
                 return Err(Failure::Host { code: "E0806", message: format!("{action} is scheduled at {at:e} s: a leaf of a composite param is set before the run (at = 0)") });
             }
             let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
-            return Session::set_leaf(&mut self.params, circuit, &param, leaf, value);
+            return Session::set_leaf(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), circuit, &param, leaf, value);
         }
         if at > 0.0 {
             // the values a timed set derives depend on every other set due before it, whatever the
@@ -115,6 +118,21 @@ impl Session {
         let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
         let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
         Session::set_param(&mut self.params, derive, circuit, &param, value)
+    }
+
+    /// Sets the param `path` to `text`, read as its type reads it (PI-01 to PI-03, D24), before the run: an
+    /// integer literal of the type and range, the name of a variant of a unit enum, `None` or a value of
+    /// `T` for an `Option<T>`. `E0801` for a path that names no param, `E0803` for a structural param,
+    /// `E0802` for a text that is no value of its type, naming the param and listing an enum's variants.
+    pub fn set_text(&mut self, path: &str, text: &str) -> Result<(), Failure> {
+        let action = format!("the set of `{path}`");
+        let param = ParamPath::resolve(self.ir(), self.ir().top().path(), path)?;
+        param.refuse_structural(self.ir())?;
+        self.ready_for(0.0, &action)?;
+        let ir = self.ir.clone();
+        let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
+        let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
+        Session::set_text_param(&mut self.params, derive, circuit, &ir, &param, text)
     }
 
     /// What every timed `set` of `sets` changes, in time order (the order given between equal

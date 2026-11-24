@@ -88,6 +88,6 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// followed by another point or a transient) are dropped.
     pub fn end_sweep(&mut self) {
         self.discrete.drop_settle_commits();
-        self.exempt_next = false;
+        self.settle_delivered = false;
     }
 }

@@ -197,36 +197,8 @@ pub(crate) fn build<'a, I: In<'a>>(
     (alts, no_alt)
 }
 
-/// Whether a pattern binds the literal `Unknown` where a name belongs.
-fn binds_unknown(p: &Pat) -> Option<Span> {
-    match &p.kind {
-        PatKind::Lit(e) if matches!(e.kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. })) => Some(p.span.0),
-        PatKind::Tuple(v) | PatKind::Array(v) | PatKind::Or(v) | PatKind::TupleStruct { pats: v, .. } => {
-            v.iter().find_map(binds_unknown)
-        }
-        PatKind::Ident { sub: Some(p), .. } => binds_unknown(p),
-        PatKind::Struct { fields, .. } => fields.iter().find_map(|f| f.pat.as_ref().and_then(binds_unknown)),
-        _ => None,
-    }
-}
-
-/// A pattern in a binding position (`let`, `for`, a closure parameter):
-/// like [`Handles::pat1`], but `Unknown` is a literal, not a name (`E0908`).
+/// A pattern in a binding position (`let`, `for`, a closure parameter): the same pattern as
+/// [`Handles::pat1`], `Unknown` being an ordinary name that resolves to nothing.
 pub(crate) fn binding<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Pat> {
-    h.pat1
-        .clone()
-        .validate(|p, _, emitter| {
-            if let Some(span) = binds_unknown(&p) {
-                emitter.emit(Rich::custom(
-                    span,
-                    Custom {
-                        code: "E0908",
-                        message: "`Unknown` is a literal, not a name".into(),
-                        help: Some("choose another name for the binding".into()),
-                    },
-                ));
-            }
-            p
-        })
-        .boxed()
+    h.pat1.clone().boxed()
 }

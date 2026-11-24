@@ -423,8 +423,7 @@ later microstep.
   commits meet only when they apply, under §12.1.2. `p <- true; p <- false after w;` is a pulse in
   either order. This behavior is the **transport delay**.
 - **§12.1.5** **Probes read the latest solution at the instant** the event fired: at `(t, n)`,
-  the solution of the previous time point before §15 step 3.4 solves `t`, the solution at `t`
-  after it (§15 step 3.3). A reaction that probes makes its instant a time point of
+  the solution at `t`, solved in §15 step 1 on the left value (§15 step 3.3). A reaction that probes makes its instant a time point of
   the solver (§17.2).
 - **§12.1.6** **A reaction never suspends.** It runs to completion at its instant. A sequence over
   time is visible state (§12.2).
@@ -608,7 +607,7 @@ of `&&` whose left operand is an `Event`.
   | The two solutions are | `cross` |
   | --- | --- |
   | two time points of a transient | located by the solver (§17.3); fires at the located instant, rounded up to a tick (§15) |
-  | two time points a jump separates (§15.2) | not located: fires at the time point of the step that reads the change, at the microstep after that step's solve (§15 step 3.4), never before the change (§15.2.4) |
+  | two time points a jump separates (§15.2) | not located: fires at the time point of the step that reads the change, at microstep 0 after that step's solve (§15 step 1), never before the change (§15.2.4) |
   | two rounds of an operating point (§16 step 4) | fires in the round that follows |
   | two points of a sweep (§16.1.2) | fires at the later point |
 
@@ -742,7 +741,7 @@ library (§22), written in the language over this section.
 | `potential`, `flow`, every `access` alias; `p.inflow()` | `fn` | probes (§6) | `analog`, events, reactions, body `let`s, value inputs | 14.1 |
 | `ddx(e, probe)` | `fn` | partial derivative | `analog` | 14.2 |
 | `ac_stim(mag, phase: Option<f64>)` | `fn` | small-signal stimulus | `analog` | 14.3 |
-| `temperature()`, `simparam(name, default: Option<f64>)`, `analysis(a)` for an analysis kind | `fn` | environment, constant during an analysis | everywhere | 14.4 |
+| `temperature()`, `simparam(name) -> Option<f64>`, `analysis(a)` for an analysis kind | `fn` | environment, constant during an analysis | everywhere | 14.4 |
 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` | `fn` | environment of the solve (§16.2) | everywhere but definitions (§8.2.5) | 14.4 |
 | `ddt(x, abstol: Option<f64>)` | module | time derivative; its argument is a state of the jump rule (§15.2) | where instances go (§8.3.4) and `analog` reads them | 14.5 |
 | `delay(x, td, max: Option<f64>)` | module | `x` as it was `td` ago | the same | 14.6 |
@@ -775,8 +774,8 @@ library (§22), written in the language over this section.
   primitive. §14.1–§14.10 cite its rows, restate one only to add detail, and add what a
   reaction reads. Where they differ, §16.2 governs.
 - **§14 rule 7** A continuous core result read in a reaction, a guard or an event argument has the
-  value it has in the solution that context reads (§15 step 3.3): the solution of the previous
-  time point before step 3.4 solves `t`, the solution at `t` after it and in `on settle`.
+  value it has in the solution that context reads (§15 step 3.3): the solution at `t`, solved in
+  §15 step 1 on the left value, also in `on settle`.
 - **§14 rule 8** State of a core module advances only on accepted steps (§17.2.4) and is restored by
   a rejected one (§17.2.3). It is kept by an analysis run at a transient's last instant (§16.4).
 - **§14 rule 9** A core module's state advances whatever control flow surrounds its placement
@@ -795,7 +794,6 @@ library (§22), written in the language over this section.
 | `E0453` | `delay` with `td < 0`, or `max` not positive | run |
 | `E0454` | `noise` with a negative or non-finite `psd` in a `Noise` sweep | run |
 | §17 | an invalid `bound_step` argument (`E0509`); an invalid `ttol` or `etol` of `cross` (`E0510`) | run |
-| `E0456` | `simparam(name)` with no default and no such session parameter | run, at the start of the analysis |
 | `E0457` | a core name redefined by a model (§14 rule 1) | elaboration |
 | §8.1 | an environment function in a const context (`E0323`) | elaboration |
 | §8.2 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
@@ -866,7 +864,7 @@ with `mag` and `phase` evaluated at the operating point.
 | Function | Returns | Class |
 | --- | --- | --- |
 | `temperature() -> f64` | the analysis temperature plus the instance's effective `dtemp` (§8.5.5), in kelvin | constant during an analysis |
-| `simparam(name: str, default: Option<f64>) -> f64` | the session parameter `name`, else `default` | constant during an analysis |
+| `simparam(name: str) -> Option<f64>` | `Some` of the session parameter `name` when the run gave it, else `None` | constant during an analysis |
 | `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Transient`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
 | `freq() -> f64` | the frequency of the sweep point | environment of the solve |
@@ -883,7 +881,10 @@ with `mag` and `phase` evaluated at the operating point.
 - **§14.4.3** All are plain values. All are constant during a solve, so any of them **MAY** appear in a
   selector (§11 rule 3).
 - **§14.4.6** This specification names no session parameter of `simparam`. The names are the
-  host's (G.66).
+  host's (G.66). The result is an `Option<f64>` with no default argument: a model writes
+  `simparam("x").unwrap_or(1.0)` or a `match`. `E0456` is retired with the default (user decision
+  2026-11-23: "É, melhor voltar Option"). `tnom` is no session parameter: it is a per-instance model
+  param, and the core keeps only the run temperature (`temperature()`).
 - **§14.4.7** `gmin()` and `source_scale()` are the continuation variables (§16 step 3). They
   change between solves, as `now()` and `freq()` do, so they are not constant during an
   analysis and §14.4.1 does not apply to them. At rest `gmin()` is the session `gmin` and
@@ -924,7 +925,9 @@ same.
   equations allow (§15.2.1). The history is kept across a jump; the previous derivative is
   dropped only in the steps §15.2.6 restarts.
 - **§14.5.4** Read in a reaction or an event argument, the result is the derivative in the
-  solution read: 0 at an equilibrium solution, the derivative of the step that read the jump, after one (§15.2.4).
+  solution read: 0 at an equilibrium solution; after the step that read a jump, that step's
+  derivative, which is the change of `x` across the step divided by the step (§15.2.6), so it
+  has the sign of the change.
 - **§14.5.5** In `Noise`, `ddt(n)` of a noise result is `jω·n` (§11.1.9).
 
 ### 14.6 `delay`

@@ -53,7 +53,7 @@ module CarrierBench() {
     signal o: Electrical;
     signal lv: Bit<f64>;
     let stepper = Stepper(lv);
-    let drive = Drive(o, lv.known_or(0.0));
+    let drive = Drive(o, lv);
 }
 
 /// Records `x` at 1 ms: a value input read in a reaction of the callee.
@@ -106,7 +106,7 @@ module UntakenBench() {
     let load = Resistor { r: 1k }(o, gnd);
 }
 analog for UntakenBench {
-    if en.high() { v(o) +> Lag(v(inp)); } else { v(o) +> 0.0; }
+    if en { v(o) +> Lag(v(inp)); } else { v(o) +> 0.0; }
 }
 
 module NamedBench() {

@@ -89,9 +89,7 @@ impl Interpreted {
                 Source::Time => None,
                 // `freq()` and `analysis(..)`: not a frame cell; the walk refuses the read by name.
                 Source::Freq | Source::Analysis(_) | Source::Fired(_) => None,
-                // the tick length of a reaction that decides on an unknown: no body with a
-                // reaction runs here (R1)
-                Source::Resolution => None,
+                // the tick length of a reaction: no body with a reaction runs here (R1)
                 // the settle pin of a `settle` event: refused by name (§13 rule 17)
                 Source::Settle => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
@@ -99,9 +97,18 @@ impl Interpreted {
                 // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
                 // `at` or a carrier (msl-digital T22).
                 Source::Timer(_) | Source::CarrierPrevious(_) => None,
+                // an array carrier, whole or one element: refused by name in the same way (composite-values R1)
+                Source::Whole(..) | Source::Element(..) => None,
                 // a derivative site's rate: no body that has one reaches the interpreter, which
                 // refuses it by name (analog-structure R1, AS-17).
                 Source::Derivative(_) => None,
+                // a delay site's output: no body that has one reaches the interpreter, which
+                // refuses it by name (analog-operators R1, AO-11)
+                Source::Delay(_) => None,
+                // a noise source's input: refused by name likewise (AO-11)
+                Source::NoiseValue(_) => None,
+                // a session parameter: refused by name likewise (AO-11)
+                Source::SessionParameter(_) => None,
                 // a param's previous value or changed byte: refused by name likewise (T15)
                 Source::ParamPrevious(_) | Source::ParamChanged(_) => None,
             };
@@ -133,6 +140,10 @@ impl Interpreted {
             // the interpreter refuses a body with a derivative site by name (R1, AS-17)
             Term::DerivativeRate(k) | Term::DerivativeState(k) => {
                 return Err(Fault::new(Walk::UNEXECUTED, format!("{}: derivative site {k} is not run by the interpreter", body.name())));
+            }
+            // the interpreter refuses a body with a delay site by name (R1, AO-11)
+            Term::DelayOutput(k) | Term::DelayHistory(k) => {
+                return Err(Fault::new(Walk::UNEXECUTED, format!("{}: delay site {k} is not run by the interpreter", body.name())));
             }
             Term::Eq(b) => {
                 let branch = &body.branches()[b as usize];
@@ -237,7 +248,7 @@ impl Interpreted {
         Ok(())
     }
 
-    /// The `where` of param `p`: the condition over the params it reads, written as a known `BIT`.
+    /// The `where` of param `p`: the condition over the params it reads, written as a `BIT`.
     fn check(&self, f: &FunctionPlan, p: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let body = self.body();
         let Some(condition) = body.params().get(p as usize).and_then(|x| x.check) else {
@@ -297,7 +308,7 @@ impl Factory for BodyFactory {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
             // `bound_step` and a `cross` tolerance: refused by name (T12).
-            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::DerivativeAbstol(_) => {
+            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::DerivativeAbstol(_) | Mode::DelayMaximum(_) | Mode::Noise(_) => {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
         }

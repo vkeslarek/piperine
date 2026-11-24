@@ -171,27 +171,26 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
     // structure, placed in a top with the clock as an `in` port. `Capacitor` is chapter 1's, written first
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
-    Refusal::expect(chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::of_top()), "modules#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).earlier("sc.msl").run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.table.rows.len(), 3, "the clock and the two analog nodes");
     assert!(ran.signal("Top.b").abs() < 1e-12, "the integrator's output with no input is at rest");
 }
 
 #[test]
-fn the_memory_bank_is_refused_for_its_struct_arrays_and_generics() {
+fn the_memory_bank_is_refused_for_its_generic_module() {
     // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11
     // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a
-    // parent's body. The struct as a type (L1), the arrays of carriers (L24) and the generic module (L30)
+    // parent's body. The generic module (L30); the struct as a type and the arrays of carriers run
     let chapter = Chapter::read();
     let top = format!("module Top() {{\n    signal wl: [Bit; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    for expected in ["an array of `Bit<bool>` is not supported yet", "generic module is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
+    // the arrays of carriers run since composite-values phase C (L24): the generic module is the one refusal left (L30)
+    assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
+    assert!(!given.iter().any(|(_, message)| message.contains("array of")), "the arrays of carriers run: {given:?}");
     assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "an array of `Bit<bool>` is not supported yet");
+    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "generic module is not supported yet");
 }
 
 #[test]
@@ -220,7 +219,7 @@ fn binding_m_and_dtemp_is_refused_as_an_unknown_param() {
     // modules~1faf8c12: "Every instance has these two implicit params, and you bind them like any other:
     // Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel": the binding is `E0320`
     // today, `no param m` (L29); the Book's meaning is four resistors in parallel. The row is `refused`,
-    // owned by `params-and-io`, which implements `m`
+    // owned by `generics` phase D (GN-24, GN-25), which implements `m`
     let faulty = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
     assert_eq!(faulty.first("E0320").message, "no param `m` in `Resistor`");
     let dtemp = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, dtemp: 5.0 };\n"), "Top");
@@ -307,7 +306,11 @@ fn e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked()
     // is not raised
     let chapter = Chapter::read();
     let zero = "module Empty() { signal vin: Electrical; pub signal vout: Electrical; pub let lad = Ladder::<0>(vin, vout) { r: 1k, c: 1n }; }\n";
-    let model = chapter.wrapped("empty.msl", "", "modules#1", zero);
+    // the whole-model check (S3) refuses the listing's own `LadderTop` for the same placement, so the model is
+    // the listing up to it: the `Empty` placement is the one refusal
+    let block = chapter.text("modules#1");
+    let (listing, _) = block.split_once("module LadderTop()").expect("modules#1 ends with LadderTop");
+    let model = Model::written("empty.msl", &format!("{listing}\n{zero}"));
     let given = Refusal::of(model.run(Faulty::operating_point_of("Empty")), "modules~4bcb9f1d");
     assert_eq!(given, [("P0001".to_string(), "generic module is not supported yet".to_string())]);
 }

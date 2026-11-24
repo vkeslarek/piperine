@@ -41,8 +41,8 @@ fn let_mut_lowers_to_mutable_locals_and_assignments() {
 
 #[test]
 fn loops_lower_to_the_loops_of_the_ir() {
-    // §1.8.7 to §1.8.12: every form stays the IR's own loop in a function, where no decision may
-    // be unknown; `break value` gives the loop its value's type.
+    // §1.8.7 to §1.8.12: every form stays the IR's own loop in a function;
+    // `break value` gives the loop its value's type.
     let items = "fn work(n: u8) -> u8 {\n\
                  let s = 0u8; let i = 0u8;\n\
                  while i < n { s += i; i += 1; }\n\
@@ -56,12 +56,12 @@ fn loops_lower_to_the_loops_of_the_ir() {
         assert!(text.contains(printed), "`{printed}` in:\n{text}");
     }
 
-    // In a reaction, whose values may be unknown, a `for` that leaves early is the `while` that
-    // counts a mutable local, taking the next value before the body so `continue` still counts.
+    // In a reaction a `for` that leaves early is the IR's own `for` as well: no value may be unknown (§3.3), so
+    // there is no counting `while` to merge.
     let body = "let hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
     let ir = Elab::ir(&ElabSource::reacting("", body), "Top");
     let text = ir.print_structural();
-    assert!(text.contains("while") && !text.contains("for k in"), "{text}");
+    assert!(text.contains("for k in") && !text.contains("while"), "{text}");
 }
 
 #[test]
@@ -73,20 +73,6 @@ fn a_function_returning_an_option_is_two_ir_functions() {
     let ir = Elab::ir(&src, "Top");
     let names: Vec<String> = ir.functions().map(|f| f.name().to_string()).collect();
     assert_eq!(names, vec!["halved.is".to_string(), "halved.val".to_string()]);
-}
-
-#[test]
-fn a_function_value_called_with_an_unknown_is_the_flagged_variant_or_p0001() {
-    // §3.3 with §1.5.10: a local bound to a function's name calls the variant for an argument that
-    // may be unknown; a closure, whose type is fixed where it is written, cannot take one, and the
-    // refusal names the call.
-    let named = ElabSource::reacting("fn id(x: u8) -> u8 { x }", "let f = id; let u: u8 = Unknown; q <- f(u).known_or(0);");
-    let ir = Elab::ir(&named, "Top");
-    assert!(ir.functions().any(|f| f.name() == "id~1"), "{}", ir.print_structural());
-    let closure = ElabSource::reacting("", "let f = |x: u8| x; let u: u8 = Unknown; q <- f(u).known_or(0);");
-    let refused = Elab::run(&closure, "Top").expect_err("a closure takes no unknown");
-    assert_eq!(Elab::codes(&refused), ["P0001"]);
-    assert!(refused[0].diagnostic.message.contains("a call through a function value"), "{:?}", refused[0].diagnostic.message);
 }
 
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
@@ -166,7 +152,7 @@ fn a_recursion_reached_from_analog_is_unrolled() {
 
     // A recursion no analog block reaches stays a recursion of the IR (D12).
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
-    let src = format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8>) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- tri(3, 1.0) as u8; }} }}");
+    let src = format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8> = 0) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- tri(3, 1.0) as u8; }} }}");
     let ir = Elab::ir(&src, "Top");
     assert!(ir.functions().any(|f| f.name() == "tri"));
 }

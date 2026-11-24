@@ -78,12 +78,17 @@ impl Elaboration<'_, '_> {
 
     /// `i(a, b)` read as a value: the flow of the branch `(a, b)` the module gives a potential
     /// contribution (amendment A5), negated when the read names the branch the other way round.
-    /// A branch with no potential contribution is `P0001` (a flow branch has no flow read yet).
+    /// A branch with no potential contribution is `P0001` (a flow branch has no flow read yet), except in
+    /// a value that is differentiated, where it is a leaf (`flow_leaf_branch`).
     fn lower_flow_read(&mut self, scope: &mut Scope, expr: ExprId, plus: Terminal, minus: Terminal, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
-        let Some((branch, reversed)) = self.potential_branch(scope, plus, minus) else {
-            self.unsupported(scope.file, span, "a flow probe of a branch without a potential contribution");
-            return None;
+        let (branch, reversed) = match self.potential_branch(scope, plus, minus) {
+            Some(found) => found,
+            None if scope.differentiated => self.flow_leaf_branch(scope, plus, minus),
+            None => {
+                self.unsupported(scope.file, span, "a flow probe of a branch without a potential contribution");
+                return None;
+            }
         };
         let flow = self.emit(Expr::Flow { branch }, ValueType::F64, origin.clone());
         if !reversed {
@@ -92,11 +97,28 @@ impl Elaboration<'_, '_> {
         Some(self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Neg, expr: flow }, ValueType::F64, origin))
     }
 
+    /// The branch between `plus` and `minus`, whether it is named the other way round, for the flow a `ddx` reads as a
+    /// leaf of its derivative though the module gives the branch no potential contribution: the branch a flow
+    /// contribution made, or a flow branch the read makes. The derivative of the leaf against itself is 1 (§14.2.3),
+    /// and the leaf is recorded in `flow_leaves`, since the value of such a flow is not read anywhere yet.
+    pub(super) fn flow_leaf_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> (u32, bool) {
+        let existing = scope.branches.iter().position(|b| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus));
+        let (branch, reversed) = match existing {
+            Some(at) => (at as u32, scope.branches[at].plus != plus),
+            None => {
+                scope.branches.push(Branch { plus, minus, kind: BranchKind::Flow });
+                (scope.branches.len() as u32 - 1, false)
+            }
+        };
+        scope.flow_leaves.push(branch);
+        (branch, reversed)
+    }
+
     /// The potential branch between `plus` and `minus`, and whether it is named the other way
     /// round. A branch is numbered at its first contribution; a flow read written before that
     /// contribution numbers it from the potential contribution the module's `analog` block
     /// writes, wherever it sits in it (under an `if`, in a nested block).
-    fn potential_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> Option<(u32, bool)> {
+    pub(super) fn potential_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> Option<(u32, bool)> {
         let same = |b: &Branch| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus);
         let existing = scope.branches.iter().position(same);
         if let Some(at) = existing
@@ -172,8 +194,12 @@ impl Elaboration<'_, '_> {
             "limit" => self.lower_limit(scope, expr, args, ty, origin),
             "ac_stim" => self.lower_stim(scope, expr, args, ty, origin),
             "ddt" => self.lower_derivative(scope, expr, args, origin),
+            "ddx" => self.lower_ddx(scope, expr, args, origin),
+            "delay" => self.lower_delay(scope, expr, args, origin),
+            "noise" => self.lower_noise(scope, expr, args, origin),
+            "simparam" => self.lower_simparam(scope, args, origin),
             name => {
-                self.unsupported(scope.file, span, &format!("the core primitive `{name}`"));
+                self.unsupported(scope.file, span, &format!("core primitive `{name}`"));
                 None
             }
         }
@@ -198,6 +224,10 @@ impl Elaboration<'_, '_> {
         if !self.core_site_allowed(scope, span, "limit") {
             return None;
         }
+        // read at a converged solution, `limit(x, f, seed)` is `x`: the limited iterate is the unlimited one
+        if scope.at_solution {
+            return self.lower_expr(scope, *args.first()?);
+        }
         let enabled = self.standalone_guard(scope, span, "a `limit`")?;
         let site = scope.limits.len() as u32;
         let name = match scope.limit_name.take() {
@@ -209,7 +239,7 @@ impl Elaboration<'_, '_> {
             None => {
                 let mut lowered = Vec::new();
                 for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `limit`")));
+                    lowered.push(self.lower_expr(scope, *arg));
                 }
                 let mut lowered = lowered.into_iter();
                 (lowered.next()??, lowered.next()??, lowered.next().flatten())
@@ -217,10 +247,10 @@ impl Elaboration<'_, '_> {
             Some(_) => {
                 // `f` is a closure whose parameters are locals of the body: it stays where it is.
                 let mut standalone = Self::standalone_scope(scope);
-                let x = self.lower_expr(&mut standalone, *args.first()?).and_then(|v| self.known_in_analog(scope.file, *args.first()?, v, "an argument of `limit`"));
+                let x = self.lower_expr(&mut standalone, *args.first()?);
                 let f = self.lower_expr(scope, *args.get(1)?);
                 let seed = match args.get(2) {
-                    Some(seed) => Some(self.lower_expr(&mut standalone, *seed).and_then(|v| self.known_in_analog(scope.file, *seed, v, "an argument of `limit`"))),
+                    Some(seed) => Some(self.lower_expr(&mut standalone, *seed)),
                     None => None,
                 };
                 if !standalone.locals.is_empty() {
@@ -246,13 +276,18 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let site = scope.stims.len() as u32;
-        scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone(), enabled: None });
+        // the first site is the analysis `ac`; a later one is numbered, since the backends print a site by its name
+        let name = if site == 0 { "ac".to_string() } else { format!("ac{site}") };
+        scope.stims.push(Site { name, origin: origin.clone(), enabled: None });
         let guarded = !scope.guards.is_empty();
         let mut standalone = Self::standalone_scope(scope);
         let mut lowered = Vec::new();
         for arg in args {
             let value = if guarded { self.lower_expr(&mut standalone, *arg) } else { self.lower_expr(scope, *arg) };
-            lowered.push(value.and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `ac_stim`")));
+            lowered.push(value);
+        }
+        if guarded {
+            scope.adopt_standalone(&mut standalone);
         }
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a guarded `ac_stim` whose input binds a local");
@@ -260,7 +295,13 @@ impl Elaboration<'_, '_> {
         }
         let mut lowered = lowered.into_iter();
         let (mag, phase) = (lowered.next()??, lowered.next().flatten());
-        Some(self.emit(Expr::Stim { site, mag, phase }, ty, origin))
+        let stimulus = self.emit(Expr::Stim { site, mag, phase }, ty, origin);
+        if scope.value_input {
+            // the site function is found in a statement of the block: the value input reads the site, this writes it
+            let write = self.stmt(piperine_ir::Stmt::Expr(stimulus));
+            scope.hoisted_steps.push(write);
+        }
+        Some(stimulus)
     }
 
     /// Whether a `limit` or `ac_stim` may stand where `scope` is: not inside an `Option` method
@@ -318,11 +359,20 @@ impl Elaboration<'_, '_> {
         if let ExprKind::Field { .. } = &node.kind {
             return self.reached_terminal(scope, arg);
         }
+        if let ExprKind::Index { .. } = &node.kind {
+            // one node of an array of nodes: its index folds, per iteration of an unrolled loop (CV-26)
+            return self.node_element(scope, arg)?.or_else(|| {
+                self.unsupported(file, node.span, "an index of a value that is no array of nodes");
+                None
+            });
+        }
         let ExprKind::Path(path) = &node.kind else {
             self.unsupported(file, node.span, "a node argument that is not a name");
             return None;
         };
         match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
+            // a handle is the node the caller passed (`handles.rs`)
+            Resolution::Decl(decl) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_terminal(scope, bound),
             Resolution::Decl(decl) => match self.frame_node(scope.frame, decl) {
                 Some(terminal) => Some(terminal),
                 None => {

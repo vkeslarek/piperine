@@ -1,7 +1,7 @@
 //! Modules with a result, time and the analysis of `piperine_lang::types` (feature
 //! `msl-digital`, DIG-06): `module name(inputs) -> T { items result }` and its placement in an
 //! expression (part III §8.3), `now()` and `analysis(Static)` (part IV §14.4), what an `analog`
-//! block may read of a carrier (`E0150`, part I §3.3.5) and a `let` that reads itself. Sources
+//! block reads of a carrier (any expression, part I §3.3.6) and a `let` that reads itself. Sources
 //! are written over the embedded standard library: `transition`, `above` and `init` are the
 //! stdlib's own.
 
@@ -71,7 +71,7 @@ fn a_module_with_a_result_is_typed() {
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0311".to_string()], "1.0"));
 
     // `transition`, `above` and `init` of the stdlib, placed as the buck and `A2D` place them.
-    let src = "module Top(in g: Bit, p: Electrical, out d: Bit) {\n    let gate = transition(if g.high() { 1.0 } else { 0.0 }, 0.0, 5n, 5n);\n    let up = above(v(p) - 0.5);\n    let start = init();\n    let cmp = A2D(p, d) { vth: 0.74, hyst: 20m };\n}\nanalog for Top { v(p) +> gate; }\ndigital for Top { on up { } on start { } }";
+    let src = "module Top(in g: Bit, p: Electrical, out d: Bit) {\n    let gate = transition(if g { 1.0 } else { 0.0 }, 0.0, 5n, 5n);\n    let up = above(v(p) - 0.5);\n    let start = init();\n    let cmp = A2D(p, d) { vth: 0.74, hyst: 20m };\n}\nanalog for Top { v(p) +> gate; }\ndigital for Top { on up { } on start { } }";
     let design = design_of(src);
     let types = checked(&design, src);
     assert_eq!([types.local(binding(&design, "gate")), types.local(binding(&design, "up")), types.local(binding(&design, "start"))], [Some(&Ty::F64), Some(&Ty::Event), Some(&Ty::Event)]);
@@ -179,43 +179,34 @@ fn now_and_analysis_static_are_typed() {
 }
 
 #[test]
-fn an_e0150_carries_a_help_line_naming_the_flag_reads() {
-    // errors#1 of the Book (chapter 2): the diagnostic has a code, a message naming the carrier, a
-    // primary label and a help line that names `known()`, `known_or(d)` and `high()`
+fn a_bare_analog_read_of_a_carrier_has_no_diagnostic() {
+    // errors#1 of the Book (chapter 2) was `E0150` with a help line; §3.3.6 makes the source plain
     let src = "module Top(in c: Bit<f64>, p: Electrical) { }\nanalog for Top { v(p) +> c; }";
-    let d = diagnostics(src);
-    assert_eq!(codes(&d), ["E0150"]);
-    let help = d[0].diagnostic.help.as_deref().expect("a help line");
-    assert!(help.contains("`known()`") && help.contains("`known_or(d)`") && help.contains("`high()`"), "{help}");
+    checked(&design_of(src), src);
 }
 
 #[test]
-fn an_analog_read_of_a_carrier_outside_the_flag_reads_is_e0150() {
-    // DIG-06 AC 6 (part I §3.3.5): an `analog` block reads a discrete carrier through `known`,
-    // `known_or`, `is_known` or `high` only; a bare read, one through a `let`, one through a value
-    // input and one through a result are `E0150`, naming the carrier.
+fn an_analog_read_of_a_carrier_is_the_value() {
+    // DIG-06 AC 6 as §3.3.6 amends it: an `analog` block reads a discrete carrier like any
+    // expression, a bare read, one through a `let`, one through a value input and one through a
+    // result; the sources that were `E0150` are accepted
     let items = format!("{TWICE}module Amp(x: f64, p: Electrical) {{ }}\nanalog for Amp {{ v(p) +> x; }}\n");
-    for (inside, analog, at, carrier) in [
-        ("", "v(p) +> c;", "c", "`c`"),
-        ("", "v(p) +> c + 1.0;", "c", "`c`"),
-        ("", "v(p) +> c.prev();", "c", "`c`"),
-        ("", "v(p) +> (c + 1.0).known_or(0.0);", "c", "`c`"),
-        ("let k = c * 2.0;", "v(p) +> k;", "k", "`c`"),
-        ("let a = Amp(c, p);", "", "c", "`c`"),
-        ("let g = twice(c);", "v(p) +> g;", "g", "`c`"),
-        // a `let` of the `analog` block: one read, one `E0150` at the read, not again where
-        // the `let` is read (verification F11)
-        ("", "let q = c; v(p) +> q;", "c", "`c`"),
-        ("", "let q = c + 1.0; v(p) +> q + q;", "c", "`c`"),
+    for (inside, analog) in [
+        ("", "v(p) +> c;"),
+        ("", "v(p) +> c + 1.0;"),
+        ("", "v(p) +> c.prev();"),
+        ("", "v(p) +> (c + 1.0);"),
+        ("let k = c * 2.0;", "v(p) +> k;"),
+        ("let a = Amp(c, p);", ""),
+        ("let g = twice(c);", "v(p) +> g;"),
+        ("", "let q = c; v(p) +> q;"),
+        ("", "let q = c + 1.0; v(p) +> q + q;"),
     ] {
         let src = format!("{items}module Top(in c: Bit<f64>, in en: Bit, p: Electrical) {{ {inside} }}\nanalog for Top {{ {analog} }}");
-        let d = diagnostics(&src);
-        assert_eq!(codes(&d), ["E0150"], "{inside} {analog}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert_eq!(snippet(&src, &d[0]), at, "{inside} {analog}");
-        assert!(d[0].diagnostic.message.contains(carrier), "{inside} {analog}: {}", d[0].diagnostic.message);
+        checked(&design_of(&src), &src);
     }
-    // The flag reads are the way in, through a `let` and a result too.
-    let src = format!("{items}module Top(in c: Bit<f64>, in en: Bit, p: Electrical) {{\n    let k = c.known_or(0.0) * 2.0;\n    let g = twice(c.known_or(1.0));\n    let a = Amp(c.known_or(0.0), p);\n}}\nanalog for Top {{ v(p) +> k + g + c.known_or(0.0) + if en.high() {{ 1.0 }} else {{ 0.0 }}; let u = c.is_known(); }}");
+    // A bare read beside the others.
+    let src = format!("{items}module Top(in c: Bit<f64>, in en: Bit, p: Electrical) {{\n    let k = c * 2.0;\n    let g = twice(c);\n    let a = Amp(c, p);\n}}\nanalog for Top {{ v(p) +> k + g + c + if en {{ 1.0 }} else {{ 0.0 }}; }}");
     checked(&design_of(&src), &src);
     // An expression at an `in` port is a definition of the parent and outside the rule.
     let src = "module Child(in a: Bit<f64>) { }\nmodule Top(in c: Bit<f64>) { let k = Child(c * 2.0); }";
@@ -244,7 +235,7 @@ fn a_let_that_reads_itself_is_e0332_or_e0353() {
     // A cycle through a result that reads only its own carriers is legal (`let y = idt(f(y))`,
     // §8.3.5): it types (the feedback test lives in `types_structure.rs`, analog-structure T25,
     // which lifted the `P0001` this row asserted).
-    let src = "module integ(x: f64) -> f64 {\n    signal s: Bit<f64> = 0.0;\n    s.known_or(0.0)\n}\nmodule Top() { let y = integ(y); }";
+    let src = "module integ(x: f64) -> f64 {\n    signal s: Bit<f64> = 0.0;\n    s\n}\nmodule Top() { let y = integ(y); }";
     checked(&design_of(src), src);
 }
 

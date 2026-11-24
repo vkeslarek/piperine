@@ -6,18 +6,18 @@
 //! on the pin path `<instance path>.<stream>`. `Ir::record_at` gives the instance and the site;
 //! the site's `emit!` statement gives the fields in source order; each value field is read from
 //! the bytes through the stream's `RecordLayout` (a carrier of the field's type at its offset,
-//! its known byte beside it), each text field is the site's literal, which never crosses the
-//! ABI. A record is never paired with a commit by order. A record with no site (a relaxed field
-//! that moved, abi.md §9 D1) has every value field of its stream and no text field.
+//! the value only), each text field is the site's literal, which never crosses the
+//! ABI. A record is never paired with a commit by order. A record with no site has every
+//! value field of its stream and no text field.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use piperine_ir::{EmitField, Ir, Stmt, Stream, ValueType};
-use piperine_plan::{CarrierLayout, RecordLayout};
-use piperine_solver::protocol::{Observation, ObservationKind, Sink};
+use piperine_ir::{EmitField, Ir, Stmt, Stream};
+use piperine_plan::RecordLayout;
+use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
 use crate::composite::{CellShape, CompositeCell};
 use crate::failure::Failure;
@@ -32,17 +32,18 @@ pub struct Record {
     pub instance: String,
     pub stream: String,
     pub fields: Vec<(String, Field)>,
-    /// Whether the record was reached on a path taken under unknown control (§19 rule 1). It is
-    /// no field of the stream: it is not among `fields`.
-    pub maybe: bool,
+    /// The Newton iteration that wrote the record: `Some` for a trace (`emit!` in `analog`, §19 rule
+    /// 3), `None` for the record of a reaction.
+    pub iteration: Option<u32>,
+    /// The analysis that wrote the record, when the solver says which.
+    pub analysis: Option<AnalysisKind>,
 }
 
 impl Record {
-    /// Whether the field `name` is known true on a record that was surely reached: a `maybe`
-    /// record never says it, so a `finish` or `fatal` that may not have happened ends nothing
-    /// (§19 Resolution).
-    pub fn surely(&self, name: &str) -> bool {
-        !self.maybe && self.fields.iter().any(|(field, value)| field == name && *value == Field::Bool(true))
+    /// Whether the field `name` is the `bool` true on this record: a `sim` record's `finish` or
+    /// `failed`.
+    pub fn holds(&self, name: &str) -> bool {
+        self.fields.iter().any(|(field, value)| field == name && *value == Field::Bool(true))
     }
 }
 
@@ -54,8 +55,6 @@ pub enum Field {
     Int(i128),
     /// A text literal of the site.
     Text(String),
-    /// A value whose known byte is clear.
-    Unknown,
     /// The name of the variant an enum with no payload holds (CV-22).
     Variant(String),
     /// A tuple, an array, a struct, an enum or an `Option`: the tree of its parts.
@@ -75,13 +74,22 @@ pub struct Streams {
     pins: HashMap<String, (String, Stream, RecordLayout)>,
     /// The pin paths `decode` gives records for; `None` keeps every stream.
     kept: Option<HashSet<String>>,
+    /// `<instance path>.trace:<k>` to the instance path, the site and the site's stream, for every
+    /// trace site (`emit!` in `analog`).
+    traces: HashMap<String, (String, u32, String)>,
 }
 
 impl Streams {
     /// Every stream of every instance of `ir`.
     pub fn of(ir: Arc<Ir>) -> Streams {
         let mut pins = HashMap::new();
+        let mut traces = HashMap::new();
         for instance in ir.instances() {
+            for (site, trace) in instance.body().traces().iter().enumerate() {
+                if let Some(stream) = instance.body().streams().get(trace.stream as usize) {
+                    traces.insert(format!("{}.trace:{site}", instance.path()), (instance.path().to_string(), site as u32, stream.name.clone()));
+                }
+            }
             for stream in instance.body().streams() {
                 // `check()` refuses a stream field no carrier holds, so every checked stream has
                 // a layout
@@ -90,7 +98,7 @@ impl Streams {
                 }
             }
         }
-        Streams { ir, pins, kept: None }
+        Streams { ir, pins, kept: None, traces }
     }
 
     /// The pin path `<instance path>.<stream>` of every stream of the design, sorted.
@@ -102,7 +110,7 @@ impl Streams {
 
     /// Whether `bytes` at `path` is the write of a stream's `RECORD` pin, which the digital side
     /// also reports as the net `path` taking a value: a stream may share its name with a signal, and
-    /// a record's bytes (its fields and the `maybe` flag) are no value of that signal's type.
+    /// a record's bytes are no value of that signal's type.
     pub fn is_record_write(&self, path: &str, bytes: &[u8]) -> bool {
         self.pins.get(path).is_some_and(|(_, _, layout)| layout.size as usize == bytes.len())
     }
@@ -132,11 +140,52 @@ impl Streams {
     /// site that is no `emit!` of that stream, or of bytes that are not its layout's size is a
     /// `Failure`, never a guessed or truncated record.
     pub fn decode(&self, o: &Observation) -> Option<Result<Record, Failure>> {
+        if let ObservationKind::Trace { iteration, bytes } = &o.kind {
+            return self.trace(o, *iteration, bytes);
+        }
         let ObservationKind::Record { site, bytes } = &o.kind else { return None };
         if self.kept.as_ref().is_some_and(|kept| !kept.contains(&o.path)) {
             return None;
         }
-        Some(self.record(o, *site, bytes))
+        Some(self.record(o, *site, bytes).map(|record| Record { analysis: Some(o.analysis), ..record }))
+    }
+
+    /// The record of a `TRACE` write `o` (Newton iteration `iteration`): the site's stream and
+    /// fields, read through the watch's layout (a presence byte, then the stream's record). `None`
+    /// unless the run names the stream (`streams`): a trace is a debugging surface the host asks for
+    /// (Q5); a trace of a site the design lacks, or of the wrong size, is a `Failure`.
+    fn trace(&self, o: &Observation, iteration: u32, bytes: &[u8]) -> Option<Result<Record, Failure>> {
+        let (instance, site, stream_name) = self.traces.get(&o.path)?;
+        let stream_pin = format!("{instance}.{stream_name}");
+        // a trace is delivered only for a stream the run names
+        if !self.kept.as_ref().is_some_and(|kept| kept.contains(&stream_pin)) {
+            return None;
+        }
+        Some(self.trace_record(o, iteration, instance, *site, &stream_pin, bytes))
+    }
+
+    fn trace_record(&self, o: &Observation, iteration: u32, instance: &str, site: u32, stream_pin: &str, bytes: &[u8]) -> Result<Record, Failure> {
+        let refused = |why: String| Failure::Backend(format!("a trace on `{}` at {}: {why}", o.path, o.time));
+        let (_, stream, layout) = self.pins.get(stream_pin).ok_or_else(|| refused("no stream of the design has that path".into()))?;
+        let start = layout.trace_start() as usize;
+        if bytes.len() != layout.trace_size() as usize || bytes.first().is_none_or(|present| *present == 0) {
+            return Err(refused(format!("{} bytes where the watch's layout holds {} and a set presence byte", bytes.len(), layout.trace_size())));
+        }
+        let record = &bytes[start..];
+        let body = self.ir.instance_at(instance).ok_or_else(|| refused("no instance of the design has that path".into()))?.body();
+        let value = |field: u32| -> Result<(String, Field), Failure> {
+            let f = stream.fields.get(field as usize).ok_or_else(|| refused(format!("no value field {field}")))?;
+            let (offset, carrier) = &layout.fields[field as usize];
+            let slice = &record[*offset as usize..(offset + carrier.size()) as usize];
+            let cell = match CellShape::of(&self.ir, &f.ty) {
+                Some(shape) if !matches!(shape, CellShape::Scalar(_)) => shape.decode(slice)?,
+                _ => Cell::decode(&self.ir.carried(&f.ty), slice)?,
+            };
+            Ok((f.name.clone(), Field::of(cell)?))
+        };
+        let mut fields = (0..stream.fields.len() as u32).map(value).collect::<Result<Vec<_>, Failure>>()?;
+        fields.extend(body.trace_texts(site).into_iter().map(|(name, text)| (name.to_string(), Field::Text(text.to_string()))));
+        Ok(Record { time: o.time, instance: instance.to_string(), stream: stream.name.clone(), fields, iteration: Some(iteration), analysis: Some(o.analysis) })
     }
 
     /// The instant of `o` when it is a `sim` record whose `finish` is true, whether or not the run
@@ -148,7 +197,7 @@ impl Streams {
             return None;
         }
         let record = self.record(o, *site, bytes).ok()?;
-        record.surely("finish").then_some(record.time)
+        record.holds("finish").then_some(record.time)
     }
 
     fn record(&self, o: &Observation, site: Option<(u32, u32)>, bytes: &[u8]) -> Result<Record, Failure> {
@@ -165,13 +214,8 @@ impl Streams {
                 Some(shape) if !matches!(shape, CellShape::Scalar(_)) => shape.decode(slice)?,
                 _ => Cell::decode(&self.ir.carried(&f.ty), slice)?,
             };
-            Ok((f.name.clone(), Field::of(cell)))
+            Ok((f.name.clone(), Field::of(cell)?))
         };
-        // `maybe` is always known (§19 rule 1); a clear known byte, which no run writes, reads as
-        // not maybe rather than as a guess
-        let maybe_layout = CarrierLayout::of(&ValueType::Bool).ok_or_else(|| refused("no carrier holds a `bool`".into()))?;
-        let maybe_at = layout.maybe_offset() as usize;
-        let maybe = matches!(Cell::decode(&ValueType::Bool, &bytes[maybe_at..maybe_at + maybe_layout.size as usize])?, Cell::Bool(true));
         let fields = match site {
             Some((reaction, statement)) => {
                 let (inst, _) = self.ir.record_at(&o.path, reaction, statement).ok_or_else(|| {
@@ -189,28 +233,28 @@ impl Streams {
             }
             None => (0..stream.fields.len() as u32).map(value).collect::<Result<Vec<_>, Failure>>()?,
         };
-        Ok(Record { time: o.time, instance: instance.clone(), stream: stream.name.clone(), fields, maybe })
+        Ok(Record { time: o.time, instance: instance.clone(), stream: stream.name.clone(), fields, iteration: None, analysis: None })
     }
 }
 
 impl Record {
     /// Whether this is a passing check: a record of the reserved `checks` stream whose `pass`
-    /// is true. A failing check, an unknown one and a `target` (which has no `pass`) are not.
+    /// is true. A failing check and a `target` (which has no `pass`) are not.
     pub fn is_passing_check(&self) -> bool {
         self.stream == "checks" && self.fields.iter().any(|(name, field)| name == "pass" && *field == Field::Bool(true))
     }
 }
 
 impl Field {
-    fn of(cell: Cell) -> Field {
-        match cell {
+    fn of(cell: Cell) -> Result<Field, Failure> {
+        Ok(match cell {
             Cell::Real(v) => Field::Real(v),
             Cell::Bool(v) => Field::Bool(v),
             Cell::Int(v) => Field::Int(v),
             Cell::Text(v) => Field::Variant(v),
-            Cell::Unknown => Field::Unknown,
             Cell::Composite(v) => Field::Composite(v),
-        }
+            Cell::Absent => return Err(Failure::Backend("a record field decoded from its bytes is a value, never the absent cell".into())),
+        })
     }
 }
 

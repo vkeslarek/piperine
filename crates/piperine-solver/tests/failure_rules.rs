@@ -171,6 +171,7 @@ fn section_12_unresolvable_noise_output_node_is_an_analysis_error() {
         output_node: NodeIdentifier::Anonymous(99),
         reference_node: NodeIdentifier::Gnd,
         input_source_name: None,
+        output_flow: None,
     };
     let err = circuit
         .noise(options, Context::default())
@@ -188,6 +189,7 @@ fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
         output_node: node_a(&circuit),
         reference_node: NodeIdentifier::Anonymous(98),
         input_source_name: None,
+        output_flow: None,
     };
     let err = circuit
         .noise(options, Context::default())

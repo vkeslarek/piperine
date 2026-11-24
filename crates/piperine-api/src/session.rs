@@ -11,24 +11,27 @@ use std::sync::Arc;
 
 use piperine_digital_solver::net::NetId;
 use piperine_interp::Interpreter;
-use piperine_ir::{BranchKind, ChildValue, Ir};
+use piperine_ir::{BranchKind, CarrierRole, ChildValue, Ir};
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
 use piperine_plan::{Netlist, ParamReads};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
+    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, NoiseAnalysisOptions, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
     TransientAnalysisOptions,
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::noise::{NoiseOutput, NoiseProbe, NoiseReport};
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
-use crate::params::{Changed, Derive, Evaluated, Params};
+use crate::param_text::{ParamText, Scalar as ParamScalar};
+use crate::pins::{Pins, Unbound};
+use crate::params::{Changed, Derive, Evaluated, LeafChange, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
@@ -37,6 +40,7 @@ use crate::table::Table;
 use crate::project::Project;
 use crate::request::{Analysis, Grid, Options, RunSpec};
 use crate::source::NodeSources;
+use crate::statistics::TransientStatistics;
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +57,7 @@ pub enum Built {
 /// circuit, which holds the loaded library's modules, before the library.
 pub struct Session {
     pub(crate) circuit: Option<CircuitInstance>,
-    ir: Arc<Ir>,
+    pub(crate) ir: Arc<Ir>,
     pub(crate) compiled: Option<Compiled>,
     top: String,
     backend: Backend,
@@ -70,6 +74,10 @@ pub struct Session {
     context: Context,
     /// The source and the node of a `tf` or `pz` run, resolved against the design.
     transfer: Option<Transfer>,
+    /// The output and input a `noise` run resolved at open.
+    noise: Option<NoiseProbe>,
+    /// The report of the `noise` run this session took.
+    noise_report: Option<NoiseReport>,
     /// The params a `sens` run differentiates by, resolved against the design, in the order given.
     wrt: Vec<ParamPath>,
     /// The host's drives due after the start of the transient, in the order given.
@@ -81,6 +89,8 @@ pub struct Session {
     pub(crate) sources: NodeSources,
     /// The value of every param of every instance, which a `set` keeps with what derives from it.
     pub(crate) params: Params,
+    /// The counts of the transient this session took, `None` before it and for any other analysis.
+    statistics: Option<TransientStatistics>,
 }
 
 /// The input and the output of a `tf` or `pz` run, by what the solver knows them by.
@@ -114,6 +124,11 @@ impl ParamPath {
     /// The full path, `<instance>.<param>`.
     pub fn label(&self) -> String {
         format!("{}.{}", self.instance, self.param)
+    }
+
+    /// Whether this param is structural: its value selects the body at elaboration.
+    pub fn is_structural(&self, ir: &Ir) -> bool {
+        ir.instance_at(&self.instance).and_then(|i| i.body().params().iter().find(|p| p.name == self.param).map(|p| p.structural)).unwrap_or(false)
     }
 
     /// `E0803` when this param is structural: a structural param selects the body at elaboration,
@@ -165,12 +180,21 @@ impl ParamTarget {
     pub fn resolve(ir: &Ir, top: &str, entry: &str) -> Result<ParamTarget, Failure> {
         match ParamPath::resolve(ir, top, entry) {
             Ok(param) => {
-                let composite = ir.instance_at(&param.instance).and_then(|i| i.body().params().iter().find(|p| p.name == param.param).map(|p| p.ty.is_composite()));
+                let composite = ir.instance_at(&param.instance).and_then(|i| i.body().params().iter().find(|p| p.name == param.param).map(|p| ir.is_composite_value(&p.ty)));
                 if composite == Some(true) {
                     return Err(Failure::Host { code: "E0802", message: format!("`{entry}` is a composite param: name one of its leaves, `{entry}.<leaf>`") });
                 }
                 Ok(ParamTarget { param, leaf: None })
             }
+            Err(named) => ParamTarget::leaf(ir, top, entry).ok_or(named),
+        }
+    }
+
+    /// `entry` as a `--param` text names it: a whole param (of any type, a composite included: its type reads the text) or,
+    /// failing that, a leaf of a composite param. `E0801` when it names neither.
+    pub fn resolve_text(ir: &Ir, top: &str, entry: &str) -> Result<ParamTarget, Failure> {
+        match ParamPath::resolve(ir, top, entry) {
+            Ok(param) => Ok(ParamTarget { param, leaf: None }),
             Err(named) => ParamTarget::leaf(ir, top, entry).ok_or(named),
         }
     }
@@ -186,7 +210,7 @@ impl ParamTarget {
             let (name, leaf) = rest.split_at(name_end);
             let leaf = leaf.strip_prefix('.').unwrap_or(leaf);
             let Some(instance) = [path.clone(), format!("{top}.{path}")].into_iter().find_map(|p| ir.instance_at(&p)) else { continue };
-            if leaf.is_empty() || !instance.body().params().iter().any(|p| p.name == name && p.ty.is_composite()) {
+            if leaf.is_empty() || !instance.body().params().iter().any(|p| p.name == name && ir.is_composite_value(&p.ty)) {
                 continue;
             }
             return Some(ParamTarget { param: ParamPath { instance: instance.path().to_string(), param: name.to_string() }, leaf: Some(leaf.to_string()) });
@@ -206,20 +230,107 @@ impl ParamTarget {
 impl Session {
     /// Writes `value` to `leaf` of the composite param `path` names: the whole value after the write
     /// is checked against the param's `where` (`E0317`) before anything is changed, then written.
-    pub(crate) fn set_leaf(table: &mut Params, circuit: &mut CircuitInstance, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
+    pub(crate) fn set_leaf(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
         let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
-        let label = change.label();
-        circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
-            let text = error.to_string();
-            if text.contains("is refused, check") {
-                Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {} written at `{label}`", path.instance, path.param, value) }
-            } else {
-                Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {text}") }
+        Session::write_leaf_change(table, derive, circuit, path, &change, &value.to_string())
+    }
+
+    /// Writes `text` to the param `path` names as its type reads it (PI-01 to PI-03, D24): an integer
+    /// literal, a variant name, `None` or a value of `T`. A refusal changes nothing (`E0802`). An integer an
+    /// `f64` cannot hold is written as its exact pin bytes (PI-01 AC 4).
+    pub(crate) fn set_text_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
+        Session::write_text(table, derive, circuit, ir, path, text).map_err(|failure| Session::name_text(failure, &path.label(), text))
+    }
+
+    /// `failure`, when it is the refusal of a write (`E0802`: "`<label>` refuses the value ..."), as the user's own text states it:
+    /// the param and the text they gave (`Open`, `Some(0.5)`), never the tag or the leaf the text became.
+    fn name_text(failure: Failure, label: &str, text: &str) -> Failure {
+        match failure {
+            Failure::Host { code: "E0802", message } => match message.split_once("refuses the value ").and_then(|(_, rest)| rest.split_once(": ")) {
+                Some((_, reason)) => Failure::Host { code: "E0802", message: format!("`{label}` refuses the value `{text}`: {reason}") },
+                None => Failure::Host { code: "E0802", message },
+            },
+            other => other,
+        }
+    }
+
+    /// [`Session::set_text_param`] before its refusals are renamed.
+    fn write_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
+        let read = ParamText::read(ir, path, text)?;
+        match read.option_leaves(&path.label())? {
+            None => match read {
+                ParamText::Whole(scalar) => match scalar.exact_real() {
+                    Some(value) => Session::set_param(table, derive, circuit, path, value),
+                    None => Session::set_exact_integer(table, derive, circuit, path, scalar),
+                },
+                ParamText::Option { .. } => Ok(()),
+            },
+            Some(leaves) => {
+                // both leaves are written on a copy of the table, so the param changes once, whole
+                let mut working = table.clone();
+                let mut first: Option<LeafChange> = None;
+                for (leaf, value) in leaves {
+                    let change = working.leaf_change(&path.instance, &path.param, leaf, value)?;
+                    working.apply_leaf(&change);
+                    first = Some(LeafChange { old: first.map_or_else(|| change.old.clone(), |earlier| earlier.old), ..change });
+                }
+                let whole = first.ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{}` has no leaf to write", path.label()) })?;
+                Session::write_leaf_change(table, derive, circuit, path, &whole, text)
             }
-        })?;
-        circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {error}") })?;
-        table.apply_leaf(&change);
-        Ok(())
+        }
+    }
+
+    /// Writes an integer no `f64` holds exactly to its pin as the pin's own bytes, and recomputes what a placement derives from it from
+    /// those bytes (PI-01 AC 4, §8.1.23).
+    fn set_exact_integer(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
+        let ParamScalar::Integer(value) = scalar else { return Ok(()) };
+        let changes = table.changes_integer(&path.instance, &path.param, value, derive)?;
+        let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
+        let mut write = |change: &Changed| {
+            if Session::unwritten(circuit, change, forwarded) {
+                return Ok(());
+            }
+            circuit.write(&change.instance, &change.param, change.param_value())
+        };
+        table.write_changes(&changes, &mut write)
+    }
+
+    /// Writes the `--param` entry `text` of `target`: a leaf of a composite takes a number or a flag, a whole param is read
+    /// by its type. A structural param is an elaboration input already used, so the text is only checked against its type.
+    pub(crate) fn set_target_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, target: &ParamTarget, text: &str) -> Result<(), Failure> {
+        match &target.leaf {
+            Some(leaf) => {
+                let number = table.leaf_number(&target.param.instance, &target.param.param, leaf, text)?;
+                Session::set_leaf(table, derive, circuit, &target.param, leaf, number)
+            }
+            None if target.param.is_structural(ir) => ParamText::read(ir, &target.param, text).map(|_| ()),
+            None => Session::set_text_param(table, derive, circuit, ir, &target.param, text),
+        }
+    }
+
+    /// Checks `change` against the param's `where` (`E0317`), writes it to `circuit` and takes it into `table`;
+    /// `shown` is the value as the host gave it, for the refusals.
+    fn write_leaf_change(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
+        let label = change.label();
+        let changes = table.changes_composite(&path.instance, &path.param, change.bytes.clone(), shown, derive)?;
+        let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
+        // the `where` of the param is checked where a device pin holds it; a param no pin holds is not written when others derive from it
+        if circuit.holds(&path.instance, &path.param) {
+            circuit.check(&path.instance, &path.param, &change.param_value()).map_err(|text| {
+                if text.contains("is refused, check") {
+                    Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {shown} written at `{label}`", path.instance, path.param) }
+                } else {
+                    Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {text}") }
+                }
+            })?;
+        }
+        let mut write = |changed: &Changed| {
+            if Session::unwritten(circuit, changed, forwarded) {
+                return Ok(());
+            }
+            circuit.write(&changed.instance, &changed.param, changed.param_value())
+        };
+        table.write_changes(&changes, &mut write)
     }
 }
 
@@ -259,11 +370,17 @@ impl Session {
             _ => None,
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
+        let texts = spec.param_texts.iter().map(|(entry, text)| Ok((ParamTarget::resolve_text(&ir, ir.top().path(), entry)?, text.as_str()))).collect::<Result<Vec<_>, Failure>>()?;
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamTarget::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
         let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
-        let netlist = Session::netlist_of(&ir, &spec.options);
+        let noise = match &spec.analysis {
+            Analysis::Noise { output, input, .. } => Some(NoiseProbe::resolve(&ir, ir.top().path(), output, input.as_deref())?),
+            _ => None,
+        };
+        let session_parameters = crate::parameters::SessionParameters::of(&ir, &spec.options);
+        let netlist = Session::netlist_of(&ir, &spec.options, &session_parameters);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
@@ -295,24 +412,30 @@ impl Session {
         let mut table = Params::of(&ir);
         for (path, _, value) in &params {
             match &path.leaf {
-                Some(leaf) => Session::set_leaf(&mut table, &mut circuit, &path.param, leaf, *value)?,
-                None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
+                Some(leaf) => Session::set_leaf(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, leaf, *value)?,
+                None => {
+                    table.refuse_unfit(&path.param.instance, &path.param.param, *value)?;
+                    Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?
+                }
             }
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
+        for (target, text) in &texts {
+            Session::set_target_text(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &ir, target, text)?;
+        }
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table, statistics: None })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
     /// instance order (X9). A param no device pin holds is not written when others derive from
     /// it, or when it is itself derived: nothing reads it on a device, and what derives from it
     /// is written. A refusal changes nothing (`E0802`).
-    pub(crate) fn set_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, value: f64) -> Result<(), Failure> {
+    pub(crate) fn set_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, value: f64) -> Result<(), Failure> {
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
         let mut write = |change: &Changed| {
             if Session::unwritten(circuit, change, forwarded) {
                 return Ok(());
             }
-            circuit.set(&change.instance, &change.param, change.param_value()).map_err(|error| error.to_string())
+            circuit.write(&change.instance, &change.param, change.param_value())
         };
         table.set(&path.instance, &path.param, value, derive, &mut write).map(|_| ())
     }
@@ -320,14 +443,13 @@ impl Session {
     /// Whether `change` is left unwritten: no device pin holds the param, and it is itself
     /// derived or others derive from it (`forwarded`). A pinless param nothing derives from is
     /// still written, so the circuit's refusal names it.
-    pub(crate) fn unwritten(circuit: &CircuitInstance, change: &Changed, forwarded: bool) -> bool {
-        let pinned = circuit.bound().is_some_and(|bound| bound.names.params.contains_key(&(change.instance.clone(), change.param.clone())));
-        !pinned && (change.derived || forwarded)
+    pub(crate) fn unwritten(circuit: &dyn Pins, change: &Changed, forwarded: bool) -> bool {
+        !circuit.holds(&change.instance, &change.param) && (change.derived || forwarded)
     }
 
     /// The context a run's options give: the solver's own default with each given option in its
     /// place; `temp` is Celsius in the run and Kelvin in the solver (HII-02 AC 2 and 3).
-    fn context_of(options: &Options) -> Context {
+    pub(crate) fn context_of(options: &Options) -> Context {
         let mut context = Context::default();
         let tolerances = &mut context.tolerances;
         for (given, slot) in [
@@ -349,18 +471,21 @@ impl Session {
         context
     }
 
-    /// The netlist that binds the design when the run gives a `resolution` or a `maxmicro`; `None`
+    /// The netlist that binds the design when the run gives a `resolution`, a `maxmicro` or the design reads session parameters; `None`
     /// leaves the backend's own `circuit()`, which is what a run with neither has always used.
-    fn netlist_of<'a>(ir: &'a Ir, options: &Options) -> Option<Netlist<'a>> {
-        if options.resolution.is_none() && options.maxmicro.is_none() {
+    fn netlist_of<'a>(ir: &'a Ir, options: &Options, session_parameters: &[(String, f64)]) -> Option<Netlist<'a>> {
+        if options.resolution.is_none() && options.maxmicro.is_none() && options.time_point_rule.is_none() && session_parameters.is_empty() {
             return None;
         }
-        let mut netlist = Netlist::new(ir);
+        let mut netlist = Netlist::new(ir).with_session_parameters(session_parameters);
         if let Some(seconds) = options.resolution {
             netlist = netlist.with_resolution(seconds);
         }
         if let Some(bound) = options.maxmicro {
             netlist = netlist.with_microsteps(bound as usize);
+        }
+        if let Some(rule) = options.time_point_rule {
+            netlist = netlist.with_time_point_rule(rule);
         }
         Some(netlist)
     }
@@ -386,7 +511,7 @@ impl Session {
                 Ok((Some(Transfer { input, output: NodeIdentifier::Anonymous(node.id().index()) }), Vec::new()))
             }
             Analysis::Sens { wrt } => {
-                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
+                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
                     let message = format!("`{path}` is a discrete net, a param or a flow term: a `sens` run differentiates nodes and flows, not a discrete value");
                     return Err(Failure::Host { code: "P0010", message });
                 }
@@ -435,19 +560,29 @@ impl Session {
             .collect()
     }
 
+    /// How the steps of this session's transient were spent: `None` before it ran, and for any
+    /// analysis but a transient.
+    pub fn statistics(&self) -> Option<&TransientStatistics> {
+        self.statistics.as_ref()
+    }
+
     /// The context every analysis of this session takes.
     pub fn context(&self) -> &Context {
         &self.context
     }
 
-    /// The stages before a backend: the design of `spec` read, its top chosen, type-checked and
-    /// elaborated. `open` and `Project::check` run the same code, so a check finds what a run
-    /// would.
+    /// The stages before a backend: the design of `spec` read, every item type-checked, its top
+    /// chosen, checked and elaborated. `open` and `Project::check` run the same code, so a check
+    /// finds what a run would.
     pub(crate) fn elaborate(project: &Project, spec: &RunSpec) -> Result<(Arc<Ir>, String), Failure> {
         let design = project.design(spec)?;
         if !design.diagnostics().is_empty() {
             let found = design.diagnostics().to_vec();
             return Err(Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
+        }
+        // every item is typed, reached from the top or not (S3, GN-09): a run fails as a check does
+        if let Err(found) = Types::check_model(&design) {
+            return Err(Session::diagnosed("typeck", design, found));
         }
         let top = Session::top_of(&design, spec)?;
         if let Err(found) = Types::check(&design, &top) {
@@ -455,11 +590,22 @@ impl Session {
         }
         // the before-run bindings of key params are elaboration inputs (analog-structure, AS-15 AC 1):
         // the elaborator lowers the variant of their values; every other binding is written below
-        let bound = piperine_lang::elab::Overrides::new(&spec.params);
+        let bound = piperine_lang::elab::Overrides::new(&spec.params).with_texts(&spec.param_texts);
         match Elaborator::new(&design).run_with(&top, &bound) {
             Ok(ir) => Ok((Arc::new(ir), top)),
             Err(found) => Err(Session::diagnosed("elaborate", design, found)),
         }
+    }
+
+    /// What a `noise` run measures and refers to, resolved at open; `None` for any other analysis.
+    pub fn noise_probe(&self) -> Option<&NoiseProbe> {
+        self.noise.as_ref()
+    }
+
+    /// The report of the noise run this session took: its densities, totals and groups; `None`
+    /// before the run and for any other analysis.
+    pub fn noise_report(&self) -> Option<&NoiseReport> {
+        self.noise_report.as_ref()
     }
 
     /// The top module's name.
@@ -507,8 +653,9 @@ impl Session {
     /// run reach `sink` as the solver delivers them. A session runs once: the analysis takes its
     /// circuit.
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
-        if self.circuit.is_some() {
+        if let Some(circuit) = &self.circuit {
             self.sources.require_all(&self.ir)?;
+            self.require_inputs(circuit)?;
         }
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
@@ -522,6 +669,21 @@ impl Session {
         match failure.borrow_mut().take() {
             Some(broken) => Err(broken),
             None => table,
+        }
+    }
+
+    /// `E0187` naming the first `in` port of the top that holds no value when the analysis starts: no
+    /// initial value (`= value`, or the `Default` of its type) and no value the host wrote before
+    /// the run (`drive` at 0). Nothing writes such a port, so it has no value to start from.
+    fn require_inputs(&self, circuit: &CircuitInstance) -> Result<(), Failure> {
+        let top = self.ir.top();
+        let silent = top.body().carriers().iter().find(|c| c.role == CarrierRole::In && c.init.is_none() && !circuit.net_written(&format!("{}.{}", top.path(), c.name)));
+        match silent {
+            Some(port) => Err(Failure::Host {
+                code: "E0187",
+                message: format!("the `in` port `{}` of the top `{}` has no initial value, no `Default` and no value from the host: give it `= value`, or `drive` it at 0 before the run", port.name, top.path()),
+            }),
+            None => Ok(()),
         }
     }
 
@@ -566,7 +728,7 @@ impl Session {
                     .with_sink(delivery)
                     .with_step_observer(Box::new(Tap(recorder.clone())))
                     .build();
-                solver
+                let result = solver
                     .tran()
                     .and_then(|mut tran| {
                         for action in &timed {
@@ -578,6 +740,7 @@ impl Session {
                         tran.solve()
                     })
                     .map_err(|error| Failure::from_fault("transient", error, recorder.borrow().reached()))?;
+                self.statistics = Some(TransientStatistics::new(result.statistics().clone(), result.stats.clone()));
                 // CLI-05 AC 11: a run that stopped short has no table to give. How far it got is the
                 // last step the observer saw, which a design with no analog unknown reaches too (its
                 // result holds no analog accept, HII-17). A model that wrote `finish` ended the run at
@@ -669,6 +832,27 @@ impl Session {
                     None => Ok(table),
                 }
             }
+            Analysis::Noise { from, to, grid, .. } => {
+                let probe = self.noise.as_ref().ok_or_else(|| Failure::Backend("a noise run resolved no output".into()))?;
+                let sweep_options = AcSweepAnalysisOptions {
+                    start_frequency: *from,
+                    stop_frequency: *to,
+                    steps: grid.steps(*from, *to),
+                    logarithmic: matches!(grid, Grid::PerDecade(_)),
+                };
+                let (output_node, reference_node, output_flow) = match &probe.output {
+                    NoiseOutput::Potential { plus, minus } => (plus.clone(), minus.clone(), None),
+                    NoiseOutput::Flow(flow) => (NodeIdentifier::Gnd, NodeIdentifier::Gnd, Some(flow.clone())),
+                };
+                let options = NoiseAnalysisOptions { sweep_options, output_node, reference_node, input_source_name: probe.input.clone(), output_flow };
+                let unit = probe.unit();
+                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
+                let result = solver.noise(options).and_then(|mut noise| noise.solve()).map_err(|error| Failure::Solver { analysis: "noise", error })?;
+                let report = NoiseReport::of(&result, unit);
+                let table = Table::noise(&report);
+                self.noise_report = Some(report);
+                Ok(table)
+            }
             Analysis::Sens { .. } => {
                 let mut circuit = circuit;
                 let nets = circuit.nets();
@@ -715,7 +899,7 @@ impl Session {
         let variable = match probe {
             Probe::Node { id, .. } => AnalogVariable::Node(id.clone()),
             Probe::Flow { branch, .. } => AnalogVariable::Branch(branch.clone()),
-            Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
+            Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
             Probe::Term { instance, .. } => return Err(Failure::Backend(format!("`i({instance})` is a flow term: it has no solved analog net"))),
         };
         let found = nets.iter().find(|net| net.analog_variable().is_some_and(|v| **v == variable));
@@ -750,24 +934,41 @@ impl Session {
 
     /// The top of `spec` and what its design declares, elaborated and nothing else: no backend
     /// builds it and no analysis runs (`piperine info`). The request's `params` are applied to the
-    /// table, and what a placement derives from them is evaluated by the interpreter's walk, so
-    /// the values shown are the ones a run uses. Diagnostics are the `Failure` of a design that
-    /// does not elaborate, as `Session::open` gives them.
-    pub fn describe(project: &Project, spec: &RunSpec) -> Result<(String, Metadata), Failure> {
+    /// table, and what a placement derives from them is evaluated as the request's backend would
+    /// (HII-10, so the values shown are the ones a run uses): by the interpreter's walk for an
+    /// interpreter request, which holds `f64` and `bool` params only, and by the compiled design's
+    /// derive functions for a Rust request, every param type included. That compile happens only
+    /// when the request sets a param some placement derives from; `settings` is asked for then and
+    /// not otherwise. Diagnostics are the `Failure` of a design that does not elaborate, as
+    /// `Session::open` gives them.
+    pub fn describe(project: &Project, spec: &RunSpec, settings: &dyn Fn() -> Result<Settings, Failure>) -> Result<(String, Metadata), Failure> {
         let (ir, top) = Session::elaborate(project, spec)?;
         let mut table = Params::of(&ir);
-        let derive = Evaluated::new(&ir, table.plan());
+        let backend = Backend::choose(None, None, spec.backend.as_deref())?;
+        let sets_a_param = !spec.params.is_empty() || !spec.param_texts.is_empty();
+        let compiled = match backend {
+            Backend::Rust if sets_a_param && !table.plan().bindings().is_empty() => {
+                let transpiler = Transpiler::new(ir.clone()).map_err(|e| Failure::Backend(e.to_string()))?;
+                Some(transpiler.compile(&settings()?).map_err(|e| Failure::Backend(e.to_string()))?)
+            }
+            _ => None,
+        };
+        let evaluated = Evaluated::new(&ir, table.plan());
+        let derive: &dyn Derive = match &compiled {
+            Some(compiled) => compiled,
+            None => &evaluated,
+        };
+        let mut unbound = Unbound;
         for (entry, value) in &spec.params {
             let target = ParamTarget::resolve(&ir, ir.top().path(), entry)?;
             match &target.leaf {
-                Some(leaf) => {
-                    let change = table.leaf_change(&target.param.instance, &target.param.param, leaf, *value)?;
-                    table.apply_leaf(&change);
-                }
-                None => {
-                    table.set(&target.param.instance, &target.param.param, *value, Some(&derive), &mut |_| Ok(()))?;
-                }
+                Some(leaf) => Session::set_leaf(&mut table, Some(derive), &mut unbound, &target.param, leaf, *value)?,
+                None => Session::set_param(&mut table, Some(derive), &mut unbound, &target.param, *value)?,
             }
+        }
+        for (entry, text) in &spec.param_texts {
+            let target = ParamTarget::resolve_text(&ir, ir.top().path(), entry)?;
+            Session::set_target_text(&mut table, Some(derive), &mut unbound, &ir, &target, text)?;
         }
         Ok((top, Metadata::of(&ir, &table)))
     }
@@ -808,7 +1009,7 @@ impl Session {
         if spec.print.is_empty() {
             return Ok(Probe::defaults(ir, top));
         }
-        spec.print.iter().map(|entry| Probe::resolve(ir, top, entry)).collect()
+        spec.print.iter().map(|entry| Probe::resolve_all(ir, top, entry)).collect::<Result<Vec<_>, Failure>>().map(|all| all.into_iter().flatten().collect())
     }
 
     fn diagnosed(stage: &'static str, design: Design, found: Vec<DesignDiagnostic>) -> Failure {

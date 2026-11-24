@@ -88,15 +88,15 @@ fn unit_enums_and_their_variants_are_typed() {
     let types = checked(&design, &src);
     let (mode, fault) = (decl(&design, "Mode", true), decl(&design, "Fault", true));
     let got: Vec<Ty> = ["m", "f", "same", "other"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
-    assert_eq!(got, [Ty::Enum(mode), Ty::Enum(fault), Ty::Bool, Ty::Bool]);
-    assert_eq!(Ty::Enum(mode).name(&design), "enum `Mode`");
+    assert_eq!(got, [Ty::enumeration(mode), Ty::enumeration(fault), Ty::Bool, Ty::Bool]);
+    assert_eq!(Ty::enumeration(mode).name(&design), "Mode");
 
     // `Severity` of the stdlib, through the prelude.
     let src = "module Top() { }\nanalog for Top { let s = Severity::Warning; let w = s == Severity::Error; }";
     let design = design_with_std(src);
     let types = checked(&design, src);
     let severity = design.decls().into_iter().find(|d| d.name() == Some("Severity") && matches!(d.kind(), DeclKind::Enum(_))).expect("std Severity").id();
-    assert_eq!(types.local(decl(&design, "s", false)), Some(&Ty::Enum(severity)));
+    assert_eq!(types.local(decl(&design, "s", false)), Some(&Ty::enumeration(severity)));
     assert_eq!(types.local(decl(&design, "w", false)), Some(&Ty::Bool));
 
     // Two enums do not compare, and one without `PartialEq` does not compare at all.
@@ -135,7 +135,7 @@ fn option_values_and_their_methods_are_typed() {
     let fault = decl(&design, "Fault", true);
     let opt = |t: Ty| Ty::Option(Box::new(t));
     let got: Vec<Ty> = ["a", "b", "c", "f", "g", "s", "n", "u", "v"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
-    assert_eq!(got, [opt(Ty::F64), opt(Ty::UInt(8)), opt(Ty::UInt(8)), opt(Ty::Enum(fault)), opt(Ty::F64), Ty::Bool, Ty::Bool, Ty::UInt(8), Ty::F64]);
+    assert_eq!(got, [opt(Ty::F64), opt(Ty::UInt(8)), opt(Ty::UInt(8)), opt(Ty::enumeration(fault)), opt(Ty::F64), Ty::Bool, Ty::Bool, Ty::UInt(8), Ty::F64]);
     assert_eq!(opt(Ty::UInt(8)).name(&design), "Option<u8>");
 
     // `None` with nothing to take a type from, and `unwrap_or` of another type, are mismatches.
@@ -248,7 +248,7 @@ fn match_is_typed_over_enums_bools_integers_and_options() {
     let types = checked(&design, &src);
     let (mode, fault) = (decl(&design, "Mode", true), decl(&design, "Fault", true));
     let got: Vec<Ty> = ["m", "s", "b", "i", "fo", "g", "h", "x"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
-    assert_eq!(got, [Ty::Enum(mode), Ty::UInt(8), Ty::F64, Ty::Int(32), Ty::Int(32), Ty::Enum(fault), Ty::UInt(9), Ty::Enum(fault)]);
+    assert_eq!(got, [Ty::enumeration(mode), Ty::UInt(8), Ty::F64, Ty::Int(32), Ty::Int(32), Ty::enumeration(fault), Ty::UInt(9), Ty::enumeration(fault)]);
 
     // DIG-01 AC 2, the `match` arm position: a bare literal arm takes the type of the first arm
     // that is not one (`9` is a `u9`, written before `w`).

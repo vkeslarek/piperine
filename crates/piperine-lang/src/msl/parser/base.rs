@@ -236,7 +236,7 @@ pub(crate) fn path_ident<'a, I: In<'a>>() -> impl Parser<'a, I, Ident, Extra<'a>
     ident().or(kw_seg).labelled("identifier")
 }
 
-/// Any literal: integer, float, string, `true`/`false`, `Unknown`.
+/// Any literal: integer, float, string, `true`/`false`.
 pub(crate) fn lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone {
     select! {
         Token::Int(s) => LitKind::Int(s),
@@ -244,7 +244,6 @@ pub(crate) fn lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone
         Token::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes },
         Token::Kw(Kw::True) => LitKind::Bool(true),
         Token::Kw(Kw::False) => LitKind::Bool(false),
-        Token::Unknown => LitKind::Unknown,
     }
     .map_with(|kind, e| Lit { kind, span: Loc(e.span()) })
     .labelled("literal")

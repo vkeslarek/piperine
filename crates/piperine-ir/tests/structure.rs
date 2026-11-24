@@ -166,11 +166,10 @@ impl Switching {
         e.binary(BinaryOp::Gt, probe, half)
     }
 
-    /// `en.high()` of the carrier `en`.
+    /// A read of the `bool` carrier `en`.
     fn carrier_high(b: &mut IrBuilder) -> ExprId {
         let o = Origin { file: Self::FILE.into(), line: 3, col: 5 };
-        let read = b.expr(Expr::Carrier(0), ValueType::Flagged(Box::new(ValueType::Bool)), o.clone());
-        b.expr(Expr::High(read), ValueType::Bool, o)
+        b.expr(Expr::Carrier(0), ValueType::Bool, o)
     }
 
     /// The design: `kind` is the kind of branch 0; `write` returns the `analog` block (and may add
@@ -208,7 +207,7 @@ impl Switching {
             analog: Some(analog),
             children: vec![],
         });
-        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
         for site in derivatives {
             b.derivative(body, site);
         }
@@ -293,7 +292,7 @@ fn a_contribution_in_a_function_or_a_reaction_is_broken() {
         analog: None,
         children: vec![],
     });
-    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
     let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: origin.clone() });
     b.reaction(body, Reaction { on: vec![event], stmts: vec![inside], locals: vec![], origin: origin.clone() });
     let top = b.next_instance_id();
@@ -325,7 +324,7 @@ fn a_flow_branch_refuses_a_potential_contribution() {
 
 #[test]
 fn contributions_lists_each_with_its_enclosing_conditions() {
-    // c1 = `v(a) > 0.5`, c2 = `en.high()`:
+    // c1 = `v(a) > 0.5`, c2 = `en`:
     //   `if c1 { A } else { if c2 { B } }  { C }  D`
     let mut conditions: Vec<ExprId> = Vec::new();
     let ir = Switching::ir(BranchKind::Flow, |b| {
@@ -358,7 +357,7 @@ fn contributions_lists_each_with_its_enclosing_conditions() {
 #[test]
 fn a_nested_contribution_reads_its_conditions_in_its_branch_dependencies() {
     // `if v(a) > 0.5 { i(a, gnd) +> 1.0; }`: the branch reads the node its condition probes, and
-    // is no longer affine; `if en.high() { i(a, gnd) +> 1.0; }` reads the carrier and stays affine.
+    // is no longer affine; `if en { i(a, gnd) +> 1.0; }` reads the carrier and stays affine.
     let on_probe = Switching::ir(BranchKind::Flow, |b| {
         let (cond, taken) = (Switching::probe_above(b), Switching::contribute(b, QuantityRole::Flow, 1.0));
         vec![Switching::branch_on(b, cond, vec![taken], vec![])]
@@ -465,7 +464,7 @@ impl Switching {
         b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] })
     }
 
-    /// `if en.high() { i(a, gnd) +> <read>; }` where `read` builds the contributed value.
+    /// `if en { i(a, gnd) +> <read>; }` where `read` builds the contributed value.
     fn read_under_a_condition(b: &mut IrBuilder, read: ExprId) -> StmtId {
         let (cond, taken) = (Self::carrier_high(b), Self::contribute_expr(b, read));
         Self::branch_on(b, cond, vec![taken], vec![])
@@ -474,8 +473,8 @@ impl Switching {
 
 #[test]
 fn a_limit_under_a_condition_needs_enabled() {
-    // `if en.high() { i(a, gnd) +> limit(..); }`: without `enabled` the site is broken, with
-    // `enabled = en.high()` the same body passes and the site reads the carrier.
+    // `if en { i(a, gnd) +> limit(..); }`: without `enabled` the site is broken, with
+    // `enabled = en` the same body passes and the site reads the carrier.
     let unguarded = Switching::ir_with_sites(BranchKind::Flow, |b| {
         let read = Switching::limit_read(b);
         Written { analog: vec![Switching::read_under_a_condition(b, read)], limits: vec![Switching::named("lim", None)], ..Written::default() }
@@ -489,7 +488,7 @@ fn a_limit_under_a_condition_needs_enabled() {
     assert_eq!(guarded.check(), vec![], "{}", guarded);
     let body = guarded.bodies().next().expect("a body");
     assert_eq!(body.carrier_reads(Target::Limit(0)), vec![0], "the site reads what enables it");
-    assert!(guarded.to_string().contains("limit L0 \"lim\" enabled en.high()"), "{}", guarded);
+    assert!(guarded.to_string().contains("limit L0 \"lim\" enabled en"), "{}", guarded);
 }
 
 #[test]
@@ -504,7 +503,7 @@ fn a_top_level_limit_has_no_enabled() {
 
 #[test]
 fn an_ac_stim_under_a_condition_passes_check() {
-    // `if en.high() { i(a, gnd) +> ac_stim(1.0); }` (AS-06 AC 4): no `enabled` is needed.
+    // `if en { i(a, gnd) +> ac_stim(1.0); }` (AS-06 AC 4): no `enabled` is needed.
     let ir = Switching::ir_with_sites(BranchKind::Flow, |b| {
         let read = Switching::stim_read(b);
         Written { analog: vec![Switching::read_under_a_condition(b, read)], stims: vec![Switching::named("ac", None)], ..Written::default() }
@@ -514,7 +513,7 @@ fn an_ac_stim_under_a_condition_passes_check() {
 
 #[test]
 fn a_bound_step_with_when_reads_its_condition() {
-    // `bound_step(1n) when en.high()` at the top of the block: the cap site reads the carrier.
+    // `bound_step(1n) when en` at the top of the block: the cap site reads the carrier.
     let capped = Switching::ir_with_sites(BranchKind::Flow, |b| {
         let (step, when) = (Switching::ex(b).real(1e-9), Switching::carrier_high(b));
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
@@ -523,7 +522,7 @@ fn a_bound_step_with_when_reads_its_condition() {
     assert_eq!(capped.check(), vec![], "{}", capped);
     let body = capped.bodies().next().expect("a body");
     assert_eq!(body.carrier_reads(Target::BoundStep(0)), vec![0]);
-    assert!(capped.to_string().contains("bound_step(1e-9) when en.high()"), "{}", capped);
+    assert!(capped.to_string().contains("bound_step(1e-9) when en"), "{}", capped);
 
     // A `when` that is not a `bool` is broken.
     let wrong = Switching::ir_with_sites(BranchKind::Flow, |b| {
@@ -583,18 +582,18 @@ impl Placements {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let leaf = b.body(Self::body("Leaf", vec![Self::node("p", NodeRole::Port, el), Self::node("s", NodeRole::Signal, el)], vec![]));
-        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2) });
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2), count: None });
         let top_body = b.body(Self::body(
             "Top",
             vec![Self::node("a", NodeRole::Signal, el), Self::node("mid", NodeRole::Reached, el)],
             vec![Self::child("leaf", leaf, vec![Terminal::Node(0), Terminal::Own(1)])],
         ));
-        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4) });
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4), count: None });
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
         if drive {
             let value = Ex::new(&mut b, "placements.msl", 6, 1).boolean(true);
-            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6) });
+            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6), element: None, path: vec![] });
         }
         let top = b.next_instance_id();
         let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: Self::at(4) });
@@ -709,10 +708,10 @@ impl ParamEvents {
         let mut b = IrBuilder::new();
         let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };
         let value = value(&mut b);
-        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None });
+        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None, target: None });
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone() });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
         let event = b.event(body, Event { source, guard: None, origin: Self::at() });
         b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
         let top = b.next_instance_id();
@@ -753,9 +752,9 @@ fn a_param_previous_read_is_typed_as_the_param() {
     let body = ir.bodies().next().expect("a body");
     assert_eq!(body.param_previous_reads(Target::Reaction(0)), vec![0]);
     assert!(body.param_changes(Target::Reaction(0)).is_empty());
-    // A param is known: a flagged `prev()` is not what the form gives.
-    let flagged = ParamEvents::ir(EventSource::ParamChanged(0), ValueType::F64, |b| ParamEvents::previous(b, ValueType::Flagged(Box::new(ValueType::F64))));
-    assert!(Switching::names(&flagged.check(), "expression is typed flagged<f64>, its form gives f64"), "{:?}", flagged.check());
+    // A `prev()` of another type is not what the form gives.
+    let wrong = ParamEvents::ir(EventSource::ParamChanged(0), ValueType::F64, |b| ParamEvents::previous(b, ValueType::Bool));
+    assert!(Switching::names(&wrong.check(), "expression is typed bool, its form gives f64"), "{:?}", wrong.check());
 }
 
 #[test]

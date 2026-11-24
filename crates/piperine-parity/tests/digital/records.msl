@@ -13,7 +13,7 @@ module Bad(in clk: Bit, out bad: Bit = false) {
 }
 digital for Bad {
     on clk.rise() {
-        let s = n.known_or(0);
+        let s = n;
         n <- s + 1;
         if s == 2 { bad <- true; }
     }

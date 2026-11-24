@@ -117,7 +117,7 @@ fn flip_flop() -> Specs {
             origin: "dff.msl:3:5",
             on: vec![3],
             reads: vec![pin_cell(1, part::VALUE)],
-            writes: vec![Statement { pin: 2, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: 2, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         }],
         ..Specs::default()
@@ -141,7 +141,7 @@ type Row = (Rule, fn() -> Specs, &'static str, &'static str);
 
 #[test]
 fn every_shape_local_rule_is_enforced() {
-    let table: [Row; 19] = [
+    let table: [Row; 22] = [
         (Rule::UnknownConstant, || { let mut s = resistor(); s.terms[0].op = 9; s }, "term i", "res.msl:3:5"),
         (Rule::IndexOutOfRange, || { let mut s = resistor(); s.functions[0].reads[1].index = 7; s }, "function i", "res.msl:3:9"),
         (Rule::KindRole, || {
@@ -195,6 +195,20 @@ fn every_shape_local_rule_is_enforced() {
             let mut s = flip_flop();
             s.pins[1].flags = pin_flag::QUIET;
             s.reactions[0].reads = vec![pin_cell(1, part::PREVIOUS)];
+            s
+        }, "reaction sample", "dff.msl:3:5"),
+        (Rule::ArrayNotDiscrete, || { let mut s = resistor(); s.pins[1].count = 4; s }, "pin p", "res.msl:1:17"),
+        (Rule::ArrayInitLength, || {
+            let mut s = flip_flop();
+            s.pins[2].count = 4;
+            s.pins[2].flags = pin_flag::HAS_INIT;
+            s.pins[2].init = &[0, 0, 0];
+            s
+        }, "pin q", "dff.msl:1:18"),
+        (Rule::ElementOutOfRange, || {
+            let mut s = flip_flop();
+            s.pins[1].count = 4;
+            s.reactions[0].elements = vec![4];
             s
         }, "reaction sample", "dff.msl:3:5"),
     ];
@@ -254,7 +268,7 @@ fn a_zeroed_shape_entry_is_an_unknown_constant() {
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "function i"));
 
     let mut specs = flip_flop();
-    specs.reactions[0].writes[0] = Statement { pin: 2, offset: 0, len: 2, flags: 0x80, min_after: 0.0 };
+    specs.reactions[0].writes[0] = Statement { pin: 2, offset: 0, len: 1, flags: 0x80, min_after: 0.0 };
     let err = validate(specs.build().shape()).expect_err("an unknown statement flag");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "reaction sample"));
 }

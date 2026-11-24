@@ -30,7 +30,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 
 | Feature | What it delivers | Progress | Lane |
 | --- | --- | --- | --- |
-| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B10 done (T1 to T63, MD-79); then verifier, merge | C |
+| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B10 done (T1 to T63, MD-79); phase C (arrays of carriers) delivered T64 to T90; then verifier, merge | C |
 | `explicit-unknowns` B1–B3 | The spec and Book amendment of the explicit model (MD-78): no hidden known flag, `Logic`, `Option`, `Default`, traits as capabilities, `Resolve<X, V>` on natures, strengths, the ABI without known bytes | done on the branch; user reads the Book, then Opus verifier and merge to `main` ahead of the code | A |
 
 ### Waiting, in order (all unblock when `composite-values` merges)
@@ -38,15 +38,19 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | # | Feature | What is left | Waits on |
 | --- | --- | --- | --- |
 | 1 | `explicit-unknowns` phase A (B4–B7) | No hidden known flag: values are what their type says, `Default` decides whether a carrier may start without a value (`E0187`), `analog` reads binary carriers directly, the ABI without known bytes (still major 1), `E0511`; the spec and Book amendment (B1–B3) merges to `main` first (MD-78, user 2026-11-21) | composite-values |
-| 2 | `generics` | Generic structs, enums, functions and traits, const generics, `Fn` values (L4, L7, L8, L29–L32, L58, S3, X6); tasks amended for value semantics and explicit unknowns (`impl` on natures) | explicit-unknowns A |
-| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` | generics A |
-| 4 | `analog-operators` | B4–B7: `simparam`, `tnom`, noise sources and the noise analysis, the `laplace`/`zi` family (L43–L45, L47, L49, U7) | composite-values |
-| 5 | `unknown-semantics-events` | B5: L51, L53, in the explicit model | generics A–B |
-| 6 | `params-and-io` | B5–B6: integer, enum and `Option` params, `E0122`, `parse_table`, `parse_hex`, `table_model` | composite-values, explicit-unknowns A |
+| 2 | `generics` | Generic structs, enums, functions and traits, const generics, `Fn` values (phases A and B delivered: L4, L7, L8, L9 and X6 closed, S3 narrowed to generic modules; left: L29–L32, L58); tasks amended for value semantics and explicit unknowns (`impl` on natures) | explicit-unknowns A |
+| 2C | `generics` phase C (`tasks-c.md`, T53–T82, batches B9–B13) | L70, then `cast`/`same` compiled from `std/values.msl` (moved from `explicit-unknowns` T48, user 2026-11-23), then GN-32 (`encode`/`decode` of every layout, generic hand-written `Repr`, default levels: L69, L70); then generic modules (S3), placement inference, `Short`, structural params, generation `for`/`if` in a body and a `digital` block, recursion by generation, the ladder (L30, L31); flips digital#21, cheatsheet#2, cheatsheet#3, core-std#8, modules#1, #2, #6, #8 and their claims | B9: nothing (may start now); B10 on: `composite-values` phase C on `main` |
+| 2D | `generics` phase D (`tasks-d.md`, T83–T102, batches B14–B16) | Templates as values, placement through a template or a binning function, `Fn(P)` bounds, trait impls on module types (the swappable MOSFET; `E0130` leaves the spec), L32; `temperature()` (core) and `multiplicity()` (a stdlib MSL function over `simparam("multiplicity")`, with `DEFAULT_MULTIPLICITY = 1.0`; no core row, no `--multiplicity` key, no `E0802`, no IR/ABI read — user decision 2026-11-23: "É, melhor voltar Option") as `Option<f64>` run settings the model reads, no implicit params (user decision 2026-11-23, L29); T99–T101 need `analog-operators`' `simparam -> Option<f64>` on `main`; flips modules#12 and modules~1faf8c12; `resolved-nets-bundles` owns modules#10 and cheatsheet#8; one multiplicity per run, an instance combines its own `m` param as `m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY)` (user 2026-11-23) | generics C |
+| 2E | `generics` phase E (`tasks-e.md`, T103–T115, batches B17–B18) | The L58 generics group against §22 (`merge` struck, MD-78), `std` under the whole-model check; closes the feature (`checks.md`, Verifier) | generics D, `analog-operators` B4–B7 (user 2026-11-23) |
+| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` (L68: `Logic`, `logic`, `matches_bits`) | generics A |
+| 4 | `analog-operators` | Delivered, B1–B7 (MD-82): `ddx`, `delay`, `simparam(name) -> Option<f64>` (no run `tnom`: a per-instance model param, user 2026-11-23), `noise`, `white_noise` and `flicker_noise` with the noise analysis (per-source totals, `onoise`/`inoise`, the `noise` run and `--analysis noise`), `emit!` in `analog` as traces, and the retaken step that makes `slew` limit an ideal step (L43–L45, L47, L49, L60, U7 closed; L72 found and closed); the ngspice twins `delay_tline`, `noise_rc`, `noise_diode`, `tnom_res` agree, `noise_switch` is held to its closed form (ngspice reads a closed switch as open in `.noise`) | composite-values |
+| 5 | `unknown-semantics-events` | Delivered, B1–B5 (MD-74): `settle`, held settle commits, events read as `bool` (`Pfd3`), `limexp`, the Book's clipper and buck, functions that return `Event` (L51, L52, L53 closed) | generics A–B |
+| 6 | `params-and-io` | Delivered, B1–B6 (MD-75): the host's node sources, integer, enum (payload enums included) and `Option` params, `E0122`, `parse_table`, `parse_hex`, `table_model`; B5–B6 ran on composite-values and explicit-unknowns A | composite-values, explicit-unknowns A |
 | 7 | `resolved-nets` | B3 and later, re-planned for `Resolve<X, V>` as a capability of a nature: `Strength` (five levels), `Driven`, `strongest`, `Pullup`, `Pulldown`, `Keeper`, `Tribuf`, `Tgate`, `Bidir`; `E0220`, `E0225`, `E0511` (L21, L58) | generics, explicit-unknowns B |
 | 8 | `resolved-nets-bundles` | B2 and later: connecting and resolving bundles (L25) | resolved-nets |
 | 9 | `code-clarity` | Readability and structure refactor under the seven cleanliness rules, CC-11 included (no language special cases: builtins declared in the MSL prelude), and the split of the three oversized `pom/{resolve,reflect,lower}/mod.rs`; a Fable inventory first | items 1–8 |
-| 10 | `spec-closure` (**item 13**) | Fable closure of spec ↔ implementation; G1, G2, G4, G5, X1, X2, H13 and the discrepancies logged during the run | code-clarity, and **no Book listing still refused by a feature** (below) |
+| 10 | `composite-values` phase D | Number widths (L13, CV-29 to CV-33): `f32` as Rust's, `f16` and `f128` correctly rounded in every operation and H.2 method (user Q4 (a), 2026-11-23), integers of any width; the leaf crate `piperine-numbers` embedded as runtime source. Planned: `design-d.md`, `tasks-d.md` (T91 to T126, batches D1 to D6); D1 to D3 may run now, D4 waits for phase C on `main` | composite-values phase C (D4 to D6 only) |
+| 11 | `spec-closure` (**item 13**) | Fable closure of spec ↔ implementation; G1, G2, G4, G5, X1, X2, H13 and the discrepancies logged during the run | code-clarity, composite-values phase D, and **no Book listing still refused by a feature** (below) |
 
 `unknown-semantics-per-level` is **dropped**: explicit unknowns replace per-level flags (user, 2026-11-21).
 
@@ -57,7 +61,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (`analog` reads a discrete carrier directly) | `E0150` | `explicit-unknowns` phase A (T20, closed by T40) |
 | The `E0187` and `Default` initial-value sentences of the values chapter | not raised | `explicit-unknowns` phase A (T21, T22, T30) |
 | values#14 (`Option` as a carried type) | `E0112` | `explicit-unknowns` phase A |
-| natures#2 (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>>`, `signal sda: Sda`) | `P0001`, `E0112`, `E0161` | `resolved-nets` (needs `composite-values` for the array, explicit-unknowns phases A and B, and `Resolve<Driven>` for `Sda`) |
+| natures#2 (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>>`, `signal sda: Sda`) | `E0161` (`Sda`, the model's own nature declared further on in the chapter; every other line of the list elaborates) | `resolved-nets` (needs `Resolve<Driven>` for `Sda`; the composite-values array and explicit-unknowns phases A and B have landed) |
 | values#18 and the other `Logic<4>` listings | `P0001` | `explicit-unknowns` phase B (T48) |
 | digital#16 to digital#20, natures#3 and its alarm, core-std#6 (`Driven`, `Resolve`, `Pullup`, `Tribuf`, `Keeper`) | `E0161` | `resolved-nets` B3 and later (T27 to T32) |
 
@@ -68,7 +72,8 @@ code (user, 2026-11-18 and 2026-11-21).
 
 | Feature | What it delivers | State |
 | --- | --- | --- |
-| `transient-performance` | Faster transients (Fable diagnosis and plan): step control around events, stamps and node lists reused, no instant at an idle step; T25: the analog time as an integer tick epoch plus a small offset, replacing the long-transient stopgap | spec, design and tasks on `feature/transient-performance`; first after the review (user, 2026-11-21) |
+| `transient-performance` | Faster transients: only observable landings, the tested landing and jump steps, stamps reused, no instant at an idle step, T25's tick epoch. The buck's start went from 804 136 steps / 151.9 s to 210 188 / ~27 s | **delivered** — verified (round 4) and merged (user, 2026-11-22) |
+| `digital-performance` | A digital-only run in bounded memory, no quadratic paths, an allocation-free call, work proportional to activity; last, the whole digital circuit of a compiled unit evaluated in topological order over a flat state until it converges (Verilator-style). Measured today: 175x (counter) to 560 000x (10 000 flops) behind Verilator; memory grows with run length | spec on `feature/digital-performance` (diagnosis + bench harness); **postponed until after spec-closure and the code-clarity refactor** (user, 2026-11-22: "precisamos primeiro de um bom refactor e de todas as features funcionando") |
 | `host-iii` | `force`, `release`, waits for an event, continued transients (H1, H6) | spec |
 | `host-analyses` | S-parameters, Fourier, distortion, operating-point variables (H2) | spec |
 | `sweeps-montecarlo-optimization` | Multi-axis sweeps, Monte Carlo, optimization (H2, H7) | spec |
@@ -76,7 +81,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `cli-packages` | Packages from the command line (H10) | spec |
 | `conformance` | The galleries and conformance on the compiled backend (U1, U2, U4, U6, U8, U9) | spec |
 | `foreign-models` | Foreign and OSDI models, linking (L12, L33) | spec |
-| `multi-rate` | Digital edges that do not cut analog steps (V12) | spec; later (user) |
+| `multi-rate` | Digital edges that do not cut analog steps (V12) | delivered by `transient-performance` (landings only where something observable happens: `59be2e5c`; no instant at an idle step: `c8569a22`) |
 | `surrogate-models` | Averaged or surrogate models for long runs (V13) | spec; later (user) |
 | `periodic-small-signal` | Small-signal analyses over the periodic steady state (V16) | spec |
 | `ngspice-models` | The ngspice device models in the MSL standard library — same names, params and equations, each with a parity twin — so a SPICE user moves over easily | **idea only**; well after the rest (user, 2026-11-21) |
@@ -96,5 +101,4 @@ Logged during the unattended run; presented at the item 13 review.
 | Spec §13 | D2 |
 | Book | The clipper twin |
 | Buck example | Brown-out OVP, start-up peak iL 1.78 A, the 12 → 9 V ramp of 236 µs |
-| `transient-performance` | Decision points 1–5 of its plan |
 | Elaboration | A child's node connected to another placement (`P0001`) is a lowering gap, not a spec rule: close it, or spec it |

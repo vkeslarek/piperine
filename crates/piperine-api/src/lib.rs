@@ -10,6 +10,7 @@
 //! - [`project`]: the package a command works on, its runs and the crate graph of a run.
 //! - [`plot`]: the geometry of a plot, as numbers.
 //! - [`session`]: a run request from source to a circuit bound on a backend, and its run.
+//! - [`statistics`]: how a transient's steps were spent.
 //! - [`table`]: the result of an analysis as columns of typed cells.
 //! - [`record`]: an `emit!` record, its decoding, and where a session hands it.
 //! - [`verdict`]: pass or fail of a run, from its `checks` records.
@@ -19,9 +20,13 @@ pub mod backend;
 pub mod composite;
 pub mod failure;
 mod held;
+mod pins;
 mod host;
 pub mod prelude;
 pub mod metadata;
+pub mod noise;
+mod parameters;
+pub mod param_text;
 pub mod params;
 pub mod plot;
 pub mod probe;
@@ -31,6 +36,7 @@ mod recorder;
 pub mod request;
 pub mod session;
 mod source;
+pub mod statistics;
 pub mod table;
 pub mod verdict;
 
@@ -46,6 +52,8 @@ pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
 pub use session::{Built, ParamPath, ParamTarget, Session};
 pub use source::NodeSource;
+pub use statistics::TransientStatistics;
+pub use param_text::ParamText;
 pub use params::{Changed, Derive, Params};
 pub use piperine_solver::prelude::ParamValue;
 pub use table::{Cell, Table};

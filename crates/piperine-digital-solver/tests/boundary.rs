@@ -15,6 +15,7 @@ use piperine_digital_solver::observe::Observation;
 use piperine_digital_solver::plan::DigitalPlan;
 use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
 fn crate_dir() -> PathBuf {
@@ -111,19 +112,19 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     let _drain: fn(&mut Digital) -> Vec<Observation> = Digital::drain_observations;
 
     // and each once, on a small plan: one host-driven net
-    let plan = DigitalPlan::bind(vec![NetSpec::discrete("n", 2, 1)], vec![], Resolution::default()).unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let plan = DigitalPlan::bind(vec![NetSpec::discrete("n", 1, 1)], vec![], Resolution::default()).unwrap();
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     let n = NetId(0);
     d.start().unwrap();
     assert_eq!(d.next_due(), None);
-    d.host_commit(n, 0, &[1, 1], Tick(4)).unwrap();
+    d.host_commit(n, 0, &[1], Tick(4)).unwrap();
     assert_eq!(d.next_due(), Some(Tick(4)));
     let cp = d.checkpoint();
     assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Reached);
-    assert_eq!(d.read(n), [1, 1]);
+    assert_eq!(d.read(n), [1]);
     d.restore(&cp);
-    assert_eq!(d.read(n), [0, 0]);
-    assert_eq!(d.shadow(n, 0, &[1, 1]).unwrap(), Shadow::Accept);
+    assert_eq!(d.read(n), [0]);
+    assert_eq!(d.shadow(n, 0, &[1]).unwrap(), Shadow::Accept);
     assert_eq!(d.net_name(n), "n");
     let out = d.run_instant(Tick(4), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
     assert!(!out.finish);

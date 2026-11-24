@@ -1,0 +1,46 @@
+//! A function that returns `Event` may choose between events by a value read at the instant (§13 rules 1 and 7, UE-04): its
+//! `if` and its `match` give `(c && e₁) || (!c && e₂)`, each guard read in the microstep the event fires in.
+
+/// A rise of `c` while `s` holds, a fall of `c` while it does not.
+pub fn pick(c: Bit, s: Bit) -> Event { if s { c.rise() } else { c.fall() } }
+
+/// The same choice written as a `match` on the flag.
+pub fn chosen(c: Bit, s: Bit) -> Event { match s { true => c.rise(), false => c.fall() } }
+
+/// A rise of `c` once a counter the body builds with a `for` reaches three: `n` is built, then read by the choice.
+pub fn counted(c: Bit, s: Bit) -> Event {
+    let n = 0;
+    for step in 0..3 { n += 1; }
+    if s && n == 3 { c.rise() } else { c.fall() }
+}
+
+/// `clk` rises at 10 ns and 30 ns and falls at 20 ns.
+module Clock(out clk: Bit = false) {}
+digital for Clock {
+    on at(10n) { clk <- true; }
+    on at(20n) { clk <- false; }
+    on at(30n) { clk <- true; }
+}
+
+/// The flag is low until 25 ns, between the fall and the second rise.
+module Flag(out s: Bit = false) {}
+digital for Flag {
+    on at(25n) { s <- true; }
+}
+
+/// One reaction per way of writing the choice.
+module Choices(in clk: Bit, in s: Bit) {}
+digital for Choices {
+    on pick(clk, s) { emit!("pick", t = now()); }
+    on chosen(clk, s) { emit!("chosen", t = now()); }
+    on counted(clk, s) { emit!("counted", t = now()); }
+}
+
+/// The clock, the flag and the reactions over them.
+module ChoiceBench() {
+    signal clk: Bit;
+    signal s: Bit;
+    let clock = Clock(clk);
+    let flag = Flag(s);
+    let choices = Choices(clk, s);
+}

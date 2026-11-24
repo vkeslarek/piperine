@@ -13,12 +13,13 @@ use piperine_digital_solver::engine::{Digital, Horizon, Mode, Outcome};
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
 use piperine_digital_solver::tick::{Resolution, Tick};
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000;
 
 fn engine(devices: Vec<Placed<'_>>) -> Digital {
-    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default())
+    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
 }
 
 fn net(d: &Digital, name: &str) -> NetId {
@@ -115,12 +116,12 @@ fn every_change_commit_and_record_is_observed_in_order() {
     let seen = d.drain_observations();
     let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
     let want: Vec<Observation> = (1..=8u8)
-        .map(|i| Observation::Record { stream: "r.log".into(), reaction: 0, statement: 0, at: (Tick(3), 0), bytes: vec![i, 1] })
+        .map(|i| Observation::Record { stream: "r.log".into(), reaction: 0, statement: 0, at: (Tick(3), 0), bytes: vec![i] })
         .collect();
     assert_eq!(records, want.iter().collect::<Vec<_>>(), "eight records, none lost to transport");
     let commits = seen.iter().filter(|o| matches!(o, Observation::Commit { instance, statement: 0, .. } if instance == "r")).count();
     assert_eq!(commits, 8);
-    assert_eq!(d.read(net(&d, "log")), [8, 1], "transport leaves the last value in the pin");
+    assert_eq!(d.read(net(&d, "log")), [8], "transport leaves the last value in the pin");
     let changes: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Change { net, .. } if net == "log")).collect();
     assert_eq!(changes.len(), 1, "one applied change of log");
     assert_eq!(seen.first(), Some(&Observation::Fire { net: "go".into(), at: (Tick(3), 0) }));
@@ -131,7 +132,7 @@ fn every_change_commit_and_record_is_observed_in_order() {
     let mut last = (Tick(i64::MIN), 0);
     for o in d.drain_observations() {
         let at = match o {
-            Observation::Change { at, .. } | Observation::Fire { at, .. } | Observation::Record { at, .. } | Observation::Unsettled { at, .. } => at,
+            Observation::Change { at, .. } | Observation::Fire { at, .. } | Observation::Record { at, .. } => at,
             Observation::Commit { made, .. } => made,
         };
         assert!(at >= last, "{at:?} after {last:?}");
@@ -261,9 +262,9 @@ fn nested_marks_rewind_in_order() {
 #[test]
 fn a_mark_journals_only_the_nets_that_changed() {
     // HYG-14 AC 5: 1 of 1 000 nets changes between the mark and the rewind: one entry.
-    let nets: Vec<NetSpec> = (0..1000).map(|i| NetSpec::discrete(&format!("n{i}"), 2, 1)).collect();
+    let nets: Vec<NetSpec> = (0..1000).map(|i| NetSpec::discrete(&format!("n{i}"), 1, 1)).collect();
     let plan = piperine_digital_solver::plan::DigitalPlan::bind(nets, vec![], Resolution::default()).unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
     let mark = d.mark();
     d.host_commit(NetId(417), 0, &HIGH, Tick(7)).unwrap();
@@ -271,7 +272,7 @@ fn a_mark_journals_only_the_nets_that_changed() {
     assert_eq!(d.read(NetId(417)), HIGH);
     assert_eq!(d.journaled_nets(), 1, "one net changed: one entry, not a thousand");
     d.rewind(&mark);
-    assert_eq!(d.read(NetId(417)), [0, 0]);
+    assert_eq!(d.read(NetId(417)), [0]);
     assert_eq!(d.next_due(), None);
     d.release(mark);
 }
@@ -282,7 +283,7 @@ fn settler_engine() -> Digital {
         nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
     })
     .expect("binds");
-    Digital::new(plan, DigitalLimits::default())
+    Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
 }
 
 /// The settle phase of the instant at tick 0, which makes the held commit.

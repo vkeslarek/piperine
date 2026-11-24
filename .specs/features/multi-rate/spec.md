@@ -1,5 +1,7 @@
 # Multi-Rate Stepping Specification
 
+> Delivered by `transient-performance` (`.specs/features/transient-performance/`): it absorbed this feature's requirements; the gate of Q3 was replaced there (D6).
+
 **Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
 
 Priority: **later** (user, 2026-11-17: multi-rate is a "melhoria futura… bem depois"). It is specified now so that the gap has an owner; it is queued after `solver-hygiene` and `host-ii`.

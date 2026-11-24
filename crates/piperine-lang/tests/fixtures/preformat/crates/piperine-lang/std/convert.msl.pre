@@ -1,28 +1,55 @@
 //! Converters (§22.4): `D2A`, `A2D` and `Bidir` carry a signal between discrete carriers and nodes.
 
 pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
-    rout: f64 = 100.0; tr: f64 = 20p;
-    let ramp = transition(match d.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    let ramp = transition(if d { 1.0 } else { 0.0 }, 0.0, tr, tr);
 }
-analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
 
-pub module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+analog for D2A {
+    i(a) +> (v(a) - ramp * v(vdd)) / rout;
+}
+
+pub module A2D(a: Electrical, out d: Bit = false) {
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+}
+
 digital for A2D {
-    on above(v(a) - vth - hyst / 2.0) { d <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+    on above(v(a) - vth - hyst / 2.0) {
+        d <- true;
+    }
+    on above(vth - hyst / 2.0 - v(a)) {
+        d <- false;
+    }
 }
 
 pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
-    rout: f64 = 100.0; tr: f64 = 20p; vth: f64 = 0.6; hyst: f64 = 50m;
-    signal seen: Bit = false;                                  // the node, thresholded
-    let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ;   // unknown strength: assume driven
-    d = if driving { Logic::Z } else { Logic::strong(seen) };
-    let ramp = transition(match d.others().v.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+    signal seen: Bit = false; // the node, thresholded
+    let driving = d.others().s != Strength::HighZ;
+    d = if driving {
+        Drive::Z
+    } else {
+        Drive::strong(seen)
+    };
+    let ramp = transition(if d.others().v { 1.0 } else { 0.0 }, 0.0, tr, tr);
 }
+
 analog for Bidir {
-    if driving { i(a) +> (v(a) - ramp * v(vdd)) / rout; }     // released: no contribution, zero flow
+    if driving {
+        i(a) +> (v(a) - ramp * v(vdd)) / rout;
+    } // released: no contribution, zero flow
 }
+
 digital for Bidir {
-    on above(v(a) - vth - hyst / 2.0) { seen <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { seen <- false; }
+    on above(v(a) - vth - hyst / 2.0) {
+        seen <- true;
+    }
+    on above(vth - hyst / 2.0 - v(a)) {
+        seen <- false;
+    }
 }

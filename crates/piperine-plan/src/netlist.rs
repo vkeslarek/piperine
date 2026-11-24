@@ -2,11 +2,12 @@
 //! the module of each body.
 
 use piperine_abi::raw::Module;
-use piperine_ir::{BodyId, Constant, Ir, NodeRef};
+use piperine_ir::{BodyId, CarrierRole, Constant, Ir, NodeRef};
 use piperine_solver::abi::{Error, SolverDomain};
-use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result};
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result, TimePointRule};
 
 use crate::BodyPlan;
+use crate::array::ArrayPin;
 use crate::pin::PinLayout;
 
 /// Who supplies the module of a body: the interpreter, or a compiled library.
@@ -16,16 +17,18 @@ pub trait Modules {
 }
 
 /// The instance table of one design, ready to be bound to the modules of its bodies.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Netlist<'a> {
     ir: &'a Ir,
     resolution: Option<f64>,
     microsteps: Option<usize>,
+    time_point_rule: Option<TimePointRule>,
+    session_parameters: Vec<(String, f64)>,
 }
 
 impl<'a> Netlist<'a> {
     pub fn new(ir: &'a Ir) -> Netlist<'a> {
-        Netlist { ir, resolution: None, microsteps: None }
+        Netlist { ir, resolution: None, microsteps: None, time_point_rule: None, session_parameters: Vec::new() }
     }
 
     /// This netlist with the session's tick length (the `RESOLUTION` global), in seconds; the
@@ -38,6 +41,24 @@ impl<'a> Netlist<'a> {
     /// engine's own default (1000) when never given.
     pub fn with_microsteps(self, bound: usize) -> Netlist<'a> {
         Netlist { microsteps: Some(bound), ..self }
+    }
+
+    /// This netlist with the rule that decides which scheduled instants the digital engine lands
+    /// the analog step on; the engine's own default (`Observable`) when never given.
+    pub fn with_time_point_rule(self, rule: TimePointRule) -> Netlist<'a> {
+        Netlist { time_point_rule: Some(rule), ..self }
+    }
+
+    /// This netlist with the session's parameters, each handed to the builder as the value of the
+    /// `GLOBAL NAMED` pin of that name (`simparam`, §14.4): a pin of a name not given here stays
+    /// unknown, which an `OPTIONAL` pin reads as its default.
+    pub fn with_session_parameters(self, parameters: &[(String, f64)]) -> Netlist<'a> {
+        Netlist { session_parameters: parameters.to_vec(), ..self }
+    }
+
+    /// The session parameters this netlist hands to the builder, in the order given.
+    pub fn session_parameters(&self) -> &[(String, f64)] {
+        &self.session_parameters
     }
 
     /// The design as a solver circuit: one solver node per design node, in the IR's node order
@@ -74,6 +95,13 @@ impl<'a> Netlist<'a> {
         if let Some(bound) = self.microsteps {
             builder.microsteps(bound);
         }
+        if let Some(rule) = self.time_point_rule {
+            builder.time_point_rule(rule);
+        }
+        self.declare_array_nets(&mut builder);
+        for (name, value) in &self.session_parameters {
+            builder.session_param(name, ParamValue::Real(*value));
+        }
         for instance in ir.instances() {
             let body = instance.body();
             let Some(module) = modules.module(body.id()) else { continue };
@@ -89,10 +117,19 @@ impl<'a> Netlist<'a> {
                 if !BodyPlan::carrier_is_port(body, c as u32) {
                     continue;
                 }
-                ports.push(match instance.net(c) {
-                    Some(net) => Port::Net(net.path().to_string()),
-                    None => Port::Open,
+                ports.push(match (instance.net(c), Self::window_of(instance, c)) {
+                    (Some(net), Some(window)) => Port::Window { net: net.path().to_string(), first: window.first, length: window.length.unwrap_or(1) },
+                    (Some(net), None) => Port::Net(net.path().to_string()),
+                    (None, _) => Port::Open,
                 });
+            }
+            // a drive of one element writes a scalar pin bound to that element of the array net (`Pins::element_drives`)
+            for drive in body.drives().iter().filter(|d| d.element.is_some() && d.after.is_none()) {
+                let window = match (instance.net(drive.carrier as usize), drive.element) {
+                    (Some(net), Some(first)) => Port::Window { net: net.path().to_string(), first, length: 1 },
+                    _ => Port::Open,
+                };
+                ports.push(window);
             }
             let mut values: Vec<(&str, ParamValue)> = Vec::new();
             for (param, given) in body.params().iter().zip(instance.params()).filter(|(param, given)| param.default.as_ref() != Some(*given)) {
@@ -111,6 +148,29 @@ impl<'a> Netlist<'a> {
             builder.device(module, instance.path(), &values, &ports);
         }
         builder.build()
+    }
+
+    /// Declares, for every array carrier a design net is declared for, the array net of that name with its element
+    /// count and initial value (`CircuitBuilder::array_net`), so the pins and windows bound to it find it.
+    fn declare_array_nets(&self, builder: &mut CircuitBuilder) {
+        for instance in self.ir.instances() {
+            for (c, carrier) in instance.body().carriers().iter().enumerate() {
+                let Some(count) = carrier.count else { continue };
+                let Some(net) = instance.net(c).filter(|n| n.declared_by().id() == instance.id()) else { continue };
+                let init = carrier.init.and_then(|value| ArrayPin::init(self.ir, carrier, value)).unwrap_or_default();
+                builder.array_net(net.path(), count, &init);
+            }
+        }
+    }
+
+    /// The window of an array of carriers the parent of `instance` gives carrier `c` of it (an `in` or `out` port),
+    /// `None` when it is given the whole net, or `c` is no port the parent binds.
+    fn window_of(instance: piperine_ir::Instance<'_>, c: usize) -> Option<piperine_ir::CarrierWindow> {
+        let parent = instance.parent()?;
+        let child = parent.children().position(|i| i.id() == instance.id())?;
+        let body = instance.body();
+        let slot = body.carriers().iter().take(c).filter(|x| matches!(x.role, CarrierRole::In | CarrierRole::Out)).count();
+        parent.body().child_windows(child).get(slot).copied().flatten()
     }
 
     /// The wiring this netlist cannot give the solver, as an error naming it (see `circuit`).
@@ -205,5 +265,15 @@ mod tests {
         assert_eq!(given.bound().expect("bound").microsteps, 7);
         let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
         assert_eq!(default.bound().expect("bound").microsteps, 1000);
+    }
+
+    #[test]
+    fn with_time_point_rule_reaches_the_digital_engine() {
+        // the rule a netlist carries is the rule the engine binds with; the default is Observable
+        let ir = empty_design();
+        let given = Netlist::new(&ir).with_time_point_rule(TimePointRule::Declared).circuit(&Nothing).expect("binds");
+        assert_eq!(given.bound().expect("bound").digital.time_point_rule(), TimePointRule::Declared);
+        let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
+        assert_eq!(default.bound().expect("bound").digital.time_point_rule(), TimePointRule::Observable);
     }
 }

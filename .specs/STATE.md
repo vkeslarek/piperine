@@ -1510,7 +1510,7 @@ deviation tables of their commits.
 
 1. **A host `set` recomputes every value derived from the param it changes** (§8.1.23, decision
    X9): the child params, the constant `let`s and the definitions whose expression reads it. The
-   derivation is a function the compiled backend generates, `piperine_derive_1(k, params) -> f64`,
+   derivation is a function the compiled backend generates, `piperine_derive_3(k, params, out) -> u32` (the contract version is the suffix: `params` the pin bytes of the parent's params, `out` a `BytesMut` the host sizes to the child's pin, the answer the bytes written, 0 for none),
    from a `DerivePlan` that `piperine-plan` builds from the IR; the host calls it, then writes each
    changed pin through `CircuitInstance::set`, checking each child's `where` first and undoing
    the writes on a refusal (§23.1 rule 6). A timed `set` derives when it is scheduled, one write
@@ -1662,18 +1662,22 @@ merge renumbers.
    skips (they are typed with their closure), so `limexp` checks and lowers like any module with a
    result; it is one `limit` instance per use, its argument moves by at most 1.0 per iteration and its
    derivative is `limexp` (section 22.2.4 rules 3 to 5).
-4. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
+4. **A function that returns `Event` is inlined where it stands** (B5, 2026-11-23; section 13 rule 7, design D14). Its call is no
+   IR function: `elab/event_functions.rs` walks the event its body yields in the caller's head, body read, guard or
+   module result, with its parameters bound as a handle inlines (`Scope::handles`), a `str` and a value (`Environment`),
+   and a function that calls another nests. The checker needed no change (generics' handle receivers type
+   `req.rise()`); the plain `Pfd3` of the Book runs from source on `composite-values`' assignment.
+5. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
    and the Book's clipper (`tran_clipper.cir`, ngspice given the harness's own step cap) agrees under
    `TRAN_VOLTAGE`; no tolerance moved. The Book's buck holds its `regulated` check from 10 ms on (largest
    deviation 9.4 mV against 50 mV).
 
 **Scope:** `crates/piperine-{ir,plan,transpile,digital-solver,solver,lang}`, the Book's chapters 8 and 10.
-**Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
-`composite-values` and `generics`.
+**Status:** Delivered, B1 to B5 (T1 to T31): L51, L52 and L53 closed.
 
 ### MD-75: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
 
-`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6 wait on `composite-values` phases A to B). The
+`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6, 2026-11-23, on `composite-values` A to B and `explicit-unknowns` A). The
 number follows MD-74 (`unknown-semantics-events`, merged first).
 
 1. **Every code of the spec is raised or owned.** `crates/piperine-lang/tests/spec_codes.rs` lists every
@@ -1691,10 +1695,21 @@ number follows MD-74 (`unknown-semantics-events`, merged first).
 5. **The shipped sources are in the formatter's form:** the stdlib, `examples/buck` and the gallery
    fences, with `piperine fmt --check` guarding them; Appendix C.2 states the `table_model` spline end
    conditions.
+6. **A param is any value type** (B5, spec §8.1.15): an integer, a unit enum (its tag), an enum with fields
+   or an `Option` (composite pins; an `Option` param no instance binds is `None`, explicit-unknowns EU-06).
+   The host reads a `--param`/`set` text by the param's type (`ParamText`: an integer literal in a radix,
+   a variant name, `None` or a value of `T`; `E0802` otherwise); a composite is set by its leaves. The
+   interpreter refuses every param that is not `f64` or `bool`. A named function called outside its class
+   is `E0122`.
+7. **Files and tables** (B6): `parse_table` and `parse_hex` are intrinsics typed by the `const`'s array
+   type and folded by the evaluator (`E0614`, `E0706`; an `x`/`z` digit is `E0706`, integers hold no
+   unknown); `table_model` lowers to `Expr::Table` over elaboration constants (`E0703`, `E0704`) and runs
+   on `rt::TableModel` (`E0705` outside the table under extrapolation `E`, the host keeping the code).
+   The IR is appended last (D17); the interpreter refuses it by name.
 
 **Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-api`, `crates/piperine-cli`,
 `crates/piperine-parity`, `docs/spec`, `GAPS.md`.
-**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`.
+**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`; delivered, B1 to B6 (2026-11-23).
 
 ### MD-76: pure value semantics: no reference, no move, no mutability marker
 
@@ -1780,7 +1795,7 @@ integrated; cargo test -p piperine-parity --test source_commits --test source_re
 It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD-76's D7 into the trait. MD-74 stands. The specification, `abi.md`, the records and the Book are amended first (batches B1 to B3, on `main` ahead of the code); phase A removes the flag from every layer, phase B writes `Logic<N>` from `std` after `generics`.
 
 **Scope:** `docs/spec`, `docs/book`, `crates/piperine-{lang,ir,plan,transpile,abi,digital-solver,solver,api,cli,parity}`, `examples/`, `tests/`.
-**Status:** Accepted (2026-11-21), from the approved `.specs/features/explicit-unknowns/spec.md`. Delivered so far: the specification, `abi.md` and the records (S8 in `GAPS.md` tracks the code).
+**Status:** Accepted (2026-11-21), from the approved `.specs/features/explicit-unknowns/spec.md`. Delivered: the specification, `abi.md`, the records and phase A, the code (T19 to T40, 2026-11-22: no layer carries a known flag, the device ABI is major 1, minor 0, edited in place, `E0511` stops a loop that does not settle, a top `in` port needs its first value; S8 of `GAPS.md` is closed). Phase B delivered (T41 to T48, 2026-11-23: the operator traits of Appendix H.10 and `Logic<N>` from `std/logic.msl`, `logic` and `matches_bits` over it, the host's four-state cell; L68 of `GAPS.md` is closed). `impl Bit<Logic>` (§22.1.5) is built (fix round, 2026-11-23). `cast` and `same` stay the checker's own intrinsics until `generics` phase C brings `encode` and `decode` of derived layouts (L70): `same` of a `Logic` needs them in a library definition; their removal and a differential test are `generics` phase C batch B9, T55 of its `tasks-c.md`, right after its L70 task (user's ruling, 2026-11-23). A host write of a `Logic` param or pattern is `GAPS.md` L71, owner `resolved-nets`.
 
 ---
 
@@ -1808,10 +1823,80 @@ It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD
    param is set by the path of one leaf before the run (`Top.f.num[2]=0.5`); its `where` is checked on the whole
    value after the write (`E0317`).
 5. **Defaults taken while the user was away** (D1 to D20 of `design.md`, plus B1 to B10 of `tasks.md`'s Handoff).
+6. **Phase C (arrays of carriers, 2026-11-23).** An array of discrete carriers is one sparse array net; a child binds a window of it; an array of nodes is one node per element. The ABI's array pin (`Pin.count`, `Cell.element` as `Function.elements`/`Reaction.elements`, `ArrayView`, `Host.commit_element`, `Host` 24 bytes) was added in place at `MINOR` 0 (MD-78; QC1, approved by the user 2026-11-23, supersedes EU-16 AC 2). An array of carriers is `Ty::Array` over a `Carrier`/`Node`; a definition of one element writes a window-bound scalar pin; an index that must fold and does not is `E0180` (`P0002` is no code a source may spell).
 
 **Scope:** `crates/piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-lang`, `piperine-api`,
 `piperine-cli`, `piperine-parity`, `docs/spec`, the Book, `GAPS.md`.
-**Status:** phases A and B delivered (2026-11-21); phases C and D (arrays of carriers, `f16`/`f128`) follow.
+**Status:** phases A, B (2026-11-21) and C (arrays of carriers, 2026-11-23) delivered; phase D (`f16`/`f128`) follows.
+
+### MD-80: the solver lands by the observable rule; every step is tested; time is a tick epoch
+
+`transient-performance` (2026-11-22; the number follows MD-79, `composite-values`; a collision at merge is
+renumbered by whoever merges second). It extends MD-62's owner protocol (the one device contract and the transient
+protocol over its two sides) and MD-74's rule for `settle`, and supersedes nothing.
+
+1. **Landings.** The discrete side lands the analog step only where something observable happens: an analog-read
+   net changed, a firing reaction reads a continuous pin, an `IRREVERSIBLE` reaction or a host waiter (the
+   `Observable` `TimePointRule`, the solver's default; `Declared` is the reference mode, a host option with no run
+   key). The step that ends on a landing is tested for truncation, and the step that reads a jump is
+   error-controlled by a first-order estimate: the two exemptions of Part V §15.2 that rules 1 and 6 name are gone. The
+   step retaken to the same time after its crossings (§15.2 rule 4) stays exempt, since it cannot be taken smaller.
+2. **Idle steps.** An accepted step where nothing is due, no crossing fired and nothing listens to `settle` runs no
+   instant (`DiscreteSide::is_idle_at`).
+3. **Per-step cost.** Newton reads the clock only when `PIPERINE_TRACE_TIMING` is set; a `Handle` validates a
+   function's cells once and a call allocates nothing; a term's partials are read where they live; stamps go into a
+   buffer the solver keeps.
+4. **Long runs.** Past 2^52 ticks the protocol counts the analog side's times from an epoch it moves to every
+   accepted tick (`AnalogSide::rebase`), so every tick is exact for any run length; the 256-spacing step floor of
+   Appendix C.2.1 is gone. Under 2^52 ticks nothing moves.
+5. **Measured.** The buck's 600 us start: 804 136 steps / 151.9 s to 210 188 / about 27 s; `buck.vout` against a
+   `max_step = 1e-10` reference 0.000136 mV (gate 0.104 mV); no parity value, twin or pinned grid moved.
+6. **Restart after a host write (T26, TP-13; user 2026-11-22).** The step that reads a host write restarts at a
+   tenth of the last step instead of 10⁻³ (`HOST_RESTART_FRACTION`); the power stage takes 27 547 steps instead of
+   30 920 (release). The step controller's growth clamp stays 1.5: 2.0 moves the `tran_corner` twin's bytes (D5).
+
+### MD-81: generics are monomorphized at elaboration; handle functions are inlined
+
+`generics` (2026-11-23; the number follows MD-80, `transient-performance`; a collision at merge is renumbered by whoever
+merges second). It extends MD-64 (IR functions are pure values) and supersedes nothing.
+
+1. **Monomorphization.** The checker types a generic body once, with each type parameter opaque, and records each use's
+   arguments (`Types::instantiation`); the elaborator makes one IR function or one IR type per distinct instance, named by
+   its turbofish spelling (`swap::<f64>`, `Pair<f64>`), and the POM keeps the generic item as written.
+2. **Static dispatch.** A call through a bound runs the `impl` of the receiver's concrete type, chosen among the `impl`s of the
+   trait by the arguments the bound writes (`C: Convert<f64>`); a closure or a function name passed for an `Fn` bound is a
+   function value, not inlined (design D9 amended).
+3. **Handles.** A function with a handle parameter (a node or a carrier of a nature, `self` of an `impl` on a nature,
+   `fn f<N: Nature>`) is inlined at each call, never an IR function: the handle is bound to the caller's node or carrier, a
+   probe lowers to its terminals and a read to the carrier's value; a handle returned, stored or written through is `E0133`
+   and a recursion through one is `E0126`.
+4. **Hand-written `Repr`.** `encode` and `decode` are IR functions named on the type; a carrier's initial value is the levels
+   word `encode` gives for the folded initializer (design D18).
+5. **`check`.** `piperine check` types every item of every non-std crate; a generic module's body waits for phase C (S3).
+
+### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input
+
+`analog-operators` (2026-11-23; the number follows MD-81, `generics`; a collision at merge is renumbered by whoever merges
+second). It extends MD-64 (IR functions are pure values) and MD-78, and supersedes nothing.
+
+1. **`ddx`** is differentiated symbolically in the IR at elaboration (`Differentiation`); backends are unchanged. A loop,
+   an assignment, a closure or a call through a value under `ddx` is `P0001` naming it.
+2. **`delay`** is always a site on a private pin with a `FLOW` and a `DELAY` term; a negative `td` or `max <= 0` is the run
+   error `E0453`, a `td` that varies is bounded by its `max`.
+3. **A noise source** (`noise`, `white_noise`, `flicker_noise`) is a `NOISE` input of the instance whose density only a noise
+   sweep reads, grouped by the source's name; the analysis integrates each source by ngspice's power-law rule and sums the
+   sources as powers (`onoise_total`, `inoise_total`). `NOISE` is the one parity constant of noise.
+4. **Session parameters.** The core keeps only the run temperature (`temp`, `temperature()`); `tnom` is an ordinary
+   per-instance model param (default 300.15 K), never a run key or flag, and `dtemp` is no core mechanism (user,
+   2026-11-23). `simparam(name)` is an `Option<f64>`: `Some` when the run set it, `None` otherwise, no default argument,
+   `E0456` retired (user, 2026-11-23). The host fills a `GLOBAL NAMED` pin per name.
+5. **Traces.** `emit!` in `analog` is a `TRACE` watch delivered as a record of a stream the run names, with the Newton
+   iteration and the analysis; one reached through a `fn` stays `P0001` naming the `fn` (GAPS L72).
+6. **Owner rule (AO-13).** The step that read a jump is retaken when the jump's crossings change what `analog` reads, so the
+   stdlib `slew` limits an ideal step; the bound is the round bound, else `E0504`.
+7. **Parity.** ngspice is the oracle where it is right: `delay_tline`, `noise_rc`, `noise_diode` and `tnom_res` agree under
+   their contracts. ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so
+   the closed `noise_switch` is held to its closed form and the same twin opened to `noise_switch_off.cir`.
 
 ## Handoff Snapshot
 

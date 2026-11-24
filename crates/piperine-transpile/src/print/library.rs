@@ -20,7 +20,7 @@ use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
 use piperine_plan::{BodyPlan, DerivePlan, Mode};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, DerivativePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, TypeItems, ValuePrinter};
+use crate::print::{AnalogPrinter, DelayPrinter, DerivativePrinter, NoisePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, TypeItems, ValuePrinter};
 
 /// Prints a design.
 #[derive(Debug)]
@@ -84,6 +84,7 @@ impl LibraryPrinter {
         }
         if !derived.is_empty() {
             uses.insert("piperine_abi::raw::List");
+            uses.insert("piperine_abi::raw::BytesMut");
         }
 
         let mut t = Text::new();
@@ -173,11 +174,13 @@ impl LibraryPrinter {
                 Mode::Ttol(_) | Mode::Etol(_) => (analog.tolerance(k)?, digital.function_name(f)),
                 Mode::Cap(_) => (analog.cap(k)?, digital.function_name(f)),
                 Mode::DerivativeAbstol(_) => (DerivativePrinter::new(&analog).abstol(k)?, digital.function_name(f)),
+                Mode::Noise(_) => (NoisePrinter::new(&analog).density(k)?, digital.function_name(f)),
+                Mode::DelayMaximum(_) => (DelayPrinter::new(&analog).maximum(k)?, digital.function_name(f)),
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Dual");
             }
-            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::Cap(_) | Mode::DerivativeAbstol(_) | Mode::Cross { .. }) {
+            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::Cap(_) | Mode::DerivativeAbstol(_) | Mode::DelayMaximum(_) | Mode::Noise(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Real");
             }
             uses.insert("piperine_abi::device::Eval");
@@ -209,6 +212,10 @@ impl LibraryPrinter {
             "std::sync::OnceLock",
         ] {
             uses.insert(path);
+        }
+        // a session parameter's pin and a trace's record are read and written through `Carried`
+        if !body.session_parameters().is_empty() || !body.traces().is_empty() {
+            uses.insert("rt::Carried");
         }
         let shape = shapes.prototype(plan.shape().shape());
 
@@ -354,7 +361,7 @@ impl LibraryPrinter {
                 exprs.extend(e.guard);
                 match e.source {
                     EventSource::Cross { e: x, .. } | EventSource::At(x) => exprs.push(x),
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => {}
                 }
             }
             for r in body.reactions() {
@@ -370,6 +377,16 @@ impl LibraryPrinter {
         let mut exprs = Self::roots(ir, running.iter().map(|(b, _)| *b));
         exprs.extend(derived.bindings().iter().map(|b| b.expr));
         let mut found = BTreeSet::new();
+        // the `encode` and `decode` of a hand-written `Repr` are called by the type's own `Carried` impl (GN-05)
+        for data in ir.types() {
+            if let piperine_ir::ReprForm::HandWritten { encode, decode, .. } = data.repr {
+                for function in [encode, decode] {
+                    if found.insert(function.index()) {
+                        exprs.push(ir.function(function).body());
+                    }
+                }
+            }
+        }
         while let Some(e) = exprs.pop() {
             match ir.expr(e) {
                 Expr::Call { function, args } => {

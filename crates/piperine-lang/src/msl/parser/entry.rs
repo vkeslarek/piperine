@@ -49,17 +49,6 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
         RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Kw(k) if unused_keyword(*k)) => {
             name_error(&t, span)
         }
-        // `Unknown` where a declaration or field name goes: `Unknown: T = ..`.
-        RichReason::ExpectedFound { found: Some(t), .. }
-            if matches!(&**t, Token::Unknown)
-                && tokens
-                    .iter()
-                    .position(|(_, s)| *s == span)
-                    .and_then(|i| tokens.get(i + 1))
-                    .is_some_and(|(n, _)| matches!(n, Token::Punct(Punct::Colon))) =>
-        {
-            name_error(&t, span)
-        }
         RichReason::ExpectedFound { found: Some(t), .. } if names_expected(e, &t) => name_error(&t, span),
         RichReason::ExpectedFound { found: None, .. } if at_span().is_some_and(|t| names_expected(e, &t)) => {
             name_error(&at_span().unwrap_or(Token::Error), span)
@@ -221,7 +210,7 @@ pub fn parse_type(src: &str) -> Parsed<Type> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| ty::build(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| ty::build(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one pattern.
@@ -229,7 +218,7 @@ pub fn parse_pat(src: &str) -> Parsed<Pat> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| h.pat.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| h.pat.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as generic parameters (`<T: Repr = bool, const N: u32>`).
@@ -237,7 +226,7 @@ pub fn parse_generics(src: &str) -> Parsed<Generics> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one expression.
@@ -245,7 +234,7 @@ pub fn parse_expr(src: &str) -> Parsed<Expr> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| h.expr.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| h.expr.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one item of a module body.
@@ -253,7 +242,7 @@ pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one braced block `{ stmt* }`.
@@ -261,7 +250,7 @@ pub fn parse_block(src: &str) -> Parsed<Block> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// The deepest nesting the parser descends into (E0910).
@@ -284,8 +273,7 @@ fn is_close(t: &Token) -> bool {
 /// postfix; otherwise the next operator token is a prefix form.
 fn ends_operand(t: &Token) -> bool {
     match t {
-        Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. }
-        | Token::Unknown => true,
+        Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. } => true,
         Token::Kw(Kw::SelfLower | Kw::SelfUpper | Kw::True | Kw::False) => true,
         Token::Punct(p) => matches!(p, Punct::RParen | Punct::RBracket | Punct::RBrace | Punct::Question),
         _ => false,
@@ -730,7 +718,7 @@ pub fn parse(src: &str) -> ParseResult {
         .then(first_of(vec![h.item.clone().boxed(), stray.boxed()]).repeated().collect::<Vec<_>>())
         .then_ignore(end())
         .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
-    let (file, mut diagnostics) = finish(crate::stack::deep(|| file.parse(input).into_output_errors()), diags, &tokens);
+    let (file, mut diagnostics) = finish(crate::stack::Stack::deep(|| file.parse(input).into_output_errors()), diags, &tokens);
     let file = file.unwrap_or(File {
         inner_docs: Vec::new(),
         items: Vec::new(),
@@ -761,21 +749,14 @@ fn added_keyword(k: Kw) -> bool {
     matches!(k, Module | Nature | Signal | On | Out | Flip | After)
 }
 
-/// A keyword or `Unknown` found where a name was expected.
+/// A keyword found where a name was expected.
 fn names_expected(e: &Err<'_>, found: &Token) -> bool {
-    matches!(found, Token::Kw(_) | Token::Unknown)
+    matches!(found, Token::Kw(_))
         && e.expected().any(|p| matches!(p, RichPattern::Label(l) if NAME_LABELS.contains(&&**l)))
 }
 
 fn name_error(found: &Token, span: Span) -> Diagnostic {
     match found {
-        Token::Unknown => Diagnostic::new(
-            "E0908",
-            "`Unknown` is a literal, not a name",
-            span,
-            "cannot name a binding, item or field `Unknown`",
-        )
-        .with_help("choose another name"),
         Token::Kw(Kw::Unsafe | Kw::Async | Kw::Await | Kw::Dyn) => Diagnostic::new(
             "E0101",
             format!("{found} is not part of the language"),

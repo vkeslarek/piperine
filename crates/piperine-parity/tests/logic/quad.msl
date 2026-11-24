@@ -1,0 +1,44 @@
+//! An operator on a library type is a call of its trait `impl` (Appendix H.10): `Quad` is a four-state value written
+//! in the model, `&`, `!` and `&=` on it run the `impl` functions; the expected values are computed in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr)]
+struct Quad { binary: u4, value: u4 }
+
+impl BitAnd for Quad {
+    fn bitand(self, r: Quad) -> Quad { Quad { binary: self.binary | r.binary, value: self.value & r.value } }
+}
+impl BitAnd<u4, Quad> for Quad {
+    fn bitand(self, r: u4) -> Quad { Quad { binary: self.binary, value: self.value & r } }
+}
+impl Not for Quad {
+    fn not(self) -> Quad { Quad { binary: self.binary, value: !self.value } }
+}
+
+fn both() -> Quad { Quad { binary: 3, value: 12 } & Quad { binary: 4, value: 10 } }
+fn masked() -> Quad { Quad { binary: 3, value: 12 } & 6u4 }
+fn inverted() -> Quad { !Quad { binary: 3, value: 12 } }
+fn compound() -> Quad {
+    let a = Quad { binary: 3, value: 12 };
+    a &= Quad { binary: 8, value: 14 };
+    a
+}
+
+module Rows(in clk: Bit, out m0: Bit<Quad> = Quad { binary: 0, value: 0 }, out m1: Bit<Quad> = Quad { binary: 0, value: 0 }, out m2: Bit<Quad> = Quad { binary: 0, value: 0 }, out m3: Bit<Quad> = Quad { binary: 0, value: 0 }) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- both();
+        m1 <- masked();
+        m2 <- inverted();
+        m3 <- compound();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<Quad>; signal m1: Bit<Quad>; signal m2: Bit<Quad>; signal m3: Bit<Quad>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, m2, m3);
+}

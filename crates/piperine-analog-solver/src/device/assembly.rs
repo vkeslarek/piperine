@@ -14,7 +14,9 @@ use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
 use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces, tolerance};
-use super::small_signal::{ComplexStamps, NoiseColumn, noise_columns, response, stamp_matrix, stimulus};
+use super::small_signal::{
+    ComplexStamps, NoiseColumn, SmallSignal, StimulusColumn, TermLinearization, response, stamp_matrix, stimulus,
+};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::integration::DdtState;
@@ -242,7 +244,7 @@ impl Assembly {
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DELAY {
                     let v = linear(t, inst, st).v;
-                    st.delay[ti].push(amb.time, v, max_of(t, &self.slots));
+                    st.delay[ti].push(amb.time, v, max_of(t, &self.slots, &self.written));
                 }
             }
         }
@@ -324,7 +326,9 @@ impl Assembly {
     /// `DELAY` term in its Norton form; a `DDT` term adds nothing (its
     /// positions carry 0).
     pub fn assemble_dc(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
-        self.assemble(x, amb, None)
+        let mut out = Vec::new();
+        self.assemble(x, amb, None, &mut out)?;
+        Ok(out)
     }
 
     /// The stamps of transient stage `stage` at iterate `x`: `FLOW` terms in
@@ -336,34 +340,51 @@ impl Assembly {
         amb: Ambient,
         stage: Stage,
     ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
-        self.assemble(x, amb, Some(stage))
+        let mut out = Vec::new();
+        self.assemble_tran_into(x, amb, stage, &mut out)?;
+        Ok(out)
     }
 
+    /// [`assemble_tran`](Self::assemble_tran) into `out`, which is emptied first: a caller that
+    /// stamps every iteration keeps one buffer, and a stage of the same shape allocates nothing.
+    pub fn assemble_tran_into(
+        &mut self,
+        x: &[f64],
+        amb: Ambient,
+        stage: Stage,
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> Result<(), Error> {
+        self.assemble(x, amb, Some(stage), out)
+    }
+
+    /// Fills `out`, emptied first, with the stamps of an equilibrium solve (`stage` `None`) or of
+    /// one transient stage.
     fn assemble(
         &mut self,
         x: &[f64],
         amb: Ambient,
         stage: Option<Stage>,
-    ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> Result<(), Error> {
         self.evaluate(x, amb)?;
         self.stage = stage;
-        let mut out = Vec::new();
+        out.clear();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate() {
                 let lin = linear(t, inst, st);
                 match (t.op, stage) {
-                    (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, &mut out),
-                    (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, &mut out),
+                    (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, out),
+                    (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, out),
                     (op::DELAY, Some(_)) => {
                         let td = t.td.map_or(0.0, |(f, w)| st.fns[f].f64(w));
-                        let at = (amb.time, td, max_of(t, &self.slots));
-                        stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, &mut out)?;
+                        let at = (amb.time, td, max_of(t, &self.slots, &self.written));
+                        stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, out)?;
                     }
-                    _ => stamp_flow(t, &lin, x, &mut out),
+                    _ => stamp_flow(t, &lin, x, out),
                 }
             }
         }
-        Ok(out)
+        Ok(())
     }
 
     /// The small-signal system at operating point `op` and sweep frequency
@@ -399,9 +420,51 @@ impl Assembly {
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
         let mut out = Vec::new();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
-            noise_columns(inst, st, omega, &mut out);
+            SmallSignal::new(inst, st, omega).noise_columns(&mut out);
         }
         Ok(out)
+    }
+
+    /// The small-signal stimuli of instance `instance` at `operating_point` and sweep
+    /// frequency `ambient.freq`: one column per `STIM` input, through every term that reads it, with
+    /// the phase of its phasor. The input-referred noise reads the transfer from them (design
+    /// D11). An `instance` that is not in the plan is an error naming it.
+    pub fn stimulus_columns(&mut self, operating_point: &[f64], ambient: Ambient, instance: &str) -> Result<Vec<StimulusColumn>, Error> {
+        let index = self.instance_index(instance)?;
+        self.evaluate_for(operating_point, ambient, Need::AC)?;
+        let omega = 2.0 * std::f64::consts::PI * ambient.freq;
+        let mut out = Vec::new();
+        SmallSignal::new(&self.plan.instances[index], &self.state[index], omega).stimulus_columns(&mut out);
+        Ok(out)
+    }
+
+    /// Term `term` of instance `instance` linearized at `operating_point` and sweep frequency
+    /// `ambient.freq`: its partials against the unknowns and against each `NOISE` input, the
+    /// operator's response applied. An unknown instance or term is an error naming it.
+    pub fn term_linearization(
+        &mut self,
+        operating_point: &[f64],
+        ambient: Ambient,
+        instance: &str,
+        term: &str,
+    ) -> Result<TermLinearization, Error> {
+        let index = self.instance_index(instance)?;
+        let Some(term_index) = self.plan.instances[index].terms.iter().position(|t| t.name == term) else {
+            return Err(device_error(format!("instance `{instance}` has no term `{term}`")));
+        };
+        self.evaluate_for(operating_point, ambient, Need { small_signal: true, ..Need::NEWTON })?;
+        let omega = 2.0 * std::f64::consts::PI * ambient.freq;
+        let instance_plan = &self.plan.instances[index];
+        Ok(SmallSignal::new(instance_plan, &self.state[index], omega).term_linearization(&instance_plan.terms[term_index]))
+    }
+
+    /// The position of the instance at `path` in the plan.
+    fn instance_index(&self, path: &str) -> Result<usize, Error> {
+        self.plan
+            .instances
+            .iter()
+            .position(|inst| inst.path == path)
+            .ok_or_else(|| device_error(format!("no instance `{path}` in the plan")))
     }
 
     /// Records, for every `DDT` term, its value at the converged solution `x`
@@ -568,10 +631,11 @@ impl Assembly {
     }
 }
 
-/// The bound of a `DELAY` term: the `F64` at byte 0 of its `max` slot, or
-/// unbounded.
-fn max_of(t: &TermPlan, slots: &[Vec<u8>]) -> f64 {
-    t.max.map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
+/// The bound of a `DELAY` term: the `F64` at byte 0 of its `max` slot, or unbounded. A slot the
+/// parameter cone has not written yet (the operating point's first solve comes before the cone's
+/// first run) is unbounded too: its zero bytes are no bound.
+fn max_of(t: &TermPlan, slots: &[Vec<u8>], written: &[bool]) -> f64 {
+    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
 }
 
 /// Which outputs one evaluation needs beyond the rows of a Newton solve.
@@ -648,20 +712,9 @@ pub(crate) fn run(
     for (slot, _) in &f.traces {
         st.out[*slot].fill(0);
     }
-    let mut at = 0;
-    let input: Vec<&[u8]> = f
-        .reads
-        .iter()
-        .map(|(_, len)| {
-            let cell = &scratch[at..at + len];
-            at += len;
-            cell
-        })
-        .collect();
     st.jac.fill(0.0);
-    let mut output: Vec<&mut [u8]> = st.out.iter_mut().map(Vec::as_mut_slice).collect();
     st.valid = false;
-    inst.handle.eval(f.k, &input, &mut output, &f.seed, &mut st.jac).map_err(|e| {
+    inst.handle.eval_packed(f.k, scratch, &mut st.out, &f.seed, &mut st.jac).map_err(|e| {
         device_error(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
     })?;
     st.read.clear();

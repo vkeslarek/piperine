@@ -112,8 +112,8 @@ analog for D {
 module Top() { let d = D { }(gnd, gnd); }";
     let ir = Elab::ir(src, "Top");
     let text = ir.print_structural();
-    // The sites, in source order: the `let` names a `limit`; an `ac_stim` is the analysis `ac`.
-    assert!(text.contains("  limit L0 \"vd\"\n  limit L1 \"w\"\n  limit L2 \"limit2\"\n  stim S0 \"ac\"\n  stim S1 \"ac\"\n"), "{text}");
+    // The sites, in source order: the `let` names a `limit`; the first `ac_stim` is the analysis `ac`, a later one is numbered (`ac1`), so no two sites print alike.
+    assert!(text.contains("  limit L0 \"vd\"\n  limit L1 \"w\"\n  limit L2 \"limit2\"\n  stim S0 \"ac\"\n  stim S1 \"ac1\"\n"), "{text}");
     // The diode's form, closure and seed included.
     assert!(text.contains("let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, 0.026, vcrit), seed vcrit)"), "{text}");
     assert!(text.contains("let w = limit L1 (probe(a, gnd), |n, o| n)"), "no seed, no `seed`: {text}");
@@ -358,7 +358,7 @@ fn freq_analysis_and_bound_step_lower() {
     // block and the constant 0.0 in a reaction (§14.4.4); each kind of `analysis` is its own read;
     // each `bound_step(dt);` of the block's top level is a numbered statement.
     let src = "module A() { }\nanalog for A { let f = freq(); let d = analysis(Dc); let t = analysis(Transient); let a = analysis(Ac); let n = analysis(Noise); let s = analysis(Static); bound_step(1.0e-9); bound_step(f + 2.0e-9); }\n\
-module R(out q: Bit<f64>) { }\ndigital for R { on at(1.0e-9) { q <- freq(); } }\n\
+module R(out q: Bit<f64> = 0.0) { }\ndigital for R { on at(1.0e-9) { q <- freq(); } }\n\
 module Top() { signal q: Bit<f64>; let a = A { }(); let r = R { }(q); }";
     let ir = Elab::ir(src, "Top");
     let text = ir.print_structural();

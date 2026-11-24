@@ -477,7 +477,6 @@ fn diagnostic_has_code_message_label_help() {
         ("E0903", "fn out() {}"),
         ("E0905", "const A: u8 = 'a';"),
         ("E0907", "fn f() { let x = a +> b; }"),
-        ("E0908", "fn f() { let Unknown = 1; }"),
         ("E0900", "fn f( { }"),
     ];
     for (code, src) in fixtures {
@@ -584,9 +583,6 @@ fn fixtures() -> Vec<Fixture> {
         fixture("E0909", "const A: f64 = ", "1e999", ";"),
         fixture("E0907", "fn f() { let x = a ", "+>", " b; }"),
         fixture("E0907", "fn f() { g(a ", "<-", " b); }"),
-        fixture("E0908", "fn f() { let ", "Unknown", " = 1; }"),
-        fixture("E0908", "module M() { ", "Unknown", ": f64 = 1.0; }"),
-        fixture("E0908", "fn f() { S { ", "Unknown", ": 1 }; }"),
         // The 257th nested delimiter.
         Fixture {
             code: "E0910",
@@ -645,18 +641,10 @@ fn every_parse_phase_row_has_a_fixture() {
     let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
     let missing: Vec<&String> = spec.difference(&covered).collect();
     assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
-    // And a fixture for a code the spec does not list as `parse` is stale, except the codes the
-    // specification retired ahead of the parser (explicit-unknowns).
-    let stale: Vec<&String> = covered.difference(&spec).filter(|c| !RETIRED_AHEAD_OF_THE_PARSER.contains(&c.as_str())).collect();
+    // And a fixture for a code the spec does not list as `parse` is stale.
+    let stale: Vec<&String> = covered.difference(&spec).collect();
     assert!(stale.is_empty(), "fixtures for codes that are not parse-phase rows: {stale:?}");
-    for code in RETIRED_AHEAD_OF_THE_PARSER {
-        assert!(covered.contains(code) && !spec.contains(code), "{code} is retired in the spec and still raised: drop it from the list once the parser stops");
-    }
 }
-
-/// Parse-phase codes the specification retired before the parser stopped raising them: explicit-unknowns
-/// retired `E0908` (`Unknown` as a name; its task T28 removes the fixtures and the entry).
-const RETIRED_AHEAD_OF_THE_PARSER: [&str; 1] = ["E0908"];
 
 #[test]
 fn rendered_output_is_miette_graphical() {

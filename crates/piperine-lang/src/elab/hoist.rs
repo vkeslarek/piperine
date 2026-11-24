@@ -15,7 +15,7 @@
 //! caller's terminal for its argument, a node `signal` to a node the body gained, a module-body
 //! `let` to its value lowered in place. The `analog` blocks of every frame are lowered after the
 //! body's own, in frame order (§8.3.16: the callee's rows read what its inputs probe in the
-//! caller, and the caller reads the callee's unknowns). A discrete `in` value input (`in x: Bit<f64>`) is a carrier of the
+//! caller). A discrete `in` value input (`in x: Bit<f64>`) is a carrier of the
 //! frame driven by the caller's expression, an anonymous definition. `cross` and `at` are core:
 //! a placement of one is an event of the enclosing body, not a frame.
 
@@ -111,9 +111,9 @@ impl Elaboration<'_, '_> {
         let module = self.frames[frame].module;
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
         let result = data.result?;
-        let outer = std::mem::replace(&mut scope.frame, frame);
+        let entry = self.enter_frame(scope, frame);
         let lowered = self.lower_expr(scope, result);
-        scope.frame = outer;
+        self.leave_frame(scope, entry);
         lowered
     }
 
@@ -129,10 +129,10 @@ impl Elaboration<'_, '_> {
         let parent = self.frames[scope.frame].parent?;
         // the caller's expression reads the loop variables it was written under (`unroll.rs`)
         let seen = self.frames[scope.frame].unrolled.clone();
-        let outer = std::mem::replace(&mut scope.frame, parent);
+        let entry = self.enter_frame(scope, parent);
         let outer_unrolled = std::mem::replace(&mut scope.unrolled, seen);
         let lowered = lower(self, scope);
-        scope.frame = outer;
+        self.leave_frame(scope, entry);
         scope.unrolled = outer_unrolled;
         lowered
     }
@@ -243,14 +243,16 @@ impl Elaboration<'_, '_> {
             let origin = self.expr_origin(arg.value);
             let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
             if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None, wanted.as_ref()) {
-                self.structure.drives.push(Drive { carrier, value, after: None, origin });
+                self.structure.drives.push(Drive { carrier, value, after: None, origin, element: None, path: vec![] });
             }
         }
         let mut inner = Self::sub_scope(scope);
         inner.frame = index;
+        let outer_params = self.consts.set_frame_params(self.frame_bindings(index));
         self.lower_definitions(&inner, module);
         self.hoist_placements(&inner);
         self.lower_digital(&inner, module);
+        self.consts.set_frame_params(outer_params);
         Some(index)
     }
 
@@ -296,9 +298,9 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             let module = self.frames[frame].module;
-            let outer = std::mem::replace(&mut scope.frame, frame);
+            let entry = self.enter_frame(scope, frame);
             let lowered = self.lower_analog(scope, module);
-            scope.frame = outer;
+            self.leave_frame(scope, entry);
             if let Some(lowered) = lowered {
                 stmts.get_or_insert_with(Vec::new).extend(lowered);
             }

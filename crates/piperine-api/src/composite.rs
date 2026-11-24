@@ -2,8 +2,8 @@
 //! a carried tuple, array, struct, enum or `Option` decoded with the IR's type arena into a
 //! `CompositeCell`, which renders as the language's literal syntax, as nested JSON and as dotted
 //! leaves, and names an enum's variant (the variant names live in the arena, never in the net's
-//! bytes). A pin of such a value is the bytes of its parts one after another and then one known
-//! byte (`piperine_plan::CompositeLayout`); `CellShape` is the type read once from the arena, so a
+//! bytes). A pin of such a value is the bytes of its parts one after another and nothing else
+//! (`piperine_plan::CompositeLayout`); `CellShape` is the type read once from the arena, so a
 //! decoder needs no `Ir`.
 
 use piperine_ir::{FieldsForm, Ir, TypeKind, ValueType};
@@ -20,6 +20,8 @@ pub enum CellShape {
     Struct {
         /// The source name.
         name: String,
+        /// The path of the declaration (`std::logic::Logic`): what tells the library's type from a project's own alike.
+        declaration: String,
         /// How the fields are written.
         form: FieldsForm,
         /// The fields, in order.
@@ -59,7 +61,6 @@ impl CellShape {
     /// The shape of a pin holding `ty` in `ir`; `None` for a type no pin holds.
     pub fn of(ir: &Ir, ty: &ValueType) -> Option<CellShape> {
         match ty {
-            ValueType::Flagged(inner) => CellShape::of(ir, inner),
             ValueType::Bool | ValueType::F64 | ValueType::UInt(_) | ValueType::Int(_) => Some(CellShape::Scalar(ty.clone())),
             ValueType::Tuple(parts) => parts.iter().map(|part| CellShape::of(ir, part)).collect::<Option<Vec<_>>>().map(CellShape::Tuple),
             ValueType::Array(element, length) => Some(CellShape::Array(Box::new(CellShape::of(ir, element)?), usize::try_from(*length).ok()?)),
@@ -67,7 +68,7 @@ impl CellShape {
             ValueType::Struct(id) => {
                 let data = ir.type_data(*id);
                 let TypeKind::Struct { form, fields } = &data.kind else { return None };
-                Some(CellShape::Struct { name: data.name.clone(), form: *form, fields: CellShape::fields(ir, fields)? })
+                Some(CellShape::Struct { name: data.name.clone(), declaration: data.path.clone(), form: *form, fields: CellShape::fields(ir, fields)? })
             }
             ValueType::Enum(id) => {
                 let data = ir.type_data(*id);
@@ -92,7 +93,37 @@ impl CellShape {
         matches!(self, CellShape::Enum { variants, .. } if variants.iter().all(|v| v.fields.is_empty()))
     }
 
-    /// The width of the value bytes of a value of this shape, before the known byte.
+    /// Whether a value of this shape can have the leaf `path` (named as `CompositeCell::leaves` names it): the
+    /// payload leaf of a variant is one of the shape although the value holds another variant, and so is the
+    /// `value` of an `Option` that holds nothing.
+    pub fn can_hold_leaf(&self, path: &str) -> bool {
+        let mut paths = Vec::new();
+        self.collect_leaf_paths("", &mut paths);
+        paths.iter().any(|candidate| candidate == path)
+    }
+
+    /// Adds to `found` every leaf path of this shape, named under `prefix`.
+    fn collect_leaf_paths(&self, prefix: &str, found: &mut Vec<String>) {
+        let join = |part: &str| if prefix.is_empty() { part.to_string() } else if part.is_empty() { prefix.to_string() } else { format!("{prefix}.{part}") };
+        match self {
+            CellShape::Scalar(_) => found.push(prefix.to_string()),
+            CellShape::Struct { fields, .. } => fields.iter().for_each(|(name, shape)| shape.collect_leaf_paths(&join(name), found)),
+            CellShape::Tuple(parts) => parts.iter().enumerate().for_each(|(k, shape)| shape.collect_leaf_paths(&join(&k.to_string()), found)),
+            CellShape::Array(element, length) => (0..*length).for_each(|k| element.collect_leaf_paths(&format!("{prefix}[{k}]"), found)),
+            CellShape::Enum { variants, .. } => {
+                found.push(prefix.to_string());
+                for variant in variants {
+                    variant.fields.iter().for_each(|(name, shape)| shape.collect_leaf_paths(&join(&format!("{}.{name}", variant.name)), found));
+                }
+            }
+            CellShape::Option(inner) => {
+                found.push(join("some"));
+                inner.collect_leaf_paths(&join("value"), found);
+            }
+        }
+    }
+
+    /// The width of the value bytes of a value of this shape, which is the size of its pin.
     pub fn width(&self) -> usize {
         match self {
             CellShape::Scalar(ValueType::Bool) => 1,
@@ -107,19 +138,18 @@ impl CellShape {
         }
     }
 
-    /// The value of a pin's `bytes`: `Cell::Unknown` when the known byte is clear or an enum's tag
-    /// names no variant (§2 rule 9), the variant's bare name for an enum with no payload, a
-    /// `Cell::Composite` for any other. A length shorter than the value and its known byte is a `Failure`.
+    /// The value of a pin's `bytes`: the variant's bare name for an enum with no payload, a
+    /// `Cell::Composite` for any other (an `Option` is `None` or `Some` of its payload). A length
+    /// shorter than the value, or a tag that names no variant, is a `Failure`, never a guess.
     pub fn decode(&self, bytes: &[u8]) -> Result<Cell, Failure> {
         let width = self.width();
-        if bytes.len() <= width {
-            return Err(Failure::Backend(format!("cannot decode a composite value of {width} bytes and a known byte from {} bytes", bytes.len())));
-        }
-        if bytes[width] == 0 {
-            return Ok(Cell::Unknown);
+        if bytes.len() < width {
+            return Err(Failure::Backend(format!("cannot decode a composite value of {width} bytes from {} bytes", bytes.len())));
         }
         let mut at = 0;
-        let Some(read) = self.read(bytes, &mut at) else { return Ok(Cell::Unknown) };
+        let Some(read) = self.read(bytes, &mut at) else {
+            return Err(Failure::Backend(format!("cannot decode a composite value from {bytes:?}: an enum's tag names no variant")));
+        };
         Ok(match (&read, self.is_unit_enum()) {
             (CompositeCell::Variant { variant, .. }, true) => Cell::Text(variant.clone()),
             (CompositeCell::Scalar(cell), _) => cell.clone(),
@@ -131,7 +161,14 @@ impl CellShape {
     fn read(&self, bytes: &[u8], at: &mut usize) -> Option<CompositeCell> {
         match self {
             CellShape::Scalar(ty) => Some(CompositeCell::Scalar(Self::scalar(ty, bytes, at))),
-            CellShape::Struct { name, form, fields } => Some(CompositeCell::Struct { name: name.clone(), form: *form, fields: Self::read_fields(fields, bytes, at)? }),
+            CellShape::Struct { name, declaration, form, fields } => {
+                let read = Self::read_fields(fields, bytes, at)?;
+                // a `Logic<N>` is its pattern of `N` characters (EU-15 AC 4), not the two planes it is made of
+                Some(match LogicCell::pattern(declaration, name, &read) {
+                    Some(pattern) => CompositeCell::Scalar(Cell::Text(pattern)),
+                    None => CompositeCell::Struct { name: name.clone(), form: *form, fields: read },
+                })
+            }
             CellShape::Tuple(parts) => parts.iter().map(|part| part.read(bytes, at)).collect::<Option<Vec<_>>>().map(CompositeCell::Tuple),
             CellShape::Array(element, length) => (0..*length).map(|_| element.read(bytes, at)).collect::<Option<Vec<_>>>().map(CompositeCell::Array),
             CellShape::Option(inner) => {
@@ -185,6 +222,36 @@ impl CellShape {
             }
             _ => Cell::Int(i128::from(raw)),
         }
+    }
+}
+
+/// The four-state `Logic<N>` of the standard library as a host prints it: `N` characters of `0`, `1`, `x` and `z`, the
+/// highest level first (§22.1.1, EU-15 AC 4). The planes `binary` and `value` give each level its character.
+struct LogicCell;
+
+impl LogicCell {
+    /// The declaration of the library's four-state value.
+    const DECLARATION: &'static str = "std::logic::Logic";
+
+    /// The pattern of the struct `name` declared at `declaration` holding `fields`, when it is the library's `Logic<N>`: two
+    /// integer planes called `binary` and `value` of `N` levels. `None` for any other struct, a project's own `Logic<4>`
+    /// with the same fields included.
+    fn pattern(declaration: &str, name: &str, fields: &[(String, CompositeCell)]) -> Option<String> {
+        // an instance's path carries its arguments (`std::logic::Logic<4>`): the declaration is what comes before them
+        if declaration.split('<').next() != Some(Self::DECLARATION) {
+            return None;
+        }
+        let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
+        let [(first, CompositeCell::Scalar(Cell::Int(binary))), (second, CompositeCell::Scalar(Cell::Int(value)))] = fields else { return None };
+        if first != "binary" || second != "value" || levels == 0 || levels > 64 {
+            return None;
+        }
+        Some((0..levels).rev().map(|level| match ((binary >> level) & 1, (value >> level) & 1) {
+            (1, 0) => '0',
+            (1, 1) => '1',
+            (0, 0) => 'x',
+            _ => 'z',
+        }).collect())
     }
 }
 
@@ -343,6 +410,7 @@ mod tests {
         fn pair() -> CellShape {
             CellShape::Struct {
                 name: "Pair".into(),
+                declaration: "Pair".into(),
                 form: FieldsForm::Named,
                 fields: vec![("a".into(), CellShape::Scalar(ValueType::UInt(8))), ("b".into(), CellShape::Scalar(ValueType::Bool))],
             }
@@ -365,34 +433,44 @@ mod tests {
                 Cell::Bool(v) => v.to_string(),
                 Cell::Int(v) => v.to_string(),
                 Cell::Text(v) => v.clone(),
-                Cell::Unknown => "x".into(),
                 Cell::Composite(_) => "composite".into(),
+                Cell::Absent => "absent".into(),
             }
         }
     }
 
     #[test]
     fn a_struct_reads_its_fields_and_prints_as_a_literal() {
-        let Cell::Composite(value) = Shapes::pair().decode(&[7, 1, 1]).expect("decodes") else { panic!("a composite") };
+        let Cell::Composite(value) = Shapes::pair().decode(&[7, 1]).expect("decodes") else { panic!("a composite") };
         assert_eq!(value.literal(&Shapes::text), "Pair { a: 7, b: true }");
         assert_eq!(value.leaves().iter().map(|(n, c)| format!("{n}={}", Shapes::text(c))).collect::<Vec<_>>(), ["a=7", "b=true"]);
         assert_eq!(value.leaf("b"), Some(Cell::Bool(true)));
         assert_eq!(value.leaf("zz"), None);
-        assert_eq!(Shapes::pair().decode(&[0, 0, 0]).expect("decodes"), Cell::Unknown, "a clear known byte is unknown");
+        let Cell::Composite(zero) = Shapes::pair().decode(&[0, 0]).expect("decodes") else { panic!("a composite") };
+        assert_eq!(zero.literal(&Shapes::text), "Pair { a: 0, b: false }", "all-zero bytes are a value, not an unknown");
     }
 
     #[test]
-    fn an_enum_reads_its_variant_name_and_a_tag_no_variant_names_reads_unknown() {
-        let Cell::Composite(value) = Shapes::tx().decode(&[1, 5, 1]).expect("decodes") else { panic!("a composite") };
+    fn an_enum_reads_its_variant_name_and_a_tag_no_variant_names_is_a_failure() {
+        let Cell::Composite(value) = Shapes::tx().decode(&[1, 5]).expect("decodes") else { panic!("a composite") };
         assert_eq!(value.literal(&Shapes::text), "Tx::Data { n: 5 }");
         assert_eq!(value.leaves().iter().map(|(n, c)| format!("{n}={}", Shapes::text(c))).collect::<Vec<_>>(), ["=Data", "Data.n=5"]);
         assert_eq!(value.json(&Shapes::text, &|s| format!("\"{s}\"")), "{\"Data\":{\"n\":5}}");
-        assert_eq!(Shapes::tx().decode(&[2, 0, 1]).expect("decodes"), Cell::Unknown, "tag 2 names no variant");
+        assert!(Shapes::tx().decode(&[2, 0]).is_err(), "tag 2 names no variant: a failure, never a guess");
         let units = CellShape::Enum {
             name: "Mode".into(),
             tag_width: 1,
             variants: vec![VariantShape { name: "Off".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }, VariantShape { name: "Run".into(), discriminant: 2, form: FieldsForm::Unit, fields: vec![] }],
         };
-        assert_eq!(units.decode(&[2, 1]).expect("decodes"), Cell::Text("Run".into()), "an enum with no payload reads as its variant's name");
+        assert_eq!(units.decode(&[2]).expect("decodes"), Cell::Text("Run".into()), "an enum with no payload reads as its variant's name");
+    }
+
+    #[test]
+    fn a_shape_holds_the_payload_leaf_of_a_variant_the_value_does_not_hold() {
+        let Cell::Composite(idle) = Shapes::tx().decode(&[0, 0]).expect("decodes") else { panic!("a composite") };
+        assert_eq!(idle.leaf("Data.n"), None, "the value holds Idle");
+        assert!(Shapes::tx().can_hold_leaf("Data.n"), "the shape holds the leaf of Data");
+        assert!(!Shapes::tx().can_hold_leaf("Data.m"), "no variant has an `m`");
+        assert!(Shapes::pair().can_hold_leaf("b") && !Shapes::pair().can_hold_leaf("c"));
     }
 }

@@ -1,0 +1,29 @@
+//! A closure and a function name passed for a parameter bound by `Fn` (GN-01, D9): a plain closure, a closure that
+//! captures a local, a function's name, and one function instantiated with each; the expected values are computed by
+//! Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 { f(f(x)) }
+fn halve(x: f64) -> f64 { 0.5 * x }
+
+fn plain() -> f64 { twice(|v| v + 1.0, 3.0) }
+fn capturing() -> f64 { let gain = 4.0; twice(|v| v * gain, 2.0) }
+fn named() -> f64 { twice(halve, 10.0) }
+
+module Rows(in clk: Bit, out m0: Bit<f64> = 0.0, out m1: Bit<f64> = 0.0, out m2: Bit<f64> = 0.0) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- plain();
+        m1 <- capturing();
+        m2 <- named();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<f64>; signal m1: Bit<f64>; signal m2: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, m2);
+}

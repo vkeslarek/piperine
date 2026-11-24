@@ -856,7 +856,7 @@ pub trait Repr {
   receives that `None`; no carrier is changed by it ([§3.3.9](#33-uncertainty-and-absence)).
 - **§2 rule 10.** A hand-written `encode` or `decode` is an ordinary function. It has no rule
   of its own.
-- **§2 rule 11.** In the byte form of a value, all-zero bytes are the bytes of `Logic::X`, of
+- **§2 rule 11.** In the byte form of a value, all-zero bytes are the bytes of `Logic::default()` (every level X; `Logic::X` at one level), of
   `None` and of the `Default` of every derived type that has one.
 
 **Errors**
@@ -904,6 +904,11 @@ of the functions it calls. A function may belong to several classes; the restric
 | event | returns `Event` ([§13](part_iv_behavior.md#13-events)) | event positions; as `bool` inside a reaction |
 | emitting | calls `emit!` ([§19](part_vi_io.md#19-streams-and-checks)) | reactions, `analog` |
 
+- **§3 rule 0.** *(Amendment, generics fix round, 2026-11-23, approved by the user 2026-11-23.)* The
+  `Callable in` column is a list of the positions of a behavior. A definition (`f = clock();`) is not
+  a behavior position: a call of a solve-reading function there is `E0336`, the code that names
+  definitions ([§8.2.5](part_iii_structure.md)), not `E0122`; `E0122` is for the const contexts
+  (a `where`, a param default, a `const`).
 - **§3 rule 1.** Inside `analog`, calls are differentiated through
   ([§11](part_iv_behavior.md#11-analog) rule 5).
 - **§3 rule 2.** `extern "C" fn` and `extern "intrinsic" fn` are implemented outside the language
@@ -926,7 +931,14 @@ of the functions it calls. A function may belong to several classes; the restric
   generics and associated consts. It is checked when the function is instantiated. Trait
   bounds are written in `generics`.
 - **§3 rule 9.** A function that is generic over a type, a nature or a const is instantiated
-  at elaboration. An error inside an instantiation is an elaboration error.
+  at elaboration. An error inside an instantiation is an elaboration error. The body is also
+  checked once at its definition, with each type parameter opaque: a name, a type or a class
+  that is wrong, a method or an operator that none of the bounds of a parameter gives
+  (`E0161` for a method, `E0180` for an operator), and a generic argument that does not
+  satisfy its bound (`E0187`) are errors of the definition, reported by `piperine check` with
+  nothing instantiating the function; the value of a const argument, the `where` (`E0127`),
+  array lengths built from const parameters and a const expression that fails (`E0104`) are
+  errors of an instantiation.
 - **§3 rule 10.** A function accepts two ABI strings, `"C"` and `"intrinsic"`. The string
   `"intrinsic"` is accepted only in the crate `std`. An `extern "C" fn` takes and returns
   `bool`, integer and float scalars only. It **MUST** be a function of its arguments alone.
@@ -1023,7 +1035,11 @@ only reference a function holds, and it is not a value.
   methods called on it. It **MUST NOT** be returned, stored in a value, or written through.
 - **§3.1.6** Reading a handle of a discrete carrier yields the carrier's value
   ([§5.1.1](part_ii_carriers.md#51-declaring-and-reading)). Through a handle, `others()` is
-  taken from the module that made the call.
+  taken from the module that made the call. *(Amendment, generics fix round 2, 2026-11-23,
+  approved by the user 2026-11-23.)* Because the read is a value, a discrete handle used where a value is
+  expected (`let c = a;`, a tail `a`, `a && true`, `if t { a } else { !a }`) stores or returns that
+  value and is no `E0133`; `E0133` is for a handle kept as a handle, which only a node (the read of a
+  continuous handle is the node itself) or a write through the handle can be.
 - **§3.1.7** A method call on a carrier expression is looked up in this order: the carrier
   methods ([§14](part_iv_behavior.md#14-core-primitives)), the `impl` blocks of its nature
   (trait `impl`s included, rule 9), then the methods of the value it reads.
@@ -1040,6 +1056,12 @@ only reference a function holds, and it is not a value.
   ([§1.5.12](#15-expressions)). A method that changes a value returns the new one, and the
   caller assigns it: `s = s.step(x);`. There is no other receiver form and no shorthand for
   that assignment.
+
+> **Resolution.** [§3.7.7](#37-traits) says an inherent `impl T { .. }` is written in the crate that
+> declares `T`; that rule governs value types. An inherent `impl` on a nature may be written in any
+> crate: `impl Thermal { fn celsius(self) -> f64 { temp(self) - 273.15 } }` is a legal item of a
+> user crate although `Thermal` is a `std` nature (§3.1's own example). A trait `impl` on a nature
+> keeps the orphan rule of [§3.7.7](#37-traits): the trait or the nature is the crate's.
 
 > **Resolution.** An `impl` on a value type may hold associated `const` items
 > ([§3.9](#39-constants)), read as `Type::NAME` (`Logic::Z`,
@@ -1227,7 +1249,7 @@ module Demo(in clk: Bit) {
 digital for Demo {
     on clk.rise() {
         if en { last <- Some(1); }        // `if` takes a bool: one path runs
-        if same(bus, Logic::X) { en <- true; }  // a Logic decides through a function
+        if same(bus, Logic::default()) { en <- true; }  // a Logic decides through a function
         match last {
             Some(v) => { last <- Some(v + 1); }
             None => {}
@@ -1570,7 +1592,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0187` | an `impl Tr for T` that leaves out an item without a default, defines an item the trait does not have, or gives an item another signature; a type that does not implement a supertrait; two `impl`s that overlap (§3.7.6); an `impl` in a crate that §3.7.7 does not allow; `self` outside an `impl` or a trait, or not first; a generic argument that does not satisfy its bound, or a wrong number of generic arguments ([§3.8](#38-generics-and-bounds)); a `pub` on an item of an `impl Tr for T`; a carrier, a drive or a param with no initial value whose type does not implement `Default` (§3.3.4), `#[derive(Default)]` on a type with a field that does not, and `T::default()` on a type that does not (Appendix H.8 rule 4) | elaboration |
+| `E0187` | an `impl Tr for T` that leaves out an item without a default, defines an item the trait does not have, or gives an item another signature; a type that does not implement a supertrait; two `impl`s that overlap (§3.7.6); an `impl` in a crate that §3.7.7 does not allow; `self` outside an `impl` or a trait, or not first; a generic argument that does not satisfy its bound, or a wrong number of generic arguments ([§3.8](#38-generics-and-bounds)); a generic parameter list in which a parameter without a default follows one with a default, or a const parameter is neither an integer nor `bool` (§3.8.3, §3.8.4); a `pub` on an item of an `impl Tr for T`; a carrier, a drive or a param with no initial value whose type does not implement `Default` (§3.3.4), `#[derive(Default)]` on a type with a field that does not, and `T::default()` on a type that does not (Appendix H.8 rule 4) | elaboration |
 | [§3.1](#31-impl) | `impl Tr for` a bundle (`E0134`) | elaboration |
 
 **Examples**
@@ -1650,6 +1672,7 @@ generic_arg    ::= type | literal | '-' literal | block
 | Code | Condition | Phase |
 | --- | --- | --- |
 | [§3.7](#37-traits) | a generic argument that does not satisfy its bound, or a wrong number of arguments (`E0187`) | elaboration |
+| [§3.8](#38-generics-and-bounds) | a parameter without a default after one with a default, or a const parameter that is neither an integer nor `bool` (`E0187`); a bound that names no trait (`E0161`) | elaboration |
 | [§1.4](#14-typing-inference-and-conversion) | a generic argument that cannot be inferred (`E0181`) | elaboration |
 | [§3](#3-functions) | an error inside an instantiation, reported at elaboration; a false `where` (`E0127`) | elaboration |
 
@@ -1711,7 +1734,7 @@ const_item     ::= 'const' IDENT ':' type ( '=' expr )? ';'
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0188` | the initializer of a `const`, an array length, a bound of a range index ([§1.5.9](#15-expressions)) or a const argument that is not a const expression (§3.9.2, §3.9.3); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
+| `E0188` | the initializer of a `const`, an array length, a bound of a range index ([§1.5.9](#15-expressions)) or a const argument that is not a const expression (§3.9.2, §3.9.3); an element index of an array of carriers or nodes that must fold at elaboration and does not (a definition, an event head, a connection, a node in `analog`); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
 | [§1](#1-value-types) | a panic while a const expression is evaluated (`E0104`) | elaboration |
 
 **Examples**

@@ -91,13 +91,13 @@ impl Solver {
     }
 
     pub fn ac(&mut self) -> crate::core::result::Result<ac::AcSolver<'_>> {
-        let mut solver = self.circuit.ac(self.context.clone())?;
+        let mut solver = ac::AcSolver::observed_by(&mut self.circuit, self.context.clone(), self.host.clone())?;
         solver.policy = self.policy.clone();
         Ok(solver)
     }
 
     pub fn noise(&mut self, opts: noise::NoiseAnalysisOptions) -> crate::core::result::Result<noise::NoiseSolver<'_>> {
-        self.circuit.noise(opts, self.context.clone())
+        noise::NoiseSolver::observed_by(&mut self.circuit, opts, self.context.clone(), self.host.clone())
     }
 
     pub fn tf(&mut self, opts: tf::TransferFunctionAnalysisOptions) -> crate::core::result::Result<tf::TransferFunctionSolver<'_>> {

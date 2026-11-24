@@ -64,7 +64,7 @@ impl Delayed {
 pub(crate) fn stamp_delay(
     path: &str,
     t: &TermPlan,
-    lin: &Linear,
+    lin: &Linear<'_>,
     hist: &Delayed,
     (now, td, max): (f64, f64, f64),
     x: &[f64],
@@ -77,7 +77,7 @@ pub(crate) fn stamp_delay(
         )));
     }
     let (h, w) = hist.at(now - td, now);
-    let at = Linear { v: h + w * lin.v, cols: lin.cols.iter().map(|(c, g)| (c.clone(), w * g)).collect() };
+    let at = lin.scaled(h + w * lin.v, w);
     stamp_flow(t, &at, x, out);
     Ok(())
 }

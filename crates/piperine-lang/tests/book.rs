@@ -198,15 +198,14 @@ fn the_chapter_names_every_core_name() {
 fn the_chapter_has_a_part_per_namespace() {
     let design = embedded();
     let namespaces = std_namespaces(&design);
-    assert_eq!(namespaces.len(), 9, "{namespaces:?}");
+    assert_eq!(namespaces.len(), 10, "{namespaces:?}");
     let heads = headings(&chapter(&content(), "core-std"));
     let absent: Vec<String> = namespaces.iter().filter(|n| !heads.iter().any(|h| h.contains(&format!("<code>std::{n}</code>")))).cloned().collect();
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
 
-/// Prelude exports the Book no longer names because the explicit model removed them (`Known`, `merge`,
-/// `Wire`, `Tri`, `tri`, `SumNet`) while `std` still declares them; owned by explicit-unknowns T23.
-const STD_BEHIND_THE_BOOK: [&str; 6] = ["Known", "merge", "tri", "Tri", "SumNet", "Wire"];
+/// Prelude exports the Book no longer names because the explicit model removed them (`Wire`, `Tri`, `tri`, `SumNet`, and `Drive`, the earlier strength struct of `nets` that `Driven` replaces) while `std` still declares them; owned by explicit-unknowns T23.
+const STD_BEHIND_THE_BOOK: [&str; 5] = ["tri", "Tri", "SumNet", "Wire", "Drive"];
 
 #[test]
 fn the_chapter_names_every_prelude_export() {

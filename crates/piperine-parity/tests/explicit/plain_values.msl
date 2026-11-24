@@ -1,0 +1,75 @@
+//! Math, `&&` and `||`, records and emitting functions over values that are always values (part I §3.3, §19).
+//! A 1 GHz oscillator gives the rising edges the probes run on (0.5 ns, 1.5 ns, ...).
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// A function of a carrier is a value: `x` holds 4.0 and `y` holds -9.0.
+module MathProbe(in clk: Bit, in x: Bit<f64>, in y: Bit<f64>) {}
+digital for MathProbe {
+    on clk.rise() { emit!("math", root = x.sqrt(), abs = y.abs(), exp = (x - 4.0).exp(), ln = x.ln() * 0.0); }
+}
+
+module MathBench() {
+    signal clk: Bit; signal x: Bit<f64> = 4.0; signal y: Bit<f64> = -9.0;
+    let osc = Osc(clk) { f: 1G };
+    let probe = MathProbe(clk, x, y);
+}
+
+/// `&&` and `||` take a `bool` each side; the right operand runs only when the left does not decide. `t` and `f`
+/// are true and false, `n0` is 0 and `n2` is 2: `10 / n0` would panic, so it must not run.
+module ShortProbe(in clk: Bit, in t: Bit, in f: Bit, in n0: Bit<u8>, in n2: Bit<u8>) {}
+digital for ShortProbe {
+    on clk.rise() {
+        emit!("and", skipped = f && (10 / n0 > 1), run = t && (10 / n2 > 1));
+        emit!("or", skipped = t || (10 / n0 > 1), run = f || (10 / n2 > 5));
+        emit!("emits", skipped = f && { emit!("ran", v = true); true }, run = t && { emit!("ran", v = false); false });
+    }
+}
+
+module ShortBench() {
+    signal clk: Bit; signal t: Bit = true; signal f: Bit = false;
+    signal n0: Bit<u8> = 0; signal n2: Bit<u8> = 2;
+    let osc = Osc(clk) { f: 1G };
+    let probe = ShortProbe(clk, t, f, n0, n2);
+}
+
+/// A record is written where the path reaches it: under a guard that holds, or under none.
+module Recording(in clk: Bit, in d: Bit, in e: Bit, in v: Bit<u8>) {}
+digital for Recording {
+    on clk.rise() {
+        if d { emit!("taken", v = v, k = 3); }
+        if e { emit!("skipped", v = v, k = 3); }
+        emit!("plain", v = v, k = 3);
+        if d { require("held", true); }
+    }
+}
+
+module RecordBench() {
+    signal clk: Bit; signal d: Bit = true; signal e: Bit = false; signal v: Bit<u8> = 6;
+    let osc = Osc(clk) { f: 1G };
+    let m = Recording(clk, d, e, v);
+}
+
+/// A function that emits and returns a value, called in a value position of a reaction.
+fn heard() -> u8 { emit!("heard", n = 7); 7 }
+fn ping() -> bool { emit!("pinged", v = true); true }
+
+module Calls(in clk: Bit, in d: Bit, in u: Bit, out sure: Bit<u8> = 1, out chosen: Bit<u8> = 1) {}
+digital for Calls {
+    on clk.rise() {
+        sure <- heard();
+        if d { chosen <- heard(); }
+        emit!("both", r = u && ping());
+    }
+}
+
+module CallsBench() {
+    signal clk: Bit; signal d: Bit = true; signal u: Bit = true;
+    signal sure: Bit<u8>; signal chosen: Bit<u8>;
+    let osc = Osc(clk) { f: 1G };
+    let calls = Calls(clk, d, u, sure, chosen);
+}

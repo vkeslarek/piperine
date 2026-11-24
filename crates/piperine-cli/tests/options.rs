@@ -311,6 +311,57 @@ fn an_unwritable_plot_names_the_path_and_exits_1() {
     assert!(!project.path().join("op.svg").exists());
 }
 
+/// The command line of `piperine run`, as the library reads it.
+struct CommandLine;
+
+impl CommandLine {
+    /// The settings the flags `args` of `piperine run` give, as the command line reads them.
+    fn flags(args: &[&str]) -> piperine_api::Overrides {
+        let line: Vec<&str> = ["piperine", "run", "x"].iter().chain(args).copied().collect();
+        match piperine_cli::Cli::parse(line) {
+            Ok(piperine_cli::Invocation::Run { overrides, .. }) => overrides,
+            other => panic!("{args:?} parse as a run, found {:?}", other.err()),
+        }
+    }
+}
+
+#[test]
+fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
+    // AO-07 AC 5: `--simparam <name>=<value>` repeats, each entry reaching the request in the order
+    // given (the divider reads no session parameter, so a run cannot show it); a value that is no
+    // number is a P0010 naming the entry, exit 1, and nothing runs.
+    assert_eq!(CommandLine::flags(&["--simparam", "gain=2", "--simparam", "bias=0.5"]).simparam, [("gain".to_string(), 2.0), ("bias".to_string(), 0.5)]);
+    let dir = tempfile::tempdir().expect("tmp");
+    let divider = twin("divider.msl");
+    let divider = divider.to_str().expect("path");
+    let given = piperine_in(dir.path(), &["run", divider, "--analysis", "op", "--simparam", "gain=2", "--simparam", "bias=0.5"]);
+    assert_eq!(given.status.code(), Some(0), "{}", text(&given.stderr));
+    let bad = piperine_in(dir.path(), &["run", divider, "--analysis", "op", "--simparam", "gain=two"]);
+    assert_eq!(bad.status.code(), Some(1), "{}", text(&bad.stderr));
+    assert!(text(&bad.stderr).contains("P0010") && text(&bad.stderr).contains("gain=two"), "{}", text(&bad.stderr));
+    assert_eq!(text(&bad.stdout), "");
+}
+
+#[test]
+fn a_simparam_entry_naming_an_option_is_p0010() {
+    // AO-07 AC 5 (D13): `--simparam reltol=1e-3` is a P0010 naming the entry, exit code 1.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--simparam", "reltol=1e-3"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("reltol"), "{}", text(&out.stderr));
+}
+
+#[test]
+fn a_tnom_flag_is_refused() {
+    // AO-08 AC 1 (withdrawn flag `--tnom`): the command line has no such flag, so it is a usage
+    // error naming it, exit 2 (clap's), and nothing runs.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "50"]);
+    assert_ne!(out.status.code(), Some(0), "{}", text(&out.stdout));
+    assert!(text(&out.stderr).contains("--tnom"), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
 /// The lone design of `piperine-api/tests/fixtures/bounded_params.msl`, shared with the API tests:
 /// its `Thresh` has a param bounded below by a constant (`x >= 0.0`) and one bounded by another
 /// param (`v_release < v_pick`).

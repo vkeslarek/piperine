@@ -1,15 +1,8 @@
 # code	owner feature	construct (requirement or GAPS id)
 E0123	foreign-models	FM-04 AC 1
 E0124	foreign-models	FM-04 AC 2, 3
-E0127	generics	L7 (generic functions)
-E0131	generics	L8 (`impl` on a nature)
-E0132	generics	L8
-E0133	generics	L8 (handles)
-E0134	generics	L7 (traits)
-E0187	generics	L7 (traits and generic arguments)
 E0203	resolved-nets	L21
 E0225	explicit-unknowns	EU-11 AC 4 (two driven types on one resolved carrier)
-E0313	composite-values	L24 (array carriers)
 E0322	generics	L31 (generation)
 E0340	generics	L31
 E0342	generics	L31
@@ -20,17 +13,6 @@ E0372	foreign-models	FM-07 AC 2, 3
 E0373	foreign-models	FM-07 AC 4, 5
 E0374	foreign-models	FM-07 AC 6
 E0375	generics	its spec, a model item named `m` or `dtemp`
-E0451	analog-operators	L43 (`ddx`)
-E0452	analog-operators	L44 (`delay`)
-E0453	analog-operators	L44
-E0454	analog-operators	L45 (`noise`)
-E0456	analog-operators	L47 (`simparam`)
-E0511	explicit-unknowns	EU-11 AC 8 (a loop of resolved drives that does not settle)
-E0614	params-and-io	PI-09 AC 3, raised here
-E0703	params-and-io	PI-10 AC 6, raised here
-E0704	params-and-io	PI-10 AC 7, raised here
-E0705	params-and-io	PI-10 AC 5, raised here
-E0706	params-and-io	PI-09 AC 4, raised here
 E0807	gradients	H8
 E0808	gradients	H8
 E0809	gradients	H8

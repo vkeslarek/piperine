@@ -9,13 +9,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
+use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
 use super::body::NodePlan;
-use super::consts::{Bindings, Folded};
+use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
-use crate::types::Ty;
+use crate::types::{Length, Nominal, Ty};
 
 /// What a body holds besides its analog block, in the order the IR numbers it.
 #[derive(Default)]
@@ -23,6 +23,12 @@ pub(super) struct Structure {
     /// The nodes of the body in the order the IR numbers them: its own ports, then its own signals,
     /// then the signals of the hoisted frames (`hoist.rs`), each with the plan placement reads.
     pub(super) nodes: Vec<(BodyNode, NodePlan)>,
+    /// The windows of arrays of carriers each child binds: (child index, one entry per carrier port).
+    pub(super) child_windows: Vec<(u32, Vec<Option<piperine_ir::CarrierWindow>>)>,
+    /// The arrays of nodes of the body, in declaration order (`carrier_arrays.rs`).
+    pub(super) node_arrays: Vec<piperine_ir::NodeArray>,
+    /// The arrays of no element the body declares (`carrier_arrays.rs`).
+    pub(super) empty_arrays: Vec<piperine_ir::EmptyArray>,
     /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
     pub(super) hoisted: Vec<Hoisted>,
     pub(super) carriers: Vec<Carrier>,
@@ -32,6 +38,16 @@ pub(super) struct Structure {
     pub(super) streams: Vec<Stream>,
     /// The derivative sites of the body, in the order their `Expr::Derivative` reads number them.
     pub(super) derivatives: Vec<Derivative>,
+    /// The `ddx` calls of the body, in source order (`partial.rs`).
+    pub(super) partial_derivatives: Vec<piperine_ir::PartialDerivative>,
+    /// The delay sites of the body, in the order their `Expr::Delay` reads number them.
+    pub(super) delays: Vec<piperine_ir::DelaySite>,
+    /// The noise sources of the body, in the order their `Expr::Noise` reads number them.
+    pub(super) noise_sources: Vec<piperine_ir::NoiseSource>,
+    /// The session parameters the body reads, one per name, in the order they were first read.
+    pub(super) session_parameters: Vec<piperine_ir::SessionParameter>,
+    /// The trace sites of the body (`emit!` in `analog`), in the order their `Stmt::Trace` numbers them.
+    pub(super) traces: Vec<piperine_ir::TraceSite>,
     /// The carriers each child binds at its carrier ports: (child index, one entry per port).
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
@@ -61,6 +77,11 @@ pub(super) struct Frame {
     /// 0's are the body's own nodes; a hoisted frame's node port is the caller's terminal for its
     /// argument, and its node `signal` a node the body gained (`hoist.rs`).
     pub(super) nodes: BTreeMap<DeclId, Terminal>,
+    /// The shape of each array of nodes of `nodes`: its first terminal is element 0 (`carrier_arrays.rs`).
+    pub(super) node_shapes: BTreeMap<DeclId, super::carrier_arrays::ArrayShape>,
+    /// The arrays of carriers declared with length 0 (§1.2.3): no carrier of the body, since no element exists to hold
+    /// (`carrier_arrays.rs`). Every element of one is out of range, and read whole it is the empty array.
+    pub(super) empty_arrays: BTreeSet<DeclId>,
     /// A hoisted module's params, bound to constants by the placement or their defaults.
     pub(super) params: BTreeMap<DeclId, Constant>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
@@ -72,6 +93,10 @@ pub(super) struct Frame {
     pub(super) failed: BTreeSet<ExprId>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(super) derivatives: BTreeMap<ExprId, u32>,
+    /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
+    pub(super) delays: BTreeMap<ExprId, u32>,
+    /// The noise source of each `noise` call read in the frame (`noise.rs`): one call, one source.
+    pub(super) noise_sources: BTreeMap<ExprId, u32>,
     /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
     pub(super) child: Option<u32>,
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
@@ -82,7 +107,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None, unrolled: Bindings::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new() }
     }
 }
 
@@ -91,10 +116,14 @@ impl Elaboration<'_, '_> {
     /// `frame`: each added to the structure and named in the frame.
     pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
         let children = self.design.decl_data(module).children.clone();
-        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && self.types.carrier(*c).is_some());
-        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && self.types.carrier(*c).is_some());
+        let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
+        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
+        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
         for decl in ports.chain(signals).collect::<Vec<_>>() {
-            if let Some(carrier) = self.lower_carrier(frame, decl) {
+            if self.is_empty_array(frame, decl) {
+                self.frames[frame].empty_arrays.insert(decl);
+                self.record_empty_array(frame, decl);
+            } else if let Some(carrier) = self.lower_carrier(frame, decl) {
                 let index = self.add_carrier(carrier);
                 self.frames[frame].carriers.insert(decl, index);
             }
@@ -113,6 +142,11 @@ impl Elaboration<'_, '_> {
         let (file, span) = (data.file, data.span);
         let carried = match self.types.carrier(decl) {
             Some(Ty::Carrier { value, .. }) => self.stored_type(value),
+            // an array of carriers holds its elements' value type (`carrier_arrays.rs`)
+            Some(array @ Ty::Array(..)) => match array.innermost() {
+                Ty::Carrier { value, .. } => self.stored_type(value),
+                _ => None,
+            },
             _ => None,
         };
         if carried.is_none() {
@@ -133,31 +167,106 @@ impl Elaboration<'_, '_> {
             _ => return None,
         };
         let ty = self.carried_type(decl)?;
+        let array = match self.types.carrier_array(decl).is_some() {
+            true => Some(self.carrier_array_shape(decl, frame)?.0),
+            false => None,
+        };
         let init = match init {
-            Some(expr) => self.carrier_init(expr, frame)?.map(|value| self.ir_constant(value, &ty)),
+            Some(expr) if array.is_some() => {
+                let shape = array.clone()?;
+                Some(self.array_init(decl, expr, &shape, &ty, frame)?)
+            }
+            Some(expr) => match self.hand_written_encode(decl) {
+                Some(encode) => Some(self.encoded_init(expr, encode, frame)?),
+                None => {
+                    let value = self.carrier_init(expr, frame)?;
+                    Some(self.ir_constant(value, &ty))
+                }
+            },
+            // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C
+            // (GAPS L69). A type with no `Default` has none to start at: the carrier takes its value from what drives it
+            None if self.hand_written_encode(decl).is_some() && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) => {
+                if self.default_initial_value(decl, &ty).is_some() {
+                    self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
+                    return None;
+                }
+                None
+            }
+            None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
-        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl) })
+        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl), count: array.map(|shape| shape.count()) })
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the
     /// params of its frame (§5.2.3, §5.1.5): a param it reads is a key param of the body, so each
-    /// variant folds its own value (`structural.rs`). The outer `None` is a diagnostic; the inner
-    /// one is an initial value that is `Unknown`, which is the same as none: every level unknown
-    /// at `(0, 0)` and no `changed()` there (§3.3).
-    fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Option<Constant>> {
+    /// variant folds its own value (`structural.rs`). `None` is a diagnostic.
+    pub(super) fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings).map(Folded::Known) } else { self.consts.folded(expr, &bindings) };
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
         match folded {
-            Ok(Folded::Known(value)) => Some(Some(value)),
-            Ok(Folded::Unknown) => Some(None),
+            Ok(value) => Some(value),
             Err(fault) => {
                 self.const_fault(&fault, "a carrier's initial value");
                 None
             }
         }
+    }
+
+    /// What carrier `decl` of value type `stored` holds at `(0, 0)` when no initial value is written:
+    /// the `Default::default()` of its type (§3.3.4), when it has one. A type without `Default` (a
+    /// `bool`, a number, a `str`) has none here: the checker asks for the written value.
+    fn default_initial_value(&mut self, decl: DeclId, stored: &ValueType) -> Option<Constant> {
+        let Some(Ty::Carrier { value, .. }) = self.types.carrier(decl).cloned() else { return None };
+        self.default_constant(&value, stored)
+    }
+
+    /// The constant `Default::default()` of the type `ty`, held as `stored`: `None` (the zero bytes)
+    /// for an `Option`, the defaults of the parts of a tuple, an array or a struct that derives
+    /// `Default` (H.8 rule 4). `None` for a type that has no default.
+    pub(super) fn default_constant(&mut self, ty: &Ty, stored: &ValueType) -> Option<Constant> {
+        let (variant, parts) = match (ty, stored) {
+            (Ty::Option(_), ValueType::Option(_)) => (None, Vec::new()),
+            (Ty::Tuple(items), ValueType::Tuple(held)) => (None, items.iter().zip(held).map(|(item, held)| self.default_constant(item, held)).collect::<Option<Vec<_>>>()?),
+            (Ty::Array(element, Length::Fixed(length)), ValueType::Array(held, _)) => {
+                let one = self.default_constant(element, held)?;
+                (None, vec![one; usize::try_from(*length).ok()?])
+            }
+            // a type with a hand-written `impl Default` starts at what its `default` returns (`Logic<N>`: every level X)
+            (Ty::Struct(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(nominal, stored),
+            (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
+                let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
+                let held = self.type_arena.field_types(*id).to_vec();
+                (None, fields.iter().zip(&held).map(|(field, held)| self.default_constant(field, held)).collect::<Option<Vec<_>>>()?)
+            }
+            _ => return None,
+        };
+        Some(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: stored.clone(), variant, parts })))
+    }
+
+    /// The constant a hand-written `impl Default` gives the struct `nominal`, held as `stored`: the tail of its `default`,
+    /// folded for the arguments of the `impl` (`N` of a `Logic<N>`). `None` when the body is no tail expression that folds.
+    fn written_default(&mut self, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
+        let function = *self.impls.builtin_functions("Default", "default", &Ty::Struct(nominal.clone())).first()?;
+        let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return None };
+        let body = data.body.clone()?;
+        let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.design.stmt_node(*stmt).kind.clone()) else { return None };
+        let arguments: Vec<super::instances::ConcreteValue> = nominal
+            .arguments
+            .iter()
+            .map(|argument| match argument {
+                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value)) => Some(super::instances::ConcreteValue::Const(*value)),
+                crate::types::GenericValue::Type(ty) => Some(super::instances::ConcreteValue::Type(ty.clone())),
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let outer = self.consts.set_substitution(self.instance_substitution(function, &arguments));
+        let folded = self.composite_constant(expr, &Bindings::new());
+        self.consts.set_substitution(outer);
+        let value = folded.ok()?;
+        Some(self.ir_constant(value, stored))
     }
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.
@@ -168,6 +277,12 @@ impl Elaboration<'_, '_> {
         }
         for carrier in structure.carriers {
             self.ir.carrier(body, carrier);
+        }
+        for array in structure.node_arrays {
+            self.ir.node_array(body, array);
+        }
+        for array in structure.empty_arrays {
+            self.ir.empty_array(body, array);
         }
         for drive in structure.drives {
             self.ir.drive(body, drive);
@@ -184,8 +299,26 @@ impl Elaboration<'_, '_> {
         for derivative in structure.derivatives {
             self.ir.derivative(body, derivative);
         }
+        for delay in structure.delays {
+            self.ir.delay(body, delay);
+        }
+        for trace in structure.traces {
+            self.ir.trace(body, trace);
+        }
+        for parameter in structure.session_parameters {
+            self.ir.session_parameter(body, parameter);
+        }
+        for source in structure.noise_sources {
+            self.ir.noise_source(body, source);
+        }
+        for partial in structure.partial_derivatives {
+            self.ir.partial_derivative(body, partial);
+        }
         for (child, carriers) in structure.child_carriers {
             self.ir.bind_child_carriers(body, child, carriers);
+        }
+        for (child, windows) in structure.child_windows {
+            self.ir.bind_child_windows(body, child, windows);
         }
         for (child, param, value) in structure.child_params {
             self.ir.child_param(body, child, param, value);

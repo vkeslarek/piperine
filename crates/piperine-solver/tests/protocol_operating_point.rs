@@ -132,7 +132,7 @@ fn a_settle_commit_of_a_dc_point_lands_at_the_next_point() {
     let log = new_log();
     let mut d = ScriptedDiscrete::new(&log);
     let a = ScriptedAnalog::new(&log);
-    d.instants.extend([Outcome::default(), Outcome { settle_boundary: vec![Boundary { slot: 4, bytes: vec![1, 1] }], ..Outcome::default() }]);
+    d.instants.extend([Outcome::default(), Outcome { settle_boundary: vec![Boundary { slot: 4, bytes: vec![1] }], ..Outcome::default() }]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(1e-12));
     p.operating_point().unwrap();
     p.operating_point().unwrap();
@@ -143,7 +143,7 @@ fn a_settle_commit_of_a_dc_point_lands_at_the_next_point() {
             Call::Start,
             Call::LandSettleCommits(0),
             settle(0),
-            Call::Deliver(vec![Boundary { slot: 4, bytes: vec![1, 1] }], Restart::Integrator),
+            Call::Deliver(vec![Boundary { slot: 4, bytes: vec![1] }], Restart::Integrator),
             Call::Start,
             Call::LandSettleCommits(0),
             settle(0),
@@ -158,7 +158,7 @@ fn a_settle_commit_of_the_last_point_is_dropped() {
     let log = new_log();
     let mut d = ScriptedDiscrete::new(&log);
     let a = ScriptedAnalog::new(&log);
-    d.instants.push_back(Outcome { settle_boundary: vec![Boundary { slot: 4, bytes: vec![1, 1] }], ..Outcome::default() });
+    d.instants.push_back(Outcome { settle_boundary: vec![Boundary { slot: 4, bytes: vec![1] }], ..Outcome::default() });
     let mut p = Protocol::new(d, a, ProtocolOptions::new(1e-12));
     p.operating_point().unwrap();
     p.end_sweep();

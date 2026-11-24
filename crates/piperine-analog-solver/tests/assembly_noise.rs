@@ -21,7 +21,7 @@ use circuit::{at, f64_bytes, f64_of, instance, netlist, tagged};
 use devices::{K_B, KF, T_NOISE, calls, modules};
 use num_complex::Complex64;
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
-use piperine_analog_solver::device::{AnalogPlan, Assembly, NoiseColumn, Stage};
+use piperine_analog_solver::device::{AnalogPlan, Assembly, NoiseColumn, JumpPosition, Stage};
 use piperine_analog_solver::math::integration::TrBdf2Phase;
 use piperine_analog_solver::math::linear::Stamp;
 use system::{at_freq, at_rest, at_time, close, solve_complex};
@@ -85,7 +85,7 @@ fn a_psd_that_reads_freq_is_evaluated_per_frequency() {
     let fl = tagged("fl", m.flicker, 701, vec![Discrete(0), at(&n[0])]);
     let mut asm = Assembly::new(AnalogPlan::bind(vec![fl], &net).expect("bind"));
     asm.assemble_dc(&[0.2], at_rest()).expect("dc");
-    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-9, prev_h: 0.0 };
+    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-9, prev_h: 0.0, jump: JumpPosition::None };
     asm.assemble_tran(&[0.2], at_time(1e-9), stage).expect("tran");
     asm.assemble_ac(&[0.2], at_freq(1e3)).expect("ac");
     assert!(calls(701).is_empty(), "KF/freq is not evaluated outside a noise sweep (at FREQ = 0 it is not finite)");

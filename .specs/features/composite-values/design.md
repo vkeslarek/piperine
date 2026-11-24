@@ -434,6 +434,9 @@ active MD decisions; each is reported back.
 
 ## Phase C (ROADMAP item 11): later batch boundary
 
+Planned in `design-c.md` and `tasks-c.md` (T64 to T90, 2026-11-23). The sketch below is the
+starting point it refined; where they differ, `design-c.md` holds.
+
 Not tasked here. After `generics` A–B, `design-c.md`/`tasks-c.md` plan CV-23 to CV-28 on top of
 this feature's types: `Ty::Array` of a carrier type (`[Bit<T>; K]`, `[Electrical; K]`), one IR
 carrier or node per element with element ports (CV-23), element reads and `E0211` (CV-24),

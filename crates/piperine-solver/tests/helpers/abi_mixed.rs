@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, REAL};
+use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
 use piperine_abi::raw::{
     Cell, DEFAULT, Field, GROUND, Layout, List, Module, Partial, Shape, Statement, Str, ambient, cell, global, leaf, op, part, pin_flag,
     reaction_flag, role, statement_flag, watch,
@@ -62,15 +62,12 @@ fn watch_spec(name: &'static str, kind: u32, event: u32) -> WatchSpec<'static> {
     WatchSpec { name, origin: ORIGIN, kind, layout: &F64, event, ttol: DEFAULT, etol: DEFAULT }
 }
 /// `v` bytes of a `BIT`.
-fn bit(value: bool) -> [u8; 2] {
-    [value as u8, 1]
+fn bit(value: bool) -> [u8; 1] {
+    [value as u8]
 }
-/// A `REAL`: value and known byte.
-pub fn real(v: f64) -> [u8; 16] {
-    let mut b = [0u8; 16];
-    b[..8].copy_from_slice(&v.to_le_bytes());
-    b[8] = 1;
-    b
+/// An `F64` carrier: its value bytes.
+pub fn real(v: f64) -> [u8; 8] {
+    v.to_le_bytes()
 }
 
 fn shared(slot: &'static OnceLock<ShapeRef>, build: fn() -> ShapeRef) -> &'static ShapeRef {
@@ -109,7 +106,7 @@ fn comparator_shape() -> ShapeRef {
         ..FunctionSpec::default()
     });
     for (name, on) in [("up", up), ("down", down)] {
-        s.reaction(ReactionSpec { name, origin: ORIGIN, on: vec![on], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+        s.reaction(ReactionSpec { name, origin: ORIGIN, on: vec![on], writes: vec![statement(out, 1, 0)], ..ReactionSpec::default() });
     }
     s.freeze()
 }
@@ -166,7 +163,7 @@ fn dff_shape() -> ShapeRef {
         origin: ORIGIN,
         on: vec![rise],
         reads: vec![pin(d)],
-        writes: vec![statement(q, 2, 0)],
+        writes: vec![statement(q, 1, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -197,7 +194,7 @@ pub fn dff() -> &'static Module {
 
 // ─── Inverter ───────────────────────────────────────────────────────────────
 
-/// pins: a=0, y=1 (PORT BIT).  fn 0 "inv": reads [a] writes [y]; y is unknown while a is.
+/// pins: a=0, y=1 (PORT BIT).  fn 0 "inv": reads [a] writes [y]; y is the negation of a.
 pub struct Inverter;
 static INVERTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static INVERTER: OnceLock<Module> = OnceLock::new();
@@ -219,7 +216,7 @@ impl Device for Inverter {
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let a = cx.bytes(0);
-        let y = if a[1] != 0 { bit(a[0] == 0) } else { [0, 0] };
+        let y = bit(a[0] == 0);
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())
     }
@@ -401,7 +398,7 @@ fn timer_shape() -> ShapeRef {
         origin: ORIGIN,
         on: vec![start, tick],
         reads: vec![pin(out), pin(half)],
-        writes: vec![statement(out, 2, 0), statement(tick, 0, statement_flag::REPLACE)],
+        writes: vec![statement(out, 1, 0), statement(tick, 0, statement_flag::REPLACE)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -435,7 +432,7 @@ pub fn timer() -> &'static Module {
 
 /// Emits eight records through one statement when `go` fires.
 /// pins: go=0 (PORT event); log=1 (PORT BYTE, RECORD)
-/// reaction 0: on [go] writes [S0 {log}]; commits `[i, known]` for i = 1 to 8, no delay
+/// reaction 0: on [go] writes [S0 {log}]; commits `[i]` for i = 1 to 8, no delay
 pub struct Recorder;
 static RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static RECORDER: OnceLock<Module> = OnceLock::new();
@@ -444,7 +441,7 @@ fn recorder_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let go = s.pin(PinSpec::event("go", role::PORT));
     let log = s.pin(PinSpec { flags: pin_flag::RECORD, ..PinSpec::discrete("log", role::PORT, &BYTE) });
-    s.reaction(ReactionSpec { name: "emit", origin: ORIGIN, on: vec![go], writes: vec![statement(log, 2, 0)], ..ReactionSpec::default() });
+    s.reaction(ReactionSpec { name: "emit", origin: ORIGIN, on: vec![go], writes: vec![statement(log, 1, 0)], ..ReactionSpec::default() });
     s.freeze()
 }
 
@@ -461,7 +458,7 @@ impl Device for Recorder {
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
         bump("recorder");
         for i in 1..=8u8 {
-            cx.commit(0, &[i, 1], 0.0)?;
+            cx.commit(0, &[i], 0.0)?;
         }
         Ok(Flow::Continue)
     }
@@ -473,8 +470,8 @@ pub fn recorder() -> &'static Module {
 
 // ─── Sampler (solver-abi-digital) ───────────────────────────────────────────
 
-/// A reaction that reads a continuous pin: its sample becomes a `REAL` when `go` fires.
-/// pins: v=0 (PORT continuous); go=1 (PORT event); s=2 (PORT REAL)
+/// A reaction that reads a continuous pin: its sample becomes an `F64` when `go` fires.
+/// pins: v=0 (PORT continuous); go=1 (PORT event); s=2 (PORT F64)
 /// reaction 0: on [go] reads [v] writes [S0 {s}]; s <- the sample, no delay
 pub struct Sampler;
 static SAMPLER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
@@ -484,13 +481,13 @@ fn sampler_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let v = s.pin(PinSpec::continuous("v", role::PORT));
     let go = s.pin(PinSpec::event("go", role::PORT));
-    let out = s.pin(PinSpec::discrete("s", role::PORT, &REAL));
+    let out = s.pin(PinSpec::discrete("s", role::PORT, &F64));
     s.reaction(ReactionSpec {
         name: "sample",
         origin: ORIGIN,
         on: vec![go],
         reads: vec![pin(v)],
-        writes: vec![statement(out, 16, 0)],
+        writes: vec![statement(out, 8, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -535,7 +532,7 @@ fn stub_shape() -> ShapeRef {
         origin: ORIGIN,
         flags: reaction_flag::IRREVERSIBLE,
         on: vec![go],
-        writes: vec![statement(out, 2, 0)],
+        writes: vec![statement(out, 1, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -565,8 +562,8 @@ pub fn stub() -> &'static Module {
 // ─── Counter (solver-abi-digital) ───────────────────────────────────────────
 
 static COUNT_FIELDS: [Field; 1] =
-    [Field { name: Str::from_static("v"), leaf: leaf::U32, offset: 0, count: 1, flags: 0, known: 0 }];
-/// One `U32` with no known byte.
+    [Field { name: Str::from_static("v"), leaf: leaf::U32, offset: 0, count: 1 }];
+/// One `U32`.
 pub static COUNT: Layout = Layout { size: 4, align: 4, fields: List::from_slice(&COUNT_FIELDS) };
 
 /// The `u32` held in a `COUNT` pin's bytes.
@@ -770,7 +767,7 @@ pub fn finisher() -> &'static Module {
 
 /// A 1 mS conductance to ground that writes a `TRACE` record at every evaluation.
 /// pins: p=0 (PORT continuous)   terms: T0 FLOW{p, GROUND}   watches: W0 TRACE (BYTE)
-/// fn 0: reads [p] writes [T0, W0] partials (0<-0); W0 <- [1, known]
+/// fn 0: reads [p] writes [T0, W0] partials (0<-0); W0 <- [1]
 pub struct Tracer;
 static TRACER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static TRACER: OnceLock<Module> = OnceLock::new();
@@ -801,7 +798,7 @@ impl Device for Tracer {
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         cx.set(0, TRACER_G * cx.f64(0));
-        cx.out_bytes(1).copy_from_slice(&[1, 1]);
+        cx.out_bytes(1).copy_from_slice(&[1]);
         cx.jac()[0] = TRACER_G;
         Ok(())
     }
@@ -991,7 +988,7 @@ fn clock_shape() -> ShapeRef {
         origin: ORIGIN,
         on: vec![tick],
         reads: vec![pin(hi), pin(period)],
-        writes: vec![statement(hi, 2, 0), statement(tick, 0, statement_flag::REPLACE)],
+        writes: vec![statement(hi, 1, 0), statement(tick, 0, statement_flag::REPLACE)],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -1062,7 +1059,7 @@ fn toggle_shape() -> ShapeRef {
         origin: ORIGIN,
         on: vec![rise],
         reads: vec![pin(q)],
-        writes: vec![statement(q, 2, 0)],
+        writes: vec![statement(q, 1, 0)],
         ..ReactionSpec::default()
     });
     s.freeze()

@@ -52,11 +52,11 @@ The user's decision removes the idea instead of finishing it. What a type can ho
 
 ## Goals
 
-- [ ] The specification and the Book state the explicit model, and no rule of either mentions a known flag, `Unknown`, `level`, `known_or`, `maybe` or a merge under unknown control.
-- [ ] A model whose carriers all have initial values and binary types runs with the results it gave before; the 7 ngspice twins print the same bytes.
-- [ ] The IR, the plan, the ABI, the generated code and the engines hold no flag, no merge and no `commit_with`.
-- [ ] `Logic<N>` runs from the standard library's own source with the four-state tables of EU-08.
-- [ ] `GAPS.md` S6 and G6 are closed, `unknown-semantics-per-level` is recorded as dropped, and MD-70 is recorded as superseded.
+- [x] The specification and the Book state the explicit model, and no rule of either mentions a known flag, `Unknown`, `level`, `known_or`, `maybe` or a merge under unknown control.
+- [x] A model whose carriers all have initial values and binary types runs with the results it gave before; the 7 ngspice twins print the same bytes.
+- [x] The IR, the plan, the ABI, the generated code and the engines hold no flag, no merge and no `commit_with`.
+- [x] `Logic<N>` runs from the standard library's own source with the four-state tables of EU-08.
+- [x] `GAPS.md` S6 and G6 are closed, `unknown-semantics-per-level` is recorded as dropped, and MD-70 is recorded as superseded.
 
 ## Out of Scope
 
@@ -193,7 +193,7 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 1. WHEN a signal, an `out` port or a drive has `= value` THEN the system SHALL commit that value at `(0, 0)`.
 2. WHEN a carrier has no initial value and its value type implements `Default` THEN the system SHALL commit `Default::default()` at `(0, 0)`.
 3. WHEN an element of an array of carriers was never committed THEN the system SHALL read it as the array's initial value for that element, without storage proportional to the declared length.
-4. IF a signal, an `out` port, or a drive of a resolved carrier has no initial value and its value type does not implement `Default` THEN the system SHALL report `E0187` at the declaration, naming the carrier and `Default`.
+4. IF a signal, an `out` port, or a drive of a resolved carrier has no initial value and its value type does not implement `Default` THEN the system SHALL report `E0187` at the declaration, naming the carrier and `Default`. (The drive of a resolved carrier is checked once a resolved nature runs: `resolved-nets`, GAPS L21.)
 5. IF a one-driver carrier has no drive and its value type does not implement `Default` THEN the system SHALL report `E0187` naming the carrier.
 6. IF a top-level `in` port has no initial value, its value type does not implement `Default`, and the host has given it no value when an analysis starts THEN the system SHALL refuse the analysis with `E0187` naming the port.
 7. IF a signal is driven by an undelayed definition, or an `out` port of a child instance gives its initial value (the one driver of the carrier), THEN the system SHALL NOT report `E0187` for the carrier on account of a missing initial value; a signal driven only by a delayed definition is not exempt. *Amended (AFK default, to show the user): added after the approval of AC 4, which it narrows; the user's rule stands (a value that has a Default may start without one, one that has none must be specified): the definition or the child's port specifies it, once, from `(0, 0)`. An undelayed definition forbids an initial value on the signal (`E0338`), so without this exemption a `bool` carrier with a definition could be written neither way.*
@@ -264,7 +264,8 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 4. The specification SHALL state that a drive picks its `impl` by the type of the value driven, that two driven types on one carrier are `E0225`, and that a driven type no `impl` accepts is `E0180`.
 5. The specification SHALL state that `resolve` receives the present drives as an array of plain values, in instance-path order, instantiated for every count from zero to the number of drives.
 6. The specification SHALL state that a drive with no initial value starts at `Default::default()` of the driven type and is a drive from `(0, 0)` on, that its absence is `E0187` (EU-04 AC 4), and that a carrier of a resolving nature needs no initial value of its own.
-7. The specification SHALL state that in a relaxing loop every drive of the loop starts each pass absent from what `resolve` receives, and that absence is not a value of the type.
+7. The specification SHALL state that in a relaxing loop every drive of the loop starts each relaxation (each microstep it runs) absent from what `resolve` receives, the passes of one relaxation building on the previous pass, and that absence is not a value of the type.
+   *Amendment of the fix round (2026-11-22; replaces "starts each pass absent"; the engine zeroes the drives once per microstep): approved by the user, 2026-11-22 - user: "Aprovo o texto novo" (AskUserQuestion).*
 8. The specification SHALL state that a loop that still moves after its bounded passes stops the run with `E0511`, which names the loop's drives.
 
 **Acceptance Criteria** (EU-12, the library's part in nets; the specification text, run by `resolved-nets`):
@@ -309,7 +310,9 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 2. The ABI's `Field` SHALL be `{ name, leaf, offset, count }`, and the shipped layouts SHALL be `BIT` `{ v: BOOL @0 }` of size 1 and alignment 1, `BYTE` `{ v: U8 @0 }` of size 1, and `F64` `{ v: F64 @0 }` of size 8 and alignment 8.
 3. The `Host` SHALL offer `commit` and no `commit_with`, and the ABI SHALL define no `commit_flag`.
 4. WHEN a pin carries `Option<T>` THEN its layout SHALL be one `BOOL` presence field followed by the layout of `T`, and a param that may be "not given" SHALL be such a pin.
-5. WHEN a pin carries `Logic<N>` THEN its layout SHALL be two fields, `binary` at offset 0 and `value` at the size of `UInt<N>`, each with the leaf of `UInt<N>`, the whole of twice that size and of that alignment.
+5. WHEN a pin carries `Logic<N>` THEN its layout SHALL be two fields, `binary` at offset 0 and `value` at the size of `UInt<N>`, each with the leaf of `UInt<N>`, the whole of twice that size and packed with alignment 1 like every composite pin.
+
+   *Amendment (coordinator ruling 2026-11-23, finding 45; replaces "and of that alignment"): the two approved texts disagreed with the plan, which lays every composite pin with alignment 1; the packed composite of `composite-values` wins.*
 6. WHEN a drive pin of a resolved net is laid out THEN it SHALL be the layout of the driven type followed by one `driving: BOOL` field, 0 for a drive absent from the resolver and 1 for a present one.
 
 **Independent Test**: a hand-written device in `crates/piperine-abi/tests` with a `BIT` pin of one byte binds and commits under `piperine_abi_1`; a cache entry keyed by the earlier contract is rebuilt.
@@ -473,27 +476,27 @@ S6 and G6 (closed by redesign); the stdlib line of §1 (`known`, `known_or`, `is
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| EU-01 | P1: a value is what its type says | Tasks | Pending |
-| EU-02 | P1: a value is what its type says | Tasks | Pending |
-| EU-03 | P1: a value is what its type says | Tasks | Pending |
-| EU-04 | P1: a carrier starts with a value, or its type has a default | Tasks | Pending |
-| EU-05 | P1: a carrier starts with a value, or its type has a default | Tasks | Pending |
-| EU-06 | P1: a carrier starts with a value, or its type has a default | Tasks | Pending |
-| EU-07 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-08 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-09 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-10 | P1: `Logic` is a library type with four states | Tasks | Pending |
-| EU-11 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-12 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-13 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-14 | P1: resolved nets, history and events | Tasks | Pending |
-| EU-15 | P1: records, the host and the device contract | Tasks | Pending |
-| EU-16 | P1: records, the host and the device contract | Tasks | Pending |
-| EU-17 | P1: the specification and the Book say it first | Tasks | Pending |
-| EU-18 | P1: the specification and the Book say it first | Tasks | Pending |
-| EU-19 | P1: the specification and the Book say it first | Tasks | Pending |
-| EU-20 | P1: the tree is written in the explicit model | Tasks | Pending |
-| EU-21 | P1: the tree is written in the explicit model | Tasks | Pending |
+| EU-01 | P1: a value is what its type says | Tasks | Done |
+| EU-02 | P1: a value is what its type says | Tasks | Done |
+| EU-03 | P1: a value is what its type says | Tasks | Done |
+| EU-04 | P1: a carrier starts with a value, or its type has a default | Tasks | Done |
+| EU-05 | P1: a carrier starts with a value, or its type has a default | Tasks | Done |
+| EU-06 | P1: a carrier starts with a value, or its type has a default | Tasks | Done |
+| EU-07 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-08 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-09 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-10 | P1: `Logic` is a library type with four states | Tasks | Done |
+| EU-11 | P1: resolved nets, history and events | Tasks | Specified here; the run is `resolved-nets` (`Resolve`, the library nets: `GAPS.md` L21) |
+| EU-12 | P1: resolved nets, history and events | Tasks | Specified here; the run is `resolved-nets` (`Resolve`, the library nets: `GAPS.md` L21) |
+| EU-13 | P1: resolved nets, history and events | Tasks | Done |
+| EU-14 | P1: resolved nets, history and events | Tasks | Done |
+| EU-15 | P1: records, the host and the device contract | Tasks | Done; a host write of a pattern is `resolved-nets` (`GAPS.md` L71) |
+| EU-16 | P1: records, the host and the device contract | Tasks | Done |
+| EU-17 | P1: the specification and the Book say it first | Tasks | Done |
+| EU-18 | P1: the specification and the Book say it first | Tasks | Done |
+| EU-19 | P1: the specification and the Book say it first | Tasks | Done; the removal of `Intrinsic::{Cast, Same}` is `generics` phase C batch B9 (`GAPS.md` L58, L70) |
+| EU-20 | P1: the tree is written in the explicit model | Tasks | Done |
+| EU-21 | P1: the tree is written in the explicit model | Tasks | Done |
 
 **Coverage:** 21 total, 21 mapped to tasks (tasks.md), 0 unmapped.
 

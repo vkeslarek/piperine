@@ -4,30 +4,42 @@
 use crate::spec::*;
 
 /// The 8-bit output-voltage setpoint register (SPEC §7.1), written by the host: `data` is taken
-/// on a rising `wr`. A code above 168 saturates to 168 (5.0 V); a write of unknown data is
-/// ignored.
+/// on a rising `wr`. A code above 168 saturates to 168 (5.0 V).
 pub module SetpointReg(in wr: Bit, in data: Bit<u8>, out code: Bit<u8> = SETPOINT_RESET) {}
+
 digital for SetpointReg {
     on wr.rise() {
-        if let Some(d) = data.known() { code <- d.min(SETPOINT_MAX); }
+        code <- data.min(SETPOINT_MAX);
     }
 }
 
 /// The target in ADC codes: 128 + 4 · code, so 0.8 V to 5.0 V in 25 mV steps (SPEC §4.1, §7.1).
-pub fn target_codes(setpoint: u8) -> u10 { REF_BASE + ((setpoint as u10) << 2) }
+pub fn target_codes(setpoint: u8) -> u10 {
+    REF_BASE + ((setpoint as u10) << 2)
+}
 
 /// The reference ramp (SPEC §7.2): one code per sample towards the target, up or down, which is
 /// 3.125 V/ms at the output. It is the soft-start, and it is the slew of every setpoint change.
 /// While `run` is low the reference rests at zero.
-pub module RefRamp(in tick: Bit, in run: Bit, in target: Bit<u10>,
-                   out reference: Bit<u10> = 0, out at_target: Bit) {
+pub module RefRamp(
+    in tick: Bit,
+    in run: Bit,
+    in target: Bit<u10>,
+    out reference: Bit<u10> = 0,
+    out at_target: Bit,
+) {
     at_target = reference == target;
 }
+
 digital for RefRamp {
     on tick.rise() {
-        if !run.known_or(false) { reference <- 0; }
-        else if reference < target { reference <- reference + 1; }
-        else if reference > target { reference <- reference - 1; }
+        if !run {
+            reference <- 0;
+        } else if reference < target {
+            reference <- reference + 1;
+        } else if reference > target {
+            reference <- reference - 1;
+        }
     }
 }
 
@@ -43,8 +55,13 @@ digital for RefRamp {
 /// range and holds while the output is saturated in the direction the error pushes
 /// (conditional integration). The sample read at the start of period n sets the duty of period
 /// n + 1: the DPWM latches `duty` at its next wrap (SPEC §9).
-pub module Pid(in tick: Bit, in run: Bit, in reference: Bit<u10>, in meas: Bit<u10>,
-               out duty: Bit<u12> = 0) {
+pub module Pid(
+    in tick: Bit,
+    in run: Bit,
+    in reference: Bit<u10>,
+    in meas: Bit<u10>,
+    out duty: Bit<u12> = 0,
+) {
     /// Integral term, Q4 duty LSBs.
     signal integ: Bit<i32> = 0;
     /// Filtered derivative term, Q4 duty LSBs.
@@ -52,13 +69,16 @@ pub module Pid(in tick: Bit, in run: Bit, in reference: Bit<u10>, in meas: Bit<u
     /// The error of the previous sample, in codes.
     signal e_prev: Bit<i16> = 0;
 }
+
 digital for Pid {
     on tick.rise() {
-        if !run.known_or(false) {
-            integ <- 0; deriv <- 0; e_prev <- 0; duty <- 0;
+        if !run {
+            integ <- 0;
+            deriv <- 0;
+            e_prev <- 0;
+            duty <- 0;
         } else {
-            // An unknown measurement reads as full scale: the loop then asks for less, never more.
-            let e = ((reference.known_or(0) as i16) - (meas.known_or(1023) as i16)).clamp(E_MIN, E_MAX);
+            let e = ((reference as i16) - (meas as i16)).clamp(E_MIN, E_MAX);
             let p = KP_Q4 * (e as i32);
             let d = (deriv >> D_POLE_SHIFT) + KD_Q4 * ((e - e_prev) as i32);
             let u = (p + integ + d) >> Q_SHIFT;

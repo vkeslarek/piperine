@@ -236,8 +236,8 @@ fn the_book_reads_every_block() {
     // them `msl`; every block has a distinct id that reads back, and every chapter has prose
     let book = Book::read();
     assert_eq!(book.chapters().len(), 21, "the chapters of the Book: {:?}", book.chapters());
-    assert_eq!(book.blocks().len(), 284, "the code blocks of the Book");
-    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 126, "the `msl` blocks of the Book");
+    assert_eq!(book.blocks().len(), 287, "the code blocks of the Book");
+    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 127, "the `msl` blocks of the Book");
     let mut seen = Vec::new();
     for block in book.blocks() {
         let id = block.id().to_string();
@@ -585,26 +585,17 @@ const REMOVED_NAMES: [&str; 7] = ["Unknown", "known_or", "known()", "is_known", 
 #[test]
 fn the_book_uses_no_removed_name() {
     // EU-18 AC 3: no block and no sentence of the Book uses `Unknown`, `known_or`, `known()`, `is_known`,
-    // `level(`, `high()` or `maybe`. The one exception is what the binary prints today: the two blocks that are
-    // the earlier front end's refusal of a plain `analog` read (`E0150`, stderr, held to the binary by
-    // `piperine-cli`'s book target) spell the names in its own diagnostic. They are listed here so the exception
-    // cannot grow, and they leave this list the day the front end stops printing them (explicit-unknowns T30).
+    // `level(`, `high()` or `maybe`. The two listings that were the earlier front end's refusal of a plain
+    // `analog` read (`E0150`, welcome#19 and the buck's) print what the binary prints now, so there is no exception.
     let book = Book::read();
     let mut found = Vec::new();
-    let mut exempt = 0;
     for block in book.blocks() {
-        let earlier_refusal = block.attribute("data-cli-output").is_some() && block.attribute("data-cli-stream") == Some("stderr") && block.text().starts_with("E0150");
-        if earlier_refusal {
-            exempt += 1;
-            continue;
-        }
         for name in REMOVED_NAMES {
             if block.text().contains(name) {
                 found.push(format!("{}: the block uses `{name}`", block.id()));
             }
         }
     }
-    assert_eq!(exempt, 2, "two listings are the earlier front end's E0150 refusal (welcome#19 and the buck's)");
     for chapter in book.chapters() {
         for sentence in book.sentences(&chapter) {
             for name in REMOVED_NAMES {
@@ -637,11 +628,9 @@ fn every_listing_that_does_not_run_names_its_gap() {
     }
     assert!(offences.is_empty(), "{}", offences.join("\n  "));
     // the gap of each is the feature that really makes it run (ROADMAP.md, "Every Book listing runs before item 13"):
-    // explicit-unknowns phase A or B (S8), `resolved-nets` (L21: also natures#2, which needs phases A and B and `composite-values` first)
+    // `resolved-nets` (L21: also natures#2, which needs phases A and B and `composite-values` first); explicit-unknowns phase B
+    // (values#18) runs since T47
     let gap_of = |id: &str| tree.inventory.rows().iter().find(|row| row.id == id).map(|row| row.gap.clone()).unwrap_or_else(|| panic!("a row {id}"));
-    for id in ["welcome#17", "analog#9", "modules#9", "mixed#8", "mixed#10", "mixed#14", "values#21", "values#14", "values#18"] {
-        assert_eq!(gap_of(id), "S8", "{id}: explicit-unknowns");
-    }
     for id in ["natures#2", "natures#3", "digital#16", "digital#17", "digital#18", "digital#19", "digital#20", "core-std#6"] {
         assert_eq!(gap_of(id), "L21", "{id}: resolved-nets");
     }

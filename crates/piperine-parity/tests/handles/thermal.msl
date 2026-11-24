@@ -1,0 +1,32 @@
+//! `impl Thermal { fn celsius(self) }` of §3.1 in a thermal circuit, and the same on a project nature (GN-10, GN-11): a
+//! node held at a temperature, read through the `impl`; the expected values are computed by Rust in `source_handles.rs`.
+
+impl Thermal {
+    pub fn celsius(self) -> f64 { temp(self) - 273.15 }
+}
+
+/// A node held at `kelvin`.
+module Hot(t: Thermal) { kelvin: f64 = 300.0; }
+analog for Hot { temp(t) +> kelvin; }
+
+/// `o` is the temperature of `t` in degrees Celsius.
+module Reader(t: Thermal, o: Electrical) {}
+analog for Reader { v(o) +> t.celsius(); }
+
+module Cold() { signal t: Thermal; signal o: Electrical; let h = Hot(t) { kelvin: 250.0 }; let r = Reader(t, o); }
+module Room() { signal t: Thermal; signal o: Electrical; let h = Hot(t) { kelvin: 300.0 }; let r = Reader(t, o); }
+module Warm() { signal t: Thermal; signal o: Electrical; let h = Hot(t) { kelvin: 350.0 }; let r = Reader(t, o); }
+
+/// A nature of the project, with an `impl` that scales its potential.
+nature Pressure { potential: P { access: p, units: "Pa", abstol: 1m }, flow: Q { access: q, units: "m3/s", abstol: 1p } }
+impl Pressure {
+    pub fn bar(self) -> f64 { p(self) / 100000.0 }
+}
+
+module Tank(a: Pressure) { level: f64 = 200000.0; }
+analog for Tank { p(a) +> level; }
+
+module Gauge(a: Pressure, o: Electrical) {}
+analog for Gauge { v(o) +> a.bar(); }
+
+module Plant() { signal a: Pressure; signal o: Electrical; let tank = Tank(a) { level: 250000.0 }; let gauge = Gauge(a, o); }

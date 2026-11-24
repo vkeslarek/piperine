@@ -10,6 +10,9 @@ use piperine_abi::thunk::module_with;
 mod composite;
 mod device;
 mod dual;
+mod generics;
+mod operators;
+mod param_types;
 mod walk;
 
 #[cfg(test)]
@@ -25,6 +28,9 @@ use std::collections::HashSet;
 
 use piperine_ir::{AnalysisKind, Body, BodyId, BranchKind, Broken, Env, EventSource, Ir, Stmt, StmtId, Target};
 use composite::CompositeForms;
+use generics::GenericForms;
+use operators::OperatorForms;
+use param_types::ParamTypes;
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
@@ -65,14 +71,18 @@ impl Interpreter {
                     what: format!("body {} has carriers, drives or reactions: the interpreter runs the M1 analog subset only (use the compiled backend)", b.name()),
                 });
             }
-            for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)).chain(CompositeForms::of(b)) {
+            for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)).chain(CompositeForms::of(b)).chain(OperatorForms::of(b)).map(String::from).chain(GenericForms::of(b)) {
                 refused.push(Broken {
                     item: format!("body {}", b.name()),
                     origin: b.origin().clone(),
                     what: format!("body {} holds {form}: the interpreter runs the M1 analog subset only", b.name()),
                 });
             }
+            for what in ParamTypes::refused(b) {
+                refused.push(Broken { item: format!("body {}", b.name()), origin: b.origin().clone(), what });
+            }
         }
+        refused.extend(GenericForms::hand_written_types(&ir));
         if !refused.is_empty() {
             return Err(Rejected { entries: refused });
         }

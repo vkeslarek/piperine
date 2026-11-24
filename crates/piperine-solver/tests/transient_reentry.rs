@@ -307,7 +307,7 @@ fn run_clocked(circuit: &mut CircuitInstance, from: Option<&TransientStep>) -> T
 
 /// The clock's value and the rising edges counted at a step's time, after the
 /// instant at that time ran (edges at every multiple of `HALF`, the first HIGH).
-fn expected_at(t: f64) -> ([u8; 2], u32) {
+fn expected_at(t: f64) -> ([u8; 1], u32) {
     let ticks = (t / 1.0e-15).round() as u64;
     let k = ticks / (HALF / 1.0e-15).round() as u64;
     let clk = if k % 2 == 1 { HIGH } else { LOW };
@@ -397,7 +397,7 @@ fn a_reentry_from_every_recorded_step_continues_bit_for_bit() {
 }
 
 /// The step at an edge of the clock is the first after a jump's delivery: its state holds the
-/// restart (first-order stage, the exemption, the step size), and the run re-entered there takes it.
+/// restart (first-order stage, the jump estimate, the step size), and the run re-entered there takes it.
 #[test]
 fn a_reentry_after_a_jump_takes_the_same_restart() {
     let (mut circuit, _c) = build_clocked_rc();

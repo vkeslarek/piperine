@@ -22,7 +22,7 @@ module Script(in clk: Bit, out hs_cmd: Bit = false, out ls_cmd: Bit = false) {
 }
 digital for Script {
     on clk.rise() {
-        let s = n.known_or(0);
+        let s = n;
         n <- s + 1;
         if s == 0 { hs_cmd <- true; }
         if s == 3 { hs_cmd <- false; }
@@ -61,7 +61,7 @@ module SwitchBench() {
 /// A source from `p` to ground that steps from 0 V to `dc` when its gate goes high: an unknown
 /// gate reads as low (`high()`).
 module StepSource(p: Electrical, in g: Bit) { dc: f64 = 1.0; }
-analog for StepSource { v(p) +> if g.high() { dc } else { 0.0 }; }
+analog for StepSource { v(p) +> if g { dc } else { 0.0 }; }
 
 /// 1 V stepped at t0 = 1 us (the clock's first rising edge, at half its 500 kHz period) into
 /// 1 ohm in series with the inductor `l` = 1.5 uH, `dcr` = 0.5 ohm: tau = l / (R + dcr) = 1 us.

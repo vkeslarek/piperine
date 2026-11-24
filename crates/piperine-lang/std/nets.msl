@@ -1,5 +1,6 @@
-//! Resolved nets (§22.3): strengths, `Logic`, `Wire`, `tri`, `sum`, the drivers and pass gates.
+//! Resolved nets (§22.3): strengths, `Drive`, `Wire`, `tri`, `sum`, the drivers and pass gates.
 
+/// How hard a drive holds its level. Verilog's drive strengths (IEEE 1364), without charge storage.
 #[derive(Repr, PartialEq, PartialOrd)]
 pub enum Strength {
     HighZ,
@@ -10,46 +11,48 @@ pub enum Strength {
 }
 
 #[derive(Repr, PartialEq)]
-pub struct Logic {
+pub struct Drive {
     pub v: bool,
     pub s: Strength,
 }
 
-impl Logic {
-    pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ }; // not driving
-    pub fn strong(v: bool) -> Logic {
-        Logic { v, s: Strength::Strong }
+impl Drive {
+    pub const Z: Drive = Drive { v: false, s: Strength::HighZ }; // not driving
+    pub fn strong(v: bool) -> Drive {
+        Drive { v, s: Strength::Strong }
     }
-    pub fn pull(v: bool) -> Logic {
-        Logic { v, s: Strength::Pull }
+    pub fn pull(v: bool) -> Drive {
+        Drive { v, s: Strength::Pull }
     }
-    pub fn weak(v: bool) -> Logic {
-        Logic { v, s: Strength::Weak }
+    pub fn weak(v: bool) -> Drive {
+        Drive { v, s: Strength::Weak }
     }
-    pub fn supply(v: bool) -> Logic {
-        Logic { v, s: Strength::Supply }
+    pub fn supply(v: bool) -> Drive {
+        Drive { v, s: Strength::Supply }
     }
 }
 
-impl Logic {
+impl Drive {
     /// IEEE 1364 net resolution: the strongest drive wins; equal strengths that disagree are unknown.
-    pub fn wired<const N: usize>(d: [Logic; N]) -> Logic {
+    pub fn wired<const N: usize>(d: [Drive; N]) -> Drive {
         d.iter().fold(
-            Logic::Z,
+            Drive::Z,
             |a, x| if x.s > a.s {
                 x
             } else if x.s < a.s {
                 a
+            } else if a.v == x.v {
+                a
             } else {
-                Logic { v: merge(a.v, x.v), s: a.s }
+                Drive { v: false, s: a.s }
             },
         )
     }
 }
 
 pub nature Wire {
-    value: Logic,
-    resolve: Logic::wired,
+    value: Drive,
+    resolve: Drive::wired,
 }
 
 pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {
@@ -57,7 +60,7 @@ pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {
         None,
         |a, x| match (a, x) {
             (None, y) | (y, None) => y,
-            _ => Some(Unknown),
+            _ => None,
         },
     )
 }
@@ -78,23 +81,23 @@ pub nature SumNet {
 
 pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) {
     y = if oe {
-        Logic::strong(d)
+        Drive::strong(d)
     } else {
-        Logic::Z
+        Drive::Z
     };
 }
 
 pub module Pullup(w: Wire) {
-    w = Logic::pull(true);
+    w = Drive::pull(true);
 }
 
 pub module Pulldown(w: Wire) {
-    w = Logic::pull(false);
+    w = Drive::pull(false);
 }
 
 pub module Keeper(w: Wire) {
-    signal last: Bit;
-    w = Logic::weak(last);
+    signal last: Bit = false;
+    w = Drive::weak(last);
 }
 
 digital for Keeper {
@@ -107,12 +110,12 @@ pub module Tran(a: Wire, b: Wire, in en: Bit) {
     a = if en {
         b.others()
     } else {
-        Logic::Z
+        Drive::Z
     };
     b = if en {
         a.others()
     } else {
-        Logic::Z
+        Drive::Z
     };
 }
 

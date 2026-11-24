@@ -5,15 +5,17 @@
 use crate::msl::Span;
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
-use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
 use super::flow::ExitFrame;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty};
 
-/// The carrier and flag methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
-const CARRIER_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "changed", "prev", "rise", "fall", "others", "inflow", "level"];
+/// The carrier methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
+const CARRIER_METHODS: &[&str] = &["changed", "prev", "rise", "fall", "others", "inflow"];
+
+/// The methods the explicit model of unknowns took out (§3.3): a call is `E0161` with the help that names the three forms.
+const REMOVED_FLAG_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "level", "merge"];
 
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
@@ -39,10 +41,16 @@ impl Checker<'_> {
         if let Some(found) = self.default_call(expr, *callee, args.len()) {
             return found;
         }
+        if let Some(found) = self.parameter_decode(expr, *callee, args) {
+            return found;
+        }
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
             CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
+            // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
+            // reads the call as a placement because a module parameter has the same bound
+            CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.call_through_bound(expr, parameter, args),
             CallClass::Instance { module: None, .. } => {
                 self.unsupported(file, node.span, "placement through a template value or a function");
                 return None;
@@ -77,12 +85,32 @@ impl Checker<'_> {
     /// A call of a function of the reachable set: arguments against the declared parameters,
     /// the declared result as the type.
     fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
+        let function = self.overload_of(function, args);
         if let Some(intrinsic) = self.intrinsic_of(function) {
             return self.intrinsic_call(expr, callee, intrinsic, args);
         }
         self.reach(function);
+        self.refuse_outside_class(expr, function);
         self.emitting_call(expr, function);
+        self.check_call_class(expr, function);
+        if self.is_trait_function(function) {
+            return self.trait_path_call(expr, function, args);
+        }
+        if self.design.decl_data(function).generics_span.is_some() {
+            return self.generic_call(expr, callee, function, args);
+        }
+        if let Some(owner) = self.generic_impl_of(function) {
+            return self.associated_call(expr, callee, function, owner, args);
+        }
         let (params, ret) = self.signature(function)?;
+        self.finish_call(expr, callee, function, params, ret, args, true)
+    }
+
+    /// The typing of a call of `function` once its parameter types and result are known (a generic
+    /// function's are the substituted ones): the callee recorded, the arguments bound to the
+    /// parameters, the result the call's type. `pointers` holds a closure that captures out of a
+    /// parameter of function type, which is a function pointer; a parameter bounded by `Fn` is not one.
+    pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg], pointers: bool) -> Option<Ty> {
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -100,7 +128,7 @@ impl Checker<'_> {
         // a parameter of function type is a function pointer: a closure that captures is refused
         let slots = self.bindings.get(&expr).cloned().unwrap_or_default();
         for (slot, param) in slots.iter().zip(&params) {
-            if let (Some(arg), Ty::Fn(..)) = (slot, param) {
+            if let (true, Some(arg), Ty::Fn(..)) = (pointers, slot, param) {
                 self.refuse_capturing_pointer(*arg);
             }
         }
@@ -236,7 +264,7 @@ impl Checker<'_> {
         Some(())
     }
 
-    /// A method call: a built-in the stdlib's own item stands for (`known_or`, `prev`, ..), or
+    /// A method call: a built-in the stdlib's own item stands for (`prev`, `cast`, ..), or
     /// a `Deferred` or `Unresolved` one resolved against the Appendix H catalogue on the type of
     /// its receiver, the row recorded (DIG-02). Every other method is `P0001` naming it.
     pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {
@@ -255,8 +283,10 @@ impl Checker<'_> {
         let builtin = match res {
             Resolution::Decl(f) => match self.stdlib_builtin(*f) {
                 Some(builtin) => Some(builtin),
+                // a method the project writes in an `impl` or a trait is typed from its signature
+                None if self.is_project_method(*f) => None,
                 None => {
-                    let replaced = flag_builtin(name).is_some() || matches!(name, "rise" | "fall");
+                    let replaced = matches!(name, "rise" | "fall");
                     let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
                     self.unsupported(file, node.span, &what);
                     return None;
@@ -265,8 +295,6 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match id.info().name {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
-                // `level` of a carrier or a value the POM resolved to the language's own row
-                "level" => Some(Builtin::Level),
                 "inflow" => return self.inflow_read(expr, *recv, args),
                 _ => {
                     self.unsupported(file, node.span, &format!("method `{name}`"));
@@ -289,32 +317,47 @@ impl Checker<'_> {
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
             return self.edge_read(expr, edge, *recv, args);
         }
-        // A receiver the POM could not type might be a value of a project's own `impl`: the
-        // checker knows only the stdlib's flag reads (§3.3.7).
-        if builtin.is_none() && flag_builtin(name).is_some() && self.project_methods.contains(name) {
-            self.unsupported(file, node.span, &format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)"));
-            self.infer(*recv);
-            return None;
+        // §3.1.7: a method of a carrier is the carrier's own (above), then the `impl`s of its nature, then the value's
+        if let Some(carrier @ Ty::Carrier { .. }) = self.carrier_named(*recv)
+            && let Some(function) = self.method_of(&carrier, name)
+        {
+            self.infer(*recv)?;
+            return self.method_call_of(expr, *recv, &carrier, function, args);
         }
         let recv_ty = self.infer(*recv)?;
-        // The four flag-total reads apply to any value and to a carrier's value.
-        let builtin = builtin.or_else(|| flag_builtin(name));
-        if let Some(builtin) = builtin {
-            if let Some(result) = self.flag_read(expr, builtin, &recv_ty, args) {
-                return result;
-            }
+        // §3 rule 9: a value of a type parameter has the methods its bounds give
+        if let Ty::Param(param) = recv_ty {
+            return self.parameter_method(param, name, method.span, args, file, (expr, *recv));
+        }
+        // §3.1.7: the methods of a struct or an enum are the project's
+        if matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_))
+            && let Some(function) = self.method_of(&recv_ty, name)
+        {
+            return self.method_call_of(expr, *recv, &recv_ty, function, args);
         }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
             miss => {
+                if let Some(function) = self.method_of(&recv_ty, name) {
+                    return self.method_call_of(expr, *recv, &recv_ty, function, args);
+                }
                 let type_name = recv_ty.name(self.design);
                 // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
-                let copy_method = name == "clone" && !self.project_methods.contains(name);
-                if copy_method || (matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name)) {
+                let copy_method = name == "clone" && !self.project_defines(name);
+                // a struct or an enum has the project's methods and no others (§3.1.7), so a miss is absent
+                let own_only = matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_));
+                if copy_method || own_only || (matches!(miss, Lookup::Absent) && !self.project_defines(name) && !CARRIER_METHODS.contains(&name)) {
                     let message = format!("no method `{name}` on `{type_name}`");
                     let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
-                    self.report(file, if copy_method { diagnostic.with_help(crate::msl::diag::COPY_HELP) } else { diagnostic });
+                    let help = if copy_method {
+                        Some(crate::msl::diag::COPY_HELP)
+                    } else if REMOVED_FLAG_METHODS.contains(&name) {
+                        Some(crate::msl::diag::UNKNOWN_HELP)
+                    } else {
+                        None
+                    };
+                    self.report(file, help.map_or(diagnostic.clone(), |help| diagnostic.with_help(help)));
                 } else {
                     self.unsupported(file, method.span, &format!("method `{name}` on `{type_name}`"));
                 }

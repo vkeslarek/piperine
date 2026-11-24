@@ -1,0 +1,27 @@
+//! `Logic<N>` from the library source (§22.1.1): two `UInt<N>` planes, `binary` then `value`; `at(k)` reads one level;
+//! a carrier with no initial value starts at X on every level. The expected bytes are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn sample() -> Logic<4> { Logic { binary: 3u4, value: 5u4 } }
+
+module Rows(in clk: Bit, out m0: Bit<Logic<4>>, out m1: Bit<Logic<4>>, out s0: Bit<LogicState> = LogicState::X, out s1: Bit<LogicState> = LogicState::X, out s2: Bit<LogicState> = LogicState::X, out s3: Bit<LogicState> = LogicState::X) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- Logic::from(0b1010u4);
+        m1 <- sample();
+        s0 <- sample().at(0);
+        s1 <- sample().at(1);
+        s2 <- sample().at(2);
+        s3 <- sample().at(3);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<Logic<4>>; signal m1: Bit<Logic<4>>;
+    signal s0: Bit<LogicState>; signal s1: Bit<LogicState>; signal s2: Bit<LogicState>; signal s3: Bit<LogicState>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, s0, s1, s2, s3);
+}

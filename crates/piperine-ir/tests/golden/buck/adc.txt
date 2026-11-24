@@ -9,7 +9,7 @@ body Adc
   carrier sample: bool in
   carrier code: u10 out init 0
   carrier done: bool out init false
-  event E0 changed sample guard sample.high()
+  event E0 changed sample guard sample
   reaction R0 on (E0)
     local q: u10
     let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)

@@ -104,7 +104,7 @@ fn the_later_statement_wins() {
     // §12.1.2: commits to one level that apply in the same microstep are ordered by the instant
     // they were made, then by source order; the last one is the value. At 2.5 ns `x` takes 2,
     // and 1 is never seen. At 7.5 ns the same commits leave the value as it is: no change.
-    assert_eq!(seen.transient("x"), vec![(5 * NS / 2, vec![2, 1])]);
+    assert_eq!(seen.transient("x"), vec![(5 * NS / 2, vec![2])]);
 }
 
 /// `module Pulse(in clk: Bit, out p: Bit = false, out q: Bit = false)`:
@@ -177,7 +177,7 @@ fn count(b: &mut IrBuilder) -> BodyId {
     let mut x = Dx::new(b, F, 11, 22);
     let n = x.carrier(1, Ty::u(8));
     let one = x.int(1, Ty::u(8));
-    let next = x.bin(BinaryOp::Add, n, one, Ty::flagged(Ty::u(8)));
+    let next = x.bin(BinaryOp::Add, n, one, Ty::u(8));
     let commit = x.commit(1, next, None);
     Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 11);
     body
@@ -207,5 +207,5 @@ fn an_unchanged_commit_fires_nothing() {
     assert_eq!(moved[0].0, 5 * NS / 2);
     // (§12.1.18: one firing in the transient on top of the one the operating point counted, so
     // the counter reads 2 -- three more firings from the unchanged commits would read 5)
-    assert_eq!(moved[0].1, vec![2, 1], "the counter holds 2 after the one firing: {moved:?}");
+    assert_eq!(moved[0].1, vec![2], "the counter holds 2 after the one firing: {moved:?}");
 }

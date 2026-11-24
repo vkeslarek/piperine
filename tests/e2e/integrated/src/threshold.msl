@@ -4,18 +4,18 @@
 use crate::{Capacitor, Clock, Resistor, Vdc};
 
 /// Counts the rising and the falling edges of `cmp`, one `edges` record per edge: whether it was a rise
-/// and the count of that kind so far. An edge is a change between two known values: the comparator's
-/// first commit at time 0 takes `cmp` from unknown to false and is no fall.
+/// and the count of that kind so far. An edge is a transition: the comparator starts at false, so its
+/// first commit at time 0 is no fall.
 pub module EdgeCounter(in cmp: Bit, out rises: Bit<u8> = 0, out falls: Bit<u8> = 0) {}
 
 digital for EdgeCounter {
-    on cmp.rise() && cmp.prev().is_known() {
-        let n = rises.known_or(0) + 1;
+    on cmp.rise() {
+        let n = rises + 1;
         rises <- n;
         emit!("edges", rising = true, n = n);
     }
-    on cmp.fall() && cmp.prev().is_known() {
-        let n = falls.known_or(0) + 1;
+    on cmp.fall() {
+        let n = falls + 1;
         falls <- n;
         emit!("edges", rising = false, n = n);
     }

@@ -3,22 +3,21 @@
 //! of `match`, `if let`, `while let` and `let .. else`, closures, function values and recursion
 //! evaluate at elaboration to the value they have at run time.
 //!
-//! A statement evaluates to a value or to nothing (`exec`): `()` is no [`Folded`]. An exit is an
+//! A statement evaluates to a value or to nothing (`exec`): `()` is no [`Constant`]. An exit is an
 //! `Err(ConstFault::Leaves)` the loop or function it leaves catches, so every `?` between the exit
 //! and its target unwinds as it would in the source; the value a `break` or `return` carries
 //! waits in `ConstEval::leaving`. A loop that runs more than 2^24 iterations and a call nested more
 //! than 1 024 deep are panics (§1 rule 11, Q5): `E0104` at elaboration.
 //!
-//! A decision that is unknown (§3.3) is *not* taken: a loop or a `match` over one is
-//! [`ConstFault::Unknown`] (§3.3.8: structure is decided by known values), an `if` on one runs both
-//! arms and merges the locals they write and the value they give (§3.3.3), and an exit under one is
-//! refused by name.
+//! A decision reads a value, and every value is a value (§3.3.1): an `if` takes one arm, a `match`
+//! the first arm that matches, a loop runs while its condition holds. A read that has no constant
+//! at elaboration is a fault at that read.
 
 use std::collections::BTreeMap;
 
 use piperine_ir::Constant;
 
-use super::{Bindings, ConstEval, ConstFault, Exit, Folded};
+use super::{Bindings, ConstEval, ConstFault, Exit};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind};
 
 /// The most iterations one loop runs in one evaluation (Q5, §1 rule 11).
@@ -31,33 +30,26 @@ pub(super) enum FnValue {
     /// A `fn` item.
     Named(DeclId),
     /// A closure: the patterns of its parameters, its body, and what it captured.
-    Closure { params: Vec<PatId>, body: ExprId, captured: BTreeMap<DeclId, Folded>, functions: BTreeMap<DeclId, FnValue> },
+    Closure { params: Vec<PatId>, body: ExprId, captured: BTreeMap<DeclId, Constant>, functions: BTreeMap<DeclId, FnValue> },
 }
 
 /// One argument of a call: its value, or the function it stands for.
 pub(super) struct Argument {
-    /// The value; `Unknown` for a function argument, which has none.
-    pub(super) value: Folded,
+    /// The value; `None` for a function argument, which has none.
+    pub(super) value: Option<Constant>,
     /// The function the argument is, when it is one.
     pub(super) function: Option<FnValue>,
-}
-
-/// Whether a condition holds, is false, or is unknown.
-enum Truth {
-    Holds,
-    Fails,
-    Unknown,
 }
 
 /// What a loop's body did: the loop goes on, or it ends with a value.
 enum Flow {
     Next,
-    Done(Option<Folded>),
+    Done(Option<Constant>),
 }
 
 impl ConstEval<'_, '_> {
     /// `expr` evaluated as a statement or a value: `Some` value, or `None` for `()`.
-    pub(super) fn exec(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    pub(super) fn exec(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         let kind = self.design.expr_node(expr).kind.clone();
         match &kind {
             ExprKind::Block(block) => self.exec_block(expr, &block.stmts, bindings),
@@ -75,13 +67,13 @@ impl ConstEval<'_, '_> {
     }
 
     /// `expr` as a value, for the forms of `exec` that may have none.
-    pub(super) fn exec_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn exec_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         self.exec(expr, bindings)?.ok_or(ConstFault::Unsupported { expr, what: "a form with no value where a value is needed".to_string() })
     }
 
     /// `break`, `continue` or `return`, with its value evaluated: the fault the loop or function it
     /// leaves catches.
-    fn exit(&mut self, expr: ExprId, exit: Exit, value: Option<ExprId>, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    fn exit(&mut self, expr: ExprId, exit: Exit, value: Option<ExprId>, bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         self.leaving = match value {
             Some(value) => Some(self.fold(value, bindings)?),
             None => None,
@@ -91,7 +83,7 @@ impl ConstEval<'_, '_> {
 
     /// The statements of a block: the value of the last one when it is an expression without `;`,
     /// else `None`. A `let` binds into the locals, a function value into the function values.
-    pub(super) fn exec_block(&mut self, expr: ExprId, stmts: &[StmtId], bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    pub(super) fn exec_block(&mut self, expr: ExprId, stmts: &[StmtId], bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         let mut value = None;
         for stmt in stmts {
             value = None;
@@ -137,93 +129,37 @@ impl ConstEval<'_, '_> {
     // ---- decisions ---------------------------------------------------------------------------
 
     /// A condition: a `bool`, or `let pat = e` (which binds when it matches).
-    fn condition(&mut self, cond: ExprId, bindings: &Bindings) -> Result<Truth, ConstFault> {
+    fn condition(&mut self, cond: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
         if let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() {
             let value = self.fold(expr, bindings)?;
-            if value == Folded::Unknown && !matches!(self.design.pat_node(pat).kind, PatKind::Wild) {
-                return Ok(Truth::Unknown);
-            }
-            return Ok(if self.matches(pat, value, expr, bindings)? { Truth::Holds } else { Truth::Fails });
+            return self.matches(pat, value, expr, bindings);
         }
-        match self.fold(cond, bindings)? {
-            Folded::Known(known) => Ok(if Self::boolean(cond, known)? { Truth::Holds } else { Truth::Fails }),
-            Folded::Unknown => Ok(Truth::Unknown),
+        let value = self.fold(cond, bindings)?;
+        Self::boolean(cond, value)
+    }
+
+    /// `if cond { then } else { else_ }`: the arm the condition takes.
+    fn exec_if(&mut self, expr: ExprId, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
+        if self.condition(cond, bindings)? {
+            return self.exec_block(expr, &then.stmts, bindings);
+        }
+        match else_ {
+            Some(otherwise) => self.exec(otherwise, bindings),
+            None => Ok(None),
         }
     }
 
-    /// `if cond { then } else { else_ }`. A known condition takes its arm; an unknown one runs both
-    /// and merges what they write and give (§3.3.3); a panic in an arm makes every local and the
-    /// value unknown (§1 rule 13).
-    fn exec_if(&mut self, expr: ExprId, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
-        match self.condition(cond, bindings)? {
-            Truth::Holds => self.exec_block(expr, &then.stmts, bindings),
-            Truth::Fails => match else_ {
-                Some(otherwise) => self.exec(otherwise, bindings),
-                None => Ok(None),
-            },
-            Truth::Unknown => {
-                let before = self.locals.clone();
-                let first = self.exec_block(expr, &then.stmts, bindings);
-                let after_first = std::mem::replace(&mut self.locals, before.clone());
-                let second = match else_ {
-                    Some(otherwise) => self.exec(otherwise, bindings),
-                    None => Ok(None),
-                };
-                let after_second = std::mem::replace(&mut self.locals, before);
-                for result in [&first, &second] {
-                    if let Err(ConstFault::Leaves { expr, .. }) = result {
-                        return Err(ConstFault::Unsupported { expr: *expr, what: "an exit under an unknown decision in a const expression".to_string() });
-                    }
-                }
-                match (first, second) {
-                    (Ok(a), Ok(b)) => {
-                        self.merge_locals(&after_first, &after_second);
-                        match (a, b) {
-                            (Some(a), Some(b)) => Ok(Some(a.merge(b))),
-                            (None, None) => Ok(None),
-                            _ => Err(ConstFault::Unsupported { expr, what: "an `if` whose arms differ in having a value".to_string() }),
-                        }
-                    }
-                    (Err(ConstFault::Panic { .. }), Ok(_) | Err(ConstFault::Panic { .. })) | (Ok(_), Err(ConstFault::Panic { .. })) => {
-                        for value in self.locals.values_mut() {
-                            *value = Folded::Unknown;
-                        }
-                        Ok(Some(Folded::Unknown))
-                    }
-                    (Err(fault), _) | (_, Err(fault)) => Err(fault),
-                }
-            }
-        }
-    }
-
-    /// The locals after an `if` on an unknown condition: what both arms left, merged; a local one
-    /// arm bound and the other did not is the one arm's.
-    fn merge_locals(&mut self, first: &BTreeMap<DeclId, Folded>, second: &BTreeMap<DeclId, Folded>) {
-        for (decl, a) in first {
-            let merged = match second.get(decl) {
-                Some(b) => a.merge(*b),
-                None => *a,
-            };
-            self.locals.insert(*decl, merged);
-        }
-        for (decl, b) in second {
-            self.locals.entry(*decl).or_insert(*b);
-        }
-    }
-
-    /// `match scrutinee { arms }`: the first arm whose pattern matches and whose guard holds. The
-    /// scrutinee and the guards must be known (§3.3.8).
-    fn exec_match(&mut self, expr: ExprId, scrutinee: ExprId, arms: &[Arm], bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    /// `match scrutinee { arms }`: the first arm whose pattern matches and whose guard holds.
+    fn exec_match(&mut self, expr: ExprId, scrutinee: ExprId, arms: &[Arm], bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         let subject = self.fold(scrutinee, bindings)?;
         for arm in arms {
             if !self.matches(arm.pat, subject, scrutinee, bindings)? {
                 continue;
             }
             if let Some(guard) = arm.guard {
-                match self.fold(guard, bindings)? {
-                    Folded::Known(known) if Self::boolean(guard, known)? => {}
-                    Folded::Known(_) => continue,
-                    Folded::Unknown => return Err(ConstFault::Unknown { expr: guard }),
+                let held = self.fold(guard, bindings)?;
+                if !Self::boolean(guard, held)? {
+                    continue;
                 }
             }
             return self.exec(arm.body, bindings);
@@ -234,7 +170,7 @@ impl ConstEval<'_, '_> {
     // ---- loops -------------------------------------------------------------------------------
 
     /// One run of a loop body: it goes on (also after a `continue`) or it ends with the value of
-    /// its `break`. An unknown loop condition is a fault, not a decision.
+    /// its `break`.
     fn iterate(&mut self, expr: ExprId, body: &BlockNode, trips: &mut u64, bindings: &Bindings) -> Result<Flow, ConstFault> {
         *trips += 1;
         if *trips > TRIPS {
@@ -248,13 +184,11 @@ impl ConstEval<'_, '_> {
     }
 
     /// `while cond { body }` and `while let pat = e { body }`: of no value.
-    fn exec_while(&mut self, expr: ExprId, cond: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    fn exec_while(&mut self, expr: ExprId, cond: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         let mut trips = 0;
         loop {
-            match self.condition(cond, bindings)? {
-                Truth::Holds => {}
-                Truth::Fails => return Ok(None),
-                Truth::Unknown => return Err(ConstFault::Unknown { expr: cond }),
+            if !self.condition(cond, bindings)? {
+                return Ok(None);
             }
             if let Flow::Done(value) = self.iterate(expr, body, &mut trips, bindings)? {
                 return Ok(value);
@@ -263,7 +197,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `loop { body }`: its value is what its `break` carries.
-    fn exec_loop(&mut self, expr: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    fn exec_loop(&mut self, expr: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         let mut trips = 0;
         loop {
             if let Flow::Done(value) = self.iterate(expr, body, &mut trips, bindings)? {
@@ -274,7 +208,7 @@ impl ConstEval<'_, '_> {
 
     /// `for k in low..high { body }` and `..=`: the variable is the counter of each iteration; of no
     /// value. A `for` over anything but a range of integers is refused by name.
-    fn exec_for(&mut self, expr: ExprId, pat: PatId, iter: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
+    fn exec_for(&mut self, expr: ExprId, pat: PatId, iter: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Constant>, ConstFault> {
         let iter = self.peel(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(iter).kind else {
             // an array, a named range or an iterator chain: its elements in order (`composite.rs`)
@@ -289,13 +223,13 @@ impl ConstEval<'_, '_> {
             }
             return Ok(None);
         };
-        let (Folded::Known(Constant::Int(first)), Folded::Known(Constant::Int(last))) = (self.fold(lo, bindings)?, self.fold(hi, bindings)?) else {
-            return Err(ConstFault::Unknown { expr: iter });
+        let (Constant::Int(first), Constant::Int(last)) = (self.fold(lo, bindings)?, self.fold(hi, bindings)?) else {
+            return Err(ConstFault::Unsupported { expr: iter, what: "a `for` range whose bounds are not integers".to_string() });
         };
         let end = if inclusive { last + 1 } else { last };
         let mut trips = 0;
         for value in first..end {
-            self.matches(pat, Folded::Known(Constant::Int(value)), iter, bindings)?;
+            self.matches(pat, Constant::Int(value), iter, bindings)?;
             if let Flow::Done(value) = self.iterate(expr, body, &mut trips, bindings)? {
                 return Ok(value);
             }
@@ -321,10 +255,7 @@ impl ConstEval<'_, '_> {
             None => value,
             Some(op) => {
                 let current = self.fold(target, bindings)?;
-                match (current, value) {
-                    (Folded::Known(a), Folded::Known(b)) => Folded::Known(self.known_binary(target, op, (target, a), (rhs, b))?),
-                    (a, b) => self.unknown_binary(target, op, a, b),
-                }
+                self.known_binary(target, op, (target, current), (rhs, value))?
             }
         };
         self.locals.insert(local, assigned);
@@ -334,8 +265,8 @@ impl ConstEval<'_, '_> {
     // ---- patterns ----------------------------------------------------------------------------
 
     /// Whether `value`, the value of `at`, matches `pat`; a match binds the names of the pattern
-    /// into the locals. A refutable pattern over an unknown value is a fault (§3.3.8).
-    pub(super) fn matches(&mut self, pat: PatId, value: Folded, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
+    /// into the locals.
+    pub(super) fn matches(&mut self, pat: PatId, value: Constant, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
         if let Some(result) = self.matches_composite(pat, value, at, bindings) {
             return result;
         }
@@ -343,7 +274,7 @@ impl ConstEval<'_, '_> {
         match &kind {
             PatKind::Wild => Ok(true),
             PatKind::Ident { res, sub, binding, .. } => match self.named_constant(*res) {
-                Some(named) => self.equals(value, named, at),
+                Some(named) => Ok(self.equals(value, named)),
                 None => {
                     if let Some(sub) = sub
                         && !self.matches(*sub, value, at, bindings)?
@@ -355,11 +286,11 @@ impl ConstEval<'_, '_> {
                 }
             },
             PatKind::Lit(lit) => {
-                let named = self.known(*lit, bindings)?;
-                self.equals(value, named, at)
+                let named = self.fold(*lit, bindings)?;
+                Ok(self.equals(value, named))
             }
             PatKind::Path(path) => match self.named_constant(self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res)) {
-                Some(named) => self.equals(value, named, at),
+                Some(named) => Ok(self.equals(value, named)),
                 None => Err(ConstFault::Unsupported { expr: at, what: "a path pattern that is not a constant or a unit variant".to_string() }),
             },
             PatKind::Or(alternatives) => {
@@ -371,13 +302,13 @@ impl ConstEval<'_, '_> {
                 Ok(false)
             }
             PatKind::Range { lo, hi, inclusive } => {
-                let Folded::Known(subject) = value else { return Err(ConstFault::Unknown { expr: at }) };
+                let subject = value;
                 let above = match lo {
-                    Some(lo) => Self::order(subject, self.known(*lo, bindings)?).map(|o| o.is_ge()),
+                    Some(lo) => Self::order(subject, self.fold(*lo, bindings)?).map(|o| o.is_ge()),
                     None => Some(true),
                 };
                 let below = match hi {
-                    Some(hi) => Self::order(subject, self.known(*hi, bindings)?).map(|o| if *inclusive { o.is_le() } else { o.is_lt() }),
+                    Some(hi) => Self::order(subject, self.fold(*hi, bindings)?).map(|o| if *inclusive { o.is_le() } else { o.is_lt() }),
                     None => Some(true),
                 };
                 match (above, below) {
@@ -389,12 +320,9 @@ impl ConstEval<'_, '_> {
         }
     }
 
-    /// Whether `value` is the constant `named`; a fault when `value` is unknown.
-    fn equals(&self, value: Folded, named: Constant, at: ExprId) -> Result<bool, ConstFault> {
-        match value {
-            Folded::Known(known) => Ok(known == named),
-            Folded::Unknown => Err(ConstFault::Unknown { expr: at }),
-        }
+    /// Whether `value` is the constant `named`.
+    fn equals(&self, value: Constant, named: Constant) -> bool {
+        value == named
     }
 
     /// `a` against `b` for two integers or two floats.
@@ -453,7 +381,7 @@ impl ConstEval<'_, '_> {
     /// A call of the function value `function` with `arguments`: a `fn` as any call of it, a
     /// closure with its captured locals and its parameters bound. `return` in a closure returns from
     /// it.
-    pub(super) fn apply_value(&mut self, expr: ExprId, function: FnValue, arguments: Vec<Argument>, bindings: &Bindings) -> Result<Folded, ConstFault> {
+    pub(super) fn apply_value(&mut self, expr: ExprId, function: FnValue, arguments: Vec<Argument>, bindings: &Bindings) -> Result<Constant, ConstFault> {
         match function {
             FnValue::Named(decl) => self.apply_function(expr, decl, arguments),
             FnValue::Closure { params, body, captured, functions } => {
@@ -462,7 +390,7 @@ impl ConstEval<'_, '_> {
                 let outer_functions = std::mem::replace(&mut self.fn_values, functions);
                 let bound = self.bind_parameters(expr, &params, arguments, bindings);
                 let result = match bound {
-                    Ok(()) => crate::stack::deep(|| self.exec(body, bindings)),
+                    Ok(()) => crate::stack::Stack::deep(|| self.exec(body, bindings)),
                     Err(fault) => Err(fault),
                 };
                 self.depth -= 1;
@@ -482,7 +410,8 @@ impl ConstEval<'_, '_> {
                 }
                 (Some(_), _) => return Err(ConstFault::Unsupported { expr, what: "a function bound by a pattern that is not a name".to_string() }),
                 (None, _) => {
-                    if !self.matches(*pat, argument.value, expr, bindings)? {
+                    let Some(value) = argument.value else { return Err(ConstFault::Unsupported { expr, what: "an argument with neither a value nor a function".to_string() }) };
+                    if !self.matches(*pat, value, expr, bindings)? {
                         return Err(ConstFault::Unsupported { expr, what: "a closure parameter pattern that does not match its argument".to_string() });
                     }
                 }
@@ -502,7 +431,7 @@ impl ConstEval<'_, '_> {
 
     /// The value a function or closure body gave: what it evaluated to, or what its `return`
     /// carried.
-    pub(super) fn returned(&mut self, expr: ExprId, result: Result<Option<Folded>, ConstFault>) -> Result<Folded, ConstFault> {
+    pub(super) fn returned(&mut self, expr: ExprId, result: Result<Option<Constant>, ConstFault>) -> Result<Constant, ConstFault> {
         let value = match result {
             Ok(value) => value,
             Err(ConstFault::Leaves { exit: Exit::Return, .. }) => self.leaving.take(),

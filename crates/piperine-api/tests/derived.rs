@@ -304,7 +304,7 @@ fn metadata_lists_a_derived_param_at_the_value_the_run_uses() {
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), backend: Some("rust".into()), params: vec![("Top.q".into(), 1500.0)], ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let described = Session::describe(&project, &spec).unwrap_or_else(|f| panic!("{f}")).1;
+    let described = Session::describe(&project, &spec, &|| Ok(settings())).unwrap_or_else(|f| panic!("{f}")).1;
     let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
     for metadata in [described, session.metadata()] {
         let value = |path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone());

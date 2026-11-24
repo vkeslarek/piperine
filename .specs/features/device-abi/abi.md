@@ -134,6 +134,8 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
     check: u32,                                // HAS_CHECK: a discrete BOOL pin that must be true for a host write
                                                //            of this PARAM to be accepted (its `where`)
     abstol: [f64; 2],                          // CONTINUOUS: tolerance of the unknown, of its row; 0 = session default
+    count: u64,                                // DISCRETE: 0 is one carrier; >= 1 an array pin of `count` elements of `layout`
+                                               //   (§3.1, arrays of carriers; appended in place at MINOR 0, MD-78 item 4)
 }
 
 #[repr(C)] pub struct Layout { size: u32, align: u32, fields: List<Field> }
@@ -156,10 +158,14 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
 // d(writes[write], the F64 at byte `to`) / d(reads[read], the F64 at byte `at`)
 
 #[repr(C)] pub struct Function { name: Str, origin: Str, flags: u32,                    // OWNS_CORRECTION (A3)
-                                 reads: List<Cell>, writes: List<Cell>, partials: List<Partial> }
+                                 reads: List<Cell>, writes: List<Cell>, partials: List<Partial>,
+                                 elements: List<u64> }                                  // empty, or one per read: its array element
 #[repr(C)] pub struct Reaction { name: Str, origin: Str, flags: u32,                    // IRREVERSIBLE
                                  on: List<u32>,                                         // event pins
-                                 reads: List<Cell>, writes: List<Statement> }
+                                 reads: List<Cell>, writes: List<Statement>,
+                                 elements: List<u64> }                                  // empty, or one per read: its array element
+// `elements[i]` names the element of an array pin that `reads[i]` reads, or `WHOLE` (= u64::MAX, a reaction only):
+// the cell then holds an `ArrayView`. `Cell` itself is unchanged (a generated device spells `Cell { kind, index, part }`).
 #[repr(C)] pub struct Statement { pin: u32, offset: u32, len: u32, flags: u32,          // LATER | REPLACE
                                   min_after: f64 }                                      // LATER: every delay is at least this
 ```
@@ -212,6 +218,12 @@ The two frames. Every pointer is non-null and has the length the shape says.
     size: u32,                    // a later minor may append (a commit that also carries tangent bytes, §14.4)
     commit: unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32,
                                  bytes: *const u8, after: f64) -> u32,
+    commit_element: unsafe extern "C" fn(*mut c_void, statement: u32, element: u64, offset: u32, len: u32,
+                                 bytes: *const u8, after: f64) -> u32,   // a statement on an array pin (§3.1, C2, C3)
+}
+#[repr(C)] pub struct ArrayView {              // what a WHOLE read cell holds: the array behind the snapshot (R2)
+    context: *const c_void, count: u64, size: u32,
+    read: unsafe extern "C" fn(context: *const c_void, element: u64, part: u32) -> *const u8,
 }
 ```
 
@@ -242,16 +254,26 @@ Rules that hold for every pin, whatever its role:
 - **P3. A value is its bytes.** A pin holds the bytes of its type and nothing else: no field
   says whether a value is established. Discrete storage starts all zero, which no model reads:
   the elaborator gives every carrier pin init bytes (`HAS_INIT`), the written initial value or
-  the bytes of `Default::default()` of its type (all zero for `Logic::X`, for `None` and for a
-  derived `Default`), which the owner commits at `(0, 0)`. `piperine-abi` ships the common
+  the bytes of `Default::default()` of its type (all zero for `Logic::default()` at every width, which is
+  `Logic::X` at one level, for `None` and for a derived `Default`), which the owner commits at `(0, 0)`. `piperine-abi` ships the common
   layouts as constants (`BIT`, `BYTE`, `F64`), so an external author does not re-derive them.
   Each has one field `v`: `BIT` is `{ v: BOOL @0 }` (size 1, align 1), `BYTE` is `{ v: U8 @0 }`
   (size 1, align 1), `F64` is `{ v: F64 @0 }` (size 8, align 8). What may be absent is a field:
   an `Option<T>` is `{ some: BOOL @0, v: T }` (P5), and a `Logic<N>` is two fields of the leaf of
   `UInt<N>`, `binary` at offset 0 and `value` at the size of `UInt<N>`, the whole of twice that
-  size and of that alignment: two bits per level, no byte for a flag.
+  size and packed with alignment 1 like every composite pin (amended, coordinator ruling
+  2026-11-23: the plan's rule): two bits per level, no byte for a flag.
 - **P4. Layout equality.** Pins on one net have equal layouts (size, alignment, and per field
-  leaf, offset, count). Names do not count.
+  leaf, offset, count) and equal `count`. Names do not count.
+- **P4a. Array pins.** A `DISCRETE` pin with `count >= 1` is an array pin: its net holds `count`
+  elements of `layout`, and the owner stores only the elements written, so the storage is
+  proportional to what is written, never to `count` (part II §5.1.8). `init` is one element's bytes
+  (every element starts there) or `count` elements' bytes; any other length is refused. An element
+  never written reads its initial bytes and its `PREVIOUS` is the same. A scalar pin may be bound
+  to one element of an array net and an array pin to a run of elements (a *window*); a window is the
+  owner's binding, not shape. A read names its element (`Function.elements`/`Reaction.elements`) or
+  `WHOLE`, whose cell holds an `ArrayView`; a constant element's cell is dirtied only when that
+  element changes, a `WHOLE` cell when any does.
 - **P5. Params.** `Module.prototype` lists the `PARAM` pins with layouts and defaults; that is
   how the host encodes `Value`s and how the elaborator checks an `extern` declaration without
   creating anything. `create` gets initial values for any subset; the solver, not the shape,
@@ -442,6 +464,13 @@ Watches, by who reads them and when:
   functions are applied: a discrete pin read by an analog function changed; or a reaction
   fires that reads a continuous pin; or a reaction fires that has a statement without
   `LATER` whose pin reaches, through reads and writes, an analog function or such a reaction.
+- **R4 as implemented.** The owner decides "time point" by what the instant did, not by what
+  its reactions could do: the look-ahead runs the instant under its sub-checkpoint and lands on
+  it when a pin an analog function reads changed or a firing reaction reads a continuous pin
+  (the dynamic test). It keeps the static reach set as the rule in three cases: a reaction on
+  `settle`, a host waiter, a host probe at that time. A solver option restores the static rule
+  everywhere (the reference mode). The protocol text below is unchanged: a skipped landing is
+  one no model can observe.
 - **R5. Horizon.** `HORIZON` is the last tick before the earliest instant at which the owner
   can execute anything that reaches a pin this reaction listens to or reads, other than as a
   consequence of the commits this call makes (the stop time if nothing is queued; at most the
@@ -512,7 +541,9 @@ step 5 nothing is undone: the discontinuity handling restarts the *next* step.
 - **C2. Order.** Commits to overlapping bytes that apply in one microstep are ordered by
   (instant made, statement index, call order); the last is the value.
 - **C3. Transport.** A commit removes the pending commits of the same statement and byte range
-  due at or after its own due instant; a `REPLACE` statement removes all of them.
+  due at or after its own due instant; a `REPLACE` statement removes all of them. On an array pin
+  C2 and C3 hold per element: `commit_element(statement, element, offset, len, bytes, after)` names
+  the element at run time, and two commits to different elements neither order nor remove each other.
 - **C4. Events.** A statement on an event pin has `len = 0`; the pin fires when it applies.
 - **C5. Records.** The owner's sink sees every commit, with the instance, reaction, statement,
   the instant it was made and the instant it is due. A record is nothing more than a commit
@@ -923,7 +954,7 @@ mutable global state. `commit` is called only inside the `react` that received t
 **Undefined behavior closed.** No Rust `enum`, reference or trait object crosses. `Instance`
 is an opaque zero-sized struct. No unwinding. Typed access in the lens requires `Pod`. An
 absent `OPTIONAL` pin reads as zeros through a valid pointer and the lens returns `Option`.
-The shape is validated at bind before any constant is interpreted. In `piperine-abi`, `Str`, `Bytes`, `List` and `Module` keep their pointer fields private: safe code builds only valid ones, and a view of foreign memory is made through an `unsafe fn from_raw_parts` (or an `unsafe` dereference of the producer's pointer), which is the trust boundary. Each view also carries the lifetime of the memory it borrows (`Str<'a>`, `Bytes<'a>`, `List<'a, T>`, and so `Shape<'a>`, `Pin<'a>`, … through a zero-sized marker, the C layout unchanged): `List::from_slice` borrows its slice, and a shape copied out of a `ShapeRef` cannot outlive it. Debug sessions poison and
+The shape is validated at bind before any constant is interpreted. In `piperine-abi`, `Str`, `Bytes`, `BytesMut` (the writable output buffer a consumer lends for one call: `BytesMut::from_slice` borrows it exclusively, `as_mut_slice` is the producer's safe write) , `List` and `Module` keep their pointer fields private: safe code builds only valid ones, and a view of foreign memory is made through an `unsafe fn from_raw_parts` (or an `unsafe` dereference of the producer's pointer), which is the trust boundary. Each view also carries the lifetime of the memory it borrows (`Str<'a>`, `Bytes<'a>`, `BytesMut<'a>`, `List<'a, T>`, and so `Shape<'a>`, `Pin<'a>`, … through a zero-sized marker, the C layout unchanged): `List::from_slice` borrows its slice, and a shape copied out of a `ShapeRef` cannot outlive it. Debug sessions poison and
 guard output buffers. A device leaves the floating-point environment and signals alone.
 
 **Versioning.** Major is the symbol name. The ABI is unreleased: until the first release a
@@ -944,8 +975,7 @@ given is one its own shape declared.
 3. *Replay it.* Nothing is hidden (F1, R3), so a recorded call is a unit test: the same bytes
    through the compiled device and through the interpreter must agree, for functions and
    reactions alike.
-4. *Check it.* Finite-difference verification of `jac` (§8); the canonical-form check of P3;
-   a non-finite value reported with instance, cell and source position; a convergence failure
+4. *Check it.* Finite-difference verification of `jac` (§8); a non-finite value reported with instance, cell and source position; a convergence failure
    naming the limits still active and the rows out of tolerance.
 5. *Watch it.* Every pin change, commit, crossing and record passes through the owner's one
    sink in `(t, n)` order.
@@ -999,6 +1029,8 @@ Entry points: 6, each with one contract.
 ---
 
 ## 15. Spec amendments awaiting a decision
+
+*QC1 (composite-values phase C, approved 2026-11-23):* the array pin adds `Pin.count`, `Function.elements`/`Reaction.elements`, `ArrayView` and `Host.commit_element` in place at `MINOR` 0 (the `Host` is 24 bytes); the unreleased ABI changes in place.
 
 The ABI is implementable against the language specification (`docs/spec/` of the codegen-plan
 repo) as written, except for the sentences below. None has been edited. The verdict column is

@@ -4,8 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
-use crate::msl::lexer;
-use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, PathId, Reflect, Resolution, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
 use super::continuity::Continuity;
 use super::class::FunctionClass;
@@ -16,7 +15,7 @@ use super::flow::{ExitFrame, Flow};
 use super::nature_rules::NatureRules;
 use super::record::Records;
 use super::unsupported::Unsupported;
-use super::{Builtin, Callee, Method, Ty, Types};
+use super::{Builtin, Callee, ConstTerm, Method, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +44,7 @@ enum ItemPhase {
 }
 
 /// The parts of a function signature, each typed on its own.
-struct SignatureParts {
+pub(super) struct SignatureParts {
     params: Vec<(DeclId, Option<Ty>)>,
     ret: Option<Ty>,
     ok: bool,
@@ -72,9 +71,17 @@ pub(super) struct Checker<'d> {
     pub(super) defaults: BTreeMap<ExprId, Ty>,
     /// The type each type node of the reachable set writes.
     pub(super) written: BTreeMap<TypeId, Ty>,
+    /// The generic function whose definition is being checked or whose signature is being typed:
+    /// what a definition defers is recorded under it.
+    pub(super) generic_item: Option<DeclId>,
+    /// What each generic function defers to its instantiations.
+    pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
+    /// The instantiation each call of a generic function makes (§3.8.10).
+    pub(super) instantiations: BTreeMap<ExprId, super::Instantiation>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
     /// defines: a receiver the POM could not type might mean any of them.
-    pub(super) project_methods: BTreeSet<String>,
+    /// The traits and `impl`s of the design (§3.7), built once.
+    pub(super) impls: std::rc::Rc<super::ImplTable<'d>>,
     pub(super) continuity: Continuity,
     /// What the module being checked drives, by definition and by commit.
     pub(super) book: DriveBook,
@@ -86,6 +93,9 @@ pub(super) struct Checker<'d> {
     /// The placements whose arguments are being typed, innermost last: the module, or `None` for
     /// a core module.
     pub(super) placing: Vec<Option<DeclId>>,
+    /// How many `ddx` values are being typed: a flow probe of a branch with no potential contribution may be read there,
+    /// where it is a leaf the derivative reads symbolically (§14.2.3), though it is no value elsewhere (`probe`).
+    pub(super) differentiated: u32,
     /// The declaration being checked: a module, a function or a constant.
     pub(super) owner: Option<DeclId>,
     pub(super) context: Context,
@@ -100,6 +110,14 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
+    /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
+    pub(super) handles: BTreeSet<DeclId>,
+    /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
+    pub(super) bound_substitution: Option<super::Substitution>,
+    /// The arguments of the trait bound each call through a bound names, by call (`Types::bound_arguments`).
+    pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
+    /// How many definitions the check is inside: their values are not read from the solve (`classes.rs`).
+    pub(super) in_definition: u32,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
     pub(super) fn_where: bool,
     /// Which names are places and which locals the body assigns (§1.5.12).
@@ -159,18 +177,26 @@ impl<'d> Checker<'d> {
             widths: BTreeMap::new(),
             defaults: BTreeMap::new(),
             written: BTreeMap::new(),
-            project_methods: Self::project_methods(design),
+            generic_item: None,
+            obligations: BTreeMap::new(),
+            instantiations: BTreeMap::new(),
+            impls: std::rc::Rc::new(super::ImplTable::new(design)),
             continuity: Continuity::new(design),
             book: DriveBook::default(),
             records: Records::default(),
             lets_open: BTreeMap::new(),
             placing: Vec::new(),
+            differentiated: 0,
             owner: None,
             context: Context::Module,
             event_slot: None,
             in_guard: false,
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
+            handles: BTreeSet::new(),
+            bound_substitution: None,
+            bound_arguments: BTreeMap::new(),
+            in_definition: 0,
             fn_where: false,
             places: Places::default(),
             open_literals: BTreeMap::new(),
@@ -194,27 +220,18 @@ impl<'d> Checker<'d> {
         }
     }
 
-    /// The names of the methods the project itself defines, in an `impl` or a `trait`.
-    fn project_methods(design: &'d Design) -> BTreeSet<String> {
-        (0..design.decl_count())
-            .map(|i| DeclId(i as u32))
-            .filter(|d| matches!(design.decl_data(*d).kind, DeclKind::Fn(_)) && design.decl_data(*d).parent.is_some_and(|p| matches!(design.decl_data(p).kind, DeclKind::Impl(_) | DeclKind::Trait(_))) && !Decl::new(design, *d).krate().is_std())
-            .filter_map(|d| design.decl_data(d).name.as_ref().map(|n| n.text.clone()))
-            .collect()
+    /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
+    pub(super) fn project_defines(&self, name: &str) -> bool {
+        self.impls.defines_method(name, |decl| self.is_std(decl))
     }
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
     pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
         self.check_attributes();
         self.reach(top);
-        while let Some(decl) = self.queue.pop_front() {
-            self.declaration(decl);
-        }
-        self.record_conflicts();
+        self.drain();
         if !self.diagnostics.is_empty() {
-            let mut diagnostics = self.diagnostics;
-            diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
-            return Err(diagnostics);
+            return Err(self.sorted_diagnostics());
         }
         let typed: Vec<ExprId> = (0..self.exprs.len()).map(|i| ExprId(i as u32)).filter(|e| self.exprs[e.index()].is_some()).collect();
         for expr in typed {
@@ -222,7 +239,32 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+    }
+
+    /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
+    /// source order: the whole-model check (`model.rs`), which builds no table.
+    pub(super) fn run_model(mut self, items: &[DeclId]) -> Vec<DesignDiagnostic> {
+        for item in items {
+            self.reach(*item);
+        }
+        self.drain();
+        self.sorted_diagnostics()
+    }
+
+    /// Check the worklist until it is empty, then the conflicts between definitions.
+    fn drain(&mut self) {
+        while let Some(decl) = self.queue.pop_front() {
+            self.declaration(decl);
+        }
+        self.record_conflicts();
+    }
+
+    /// The diagnostics so far, in source order.
+    fn sorted_diagnostics(self) -> Vec<DesignDiagnostic> {
+        let mut diagnostics = self.diagnostics;
+        diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
+        diagnostics
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -238,6 +280,11 @@ impl<'d> Checker<'d> {
         if self.queued.insert(decl) {
             self.reached.push(decl);
             self.queue.push_back(decl);
+            // a function of an `impl` brings its `impl` along: the declaration rules of the block and the types it writes
+            // (the arguments of its trait) are judged once, wherever a function of it is first reached
+            if let Some(owner) = self.design.decl_data(decl).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_))) {
+                self.reach(owner);
+            }
         }
     }
 
@@ -270,6 +317,7 @@ impl<'d> Checker<'d> {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
             DeclKind::Const(_) => self.constant(decl),
+            DeclKind::Impl(_) => self.coherence(decl),
             other => self.unsupported_decl(decl, Unsupported::item(other)),
         }
         self.report_uncalled_closures();
@@ -336,7 +384,7 @@ impl<'d> Checker<'d> {
 
     /// Whether the path of a struct or enum type writes no generic argument where the declaration `decl`
     /// has no generic parameter: `Pair<4>` over a plain `struct Pair` is `P0001` (it would be read as `Pair`,
-    /// silently ignoring `4`). A declaration that is generic is refused by its own type check.
+    /// silently ignoring `4`). A generic declaration is read by `generic_nominal`.
     fn writes_no_arguments_to_a_plain_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> bool {
         let written = self.design.path_node(path).segments.last().is_some_and(|segment| segment.args.is_some());
         if !written || self.design.decl_data(decl).generics_span.is_some() {
@@ -372,7 +420,11 @@ impl<'d> Checker<'d> {
                 },
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values && NatureRules::of(self.design, d).one_driver => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
+                // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_nominal(*path, d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && !self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span) => None,
+                // §3.8.2: a type or nature parameter is a type of the generic body, opaque
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
                 // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
@@ -414,17 +466,22 @@ impl<'d> Checker<'d> {
     /// literal; a width computed from a const expression is outside the subset (`P0001`).
     fn sized_type(&mut self, file: FileId, span: Span, path: PathId, family: &str) -> Option<Ty> {
         let args = self.design.path_node(path).segments.last().and_then(|s| s.args.clone());
-        let width = match &args {
+        // a width that names const parameters is an integer of the instantiation's width (`UInt<N>`, `Int<{ N + 1 }>`)
+        let term = match &args {
             Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
-                GenericArgNode::Const(expr) => match &self.design.expr_node(*expr).kind {
-                    ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Int(_)) => match &lit.kind {
-                        LitKind::Int(text) => lexer::int_value(text),
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                GenericArgNode::Type(_) => None,
+                GenericArgNode::Const(expr) => self.const_term(*expr, file),
+                GenericArgNode::Type(ty) => self.const_parameter_named_by(*ty).map(ConstTerm::Param),
             },
+            _ => None,
+        };
+        let width = match term {
+            Some(ConstTerm::Value(value)) => u128::try_from(value).ok(),
+            Some(generic @ (ConstTerm::Param(_) | ConstTerm::Expr(_))) if matches!(family, "UInt" | "Int") => {
+                if let ConstTerm::Expr(expr) = &generic {
+                    self.defer_constant(*expr);
+                }
+                return Some(Ty::GenericInteger { signed: family == "Int", width: generic });
+            }
             _ => None,
         };
         let Some(width) = width else {
@@ -492,6 +549,25 @@ impl<'d> Checker<'d> {
 
     /// The declared parameter types and result of a function, or `None` after a `P0001`.
     pub(super) fn signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
+        let data = self.design.decl_data(decl);
+        if data.generics_span.is_some() {
+            // a use of a generic function binds its arguments after inference (T20, T21): until then
+            // a call or a function value of one is outside the subset
+            let (file, span) = (data.file, data.span);
+            self.unsupported(file, span, "generic function");
+            return None;
+        }
+        let parts = self.signature_parts(decl)?;
+        let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
+        match (parts.ok, params, parts.ret) {
+            (true, Some(params), Some(ret)) => Some((params, ret)),
+            _ => None,
+        }
+    }
+
+    /// The declared parameter types and result of a function whatever its generics: a generic
+    /// function's mention its type parameters as `Ty::Param`. `None` after a refusal.
+    pub(super) fn declared_signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
         let parts = self.signature_parts(decl)?;
         let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
         match (parts.ok, params, parts.ret) {
@@ -503,15 +579,27 @@ impl<'d> Checker<'d> {
     /// The signature piece by piece: each parameter with its type if it has one, the result if
     /// it has one, and whether the signature as a whole is inside the subset. A refused piece
     /// does not stop the others from being typed, so the body can still be checked.
-    fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
+    pub(super) fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
+        // what the types of a generic signature defer (`[T; N + 1]`) is recorded under the function
+        let outer = std::mem::replace(&mut self.generic_item, self.design.decl_data(decl).generics_span.map(|_| decl));
+        let parts = self.signature_parts_of(decl);
+        self.generic_item = outer;
+        parts
+    }
+
+    /// [`Checker::signature_parts`] with the generic item set.
+    fn signature_parts_of(&mut self, decl: DeclId) -> Option<SignatureParts> {
         let data: DeclData = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let mut ok = true;
         if data.generics_span.is_some() {
-            self.unsupported(data.file, data.span, "generic function");
-            ok = false;
+            // the list is held to §3.8; the parameters below are typed with `Ty::Param`, so the body
+            // is checked once at its definition (Q1 (c))
+            self.generic_signature(decl);
         }
-        if f.abi.is_some() {
+        // a generic `extern "intrinsic"` function (the library's `logic`, `matches_bits`, `parse_table`) is typed through
+        // the generic path like any generic function; the other `extern` functions keep their refusal
+        if f.abi.is_some() && data.generics_span.is_none() {
             self.unsupported(data.file, data.span, "`extern` function");
             ok = false;
         }
@@ -520,7 +608,8 @@ impl<'d> Checker<'d> {
             let DeclKind::FnParam(p) = &self.design.decl_data(child).kind else { continue };
             let ty = match p {
                 FnParamData::Named { ty } => self.lower_type(*ty),
-                FnParamData::SelfValue | FnParamData::Error => {
+                FnParamData::SelfValue => self.self_parameter(decl, child),
+                FnParamData::Error => {
                     let d = self.design.decl_data(child);
                     self.unsupported(d.file, d.span, "`self` parameter");
                     None
@@ -542,6 +631,13 @@ impl<'d> Checker<'d> {
     /// signature outside the subset is refused once and the body is still checked, with the
     /// parameters that could not be typed silent.
     fn function(&mut self, decl: DeclId) {
+        let outer = std::mem::replace(&mut self.generic_item, self.design.decl_data(decl).generics_span.map(|_| decl));
+        self.function_of(decl);
+        self.generic_item = outer;
+    }
+
+    /// [`Checker::function`] with the generic item set.
+    fn function_of(&mut self, decl: DeclId) {
         let Some(parts) = self.signature_parts(decl) else { return };
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return };
@@ -550,13 +646,23 @@ impl<'d> Checker<'d> {
         // parameter in it is refused (`P0001`) and the specification gives a non-`bool`
         // condition no code of its own, so that is the plain mismatch.
         if let Some(cond) = f.where_ {
+            if self.generic_item == Some(decl) {
+                self.defer(super::Obligation::Where { item: decl, condition: cond });
+            }
             self.fn_where = true;
             self.within(Context::Const, |this| this.check(cond, &Ty::Bool));
             self.fn_where = false;
         }
         for (param, ty) in parts.params {
             match ty {
+                // QC3: §3 rule 7 makes a nature parameter a handle and says nothing of an array of them
+                Some(array @ Ty::Array(..)) if array.is_carrier_element() => {
+                    let (file, span) = (self.design.decl_data(param).file, self.design.decl_data(param).span);
+                    self.unsupported(file, span, "an array of carriers as a function parameter");
+                    self.poisoned.insert(param);
+                }
                 Some(ty) => {
+                    self.note_handle(param, &ty);
                     self.locals.insert(param, ty);
                 }
                 None => {
@@ -564,6 +670,9 @@ impl<'d> Checker<'d> {
                 }
             }
         }
+        // before the body: a handle kept is `E0133`, not the mismatch the same span would also report
+        self.check_handle_result(decl, parts.ret.as_ref());
+        self.check_handle_uses(decl);
         self.context = Context::Function;
         self.flow.exit = Some(ExitFrame::new(parts.ret.clone(), false));
         match (&f.body, parts.ret) {
@@ -571,6 +680,10 @@ impl<'d> Checker<'d> {
             (Some(body), None) => {
                 self.statements(&body.stmts, None);
             }
+            // a function a trait declares has no body; its implementations do
+            (None, _) if data.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_))) => {}
+            // an `extern` function is implemented outside the language: its signature is all there is to check
+            (None, _) if f.abi.is_some() => {}
             (None, _) => self.unsupported(data.file, data.span, "function without a body"),
         }
         self.context = Context::Module;
@@ -580,7 +693,7 @@ impl<'d> Checker<'d> {
     /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
-            && found != *ret
+            && !self.compatible_at(file, body.span, &found, ret)
             && found != Ty::Never
         {
             self.mismatch(file, body.span, ret, &found);
@@ -637,7 +750,6 @@ impl<'d> Checker<'d> {
                     self.context = Context::Analog;
                     self.statements(&bd.body, None);
                     self.context = Context::Module;
-                    self.analog_reads(&bd.body);
                 }
                 BehaviorKind::Digital => self.digital_block(behavior),
             }
@@ -648,6 +760,7 @@ impl<'d> Checker<'d> {
                 self.infer(instance);
             }
         }
+        self.missing_initial_values(&data.children);
         self.handed_drives();
     }
 }

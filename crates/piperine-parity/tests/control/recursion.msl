@@ -11,7 +11,7 @@ fn is_odd(n: u8) -> bool { if n == 0 { false } else { is_even(n - 1) } }
 fn deep(n: u32) -> u32 { if n < 4000000000 { deep(n + 1) } else { 0 } }
 fn spin(x: u8) -> u8 { let k = x; loop { k ^= 1; } }
 
-module Rows(in clk: Bit, out a: Bit<u16>, out b: Bit, out c: Bit, out d: Bit) {}
+module Rows(in clk: Bit, out a: Bit<u16> = 0, out b: Bit = false, out c: Bit = false, out d: Bit = false) {}
 digital for Rows {
     on clk.rise() {
         a <- fib(10);
@@ -27,7 +27,7 @@ module Bench() {
     let rows = Rows(clk, a, b, c, d);
 }
 
-module Runaway(in clk: Bit, out y: Bit<u32>) {}
+module Runaway(in clk: Bit, out y: Bit<u32> = 0) {}
 digital for Runaway { on clk.rise() { y <- deep(0); } }
 module RunawayBench() {
     signal clk: Bit; signal y: Bit<u32>;
@@ -35,7 +35,7 @@ module RunawayBench() {
     let runaway = Runaway(clk, y);
 }
 
-module Endless(in clk: Bit, out y: Bit<u8>) {}
+module Endless(in clk: Bit, out y: Bit<u8> = 0) {}
 digital for Endless { on clk.rise() { y <- spin(1); } }
 module EndlessBench() {
     signal clk: Bit; signal y: Bit<u8>;

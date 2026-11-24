@@ -11,6 +11,8 @@ pub enum Value {
     Integer(i64),
     Boolean(bool),
     Text(String),
+    /// The exact bytes of a pin: a composite, or an integer an `f64` cannot hold.
+    Bytes(Vec<u8>),
 }
 
 impl Value {
@@ -21,6 +23,7 @@ impl Value {
             Value::Integer(_) => ValueKind::Integer,
             Value::Boolean(_) => ValueKind::Boolean,
             Value::Text(_) => ValueKind::Text,
+            Value::Bytes(_) => ValueKind::Bytes,
         }
     }
 
@@ -41,6 +44,7 @@ pub enum ValueKind {
     Integer,
     Boolean,
     Text,
+    Bytes,
 }
 
 /// Per-device observable requests for transient recording (ABI-33). Each

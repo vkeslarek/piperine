@@ -13,8 +13,9 @@ use super::check::Checker;
 use super::class::FunctionClass;
 use super::Ty;
 
-/// The core primitives that read the environment of the solve (§14.4).
-const SOLVE_READING: &[&str] = &["temperature", "gmin", "source_scale", "now", "freq", "analysis"];
+/// The core primitives that read the environment of the solve (§3 table, §14.4): `temperature()` is constant during an
+/// analysis, so a function that reads only it is pure.
+const SOLVE_READING: &[&str] = &["gmin", "source_scale", "now", "freq", "analysis"];
 
 /// What the checker knows of one closure beyond its type.
 #[derive(Debug, Clone)]
@@ -129,6 +130,8 @@ impl Checker<'_> {
         for e in exprs {
             match &self.design.expr_node(*e).kind {
                 ExprKind::Emit { .. } => class.emitting = true,
+                // a probe reads the solve: through a handle a function may write one (§3 rule 7, GN-12)
+                ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => class.solve_reading = true,
                 ExprKind::Call { callee, .. } => match self.callee_resolution(*callee) {
                     Some(Resolution::Builtin(id)) if SOLVE_READING.contains(&id.info().name) => class.solve_reading = true,
                     Some(Resolution::Decl(decl)) => match self.design.decl_data(decl).kind {
@@ -171,6 +174,18 @@ impl Checker<'_> {
         class
     }
 
+    /// A call of the named function `function` where its class is not allowed (§3 table, PI-12 AC 3): a
+    /// solve-reading function in a const context, an emitting one in a const context or a module body, is
+    /// `E0122` naming the function and the class. `emit!` written directly stays `E0601`.
+    pub(super) fn refuse_outside_class(&mut self, expr: ExprId, function: DeclId) {
+        let Some(class) = self.function_class(function, &mut BTreeSet::new()).refused_in(self.context) else { return };
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("the function `{name}` is {class} and is called where that class is not allowed (§3)");
+        self.coded(file, "E0122", span, message, "a call out of its class");
+    }
+
     /// A call of the local `decl` whose type is `fn(..) -> R`, a closure or a function pointer:
     /// the arguments against its parameters, and, for a closure, `E0122` where its class is not
     /// allowed. There is no named function to record as the callee.
@@ -178,7 +193,12 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         self.settle_pending(decl, args);
-        let Some(Ty::Fn(params, result)) = self.locals.get(&decl).cloned() else {
+        // a value of a type parameter bound by `Fn(A) -> R` is called through the bound (§3.8.6)
+        let local = match self.locals.get(&decl).cloned() {
+            Some(Ty::Param(param)) => self.callable_of(param).or(Some(Ty::Param(param))),
+            other => other,
+        };
+        let Some(Ty::Fn(params, result)) = local else {
             if !self.poisoned.contains(&decl) {
                 self.unsupported(file, span, "a call of a value that is not a function");
             }

@@ -5,47 +5,44 @@ body RefRamp  @control.msl:22:1
   carrier reference: u10 out init 0  @control.msl:23:20
   carrier at_target: bool out  @control.msl:23:52
   drive at_target = (reference == target)  @control.msl:24:5
-  event E0 changed tick guard tick.high()  @control.msl:27:8
+  event E0 changed tick guard tick  @control.msl:27:8
   reaction R0 on (E0)  @control.msl:27:5
-    if (!run.known_or(false)) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
+    if (!run) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
 body Top  @top.msl:1:1
 instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
 arenas
   top 0
   body 0: where ()  natures ()  branches ()  children ()  analog -
-  body 0 discrete: drives ((c4 e2 -))  events ((changed c0 e4))  reactions ((on (0) (s3)))
+  body 0 discrete: drives ((c4 e2 -))  events ((changed c0 e3))  reactions ((on (0) (s3)))
   body 1: where ()  natures ()  branches ()  children ()  analog -
   instance 0: name Top  body 1  parent -  children ()  nodes ()
-  e0: flagged<u10> = carrier 3  @control.msl:24:17
-  e1: flagged<u10> = carrier 2  @control.msl:24:17
-  e2: flagged<bool> = eq e0 e1  @control.msl:24:17
-  e3: flagged<bool> = carrier 0  @control.msl:27:8
-  e4: bool = high e3  @control.msl:27:8
-  e5: flagged<u10> = carrier 3  @control.msl:30:14
-  e6: flagged<u10> = carrier 2  @control.msl:30:14
-  e7: flagged<bool> = gt e5 e6  @control.msl:30:14
-  e8: flagged<u10> = carrier 3  @control.msl:30:14
-  e9: u10 = int 1  @control.msl:30:14
-  e10: flagged<u10> = sub e8 e9  @control.msl:30:14
-  e11: () = block (s0) -  @control.msl:30:14
-  e12: () = unit  @control.msl:30:14
-  e13: () = if e7 e11 e12  @control.msl:30:14
-  e14: flagged<u10> = carrier 3  @control.msl:29:14
-  e15: flagged<u10> = carrier 2  @control.msl:29:14
-  e16: flagged<bool> = lt e14 e15  @control.msl:29:14
-  e17: flagged<u10> = carrier 3  @control.msl:29:14
-  e18: u10 = int 1  @control.msl:29:14
-  e19: flagged<u10> = add e17 e18  @control.msl:29:14
-  e20: () = block (s1) -  @control.msl:29:14
-  e21: () = if e16 e20 e13  @control.msl:29:14
-  e22: flagged<bool> = carrier 1  @control.msl:28:12
-  e23: bool = bool false  @control.msl:28:12
-  e24: bool = known_or e22 e23  @control.msl:28:12
-  e25: bool = not e24  @control.msl:28:12
-  e26: u10 = int 0  @control.msl:28:12
-  e27: () = block (s2) -  @control.msl:28:12
-  e28: () = if e25 e27 e21  @control.msl:28:12
-  s0: commit c3 e10 -
-  s1: commit c3 e19 -
-  s2: commit c3 e26 -
-  s3: expr e28
+  e0: u10 = carrier 3  @control.msl:24:17
+  e1: u10 = carrier 2  @control.msl:24:17
+  e2: bool = eq e0 e1  @control.msl:24:17
+  e3: bool = carrier 0  @control.msl:27:8
+  e4: u10 = carrier 3  @control.msl:30:14
+  e5: u10 = carrier 2  @control.msl:30:14
+  e6: bool = gt e4 e5  @control.msl:30:14
+  e7: u10 = carrier 3  @control.msl:30:14
+  e8: u10 = int 1  @control.msl:30:14
+  e9: u10 = sub e7 e8  @control.msl:30:14
+  e10: () = block (s0) -  @control.msl:30:14
+  e11: () = unit  @control.msl:30:14
+  e12: () = if e6 e10 e11  @control.msl:30:14
+  e13: u10 = carrier 3  @control.msl:29:14
+  e14: u10 = carrier 2  @control.msl:29:14
+  e15: bool = lt e13 e14  @control.msl:29:14
+  e16: u10 = carrier 3  @control.msl:29:14
+  e17: u10 = int 1  @control.msl:29:14
+  e18: u10 = add e16 e17  @control.msl:29:14
+  e19: () = block (s1) -  @control.msl:29:14
+  e20: () = if e15 e19 e12  @control.msl:29:14
+  e21: bool = carrier 1  @control.msl:28:12
+  e22: bool = not e21  @control.msl:28:12
+  e23: u10 = int 0  @control.msl:28:12
+  e24: () = block (s2) -  @control.msl:28:12
+  e25: () = if e22 e24 e20  @control.msl:28:12
+  s0: commit c3 e9 -
+  s1: commit c3 e18 -
+  s2: commit c3 e23 -
+  s3: expr e25

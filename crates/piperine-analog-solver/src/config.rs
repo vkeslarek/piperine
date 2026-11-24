@@ -143,16 +143,20 @@ pub struct TraceFlags {
     pub source: bool,
     /// Trace transient LTE rejections (`PIPERINE_TRACE_TRAN`).
     pub transient: bool,
+    /// Read the clock around assembly and the linear solve and report both totals
+    /// (`PIPERINE_TRACE_TIMING`). Off, no clock is read and both totals stay 0.
+    pub timing: bool,
 }
 
 impl TraceFlags {
-    /// Seed the flags from the `PIPERINE_TRACE_{GMIN,SRC,TRAN}` env vars
+    /// Seed the flags from the `PIPERINE_TRACE_{GMIN,SRC,TRAN,TIMING}` env vars
     /// (present = on), preserving the pre-config toggle mechanism.
     pub fn from_env() -> Self {
         Self {
             gmin: std::env::var("PIPERINE_TRACE_GMIN").is_ok(),
             source: std::env::var("PIPERINE_TRACE_SRC").is_ok(),
             transient: std::env::var("PIPERINE_TRACE_TRAN").is_ok(),
+            timing: std::env::var("PIPERINE_TRACE_TIMING").is_ok(),
         }
     }
 }

@@ -29,8 +29,8 @@ const ROWS: &[Row] = &[
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "generation if", source: "module Top(a: E) { if true { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
-    Row { construct: "struct with an impl (its methods are never reached)", source: "struct S { a: f64 }\nimpl S { fn get(self) -> f64 { 1.0 } }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; let x = s.get(); }", names: "method `get`" },
-    Row { construct: "generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let x = g(1.0); }", names: "generic function" },
+    // `struct with an impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
+    Row { construct: "generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; }", names: "generic function" },
     Row { construct: "generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: E) { let g = G(a); }", names: "generic module" },
     Row { construct: "const generic", source: "module G<const N: usize>() { }\nmodule Top() { let g = G(); }", names: "generic module" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
@@ -41,12 +41,10 @@ const ROWS: &[Row] = &[
     Row { construct: "named argument of a result module", source: "module M(x: f64, y: Option<f64>) -> f64 { x }\nmodule Top() { let m = M(1.0, y: 2.0); }", names: "named connection" },
     Row { construct: "extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: E) { }\nmodule Top(a: E) { let x = X(a); }", names: "`extern` module" },
     Row { construct: "generation", source: "module Top(a: E) { for i in 0..2 { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
-    Row { construct: "ddx", source: "module Top(a: E) { }\nanalog for Top { let x = ddx(v(a), v(a)); }", names: "`ddx`" },
-    Row { construct: "delay", source: "module Top(a: E) { }\nanalog for Top { let x = delay(v(a), 1.0); }", names: "`delay`" },
-    Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
-    Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
+    // `delay`, `noise` and `simparam` left this table when analog-operators T23 typed them (`types_analog_operators`); the elaborator refuses each with `P0001` until its lowering task.
+    // `ddx` left this table when analog-operators T22 typed it (`types_analog_operators`); the elaborator refuses it with `P0001` until T32.
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
-    Row { construct: "trait", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top() { }\nanalog for Top { let y = 1.0.get(); }", names: "method `get`" },
+    // `trait` left this table when generics T25 typed a trait's methods (`types_traits::methods_associated_functions_and_constants_type_check`).
 ];
 
 fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {
@@ -104,15 +102,13 @@ fn unreached_items_are_not_reported() {
     assert!(Types::check(&design, "Top").is_err());
 }
 
-/// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
-/// flag are refused by name as well.
+/// Constructs that only resolve against the real standard library: `Bit` and `Repr` are
+/// refused by name as well.
 const STD_ROWS: &[Row] = &[
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
-    Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
+    // `element definition` left this table when composite-values T76 typed it (`types_carrier_arrays`).
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
-    // `level` itself is typed since `unknown-semantics` T2 (US-02); a receiver without `Repr` is still refused by name.
-    Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = Some(1.0).level(1); }", names: "method `level`" },
 ];
 
 #[test]

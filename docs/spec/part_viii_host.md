@@ -71,7 +71,7 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 4. Made before the run, a host drive is an initial value like the model's own, and a `set`
    binds the param without a change (§16 step 2). Made during the run, either happens at a
    scheduled time: a drive is a commit that enters that instant at step 2 of §15; a `set`
-   applies after the step to that time is accepted, at step 5 of §15 (§15.2).
+   is a host commit due at `(t, 0)`, collected at step 2 of §15 (§15.2).
 5. Monte Carlo is a host loop. It assigns a distribution to any param by path, draws per
    instance or globally, and sets the values before elaboration.
 6. A `set` is checked against the param's `where` (§8.1.1). A `set` that fails is
@@ -122,6 +122,14 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 > `Top.v[2]`) prints that leaf alone. A composite param is set by the path of one leaf
 > (`Top.f.num[2]`, `Top.p.x`, `Top.t.0`), before the run; the `where` of the param is checked on
 > the whole value after the write and a false one is `E0317`, a path that names no leaf `E0801`.
+
+> **Resolution.** A cell of a table is a value of its type, and a host that cannot read one fails
+> with the cause: a row with no cell for a column, a plain value in a column of composite values,
+> a real column that is not real at the next step. It never fills the cell in. Two cells have no
+> value of their own, and they are **absent**, which is not an unknown value (no level of any type
+> is missing): a leaf the type can hold and the value of this row does not (the payload of a
+> `None`, a field of another variant), and a param no placement has given a value. An absent cell
+> is an empty field in a text table and in CSV, `null` in JSON Lines, and nothing in a plot.
 
 A sketch in Python, not normative:
 
@@ -225,7 +233,7 @@ piece by piece:
 | Symbol | Meaning |
 | --- | --- |
 | `∂x/∂p` | the derivative of `x` at the fixed instant, through every probe, param and real carrier `x` reads |
-| `ẋ` | the time derivative of `x` along the solution the reaction reads (§15 step 3.3: the previous time point's solution before step 3.4, the solution at `t` after it) |
+| `ẋ` | the time derivative of `x` along the solution the reaction reads (§15 step 3.3: the solution at `t`, solved in step 1) |
 | `dt*/dp` | how the instant moves: rule 2 for a located crossing, rule 3 for a scheduled time, 0 for a fixed time |
 | `s_q` | the sensitivity the carrier `q` holds |
 

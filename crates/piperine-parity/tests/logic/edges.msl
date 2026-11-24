@@ -1,0 +1,39 @@
+//! `impl Bit<Logic>` (§22.1.5): `rise` is a change that ends at 1, `fall` a change that ends at 0, whatever the level was
+//! before (0, X or Z for a rise; 1, X or Z for a fall). The expected records are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 4G where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Steps `l` through 1, 0, Z, 1, X, 0, 1, Z, 0 on the rising edges of `clk`; `k` is the index of the step plus one once
+/// it is committed.
+module Driver(in clk: Bit, out l: Bit<Logic>, out k: Bit<u8> = 0) {}
+digital for Driver {
+    on clk.rise() {
+        k <- k + 1;
+        l <- match k {
+            0 => Logic::H,
+            1 => Logic::L,
+            2 => Logic::Z,
+            3 => Logic::H,
+            4 => Logic::X,
+            5 => Logic::L,
+            6 => Logic::H,
+            7 => Logic::Z,
+            _ => Logic::L,
+        };
+    }
+}
+
+/// Records the step at which `l` rises and the step at which it falls.
+module Edges(in l: Bit<Logic>, in k: Bit<u8>) {}
+digital for Edges {
+    on l.rise() { emit!("rise", step = k); }
+    on l.fall() { emit!("fall", step = k); }
+}
+
+module Bench() {
+    signal clk: Bit; signal k: Bit<u8>; signal l: Bit<Logic>;
+    let osc = Osc(clk);
+    let driver = Driver(clk, l, k);
+    let edges = Edges(l, k);
+}

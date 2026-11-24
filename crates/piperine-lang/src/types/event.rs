@@ -144,7 +144,8 @@ impl Checker<'_> {
     }
 
     /// `c.changed()`, `c.rise()` and `c.fall()` on a discrete carrier: an `Event`. `changed` on a
-    /// node is `E0230`; `rise` and `fall` are the edges of a `Bit` of `bool`.
+    /// node is `E0230`; `rise` and `fall` are the edges of a `Bit` of `bool` and of a `Bit<Logic>` of one level
+    /// (`impl Bit<Logic>`, §22.1.5).
     pub(super) fn edge_read(&mut self, expr: ExprId, builtin: Builtin, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
@@ -154,14 +155,14 @@ impl Checker<'_> {
             _ => "fall",
         };
         match self.declared_port(recv) {
-            Some((_, Ty::Carrier { value, .. })) if builtin == Builtin::Changed || *value == Ty::Bool => {
+            Some((_, Ty::Carrier { value, .. })) if builtin == Builtin::Changed || *value == Ty::Bool || self.logic_width(&value) == Some(1) => {
                 self.apply(expr, &[], args)?;
                 self.infer(recv);
                 self.builtins.insert(expr, builtin);
                 Some(Ty::Event)
             }
             Some((_, Ty::Carrier { value, .. })) => {
-                self.unsupported(file, span, &format!("method `{name}` on `Bit<{}>`: it is the edge of a `Bit` of `bool`", value.name(self.design)));
+                self.unsupported(file, span, &format!("method `{name}` on `Bit<{}>`: it is the edge of a `Bit` of `bool` or of a `Logic` of one level", value.name(self.design)));
                 None
             }
             Some((_, Ty::Node(_))) => {

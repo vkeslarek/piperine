@@ -8,7 +8,7 @@
 //! [`TransientAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::crossing::{CrossDir, predict_crossing};
-use piperine_analog_solver::device::{Ambient, AssemblySnapshot, Stage};
+use piperine_analog_solver::device::{Ambient, AssemblySnapshot, JumpPosition, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::Context;
@@ -19,6 +19,7 @@ use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::{AsIndex, Stamp};
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use crate::protocol::ProposalBound;
 use crate::prelude::{TransientAnalysisResult, TransientStep};
 
 use ndarray::ArrayView1;
@@ -295,6 +296,11 @@ pub struct TransientSystem<'a> {
     /// Last accepted step size, so the TR stage can re-derive the previous
     /// capacitor current. Updated after each accepted BDF2 phase.
     pub prev_h: f64,
+    /// Where the next step stands relative to a jump (§15.2.6): set by `device_attempt`.
+    pub jump: JumpPosition,
+    /// Whether the last accepted step read a jump: the step after it is `JumpPosition::After`.
+    /// Time-loop state, kept by `AcceptUndo` and `AnalogResume`.
+    pub last_read_jump: bool,
     pub tfinal: f64,
     /// UIC hold clamps (ngspice `CKTsetIC`): `@initial` branch seeds pinned
     /// through the t=0 solve and the first accepted step.
@@ -311,7 +317,17 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
-        self.assemble_device(state)
+        let mut stamps = Vec::new();
+        self.assemble_device(state, &mut stamps)?;
+        Ok(stamps)
+    }
+
+    fn assemble_into(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> crate::core::result::Result<()> {
+        self.assemble_device(state, out)
     }
 
     fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
@@ -362,38 +378,43 @@ impl TransientSystem<'_> {
         }
     }
 
-    /// The stamps of one stage of a circuit of devices: `FLOW` terms in their
+    /// Fills `out` with the stamps of one stage of a circuit of devices: `FLOW` terms in their
     /// Norton form, `DDT` terms through the TR-BDF2 companion over their own
     /// history, `DELAY` terms from theirs, then the solver's shunts and clamps.
     fn assemble_device(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
-        let x: Vec<f64> = match state.latest() {
-            Some(row) => row.to_vec(),
-            None => vec![0.0; state.size()],
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> crate::core::result::Result<()> {
+        let owned;
+        let x: &[f64] = match state.latest().and_then(|row| row.to_slice()) {
+            Some(row) => row,
+            None => {
+                owned = state.latest().map_or_else(|| vec![0.0; state.size()], |row| row.to_vec());
+                &owned
+            }
         };
-        let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h };
+        let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h, jump: self.jump };
         let amb = self.ambient();
         let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
-        let mut all_stamps = bound.analog.assemble_tran(&x, amb, stage)?;
-        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
+        bound.analog.assemble_tran_into(x, amb, stage, out)?;
+        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", out) {
             return Err(err);
         }
         let gshunt = self.context.tolerances.gshunt;
         if gshunt > 0.0 {
             for r in self.circuit.netlist().all_references() {
                 if r.variable().is_node() && !r.variable().is_ground() {
-                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
+                    out.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
                 }
             }
         }
         if self.uic_hold {
             for clamp in &self.uic_clamps {
-                clamp.stamp(&mut all_stamps);
+                clamp.stamp(out);
             }
         }
-        Ok(all_stamps)
+        Ok(())
     }
 
     /// The error a callback met during the solve just run, if any.
@@ -420,6 +441,30 @@ struct ScheduledWrite {
     value: crate::core::bind::ParamValue,
 }
 
+/// What a transient step reads, which decides how its truncation error is measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StepKind {
+    /// A step that reads no change: tested with Milne's estimate.
+    Ordinary,
+    /// The step that reads a jump (a delivery under a restart, §15.2 rule 6).
+    ReadsJump,
+    /// The step taken again at the same time after its crossings changed what `analog` reads
+    /// (§15.2 rule 4): exempt from the truncation-error test, since it cannot be retaken smaller.
+    Retake,
+}
+
+impl StepKind {
+    /// The kind of the step that starts at a time loop whose `sets_just_applied` is given.
+    fn of(sets_just_applied: bool) -> Self {
+        if sets_just_applied { Self::ReadsJump } else { Self::Ordinary }
+    }
+
+    /// Whether the step reads a jump (a retaken step reads the change its crossings made).
+    fn reads_jump(self) -> bool {
+        self != Self::Ordinary
+    }
+}
+
 /// Phase 1 output — the candidate landing point chosen over the unified
 /// breakpoint table from the PI-proposed step size.
 struct StepPrediction {
@@ -429,9 +474,17 @@ struct StepPrediction {
     dt_actual: f64,
     /// The step size the PI controller proposed (before breakpoint clamping).
     dt_proposed: f64,
-    /// The step lands on a declared discontinuity → exempt from the
-    /// Milne-LTE accept gate.
-    landed_on_breakpoint: bool,
+    /// What the step reads.
+    kind: StepKind,
+}
+
+/// Why an attempt was rejected.
+#[derive(Clone, Copy)]
+enum Rejection {
+    /// The step failed the truncation-error test.
+    Truncation,
+    /// Newton did not converge on the step.
+    Newton,
 }
 
 /// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
@@ -448,11 +501,28 @@ struct StepAssessment {
 /// size, and the acceptance bookkeeping the phase methods read and
 /// advance. Owned by [`TransientSolver::solve`]; the phase methods take it
 /// as an explicit parameter.
+#[derive(Clone)]
 struct TimeLoop {
+    /// The accepted time, in seconds since `origin`.
     current_time: f64,
+    /// The time of the clock's origin since the start of the run: 0 until the protocol moves the
+    /// origin forward (past 2^52 ticks, see `AnalogSide::rebase`), so that every time this loop
+    /// holds stays small however long the run.
+    origin: f64,
+    /// The stop time, in seconds since `origin`.
+    stop: f64,
     dt: f64,
     steps_accepted: usize,
-    steps_rejected: usize,
+    /// Attempts rejected by the truncation-error test.
+    rejected_truncation: usize,
+    /// Attempts rejected because Newton did not converge.
+    rejected_newton: usize,
+    /// Accepted steps that read a jump.
+    jump_steps: usize,
+    /// Rejected attempts of a step that reads a jump.
+    jump_retakes: usize,
+    /// Accepted steps of the size `max_step`.
+    steps_at_max_step: usize,
     /// Steps retaken at `dt_min` after a larger attempt failed (ngspice's `delta = delmin`).
     dt_min_floor_hits: usize,
     /// Steps accepted at `dt_min` although they fail the truncation test: nothing smaller is
@@ -461,23 +531,33 @@ struct TimeLoop {
     /// Predictor gate: extrapolation history is only valid coming off an
     /// accepted step (a rejection leaves rejected rows in the buffer).
     last_step_accepted: bool,
-    /// Live-set edge rule (LIVE-06/07): the first step after a scheduled
-    /// set integrates the value jump, so its Milne window spans the
-    /// discontinuity — the LTE there is not error but the jump itself.
-    /// That one step is exempt from the accept gate and from the PI
-    /// update (dt held), exactly like landing on a declared breakpoint.
+    /// The step about to be attempted reads a delivered change (any `Restart::Integrator*`: an
+    /// instant that changed a carrier or a param `analog` reads, a settle commit, a host `set`):
+    /// its Milne window spans the discontinuity, so it is sized by §15.2 rule 6 and tested by
+    /// the first-order jump estimate (`TrBdf2::jump_lte`) instead of the PI controller's error.
     sets_just_applied: bool,
     dt_min_seen: f64,
     dt_max_seen: f64,
 }
 
 impl TimeLoop {
-    fn new(start_time: f64, dt: f64) -> Self {
+    /// The attempts rejected, by either cause.
+    fn steps_rejected(&self) -> usize {
+        self.rejected_truncation + self.rejected_newton
+    }
+
+    fn new(start_time: f64, stop_time: f64, dt: f64) -> Self {
         Self {
             current_time: start_time,
+            origin: 0.0,
+            stop: stop_time,
             dt,
             steps_accepted: 0,
-            steps_rejected: 0,
+            rejected_truncation: 0,
+            rejected_newton: 0,
+            jump_steps: 0,
+            jump_retakes: 0,
+            steps_at_max_step: 0,
             dt_min_floor_hits: 0,
             floor_accepts: 0,
             last_step_accepted: false,
@@ -555,6 +635,8 @@ impl<'a> TransientSolver<'a> {
             phase: TrBdf2Phase::Trapezoidal,
             h: options.dt,
             prev_h: 0.0,
+            jump: JumpPosition::None,
+            last_read_jump: false,
             tfinal: options.stop_time,
             uic_clamps: Vec::new(),
             uic_hold: false,
@@ -708,7 +790,8 @@ impl<'a> TransientSolver<'a> {
         device_ic
     }
 
-    /// Advance one TR-BDF2 step over `[t_n, t_n + dt]`. Two Newton solves:
+    /// Advance one TR-BDF2 step over `[t_n, t_n + dt]`, times in seconds since the clock's `origin`
+    /// (devices and the recorded step read `origin` added back). Two Newton solves:
     /// phase 1 (Trapezoidal over `γ·dt`) → `x_{n+γ}`; phase 2 (BDF2 over
     /// `(1−γ)·dt`) → `x_{n+1}`, warm-started from `x_{n+γ}`. Either phase
     /// failing rejects the whole step (TRB-05). The Newton buffer's push
@@ -716,6 +799,7 @@ impl<'a> TransientSolver<'a> {
     /// `view(1)`; phase 2 reads `x_{n+γ}` at `view(1)` and `x_n` at `view(2)`.
     fn execute_timestep(
         &mut self,
+        origin: f64,
         t_n: f64,
         dt: f64,
         use_predictor: bool,
@@ -727,7 +811,7 @@ impl<'a> TransientSolver<'a> {
         // Phase 1 — Trapezoidal over γ·dt → intermediate point x_{n+γ}.
         self.system.phase = TrBdf2Phase::Trapezoidal;
         self.system.h = dt;
-        self.system.time = t_n + TrBdf2::GAMMA * dt;
+        self.system.time = origin + (t_n + TrBdf2::GAMMA * dt);
         // First-order predictor seed (CP-16): extrapolate the two newest
         // accepted rows — x_n at view(0), x_{n−1+γ} at view(1), separated by
         // (1−γ)·prev_h — forward γ·dt to the TR-stage target. Only when the
@@ -745,29 +829,32 @@ impl<'a> TransientSolver<'a> {
         // Phase 2 — BDF2 over (1−γ)·dt → final point x_{n+1} (warm-start x_{n+γ}).
         self.system.phase = TrBdf2Phase::Bdf2;
         self.system.h = dt;
-        self.system.time = t_next;
+        self.system.time = origin + t_next;
         self.solver.solve_with_strategy(
             &mut self.system, self.plan.newton(), &tolerances, &policy,
         )?;
         self.system.take_callback_error()?;
 
         // `prev_h` is set by the caller once the global-LTE accept gate passes.
-        Ok(Some(self.snapshot(t_next)))
+        Ok(Some(self.snapshot(origin + t_next)))
     }
 
     /// Phase 3 — assess: the accept gate (TRB-05/06) over the truncation error of the step's
     /// `ddt` states (§15.2 rule 1, §17.2 Resolution), each normalized as ngspice's `CKTterr`
     /// does (`TrBdf2::state_lte`): Milne's difference of the state's three values over the two
     /// stages, against `max(h·(abstol + reltol·|i|), reltol·max(|q|, chgtol))`. A circuit with
-    /// no `ddt` state has no truncation error, so the controller grows the step. Steps landing
-    /// on a declared discontinuity (breakpoint or live-set edge) are exempt.
-    fn assess_step(&self, prediction: &StepPrediction, post_set_step: bool) -> StepAssessment {
+    /// no `ddt` state has no truncation error, so the controller grows the step. Every step is
+    /// tested, whether or not it ends on a landing; the step that reads a jump is tested with the
+    /// first-order estimate of its own two stages (`TrBdf2::jump_lte`) against the same `trtol`.
+    fn assess_step(&self, prediction: &StepPrediction) -> StepAssessment {
         let tolerances = &self.system.context.tolerances;
         let states = self.system.circuit.abi.as_ref().map(|bound| bound.analog.ddt_states()).unwrap_or_default();
-        let milne = TrBdf2::state_lte(&states, tolerances, prediction.dt_actual);
-        let reject =
-            !prediction.landed_on_breakpoint && !post_set_step && milne > tolerances.trtol;
-        StepAssessment { milne, accept: !reject }
+        let error = match prediction.kind {
+            StepKind::Ordinary => TrBdf2::state_lte(&states, tolerances, prediction.dt_actual),
+            StepKind::ReadsJump => TrBdf2::jump_lte(&states, tolerances, prediction.dt_actual),
+            StepKind::Retake => return StepAssessment { milne: 0.0, accept: true },
+        };
+        StepAssessment { milne: error, accept: error <= tolerances.trtol }
     }
 
     /// Record an accepted step's snapshot when it falls inside the
@@ -805,10 +892,10 @@ impl<'a> TransientSolver<'a> {
         milne: f64,
         dt_actual: f64,
         dt_proposed: f64,
-        post_set_step: bool,
+        kind: StepKind,
         sets_just_applied: bool,
     ) -> f64 {
-        let mut dt = if post_set_step {
+        let mut dt = if kind.reads_jump() {
             dt_proposed
         } else {
             // NOTE: the controller targets `lte == 1` while the accept gate
@@ -821,7 +908,7 @@ impl<'a> TransientSolver<'a> {
             self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options.step_limits())
         };
         if sets_just_applied {
-            dt = (1e-3 * dt_actual).max(self.options.dt_min);
+            dt = (Self::HOST_RESTART_FRACTION * dt_actual).max(self.options.dt_min);
         }
         dt
     }
@@ -833,7 +920,12 @@ impl<'a> TransientSolver<'a> {
         result.stats.newton_iterations = self.solver.total_iterations();
         result.stats.converged = true;
         result.stats.steps_accepted = st.steps_accepted;
-        result.stats.steps_rejected = st.steps_rejected;
+        result.stats.steps_rejected = st.steps_rejected();
+        result.stats.rejected_truncation = st.rejected_truncation;
+        result.stats.rejected_newton = st.rejected_newton;
+        result.stats.jump_steps = st.jump_steps;
+        result.stats.jump_retakes = st.jump_retakes;
+        result.stats.steps_at_max_step = st.steps_at_max_step;
         result.stats.dt_min_floor_hits = st.dt_min_floor_hits;
         result.stats.floor_accepts = st.floor_accepts;
         result.stats.dt_min = if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 };
@@ -923,6 +1015,8 @@ pub(crate) struct DeviceRun {
     pending: Option<PendingStep>,
     /// The end of the step this side proposed last, on its own clock.
     proposed: f64,
+    /// What cut that proposal.
+    bound: ProposalBound,
     /// The time of the last attempt, for its trace records.
     attempted: f64,
     /// The size of the last accepted step.
@@ -950,6 +1044,26 @@ pub(crate) struct DeviceRun {
     /// The controller's step when the current step was first retaken toward a crossing: the
     /// step after the landing starts from it, not from the landing's short step.
     retaken: Option<f64>,
+    /// What the last acceptance changed, until the next one: a step retaken after its crossings
+    /// changed what `analog` reads takes it back (§15.2 rule 4).
+    undo: Option<AcceptUndo>,
+    /// The last acceptance was taken back, and the step to be attempted next is its retake.
+    retaking: bool,
+}
+
+/// What `device_accept` changes in the run, kept so `device_unaccept` can put it back: the time
+/// loop, the step controller's memory and the bookkeeping beside them.
+struct AcceptUndo {
+    st: TimeLoop,
+    prev_h: f64,
+    last_read_jump: bool,
+    uic_hold: bool,
+    steps: usize,
+    cap: f64,
+    retaken: Option<f64>,
+    delivered: Vec<String>,
+    last_dt: f64,
+    stepper: piperine_analog_solver::convergence::StepperMemory,
 }
 
 /// The attempts of one step that went past a crossing (§17.3): the accepted time the step
@@ -988,7 +1102,6 @@ struct PendingStep {
     prediction: StepPrediction,
     snapshot: TransientStep,
     milne: f64,
-    post_set_step: bool,
     /// The attempt is at the step floor and fails the truncation test: it is accepted anyway.
     over_error_at_floor: bool,
 }
@@ -1040,6 +1153,7 @@ impl TransientSolver<'_> {
                 crate::core::introspect::Value::Real(v) => crate::core::bind::ParamValue::Real(v),
                 crate::core::introspect::Value::Integer(v) => crate::core::bind::ParamValue::Int(v),
                 crate::core::introspect::Value::Boolean(v) => crate::core::bind::ParamValue::Bool(v),
+                crate::core::introspect::Value::Bytes(bytes) => crate::core::bind::ParamValue::Bytes(bytes),
                 crate::core::introspect::Value::Text(_) => {
                     return Err(Error::simple(
                         SolverDomain::Transient,
@@ -1104,10 +1218,11 @@ impl TransientSolver<'_> {
         }
         let locates = bound.analog.has_crossings();
         let run = DeviceRun {
-            st: TimeLoop::new(self.options.start_time, self.options.dt),
+            st: TimeLoop::new(self.options.start_time, self.options.stop_time, self.options.dt),
             steps: Vec::new(),
             pending: None,
             proposed: self.options.start_time,
+            bound: ProposalBound::Controller,
             attempted: self.options.start_time,
             last_dt: 0.0,
             attempts: 0,
@@ -1120,6 +1235,8 @@ impl TransientSolver<'_> {
             locates,
             located: None,
             retaken: None,
+            undo: None,
+            retaking: false,
         };
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
@@ -1177,6 +1294,7 @@ impl TransientSolver<'_> {
                 Ok(())
             })
             .and_then(|_| protocol.transient(stop));
+        let statistics = protocol.statistics().clone();
         let (side, analog) = protocol.into_sides();
         let mut run = analog.run;
         if let Some(bound) = self.system.circuit.abi.as_mut() {
@@ -1185,7 +1303,7 @@ impl TransientSolver<'_> {
         ran.map_err(|error| self.system.circuit.name_error(error))?;
         // Under `Keep::Last` the one step kept is the last, from the final solution.
         if self.options.keep == Keep::Last {
-            run.steps.push(self.full_snapshot(run.st.current_time));
+            run.steps.push(self.full_snapshot(run.st.origin + run.st.current_time));
         }
         // The last step carries the state a later run re-enters from.
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
@@ -1202,7 +1320,9 @@ impl TransientSolver<'_> {
         if let Some(last) = run.steps.last_mut() {
             last.set_reentry(Some(std::sync::Arc::new(state)));
         }
-        Ok(self.finish_run(&run.st, run.steps))
+        let mut result = self.finish_run(&run.st, run.steps);
+        result.set_statistics(statistics);
+        Ok(result)
     }
 
     /// The solution as the Newton solver holds it (empty with no unknown), as `snapshot` reads it.
@@ -1330,6 +1450,7 @@ impl TransientSolver<'_> {
             run.st.last_step_accepted = analog.last_step_accepted();
             run.st.sets_just_applied = analog.restart_pending();
             self.system.prev_h = analog.prev_h();
+            self.system.last_read_jump = analog.last_read_jump();
             self.plan.stepper_mut().resume(analog.stepper());
         } else {
             let ivs: Vec<InitialValue<AnalogReference, f64>> = self
@@ -1365,7 +1486,7 @@ impl TransientSolver<'_> {
     /// moved since): the discrete side's settled state, the assembly's and the
     /// step bound. A step already carrying one, or a time not recorded, is left.
     pub(crate) fn device_capture(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
-        let due = self.options.reenters_every_step() && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
+        let due = self.options.reenters_every_step() && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.origin + run.st.current_time);
         if due {
             let state = self.device_reentry_state(run, digital, nets);
             run.steps.last_mut().expect("a recorded step").set_reentry(Some(state));
@@ -1393,6 +1514,7 @@ impl TransientSolver<'_> {
             run.last_dt,
             run.st.last_step_accepted,
             run.st.sets_just_applied,
+            self.system.last_read_jump,
             self.plan.stepper().memory(),
         )
     }
@@ -1412,15 +1534,25 @@ impl TransientSolver<'_> {
                 dt = dt.min(Self::JUMP_FRACTION * span).max(self.options.dt_min);
             }
         }
-        let mut end = (st.current_time + dt).min(self.options.stop_time).min(st.current_time + run.cap);
+        let cap_end = st.current_time + run.cap;
+        let mut end = (st.current_time + dt).min(st.stop).min(cap_end);
         // A step that would end within two ticks short of the stop ends at the stop: the
         // remainder would be a step of a few femtoseconds, or less than a tick, which the
         // companion of a charge integrates as noise (a capped step after a jump can end there).
         // The `CAP` bound still holds after the snap: a step is never stretched past it.
-        if self.options.stop_time - end < 2.0 * run.spt {
-            end = self.options.stop_time.min(st.current_time + run.cap);
+        if st.stop - end < 2.0 * run.spt {
+            end = st.stop.min(st.current_time + run.cap);
         }
         run.proposed = end;
+        run.bound = if end == cap_end && end < st.current_time + dt {
+            ProposalBound::Cap
+        } else if end == st.stop {
+            ProposalBound::Stop
+        } else if dt >= self.options.dt_max {
+            ProposalBound::MaxStep
+        } else {
+            ProposalBound::Controller
+        };
         run.proposed
     }
 
@@ -1437,7 +1569,7 @@ impl TransientSolver<'_> {
         &mut self,
         run: &mut DeviceRun,
         to: f64,
-        exempt: bool,
+        landing: bool,
     ) -> crate::core::result::Result<crate::protocol::Attempt> {
         use crate::protocol::Attempt;
         if let Some(e) = run.failed.take() {
@@ -1446,7 +1578,7 @@ impl TransientSolver<'_> {
         run.attempts += 1;
         if run.attempts > self.options.max_steps {
             let st = &run.st;
-            let progress = (st.current_time - self.options.start_time)
+            let progress = (st.origin + st.current_time - self.options.start_time)
                 / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
             return Err(piperine_analog_solver::error::Error::simple(
                 piperine_analog_solver::error::SolverDomain::Transient,
@@ -1461,19 +1593,19 @@ impl TransientSolver<'_> {
                      raise `dt_min` to make the floor fail instead of crawl, \
                      or soften the discontinuity.",
                     self.options.max_steps,
-                    st.current_time,
+                    st.origin + st.current_time,
                     self.options.stop_time,
                     progress * 100.0,
                     st.dt,
                     st.steps_accepted,
-                    st.steps_rejected,
+                    st.steps_rejected(),
                     st.dt_min_floor_hits,
                     if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
                 ),
             ));
         }
-        let stop = self.options.stop_time;
-        let t_next = if exempt {
+        let stop = run.st.stop;
+        let t_next = if landing {
             to
         } else if (stop - to).abs() < run.spt {
             stop
@@ -1493,27 +1625,34 @@ impl TransientSolver<'_> {
             // at `h <= 0`): never attempted, never accepted.
             return Err(piperine_analog_solver::error::Error::simple(
                 piperine_analog_solver::error::SolverDomain::Transient,
-                format!("a step to t = {t_next:e} s does not advance from t = {:e} s", st.current_time),
+                format!("a step to t = {:e} s does not advance from t = {:e} s", st.origin + t_next, st.origin + st.current_time),
             ));
         }
         let prediction = StepPrediction {
             t_next,
             dt_actual: t_next - st.current_time,
             dt_proposed: st.dt,
-            landed_on_breakpoint: exempt,
+            kind: if run.retaking { StepKind::Retake } else { StepKind::of(st.sets_just_applied) },
         };
-        let post_set_step = st.sets_just_applied;
-        let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
+        self.system.jump = if st.sets_just_applied {
+            JumpPosition::Reads
+        } else if self.system.last_read_jump {
+            JumpPosition::After
+        } else {
+            JumpPosition::None
+        };
+        let outcome = self.execute_timestep(st.origin, st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
-            let assessment = self.assess_step(&prediction, post_set_step);
+            let kind = prediction.kind;
+            let assessment = self.assess_step(&prediction);
             // The floor rule, ngspice's (`dctran.c`, "Timestep too small"): nothing smaller than
             // `dt_min` is tried, so an attempt already at it that only fails the truncation test
             // is accepted and counted; a Newton failure there ends the run (below).
             let over_error_at_floor = !assessment.accept && self.is_at_floor(run, prediction.dt_actual);
             if assessment.accept || over_error_at_floor {
-                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step, over_error_at_floor });
+                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, over_error_at_floor });
                 // §17.3 rule 8: a step that reads a jump does not locate its crossings.
-                if run.locates && !post_set_step
+                if run.locates && !kind.reads_jump()
                     && let Some(landing) = self.device_locate(run, t_next)?
                 {
                     return Ok(Attempt::LandedEarlier(landing));
@@ -1521,14 +1660,14 @@ impl TransientSolver<'_> {
                 return Ok(Attempt::Converged);
             }
             self.trace_rejection(run, &prediction, assessment.milne);
-            self.cut_after_failure(run, &prediction);
+            self.cut_after_failure(run, &prediction, Rejection::Truncation);
             return Ok(Attempt::Rejected);
         }
         // A Newton failure: ngspice cuts the step to an eighth; one that would fall to the floor is
         // retaken there once, and the attempt at the floor that fails again is "Timestep too small".
-        let spent = self.cut_after_failure(run, &prediction);
+        let spent = self.cut_after_failure(run, &prediction, Rejection::Newton);
         if spent && let Err(e) = outcome {
-            run.failed = Some(run.floor_error(e, t_next, post_set_step));
+            run.failed = Some(run.floor_error(e, t_next, prediction.kind.reads_jump()));
         }
         Ok(Attempt::Rejected)
     }
@@ -1544,12 +1683,19 @@ impl TransientSolver<'_> {
     /// be at or under `dt_min` is `dt_min` instead, and the attempt retaken there is counted in
     /// `dt_min_floor_hits`, once; `true` when the failed attempt was itself at the floor, which has
     /// no retake left.
-    fn cut_after_failure(&mut self, run: &mut DeviceRun, prediction: &StepPrediction) -> bool {
+    fn cut_after_failure(&mut self, run: &mut DeviceRun, prediction: &StepPrediction, cause: Rejection) -> bool {
         let at_floor = self.is_at_floor(run, prediction.dt_actual);
         let st = &mut run.st;
-        st.steps_rejected += 1;
+        match cause {
+            Rejection::Truncation => st.rejected_truncation += 1,
+            Rejection::Newton => st.rejected_newton += 1,
+        }
+        st.jump_retakes += usize::from(st.sets_just_applied);
         st.last_step_accepted = false;
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
+        // The step that reads a jump is clamped below the controller's proposal (§15.2 rule 6), so
+        // its retake is an eighth of the step that failed, or it would be retaken at the same size.
+        let failed_from = if prediction.kind.reads_jump() { prediction.dt_actual } else { prediction.dt_proposed };
+        st.dt = self.plan.stepper_mut().reject_dt(failed_from, &self.options.step_limits());
         let falls_to_floor = st.dt <= self.options.dt_min;
         if falls_to_floor && !at_floor {
             st.dt = self.options.dt_min;
@@ -1571,7 +1717,7 @@ impl TransientSolver<'_> {
             run.located = None;
         }
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
-        let amb = Ambient { time: t1, ..self.system.ambient() };
+        let amb = Ambient { time: run.st.origin + t1, ..self.system.ambient() };
         let (ttol, etol) = (self.options.ttol, self.system.context.tolerances.vntol);
         let rising = self.device_bound().analog.rising(&x, amb)?;
         let mut earliest = f64::INFINITY;
@@ -1609,7 +1755,7 @@ impl TransientSolver<'_> {
         if self.policy.trace.transient {
             eprintln!(
                 "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
-                run.st.current_time,
+                run.st.origin + run.st.current_time,
                 prediction.dt_actual,
                 milne,
                 self.system.context.tolerances.trtol
@@ -1620,24 +1766,40 @@ impl TransientSolver<'_> {
     /// Accepts the converged attempt: `accept_step`'s bookkeeping without the
     /// old discrete engine; the restart comes with `device_deliver`.
     pub(crate) fn device_accept(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<crate::protocol::Accepted> {
-        let PendingStep { prediction, snapshot, milne, post_set_step, over_error_at_floor } =
+        let PendingStep { prediction, snapshot, milne, over_error_at_floor } =
             run.pending.take().expect("accept follows a converged attempt");
-        let StepPrediction { t_next, dt_actual, dt_proposed, .. } = prediction;
+        run.retaking = false;
+        run.undo = Some(AcceptUndo {
+            st: run.st.clone(),
+            prev_h: self.system.prev_h,
+            last_read_jump: self.system.last_read_jump,
+            uic_hold: self.system.uic_hold,
+            steps: run.steps.len(),
+            cap: run.cap,
+            retaken: run.retaken,
+            delivered: run.delivered.clone(),
+            last_dt: run.last_dt,
+            stepper: self.plan.stepper().memory(),
+        });
+        let StepPrediction { t_next, dt_actual, dt_proposed, kind, .. } = prediction;
         let st = &mut run.st;
         st.steps_accepted += 1;
+        st.jump_steps += usize::from(kind.reads_jump());
+        st.steps_at_max_step += usize::from(dt_actual + run.spt >= self.options.dt_max);
         st.floor_accepts += usize::from(over_error_at_floor);
         st.last_step_accepted = true;
         self.system.uic_hold = false;
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
-        let amb = Ambient { time: t_next, ..self.system.ambient() };
+        let amb = Ambient { time: run.st.origin + t_next, ..self.system.ambient() };
         let (accepted, cap) = crate::analyses::adapters::accepted(self.device_bound(), &x, amb)?;
         run.cap = cap;
         let st = &mut run.st;
-        self.record_step(&mut run.steps, t_next, snapshot);
+        self.record_step(&mut run.steps, st.origin + t_next, snapshot);
         st.current_time = t_next;
         self.system.prev_h = dt_actual;
+        self.system.last_read_jump = st.sets_just_applied;
         // A design that locates crossings ends a step on the tick below the controller's
         // proposal: the controller grows from its proposal, or a step of a few ticks would
         // round down to the same tick forever.
@@ -1646,7 +1808,7 @@ impl TransientSolver<'_> {
         } else {
             dt_actual
         };
-        st.dt = self.propose_dt(milne, grown_from, dt_proposed, post_set_step, false);
+        st.dt = self.propose_dt(milne, grown_from, dt_proposed, kind, false);
         // A step retaken toward a crossing is short for the crossing's sake, not the error's:
         // the next step starts from the controller's step before the retake.
         if let Some(before) = run.retaken.take() {
@@ -1658,9 +1820,27 @@ impl TransientSolver<'_> {
         Ok(accepted)
     }
 
+    /// Takes back the last `device_accept`: the time loop, the controller and the recorded step
+    /// are as the attempt found them, so the same step can be attempted again (§15.2 rule 4).
+    /// The solution history and the assembly come back with `device_restore`.
+    pub(crate) fn device_unaccept(&mut self, run: &mut DeviceRun) {
+        let undo = run.undo.take().expect("a retake follows an acceptance");
+        run.retaking = true;
+        run.st = undo.st;
+        self.system.prev_h = undo.prev_h;
+        self.system.last_read_jump = undo.last_read_jump;
+        self.system.uic_hold = undo.uic_hold;
+        run.steps.truncate(undo.steps);
+        run.cap = undo.cap;
+        run.retaken = undo.retaken;
+        run.delivered = undo.delivered;
+        run.last_dt = undo.last_dt;
+        self.plan.stepper_mut().resume(&undo.stepper);
+    }
+
     /// The analog copy takes the boundary; after a jump the next step starts
-    /// first-order (`prev_h = 0`) and is exempt from the truncation test and
-    /// the controller, as after a scheduled set; after a host write it is also
+    /// first-order (`prev_h = 0`) and is sized and tested by the
+    /// jump rule (§15.2 rule 6), as after a scheduled set; after a host write it is also
     /// `1e-3` of the last step, floored at `dt_min`.
     pub(crate) fn device_deliver(
         &mut self,
@@ -1690,7 +1870,7 @@ impl TransientSolver<'_> {
             }
             Restart::IntegratorSmall => {
                 self.system.prev_h = 0.0;
-                run.st.dt = (1e-3 * run.last_dt).max(self.options.dt_min);
+                run.st.dt = (Self::HOST_RESTART_FRACTION * run.last_dt).max(self.options.dt_min);
                 run.st.sets_just_applied = true;
             }
         }
@@ -1699,6 +1879,10 @@ impl TransientSolver<'_> {
     /// The step after a jump is at most this fraction of the last step and of the gap to the next
     /// scheduled time.
     const JUMP_FRACTION: f64 = 0.1;
+
+    /// The step that reads a host write restarts at this fraction of the last step, floored at
+    /// `dt_min` (ngspice's first step after a breakpoint is about a sixth of the one before it, and the same tenth the landing restart takes).
+    const HOST_RESTART_FRACTION: f64 = 0.1;
 
     pub(crate) fn device_mark(&self) -> DeviceMark {
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
@@ -1749,14 +1933,37 @@ impl DeviceRun {
             .with_unknowns(run.unknowns.clone())
     }
 
-    /// The time of the last attempt.
+    /// What cut the proposal the last `device_propose` returned.
+    pub(crate) fn proposal_bound(&self) -> ProposalBound {
+        self.bound
+    }
+
+    /// The time of the last attempt, in seconds since the run's start.
     pub(crate) fn attempted(&self) -> f64 {
-        self.attempted
+        self.st.origin + self.attempted
     }
 
     /// The time of the last accepted step (the start before any), as the step records it.
     pub(crate) fn accepted_time(&self) -> f64 {
-        self.st.current_time
+        self.st.origin + self.st.current_time
+    }
+
+    /// Moves the origin of this run's clock forward (`AnalogSide::rebase`): every time the run
+    /// holds becomes seconds since the new origin, and what reads absolute time adds `origin.time`
+    /// back. A step's history of times (`Located`) moves with them.
+    pub(crate) fn rebase(&mut self, origin: crate::protocol::Origin) {
+        let moved = origin.moved;
+        self.st.current_time -= moved;
+        self.st.origin = origin.time;
+        self.st.stop = origin.stop;
+        self.proposed -= moved;
+        self.attempted -= moved;
+        if let Some(located) = &mut self.located {
+            located.from -= moved;
+            for (_, (time, _, _)) in &mut located.past {
+                *time -= moved;
+            }
+        }
     }
 
     /// The smallest `CAP` of an accepted solution bounds the next step.

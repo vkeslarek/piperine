@@ -20,13 +20,11 @@ mod support {
     pub mod value_file;
 }
 
-use piperine::{Failure, Field, Overrides};
+use piperine::{Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::Ran;
 use support::printed::Printed;
 use support::records::Fields;
-use support::refusal::Refusal;
 use support::value_file::ValueFile;
 
 /// A listing of the chapter whose forms the compiler does not run yet, reached from a top.
@@ -41,11 +39,6 @@ impl Reached {
     /// The text after a listing that makes a top run `statements` in a reaction at 1 us.
     fn top(statements: &str) -> String {
         format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n")
-    }
-
-    /// The run of the block `id`, after `before`, on a top that runs `statements`.
-    fn run(id: &str, before: &str, statements: &str) -> Result<Ran, Failure> {
-        Chapter::read().wrapped("reached.msl", before, id, &Self::top(statements)).run(Self::overrides())
     }
 }
 
@@ -98,7 +91,7 @@ fn a_match_that_misses_a_variant_stops_the_build() {
     let source = Chapter::read().text("types#8").replace("enum Level { Low, Between, High }", "enum Level { Low, Between, High, Over }");
     let faulty = Faulty::elaborating("types~545f1643", &source, "Levels");
     // E0184 since composite-values T14: the exhaustiveness check names a pattern the arms miss (§1.8.6)
-    assert_eq!(faulty.first("E0184").message, "a `match` over `enum `Level`` is not exhaustive: `Level::Over` is not covered (§1.8.6)");
+    assert_eq!(faulty.first("E0184").message, "a `match` over `Level` is not exhaustive: `Level::Over` is not covered (§1.8.6)");
     // the first row of the table: an `Option<f64>` is not an `f64`
     let added = ValueFile::refused("types~39ba351d", "", "let limit: Option<f64> = Some(3.3); let x = limit + 1.0; emit!(\"r\", x = x);");
     assert_eq!(added.first("E0180").message, "mismatched types: expected `f64`, found `Option<f64>`");
@@ -127,15 +120,17 @@ fn an_impl_gives_a_type_its_constants_and_functions() {
 
 #[test]
 fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
-    // types#7 (refused, L3): `mean`, generic over the length; types#16 (refused, L7): the method `switches_at`.
+    // types#7 (run): `mean`, generic over the length; types#16 (run): the method `switches_at`.
     // (types#6, the tuple `ordered`, and types#12, the structs `Reading` and `Volts`, run since composite-values
     // T48 to T51, the table `TAPS` with `smoothed` of types#7 since T55, and types#11, the enum `Shape` with
     // fields and no `Repr`, since composite-values finding 3: see `tuples_and_structs_run_where_a_top_reaches_them`,
     // `a_table_const_runs_where_a_top_reaches_it` and `an_enum_without_repr_runs_as_a_value`.)
     // When one of them runs this test fails and its row moves to `run`
-    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
+    let mean = Chapter::read().wrapped("reached.msl", "", "types#7", &Reached::top("emit!(\"r\", s = mean(TAPS));")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("3.333333e-1", Fields::real(mean.stream("r")[0], "s"), "mean(TAPS)");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
-    Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
+    let high = Chapter::read().wrapped("reached.msl", family, "types#16", &Reached::top("emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
+    ValueFile::flag(high.stream("r")[0], "s", 2.0 > 0.5 * 3.3);
 }
 
 #[test]
@@ -176,14 +171,10 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // chapter's status box, each on the smallest model (when one of them runs, this test fails and the box
     // loses it; tuples, arrays, structs, enums with fields and numbered variants run since composite-values
     // T48 to T51, `tuples_and_structs_run_where_a_top_reaches_them`)
-    let level = "#[derive(PartialEq, Repr)] enum Z { A, B }";
-    for (items, statements, named) in [
-        (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
-    ] {
-        let items = if statements.contains(".next()") { format!("{items}\nimpl Z {{ fn next(self) -> Z {{ match self {{ Z::A => Z::B, Z::B => Z::A }} }} }}") } else { items.to_string() };
-        let faulty = ValueFile::refused("types~5628120b", &items, statements);
-        assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
-    }
+    // the one form left on the box ran through a method outside the catalogue: it runs now, with the answer Rust gives
+    let level = "#[derive(PartialEq, Repr)] enum Z { A, B }\nimpl Z { fn next(self) -> Z { match self { Z::A => Z::B, Z::B => Z::A } } }";
+    let ran = ValueFile::written(level, "emit!(\"r\", y = Z::B.next() == Z::A);");
+    ValueFile::flag(&ran, "y", true);
 }
 
 #[test]
@@ -205,7 +196,7 @@ fn the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them() {
     let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
     let ran = reaching("let z = range_of(3);").run(overrides());
     assert!(ran.is_ok(), "`range_of` runs: an enum without `Repr` is a value and a range pattern an arm");
-    Refusal::expect(reaching("let z = mean([1.0, 2.0]);").run(overrides()), "types#17", "P0001", "generic function is not supported yet");
+    assert!(reaching("let z = mean([1.0, 2.0]);").run(overrides()).is_ok(), "`mean` runs: a generic function over the length of an array");
 }
 
 #[test]

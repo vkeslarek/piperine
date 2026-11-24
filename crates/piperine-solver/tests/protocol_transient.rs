@@ -1,6 +1,6 @@
 //! The transient protocol (feature `solver-abi-core`, SAC-14, SAC-16 AC 9;
 //! abi.md §5): on scripted stubs, a step with no landing is one attempt to the
-//! proposed time; a landing is solved on the value before its instant (exempt),
+//! proposed time; a landing is solved on the value before its instant (a landing),
 //! then the instant runs and what it changed is delivered with a restart (the
 //! user's order, superseding the boundary preview of AC 3); a rejected
 //! or shortened attempt restores both sides and the sink mark and advances
@@ -9,8 +9,7 @@
 //! param write); with no unknown no attempt is made; settle runs at time
 //! points and the stop time only; a resume off the grid steps on from the
 //! tick its discrete side ran at, and a stop inside that tick is an error; on a real discrete
-//! side, a relaxation step that never settles reaches the owner as one `Unsettled` observation
-//! (spec §8.2.3 step 4).
+//! side, a loop that never settles stops the run with `E0511` (spec §8.2.3 step 4).
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
@@ -32,7 +31,7 @@ use piperine_solver::abi::Port;
 use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 
 use piperine_solver::protocol::{
-    Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
+    Accepted, Advance, LandingCause, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
     Protocol, ProtocolOptions, Restart, SetOutcome, Sink,
 };
 use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
@@ -64,7 +63,7 @@ fn attempts(log: &Log) -> Vec<Call> {
 }
 
 fn boundary() -> Boundary {
-    Boundary { slot: 3, bytes: vec![1, 1] }
+    Boundary { slot: 3, bytes: vec![1] }
 }
 
 #[test]
@@ -77,9 +76,9 @@ fn no_landing_means_one_attempt_to_the_proposed_time() {
         calls(&log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. })),
         [
             Call::Advance(4),
-            Call::Attempt { to: 2.0, exempt: false },
+            Call::Attempt { to: 2.0, landing: false },
             Call::Advance(10),
-            Call::Attempt { to: 5.0, exempt: false },
+            Call::Attempt { to: 5.0, landing: false },
         ]
     );
     assert_eq!(p.now(), 5.0);
@@ -96,7 +95,7 @@ fn a_proposal_a_few_ulps_short_of_a_tick_is_that_tick() {
     assert_eq!(p.transient(stop).unwrap(), Ended::StopTime);
     assert_eq!(
         calls(&log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. })),
-        [Call::Advance(5_000_000_000), Call::Attempt { to: stop, exempt: false }],
+        [Call::Advance(5_000_000_000), Call::Attempt { to: stop, landing: false }],
         "one step to the tick, not a step a tick short and a sliver after it"
     );
 }
@@ -105,7 +104,7 @@ fn a_proposal_a_few_ulps_short_of_a_tick_is_that_tick() {
 fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
     let (log, mut d, mut a) = sides();
     // An R4 landing at 1 s whose instant changes a value the analog side reads.
-    d.advances.push_back(Advance::Landing { tick: 2, time_point: true });
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::AnalogReadChanged });
     d.instants.push_back(Outcome { boundary: vec![boundary()], ..Outcome::default() });
     a.accepts.push_back(Accepted { fired: vec![], samples: vec![0.5] });
     a.proposals.extend([3.0, 3.0]);
@@ -120,8 +119,8 @@ fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
         [
             Call::Advance(6),
             // Solved at 1 s on the value before the instant: nothing delivered yet;
-            // exempt, as a step that lands on a scheduled instant.
-            Call::Attempt { to: 1.0, exempt: true },
+            // a landing, as a step that lands on a scheduled instant.
+            Call::Attempt { to: 1.0, landing: true },
             Call::Accept,
             // The instant runs after the solve; its reactions read the solution at 1 s.
             Call::RunInstant { at: 2, samples: vec![0.5], limit: horizon(6, 2), mode },
@@ -129,7 +128,7 @@ fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
             // that solve, and the next step restarts from the jump.
             Call::Deliver(vec![boundary()], Restart::Integrator),
             Call::Advance(6),
-            Call::Attempt { to: 3.0, exempt: false },
+            Call::Attempt { to: 3.0, landing: false },
             Call::Accept,
             Call::RunInstant { at: 6, samples: vec![], limit: horizon(6, 6), mode },
         ]
@@ -156,13 +155,13 @@ fn a_rejected_attempt_restores_both_sides_and_replays() {
             Call::DiscreteMark(0),
             Call::AnalogMark(0),
             Call::Advance(4),
-            Call::Attempt { to: 2.0, exempt: false },
+            Call::Attempt { to: 2.0, landing: false },
             Call::DiscreteRestore(0),
             Call::AnalogRestore(0),
             Call::DiscreteMark(1),
             Call::AnalogMark(1),
             Call::Advance(2),
-            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 1.0, landing: false },
         ]
     );
     assert!(seen.borrow().is_empty(), "the undone instant reached the sink: {:?}", seen.borrow());
@@ -184,15 +183,15 @@ fn an_earlier_landing_restores_and_replays() {
         [
             Call::Propose(0.0, 3.0),
             Call::Advance(6),
-            Call::Attempt { to: 3.0, exempt: false },
+            Call::Attempt { to: 3.0, landing: false },
             Call::DiscreteRestore(0),
             Call::AnalogRestore(0),
             // No new proposal: the discrete side advances again to the landing.
             Call::Advance(3),
-            Call::Attempt { to: 1.5, exempt: false },
+            Call::Attempt { to: 1.5, landing: false },
             Call::Propose(1.5, 3.0),
             Call::Advance(6),
-            Call::Attempt { to: 3.0, exempt: false },
+            Call::Attempt { to: 3.0, landing: false },
         ]
     );
 }
@@ -252,7 +251,7 @@ fn a_host_param_write_asks_for_the_small_restart() {
                 Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(2, 2), mode: quiet },
                 Call::Deliver(vec![boundary()], restart),
                 // No zero-length step: the next attempt goes forward.
-                Call::Attempt { to: 2.0, exempt: false },
+                Call::Attempt { to: 2.0, landing: false },
                 Call::RunInstant { at: 4, samples: vec![], limit: horizon(4, 4), mode: step },
             ],
             "param write: {param}"
@@ -276,9 +275,9 @@ fn no_unknowns_means_no_attempt() {
     let (log, mut d, mut a) = sides();
     a.unknowns = false;
     d.advances.extend([
-        Advance::Landing { tick: 2, time_point: false },
-        Advance::Landing { tick: 4, time_point: false },
-        Advance::Landing { tick: 6, time_point: false },
+        Advance::Landing { tick: 2, cause: LandingCause::Irreversible },
+        Advance::Landing { tick: 4, cause: LandingCause::Irreversible },
+        Advance::Landing { tick: 6, cause: LandingCause::Irreversible },
     ]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     assert_eq!(p.transient(5.0).unwrap(), Ended::StopTime);
@@ -302,7 +301,7 @@ fn settle_runs_at_time_points_and_at_the_stop_time_only() {
     let (log, mut d, mut a) = sides();
     // An irreversible landing at 1 s (not a time point), an R4 landing at 2 s,
     // an ordinary accepted step at 3 s, the stop time at 4 s.
-    d.advances.extend([Advance::Landing { tick: 2, time_point: false }, Advance::Landing { tick: 4, time_point: true }]);
+    d.advances.extend([Advance::Landing { tick: 2, cause: LandingCause::Irreversible }, Advance::Landing { tick: 4, cause: LandingCause::AnalogReadChanged }]);
     a.proposals.extend([3.0, 3.0, 3.0]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(4.0).unwrap();
@@ -359,13 +358,13 @@ fn an_off_grid_step_lands_on_the_tick_grid() {
         attempts_and_instants(&log),
         [
             Call::Advance(1),
-            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 1.0, landing: false },
             run(1),
             Call::Advance(2),
-            Call::Attempt { to: 2.0, exempt: false },
+            Call::Attempt { to: 2.0, landing: false },
             run(2),
             Call::Advance(3),
-            Call::Attempt { to: 3.0, exempt: false },
+            Call::Attempt { to: 3.0, landing: false },
             run(3),
         ],
         "every step ends on a tick and the instant run is that tick's own"
@@ -379,7 +378,7 @@ fn an_off_grid_step_lands_on_the_tick_grid() {
     let mut p = Protocol::new(d, a, ProtocolOptions::new(1.0));
     p.transient(2.0).unwrap();
     let seq = attempts_and_instants(&log);
-    assert_eq!(&seq[..5], [Call::Advance(2), Call::Attempt { to: 2.0, exempt: false }, Call::Advance(1), Call::Attempt { to: 1.0, exempt: false }, run(1)]);
+    assert_eq!(&seq[..5], [Call::Advance(2), Call::Attempt { to: 2.0, landing: false }, Call::Advance(1), Call::Attempt { to: 1.0, landing: false }, run(1)]);
 }
 
 #[test]
@@ -421,13 +420,13 @@ fn a_crossing_within_half_a_tick_of_the_target_does_not_loop() {
     assert_eq!(
         calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept)),
         [
-            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 1.0, landing: false },
             // Shrunk by one tick, never the identical step again.
-            Call::Attempt { to: 0.5, exempt: false },
+            Call::Attempt { to: 0.5, landing: false },
             // The crossing lies past this step's end: taken at the end.
             Call::Accept,
             // A one-tick step whose crossing rounds to its end: taken at the end.
-            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 1.0, landing: false },
             Call::Accept,
         ]
     );
@@ -442,7 +441,7 @@ fn a_crossing_at_or_after_the_target_is_taken_at_the_end() {
     assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
     assert_eq!(
         calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept)),
-        [Call::Attempt { to: 1.0, exempt: false }, Call::Accept, Call::Attempt { to: 2.0, exempt: false }, Call::Accept]
+        [Call::Attempt { to: 1.0, landing: false }, Call::Accept, Call::Attempt { to: 2.0, landing: false }, Call::Accept]
     );
 }
 
@@ -487,10 +486,10 @@ fn a_resumed_transient_continues_from_its_time_without_an_operating_point() {
         [
             Call::Propose(2.0, 4.0),
             Call::Advance(6),
-            Call::Attempt { to: 3.0, exempt: false },
+            Call::Attempt { to: 3.0, landing: false },
             Call::Propose(3.0, 4.0),
             Call::Advance(8),
-            Call::Attempt { to: 4.0, exempt: false },
+            Call::Attempt { to: 4.0, landing: false },
         ]
     );
     assert_eq!(p.now(), 4.0);
@@ -510,7 +509,7 @@ fn a_resume_off_the_grid_steps_on_from_its_tick() {
     assert_eq!(p.transient(2.6).unwrap(), Ended::StopTime);
     assert_eq!(
         calls(&log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. })),
-        [Call::Advance(5), Call::Attempt { to: 2.5, exempt: false }]
+        [Call::Advance(5), Call::Attempt { to: 2.5, landing: false }]
     );
 
     // Resumed below its tick (an analog time 1.95, the instant at tick 4): a host write runs at tick 4.
@@ -556,7 +555,7 @@ fn the_proposal_sees_the_next_due_time() {
     assert_eq!(a.next_dues, [None, None], "nothing queued: no next time point");
 }
 
-/// The settle boundary of the commits an instant held: slot 3 will read `[1, 1]` (§15 S2).
+/// The settle boundary of the commits an instant held: slot 3 will read `[1]` (§15 S2).
 fn settle_outcome() -> Outcome {
     Outcome { settle_boundary: vec![boundary()], ..Outcome::default() }
 }
@@ -581,10 +580,10 @@ fn a_settle_commit_lands_at_the_next_time_point() {
     assert_eq!(
         settle_calls(&log),
         [
-            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 1.0, landing: false },
             Call::LandSettleCommits(2),
             at(2),
-            Call::Attempt { to: 2.0, exempt: true },
+            Call::Attempt { to: 2.0, landing: true },
             Call::LandSettleCommits(4),
             at(4),
             Call::DropSettleCommits,
@@ -594,9 +593,9 @@ fn a_settle_commit_lands_at_the_next_time_point() {
 }
 
 #[test]
-fn the_step_after_a_settle_commit_is_exempt_and_restarts() {
+fn the_step_after_a_settle_commit_is_a_landing_and_restarts() {
     // §15 S2, S3: the commit reaches the analog side with a restart; the step that arrives at the
-    // next time point is exempt from the truncation test, and the one after it is not
+    // next time point is a landing, and the one after it is not
     let (log, mut d, mut a) = sides();
     a.proposals.extend([1.0, 2.0, 3.0]);
     d.instants.push_back(settle_outcome());
@@ -605,9 +604,9 @@ fn the_step_after_a_settle_commit_is_exempt_and_restarts() {
     assert_eq!(
         attempts(&log),
         [
-            Call::Attempt { to: 1.0, exempt: false },
-            Call::Attempt { to: 2.0, exempt: true },
-            Call::Attempt { to: 3.0, exempt: false },
+            Call::Attempt { to: 1.0, landing: false },
+            Call::Attempt { to: 2.0, landing: true },
+            Call::Attempt { to: 3.0, landing: false },
         ]
     );
     assert_eq!(calls(&log, |c| matches!(c, Call::Deliver(..))), [Call::Deliver(vec![boundary()], Restart::Integrator)]);
@@ -620,7 +619,7 @@ fn an_event_time_before_the_next_time_point_reads_the_old_value() {
     let (log, mut d, mut a) = sides();
     a.proposals.extend([1.0, 2.0]);
     d.instants.push_back(settle_outcome());
-    d.advances.extend([Advance::Reached, Advance::Landing { tick: 3, time_point: false }]);
+    d.advances.extend([Advance::Reached, Advance::Landing { tick: 3, cause: LandingCause::Irreversible }]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(2.0).unwrap();
     let lands = calls(&log, |c| matches!(c, Call::LandSettleCommits(_)));
@@ -631,7 +630,7 @@ fn an_event_time_before_the_next_time_point_reads_the_old_value() {
 #[test]
 fn a_rejected_step_moves_the_settle_commit() {
     // §15 S5: the step to the next time point is rejected: both sides restore, nothing lands, and
-    // the retried step (still exempt) lands it at the time point it finally reaches
+    // the retried step (still a landing) lands it at the time point it finally reaches
     let (log, mut d, mut a) = sides();
     a.proposals.extend([1.0, 2.0, 2.0]);
     a.attempts.extend([Attempt::Converged, Attempt::Rejected, Attempt::Converged]);
@@ -641,9 +640,9 @@ fn a_rejected_step_moves_the_settle_commit() {
     assert_eq!(
         attempts(&log),
         [
-            Call::Attempt { to: 1.0, exempt: false },
-            Call::Attempt { to: 2.0, exempt: true },
-            Call::Attempt { to: 2.0, exempt: true },
+            Call::Attempt { to: 1.0, landing: false },
+            Call::Attempt { to: 2.0, landing: true },
+            Call::Attempt { to: 2.0, landing: true },
         ]
     );
     let order = settle_calls(&log);
@@ -666,8 +665,8 @@ fn a_settle_commit_at_the_stop_time_is_dropped() {
     assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(_))).count(), 1, "only the stop's own landing: {order:?}");
 }
 
-/// A function that never settles on its own net: it writes the inverse of the level it reads, and
-/// high while that level is unknown. Bound with `a` and `y` on one `RELAX` net it relaxes forever.
+/// A function that never settles on its own net: it writes the inverse of the level it reads.
+/// Bound with `a` and `y` on one `RELAX` net it relaxes forever.
 ///
 /// pins: a=0 (PORT BIT); y=1 (PORT BIT, RELAX).  fn 0 "flip": reads [a] writes [y]
 struct Flipper;
@@ -699,9 +698,8 @@ impl Device for Flipper {
         Ok((Flipper, Arc::clone(FLIPPER_SHAPE.get_or_init(Flipper::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let a = cx.bytes(0);
-        let level = if a[1] != 0 { a[0] == 0 } else { true };
-        cx.out_bytes(0).copy_from_slice(&[level as u8, 1]);
+        let level = cx.bytes(0)[0] == 0;
+        cx.out_bytes(0).copy_from_slice(&[level as u8]);
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
@@ -710,9 +708,10 @@ impl Device for Flipper {
 }
 
 #[test]
-fn an_unsettled_loop_reaches_the_owner_once_per_step() {
-    // spec §8.2.3 step 4, abi.md §9 D1: the discrete side's one `Unsettled` observation of the
-    // step is one observation at the owner, naming the loop's net, not one per net and not a record.
+fn an_unsettled_loop_is_e0511_naming_its_drives() {
+    // abi.md §9 D1: a loop that still moves after the bounded passes stops the run with `E0511`,
+    // naming the loop's drives; the bytes of a layout hold only values, so there is nothing to
+    // zero
     let mut builder = CircuitBuilder::new("unsettled");
     builder.device(
         FLIPPER.get_or_init(|| module::<Flipper>("Flipper")),
@@ -720,19 +719,12 @@ fn an_unsettled_loop_reaches_the_owner_once_per_step() {
         &[],
         &[Port::Net("x".to_string()), Port::Net("x".to_string())],
     );
-    let seen = Rc::new(RefCell::new(Vec::new()));
     let mut solver = Solver::new(builder.build().expect("build"))
         .with_tran_opts(TransientAnalysisOptions::new(1.0e-7, 1.0e-8))
-        .with_sink(Box::new(Collect(Rc::clone(&seen))))
+        .with_sink(Box::new(Collect(Rc::new(RefCell::new(Vec::new())))))
         .build();
-    solver.tran().expect("transient").solve().expect("an unsettled loop is not an error");
-    let seen = seen.borrow();
-    let unsettled: Vec<&Observation> =
-        seen.iter().filter(|o| matches!(o.kind, ObservationKind::Unsettled { .. })).collect();
-    assert_eq!(unsettled.len(), 1, "one observation for the one unsettled step: {seen:?}");
-    assert_eq!(unsettled[0].kind, ObservationKind::Unsettled { nets: vec!["x".to_string()] }, "it names the loop's net");
-    let known_level = seen.iter().any(|o| o.path == "x" && matches!(&o.kind, ObservationKind::Change { bytes } if bytes[1] != 0));
-    assert!(!known_level, "the moving level was made unknown: the net never shows a known level");
+    let error = solver.tran().expect("transient").solve().expect_err("a loop that does not settle fails the run");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle; its drives: x"), "{error}");
 }
 
 /// SAI-15: the target's own device passes the partials verifier (the guard of `abi_devices.rs`).

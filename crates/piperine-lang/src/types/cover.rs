@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use crate::pom::{DeclId, DeclKind, Design};
 
 use super::aggregate::FieldType;
-use super::Ty;
+use super::{Length, Nominal, Ty};
 
 /// What one alternative of a pattern covers of its scrutinee.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -95,15 +95,15 @@ impl<'d> Coverage<'d> {
                     Self::prefixed(format!("Some({})", w[0]), rest)
                 })
             }
-            Ty::Enum(decl) => self.missing_variant(*decl, rest, rows),
-            Ty::Struct(decl) => {
+            Ty::Enum(Nominal { decl, .. }) => self.missing_variant(*decl, rest, rows),
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields = self.layouts.get(decl).cloned().unwrap_or_default();
                 let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
                 let name = self.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.missing_product(&types, rest, rows, |parts| Self::spell_fields(&name, &fields, parts))
             }
             Ty::Tuple(items) => self.missing_product(items, rest, rows, |parts| format!("({})", parts.join(", "))),
-            Ty::Array(element, length) if *length <= 256 => {
+            Ty::Array(element, Length::Fixed(length)) if *length <= 256 => {
                 let items = vec![(**element).clone(); *length as usize];
                 self.missing_product(&items, rest, rows, |parts| format!("[{}]", parts.join(", ")))
             }

@@ -6,11 +6,13 @@
 //! crate of the workspace but `piperine-abi`.
 
 pub mod advance;
+pub mod array;
 pub mod dag;
 pub mod engine;
 pub mod error;
 pub mod instant;
 pub(crate) mod journal;
+pub mod landing;
 pub mod limits;
 pub mod net;
 pub mod observe;

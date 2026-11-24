@@ -18,7 +18,7 @@ impl ElabSource {
 
     /// A design whose `Top` has the reaction `body` on a clock `clk`.
     pub fn reacting(items: &str, body: &str) -> String {
-        format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8>) {{ }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}")
+        format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8> = 0) {{ }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}")
     }
 
     /// A design of `Top` whose `analog` block contributes `call` to its node.

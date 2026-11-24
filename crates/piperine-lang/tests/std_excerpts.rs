@@ -104,15 +104,17 @@ fn fence_failures(markdown: &str, files: &[(String, String)]) -> Vec<FenceFailur
         let Some(section) = lines[..block.line - 1].iter().rev().find_map(|l| section_of_heading(l)) else {
             continue;
         };
-        let Some((_, file)) = files.iter().find(|(s, _)| *s == section) else {
+        // a section may be written in several files (`values.msl` and `logic.msl` hold §22.1): the fence is in one of them
+        let candidates: Vec<Vec<String>> = files.iter().filter(|(s, _)| *s == section).map(|(_, file)| normalized_lines(file)).collect();
+        if candidates.is_empty() {
             continue;
-        };
+        }
         let fence = trimmed_fence(&block.text);
-        let file_lines = normalized_lines(file);
-        // The longest prefix of the fence that occurs as consecutive lines of the file.
-        let matched = (0..=fence.len())
-            .rev()
-            .find(|&k| k == 0 || file_lines.windows(k).any(|w| w == &fence[..k]))
+        // The longest prefix of the fence that occurs as consecutive lines of one of the files.
+        let matched = candidates
+            .iter()
+            .map(|file_lines| (0..=fence.len()).rev().find(|&k| k == 0 || file_lines.windows(k).any(|w| w == &fence[..k])).unwrap_or(0))
+            .max()
             .unwrap_or(0);
         if matched < fence.len() {
             failures.push(FenceFailure { file: block.file.clone(), spec_line: block.line, first_unmatched: fence[matched].clone() });
@@ -220,77 +222,44 @@ fn live_sources(part_vii: &str) -> Vec<(String, String)> {
 }
 
 /// The first unmatched line of each fence of Part VII that is ahead of `std`: the specification
-/// states the explicit model (explicit-unknowns, MD-78) and the `std` files are brought to it by
-/// tasks T23 (the binary part) and T44 (`Logic`). A fence leaves this list in the task that makes
-/// its text a text of its file; `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
-const AHEAD_OF_STD: [&str; 24] = [
-    "/// Four-state logic on N levels: 0, 1, X (not determined) and Z (not driven).",
-    "impl Logic {",
-    "impl<const N: usize> BitAnd for Logic<N> {",
-    "/// The same levels under another type of the same width, or `None` when `B` rejects them.",
-    "/// Equal level by level: on a `Logic`, the four states are compared literally.",
-    "    /// A change that ends at true: false to true.",
-    "    now() - t // a plain real, so analog may read it (§3.3.6)",
-    "    t // a plain real, so analog may read it (§3.3.6)",
-    "    signal base: Bit<Option<f64>>; // where the integral was last seated; None before the first wrap",
-    "    match mode {",
-    "    signal xd: Bit<f64> = 0.0; // x after the delay",
-    "    signal xs: [Bit<f64>; N] = [0.0; N]; // xs[k] = x[n−1−k]",
-    "/// How hard a drive holds its level. Verilog's drive strengths (IEEE 1364), without charge storage.",
+/// states `Logic<N>`, `Driven` and the net modules over `Resolve<Driven>` (explicit-unknowns, MD-78) before
+/// the files can hold them, because `Logic<N>` is a generic struct with operator traits (T44, T45, phase B) and
+/// `Resolve` is a capability of a nature (`resolved-nets`, after `generics`). The binary part of Part VII is `std`'s
+/// text since T23. A fence leaves this list in the task that makes its text a text of its file;
+/// `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
+const AHEAD_OF_STD: [&str; 8] = [
+    "/// What a module drives into a net that resolves by strength: a level and how hard it is held.",
     "impl Driven {",
     "pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {",
     "pub module Keeper<W: Nature + Resolve<Driven>>(w: W) {",
     "pub module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {",
     "pub module Tgate<W: Nature + Resolve<Driven>>(a: W, y: W, in s: Bit, in sn: Bit) {",
-    "    let ramp = transition(if d { 1.0 } else { 0.0 }, 0.0, tr, tr);",
     "pub module Bidir<W: Nature + Resolve<Driven>>(d: W, a: Electrical, vdd: Electrical) {",
-    "    on d.changed() && clk {",
-    "pub module inertial<T: Repr + Default>(in x: Bit<T>, tpd: f64) -> T {",
     "pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {",
-    "/// A condition that must hold: a pass or a failure.",
 ];
 
-/// The units of `std` (file, line, label) that have no fence yet, because the fence that listed
-/// them was rewritten. They leave this list in T23 and T44, with the `std` text they name.
-const BEHIND_SPEC: [(&str, usize, &str); 38] = [
-    ("analog.msl", 195, "Digital block"),
-    ("analog.msl", 224, "Analog block"),
-    ("analog.msl", 268, "Digital block"),
-    ("analog.msl", 295, "Digital block"),
-    ("analog.msl", 321, "Analog block"),
-    ("monitor.msl", 52, "Digital block"),
-    ("nets.msl", 100, "Digital block"),
-    ("analog.msl", 161, "module last_crossing"),
-    ("analog.msl", 186, "module idtmod"),
-    ("analog.msl", 250, "module transition"),
-    ("analog.msl", 284, "module zi_nd"),
-    ("convert.msl", 3, "module D2A"),
+/// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or
+/// removed, which stay while something still reads them: the library
+/// nets and the modules over them (`Wire`, `Tri`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
+/// `resolved-nets`), the `Drive` struct and its `impl`s. Nothing in these
+/// units reads a known flag. The list is empty when they are gone.
+const BEHIND_SPEC: [(&str, usize, &str); 16] = [
     ("convert.msl", 36, "module Bidir"),
-    ("io.msl", 22, "fn require"),
-    ("monitor.msl", 69, "module inertial"),
     ("monitor.msl", 87, "module TribufDelayed"),
-    ("nets.msl", 12, "struct Logic"),
-    ("nets.msl", 18, "impl"),
-    ("nets.msl", 34, "impl"),
-    ("nets.msl", 50, "nature Wire"),
-    ("nets.msl", 55, "fn tri"),
-    ("nets.msl", 65, "nature Tri"),
-    ("nets.msl", 74, "nature SumNet"),
-    ("nets.msl", 79, "module Tribuf"),
-    ("nets.msl", 87, "module Pullup"),
-    ("nets.msl", 91, "module Pulldown"),
-    ("nets.msl", 95, "module Keeper"),
-    ("nets.msl", 106, "module Tran"),
-    ("nets.msl", 119, "module Tgate"),
-    ("values.msl", 4, "trait Known"),
-    ("values.msl", 20, "impl"),
-    ("values.msl", 22, "fn merge"),
-    ("values.msl", 32, "fn cast"),
-    ("values.msl", 37, "fn same"),
-    ("values.msl", 41, "fn matches_bits"),
-    ("values.msl", 43, "fn logic"),
-    ("values.msl", 45, "impl"),
-    ("values.msl", 77, "module since"),
+    ("nets.msl", 13, "struct Drive"),
+    ("nets.msl", 19, "impl"),
+    ("nets.msl", 35, "impl"),
+    ("nets.msl", 53, "nature Wire"),
+    ("nets.msl", 58, "fn tri"),
+    ("nets.msl", 68, "nature Tri"),
+    ("nets.msl", 77, "nature SumNet"),
+    ("nets.msl", 82, "module Tribuf"),
+    ("nets.msl", 90, "module Pullup"),
+    ("nets.msl", 94, "module Pulldown"),
+    ("nets.msl", 98, "module Keeper"),
+    ("nets.msl", 109, "module Tran"),
+    ("nets.msl", 122, "module Tgate"),
+    ("nets.msl", 103, "Digital block"),
 ];
 
 fn part_vii() -> String {

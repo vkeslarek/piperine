@@ -1,0 +1,24 @@
+/// One error of each item kind; nothing reaches any of them.
+fn broken(x: f64) -> bool { x + 1.0 }
+
+module Wrong() {
+    limit: f64 = true;
+}
+
+module Behaving(a: Electrical) { }
+
+analog for Behaving {
+    let flag: bool = 1.0;
+}
+
+const LIMIT: bool = 1.0;
+
+struct Holder { a: f64 }
+
+impl Holder {
+    fn make() -> bool { 1.0 }
+}
+
+module Top() {
+    signal a: Electrical;
+}

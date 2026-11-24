@@ -13,12 +13,13 @@ use std::collections::HashMap;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::{
-    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, field_flag, global, kind, leaf, pin_flag, role, watch,
+    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, global, kind, leaf, pin_flag, role, watch,
 };
 use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, Assembly};
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier};
 use piperine_analog_solver::tolerances::Tolerances;
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::engine::Digital;
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::plan::{Binding, DigitalPlan, InstancePlan};
@@ -36,6 +37,18 @@ pub enum Port {
     Net(NetName),
     /// Nothing: the pin is private (an `OPTIONAL` pin reads as zero bytes).
     Open,
+    /// A discrete pin on `length` consecutive elements of the array net `net` from `first`: a scalar pin takes one
+    /// element (`length` 1), an array pin of `length` elements takes that run (composite-values CV-23).
+    Window { net: NetName, first: u64, length: u64 },
+}
+
+/// An array net the builder declared: `count` elements, each starting at `init` (one element's bytes, every
+/// element's bytes, or none for all zero).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ArrayDecl {
+    pub name: String,
+    pub count: u64,
+    pub init: Vec<u8>,
 }
 
 /// The name of a design-wide discrete or event net.
@@ -75,6 +88,10 @@ pub enum Site {
     Ground,
     /// A discrete or event pin on this net.
     Net(NetId),
+    /// A scalar discrete pin on one element of an array net.
+    ArrayElement { net: NetId, element: u64 },
+    /// An array pin on a run of elements of an array net.
+    ArrayWindow { net: NetId, first: u64, length: u64 },
     /// Nothing (an unbound `OPTIONAL` pin).
     Absent,
 }
@@ -151,6 +168,8 @@ pub struct Bound {
     pub holds: Vec<Hold>,
     /// The smallest non-zero `abstol` of the pins on each node.
     pub vntol: HashMap<NodeIdentifier, f64>,
+    /// The flow `abstol` of the pins of each branch unknown that has one.
+    pub branch_abstol: HashMap<BranchIdentifier, f64>,
     /// The analysis-kind globals some pin reads (`DC`, `TRAN`, `AC`, `NOISE`):
     /// the constant, its net and the bytes that mean "this analysis runs".
     pub analyses: Vec<(u32, NetId, Vec<u8>)>,
@@ -171,10 +190,12 @@ pub struct Bound {
 #[derive(Clone, Debug)]
 pub(crate) struct Recipe {
     pub specs: Vec<DeviceSpec>,
+    pub arrays: Vec<ArrayDecl>,
     pub shared: Vec<(String, ParamValue)>,
     pub session: Vec<(String, ParamValue)>,
     pub resolution: f64,
     pub microsteps: usize,
+    pub time_point_rule: TimePointRule,
     pub temperature: f64,
 }
 
@@ -241,23 +262,30 @@ impl Bound {
     }
 
     /// Tightens `tol` with the per-node tolerances of the pins: a node keeps
-    /// the smaller of its present override and the pins' (design AC 4).
+    /// the smaller of its present override and the pins' (design AC 4). A branch
+    /// unknown takes the flow `abstol` of its pins (§17.1 rules 1 and 2).
     pub fn tighten(&self, tol: &mut Tolerances) {
-        if self.vntol.is_empty() {
-            return;
+        if !self.vntol.is_empty() {
+            let mut map = (*tol.node_vntol_overrides).clone();
+            for (id, v) in &self.vntol {
+                let entry = map.entry(id.clone()).or_insert(*v);
+                *entry = entry.min(*v);
+            }
+            tol.node_vntol_overrides = std::rc::Rc::new(map);
         }
-        let mut map = (*tol.node_vntol_overrides).clone();
-        for (id, v) in &self.vntol {
-            let entry = map.entry(id.clone()).or_insert(*v);
-            *entry = entry.min(*v);
+        if !self.branch_abstol.is_empty() {
+            let mut map = (*tol.branch_abstol_overrides).clone();
+            map.extend(self.branch_abstol.iter().map(|(id, v)| (id.clone(), *v)));
+            tol.branch_abstol_overrides = std::rc::Rc::new(map);
         }
-        tol.node_vntol_overrides = std::rc::Rc::new(map);
     }
 }
 
 /// What the builder hands to [`bind`].
 pub(crate) struct BindInput<'a> {
     pub specs: Vec<DeviceSpec>,
+    /// The array nets: name, element count and initial value.
+    pub arrays: Vec<ArrayDecl>,
     /// Shared param nets: name and seed.
     pub shared: Vec<(String, ParamValue)>,
     /// Session parameters for `NAMED` globals.
@@ -265,6 +293,7 @@ pub(crate) struct BindInput<'a> {
     pub netlist: &'a mut Netlist,
     pub resolution: f64,
     pub microsteps: usize,
+    pub time_point_rule: TimePointRule,
     pub temperature: f64,
 }
 
@@ -272,7 +301,7 @@ fn bind_error(path: &str, detail: impl std::fmt::Display) -> Error {
     Error::simple(SolverDomain::Device, format!("instance `{path}`: {detail}"))
 }
 
-/// The bytes of `value` in `layout` (P3: a field with a known byte gets it set).
+/// The bytes of `value` in `layout` (P3: the bytes of its type and nothing else).
 pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result<Vec<u8>, String> {
     if let ParamValue::Bytes(b) = value {
         return if b.len() == layout.size as usize {
@@ -314,8 +343,11 @@ pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result
         }
         _ => return Err("the value does not fit the first field of the layout".into()),
     }
-    if field.flags & field_flag::HAS_KNOWN != 0 {
-        *bytes.get_mut(field.known as usize).ok_or("the known byte lies outside the layout")? = 1;
+    // a layout whose second field is a BOOL `known` flag (a session parameter's) says the value was given
+    if let Some(flag) = layout.fields.iter().nth(1).filter(|f| f.name.as_str() == "known" && f.leaf == leaf::BOOL) {
+        if let Some(byte) = bytes.get_mut(flag.offset as usize) {
+            *byte = 1;
+        }
     }
     Ok(bytes)
 }
@@ -338,10 +370,25 @@ impl Nets {
         i
     }
 
+    /// The array net `decl`, created with the element shape of `pin` on first use.
+    fn get_or_add_array(&mut self, key: &str, decl: &ArrayDecl, pin: &Pin) -> usize {
+        if let Some(i) = self.named.get(key) {
+            return *i;
+        }
+        let spec = NetSpec { init: decl.init.clone(), ..NetSpec::array(&decl.name, pin.layout.size, pin.layout.align, decl.count) };
+        self.specs.push(spec);
+        let i = self.specs.len() - 1;
+        self.named.insert(key.to_string(), i);
+        i
+    }
+
     /// A net of its own with the shape of `pin`.
     fn add(&mut self, name: &str, pin: &Pin) -> usize {
         let spec = if pin.kind == kind::EVENT {
             NetSpec::event(name)
+        } else if pin.count > 0 {
+            // an array pin no one shares: its own array net of the same element count (P4)
+            NetSpec::array(name, pin.layout.size, pin.layout.align, pin.count)
         } else {
             NetSpec::discrete(name, pin.layout.size, pin.layout.align)
         };
@@ -356,7 +403,9 @@ impl Nets {
         spec.record |= pin.flags & pin_flag::RECORD != 0;
         spec.relax |= pin.flags & pin_flag::RELAX != 0;
         spec.structural |= pin.flags & pin_flag::STRUCTURAL != 0;
-        if spec.init.is_empty() && pin.flags & pin_flag::HAS_INIT != 0 && pin.role != role::PARAM {
+        // a scalar pin on one element of an array net says nothing of the other elements' initial value
+        let element_pin = spec.count > 0 && pin.count == 0;
+        if spec.init.is_empty() && pin.flags & pin_flag::HAS_INIT != 0 && pin.role != role::PARAM && !element_pin {
             spec.init = pin.init.as_slice().to_vec();
         }
     }
@@ -411,7 +460,7 @@ fn create(module: &'static Module, path: &str, values: &[(u32, Vec<u8>)]) -> Res
 
 /// Binds `input` to its two plans.
 pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
-    let BindInput { specs, shared, session, netlist, resolution, microsteps, temperature } = input;
+    let BindInput { specs, arrays, shared, session, netlist, resolution, microsteps, time_point_rule, temperature } = input;
     let mut nets = Nets::default();
     let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
     for (name, seed) in shared {
@@ -425,6 +474,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
     let mut binds: Vec<Bind> = Vec::with_capacity(specs.len());
     let mut holds = Vec::new();
     let mut vntol: HashMap<NodeIdentifier, f64> = HashMap::new();
+    let mut branch_abstol: HashMap<BranchIdentifier, f64> = HashMap::new();
     let mut params = HashMap::new();
     let mut analyses: Vec<(u32, NetId, Vec<u8>)> = Vec::new();
 
@@ -491,7 +541,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                             Port::Node(r) if r.variable().is_ground() => Site::Ground,
                             Port::Node(r) => Site::Unknown(r),
                             Port::Open => Site::Unknown(netlist.connect_branch(BranchIdentifier::new(path, pname))),
-                            Port::Net(n) => {
+                            Port::Net(n) | Port::Window { net: n, .. } => {
                                 return Err(bind_error(path, format!("continuous pin `{pname}` bound to net `{n}`")));
                             }
                         },
@@ -507,20 +557,54 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                                 value: v.ok_or_else(|| bind_error(path, format!("`{pname}`: init is not an F64")))?,
                             });
                         }
-                        if pin.abstol[0] > 0.0
-                            && let AnalogVariable::Node(id) = r.variable().as_ref()
-                        {
-                            let e = vntol.entry(id.clone()).or_insert(pin.abstol[0]);
-                            *e = e.min(pin.abstol[0]);
+                        match r.variable().as_ref() {
+                            AnalogVariable::Node(id) if pin.abstol[0] > 0.0 => {
+                                let e = vntol.entry(id.clone()).or_insert(pin.abstol[0]);
+                                *e = e.min(pin.abstol[0]);
+                            }
+                            AnalogVariable::Branch(id) if pin.abstol[1] > 0.0 => {
+                                let e = branch_abstol.entry(id.clone()).or_insert(pin.abstol[1]);
+                                *e = e.min(pin.abstol[1]);
+                            }
+                            _ => {}
                         }
                     }
                     (site, None)
                 }
                 kind::DISCRETE | kind::EVENT => {
                     let private = format!("{path}.{pname}");
+                    let mut window: Option<(u64, u64)> = None;
                     let net = match pin.role {
                         role::PORT => match take(&mut ports, &mut given) {
-                            Port::Net(n) => Some(nets.get_or_add(&format!("net:{n}"), &n, pin)),
+                            Port::Net(n) => match arrays.iter().find(|decl| decl.name == n) {
+                                Some(decl) if pin.count == decl.count => Some(nets.get_or_add_array(&format!("net:{n}"), decl, pin)),
+                                Some(decl) => {
+                                    return Err(bind_error(
+                                        path,
+                                        format!("pin `{pname}` of {} elements bound to array net `{n}` of {} elements", pin.count, decl.count),
+                                    ));
+                                }
+                                None => Some(nets.get_or_add(&format!("net:{n}"), &n, pin)),
+                            },
+                            Port::Window { net: n, first, length } => {
+                                let Some(decl) = arrays.iter().find(|decl| decl.name == n) else {
+                                    return Err(bind_error(path, format!("pin `{pname}` bound to a window of `{n}`, which is no array net")));
+                                };
+                                if first.checked_add(length).is_none_or(|end| end > decl.count) || length == 0 {
+                                    return Err(bind_error(
+                                        path,
+                                        format!("pin `{pname}` bound to elements {first}..+{length} of array net `{n}` of {} elements", decl.count),
+                                    ));
+                                }
+                                if length != pin.count.max(1) {
+                                    return Err(bind_error(
+                                        path,
+                                        format!("pin `{pname}` of {} elements bound to a window of {length} elements of `{n}`", pin.count.max(1)),
+                                    ));
+                                }
+                                window = Some((first, length));
+                                Some(nets.get_or_add_array(&format!("net:{n}"), decl, pin))
+                            }
                             Port::Open if optional => None,
                             Port::Open => Some(nets.add(&private, pin)),
                             Port::Node(_) => {
@@ -595,7 +679,13 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                     if let Some(n) = net {
                         nets.merge(n, pin);
                     }
-                    (net.map_or(Site::Absent, |n| Site::Net(NetId(n as u32))), net)
+                    let site = match (net, window) {
+                        (None, _) => Site::Absent,
+                        (Some(n), None) => Site::Net(NetId(n as u32)),
+                        (Some(n), Some((element, 1))) if pin.count == 0 => Site::ArrayElement { net: NetId(n as u32), element },
+                        (Some(n), Some((first, length))) => Site::ArrayWindow { net: NetId(n as u32), first, length },
+                    };
+                    (site, net)
                 }
                 _ => return Err(bind_error(path, format!("pin `{pname}` has an unknown kind"))),
             };
@@ -672,6 +762,20 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                         abinds.push(AnalogBinding::Absent);
                     }
                 }
+                Site::ArrayElement { net, element } => {
+                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
+                        return Err(bind_error(&b.path, format!("an analog function reads pin `{}`, on element {element} of an array net", pin.name.as_str())));
+                    }
+                    abinds.push(AnalogBinding::Absent);
+                    dbinds.push(Binding::ArrayElement { net: *net, element: *element });
+                }
+                Site::ArrayWindow { net, first, length } => {
+                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
+                        return Err(bind_error(&b.path, format!("an analog function reads pin `{}`, on a window of an array net", pin.name.as_str())));
+                    }
+                    abinds.push(AnalogBinding::Absent);
+                    dbinds.push(Binding::ArrayWindow { net: *net, first: *first, length: *length });
+                }
                 Site::Absent => {
                     abinds.push(AnalogBinding::Absent);
                     dbinds.push(Binding::Absent);
@@ -685,7 +789,9 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         digital_instances.push(InstancePlan { path: b.path, handle: b.digital, pins: dbinds });
     }
     for spec in &nets.specs {
-        if !spec.init.is_empty() && spec.init.len() != spec.size as usize {
+        let element = spec.size as usize;
+        let allowed = spec.init.len() == element || (spec.count > 0 && spec.init.len() as u64 == element as u64 * spec.count);
+        if !spec.init.is_empty() && !allowed {
             return Err(Error::simple(
                 SolverDomain::Device,
                 format!("net `{}` holds {} bytes and its seed {}", spec.name, spec.size, spec.init.len()),
@@ -710,6 +816,6 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
             analog.set_discrete(slot, &init);
         }
     }
-    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() });
-    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
+    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() }, time_point_rule);
+    Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
 }

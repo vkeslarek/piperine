@@ -695,7 +695,7 @@ impl Names<'_, '_> {
     }
 
     fn expr(&mut self, id: ExprId) {
-        crate::stack::deep(|| self.expr_inner(id))
+        crate::stack::Stack::deep(|| self.expr_inner(id))
     }
 
     fn expr_inner(&mut self, id: ExprId) {

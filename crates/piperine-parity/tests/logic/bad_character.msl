@@ -1,0 +1,3 @@
+//! A pattern holds only `0`, `1`, `x` and `z` (§22.1.4 rule 2): `q` is no level, so the pattern is `E0702`.
+
+module Bench() { signal a: Bit<Logic<4>> = logic("10q1"); }

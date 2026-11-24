@@ -1,0 +1,20 @@
+//! A param of type `Option<u8>` no instance binds (EU-06 AC 1): refused `P0001` until `params-and-io` builds
+//! the param pins. It lives in a file of its own because the whole-model check (S3) types every item of a
+//! file, so one refused item would stop every bench of `initial.msl`.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// A module with an `Option` param no instance binds (`GAPS.md` L28: not elaborated yet).
+module Param(in clk: Bit) { limit: Option<u8>; }
+digital for Param { on clk.rise() { emit!("param", given = limit.is_some()); } }
+
+/// The module placed with no value for `limit`.
+module ParamBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Param(clk);
+}

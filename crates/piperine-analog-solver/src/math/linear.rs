@@ -22,7 +22,12 @@ pub enum Stamp<A: AsIndex, E: Scalar> {
 
 pub trait LinearSystem<E: Scalar> {
     fn new(size: usize) -> Self;
-    fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>);
+    /// Adds every stamp of `stamps`, which the caller keeps (and can refill) afterwards.
+    fn apply_stamps_from<A: AsIndex>(&mut self, stamps: &[Stamp<A, E>]);
+    /// Adds every stamp of `stamps`.
+    fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>) {
+        self.apply_stamps_from(&stamps);
+    }
     /// Clear stamps + RHS in-place for reuse across Newton iterations.
     /// Call instead of `new()` to avoid per-iteration heap allocation.
     fn reset(&mut self);

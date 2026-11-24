@@ -4,14 +4,15 @@
 
 use crate::msl::lexer;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
-use crate::stack;
+use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
+use crate::stack::Stack;
 
 use super::check::{Checker, Context};
 use super::derives::DerivedTrait;
 use super::flow::Assigned;
+use super::operators::OperatorTrait;
 use super::unsupported::Unsupported;
-use super::Ty;
+use super::{Nominal, Ty};
 
 impl Checker<'_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
@@ -26,13 +27,17 @@ impl Checker<'_> {
             self.option_argument(expr, expected, inner);
             return;
         }
+        if matches!(expected, Ty::Carrier { .. }) {
+            self.handle_argument(expr, expected);
+            return;
+        }
         self.check(expr, expected);
     }
 
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
     /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
-        stack::deep(|| {
+        Stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
             if *expected == Ty::Event {
@@ -74,9 +79,6 @@ impl Checker<'_> {
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Name { params }` where a module type is expected: a template value (PI-04).
                 ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
-                // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
-                // computes with known reals (§3.3.5): there it is refused by name.
-                ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && self.repr_ok(expected) && self.context != Context::Analog => Some(expected.clone()),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -123,14 +125,15 @@ impl Checker<'_> {
                     self.check_as(*operand, expected, code);
                     Some(expected.clone())
                 }
-                ExprKind::Call { .. } => {
+                // a call, a struct expression and a constructor name may take the arguments of a generic type from the type expected
+                ExprKind::Call { .. } | ExprKind::Struct { .. } | ExprKind::Path(_) => {
                     self.call_expected = Some((expr, expected.clone()));
                     self.infer(expr)
                 }
                 _ => self.infer(expr),
             };
             if let Some(found) = found
-                && found != *expected
+                && !self.compatible(expr, &found, expected)
                 && found != Ty::Never
             {
                 if self.event_reads.contains(&expr) {
@@ -162,7 +165,7 @@ impl Checker<'_> {
 
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
-        stack::deep(|| {
+        Stack::deep(|| {
             let in_event_position = self.event_slot == Some(expr);
             let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
@@ -209,6 +212,8 @@ impl Checker<'_> {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
                     Some(Ty::Event) => self.negated_event(expr, *operand),
+                    // a struct or an enum takes `!` from the `impl` of `Not` (Appendix H.10)
+                    Some(t) if Self::takes_operator_traits(&t) => self.operator_call(expr, OperatorTrait::Not, *operand, &t, None),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::Bool, &other);
@@ -281,11 +286,19 @@ impl Checker<'_> {
             BinOp::And | BinOp::Or => self.logical(whole, op == BinOp::And, lhs, rhs),
             BinOp::Eq | BinOp::Ne => {
                 let (first, second) = self.literal_last(lhs, rhs);
-                match self.infer(first) {
-                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
+                let first_ty = self.infer(first);
+                // a struct or an enum with an `impl` of `PartialEq` takes `==` from it, whatever its `Out` (Appendix H.10)
+                if let (Some(ty), Some(operator), true) = (&first_ty, OperatorTrait::of_binary(op), first == lhs)
+                    && Self::takes_operator_traits(ty)
+                    && self.has_operator_impl(operator, ty)
+                {
+                    return self.operator_call(whole, operator, lhs, ty, Some(rhs));
+                }
+                match first_ty {
+                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Str)) => self.check(second, &t),
                     // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
                     // when it implements `PartialEq`.
-                    Some(t) if t.is_composite() => {
+                    Some(t) if t.is_composite() || matches!(t, Ty::Param(_)) => {
                         self.check(second, &t);
                         let span = self.design.expr_node(first).span;
                         self.require_trait(file, span, &t, DerivedTrait::PartialEq);
@@ -302,7 +315,16 @@ impl Checker<'_> {
             }
             BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr => {
                 let bitwise = op != BinOp::Rem;
-                match self.operands(lhs, rhs, false, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
+                let (first, _) = self.literal_last(lhs, rhs);
+                let first_ty = self.infer(first);
+                // a struct or an enum takes the operator from the `impl` of its trait; a built-in type does when the
+                // project writes an `impl` of the trait for it and the right operand is no bare literal (Appendix H.10)
+                if let (Some(ty), Some(operator), true) = (&first_ty, OperatorTrait::of_binary(op), first == lhs)
+                    && (Self::takes_operator_traits(ty) || (self.has_operator_impl(operator, ty) && self.integer_literal_text(rhs).is_none() && self.infer(rhs).is_some_and(|found| Self::takes_operator_traits(&found))))
+                {
+                    return self.operator_call(whole, operator, lhs, ty, Some(rhs));
+                }
+                match self.operands_of(first_ty, lhs, rhs, false, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
                     Some(t) => Some(t),
                     None => {
                         self.unsupported(file, span, Unsupported::binary(op));
@@ -315,6 +337,7 @@ impl Checker<'_> {
                     self.shift_amount(rhs);
                     Some(t)
                 }
+                Some(t) if Self::takes_operator_traits(&t) => OperatorTrait::of_binary(op).and_then(|operator| self.operator_call(whole, operator, lhs, &t, Some(rhs))),
                 _ => {
                     self.unsupported(file, span, Unsupported::binary(op));
                     None
@@ -330,13 +353,20 @@ impl Checker<'_> {
     /// `>`, `>=`) also takes an enum that derives `PartialOrd` (§2 rule 5), compared in
     /// declaration order; the result is then that enum.
     fn operands(&mut self, lhs: ExprId, rhs: ExprId, ordering: bool, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
+        let (first, _) = self.literal_last(lhs, rhs);
+        let first_ty = self.infer(first);
+        self.operands_of(first_ty, lhs, rhs, ordering, accepts)
+    }
+
+    /// [`Checker::operands`] with the type of the first operand already inferred.
+    fn operands_of(&mut self, first_ty: Option<Ty>, lhs: ExprId, rhs: ExprId, ordering: bool, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
         let (first, second) = self.literal_last(lhs, rhs);
-        match self.infer(first) {
+        match first_ty {
             Some(t) if accepts(&t) => {
                 self.check(second, &t);
                 Some(t)
             }
-            Some(t) if ordering && t.is_composite() => {
+            Some(t) if ordering && (t.is_composite() || matches!(t, Ty::Param(_))) => {
                 self.check(second, &t);
                 let file = self.file_of_expr(first);
                 let span = self.design.expr_node(first).span;
@@ -386,7 +416,7 @@ impl Checker<'_> {
         let target = target?;
         let numeric = |t: &Ty| t.is_integer() || *t == Ty::F64;
         // §1.3.7: an enum without fields converts to an integer type; its value is the discriminant.
-        if let Some(Ty::Enum(decl)) = &source
+        if let Some(Ty::Enum(Nominal { decl, .. })) = &source
             && target.is_integer()
             && !self.has_payload(*decl)
         {
@@ -459,17 +489,6 @@ impl Checker<'_> {
             LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => Some(Ty::Str),
-            LitKind::Unknown if self.context == Context::Analog => {
-                let message = "`analog` takes known reals, and the literal `Unknown` is unknown: it has no unknowns (§3.3.5)".to_string();
-                self.coded(file, "E0150", span, message, "may be unknown");
-                None
-            }
-            LitKind::Unknown => {
-                // A.6 (`E0906`): no carried type is expected here, or the expected type has no `Repr`.
-                let message = "`Unknown` has no type here: write it where a type that implements `Repr` is expected (A.6)".to_string();
-                self.coded(file, "E0906", span, message, "`Unknown` of what type?");
-                None
-            }
         }
     }
 
@@ -563,9 +582,15 @@ impl Checker<'_> {
                         self.lower_type(c.ty)
                     }
                     DeclKind::Param(p) => self.lower_type(p.ty),
+                    // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
+                    DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
+                        // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
+                        if let Some(read) = self.handle_read(decl) {
+                            return Some(read);
+                        }
                         let local = self.locals.get(&decl).cloned();
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
                         self.open_literals.remove(&decl);
@@ -592,7 +617,7 @@ impl Checker<'_> {
                         }
                         local
                     }
-                    DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(decl, file, node.span),
+                    DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
                     other => {
@@ -686,7 +711,13 @@ impl Checker<'_> {
             return;
         }
         let annotated = match ty {
-            Some(t) => match self.lower_type(t) {
+            Some(t) => match self.lower_type(t).filter(|ty| {
+                let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
+                if carriers {
+                    self.unsupported(file, self.design.type_node(t).span, "an array of carriers as a `let` type");
+                }
+                !carriers
+            }) {
                 Some(t) => Some(t),
                 None => {
                     if let Some(init) = init {

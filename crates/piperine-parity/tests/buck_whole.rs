@@ -74,16 +74,18 @@ fn a_buck_that_is_not_enabled_stays_off_with_vin_ok_high() {
     // DIG-15 AC 6, SPEC §8: with `en` unknown the supervisor is `Off` (tag 0, its initial value)
     // at every sample, power-good stays low, and nothing commits another value
     let mode = series(&seen, "Buck.mode");
-    assert_eq!(mode, vec![(0, vec![0, 1])], "mode is Off, known, from the first instant and never changes");
+    assert_eq!(mode, vec![(0, vec![0])], "mode is Off from the first instant and never changes");
     let pgood = series(&seen, "Buck.pgood");
     assert_eq!(pgood, vec![(0, LOW.to_vec())], "pgood is false from the first instant and never changes");
     // the DPWM does not switch while `run` is low (SPEC §8: `Off` holds both switches off), so
-    // both gates are false; each is a drive delayed by `tpd` = 10 ns (SPEC §5.3), unknown until
-    // its first commit is due (part I §5.1.1), false from then to the end
-    let tpd = 10 * NS;
+    // both gates are false; each is a drive delayed by `tpd` = 10 ns (SPEC §5.3). A carrier has
+    // its initial value, false, from (0, 0) on (part II §5.1.1, §5.3.8), and the commit of
+    // false that comes due at `tpd` writes the value it already holds: "a commit of the value
+    // the carrier already holds is not a change" (part II §5.3.5). So the one entry is the
+    // initial value at 0, false to the end
     for gate in ["Buck.power.hs_gate", "Buck.power.ls_gate"] {
         let s = series(&seen, gate);
-        assert_eq!(s, vec![(tpd, LOW.to_vec())], "{gate}: false from tpd, never true");
+        assert_eq!(s, vec![(0, LOW.to_vec())], "{gate}: false from the first instant, never true");
     }
     // SPEC §8.1: Vin (12 V through 20 mohm, divided by 10: about 1.2 V) is above the UVLO
     // threshold 0.85 V at the operating point, so the `init` half of `above` (std `A2D` inside
@@ -100,8 +102,9 @@ fn a_buck_that_is_not_enabled_stays_off_with_vin_ok_high() {
 fn no_never_record_fails_while_not_enabled() {
     let (built, seen) = idle();
     // SPEC §5.3 and §10 S10: the `Never` monitor of the DPWM checks at each rising clock edge
-    // that both commands are never on together: one record of `checks` per edge, `pass` known
-    // and true while neither switches
+    // that both commands are never on together: one record of `checks` per edge, `pass` true
+    // while neither switches. `pass` is a `bool`, one byte (part VII §19 rule 3: a pass or a
+    // fail, no third verdict)
     // `Never` has no result: it is a child instance of the DPWM, `no_shoot_through`
     let never_at = "Buck.ctl.pwm.no_shoot_through";
     let all = seen.all();
@@ -130,6 +133,6 @@ fn no_never_record_fails_while_not_enabled() {
     assert_eq!(sites.len(), records.len(), "each record decodes to its site");
     let never = vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())];
     assert!(sites.iter().all(|t| *t == never), "every record is the `never` check");
-    let failed: Vec<&(i64, Vec<u8>)> = records.iter().filter(|(_, b)| b[0] != 1 || b[1] != 1).collect();
-    assert!(failed.is_empty(), "no record has `pass` false or unknown: {failed:?}");
+    let failed: Vec<&(i64, Vec<u8>)> = records.iter().filter(|(_, b)| b[0] != 1).collect();
+    assert!(failed.is_empty(), "no record has `pass` false: {failed:?}");
 }

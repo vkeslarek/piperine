@@ -79,9 +79,9 @@ impl Elaboration<'_, '_> {
             },
             _ => {
                 let value = self.body_let_value(item)?;
-                let outer = std::mem::replace(&mut scope.frame, frame);
+                let entry = self.enter_frame(scope, frame);
                 let lowered = self.lower_body_let(scope, value);
-                scope.frame = outer;
+                self.leave_frame(scope, entry);
                 lowered
             }
         }
@@ -187,7 +187,7 @@ impl Elaboration<'_, '_> {
         self.types.carrier(decl)?;
         let ty = self.carried_type(decl)?;
         let name = format!("{}{}", self.frames[frame].prefix, self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()));
-        let carrier = Carrier { name, ty, role: CarrierRole::Reached, init: None, origin: self.locator.decl(decl) };
+        let carrier = Carrier { name, ty, role: CarrierRole::Reached, init: None, origin: self.locator.decl(decl), count: None };
         let index = self.add_carrier(carrier);
         let child_carrier = self.own_carrier_slot(self.frames[frame].module, decl)?;
         self.structure.reaches.push(Reach { child, item: ReachedItem::Carrier { carrier: index, child_carrier } });
@@ -225,7 +225,7 @@ impl Elaboration<'_, '_> {
         let mut found = Vec::new();
         for index in 0..self.design.expr_count() {
             let expr = ExprId(index as u32);
-            if self.types.ty(expr).is_none() {
+            if self.typed(expr).is_none() {
                 continue;
             }
             let ExprKind::Field { res: Resolution::Decl(item), .. } = &self.design.expr_node(expr).kind else { continue };
