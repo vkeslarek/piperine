@@ -1872,7 +1872,8 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    and a recursion through one is `E0126`.
 4. **Hand-written `Repr`.** `encode` and `decode` are IR functions named on the type; a carrier's initial value is the levels
    word `encode` gives for the folded initializer (design D18).
-5. **`check`.** `piperine check` types every item of every non-std crate; a generic module's body waits for phase C (S3).
+5. **`check`.** `piperine check` types every item of every non-std crate; an unreached generic module is typed once at its definition (S3 closed, phase C).
+6. **Generic modules and generation (phase C).** A module instance is monomorphized per `BodyKey` (module, instance, key params): a param read by a generic argument, a generation range or a generation condition is structural, folded per body key, and `E0341` is a module placed again with the same key. Generation (`for`, `if`) in a module body or a `digital` block is unrolled at elaboration into one child, node or reaction per iteration (`elab/generation.rs`, `GeneratedItems`), the POM keeping the loop as written; an array of generated placements is `Ty::Array(Ty::Module(m), Length)`. The interim gate (`UnfinishedForms`) that held these forms back was deleted at T80.
 
 ### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input
 

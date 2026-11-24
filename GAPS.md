@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 0 silent, 2 broken, 18 loud (L1 to L75 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the ten `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L69 and L70 closed by `generics` phase C, in six tables) plus
+**Counts.** 0 silent, 2 broken, 16 loud (L1 to L75 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the ten `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -110,8 +110,6 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
 | L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
-| L30 | generic modules run (T71); what is left of this row is `Short<N>` placed over each nature (T69) and the params read by generic arguments and lengths as structural (T70) | §8 rule 4 | - | M |
-| L31 | generation `for` and `if` in a `digital` block (in a module body it runs, T77) | §12 rule 1 | `generation for/if in a digital block` | M |
 | L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
 
@@ -148,7 +146,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
-| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`; **Resolved nets (L21):** `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
+| L58 | Stdlib refused with the form it is built on. **Generics (phase E):** `since`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`; **Resolved nets (L21):** `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
 | L59 | the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L71 | a host write of a `Logic` param or of a four-state pattern: a `Logic` param is a struct param (`P0001`), and no host call takes `"10xz"` for a `Logic<4>` cell, though the host prints a cell as that pattern (EU-15 AC 4). T47 planned `parse the same pattern for a host write` and dropped it: no criterion asks for one and the write fails loud (owner `resolved-nets`, whose host drive of a resolved `Logic` carrier is the first caller; it parses the pattern with the rules of §22.1.4 and writes the two planes of `abi.md` P3) | §22.1.1, §22.1.4 | `P0001` (a struct param) | S |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
@@ -281,12 +279,12 @@ does not count.
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 60 % | floats other than `f64`, widths over 64, generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
 | I §3–§3.3 functions, calls, uncertainty and absence | 70 % | generic functions, `impl`, traits and handles, then loops, recursion, closures, function values, arrays, composites and the level reads run |
-| I §3.4–§3.6 files, crates, packages | 100 % | nothing: the check of an unreached generic module (S3) closed |
+| I §3.4–§3.6 files, crates, packages | 100 % | nothing: the check of an unreached generic module (S3) closed (generics phase C) |
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
-| III §8–§8.2 modules, ports, params, the body | 70 % | generation; arrays of carriers and nodes as ports and signals run (phase C) |
-| III §8.3 instances in expressions | 70 % | generic results, the stdlib `idt` and `Water` (L40) |
+| III §8–§8.2 modules, ports, params, the body | 90 % | generic modules and generation (the body and a `digital` block) run (phase C); arrays of carriers and nodes as ports and signals run |
+| III §8.3 instances in expressions | 80 % | the stdlib `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
 | IV §12–§13 digital, events | 70 % | the forms L75 lists; arrays of carriers, element and field commits run (composite-values phase C) |
@@ -304,12 +302,12 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (17 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (14 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list, and `E0702` left it when T45 raised it. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` is retired (T55): the width mismatch of `cast` is the `E0127` of its `where`, raised by the elaborator.
-`E0123 E0124 E0203 E0225 E0322 E0340 E0342
+`E0123 E0124 E0203 E0225
 E0360 E0362 E0371 E0372 E0373 E0374 E0375
 E0807 E0808 E0809`
 
@@ -332,7 +330,7 @@ E0807 E0808 E0809`
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
 | Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7, L72 | M to L |
 | Composite values | phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows | L |
-| Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6; phase C: generic modules run, S3 closed) | L30 (narrowed), L31 and L32: `Short` over every nature, the structural params, the Book's ladder | L |
+| Generics and generation (phases A to C delivered: L4, L7, L8, L9, L30, L31, X6; S3 closed) | L32 (phase D: templates, placement through a template or a function) | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics (delivered) | nothing open (L18 and L19 closed by `unknown-semantics`; L51, L52 and L53 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B delivered `Logic<N>`, `logic` and `matches_bits`, L68) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
