@@ -40,7 +40,7 @@ impl Checker<'_> {
                 let message = format!("`{found}` has no `Repr`: a carrier holds only a type that implements it (part I §2)");
                 self.coded(file, "E0112", self.design.expr_node(value).span, message, "no `Repr`");
             }
-            Some(target) => self.check_as(value, &target.held, "E0432"),
+            Some(target) => self.check_drive_value(target, value, "E0432"),
             None => {
                 self.infer(value);
             }

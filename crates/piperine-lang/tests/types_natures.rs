@@ -250,3 +250,37 @@ fn a_second_drive_of_a_one_driver_carrier_names_the_nature_and_resolve() {
     let message = &diagnostics[0].diagnostic.message;
     assert!(message.contains("`Bit`") && message.contains("Resolve"), "{message}");
 }
+
+/// A project nature with two `impl`s: `AndWire` takes `bool`, `Counted` takes `bool` or `u8`.
+const TWO_IMPLS: &str = "nature Counted { value: u8 }\nimpl Resolve<bool, u8> for Counted { fn resolve<const N: usize>(d: [bool; N]) -> u8 { 0 } }\nimpl Resolve<u8> for Counted { fn resolve<const N: usize>(d: [u8; N]) -> u8 { 0 } }\nnature AndWire { value: bool }\nimpl Resolve<bool> for AndWire { fn resolve<const N: usize>(d: [bool; N]) -> bool { true } }\n";
+
+#[test]
+fn a_drive_picks_the_impl_of_its_type() {
+    // §5.2.15: the type of a definition or a commit picks the `impl Resolve<X, V>` whose `X` it is.
+    let text = format!("{TWO_IMPLS}module Top(c: Counted, in clk: Bit) {{ signal b: bool; }}\ndigital for Top {{ on clk.rise() {{ let flag: bool = true; c <- flag; }} }}");
+    let source = Source::new(&text);
+    let types = source.checked();
+    let picks = (0..source.design.expr_count()).filter(|index| types.drive_impl(piperine_lang::pom::ExprId(*index as u32)).is_some()).count();
+    assert_eq!(picks, 1, "the commit's value picked one `impl`");
+    let text = format!("{TWO_IMPLS}module Top(c: Counted) {{ c = 7u8; }}");
+    Source::new(&text).checked();
+}
+
+#[test]
+fn a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181() {
+    // §5.2.15: a type no `impl` takes is `E0180` naming the nature and the driven types; a bare
+    // literal that two `impl`s accept is `E0181`.
+    let text = format!("{TWO_IMPLS}module Top(w: AndWire) {{ w = 1.5; }}");
+    let diagnostics = Source::new(&text).diagnostics();
+    assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
+    assert!(diagnostics[0].diagnostic.message.contains("AndWire") && diagnostics[0].diagnostic.message.contains("bool"), "{}", diagnostics[0].diagnostic.message);
+    let text = format!("{TWO_IMPLS}module Top(c: Counted) {{ c = 1.5; }}");
+    let diagnostics = Source::new(&text).diagnostics();
+    assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
+    assert!(diagnostics[0].diagnostic.message.contains("Counted") && diagnostics[0].diagnostic.message.contains("u8"), "{}", diagnostics[0].diagnostic.message);
+    let wide = "nature Wide { value: u8 }\nimpl Resolve<u8> for Wide { fn resolve<const N: usize>(d: [u8; N]) -> u8 { 0 } }\nimpl Resolve<u16, u8> for Wide { fn resolve<const N: usize>(d: [u16; N]) -> u8 { 0 } }\n";
+    let text = format!("{wide}module Top(c: Wide) {{ c = 1; }}");
+    assert_eq!(Source::new(&text).codes(), ["E0181"]);
+    let text = format!("{wide}module Top(c: Wide) {{ c = 1u16; }}");
+    Source::new(&text).checked();
+}

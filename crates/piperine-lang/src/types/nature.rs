@@ -4,7 +4,7 @@
 //! `E0181`, §5.2.15).
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, FileId, GenericParamData, NatureFieldNode, NatureKind, Resolution};
+use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData, NatureFieldNode, NatureKind, Resolution};
 
 use super::check::Checker;
 use super::{ConstTerm, ImplEntry, ImplTarget, Length, Ty};
@@ -34,6 +34,67 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// The `impl Resolve`s asked through `checker`.
     pub(super) fn new(checker: &'checker mut Checker<'design>) -> Self {
         ResolveImpls { checker }
+    }
+
+    /// The `impl`s of `nature` whose arguments type, in declaration order. The one-argument form
+    /// `impl Resolve<V>` has `X = V` (spec Q4).
+    pub(super) fn of(&mut self, nature: DeclId) -> Vec<ResolveImpl> {
+        let table = std::rc::Rc::clone(&self.checker.impls);
+        let entries: Vec<ImplEntry> = table.impls().iter().filter(|entry| entry.builtin_trait == Some(RESOLVE_TRAIT) && entry.target == ImplTarget::Declared(nature)).cloned().collect();
+        entries.iter().filter_map(|entry| self.typed(entry)).collect()
+    }
+
+    /// The `impl` of `nature` the drive `value` picks (§5.2.15): the one whose `X` is the type of
+    /// the expression. A type no `impl` takes is `E0180` naming the nature and the types its
+    /// `impl`s take; a literal several `impl`s accept is `E0181`. The pick is recorded for the
+    /// elaborator; `None` after a report.
+    pub(super) fn pick(&mut self, nature: DeclId, value: ExprId) -> Option<ResolveImpl> {
+        let design = self.checker.design;
+        let impls = self.of(nature);
+        let nature_name = design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let takes = impls.iter().map(|candidate| format!("`{}`", candidate.driven.name(design))).collect::<Vec<_>>().join(", ");
+        let (file, span) = (self.checker.file_of_expr(value), design.expr_node(value).span);
+        let picked = match impls.as_slice() {
+            [] => return None,
+            [only] => {
+                let mark = self.checker.diagnostics_mark();
+                self.checker.check_as(value, &only.driven, "E0180");
+                self.checker.annotate_since(mark, "E0180", &format!(": a drive of `{nature_name}` is a `{}` (its `impl Resolve`, §5.2.15)", only.driven.name(design)));
+                only.clone()
+            }
+            several => {
+                let bare = self.checker.integer_literal_text(value).filter(|text| text.chars().all(|c| c.is_ascii_digit() || c == '_'));
+                let accepting: Vec<&ResolveImpl> = match &bare {
+                    Some(_) => several.iter().filter(|candidate| matches!(candidate.driven, Ty::UInt(_) | Ty::Int(_))).collect(),
+                    None => {
+                        let found = self.checker.infer(value)?;
+                        several.iter().filter(|candidate| found.fits(&candidate.driven)).collect()
+                    }
+                };
+                match accepting.as_slice() {
+                    [] => {
+                        let message = format!("a drive of `{nature_name}` has no `impl Resolve` that takes it: the `impl`s of `{nature_name}` take {takes} (§5.2.15)");
+                        self.checker.coded(file, "E0180", span, message, "no `impl Resolve` takes this type");
+                        return None;
+                    }
+                    [one] => {
+                        if bare.is_some() {
+                            self.checker.check_as(value, &one.driven, "E0180");
+                        }
+                        (*one).clone()
+                    }
+                    ambiguous => {
+                        let names = ambiguous.iter().map(|candidate| format!("`{}`", candidate.driven.name(design))).collect::<Vec<_>>().join(", ");
+                        let message = format!("this literal fits more than one `impl Resolve` of `{nature_name}`: {names}; write its type (§5.2.15)");
+                        self.checker.coded(file, "E0181", span, message, "an ambiguous literal");
+                        self.checker.infer(value);
+                        return None;
+                    }
+                }
+            }
+        };
+        self.checker.drive_impls.insert(value, picked.implementation);
+        Some(picked)
     }
 
     /// The `impl Resolve` blocks written for `nature`, in declaration order.
@@ -136,5 +197,23 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// One `E0203` at `span`.
     fn refuse(&mut self, file: FileId, span: Span, message: &str) {
         self.checker.coded(file, "E0203", span, message.to_string(), "not an `impl Resolve<X, V>`");
+    }
+}
+
+impl Checker<'_> {
+    /// The value of a definition or a commit to `target`: a carrier of a resolved nature takes the
+    /// type of the `impl Resolve` its value picks (`ResolveImpls::pick`), any other the type it
+    /// holds, mismatching with `code`.
+    pub(super) fn check_drive_value(&mut self, target: &super::element_target::DriveTarget, value: ExprId, code: &'static str) {
+        let resolved = match self.carriers.get(&target.carrier).map(Ty::innermost) {
+            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.design, *nature).resolved && target.element == super::element_target::Element::Whole => Some(*nature),
+            _ => None,
+        };
+        match resolved {
+            Some(nature) => {
+                ResolveImpls::new(self).pick(nature, value);
+            }
+            None => self.check_as(value, &target.held, code),
+        }
     }
 }

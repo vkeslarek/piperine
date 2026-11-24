@@ -548,8 +548,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181` and `a_drive_picks_the_impl_of_its_type` pass under `**Run typesnatures**`
-- [ ] Gate check passes: Quick
+- [x] `a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181` and `a_drive_picks_the_impl_of_its_type` pass under `**Run typesnatures**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

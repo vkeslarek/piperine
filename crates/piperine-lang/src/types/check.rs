@@ -125,6 +125,8 @@ pub(super) struct Checker<'d> {
     /// The locals bound to a bare integer literal whose type no use has fixed yet (§1.4.4), each
     /// with the literal expression: `let mut total = 0;` waits for `total += k`.
     pub(super) open_literals: BTreeMap<DeclId, ExprId>,
+    /// The `impl Resolve` each value written to a resolved carrier picked (`nature.rs`): by the value expression.
+    pub(super) drive_impls: BTreeMap<ExprId, DeclId>,
     /// The locals declared without a value (`let x;`, §1.7.5).
     pub(super) deferred: BTreeSet<DeclId>,
     /// The control state of the body being checked.
@@ -200,6 +202,7 @@ impl<'d> Checker<'d> {
             fn_where: false,
             places: Places::default(),
             open_literals: BTreeMap::new(),
+            drive_impls: BTreeMap::new(),
             deferred: BTreeSet::new(),
             flow: Flow::default(),
             closures: BTreeMap::new(),
@@ -239,7 +242,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -324,6 +327,18 @@ impl<'d> Checker<'d> {
     }
 
     // ---- reporting -------------------------------------------------------------------------
+
+    /// How many diagnostics are reported so far: a mark for [`Checker::annotate_since`].
+    pub(super) fn diagnostics_mark(&self) -> usize {
+        self.diagnostics.len()
+    }
+
+    /// Appends `note` to the message of each diagnostic coded `code` reported after `mark`.
+    pub(super) fn annotate_since(&mut self, mark: usize, code: &str, note: &str) {
+        for reported in self.diagnostics[mark..].iter_mut().filter(|reported| reported.diagnostic.code == code) {
+            reported.diagnostic.message.push_str(note);
+        }
+    }
 
     /// One diagnostic per construct: a second one at the same span is dropped.
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {

@@ -116,7 +116,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(data.place);
         let target = self.drive_target(data.place, "definition");
         match &target {
-            Some(target) => self.check_as(data.value, &target.held, "E0337"),
+            Some(target) => self.check_drive_value(target, data.value, "E0337"),
             None => {
                 self.infer(data.value);
             }

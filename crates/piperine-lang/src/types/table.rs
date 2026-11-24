@@ -219,6 +219,8 @@ pub struct Types<'d> {
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The parameters of the functions of the check that are handles (`handles.rs`).
     pub(super) handles: std::collections::BTreeSet<DeclId>,
+    /// The `impl Resolve` each value written to a resolved carrier picked: by the value expression (`nature.rs`).
+    pub(super) drive_impls: BTreeMap<ExprId, DeclId>,
     /// The arguments of the trait bound each call through a bound names (`bounds.rs`).
     pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
@@ -421,6 +423,12 @@ impl<'d> Types<'d> {
     /// gives `[f64]`); empty for a trait with none. The call's `impl` is the one of that argument list (GN-04).
     pub fn bound_arguments(&self, call: ExprId) -> &[Ty] {
         self.bound_arguments.get(&call).map_or(&[], Vec::as_slice)
+    }
+
+    /// The `impl Resolve<X, V> for N` a definition or a commit to a carrier of the resolved nature `N`
+    /// picked through the type of its value `value` (§5.2.15); `None` for any other expression.
+    pub fn drive_impl(&self, value: ExprId) -> Option<DeclId> {
+        self.drive_impls.get(&value).copied()
     }
 
     /// Whether the function parameter `param` is a handle: it stands for the carrier the caller passes (§3.1.5).
