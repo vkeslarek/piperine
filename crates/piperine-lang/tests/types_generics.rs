@@ -460,7 +460,10 @@ fn phase_d_and_e_forms_stay_p0001_by_name() {
     // a template is a value from generics T84 on (GN-21): it is no longer refused
     assert!(!LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
     let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
-    assert!(LaterPhases::refuses(through, "placement through a template value or a function"), "{:?}", LaterPhases::found(through));
+    // a placement through a value input of module type is refused by the input's type alone: the phase-C message
+    // "placement through a template value or a function" is gone (finding 35), and no cascade follows the refusal
+    assert!(LaterPhases::refuses(through, "value input port of type"), "{:?}", LaterPhases::found(through));
+    assert_eq!(LaterPhases::found(through).len(), 1, "{:?}", LaterPhases::found(through));
     // a template parameter (`C: Fn(..)`, GN-23): a module whose ports differ from `P` is `E0360` (T88), and one left to inference is `E0181`
     let bound = "module Cell(a: Electrical) {}\nmodule Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner::<Cell>(); }\n";
     assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "E0360"), "{:?}", LaterPhases::found(bound));

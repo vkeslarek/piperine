@@ -304,6 +304,30 @@ fn an_unread_let_of_a_template_item_is_e0181() {
 }
 
 #[test]
+fn a_bare_module_name_used_as_a_value_is_its_template_with_every_default() {
+    // §8.4 amendment (finding 35): a module's bare name used as a value is the template `Name {}`, every param at its
+    // default, wherever a template goes (a `let`, a head, a param value, a function result); a required param it leaves
+    // unbound is `E0319`, alone
+    let head = "fn cell() -> Cell { Cell }\nfn sizing() -> Sizing { Sizing }\nmodule Bank(a: E) { cell: Cell = Cell; }\n";
+    let forms: [(&str, &[&str]); 10] = [
+        ("let t = Cell; let b = t(x);", &[]),
+        ("let b = (Cell)(x);", &[]),
+        ("let b = cell()(x);", &[]),
+        ("let b = Bank(x) { cell: Cell };", &[]),
+        ("let b = Bank(x);", &[]),
+        ("let t = Sizing; let b = t(x);", &["E0319"]),
+        ("let b = (Sizing)(x);", &["E0319"]),
+        ("let t = Sizing;", &["E0319"]),
+        ("let b = sizing()(x);", &["E0319"]),
+        ("let b = (if true { Cell } else { Cell { cs: 2.0 } })(x);", &[]),
+    ];
+    for (form, codes) in forms {
+        let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ {form} }}"));
+        assert_eq!(source.codes(), codes, "{form}: {}", source.message());
+    }
+}
+
+#[test]
 fn every_callee_form_the_grammar_admits_is_called_by_its_value() {
     // Part III `callee ::= path generic_args? | call | '(' expr ')'` (finding 34, the class "every callee form"): each alternative is
     // a placement when its value is a template (§8.4.4, §8.4.6), a call when it is a function, and `E0180` when it is neither;

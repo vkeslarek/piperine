@@ -411,8 +411,9 @@ fn let_template(design: &Design, binding: DeclId, templates: &BTreeMap<ExprId, S
     template_module(design, data.value, templates, depth + 1)
 }
 
-/// The module of the template `expr` is: one written in place (`Cell { .. }`), a `const`, a param or a value input of module
-/// type, a `let` bound to one, or the result of a function that returns a module type; `None` for any other expression.
+/// The module of the template `expr` is: one written in place (`Cell { .. }`), a module's bare name (`Cell`, the template
+/// `Cell {}`, §8.4.1 amendment), a `const`, a param or a value input of module type, a `let` bound to one, or the result of a
+/// function that returns a module type; `None` for any other expression.
 fn template_module(design: &Design, expr: ExprId, templates: &BTreeMap<ExprId, StructClass>, depth: usize) -> Option<DeclId> {
     if depth > 64 {
         return None;
@@ -425,6 +426,7 @@ fn template_module(design: &Design, expr: ExprId, templates: &BTreeMap<ExprId, S
         },
         ExprKind::Path(_) => match path_res(design, expr) {
             Resolution::Decl(d) => match &design.decl_data(d).kind {
+                DeclKind::Module(_) => Some(d),
                 DeclKind::Binding(_) => let_template(design, d, templates, depth),
                 DeclKind::Param(_) | DeclKind::Port(_) | DeclKind::Const(_) => match design.type_resolution(design.declared_type(d)?) {
                     Resolution::Decl(m) if matches!(design.decl_data(m).kind, DeclKind::Module(_)) => Some(m),

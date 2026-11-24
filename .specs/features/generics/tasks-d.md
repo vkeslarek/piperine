@@ -21,6 +21,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run interp**: `cargo test -p piperine-interp --test frozen`
 **Run tgen**: `cargo test -p piperine-transpile --test generics`
 **Run tcontrol**: `cargo test -p piperine-transpile --test control`
+**Run typesgen**: `cargo test -p piperine-lang --test types_generics`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
@@ -758,6 +759,12 @@ Proof: run elabtempl | test every_callee_form_elaborates_to_what_it_names ... ok
 Proof: run srctempl | test every_callee_form_runs_what_it_names ... ok
 Proof: run tcontrol | test a_function_value_returned_by_a_function_compiles_and_runs ... ok
 
+**C126** - A module's bare name used as a value (`let t = R;`, the head `(R)(x)`, a param value, a function's result) is the template `R {}`, every param at its default: `let t = R; t(x)` and `(R)(x)` place the instance `R(x)` places; a required param it leaves unbound is `E0319` alone; the phase-C `P0001` "placement through a template value or a function" is gone, and no cascade follows a head the checker refused. (§8.4.1 amendment, AFK default 2026-11-24 pending user review; fix round 14, finding 35)
+Proof: run typestempl | test a_bare_module_name_used_as_a_value_is_its_template_with_every_default ... ok
+Proof: run elabtempl | test a_bare_module_name_used_as_a_value_places_its_template_with_every_default ... ok
+Proof: run srctempl | test a_bare_module_name_places_its_template_with_every_default ... ok
+Proof: run typesgen | test phase_d_and_e_forms_stay_p0001_by_name ... ok
+
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
@@ -797,6 +804,14 @@ The phase's live state, written as it happens - a compaction gives no warning.
 - Function values print as borrowed `&dyn Fn(A) -> R` (`print/control.rs::function_type`, which already refuses a function value whose result is a function value; `print/value.rs:809` prints a closure as `&move |..| ..`; a local of one is annotated at `value.rs:1127`). Pinned by `crates/piperine-transpile/tests/control.rs:496-497` only.
 - Two defects in `fn doubler() -> fn(f64) -> f64 { twice }`: (1) the signature prints `-> &dyn Fn(R) -> R` with no generic `R` in scope: `print/types.rs:109` says a `Fn` type holds no real, so `Printer::is_generic` (`value.rs:455`) does not make the function generic over `R` — the `Fn` arm should recurse into its params and result as `widths.rs:58` does; (2) a returned reference has no lifetime: `&twice` (a fn item) is const-promoted and could be `&'static`, but a returned capturing closure (`&move |y| y * k`) is a temporary.
 - Options weighed: (a) function values as `std::rc::Rc<dyn Fn(A) -> R>` everywhere (owned, returnable, callable through autoderef; but a `move` closure that reads an `Rc` local moves it, so captures would need a clone prelude `{ let f = f.clone(); move |..| .. }` and reads `.clone()`); (b) keep `&dyn Fn` for params and locals and print a function *result* as `Box<dyn Fn(A) -> R>` with the returned value boxed (`Box::new(twice)`, `Box::new(move |y| ..)`), the call site `doubler()(1.0)` working on the box, a local bound to it annotated `&dyn Fn` taking `&*`; (b) is smaller but is two representations, which the coordinator asked to avoid ("no special case"); (a) is the uniform one.
+**Fix round 14, finding 35 (done; coordinator ruling, AFK default 2026-11-24, pending user review):** a module's bare name used as a value is the template `Name {}` (§8.4.1 amendment in `docs/spec/part_iii_structure.md`). One template path: the classifier's `template_module` names the module of a bare name (so `let t = R; t(x)` classifies as a placement through the `let`), the checker types the bare name through `template_value` with no fields (`types/expr.rs`, `Checker::bare_module`; `E0319` for a required param, as `R {}`), and the const evaluator folds it through `template_literal` with no fields (`elab/consts.rs`). The phase-C `P0001` "placement through a template value or a function" is gone: `types/call.rs` calls any other `Instance { module: None }` head by its type (`value_call`: a function, else `E0180`), and `types/module.rs` reports `E0180` for a head typed as something other than a template of the module and nothing for a head already refused (no cascade). C126. `phase_d_and_e_forms_stay_p0001_by_name` re-pinned: a placement through a value input of module type is refused by the input's type alone.
+Remaining `P0001`s in the template/callee paths (grep of `unsupported(` in `types/{call,module,closures,templates}.rs`, `elab/{children,closures,lower}.rs`, `pom/resolve/classify.rs`):
+- Internal guards, unreachable once the checker accepts the design (owner `generics`, kept as fail-loud invariants): `types/call.rs` "call that is not a function call" (`CallClass::Unclassified`, which the classifier gives no call it resolves), `elab/children.rs` "a placement through a template value" (a placement whose class disagrees with the module the checker named), `elab/lower.rs` "a placement used as a value" (the checker reports `E0333` first), "a call the type checker did not resolve", `elab/closures.rs` "a call of a value that is not a function" and "a callee whose function value has no function type once lowered" (the checker types both).
+- `types/call.rs` "call of this declaration": a callee resolving to any declaration that is no function, module, struct, variant, local or hidden function; owner `spec-closure` (Part III says nothing of calling one; `E0180` is the likely answer).
+- `types/closures.rs` "a call of a value whose type is unknown": an unpoisoned local with no type; owner `generics` (a guard behind `E0181`/`E0332`).
+- `types/closures.rs` "a closure that captures where a function pointer `fn(..) -> R` is expected": a language rule stated as `P0001`; owner `closures` (§1.5.14 should give it a code).
+- `elab/closures.rs` "a function with an `Option` parameter or result used as a value": a lowering gap; owner `closures`.
+- `types/carrier.rs` "value input port of type `module ..`": a value input of module type (`module Top(cell: Cell)`); owner `params-and-io` (its design row 18 named the placement through it).
 **Dispatched:** none yet.
 **Walked:** none yet.
 

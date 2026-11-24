@@ -59,10 +59,8 @@ impl Checker<'_> {
                 }
                 return None;
             }
-            CallClass::Instance { module: None, .. } => {
-                self.unsupported(file, node.span, "placement through a template value or a function");
-                return None;
-            }
+            // any other head is a value called by its type: a function, else `E0180` (§1.5)
+            CallClass::Instance { module: None, .. } => return self.value_call(expr, *callee, args),
             CallClass::Probe => return self.probe(expr, false),
             CallClass::Unclassified => {
                 self.unsupported(file, node.span, "call that is not a function call");

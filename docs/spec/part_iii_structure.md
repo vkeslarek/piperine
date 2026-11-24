@@ -635,6 +635,13 @@ Its type is `Name`. Calling it with connections places an instance.
 - **§8.4.8** `inst.name` on an instance placed through a template-typed param is resolved at
   elaboration against the concrete module.
 
+> **Amendment.** §8.4.1: a module's bare name used as a value, `let t = Cell;`, the head `(Cell)(x)`,
+> a param value `cell: Cell = Cell` or a function's result, is the template `Cell {}`: every param
+> at its default, as a function's name used as a value is the function (§1.2.10). A required param
+> it leaves unbound is `E0319`, as for `Cell {}` (§8.4.2). `let t = Cell; t(x)` and `(Cell)(x)`
+> place the instance `Cell(x)` places (generics phase D, finding 35). *(AFK default 2026-11-24,
+> pending user review.)*
+
 > **Resolution.** §8.4.2 and §8.4.4: a template is complete, and the call adds connections only.
 > Overriding a template's params at the call would be a struct update, which the language lacks
 > (G.53).

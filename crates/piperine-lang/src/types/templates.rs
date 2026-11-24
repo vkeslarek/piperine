@@ -3,7 +3,7 @@
 //! expression, so a param value that reads a port, a signal or a probe is `E0362` (§8.4.6).
 
 use crate::msl::Diagnostic;
-use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, Resolution};
 
 use super::check::Checker;
 use super::{Nominal, ParamRequirement, Ty};
@@ -32,6 +32,16 @@ impl Checker<'_> {
         let ty = Ty::Module(Nominal { decl: module, arguments });
         self.exprs[expr.index()] = Some(ty.clone());
         Some(ty)
+    }
+
+    /// The module a bare name `expr` names (`Cell`, read as the template `Cell {}`, §8.4.1 amendment), `None` for any other
+    /// expression.
+    pub(super) fn bare_module(&self, expr: ExprId) -> Option<DeclId> {
+        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
+        match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
+            Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Module(_)) => Some(decl),
+            _ => None,
+        }
     }
 
     /// Every required param of `module` (§8.1.17, `ParamRequirement`) is bound in the template (§8.4.2), else `E0319` naming

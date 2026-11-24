@@ -267,9 +267,12 @@ impl Checker<'_> {
                 through_value = true;
                 Vec::new()
             }
+            // the head's value is no template of the module: a value of another type is a mismatch (§1.5); a head that has no
+            // type was refused where it is typed, and the placement adds nothing to that
             _ => {
-                if !self.reads_poisoned(*callee) {
-                    self.unsupported(file, node.span, "placement through a template value or a function");
+                if let Some(found) = self.exprs[callee.index()].clone() {
+                    let message = format!("the head's type `{}` is no template of the module this call places (§8.4.4)", found.name(self.design));
+                    self.coded(file, "E0180", node.span, message, "a placement through a value that is not a template");
                 }
                 for arg in args {
                     self.infer(arg.value);

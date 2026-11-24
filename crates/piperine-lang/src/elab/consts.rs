@@ -548,6 +548,8 @@ impl<'d, 't> ConstEval<'d, 't> {
                 Some(value) => Ok(value),
                 None => Err(ConstFault::UnboundParam { expr, param: decl }),
             },
+            // a module's bare name is the template `Name {}`, every param at its default (§8.4.1 amendment)
+            DeclKind::Module(_) => self.template_literal(expr, decl, &[], bindings),
             // A unit struct, and a unit variant of an enum with fields, are held with their parts (`composite.rs`).
             DeclKind::Struct(_) | DeclKind::Variant(_) if let Some(value) = self.unit_value(decl) => Ok(value),
             // A unit variant is its tag (§2 rule 5).

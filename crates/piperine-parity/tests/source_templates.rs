@@ -330,6 +330,16 @@ fn a_cycle_through_values_is_refused() {
 }
 
 #[test]
+fn a_bare_module_name_places_its_template_with_every_default() {
+    // §8.4.1 amendment (finding 35): `Tall` used as a value is `Tall {}`, so a `let` of it, `(Tall)(a)` and a function returning
+    // it place the cell `Tall(a)` places, its storage node following the line (0.5) scaled by the default `cs` (3.0)
+    let seen = RUN.operating_point("callees.msl", "RigBare", &["t1", "t2", "t3", "t4"]);
+    for value in &seen {
+        assert!((value - RustOracle::storage(3.0, 0.5)).abs() < TOLERANCE, "{value}: {seen:?}");
+    }
+}
+
+#[test]
 fn every_callee_form_runs_what_it_names() {
     // Part III `callee` (findings 33 and 34): a closure read before its `let`, a closure literal, a parenthesized function, the
     // function a call returns (`doubler()(x)`) and a returned closure capturing its argument (`scaler(k)(x)`) are called; a

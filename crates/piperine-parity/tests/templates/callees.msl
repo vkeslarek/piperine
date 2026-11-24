@@ -40,3 +40,28 @@ analog for RigCallees {
     potential(s2) +> v(matched.sn);
     potential(s3) +> v(blocked.sn);
 }
+
+/// A module's bare name used as a value is its template with every default (§8.4.1 amendment, finding 35): held by a
+/// `let`, as a parenthesized head, as a function's result and beside the placement it matches.
+module Tall(a: Electrical) { cs: f64 = 3.0; pub signal sn: Electrical; }
+analog for Tall { potential(sn) +> cs * v(a); }
+fn tall() -> Tall { Tall }
+module RigBare() {
+    signal a: Electrical;
+    let held = Tall;
+    let through_let = held(a);
+    let headed = (Tall)(a);
+    let returned = tall()(a);
+    let direct = Tall(a);
+    signal t1: Electrical;
+    signal t2: Electrical;
+    signal t3: Electrical;
+    signal t4: Electrical;
+}
+analog for RigBare {
+    potential(a) +> 0.5;
+    potential(t1) +> v(through_let.sn);
+    potential(t2) +> v(headed.sn);
+    potential(t3) +> v(returned.sn);
+    potential(t4) +> v(direct.sn);
+}

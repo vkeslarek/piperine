@@ -420,6 +420,27 @@ fn an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal() {
 }
 
 #[test]
+fn a_bare_module_name_used_as_a_value_places_its_template_with_every_default() {
+    // §8.4.1 amendment (finding 35): `Cell` used as a value is `Cell {}`, so `let t = Cell; t(x)`, `(Cell)(x)`, a function's
+    // result and a param value place the instance `Cell(x)` places; a required param it leaves out is `E0319`, alone
+    let head = format!("{CELL}fn cell() -> Cell {{ Cell }}\nmodule Holder(a: Electrical) {{ cell: Cell = Cell; let c = cell(a); }}\n");
+    let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let b = Cell(x); }}"), "Top");
+    for form in ["let t = Cell; let b = t(x);", "let b = (Cell)(x);", "let b = cell()(x);", "let b = q(x); let q = Cell;"] {
+        let ir = Elab::ir(&format!("{head}module Top() {{ signal x: Electrical; {form} }}"), "Top");
+        assert_eq!(Placed::first_param(&ir, "Top.b"), Placed::first_param(&direct, "Top.b"), "{form}");
+    }
+    let held = Elab::ir(&format!("{head}module Top() {{ signal x: Electrical; let b = Holder(x) {{ cell: Cell }}; }}"), "Top");
+    assert_eq!(Placed::first_param(&held, "Top.b.c"), Placed::first_param(&direct, "Top.b"));
+    let defaulted = Elab::ir(&format!("{head}module Top() {{ signal x: Electrical; let b = Holder(x); }}"), "Top");
+    assert_eq!(Placed::first_param(&defaulted, "Top.b.c"), Placed::first_param(&direct, "Top.b"));
+    let sizing = "module Sizing(a: Electrical) { size: f64; }\nanalog for Sizing { i(a, gnd) +> v(a, gnd) * size; }\n";
+    for form in ["let t = Sizing; let b = t(x);", "let b = (Sizing)(x);"] {
+        let diagnostics = Elab::run(&format!("{sizing}module Top() {{ signal x: Electrical; {form} }}"), "Top").expect_err("`size` is required");
+        assert_eq!(Elab::codes(&diagnostics), ["E0319"], "{form}");
+    }
+}
+
+#[test]
 fn every_callee_form_elaborates_to_what_it_names() {
     // Part III `callee` (findings 33 and 34): every template-valued callee form places the `Cell` its value names, and every
     // function-valued one is a value of the body, in either text order of the `let` that holds it

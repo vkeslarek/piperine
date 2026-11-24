@@ -86,8 +86,10 @@ impl Checker<'_> {
                 ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
                 ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
-                // `Name { params }` where a module type is expected: a template value (PI-04).
+                // `Name { params }` where a module type is expected: a template value (PI-04); a module's bare name is
+                // `Name {}` (§8.4.1 amendment)
                 ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields, Some(expected)),
+                ExprKind::Path(_) if matches!(expected, Ty::Module(_)) && let Some(module) = self.bare_module(expr) => self.template_value(expr, module, &[], Some(expected)),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -678,6 +680,8 @@ impl Checker<'_> {
                     DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
+                    // §8.4.1 amendment: a module's name is the template `Name {}`, every param at its default
+                    DeclKind::Module(_) => self.template_value(expr, decl, &[], None),
                     other => {
                         self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
                         None
