@@ -29,6 +29,22 @@ user sees `Serial` output and the waveforms together.
 Coordinator's recommendation: **A**, using simavr and/or avr8js only as **test oracles** (run the
 same firmware there, compare pin traces and cycle counts) — nothing linked.
 
+## Decided so far (user, 2026-11-24)
+
+- **Base: avr8js (MIT)** — copied and adapted into our own Rust core, keeping its copyright and
+  licence notice on the ported files; shaped to extend to other cores.
+- **Facts are free: datasheet distillation.** Per core, a fact sheet (registers, bits, pinout,
+  vectors, instruction cycles, peripheral behaviour) is distilled from the Microchip datasheets /
+  instruction-set manual and simavr's documentation and observable behaviour. The core is
+  implemented from those fact sheets and avr8js — never from simavr's code. simavr is used only
+  as a black-box test oracle (run the same firmware, compare pins and cycles); never linked,
+  never committed.
+- **Proof of concept done (not committed, GPL):** blink on simavr co-simulated with a Piperine
+  transient through a `HostElement`; 5 edges exactly on the 500 ms grid. Gaps found: host devices
+  are analog-only (the pin was a Norton source, no digital net/driver), only breakpoints to see
+  the future, no stock host R/D/V, no pin inputs/ADC/UART hooks, simavr sleep uses wall time,
+  operating point sees the pin before the AVR ran.
+
 ## Questions for the user
 
 1. **Board / core scope.** Start with the Uno (ATmega328P, 16 MHz) only? Later: Mega (ATmega2560),
