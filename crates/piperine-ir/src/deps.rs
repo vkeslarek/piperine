@@ -174,6 +174,12 @@ impl<'a> Body<'a> {
         self.sources_of(target).previous.iter().copied().collect()
     }
 
+    /// The resolved carriers whose `others()` (`Expr::Others`) `target` reads, by index (`Body::carriers`), sorted,
+    /// through locals and function calls.
+    pub fn others_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).others.iter().copied().collect()
+    }
+
     /// The params whose previous value (`Expr::ParamPrevious`) `target` reads, by index
     /// (`Body::params`), sorted, through locals and function calls.
     pub fn param_previous_reads(&self, target: Target) -> Vec<u32> {
@@ -331,6 +337,8 @@ struct Sources {
     flows: BTreeSet<u32>,
     /// The carriers whose previous value is read (`Expr::Previous`).
     previous: BTreeSet<u32>,
+    /// The resolved carriers whose `others()` is read (`Expr::Others`).
+    others: BTreeSet<u32>,
     /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
     fired: BTreeSet<u32>,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
@@ -363,6 +371,7 @@ impl Sources {
         self.carriers.extend(&other.carriers);
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
+        self.others.extend(&other.others);
         self.fired.extend(&other.fired);
         self.derivatives.extend(&other.derivatives);
         self.delays.extend(&other.delays);
@@ -925,6 +934,23 @@ impl<'a> Walk<'a> {
                 sources.carriers.insert(*i);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
+            Expr::Others(i) => {
+                if !in_body {
+                    self.refuse(id, "`others()` read outside a body");
+                }
+                let mut sources = Sources::default();
+                sources.others.insert(*i);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
+            Expr::Resolve { drives, .. } => {
+                if !in_body {
+                    self.refuse(id, "`resolve` outside a body");
+                }
+                // the combination of the drives' values: it reads each drive carrier and is no function of them a sum can follow
+                let mut sources = Sources::default();
+                sources.carriers.extend(drives);
+                return self.done(id, Value::of(sources, Class::Nonlinear));
+            }
             Expr::Previous(i) => {
                 if !in_body {
                     self.refuse(id, "previous-value read outside a body");
@@ -1181,7 +1207,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Others(_) | Expr::Resolve { .. } | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

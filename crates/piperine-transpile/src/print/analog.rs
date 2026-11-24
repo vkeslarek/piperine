@@ -323,9 +323,10 @@ impl<'a> AnalogPrinter<'a> {
                         stack.extend(self.ir.stmt(*s).operands());
                     }
                 }
-                Expr::Carrier(c) => {
+                Expr::Carrier(c) | Expr::Others(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
+                Expr::Resolve { drives, .. } => sources.extend(drives.iter().map(|c| Source::Carrier(*c))),
                 Expr::SessionParameter { parameter } => {
                     sources.insert(Source::SessionParameter(*parameter));
                 }

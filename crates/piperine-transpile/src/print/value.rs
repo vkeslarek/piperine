@@ -577,6 +577,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Env(_)
             | Expr::Int(_)
             | Expr::Carrier(_)
+            | Expr::Others(_)
+            | Expr::Resolve { .. }
             | Expr::Flow { .. }
             | Expr::Derivative(_)
             | Expr::Delay(_)
@@ -723,6 +725,8 @@ impl<'a> ValuePrinter<'a> {
             Expr::CarrierElement { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Value),
             Expr::ElementPrevious { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Previous),
             Expr::ElementChanged { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Changed),
+            Expr::Others(_) => Err(self.unsupported(e, "others() of a resolved carrier")),
+            Expr::Resolve { .. } => Err(self.unsupported(e, "a resolve of drives")),
             Expr::Carrier(c) if self.facts.get(*c as usize).is_some_and(|f| f.count.is_some()) => self.whole_piece(e, *c),
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
                 Some(name) => Ok(self.carrier_value(e, self.read(name))),

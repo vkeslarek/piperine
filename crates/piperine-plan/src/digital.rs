@@ -402,9 +402,9 @@ impl Digital {
     /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, or a `signal` that a
     /// child's carrier port is bound to.
     pub(crate) fn is_port(body: Body<'_>, c: u32) -> bool {
-        match body.carriers().get(c as usize).map(|x| x.role) {
+        match body.carriers().get(c as usize).map(|x| &x.role) {
             // A reached carrier is a read-only view of a child's: a `PORT` pin, as an `in` port.
-            Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached) => true,
+            Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { .. }) => true,
             // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`).
             Some(CarrierRole::Signal) => (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c),
             None => false,

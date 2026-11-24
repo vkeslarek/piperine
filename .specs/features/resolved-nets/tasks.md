@@ -419,9 +419,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_resolved_net_is_built_checked_and_printed` and `a_resolve_with_a_missing_count_or_another_type_is_refused` pass under `**Run irresolved**`
-- [ ] `resolved_forms_are_refused_by_name` passes under `**Run interp**`
-- [ ] Gate check passes: Full
+- [x] `a_resolved_net_is_built_checked_and_printed` and `a_resolve_with_a_missing_count_or_another_type_is_refused` pass under `**Run irresolved**`
+- [x] `resolved_forms_are_refused_by_name` passes under `**Run interp**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

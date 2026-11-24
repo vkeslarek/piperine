@@ -167,7 +167,7 @@ impl Elaboration<'_, '_> {
         for carrier in carriers {
             let given = match carrier.role {
                 CarrierRole::In | CarrierRole::Out => bound.next().flatten(),
-                CarrierRole::Signal | CarrierRole::Reached => None,
+                CarrierRole::Signal | CarrierRole::Reached | CarrierRole::Resolved { .. } => None,
             };
             // A reached carrier has no net of its own: this one is a placeholder `bind_reaches`
             // replaces with the child's, so its path cannot be the child's (`Top.c.state`).

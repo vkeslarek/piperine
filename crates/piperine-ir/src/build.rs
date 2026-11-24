@@ -8,7 +8,7 @@ use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, CarrierWindow, EmptyArray, NodeAlias, NodeArray, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, TraceSite, PartialDerivative, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
-    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Resolution, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -520,8 +520,17 @@ impl IrBuilder {
     }
 
     pub fn net(&mut self, spec: NetSpec) -> NetId {
-        self.nets.push(NetData { path: spec.path, ty: spec.ty, declared_by: spec.declared_by, init: spec.init, origin: spec.origin });
+        self.nets.push(NetData { path: spec.path, ty: spec.ty, declared_by: spec.declared_by, init: spec.init, origin: spec.origin, resolution: None });
         NetId(self.nets.len() as u32 - 1)
+    }
+
+    /// Records that `net` is a resolved net made of `resolution` (RN-03). An id this builder never handed out panics.
+    pub fn resolve_net(&mut self, net: NetId, resolution: Resolution) {
+        let count = self.nets.len();
+        match self.nets.get_mut(net.index()) {
+            Some(data) => data.resolution = Some(resolution),
+            None => panic!("net id {} out of range ({count} nets)", net.0),
+        }
     }
 
     /// Binds the carriers of `instance`'s body, in their order, to `nets`. An id this builder

@@ -5,7 +5,7 @@ use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId
 use crate::model::{
     CarrierWindow, EmptyArray, NodeArray,
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, TraceSite, PartialDerivative, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Resolution, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
@@ -703,6 +703,11 @@ impl<'a> Net<'a> {
 
     pub fn origin(&self) -> &'a Origin {
         &self.data().origin
+    }
+
+    /// What the net is made of when it is a resolved net: its drives and its resolver (RN-03).
+    pub fn resolution(&self) -> Option<&'a Resolution> {
+        self.data().resolution.as_ref()
     }
 
     /// The instances this net is wired to through a port carrier of their body, in pre-order. The
