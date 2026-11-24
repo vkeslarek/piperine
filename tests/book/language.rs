@@ -20,7 +20,7 @@ mod support {
     pub mod value_file;
 }
 
-use piperine::Overrides;
+use piperine::{Field, FloatCell, FloatFormat, Overrides, WideCell};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
@@ -130,7 +130,7 @@ fn blocks_ifs_and_matches_are_expressions_with_one_value() {
 
 #[test]
 fn constants_and_functions_compute_before_and_during_the_run() {
-    // language#10 (run, `functions.msl`) with its listing language#12; language~49c521bb "Running today: bool,
+    // language#10 (run, `functions.msl`) with its listing language#12; language~b0e5f677 "Running today: bool,
     // integers of up to 64 bits, f64, constants, functions, let and blocks, if, and match over literals" (this
     // file and the three before it are those forms, and each runs)
     let record = ValueFile::only(Chapter::read().marked("functions.msl", "language#10").run(ValueFile::transient()), "functions");
@@ -195,16 +195,13 @@ fn the_sum_below_listing_runs_with_the_literal_typed_by_its_use() {
 
 #[test]
 fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
-    // language~56bbb0e9 "Parsed and checked, and not run yet: an item declared inside a block, % on floats,
-    // floats other than f64, and integers wider than 64 bits"; language~5628120b "A model that uses one of them is stopped before the run with the
+    // language~20712686 "Parsed and checked, and not run yet: an item declared inside a block and % on floats"; language~5628120b "A model that uses one of them is stopped before the run with the
     // code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones
     // above": the forms of the status box, each on the smallest model (when one of them runs, this test fails
     // and the box loses it)
     for (items, statements, named) in [
         ("", "const K: f64 = 4.0; emit!(\"r\", y = K);", "item inside a block is not supported yet"),
         ("", "let p = 7.5 % 2.0; emit!(\"r\", p = p);", "operator `%` is not supported yet"),
-        ("", "let x: f32 = 1.5; emit!(\"r\", x = x);", "type `f32` is not supported yet"),
-        ("", "let x: u128 = 1; emit!(\"r\", x = x);", "integer type `u128` is not supported yet"),
     ] {
         let faulty = ValueFile::refused("language~5628120b", items, statements);
         assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
@@ -212,6 +209,19 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // an assignment to a parameter is the error E0183 (§1.5.12, §3.1.10), no longer a form that waits
     let parameter = ValueFile::refused("language~5628120b", "fn bump(x: u32) -> u32 { x = 6; x }", "emit!(\"r\", x = bump(1));");
     assert!(parameter.given.iter().any(|reported| reported.code == "E0183"), "{:?}", parameter.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+}
+
+#[test]
+fn floats_of_every_width_and_wide_integers_run() {
+    // language~b0e5f677 "Running today: bool, integers of any width, f16, f32, f64 and f128, ...": the two models the status
+    // box used to refuse run now, each emitting the value it was given
+    let single = ValueFile::written("", "let x: f32 = 1.5; emit!(\"r\", x = x);");
+    assert_eq!(Fields::of(&single, "x"), &Field::Float(FloatCell { format: FloatFormat::Single, bits: u128::from(1.5f32.to_bits()) }), "`f32` 1.5 is the bits of Rust's 1.5f32");
+    let wide = ValueFile::written("", "let x: u128 = 1; emit!(\"r\", x = x);");
+    assert_eq!(Fields::of(&wide, "x"), &Field::Wide(WideCell { signed: false, width: 128, limbs: vec![1, 0] }), "a `u128` is wider than 64 bits: one exact value of two limbs, which reads as 1");
+    assert_eq!(match Fields::of(&wide, "x") { Field::Wide(cell) => cell.text(), other => panic!("{other:?}") }, "1");
+    let wider = ValueFile::written("", "let x: UInt<200> = 1; let y = x << 199u8; emit!(\"r\", y = y);");
+    assert_eq!(Fields::of(&wider, "y"), &Field::Wide(WideCell { signed: false, width: 200, limbs: vec![0, 0, 0, 1 << 7] }), "2^199 over four limbs, one exact value");
 }
 
 #[test]

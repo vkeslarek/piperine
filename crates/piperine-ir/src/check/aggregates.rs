@@ -122,7 +122,7 @@ impl Checker<'_> {
                 }
                 ValueType::Tuple(parts) => stack.extend(parts.clone()),
                 ValueType::Array(element, _) | ValueType::Option(element) => stack.push(*element.clone()),
-                ValueType::F64 | ValueType::Bool | ValueType::Unit | ValueType::Fn(..) | ValueType::UInt(_) | ValueType::Int(_) => {}
+                ValueType::F64 | ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Bool | ValueType::Unit | ValueType::Fn(..) | ValueType::UInt(_) | ValueType::Int(_) => {}
             }
         }
         false

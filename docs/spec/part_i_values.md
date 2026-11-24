@@ -130,7 +130,7 @@ pub const inf: f64 = 1.0 / 0.0;
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0101` | a syntactic form left out by rule 2: a reference or a pointer in a type, an expression or a pattern (`&T`, `&mut T`, `&x`, `*x`, `&p`, `&self`), `unsafe`, `async`, `dyn`. The markers `mut`, `ref` and `move` are reserved words (`E0903`, [A.1](appendix_a_lexical.md#a1-source-text-and-tokens)) and a lifetime is a token of a dropped class (`E0905`, [A.6](appendix_a_lexical.md)). A heap type or a thread API is a path that does not resolve (`E0161`) | parse |
-| `E0103` | an integer width that is not a const expression `>= 1`, or a float width outside {16, 32, 64, 128} | elaboration |
+| `E0103` | an integer width that is not a const expression `>= 1`, an integer width past 2^32 - 1 ([C.2](appendix_c_implementation.md#c2-reference-implementation)), or a float width outside {16, 32, 64, 128} | elaboration |
 | `E0104` | a panic while evaluating a const expression, a param default, a `where` or generation | elaboration |
 | `E0105` | a panic during a run | run |
 

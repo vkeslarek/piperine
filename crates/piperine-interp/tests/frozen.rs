@@ -1016,3 +1016,26 @@ fn a_table_expression_is_refused_by_name() {
     });
     assert_eq!(named, ["a table model"]);
 }
+
+#[test]
+fn each_number_width_is_refused_by_name() {
+    // CV-34 AC 1 (R1): the interpreter is frozen at the M1 analog subset, so a body that holds a
+    // value of `f32`, `f16`, `f128` or an integer wider than 64 bits is refused, the entry naming the
+    // type; a `u64` and an `f64` are not number widths and name nothing.
+    let local = |name: &str, ty: ValueType| Local { name: name.into(), ty, mutable: false };
+    for (ty, name) in [
+        (ValueType::F32, "a value of type f32"),
+        (ValueType::F16, "a value of type f16"),
+        (ValueType::F128, "a value of type f128"),
+        (ValueType::UInt(200), "a value of type u200"),
+        (ValueType::Int(65), "a value of type i65"),
+    ] {
+        let refused = Composite::refused(|_| (vec![local("x", ty.clone())], vec![]));
+        assert_eq!(refused, [name], "a local of {ty}");
+    }
+    // inside a tuple and an array the type is still named, once
+    let nested = Composite::refused(|_| (vec![local("x", ValueType::Tuple(vec![ValueType::F16, ValueType::Array(Box::new(ValueType::F16), 3)]))], vec![]));
+    assert_eq!(nested, ["a value of type f16"]);
+    let none = Composite::refused(|_| (vec![local("x", ValueType::UInt(64)), local("y", ValueType::F64)], vec![]));
+    assert!(none.is_empty(), "a u64 and an f64 are run: {none:?}");
+}

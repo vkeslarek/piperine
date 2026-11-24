@@ -132,7 +132,7 @@ impl Checker<'_> {
             // an array of carriers, or of conservative nodes (CV-23)
             array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
-            value @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
+            value @ (Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
                 self.unsupported(file, node.span, &format!("value input port of type `{}`", other.name(self.design)));
                 None
@@ -239,7 +239,7 @@ impl Checker<'_> {
     pub(super) fn path_owner_type(&mut self, file: FileId, span: Span, owner: Resolution) -> Option<Ty> {
         match owner {
             Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                ("fN", Some(64)) => Some(Ty::F64),
+                ("fN", Some(w)) => Ty::float(u32::from(w)),
                 ("bool", _) => Some(Ty::Bool),
                 ("str", _) => Some(Ty::Str),
                 ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),

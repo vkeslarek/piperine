@@ -10,6 +10,12 @@ use crate::pom::{DeclId, Design, ExprId};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Ty {
     F64,
+    /// `f32` (`Float<32>`): IEEE 754 binary32.
+    F32,
+    /// `f16` (`Float<16>`): IEEE 754 binary16.
+    F16,
+    /// `f128` (`Float<128>`): IEEE 754 binary128.
+    F128,
     Bool,
     /// `()`.
     Unit,
@@ -21,10 +27,10 @@ pub enum Ty {
     Fn(Vec<Ty>, Box<Ty>),
     /// A module, by its declaration.
     Module(DeclId),
-    /// `UInt<N>` (`uN`), `N` in 1..=64.
-    UInt(u8),
-    /// `Int<N>` (`iN`), `N` in 1..=64.
-    Int(u8),
+    /// `UInt<N>` (`uN`), `N` in 1..=2^32 - 1.
+    UInt(u32),
+    /// `Int<N>` (`iN`), `N` in 1..=2^32 - 1.
+    Int(u32),
     /// `UInt<N>` or `Int<N>` whose width names const parameters of the generic item being checked (`UInt<N>` in
     /// `impl<const N: usize> Logic<N>`): an integer of a width the instantiation gives. Substitution turns it into
     /// `UInt(n)` or `Int(n)` once the width is a number.
@@ -326,6 +332,51 @@ impl Ty {
         matches!(self, Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. })
     }
 
+    /// The float type of `width` bits, `None` unless `width` is 16, 32, 64 or 128.
+    pub fn float(width: u32) -> Option<Ty> {
+        match width {
+            16 => Some(Ty::F16),
+            32 => Some(Ty::F32),
+            64 => Some(Ty::F64),
+            128 => Some(Ty::F128),
+            _ => None,
+        }
+    }
+
+    /// The width and sign of this integer type (`UInt<N>` is `(N, false)`, `Int<N>` is `(N, true)`), `None` for any other type.
+    pub fn integer_shape(&self) -> Option<(u32, bool)> {
+        match self {
+            Ty::UInt(width) => Some((*width, false)),
+            Ty::Int(width) => Some((*width, true)),
+            _ => None,
+        }
+    }
+
+    /// Whether this is an integer wider than 64 bits.
+    pub fn is_wide_integer(&self) -> bool {
+        self.integer_shape().is_some_and(|(width, _)| width > 64)
+    }
+
+    /// Whether this is a float of a width other than `f64` or an integer wider than 64 bits: the types the number-width evaluator folds.
+    pub fn is_number_width(&self) -> bool {
+        self.is_other_float() || self.is_wide_integer()
+    }
+
+    /// Whether this is a float of any width: `f64`, `f32`, `f16` or `f128`.
+    pub fn is_float(&self) -> bool {
+        matches!(self, Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128)
+    }
+
+    /// Whether this is a float of a width other than `f64`.
+    pub fn is_other_float(&self) -> bool {
+        matches!(self, Ty::F32 | Ty::F16 | Ty::F128)
+    }
+
+    /// Whether this is a float of any width or an integer type: what `as` converts among (§1.4.5).
+    pub fn is_numeric(&self) -> bool {
+        self.is_float() || self.is_integer()
+    }
+
     /// Whether this is a type made of parts: a struct, an enum, a tuple, an array or an `Option`.
     pub fn is_composite(&self) -> bool {
         matches!(self, Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) | Ty::Option(_))
@@ -333,14 +384,14 @@ impl Ty {
 
     /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
     pub fn has_repr(&self) -> bool {
-        matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_))
+        matches!(self, Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_))
     }
 
     /// Whether a value of this type can be bound, stored and passed (§1.2): a type a carrier, a
     /// node, a module or an event is not.
     pub fn is_value(&self) -> bool {
         match self {
-            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
             Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
             Ty::Range { element, .. } | Ty::Iterator { element, .. } => element.is_value(),
             Ty::Tuple(items) => items.iter().all(Ty::is_value),
@@ -354,7 +405,9 @@ impl Ty {
     /// an integer type.
     pub fn literal_max(&self, negated: bool) -> Option<u128> {
         match *self {
-            Ty::UInt(n) => Some(u128::MAX >> (128 - u32::from(n))),
+            // a literal's value is a `u128`: a type wider than 128 bits holds every literal
+            Ty::UInt(n) => Some(u128::MAX >> (128 - n.min(128))),
+            Ty::Int(n) if n > 128 => Some(u128::MAX),
             Ty::Int(n) if negated => Some(1u128 << (n - 1)),
             Ty::Int(n) => Some((1u128 << (n - 1)) - 1),
             _ => None,
@@ -368,7 +421,10 @@ impl Ty {
         match self {
             Ty::Bool => Some(1),
             Ty::F64 => Some(64),
-            Ty::UInt(n) | Ty::Int(n) => Some(u32::from(*n)),
+            Ty::F32 => Some(32),
+            Ty::F16 => Some(16),
+            Ty::F128 => Some(128),
+            Ty::UInt(n) | Ty::Int(n) => Some(*n),
             Ty::Enum(Nominal { decl, .. }) => {
                 let variants = design.decl_data(*decl).children.iter().filter(|c| matches!(design.decl_data(**c).kind, crate::pom::DeclKind::Variant(_))).count();
                 Some(usize::BITS - variants.saturating_sub(1).leading_zeros())
@@ -395,6 +451,9 @@ impl Ty {
     pub fn name(&self, design: &Design) -> String {
         match self {
             Ty::F64 => "f64".to_string(),
+            Ty::F32 => "f32".to_string(),
+            Ty::F16 => "f16".to_string(),
+            Ty::F128 => "f128".to_string(),
             Ty::Bool => "bool".to_string(),
             Ty::Unit => "()".to_string(),
             Ty::Node(nature) => match &design.decl_data(*nature).name {

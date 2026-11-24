@@ -35,7 +35,7 @@ mod generation; mod generic_values; mod generics; mod handles;
 mod intrinsic; mod inference;
 mod iterators;
 mod lengths;
-mod literals;
+mod literals; mod widths;
 mod logic_pattern; mod loops;
 mod model;
 mod methods;
@@ -56,5 +56,5 @@ mod ty;
 pub(crate) mod unsupported;
 
 pub(crate) use self::{coverage::ElementCoverage, logic_pattern::LogicPattern};
-pub use self::{traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, obligations::Obligation, substitution::Substitution};
+pub use self::{traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution};
 pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

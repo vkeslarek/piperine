@@ -433,11 +433,11 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | CV-26 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
 | CV-27 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
 | CV-28 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
-| CV-29 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
-| CV-30 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
-| CV-31 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
-| CV-32 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
-| CV-33 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
+| CV-29 | P2: number widths (D) | D (`tasks-d.md`) | Done |
+| CV-30 | P2: number widths (D) | D (`tasks-d.md`) | Done |
+| CV-31 | P2: number widths (D) | D (`tasks-d.md`) | Done |
+| CV-32 | P2: number widths (D) | D (`tasks-d.md`) | Done |
+| CV-33 | P2: number widths (D) | D (`tasks-d.md`) | Done (CV-30 AC 2, CV-31 AC 2 and 3 and CV-32 AC 2 are inapplicable: Q4 chose (a), so no refusal of those types exists) |
 | CV-34 | P1: every phase keeps the rest intact | - | Pending |
 | CV-35 | P1: every phase keeps the rest intact | - | Pending |
 | CV-36 | P1: every phase keeps the rest intact | - | Pending |

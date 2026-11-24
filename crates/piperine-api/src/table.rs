@@ -8,6 +8,7 @@ use piperine_plan::CarrierLayout;
 use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, Net, PoleZeroResult, SensResult, TransferFunctionAnalysisResult, TransientAnalysisResult};
 
 use crate::composite::CompositeCell;
+use crate::number_cell::{FloatCell, NumberCell, WideCell};
 use crate::failure::Failure;
 use crate::noise::NoiseReport;
 use crate::probe::Probe;
@@ -20,6 +21,10 @@ pub enum Cell {
     Real(f64),
     Bool(bool),
     Int(i128),
+    /// An `f16`, `f32` or `f128`, exact (`FloatCell`).
+    Float(FloatCell),
+    /// An integer wider than 64 bits, exact (`WideCell`).
+    Wide(WideCell),
     /// A name, such as the signal column of an operating point.
     Text(String),
     /// A tuple, an array, a struct, an enum with a payload or an `Option`: the tree of its parts
@@ -42,6 +47,9 @@ pub struct Table {
 impl Cell {
     /// The value of the net of a param: the bytes of the value itself. A length other than the type's is a `Failure`.
     pub fn decode_param(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
+        if NumberCell::is_number_width(ty) {
+            return NumberCell::decode(ty, bytes);
+        }
         let wrong = || Failure::Backend(format!("cannot decode a param of type {ty} from {} bytes", bytes.len()));
         let width = match ty {
             ValueType::F64 => 8,
@@ -69,6 +77,9 @@ impl Cell {
     /// The value of `bytes`, laid out as a carrier of `ty`. Bytes of another length than the
     /// layout's are a `Failure`, never a truncated value.
     pub fn decode(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
+        if NumberCell::is_number_width(ty) {
+            return NumberCell::decode(ty, bytes);
+        }
         let refused = |why: String| Failure::Backend(format!("cannot decode a value of type {ty}: {why}"));
         let layout = CarrierLayout::of(ty).ok_or_else(|| refused("no carrier holds it".into()))?;
         if bytes.len() != layout.size as usize {
@@ -103,6 +114,17 @@ impl Cell {
 }
 
 impl Table {
+    /// The table as a plot reads it: a cell of a number width (`f16`, `f32`, `f128`, an integer wider than 64 bits) is the
+    /// nearest `f64` (Q2 (c): the plot is the one place a value goes through an `f64`).
+    pub fn plotted(&self) -> Table {
+        let plot = |cell: &Cell| match cell {
+            Cell::Float(float) => Cell::Real(float.nearest_f64()),
+            Cell::Wide(wide) => Cell::Real(wide.nearest_f64()),
+            other => other.clone(),
+        };
+        Table { columns: self.columns.clone(), rows: self.rows.iter().map(|row| row.iter().map(plot).collect()).collect() }
+    }
+
     /// The table with each column that holds composite values replaced by one column per leaf, named
     /// `<column>.<leaf>` (`<column>[k]` for an element, `<column>` itself for an enum's variant, whose
     /// payload leaves are `<column>.<Variant>.<field>`): the form CSV and a plot need (D13). The leaves

@@ -194,9 +194,6 @@ impl Checker<'_> {
         };
         let width = i128::from(width);
         let nominal = Nominal { decl: logic, arguments: vec![GenericValue::Const(ConstTerm::Value(width))] };
-        // an inferred instance is held to the width rule of a written one: wider than 64 levels is the one `P0001` (`GAPS.md` L13)
-        let substitution = self.nominal_substitution(&nominal);
-        self.fields_fit_integers(logic, &nominal.arguments, &substitution, file, span)?;
         Some(Ty::Struct(nominal))
     }
 

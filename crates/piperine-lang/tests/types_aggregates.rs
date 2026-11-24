@@ -446,14 +446,3 @@ fn two_sites_giving_a_field_two_composite_types_is_e0605() {
     assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0605"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
     assert!(found[0].diagnostic.message.contains("`v`"), "{}", found[0].diagnostic.message);
 }
-
-#[test]
-fn phase_c_and_d_forms_stay_p0001_by_name() {
-    // CV-34 AC 2: a carrier of `f32` and of `u128` (phase D) are refused by name, never silently typed. The array of
-    // carriers (phase C) now runs: `types_carrier_arrays.rs`.
-    for (carried, form) in [("Bit<f32>", "f32"), ("Bit<u128>", "u128")] {
-        let src = format!("module Top() {{ signal s: {carried}; }}");
-        let found = Types::check(&CheckedSource::standard_design_of(&src), "Top").err().unwrap_or_default();
-        assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains(form)), "{carried}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
-    }
-}

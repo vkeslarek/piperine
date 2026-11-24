@@ -11,6 +11,7 @@ mod digital;
 mod netlist;
 mod pin;
 mod plan;
+mod widths;
 
 pub use array::ArrayPin;
 pub use composite::{CompositeLayout, CompositeLeaf};
@@ -19,3 +20,4 @@ pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, RecordLayout, State
 pub use netlist::{Modules, Netlist};
 pub use pin::PinLayout;
 pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, Source, Target, Term};
+pub use widths::NumberLayout;

@@ -28,8 +28,6 @@ struct Row {
 // `types_events::settle_is_an_event_in_every_event_position`, `E0441` elsewhere in
 // `types_events::settle_outside_an_event_position_is_e0441`).
 const ROWS: &[Row] = &[
-    Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
-    Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     // `struct with an impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     Row { construct: "generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; }", names: "generic function" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },

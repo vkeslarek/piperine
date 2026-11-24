@@ -274,7 +274,7 @@ impl Elaboration<'_, '_> {
                     self.report(placing.file, Diagnostic::new("E0317", message, at, "`where` is false"));
                     ok = false;
                 }
-                Ok(Constant::Real(_) | Constant::Int(_) | Constant::Aggregate(_)) => {
+                Ok(Constant::Real(_) | Constant::Int(_) | Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_)) => {
                     self.unsupported(placing.file, at, "a `where` that is not a `bool`");
                     ok = false;
                 }

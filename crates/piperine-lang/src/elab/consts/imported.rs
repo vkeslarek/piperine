@@ -79,6 +79,8 @@ impl Elaboration<'_, '_> {
             (ConstTree::Scalar(Constant::Real(value)), _) => Some(self.emit(Expr::Real(Real::new(value.get())), ValueType::F64, origin.clone())),
             (ConstTree::Scalar(Constant::Bool(value)), _) => Some(self.emit(Expr::Bool(*value), ValueType::Bool, origin.clone())),
             (ConstTree::Scalar(Constant::Int(value)), _) => Some(self.emit(Expr::Int(*value), ty.clone(), origin.clone())),
+            (ConstTree::Scalar(Constant::FloatBits(bits)), _) => Some(self.emit(Expr::FloatBits(*bits), ty.clone(), origin.clone())),
+            (ConstTree::Scalar(Constant::Wide(id)), _) => Some(self.emit(Expr::Wide(*id), ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Aggregate(_)), _) => None,
             (ConstTree::Composite { kind, parts }, _) => {
                 let wanted = match (kind, ty) {

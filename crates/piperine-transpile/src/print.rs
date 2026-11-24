@@ -23,6 +23,7 @@ pub mod text;
 pub mod trace;
 pub mod types;
 pub mod value;
+pub mod widths;
 
 pub use analog::AnalogPrinter;
 pub use contribution::ContributionSums;

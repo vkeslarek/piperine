@@ -9,6 +9,7 @@ use piperine_lang::elab::LiteralText;
 
 use crate::composite::CellShape;
 use crate::failure::Failure;
+use crate::number_cell::{FloatCell, FloatFormat, NumberCell, WideCell};
 use crate::session::ParamPath;
 
 /// One value a text gives: a real, or an integer held exactly (never through an `f64`, PI-01 AC 4).
@@ -36,6 +37,11 @@ impl Scalar {
 pub enum ParamText {
     /// A param of one value: a number, an integer, a flag as 0 or 1, or an enum's tag.
     Whole(Scalar),
+    /// A param of a number width (`f32`, `f16`, `f128`, an integer wider than 64 bits): the exact bytes of its pin.
+    Exact {
+        /// The pin's bytes, the value read from the text in its own format.
+        bytes: Vec<u8>,
+    },
     /// An `Option` param: `None` (`some` false), or `Some` of the payload.
     Option {
         /// Whether the param holds a value.
@@ -65,6 +71,7 @@ impl ParamText {
             .ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{}` names no param of the design", path.label()) })?;
         let reading = Reading { ir, label: path.label(), text: text.trim() };
         match &ty {
+            number if NumberCell::is_number_width(number) => reading.exact(number).map(|bytes| ParamText::Exact { bytes }),
             ValueType::Option(payload) => reading.option(payload),
             other if ir.is_composite_value(other) => Err(reading.refused("a composite param, an enum with fields included, is set by its leaves, `<param>.<leaf>`".to_string())),
             other => reading.scalar(other).map(ParamText::Whole),
@@ -79,12 +86,32 @@ impl ParamText {
                 let payload = value.exact_real().ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{label}` refuses a payload an `f64` cannot hold exactly: set the leaf `value` as a number in range") })?;
                 Ok(Some([("some", f64::from(u8::from(*some))), ("value", payload)]))
             }
-            ParamText::Whole(_) => Ok(None),
+            ParamText::Whole(_) | ParamText::Exact { .. } => Ok(None),
         }
     }
 }
 
 impl Reading<'_> {
+    /// The pin bytes of the text as a value of the number-width type `ty`, read in its own format (A.8 rule 8; an integer by
+    /// its digits, `0x`, `0o` or `0b`), never through an `f64`.
+    fn exact(&self, ty: &ValueType) -> Result<Vec<u8>, Failure> {
+        if let Some(format) = FloatFormat::of(ty) {
+            let cell = FloatCell::parse(format, self.text).ok_or_else(|| self.refused(format!("it is not a number of type {ty}")))?;
+            let infinite = format.binary().classify(cell.bits) == piperine_numbers::format::FloatClass::Infinite;
+            let spelled_infinite = matches!(self.text.trim_start_matches(['+', '-']).to_ascii_lowercase().as_str(), "inf" | "infinity");
+            if infinite && !spelled_infinite {
+                return Err(self.refused(format!("it is outside the range of {ty}")));
+            }
+            return Ok(cell.to_bytes());
+        }
+        let (signed, width) = match ty {
+            ValueType::UInt(width) => (false, *width),
+            ValueType::Int(width) => (true, *width),
+            other => return Err(self.refused(format!("a value of type {other} cannot be given as text"))),
+        };
+        WideCell::parse(signed, width, self.text).map(|cell| cell.to_bytes()).ok_or_else(|| self.refused(format!("it is not an integer literal of {ty} in its range")))
+    }
+
     /// The refusal of this text, `E0802` naming the param and the value.
     fn refused(&self, why: String) -> Failure {
         Failure::Host { code: "E0802", message: format!("`{}` refuses the value `{}`: {why}", self.label, self.text) }

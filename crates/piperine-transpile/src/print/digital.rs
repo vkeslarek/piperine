@@ -127,6 +127,8 @@ impl<'a> DigitalPrinter<'a> {
                     let rust = values.type_of(ty)?;
                     format!("let {name} = {};", ValuePrinter::pin_value(&rust, &format!("{cx}.bytes({i})")))
                 }
+                // an `f32`, `f16`, `f128` or an integer wider than 64 bits is its own bytes
+                Some(ty) if ValuePrinter::is_number_width(ty) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 // a composite param is the bytes of a composite pin
                 Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),

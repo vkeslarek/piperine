@@ -30,7 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Write};
 
-use crate::ids::{AggregateId, ExprId, FunctionId, StmtId, TypeId};
+use crate::ids::{AggregateId, WideId, ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
     Drive,
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
@@ -75,6 +75,9 @@ impl Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ValueType::F64 => f.write_str("f64"),
+            ValueType::F32 => f.write_str("f32"),
+            ValueType::F16 => f.write_str("f16"),
+            ValueType::F128 => f.write_str("f128"),
             ValueType::Bool => f.write_str("bool"),
             ValueType::Unit => f.write_str("()"),
             ValueType::Fn(params, ret) => {
@@ -102,6 +105,8 @@ impl Display for Constant {
             Constant::Bool(b) => write!(f, "{b}"),
             Constant::Int(v) => write!(f, "{v}"),
             Constant::Aggregate(id) => write!(f, "agg{}", id.0),
+            Constant::FloatBits(bits) => write!(f, "bits(0x{bits:x})"),
+            Constant::Wide(id) => write!(f, "wide{}", id.0),
         }
     }
 }
@@ -285,6 +290,9 @@ impl<'a> Printer<'a> {
     /// A constant as source: a scalar as `Display` writes it, a composite value spelled out through
     /// its type (`Pair(1.0, true)`, `Tx::Data(3)`, `[1, 2]`, `Some(1.0)`); `depth` ends a cycle.
     fn constant(&self, value: &Constant, depth: usize) -> String {
+        if let Constant::Wide(id) = value {
+            return self.wide_text(*id);
+        }
         let Constant::Aggregate(id) = value else { return Printer::scalar(value) };
         let Some(data) = self.ir.aggregates.get(id.index()) else { return format!("<bad aggregate {}>", id.0) };
         if depth > 32 {
@@ -310,6 +318,28 @@ impl<'a> Printer<'a> {
             Constant::Bool(b) => b.to_string(),
             Constant::Int(v) => v.to_string(),
             Constant::Aggregate(id) => format!("agg{}", id.0),
+            Constant::FloatBits(bits) => format!("bits(0x{bits:x})"),
+            Constant::Wide(id) => format!("wide{}", id.0),
+        }
+    }
+
+    /// A constant of an integer type wider than 64 bits as `wide(0x..)`: its limbs, high limb first
+    /// (`<bad wide>` for an id outside the arena).
+    fn wide_text(&self, id: WideId) -> String {
+        let Some(data) = self.ir.wides.get(id.index()) else { return format!("<bad wide {}>", id.0) };
+        let limbs: String = data.limbs.iter().rev().map(|limb| format!("{limb:016x}")).collect();
+        format!("wide(0x{limbs})")
+    }
+
+    /// A float literal of a width other than `f64`: a finite `f32` as `1.5f32`, every other value
+    /// of `f32`, `f16` and `f128` as its IEEE 754 bits, `f16(0x3c00)`.
+    fn float_bits_text(ty: &ValueType, bits: u128) -> String {
+        match ty {
+            ValueType::F32 => {
+                let value = f32::from_bits(bits as u32);
+                if value.is_finite() { format!("{value:?}f32") } else { format!("f32(0x{bits:x})") }
+            }
+            other => format!("{other}(0x{bits:x})"),
         }
     }
 
@@ -1024,6 +1054,8 @@ impl<'a> Printer<'a> {
                 let suffix = if data.ty.is_integer() { data.ty.to_string() } else { String::new() };
                 next.push(text(format!("{v}{suffix}")));
             }
+            Expr::FloatBits(bits) => next.push(text(Printer::float_bits_text(&data.ty, *bits))),
+            Expr::Wide(id) => next.push(text(self.wide_text(*id))),
             Expr::Cast { expr, to } => next.extend([text("(".into()), Piece::Expr(*expr), text(format!(" as {to})"))]),
             Expr::Method { method, receiver, args } => {
                 next.extend([Piece::Expr(*receiver), text(format!(".{}(", Printer::method_name(*method)))]);
@@ -1126,6 +1158,8 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match &data.kind {
             Expr::Int(_) => data.ty.is_integer().then(|| data.ty.clone()),
+            Expr::FloatBits(_) => data.ty.is_other_float().then(|| data.ty.clone()),
+            Expr::Wide(_) => data.ty.is_wide_integer().then(|| data.ty.clone()),
             Expr::Cast { expr, to } => Typing::cast(&ty(expr)?, to),
             Expr::Method { method, receiver, args } => {
                 let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
@@ -1174,7 +1208,7 @@ impl<'a> Printer<'a> {
                 let params: Option<Vec<ValueType>> = params.iter().map(|p| scope.locals.get(*p as usize).map(|l| l.ty.clone())).collect();
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
-            Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
+            Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
             Expr::Carrier(_) | Expr::Previous(_) | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => None,
             Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
@@ -1366,6 +1400,8 @@ impl<'a> Printer<'a> {
             Expr::Limit { site, x, f, seed } => format!("limit L{site} {} {} {}", e(x), e(f), opt(seed)),
             Expr::Stim { site, mag, phase } => format!("ac_stim S{site} {} {}", e(mag), opt(phase)),
             Expr::Int(v) => format!("int {v}"),
+            Expr::FloatBits(bits) => format!("bits 0x{bits:x}"),
+            Expr::Wide(id) => format!("wide {}", id.0),
             Expr::Cast { expr, to } => format!("cast {} to {to}", e(expr)),
             Expr::Method { method, receiver, args } => format!("{} {} ({})", Printer::method_name(*method), e(receiver), ids(args)),
             Expr::Carrier(i) => format!("carrier {i}"),

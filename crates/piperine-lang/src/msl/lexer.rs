@@ -674,12 +674,13 @@ pub fn int_suffix_text(text: &str) -> &str {
     int_parts(text).2
 }
 
-/// `E0909` for a literal out of range: an infinite float, or an integer past
+/// `E0909` for a literal out of range: a suffixed float whose `f64` is infinite (an unsuffixed
+/// float is read in the format of its position, so the checker owns its range, A.8 rule 8), or an integer past
 /// its suffix type (`iN` admits `2^(N-1)`: the minus sign is an operator, A.2
 /// rule 7) or, unsuffixed, past 128 bits.
 fn range_diag(tok: &Token, span: Span) -> Option<Diagnostic> {
     let (text, what) = match tok {
-        Token::Float { value, raw } if value.is_infinite() => (raw, "a float literal beyond the range of `f64`".to_string()),
+        Token::Float { value, raw } if value.is_infinite() && !float_suffix(raw).is_empty() => (raw, "a float literal beyond the range of `f64`".to_string()),
         Token::Int(text) => {
             if int_value(text).is_some() {
                 return None;

@@ -440,7 +440,7 @@ For review: that no primitive numeric type implements `Default`, which differs f
 | D9 | Where docs and attributes may be written | before every item, field, variant, `match` arm and statement, and before reactions, definitions, generation and nature quantities; the docs of a quantity and of a reaction are metadata, those of a statement are kept and ignored. | A.4, §21 |
 | D10 | Identifier patterns | a plain identifier pattern that resolves to a constant, a unit variant or a unit struct is that path, not a binding. | §1 rule 14 |
 | D11 | Structural checks the elaborator reports | `E0320`, `E0140`, `E0370`, `E0201` and `E0263` are reported under the specification's codes, at name resolution. | §8.5.7, §3.2.9, §8.4, §4, B.3.3 |
-| D12 | Out-of-range literals | `E0909`, at parse: a float literal whose nearest `f64` is infinite; an integer literal past its suffix type, or past 128 bits without a suffix. | A.2 rule 8, A.6, §1 rule 7 |
+| D12 | Out-of-range literals | `E0909`: an SI-suffixed float literal whose nearest `f64` is infinite, an unsuffixed one whose nearest value of its own type is infinite (checked per format); an integer literal past its suffix type, or past 128 bits without a suffix. | A.2 rule 8, A.6, §1 rule 7 |
 | D13 | Where items may sit | at namespace scope, in a file or an inline `mod`; a hardware module and its blocks are in one file, any namespace of it. | §3.4.3, B.2 |
 | D14 | Codes of misplaced statements | `E0404` for `<-`, `+>`, `on`, `bound_step` and `signal` in any block or body that is not theirs, a module body included; `E0121` for a `fn` body, where it wins. | §10 rule 8, §3 rule 6, A.6 |
 | D15 | Raw identifiers (G.15) | `r#name` is accepted for the seven added keywords and for no other word. | A.1 rule 6, G.15 |

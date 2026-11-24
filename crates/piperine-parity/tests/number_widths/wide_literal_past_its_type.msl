@@ -1,0 +1,4 @@
+//! A literal past its type (composite-values CV-32 AC 3, A.2 rule 8): `UInt<70>` holds up to 2^70 - 1 and the literal is 2^70.
+module Bench() {
+    signal x: Bit<UInt<70>> = 0x400000000000000000;
+}

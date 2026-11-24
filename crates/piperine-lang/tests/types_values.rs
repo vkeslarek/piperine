@@ -261,11 +261,6 @@ fn the_std_pnjlim_checks_clean() {
 
 #[test]
 fn an_unsupported_form_does_not_hide_an_independent_error() {
-    // A refused annotation still has its initializer checked.
-    let (src, d) = diagnostics("", "let x: f32 = 1.0 + true;");
-    assert_eq!(codes_of(&d), ["P0001", "E0180"]);
-    assert_eq!(snippet(&src, &d[1]), "true");
-
     // A generic function used as a value is refused (its calls are typed, generics T20) and its body is checked as well.
     let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g;");
     assert_eq!(codes_of(&d), ["P0001", "E0180"]);
@@ -280,9 +275,6 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
 
     // A last statement that is not itself refused leaves the missing result its own error,
     // whatever it holds that is refused.
-    let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y: f32 = 1.0; }", "let z = f(1.0);");
-    assert_eq!(codes_of(&d), ["E0180", "P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "{ let y: f32 = 1.0; }");
     let (src, d) = diagnostics("fn f(a: f64) -> f64 { a % 2.0; }", "let z = f(1.0);");
     assert_eq!(codes_of(&d), ["E0180", "P0001"]);
     assert_eq!(snippet(&src, &d[0]), "{ a % 2.0; }");
