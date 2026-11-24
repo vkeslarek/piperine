@@ -123,6 +123,8 @@ pub(super) struct Checker<'d> {
     pub(super) template_locals: BTreeMap<DeclId, ExprId>,
     /// The type each read through a template was given by its context, which the elaborator checks the concrete item against.
     pub(super) template_items: BTreeMap<ExprId, Ty>,
+    /// The role of each access name the resolver left ambiguous (`v` of `v(y)`, `y` a `let`), read from the node its probe names.
+    pub(super) access_roles: BTreeMap<ExprId, crate::pom::QuantityRole>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
     /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
@@ -211,6 +213,7 @@ impl<'d> Checker<'d> {
             template_reads: BTreeSet::new(),
             template_locals: BTreeMap::new(),
             template_items: BTreeMap::new(),
+            access_roles: BTreeMap::new(),
             handles: BTreeSet::new(),
             bound_substitution: None,
             bound_arguments: BTreeMap::new(),
@@ -258,7 +261,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, template_items: self.template_items, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, template_items: self.template_items, access_roles: self.access_roles, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in

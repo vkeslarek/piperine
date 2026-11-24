@@ -224,6 +224,8 @@ pub struct Types<'d> {
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
     /// The type the context gave each read of an item of a child placed through a template (§8.4.8, `template_items.rs`).
     pub(super) template_items: BTreeMap<ExprId, Ty>,
+    /// The role of each access name the resolver left ambiguous, read from the node its probe names (`analog.rs`).
+    pub(super) access_roles: BTreeMap<ExprId, crate::pom::QuantityRole>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
     /// The locals some assignment of a checked body writes (§1.5.12): the elaborator makes exactly these assignable.
@@ -451,6 +453,12 @@ impl<'d> Types<'d> {
     /// elaborator checks the concrete item has it. `None` for a node read or any other expression.
     pub fn template_item(&self, read: ExprId) -> Option<&Ty> {
         self.template_items.get(&read)
+    }
+
+    /// The role the access name `callee` of a probe stands for when the resolver left it ambiguous (`v` of `v(y)` with `let y = x;`,
+    /// or of `v(c0.sn)` through a template): read from the node the probe names (§6 rule 4).
+    pub fn access_role(&self, callee: ExprId) -> Option<crate::pom::QuantityRole> {
+        self.access_roles.get(&callee).copied()
     }
 
     /// The instantiation a call of a generic function of the reachable set makes: the function and

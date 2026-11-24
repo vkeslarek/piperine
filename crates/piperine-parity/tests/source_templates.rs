@@ -160,3 +160,13 @@ fn a_let_bound_to_a_node_probes_the_node() {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
 }
+
+#[test]
+fn a_let_bound_to_a_node_is_a_contribution_target() {
+    // §6 rule 4, §11: `let y = held; v(y) +> 0.7;` holds `held` at 0.7, and `let y = c0.sn; v(y) +> 0.3;` through a template holds
+    // the cell's storage node at 0.3
+    let seen = RUN.operating_point("items.msl", "RigAliasTarget", &["held", "setter.c0.sn"]);
+    for (value, wanted) in seen.iter().zip([0.7, 0.3]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}

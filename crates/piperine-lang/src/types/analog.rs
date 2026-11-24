@@ -72,10 +72,17 @@ impl Checker<'_> {
             Resolution::Builtin(_) => (QuantityRole::Potential, None),
             // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
             // name is read as a potential probe until then
-            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.names_only_potentials(*callee) && args.first().is_some_and(|arg| self.reads_through_callable(arg.value)) => (QuantityRole::Potential, None),
-            // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4)
+            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.names_only_potentials(*callee) && args.first().is_some_and(|arg| self.reads_through_callable(arg.value)) => {
+                self.access_roles.insert(*callee, QuantityRole::Potential);
+                (QuantityRole::Potential, None)
+            }
+            // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4); the role is
+            // recorded for the elaborator, which reads a probe and a contribution target alike through it
             Resolution::Deferred(DeferReason::AmbiguousAccess) => match self.access_of_operand(*callee, args) {
-                Some((role, nature)) => (role, Some(nature)),
+                Some((role, nature)) => {
+                    self.access_roles.insert(*callee, role);
+                    (role, Some(nature))
+                }
                 None => {
                     self.unsupported(file, node.span, "probe through an access that names several natures");
                     return None;

@@ -105,6 +105,8 @@ impl Elaboration<'_, '_> {
             },
             Resolution::Builtin(id) if id.info().name == "flow" => Some(pom::QuantityRole::Flow),
             Resolution::Builtin(id) if id.info().name == "potential" => Some(pom::QuantityRole::Potential),
+            // an access the resolver left ambiguous takes the role the checker read from the node (`v(y)`, `let y = x;`)
+            Resolution::Deferred(_) => self.types.access_role(callee),
             _ => None,
         }
     }

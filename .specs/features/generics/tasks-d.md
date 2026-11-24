@@ -686,6 +686,11 @@ Proof: run typeshandles | test a_let_bound_to_a_node_keeps_its_nature_for_a_prob
 Proof: run elabhandles | test a_let_bound_to_a_node_probes_the_node ... ok
 Proof: run srctempl | test a_let_bound_to_a_node_probes_the_node ... ok
 
+**C114** - A `let` bound to a node is a contribution target as the node is: `let y = x; v(y) +> 1.0;` lowers to `v(x) +> 1.0;`, and through a template to the reached node's potential; the role of an access the resolver left ambiguous is the checker's (`Types::access_role`). (§6 rule 4, §11; fix round 5, finding 17)
+Proof: run typeshandles | test a_let_bound_to_a_node_is_a_contribution_target ... ok
+Proof: run elabhandles | test a_contribution_through_a_let_bound_to_a_node_is_the_nodes ... ok
+Proof: run srctempl | test a_let_bound_to_a_node_is_a_contribution_target ... ok
+
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 

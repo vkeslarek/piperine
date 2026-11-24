@@ -47,3 +47,22 @@ analog for RigAlias {
     let z = a;
     potential(mirror) +> v(y) + v(z);
 }
+
+/// A cell whose storage node only leaks: a holder sets its potential through a `let` (§6 rule 4).
+module Leaky(a: Electrical) { pub signal sn: Electrical; }
+analog for Leaky { i(sn, gnd) +> v(sn, gnd); }
+
+/// The setter drives `c0.sn` through `let y = c0.sn; v(y) +> 0.3;`, the cell placed through a template.
+module Setter<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }
+analog<C> for Setter<C> { let y = c0.sn; v(y) +> 0.3; }
+
+module RigAliasTarget() {
+    signal a: Electrical;
+    signal held: Electrical;
+    let setter = Setter::<_>(a) { cell: Leaky { } };
+}
+analog for RigAliasTarget {
+    potential(a) +> 0.5;
+    let y = held;
+    v(y) +> 0.7;
+}

@@ -54,3 +54,15 @@ fn a_let_bound_to_a_node_probes_the_node() {
         assert!(printed.contains(probe), "{src}: {printed}");
     }
 }
+
+#[test]
+fn a_contribution_through_a_let_bound_to_a_node_is_the_nodes() {
+    // §6 rule 4, §11: `let y = x; v(y) +> 1.0;` lowers to the contribution `v(x) +> 1.0;` lowers to, and through a template the
+    // potential of the reached node `c0.sn`
+    let alias = Elab::ir("module Top() { signal x: Electrical; }\nanalog for Top { let y = x; v(y) +> 1.0; }", "Top").print_structural();
+    let direct = Elab::ir("module Top() { signal x: Electrical; }\nanalog for Top { v(x) +> 1.0; }", "Top").print_structural();
+    assert_eq!(alias, direct);
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    let template = Elab::ir(&format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); }}\nanalog<C> for Bank<C> {{ let y = c0.sn; v(y) +> 1.0; }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"), "Top").print_structural();
+    assert!(template.contains("branch b0 (c0.sn, gnd) potential") && template.contains("b0.potential +> direct 1.0"), "{template}");
+}

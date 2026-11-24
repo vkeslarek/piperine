@@ -202,3 +202,16 @@ fn a_let_bound_to_a_node_keeps_its_nature_for_a_probe() {
         assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
     }
 }
+
+#[test]
+fn a_let_bound_to_a_node_is_a_contribution_target() {
+    // §6 rule 4, §11: `v(y) +> 1.0` with `let y = x;` contributes to `x` as `v(x) +> 1.0` does, in a plain module and through a
+    // template
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for src in [
+        "module Top() { signal x: Electrical; }\nanalog for Top { let y = x; v(y) +> 1.0; }".to_string(),
+        format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); }}\nanalog<C> for Bank<C> {{ let y = c0.sn; v(y) +> 1.0; }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
+    ] {
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+    }
+}
