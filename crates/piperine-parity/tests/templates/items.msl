@@ -66,3 +66,18 @@ analog for RigAliasTarget {
     let y = held;
     v(y) +> 0.7;
 }
+
+/// A current source pushing `amps` into its node.
+module Push(a: Electrical) { amps: f64 = 0.5; }
+analog for Push { i(a, gnd) +> -amps; }
+
+/// The bank connects a source to the storage node of the cell its template places (§8.2.8: a child's node is the parent's).
+module Feeder<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); let feed = Push(c0.sn); }
+
+module RigFeed() {
+    signal a: Electrical;
+    let feeder = Feeder::<_>(a) { cell: Leaky { } };
+    let near = Leaky(a);
+    let feed = Push(near.sn) { amps: 0.25 };
+}
+analog for RigFeed { potential(a) +> 0.5; }

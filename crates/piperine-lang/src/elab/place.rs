@@ -124,19 +124,36 @@ impl Elaboration<'_, '_> {
             self.ir.bind_nets(instance, nets.clone());
         }
         stack.push(key);
-        let mut bound = Vec::new();
-        for (index, child) in plan.children.iter().enumerate() {
-            let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
-            if let Some(placed) = self.place_child(child, &parent, stack) {
-                bound.extend(self.bind_reaches(&plan.reaches, index as u32, instance, &placed));
+        self.place_children(&plan, instance, (&placing.path, placing.file), &bindings, (&mut nodes, &nets), stack);
+        stack.pop();
+        Some(Placed { instance, nodes, nets, host_ports })
+    }
+
+    /// Places the children of `plan` under `instance`, in source order except that a child connected to a node of another child
+    /// (`Th(c0.sn)`, a reached node) waits until that child is placed and the node is bound. A node this body reaches is a node of
+    /// its own to the siblings placed after and to the parent that reads it in turn (`bank.c0.sn`), so `nodes` takes it at once.
+    /// Children that each wait for the other's node are refused by name (the checker refuses a name read before its `let` first,
+    /// so no source reaches it today).
+    fn place_children(&mut self, plan: &ModulePlan, instance: InstanceId, (path, file): (&str, FileId), bindings: &Bindings, (nodes, nets): (&mut Vec<NodeRef>, &[NetId]), stack: &mut Vec<BodyKey>) {
+        let reached: Vec<u32> = plan.nodes.iter().enumerate().filter(|(_, node)| node.role == NodeRole::Reached).map(|(slot, _)| slot as u32).collect();
+        let mut unbound: std::collections::BTreeSet<u32> = reached.into_iter().collect();
+        let mut waiting: Vec<usize> = (0..plan.children.len()).collect();
+        while !waiting.is_empty() {
+            let Some(at) = waiting.iter().position(|index| !plan.children[*index].terminals.iter().any(|t| matches!(t, Terminal::Node(slot) if unbound.contains(slot)))) else {
+                let child = &plan.children[waiting[0]];
+                let span = self.design.expr_node(child.call).span;
+                self.unsupported(file, span, "children each connected to a node of the other");
+                return;
+            };
+            let index = waiting.remove(at);
+            let parent = Parent { instance, path, nodes: nodes.as_slice(), nets, bindings };
+            if let Some(placed) = self.place_child(&plan.children[index], &parent, stack) {
+                for (slot, own) in self.bind_reaches(&plan.reaches, index as u32, instance, &placed) {
+                    nodes[slot as usize] = own;
+                    unbound.remove(&slot);
+                }
             }
         }
-        stack.pop();
-        // a node this body reaches is a node of its own to the parent that reads it in turn (`bank.c0.sn`)
-        for (slot, own) in bound {
-            nodes[slot as usize] = own;
-        }
-        Some(Placed { instance, nodes, nets, host_ports })
     }
 
     /// Binds each node and carrier `instance` reads of its child number `child` (`inst.name`, a

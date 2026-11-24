@@ -163,3 +163,20 @@ fn a_node_chosen_through_lets_and_arm_statements_folds_to_the_node() {
         assert!(printed.contains(&format!("b2.flow +> direct probe({node}, gnd)")), "{analog}: {printed}");
     }
 }
+
+#[test]
+fn a_node_of_a_child_connects_to_another_placement() {
+    // §8.2.8, §8.1.10: `Th(c0.sn)` binds `Th`'s port to the storage node of `c0`, placed by name or through a template, and so
+    // does `Th(if sel { c0.sn } else { t })` with `sel` true; the child that owns the node is placed first
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\n";
+    for (top, path) in [
+        ("module Top() { signal x: Electrical; let c0 = Dram(x); let th = Th(c0.sn); }", "Top"),
+        ("module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); let th = Th(c0.sn); }\nmodule Top() { signal x: Electrical; let b = Bank::<_>(x) { cell: Dram { } }; }", "Top.b"),
+        ("module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; sel: bool = true; signal t: Electrical; let c0 = cell(a); let th = Th(if sel { c0.sn } else { t }); }\nmodule Top() { signal x: Electrical; let b = Bank::<_>(x) { cell: Dram { } }; }", "Top.b"),
+    ] {
+        let ir = Elab::ir(&format!("{modules}{top}"), "Top");
+        let binding = |at: &str| ir.instance_at(at).map(|instance| format!("{:?}", instance.bindings())).unwrap_or_else(|| panic!("no instance {at}"));
+        let storage = format!("{:?}", ir.instance_at(&format!("{path}.c0")).expect("c0").bindings()[1]);
+        assert!(binding(&format!("{path}.th")).contains(&storage), "{top}: th is on c0.sn ({storage}): {}", binding(&format!("{path}.th")));
+    }
+}

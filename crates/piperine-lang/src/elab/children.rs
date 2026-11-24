@@ -281,13 +281,8 @@ impl Elaboration<'_, '_> {
                 }
                 continue;
             }
+            // a reached node (`c0.sn`) is bound once its child is placed; placement places that child first (`place.rs`)
             match self.lower_terminal(scope, arg.value) {
-                // A reached node is bound after its child is placed, which a sibling placed before
-                // it could not read.
-                Some(Terminal::Node(at)) if self.structure.nodes[at as usize].1.role == piperine_ir::NodeRole::Reached => {
-                    self.unsupported(scope.file, self.design.expr_node(arg.value).span, "a node of a child connected to another placement");
-                    ok = false;
-                }
                 Some(terminal) => terminals.push(terminal),
                 None => ok = false,
             }

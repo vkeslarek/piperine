@@ -181,3 +181,13 @@ fn a_param_picks_the_node_a_module_probes_and_drives() {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
 }
+
+#[test]
+fn a_childs_node_connects_to_another_placement() {
+    // §8.2.8, §8.1.10: `Push(c0.sn)` with `c0` placed through a template, and `Push(near.sn)` with `near` placed by name, drive the
+    // storage node of the cell: a 1 S leak to ground fed `amps` settles at `amps` volts (0.5 and 0.25)
+    let seen = RUN.operating_point("items.msl", "RigFeed", &["feeder.c0.sn", "near.sn"]);
+    for (value, wanted) in seen.iter().zip([0.5, 0.25]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}

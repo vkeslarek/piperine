@@ -315,3 +315,15 @@ fn a_node_chosen_at_a_node_argument_is_e0133_alone() {
         assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{body}{analog}: {found:?}");
     }
 }
+
+#[test]
+fn a_node_of_a_child_is_a_connection() {
+    // §8.2.8, §8.1.10: a child's node, named directly or through a template, is connected to another placement like any node
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\n";
+    for top in [
+        "module Top() { signal x: Electrical; let c0 = Dram(x); let th = Th(c0.sn); }",
+        "module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); let th = Th(c0.sn); }\nmodule Top() { signal x: Electrical; let b = Bank::<_>(x) { cell: Dram { } }; }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+}
