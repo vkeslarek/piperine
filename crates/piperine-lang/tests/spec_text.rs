@@ -2565,3 +2565,15 @@ fn c_2_3_and_g_38_say_tran_on_a_resolved_nature_runs() {
     assert!(g38.contains("`Tran` on nets of a `Resolve<Driven>` nature runs"), "G.38 says `Tran` runs: {g38}");
     assert!(g38.contains("20 gallery fences"), "G.38 counts the fences the gate builds: {g38}");
 }
+
+#[test]
+fn rule_2_orders_the_drives_of_one_instance_by_carrier_declaration() {
+    // resolved-nets RN-03 AC 3 (round 3 fix F21): the order `resolve` receives its drives in is the order of the holders' instance
+    // paths, and the drives one instance holds on one net follow its carriers' declaration order in its module
+    let resolution = one_line(&section(&spec("part_ii_carriers.md"), "## 4. "));
+    assert!(resolution.contains("The order of rule 2 is the lexicographic order of the hierarchical paths"), "§4 orders the drives by instance path: {resolution}");
+    // the Resolution is a block quote: each of its lines keeps its `>`
+    for needle in ["drives one instance holds on one net (two of its carriers connected to it) are ordered,", "> after the instance path, by the declaration order of those carriers in the instance's > module."] {
+        assert!(resolution.contains(needle), "§4 orders the drives of one instance by its carriers' declaration ({needle}): {resolution}");
+    }
+}

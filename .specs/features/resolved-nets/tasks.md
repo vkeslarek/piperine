@@ -1297,7 +1297,7 @@ Proof: run hostpatterns | test the_host_drives_a_four_state_in_port ... ok
 **C87** - A pattern with a character outside `0 1 x z` or of another length is `E0702` (GAPS L71, RN-03)
 Proof: run hostpatterns | test a_bad_character_and_a_wrong_length_are_e0702 ... ok
 
-**C88** - An instance whose two resolved carriers sit on one net holds one drive per carrier, in carrier order (RN-03, AC 3, round 1 fix F13)
+**C88** - An instance whose two resolved carriers sit on one net holds one drive per carrier, in carrier order, the order §4 rule 2's Resolution states (RN-03, AC 3, round 1 fix F13, round 3 fix F21)
 Proof: run sourcenets | test two_carriers_of_one_instance_on_one_net_hold_two_drives ... ok
 
 **C89** - `Tran(w, w, en)`, both sides on one net, settles on the level the net is driven to (RN-06, AC 7, round 1 fix F13)
@@ -1317,6 +1317,9 @@ Proof: run hostpatterns | test a_logic_param_of_any_width_is_set_exactly_by_its_
 
 **C94** - `Ir::check` refuses a net's `Resolution` whose holders do not fit: a count other than the drives', a holder instance or carrier out of range, a holder carrier in range that is no resolved carrier (RN-03, round 3 fix F20)
 Proof: run irresolved | test a_resolution_whose_holders_do_not_fit_its_drives_is_refused ... ok
+
+**C95** - §4 rule 2's Resolution orders the drives one instance holds on one net by its carriers' declaration order, after the instance path (RN-03, AC 3, round 3 fix F21; AFK default 2026-11-24, pending user review)
+Proof: run spectext | test rule_2_orders_the_drives_of_one_instance_by_carrier_declaration ... ok
 
 ---
 
