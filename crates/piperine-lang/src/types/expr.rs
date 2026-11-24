@@ -585,13 +585,13 @@ impl Checker<'_> {
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
                     DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
-                    DeclKind::Signal(s) => self.read_type(decl, s.ty),
+                    DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
                         if let Some(read) = self.handle_read(decl) {
                             return Some(read);
                         }
-                        let local = self.locals.get(&decl).cloned();
+                        let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(expr, decl, whole));
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
                         self.open_literals.remove(&decl);
                         if self.read_before_assignment(file, node.span, decl) {

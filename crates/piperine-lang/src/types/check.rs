@@ -718,6 +718,28 @@ impl<'d> Checker<'d> {
         false
     }
 
+    /// One item of a module body (or of a generation in it) in `phase`.
+    fn module_item(&mut self, child: DeclId, phase: ItemPhase) {
+        let item = self.design.decl_data(child).clone();
+        match (&item.kind, phase) {
+            (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
+            (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
+            (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
+            (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(child, &l.clone()),
+            (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
+            (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
+            (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
+            // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
+            // module that holds the closure, typed with it, not module items (design D9).
+            (DeclKind::Binding(_), _) => {}
+            (DeclKind::Generation(_), ItemPhase::Declarations) if !self.forms.admits(super::UnfinishedForm::Generation) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
+            (DeclKind::Generation(_), _) if !self.forms.admits(super::UnfinishedForm::Generation) => {}
+            (DeclKind::Generation(_), _) => self.generation(child, phase == ItemPhase::Declarations, |this, inner| this.module_item(inner, phase)),
+            (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
+            (_, _) => {}
+        }
+    }
+
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
     /// The modules it places are reached.
     fn module(&mut self, decl: DeclId) {
@@ -747,24 +769,7 @@ impl<'d> Checker<'d> {
         self.book = DriveBook::default();
         for phase in [ItemPhase::Declarations, ItemPhase::Lets, ItemPhase::Definitions] {
             for child in data.children.iter().copied() {
-                let item = self.design.decl_data(child).clone();
-                match (&item.kind, phase) {
-                    (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
-                    (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
-                    (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
-                    (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(&l.clone()),
-                    (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
-                    (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
-                    (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
-                    // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
-                    // module that holds the closure, typed with it, not module items (design D9).
-                    (DeclKind::Binding(_), _) => {}
-                    (DeclKind::Generation(_), ItemPhase::Declarations) if !self.forms.admits(super::UnfinishedForm::Generation) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
-                    // admitted by a test before T72 types it: nothing to check yet
-                    (DeclKind::Generation(_), _) => {}
-                    (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
-                    (_, _) => {}
-                }
+                self.module_item(child, phase);
             }
         }
         self.definition_loops();

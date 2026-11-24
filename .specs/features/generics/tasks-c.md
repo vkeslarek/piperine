@@ -609,8 +609,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generated_items_are_typed_as_arrays_by_ordinal`, `a_generation_range_that_is_not_const_is_e0340` and `a_param_inside_generation_is_e0322` pass under `**Run typesgenr**`
-- [ ] Gate check passes: Quick
+- [x] `generated_items_are_typed_as_arrays_by_ordinal`, `a_generation_range_that_is_not_const_is_e0340` and `a_param_inside_generation_is_e0322` pass under `**Run typesgenr**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

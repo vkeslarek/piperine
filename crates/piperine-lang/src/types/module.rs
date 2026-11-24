@@ -116,7 +116,15 @@ impl Checker<'_> {
     pub(super) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
         let ty = self.port_type(signal.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
-            self.carriers.insert(decl, carrier.clone());
+            let held = self.generated_type(decl, carrier.clone());
+            self.carriers.insert(decl, held);
+        }
+        // a generated node is an array of nodes, one level for each generation `for` around it (§8.2.23)
+        if let Some(node @ Ty::Node(_)) = ty.as_ref()
+            && !self.generation_loops(decl).is_empty()
+        {
+            let held = self.generated_type(decl, node.clone());
+            self.carriers.insert(decl, held);
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
         self.initial_reads(init);
@@ -132,7 +140,7 @@ impl Checker<'_> {
 
     /// `let x = value;` in a module body: the binding takes the type of the value (a placement
     /// gives it the placed module).
-    pub(super) fn module_let(&mut self, data: &LetData) {
+    pub(super) fn module_let(&mut self, decl: DeclId, data: &LetData) {
         let pat = self.design.pat_node(data.pat).clone();
         let file = self.design.decl_data(pat.owner).file;
         if matches!(pat.kind, PatKind::Tuple(_)) {
@@ -156,7 +164,9 @@ impl Checker<'_> {
                 self.poisoned.insert(*binding);
             }
             Some(ty) => {
-                self.locals.insert(*binding, ty);
+                // inside a generation `for` the binding is the array of its element (§8.2.23)
+                let held = self.generated_type(decl, ty);
+                self.locals.insert(*binding, held);
             }
             None => {
                 self.poisoned.insert(*binding);

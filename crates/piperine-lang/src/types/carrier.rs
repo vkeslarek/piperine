@@ -145,13 +145,15 @@ impl Checker<'_> {
     pub(super) fn read_type(&mut self, decl: DeclId, ty: TypeId) -> Option<Ty> {
         match self.port_type(ty)? {
             carrier @ Ty::Carrier { .. } => {
-                self.carriers.insert(decl, carrier.clone());
+                let held = self.generated_type(decl, carrier.clone());
+                self.carriers.insert(decl, held);
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
             }
             // an array of carriers reads as the array of their values; an array of nodes is the array itself
             array @ Ty::Array(..) if array.is_carrier_element() => {
-                self.carriers.insert(decl, array.clone());
+                let held = self.generated_type(decl, array.clone());
+                self.carriers.insert(decl, held);
                 Some(array.read_value())
             }
             node => Some(node),
