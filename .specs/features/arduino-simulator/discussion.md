@@ -1,6 +1,6 @@
 # Arduino simulator — discussion before planning
 
-Status: **open for discussion** (user + coordinator), 2026-11-24. No spec yet. When the questions
+Status: **postponed, much later** (user, 2026-11-24: "coloca lá para depois, bem depois"). Open for discussion when it comes back. No spec yet. When the questions
 below are settled, Fable writes `spec.md`, `design.md` and `tasks.md` from this file.
 
 ## Goal

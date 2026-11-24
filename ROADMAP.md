@@ -85,6 +85,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `surrogate-models` | Averaged or surrogate models for long runs (V13) | spec; later (user) |
 | `periodic-small-signal` | Small-signal analyses over the periodic steady state (V16) | spec |
 | `ngspice-models` | The ngspice device models in the MSL standard library — same names, params and equations, each with a parity twin — so a SPICE user moves over easily | **idea only**; well after the rest (user, 2026-11-21) |
+| `arduino-simulator` | An Arduino / AVR firmware co-simulated with the circuit: our own Rust AVR core (based on avr8js, MIT; per-core facts distilled from datasheets and simavr), pins through the device ABI, ADC/UART/interrupts | discussion + proof of concept in `.specs/features/arduino-simulator/discussion.md`; **much later** (user, 2026-11-24: "coloca lá para depois, bem depois") |
 | `python-host` | A Python host | deferred until the host features are done (user, 2026-11-18) |
 | `lang-server` | The language server on MSL (broken today) | last (user) |
 
