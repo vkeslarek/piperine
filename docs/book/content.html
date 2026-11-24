@@ -2523,6 +2523,28 @@ module MemoryBank<C: Fn(Cell), const ROWS: u32, const COLS: u32>(in wl: [Bit; RO
 
 <pre data-lang="msl">let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
 
+<p>A bound can also name a trait. A module type takes an <code>impl</code> like any other type, and <code>N: Mosfet + Fn(Electrical, Electrical)</code> accepts only a module that implements the trait and has those ports. Two stand-in models and a pair that works with either:</p>
+
+<pre data-lang="msl">/// The contract a MOSFET model keeps, whatever it is made of.
+trait Mosfet { fn gain(self) -> f64; }
+
+module Bsim3(g: Electrical, d: Electrical) { k: f64 = 1.0; }
+analog for Bsim3 { potential(d) +> k * v(g) * v(g); }
+impl Mosfet for Bsim3 { fn gain(self) -> f64 { self.k * 2.0 } }
+
+module Mos1(g: Electrical, d: Electrical) { k: f64 = 1.0; }
+analog for Mos1 { potential(d) +> k * v(g); }
+impl Mosfet for Mos1 { fn gain(self) -> f64 { self.k * 0.5 } }
+
+/// A pair over any model that implements Mosfet and has these ports.
+module DiffPair<N: Mosfet + Fn(Electrical, Electrical)>(g: Electrical, d1: Electrical, d2: Electrical) {
+    fet: N;
+    let left = fet(g, d1);
+    let right = fet(g, d2);
+}</pre>
+
+<pre data-lang="msl">let pair = DiffPair::<_>(g, d1, d2) { fet: Mos1 { k: 3.0 } };   // write Bsim3 { k: 3.0 } to swap the model</pre>
+
 <h3>Multiplicity and extern models</h3>
 
 <ul>

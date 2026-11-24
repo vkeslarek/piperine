@@ -125,6 +125,14 @@ impl Checker<'_> {
         self.callable_of(param).map(|_| decl)
     }
 
+    /// Whether `callee` is a param whose type is a type parameter with an `Fn(..)` bound, though the bound did not type (an input
+    /// that failed to lower): the failure is already reported.
+    pub(super) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
+        let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return false };
+        let DeclKind::Param(data) = &self.design.decl_data(decl).kind else { return false };
+        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if super::GenericSignature::is_callable(self.design, parameter))
+    }
+
     /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
     /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
     pub(super) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {

@@ -216,21 +216,18 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
 }
 
 #[test]
-fn the_memory_bank_is_refused_for_its_template_and_bundle() {
-    // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11
-    // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The
-    // generic module runs (T71), so do the arrays of carriers and the generation `for` of the bank (T77). What is left, exactly:
-    // the bundle `Cell`, a struct with a carrier field (L25), and the placement through the template `cell`, whose argument is
-    // the bundle literal (`Fn(Cell)` bounds a module that is typed from T88 on)
+fn the_memory_bank_is_refused_only_for_its_bundle() {
+    // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11 (fragment): the placement
+    // `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The generic module, the arrays of carriers,
+    // the generation `for` of the bank, the `Fn` bound, the template `cell` and the placement through it all run (generics phase D,
+    // `source_templates.rs`). What is left, exactly: the bundle `Cell`, a struct with a carrier field (L25), which the port of
+    // `Dram1T1C` names, and its literal `Cell { wl: wl[r], bl: bl[c] }`, the argument of the placement
     let chapter = Chapter::read();
     let top = format!("module Top() {{\n    signal wl: [Bit; 64] = [false; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
-    assert_eq!(codes, ["P0001", "P0001"], "{given:?}");
-    assert!(given[0].1.contains("`Cell` has a carrier field, a bundle is not supported yet"), "{given:?}");
-    assert_eq!(given[1].1, "placement through a template value or a function is not supported yet");
-    assert!(!given.iter().any(|(_, message)| message.contains("array of")), "the arrays of carriers run: {given:?}");
+    let messages: Vec<&str> = given.iter().map(|(_, message)| message.as_str()).collect();
+    assert_eq!(messages, ["`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet", "struct expression is not supported yet"], "the bundle type and its literal are all that is refused: {given:?}");
     Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet");
 }
 
@@ -247,13 +244,34 @@ fn a_function_that_returns_a_template_places_its_result() {
 }
 
 #[test]
+fn the_swappable_mosfet_listing_runs() {
+    // modules#14 (run): `trait Mosfet`, the stand-in models `Bsim3` (`k g^2`) and `Mos1` (`k g`) and `DiffPair<N: Mosfet + Fn(..)>`;
+    // modules#15 (fragment): the pair placed over `Mos1 { k: 3.0 }`, and over `Bsim3 { k: 3.0 }` once the model is swapped (§8.4). Each model
+    // gives its own operating point, computed here from its formula at a gate held at 0.5 V
+    let chapter = Chapter::read();
+    let fragment = chapter.text("modules#15");
+    let gate = 0.5;
+    let drain = |model: &str| -> f64 {
+        let placed = fragment.replace("Mos1", model);
+        let top = format!("module Top() {{\n    signal g: Electrical;\n    signal d1: Electrical;\n    signal d2: Electrical;\n    {placed}\n}}\nanalog for Top {{ potential(g) +> {gate}; }}\n");
+        let ran = chapter.wrapped("pair.msl", "", "modules#14", &top).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
+        assert!((ran.signal("Top.d1") - ran.signal("Top.d2")).abs() < 1e-9, "both legs of the pair hold the model's response");
+        ran.signal("Top.d1")
+    };
+    let mos1 = 3.0 * gate;
+    let bsim3 = 3.0 * gate * gate;
+    assert!((drain("Mos1") - mos1).abs() < 1e-9, "Mos1 gives k g = {mos1}");
+    assert!((drain("Bsim3") - bsim3).abs() < 1e-9, "Bsim3 gives k g^2 = {bsim3}");
+}
+
+#[test]
 fn the_extern_osdi_module_is_refused() {
-    // modules#14 (refused): `#[link("bsim4.osdi", model = "bsim4")] extern "osdi" module Bsim4`, placed in a
+    // modules#16 (refused): `#[link("bsim4.osdi", model = "bsim4")] extern "osdi" module Bsim4`, placed in a
     // top: an `extern` module is `P0001` (L33)
     let chapter = Chapter::read();
     let after = "module Top() { signal d: Electrical; signal g: Electrical; signal s: Electrical; signal b: Electrical; let m1 = Bsim4(d, g, s, b); }\n";
-    let model = chapter.wrapped("bsim4.msl", "", "modules#14", after);
-    Refusal::expect(model.run(Commands::of_top()), "modules#14", "P0001", "`extern` module is not supported yet");
+    let model = chapter.wrapped("bsim4.msl", "", "modules#16", after);
+    Refusal::expect(model.run(Commands::of_top()), "modules#16", "P0001", "`extern` module is not supported yet");
 }
 
 #[test]

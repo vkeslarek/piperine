@@ -51,6 +51,14 @@ impl Checker<'_> {
             // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
             // reads the call as a placement because a module parameter has the same bound
             CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.call_through_bound(expr, parameter, args),
+            // the `Fn` bound of the param names a type that failed (its refusal is reported where the type is written): the call has
+            // nothing left to say
+            CallClass::Instance { module: None, .. } if self.fn_bound_failed(*callee) => {
+                for arg in args {
+                    self.infer(arg.value);
+                }
+                return None;
+            }
             CallClass::Instance { module: None, .. } => {
                 self.unsupported(file, node.span, "placement through a template value or a function");
                 return None;
