@@ -50,7 +50,7 @@ tree one level at a time.
 
 ## Constructs of B.1
 
-The 62 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added to Rust, one row each, numbered as there, with the POM type or method that represents it. A construct that is a name (a core module, a core `fn`, a type or a carrier method) has no storage of its own: it is a row of the built-in table (see [Resolution](resolution.md)), and the call, instance or access that uses it carries a `Resolution::Builtin`. `crates/piperine-lang/tests/pom_docs.rs` (`every_b1_construct_is_mapped`) reads the numbers and spellings of B.1.2 and fails when a construct has no row here.
+The 60 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added to Rust, one row each, numbered as there, with the POM type or method that represents it. A construct that is a name (a core module, a core `fn`, a type or a carrier method) has no storage of its own: it is a row of the built-in table (see [Resolution](resolution.md)), and the call, instance or access that uses it carries a `Resolution::Builtin`. `crates/piperine-lang/tests/pom_docs.rs` (`every_b1_construct_is_mapped`) reads the numbers and spellings of B.1.2 and fails when a construct has no row here.
 
 | # | Construct | POM |
 | --- | --- | --- |
@@ -103,19 +103,17 @@ The 62 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added
 | 47 | `#[derive(Repr)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
 | 48 | `#[link(…)]` on an extern module | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::named` |
 | 49 | `gnd` | `BuiltinKind::Node`; `builtin` |
-| 50 | `m` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
-| 51 | `dtemp` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
-| 52 | `"osdi"` | `ModuleData::abi`; `Module::abi` |
-| 53 | `"cosim"` | `ModuleData::abi`; `Module::abi` |
-| 54 | `sim` | `ExprKind::Emit::stream`; `Expr::kind` |
-| 55 | `checks` | `ExprKind::Emit::stream`; `Expr::kind` |
-| 56 | bundle | `StructData::bundle`; `Struct::is_bundle`, `PortKind::Bundle` |
-| 57 | template | `StructClass::Template`, `CallClass::Instance`; `Instance::via_template`, `Instance::via` |
-| 58 | `Fn(P)` bound on modules | `GenericArgsNode::Paren`; `Path::segments` |
-| 59 | value inputs and a result | `PortKind::ValueInput`, `ModuleData::result`; `Module::result`, `Port::kind` |
-| 60 | `impl` on a nature or bundle | `ImplData`; `Impl`, `Nature::impls`, `Struct::impls` |
-| 61 | `pub` on body items | `DeclData::public`; `Reflect::is_pub` |
-| 62 | `where` over const generics | `FnData::where_`, `ModuleData::where_`; `Function::where_clause`, `Module::where_clause` |
+| 50 | `"osdi"` | `ModuleData::abi`; `Module::abi` |
+| 51 | `"cosim"` | `ModuleData::abi`; `Module::abi` |
+| 52 | `sim` | `ExprKind::Emit::stream`; `Expr::kind` |
+| 53 | `checks` | `ExprKind::Emit::stream`; `Expr::kind` |
+| 54 | bundle | `StructData::bundle`; `Struct::is_bundle`, `PortKind::Bundle` |
+| 55 | template | `StructClass::Template`, `CallClass::Instance`; `Instance::via_template`, `Instance::via` |
+| 56 | `Fn(P)` bound on modules | `GenericArgsNode::Paren`; `Path::segments` |
+| 57 | value inputs and a result | `PortKind::ValueInput`, `ModuleData::result`; `Module::result`, `Port::kind` |
+| 58 | `impl` on a nature or bundle | `ImplData`; `Impl`, `Nature::impls`, `Struct::impls` |
+| 59 | `pub` on body items | `DeclData::public`; `Reflect::is_pub` |
+| 60 | `where` over const generics | `FnData::where_`, `ModuleData::where_`; `Function::where_clause`, `Module::where_clause` |
 
 The specification's B.1.2 no longer lists the contextual keyword `resolve`, the literal `Unknown` and the method `level` (explicit-unknowns, D7). The literal `Unknown` and the `level` builtin are gone from the code (`Unknown` is an ordinary name that resolves to nothing, `level` a method no type has); the implementation still has `NatureFieldNode::Resolve` until `resolved-nets` T16 removes it (the trait `Resolve` replaces the field). `docs/pom/reflection.md` and `model.md` still describe the `resolve` field for the same reason; `pom_docs::the_pom_docs_that_wait_for_the_code_stay_honest` lists each statement and fails when its form leaves the code.
 

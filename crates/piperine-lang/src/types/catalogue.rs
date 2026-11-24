@@ -304,7 +304,7 @@ const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("noise", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionText], allowed: Allowed::Instances, result: CoreResult::F64 }),
     ("simparam", CoreSig { required: &[CoreParam::Text], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::OptionF64 }),
     ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog, result: CoreResult::F64 }),
-    ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::OptionF64 }),
     ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("source_scale", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("now", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),

@@ -382,6 +382,8 @@ impl Elaboration<'_, '_> {
             },
             // `simparam(name)`: the two halves of the session parameter's packed read (`session.rs`)
             ExprKind::Call { .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "simparam") => self.lower_session_pair(scope, expr, origin),
+            // `temperature()`: whether the run set it and the run's kelvin, the two environment reads (`session.rs`)
+            ExprKind::Call { .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "temperature") => Some(self.lower_temperature_pair(origin)),
             ExprKind::Call { args, .. } if matches!(self.typed(expr), Some(Ty::Option(_))) && self.is_some_call(expr) => {
                 let [arg] = args.as_slice() else { return unsupported(self) };
                 let val = self.lower_expr(scope, arg.value)?;
@@ -529,6 +531,9 @@ impl Elaboration<'_, '_> {
                         let default = self.lower_expr(scope, *default);
                         scope.nesting -= 1;
                         let default = default?;
+                        if self.is_ambient_fallback(&pair, default) {
+                            return Some(pair.val);
+                        }
                         let ty = base;
                         Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: default }, ty, origin))
                     }

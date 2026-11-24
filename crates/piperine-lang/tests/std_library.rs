@@ -233,7 +233,7 @@ fn pure_bodies_name_no_primitive() {
         for expr in item.exprs() {
             if let Resolution::Builtin(id) = expr.resolution() {
                 let info = id.info();
-                let primitive = matches!(info.kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Method | BuiltinKind::Event | BuiltinKind::Statement | BuiltinKind::Node | BuiltinKind::ImplicitParam);
+                let primitive = matches!(info.kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Method | BuiltinKind::Event | BuiltinKind::Statement | BuiltinKind::Node);
                 if primitive && info.name != "level" {
                     named.push(format!("{name}: {}", info.name));
                 }
@@ -630,7 +630,7 @@ fn each_namespace_holds_its_section() {
     let design = embedded();
     let names = |ns: &str| pub_names(&design, ns);
     let set = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
-    assert_eq!(names("constants"), set(&["Q", "K_B", "EPS0", "PI", "E", "inf"]), "constants: §1 rule 3");
+    assert_eq!(names("constants"), set(&["Q", "K_B", "EPS0", "PI", "E", "inf", "AMBIENT_TEMPERATURE", "DEFAULT_MULTIPLICITY"]), "constants: §1 rule 3");
     assert_eq!(names("carriers"), set(&["Bit", "Electrical", "Thermal", "VSignal", "Short"]), "carriers: §4 and §11");
     for ns in ["values", "logic", "analog", "nets", "convert", "monitor", "io"] {
         let mut wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member && n.namespace == ns).map(|n| n.name).collect();
@@ -780,7 +780,7 @@ fn prelude_exports_equal_the_index() {
         }
     }
     let mut wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member).map(|n| n.name).collect();
-    wanted.extend(["Bit", "Electrical", "Thermal", "VSignal", "Short", "Q", "K_B", "EPS0", "PI", "E", "inf"].map(String::from));
+    wanted.extend(["Bit", "Electrical", "Thermal", "VSignal", "Short", "Q", "K_B", "EPS0", "PI", "E", "inf", "AMBIENT_TEMPERATURE", "DEFAULT_MULTIPLICITY"].map(String::from));
     // spec-ahead and std-behind entries (explicit-unknowns, the lists above): by name across namespaces
     for (_, name) in INDEX_AHEAD_OF_STD {
         wanted.remove(name);

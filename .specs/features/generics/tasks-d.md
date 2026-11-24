@@ -359,8 +359,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `instances_have_no_implicit_params_in_the_spec`, `temperature_and_multiplicity_are_run_settings_in_the_spec` and `the_recommended_fallback_is_the_ambient_temperature_in_the_spec` pass under `**Run spectext**`
-- [ ] Gate check passes: Quick
+- [x] `instances_have_no_implicit_params_in_the_spec`, `temperature_and_multiplicity_are_run_settings_in_the_spec` and `the_recommended_fallback_is_the_ambient_temperature_in_the_spec` pass under `**Run spectext**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -380,9 +380,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `run_setting_reads_are_built_checked_and_printed` passes under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` covers the read under `**Run interp**`
-- [ ] Gate check passes: Quick
+- [x] `run_setting_reads_are_built_checked_and_printed` passes under `**Run irgen**`
+- [x] `each_generics_form_is_refused_by_name` covers the read under `**Run interp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -402,8 +402,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_device_reads_whether_the_run_set_its_temperature` passes under `**Run tgen**`
-- [ ] Gate check passes: Full
+- [x] `a_device_reads_whether_the_run_set_its_temperature` passes under `**Run tgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -423,10 +423,10 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `temperature_is_an_option_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
-- [ ] `the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled` passes under `**Run elabimplicit**`
-- [ ] `every_twin_prints_the_bytes_it_printed_before_the_move` passes under `**Run twins**`
-- [ ] Gate check passes: Full
+- [x] `temperature_is_an_option_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
+- [x] `the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled` passes under `**Run elabimplicit**`
+- [x] `every_twin_prints_the_bytes_it_printed_before_the_move` passes under `**Run twins**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -446,9 +446,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `the_temperature_listings_run_with_the_ambient_fallback` passes under `**Run bookanalog**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
-- [ ] Gate check passes: Quick
+- [x] `the_temperature_listings_run_with_the_ambient_fallback` passes under `**Run bookanalog**`
+- [x] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -468,9 +468,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `multiplicity_is_a_stdlib_function_over_simparam` passes under `**Run typesimplicit**`
-- [ ] `multiplicity_lowers_to_the_session_parameter` passes under `**Run elabimplicit**`
-- [ ] Gate check passes: Quick
+- [x] `multiplicity_is_a_stdlib_function_over_simparam` passes under `**Run typesimplicit**`
+- [x] `multiplicity_lowers_to_the_session_parameter` passes under `**Run elabimplicit**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -490,8 +490,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel`, `multiplicity_in_a_param_default_is_e0188`, `nothing_set_reads_none`, `a_model_chooses_how_to_use_its_temperature` and `the_run_settings_hold_for_the_whole_run` pass under `**Run srcimplicit**`
-- [ ] Gate check passes: Quick
+- [x] `an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel`, `multiplicity_in_a_param_default_is_e0188`, `nothing_set_reads_none`, `a_model_chooses_how_to_use_its_temperature` and `the_run_settings_hold_for_the_whole_run` pass under `**Run srcimplicit**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -511,9 +511,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `the_multiplicity_listing_runs_as_four_in_parallel` passes under `**Run bookmodules**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
-- [ ] Gate check passes: Quick
+- [x] `the_multiplicity_listing_runs_as_four_in_parallel` passes under `**Run bookmodules**`
+- [x] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -533,8 +533,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `gaps_drops_what_generics_phase_d_closed` and `state_records_templates_and_run_settings` pass under `**Run docs**`
-- [ ] Gate check passes: Full (last task of batch B16)
+- [x] `gaps_drops_what_generics_phase_d_closed` and `state_records_templates_and_run_settings` pass under `**Run docs**`
+- [x] Gate check passes: Full (last task of batch B16)
 
 **Tests**: integration
 **Gate**: full
@@ -644,6 +644,8 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 ## Handoff
 
 The phase's live state, written as it happens - a compaction gives no warning.
+
+**Settled mid-build (B16, 2026-11-24, branch `feature/generics-b16`, T94 to T102 committed and pushed):** (1) `temperature().unwrap_or(AMBIENT_TEMPERATURE)` lowers to the temperature read itself (`elab/session.rs::is_ambient_fallback`; a run that sets none reads 300.15 K, spec 8.5.3), so every twin keeps its pins, numbers and goldens; only `vt(t)`'s own text moved (`Devices::vt` takes a param; ir goldens `diode.txt` and `full/diode.txt`, transpile golden `diode.rs`, `fixtures/elab/diode_*.txt`). Any other fallback reads the pair `(temperature_given, temperature)`. (2) The given flag is a `GLOBAL TEMPERATURE_GIVEN` (10) `BIT` pin of the device ABI (not an ambient cell; in place at MINOR 0, abi.md amended), seeded and written by `bind.rs`, set by `Tolerances::set_temperature` (the API `temp` key calls it; parity tests that wrote `tolerances.temperature` directly now call it). (3) `multiplicity()` is std MSL; a function whose body calls `simparam` is inlined at its call (`records.rs::is_inlined`), because the IR keeps session reads in bodies, never in functions. (4) Deviations: a `multiplicity()` read in a param default is `E0321` (the §8.1.16 code), not `E0188`; spec 8.5.5 and `multiplicity_in_a_param_default_is_e0188` (name kept) say so. Std items carry no doc comment (`std_excerpts` matches item text verbatim); the docs live in the spec table. B.1 now counts 60 constructs (rows 50 and 51 left; docs/pom/mapping.md renumbered). The Book listing is `modules#17` after the merge with B14 and B15 (it was `modules#15` on the branch). T102 drops L29 only: **L32 stays in `GAPS.md` until the template lane (T91 to T93) lands, whose merge drops the L32 row and its `modules#10`/`cheatsheet#8` rows** and the coordinator renumbers MD-81 item 7 if the other lane adds one. `book_compiler::a_compiler_code_says_what_the_chapter_says` reports `compiler~79f44db1` now runs (a template in a `let`, from T88 to T90, not this batch). Loud count 16 (L29 closed): the pinned counts in `crates/piperine-cli/tests/docs.rs` follow.
 
 **Settled mid-build (B14 and B15 so far, 2026-11-24):** T83 to T90 are committed and pushed (head b1168fe50). Deviations: (1) `E0130` left the POM classifier, `pom_classify` and `docs/pom/resolution.md` in T84's commit, not T89's, because T83's spec edit turned `pom_docs` red; its tests were replaced (`impl_on_module_is_no_classifier_error`, `an_impl_on_a_module_type_is_accepted`). (2) T84 types a template of a non-generic module (`Ty::Module`); `Name::<G> { .. }` and the `Instance` part of the interning key (T85) wait for a generic module's template to be typed (nothing in phase D's checks needs it). (3) The template interner moved from `Elaboration` to `ConstEval` (`consts/templates.rs`), so a const, a param default and a function result fold to the same number as a placement does; `bound_implementation` moved to `consts/dispatch.rs` (Elaboration delegates). (4) T88 pulled the modules#12 flip forward (`a_function_that_returns_a_template_places_its_result`, inventory row `run`, GAPS row left) and narrowed modules#10 and cheatsheet#8 to what they print now (the bundle and one placement through `cell`); T93 finishes them and adds the swappable-MOSFET listing. (5) `E0360` and `E0362` left `code_owners.tsv` and GAPS section 10 (count 12 of 189). **T91 is open and is the hard one:** `bank.c0.sn` through `cell: C` (`C: Fn(..)`) needs (a) the checker to record a placement through a callable param (no `Callee` exists for it yet: `call_through_bound` returns the bound's result), (b) `types/template.rs`' `template_value` to `reach(module)` the template's module, (c) `Elaboration::is_module_param` and `children.rs::lower_children` to place a call whose module is only known from the folded template (`template_through` already folds the head; `lower_children` skips a call with no `Callee::Module`), (d) the POM `reached_access` and the checker's probe path to leave `v(bank.c0.sn)` deferred and the elaborator to resolve it against the concrete module (today: P0001 "probe through an access that names several natures"), `E0343` raised by the elaborator. T92 and T93 depend on it. Gate lesson: the shell tool moves any command past ~170 s to the background; poll a log file with a loop shorter than 170 s. Planning amendment (user decision 2026-11-23, DQ4, "É, melhor voltar Option"): `simparam(name) -> Option<f64>` (built by `analog-operators`), and, refined the same day (user decision 2026-11-23), `multiplicity()` is a stdlib MSL function over it (`pub fn multiplicity() -> Option<f64> { simparam("multiplicity") }`) with `DEFAULT_MULTIPLICITY = 1.0`: nothing in the core, no `multiplicity` key/flag, no `E0802`, no `Env::Multiplicity`/`MultiplicityGiven`, no ABI field; the pattern is `let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`; T99 is the stdlib task; phase D stays 20 tasks. Planning (2026-11-23): the defaults of design-d.md DD4 to DD6. User, 2026-11-23: DD2 (a) and DD3 (a) approved; DD1 rejected — "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; then "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the old one, docs recommend the ambient fallback (ngspice's 27 °C); `multiplicity() -> Option<f64>`. DQ1 to DQ3 answered the same day: "Um por run e a instância decide no seu próprio parâmetro"; one temperature for every instance; `tnom` untouched.
 **T91 (done):** `bank.c0.sn` is a read through a child of a child, which no elaboration supported (concrete or template): the module of `bank` now lowers a `Reached` node for each `child.item` the design reads (`elab/reach_through_templates.rs`, demands found once, slots right after the module's own nodes), the reader reaches that node, `place.rs` hands a reached node's binding up. Also: a generic module's module-param keys are classified (`classify_module_param_keys`), `is_module_param` holds for a `C: Fn(..)` param, `placed_module` names a call's module from the folded template, the checker `reach`es a template's module and types `v(c.x)` through a callable param as a potential probe (flow and contributions through it stay refused). A module declaring a node in generation cannot be read through (refused loud).

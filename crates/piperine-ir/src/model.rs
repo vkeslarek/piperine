@@ -1087,6 +1087,10 @@ pub enum Env {
     /// `analysis(kind)`: whether the running analysis is of this kind, a `bool` constant during
     /// the analysis (§14.4.1).
     Analysis(AnalysisKind),
+    /// Whether the run set its temperature, a `bool` constant during the analysis: with
+    /// `Temperature` it is the pair of `temperature() -> Option<f64>` (§8.5.2). `Temperature`
+    /// keeps its meaning: the run's temperature, the solver's 300.15 K when the run sets none.
+    TemperatureGiven,
 }
 
 /// The analysis kinds `analysis(…)` names, ordered as declared (the order of `Deps::env`).

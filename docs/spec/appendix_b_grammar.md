@@ -8,7 +8,7 @@ Tokens are defined in Appendix A. B.3.2 holds the productions of the mixed-signa
 ## B.1 The mixed-signal constructs
 
 Every name and form of the language that is not part of the value language of Part I (§1.1 to §1.8, §3.7 to §3.9) or of the value library (Appendix H): what the language has for hardware, time and analysis.
-The language has **62** such constructs. Everything else a model uses is the standard library (§22), written in the language.
+The language has **60** such constructs. Everything else a model uses is the standard library (§22), written in the language.
 
 ### B.1.1 Count
 
@@ -26,9 +26,9 @@ The language has **62** such constructs. Everything else a model uses is the sta
 | environment | `now` `freq` `temperature` `simparam` `analysis` | 5 |
 | built-in `!` forms | `emit!`, `include_str!` | 2 |
 | attributes | `#[derivative]`, `#[derive(Repr)]`, `#[link]` on an extern module | 3 |
-| names | `gnd`; implicit params `m`, `dtemp`; ABI strings `"osdi"`, `"cosim"`; reserved streams `sim`, `checks` | 7 |
+| names | `gnd`; ABI strings `"osdi"`, `"cosim"`; reserved streams `sim`, `checks` | 5 |
 | forms | carrier fields in a `struct` (bundle); a module's name as a type and `Name { … }` as a value (template); the `Fn(P)` bound on modules; value inputs and a result on a module; `impl` on a nature or bundle, with a handle as `self`; `pub` on body items; `where` over const generics, on a module or a `fn` | 7 |
-| **total** |  | **62** |
+| **total** |  | **60** |
 
 ### B.1.2 The constructs, one by one
 
@@ -74,7 +74,7 @@ The language has **62** such constructs. Everything else a model uses is the sta
 | 38 | `bound_step` | statement | caps the next time step | §14.10, §17.2.5 |
 | 39 | `now` | environment `fn` | the time of the solve | §14.4, §16.2 |
 | 40 | `freq` | environment `fn` | the frequency of a small-signal point | §14.4, §16.2 |
-| 41 | `temperature` | environment `fn` | the instance's temperature | §8.5.5, §14.4 |
+| 41 | `temperature` | environment `fn` | the run's temperature, an `Option<f64>` | §8.5.2, §14.4 |
 | 42 | `simparam` | environment `fn` | a simulator parameter by name | §14.4 |
 | 43 | `analysis` | environment `fn` | whether the current solve belongs to an `Analysis` | §11.1.1, §14.4 |
 | 44 | `emit!` | built-in `!` form | writes a record to a stream | §19 |
@@ -83,23 +83,21 @@ The language has **62** such constructs. Everything else a model uses is the sta
 | 47 | `#[derive(Repr)]` | attribute | derives the level layout | §2 |
 | 48 | `#[link(…)]` on an extern module | attribute | names the foreign implementation | §8.5 |
 | 49 | `gnd` | name | the reference node of every continuous nature | §6 rule 1 |
-| 50 | `m` | implicit param | multiplicity of an instance | §8.5 |
-| 51 | `dtemp` | implicit param | temperature offset of an instance | §8.5 |
-| 52 | `"osdi"` | ABI string | an OSDI analog model | §8.5 |
-| 53 | `"cosim"` | ABI string | a cosimulated discrete model | §8.5 |
-| 54 | `sim` | reserved stream | a `finish` record ends the analysis | §19 rule 2 |
-| 55 | `checks` | reserved stream | the records of `require`, `cover`, `target` | §19 rule 2 |
-| 56 | bundle | form | a `struct` whose fields are carriers | §7 |
-| 57 | template | form | a module's name as a type; `Name { … }` as a value | §8.4 |
-| 58 | `Fn(P)` bound on modules | form | holds for every module whose port list is `P` | §8.4 |
-| 59 | value inputs and a result | form | a module placed inside an expression | §8.3 |
-| 60 | `impl` on a nature or bundle | form | functions with a handle as `self` | §3.1 |
-| 61 | `pub` on body items | form | visible to the parent as `inst.name` | §8.2 |
-| 62 | `where` over const generics | form | a boolean constraint on a module or a `fn` | §8.1, §3 |
+| 50 | `"osdi"` | ABI string | an OSDI analog model | §8.5 |
+| 51 | `"cosim"` | ABI string | a cosimulated discrete model | §8.5 |
+| 52 | `sim` | reserved stream | a `finish` record ends the analysis | §19 rule 2 |
+| 53 | `checks` | reserved stream | the records of `require`, `cover`, `target` | §19 rule 2 |
+| 54 | bundle | form | a `struct` whose fields are carriers | §7 |
+| 55 | template | form | a module's name as a type; `Name { … }` as a value | §8.4 |
+| 56 | `Fn(P)` bound on modules | form | holds for every module whose port list is `P` | §8.4 |
+| 57 | value inputs and a result | form | a module placed inside an expression | §8.3 |
+| 58 | `impl` on a nature or bundle | form | functions with a handle as `self` | §3.1 |
+| 59 | `pub` on body items | form | visible to the parent as `inst.name` | §8.2 |
+| 60 | `where` over const generics | form | a boolean constraint on a module or a `fn` | §8.1, §3 |
 
 > **Resolution.** Names that occur only inside a counted construct are counted with it. The quantity keys `access`, `units` and `abstol` belong to `nature` (2). The variants of `Analysis` belong to `Analysis` (21). `UInt`, `Int` and `Float` belong to row 22. `#[repr(uN)]` (§2) and `extern "C" fn` (§3) are counted with the value language, not here.
 
-> **Resolution.** `where` on a param (§8.1) is counted with the param form of `module` (1). Row 62 covers only the `where` after a module's port list or a `fn`'s signature.
+> **Resolution.** `where` on a param (§8.1) is counted with the param form of `module` (1). Row 60 covers only the `where` after a module's port list or a `fn`'s signature.
 
 ## B.2 Where each thing is allowed
 

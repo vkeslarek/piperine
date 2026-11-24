@@ -16,7 +16,7 @@ body Diode
   local vcrit: f64
   local vd: f64
   analog
-    let nvt = (n * vt())
+    let nvt = (n * vt(temperature()))
     let vcrit = (nvt * ln((nvt / (sqrt(2.0) * is))))
     let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, nvt, vcrit), seed vcrit)
     let id = (is * (exp((vd / nvt)) - 1.0))
@@ -51,8 +51,9 @@ fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64
   local old: f64
   local vcrit: f64
   if ((new > vcrit) && (abs((new - old)) > (2.0 * nvt))) { if (old > 0.0) { let arg = ((new - old) / nvt); if (arg > 0.0) { (old + (nvt * (2.0 + ln((arg - 2.0))))) } else { (old - (nvt * (2.0 + ln((2.0 - arg))))) } } else { (nvt * ln((new / nvt))) } } else { if (new < 0.0) { let arg = if (old > 0.0) { ((-old) - 1.0) } else { ((2.0 * old) - 1.0) }; if (new < arg) { arg } else { new } } else { new } }
-fn vt() -> f64
-  ((1.380649e-23 * temperature()) / 1.602176634e-19)
+fn vt(t: f64) -> f64
+  local t: f64
+  ((1.380649e-23 * t) / 1.602176634e-19)
 instance DiodeIv: DiodeIv  nodes (DiodeIv.vin, DiodeIv.a)  params ()  top
 instance DiodeIv.v1: Vsource  nodes (DiodeIv.vin, gnd)  params (dc = 0.0, ac = 0.0)
 instance DiodeIv.r1: Resistor  nodes (DiodeIv.vin, DiodeIv.a)  params (r = 1.0)

@@ -202,11 +202,11 @@ fn the_watchdog_ends_the_run_at_the_fourth_edge_with_the_button_held() {
 
 #[test]
 fn a_crates_own_vt_replaces_the_library_one() {
-    // core-std#11 (run): `pub fn vt() -> f64 { 0.0259 }`: "Declare an item with the same name in your own
+    // core-std#11 (run): `pub fn vt(t: f64) -> f64 { 0.0259 }`: "Declare an item with the same name in your own
     // namespace and yours is the one the names in that scope find; the library's stays untouched": a node
-    // driven to `vt()` reads 25.9 mV where the library's reads 25.86 mV at the default temperature
+    // driven to `vt(300.15)` reads 25.9 mV where the library's reads 25.86 mV at the default temperature
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> vt(); }\n";
+    let after = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> vt(300.15); }\n";
     let own = chapter.wrapped("vt.msl", "", "core-std#11", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(own.signal("Top.a"), 0.0259, "this crate's vt");
     let library = Model::written("vt.msl", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));

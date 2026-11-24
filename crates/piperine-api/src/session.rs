@@ -479,7 +479,7 @@ impl Session {
             }
         }
         if let Some(celsius) = options.temp {
-            tolerances.temperature = celsius + 273.15;
+            tolerances.set_temperature(celsius + 273.15);
         }
         if let Some(rounds) = options.maxrounds {
             context.max_rounds = rounds;

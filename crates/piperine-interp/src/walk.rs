@@ -278,6 +278,7 @@ impl<'a> Walk<'a> {
             // The forms msl-fixes added are named as the source spells them.
             Expr::Method { method, .. } => format!("method `{}`", method.name()),
             Expr::Env(Env::Freq) => "form `freq()`".to_string(),
+            Expr::Env(Env::TemperatureGiven) => "form `temperature()` given".to_string(),
             Expr::Env(Env::Analysis(kind)) => format!("form `analysis({kind:?})`"),
             Expr::Fired(_) => "form `fired`".to_string(),
             Expr::Unwrap { message: Some(_), .. } => "form `expect`".to_string(),
@@ -491,7 +492,7 @@ impl<'a> Walk<'a> {
                 piperine_ir::Env::SourceScale => &f.source_scale,
                 // Not a frame cell: `eval` faults on it (`UNEXECUTED`), and `Interpreter::new`
                 // rejects a body that holds one.
-                piperine_ir::Env::Time | piperine_ir::Env::Static | piperine_ir::Env::Freq | piperine_ir::Env::Analysis(_) => return None,
+                piperine_ir::Env::Time | piperine_ir::Env::Static | piperine_ir::Env::Freq | piperine_ir::Env::Analysis(_) | piperine_ir::Env::TemperatureGiven => return None,
             })),
             // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
             // the site function's, not evaluated here.

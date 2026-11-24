@@ -777,6 +777,9 @@ pub mod global {
     pub const SETTLE: u32 = 8;
     /// The host's session parameter called `Pin.name`.
     pub const NAMED: u32 = 9;
+    /// Whether the run set its temperature, a `BIT`: `1` when it did, `0` when the `TEMPERATURE` pin holds the
+    /// session's default. Appended in place (`MINOR` 0).
+    pub const TEMPERATURE_GIVEN: u32 = 10;
 }
 
 /// `Pin.flags` bits.

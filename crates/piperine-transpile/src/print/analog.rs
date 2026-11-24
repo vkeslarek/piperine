@@ -117,6 +117,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Crossed(k) => Text::generated(&format!("cross{k}_changed")),
             Source::Timer(k) => Text::generated(&format!("at{k}_changed")),
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
+            Source::TemperatureGiven => ValuePrinter::env_name(Env::TemperatureGiven).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
             Source::LimitLast(k) => site(self.body.limits(), k, "last"),
@@ -364,6 +365,7 @@ impl<'a> AnalogPrinter<'a> {
     fn env_source(env: Env) -> Option<Source> {
         Some(match env {
             Env::Temperature => Source::Temperature,
+            Env::TemperatureGiven => Source::TemperatureGiven,
             Env::Gmin => Source::Gmin,
             Env::SourceScale => Source::SourceScale,
             Env::Time => Source::Time,
@@ -387,7 +389,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) | Source::ParamPrevious(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) | Source::SessionParameter(_) => true,
+            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) | Source::TemperatureGiven | Source::SessionParameter(_) => true,
             _ => false,
         }
     }
@@ -404,7 +406,7 @@ impl<'a> AnalogPrinter<'a> {
                 Some(carrier) => self.values.pin_type(&carrier.ty),
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
-            Source::Static | Source::Analysis(_) => Ok("bool".to_string()),
+            Source::Static | Source::Analysis(_) | Source::TemperatureGiven => Ok("bool".to_string()),
             Source::SessionParameter(_) => Ok("Option<f64>".to_string()),
             _ => Ok("R".to_string()),
         }
@@ -435,7 +437,7 @@ impl<'a> AnalogPrinter<'a> {
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
-            Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
+            Source::Static | Source::Analysis(_) | Source::TemperatureGiven => format!("let {name} = {cx}.bool({i});"),
             // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
             Source::SessionParameter(_) => format!("let {name} = {{ let pin_ = {cx}.bytes({i}); (pin_[8] != 0).then(|| f64::from_le_bytes([pin_[0], pin_[1], pin_[2], pin_[3], pin_[4], pin_[5], pin_[6], pin_[7]])) }};"),
             _ => format!("let {name} = {cx}.f64({i});"),

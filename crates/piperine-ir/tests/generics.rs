@@ -1,7 +1,7 @@
 //! Scope: the IR forms of `generics` (GN-02, GN-05, GN-06), built by hand through `IrBuilder`,
 //! checked (valid and refused) and printed: a function that is the instance of a generic item.
 
-use piperine_ir::{BodySpec, Derives, Expr, FieldsForm, FunctionId, FunctionSpec, GenericInstance, InstanceSpec, Ir, IrBuilder, Local, Origin, ReprForm, TypeData, TypeKind, ValueType, VariantData};
+use piperine_ir::{BodySpec, Derives, Env, Expr, FieldsForm, FunctionId, FunctionSpec, GenericInstance, InstanceSpec, Ir, IrBuilder, Local, Origin, ReprForm, TypeData, TypeKind, ValueType, VariantData};
 
 /// The small designs every test of this target builds.
 struct Designs;
@@ -171,4 +171,36 @@ fn a_hand_written_repr_with_wrong_signatures_is_refused() {
     assert!(empty.iter().any(|b| b.what.contains("at least one level")), "{empty:?}");
     let named = OneHot::ir("Pair<u8>", Some(GenericInstance { item: "Pair".into(), arguments: vec!["f64".into()] }), 4, 4, 4).check();
     assert!(named.iter().any(|b| b.what.contains("a generic instance of `Pair`")), "{named:?}");
+}
+
+/// The IR reads of the run's settings: whether the run set its temperature (GN-24, GN-25, GN-29).
+struct RunSettings;
+
+impl RunSettings {
+    /// `fn read(x: f64) -> Option<f64> { Some(temperature) if temperature_given }` in a design of one empty module: the
+    /// `Option` pair of `temperature()`, the given flag typed as `given`.
+    fn with_read(given: ValueType) -> Ir {
+        let mut b = IrBuilder::new();
+        let x = Local { name: "x".into(), ty: ValueType::F64, mutable: false };
+        let flag = b.expr(Expr::Env(Env::TemperatureGiven), given, Designs::origin());
+        let value = b.expr(Expr::Env(Env::Temperature), ValueType::F64, Designs::origin());
+        let pair = b.expr(Expr::OptionPack { is: flag, value }, ValueType::Option(Box::new(ValueType::F64)), Designs::origin());
+        b.function(FunctionSpec { name: "read".into(), origin: Designs::origin(), params: vec![x.clone()], ret: ValueType::Option(Box::new(ValueType::F64)), locals: vec![x], body: pair });
+        let module = b.body(BodySpec { name: "Top".into(), origin: Designs::origin(), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: module, parent: None, nodes: vec![], params: vec![], origin: Designs::origin() });
+        b.finish(top)
+    }
+}
+
+#[test]
+fn run_setting_reads_are_built_checked_and_printed() {
+    // GN-24 AC 1, GN-25 AC 1, GN-29 AC 1: `temperature()` is the `Option` pair (given, temperature); the given flag is a
+    // `bool`, a read typed otherwise is a malformed IR, and the printer names it
+    let ir = RunSettings::with_read(ValueType::Bool);
+    assert_eq!(ir.check(), vec![], "{ir}");
+    assert!(ir.to_string().contains("temperature_given()"), "{ir}");
+    let round_trip: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serializes")).expect("deserializes");
+    assert_eq!(round_trip, ir, "the read survives serde");
+    let wrong = RunSettings::with_read(ValueType::F64);
+    assert!(!wrong.check().is_empty(), "a `temperature_given` typed `f64` is refused");
 }

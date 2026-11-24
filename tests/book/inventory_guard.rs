@@ -236,8 +236,8 @@ fn the_book_reads_every_block() {
     // them `msl`; every block has a distinct id that reads back, and every chapter has prose
     let book = Book::read();
     assert_eq!(book.chapters().len(), 21, "the chapters of the Book: {:?}", book.chapters());
-    assert_eq!(book.blocks().len(), 289, "the code blocks of the Book");
-    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 129, "the `msl` blocks of the Book");
+    assert_eq!(book.blocks().len(), 290, "the code blocks of the Book");
+    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 130, "the `msl` blocks of the Book");
     let mut seen = Vec::new();
     for block in book.blocks() {
         let id = block.id().to_string();

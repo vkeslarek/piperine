@@ -177,10 +177,11 @@ pub struct Bound {
     /// start of every analysis after the `init`s (abi.md §10 "the host's
     /// initial writes").
     pub host_writes: Vec<(NetId, Vec<u8>)>,
-    /// The run's temperature when it is not the one the net was seeded with:
-    /// committed at the start of every analysis (the `TEMPERATURE` global
-    /// holds the session's value, abi.md §9).
-    pub temperature: Option<(NetId, Vec<u8>)>,
+    /// The run's temperature and whether the run set it, each when it is not
+    /// what its net was seeded with: committed at the start of every analysis
+    /// (the `TEMPERATURE` and `TEMPERATURE_GIVEN` globals hold the session's
+    /// values, abi.md §9).
+    pub temperature: Vec<(NetId, Vec<u8>)>,
     /// The bound on the microsteps of one instant the digital engine was built with.
     pub microsteps: usize,
 }
@@ -248,17 +249,37 @@ impl Bound {
         error.with_names(names)
     }
 
-    /// The `TEMPERATURE` global holds `t` from the next analysis on; a net
-    /// seeded with `t` and never moved needs no write.
-    pub(crate) fn set_temperature(&mut self, t: f64) {
-        let Some(net) = self.names.nets.get("global:temperature").copied() else { return };
+    /// The `TEMPERATURE` global holds `t` from the next analysis on, and the
+    /// `TEMPERATURE_GIVEN` global says whether the run set it (`given`); a net
+    /// seeded with its value and never moved needs no write.
+    pub(crate) fn set_temperature(&mut self, t: f64, given: bool) {
+        let temperature = |layout: &Layout| encode(layout, &ParamValue::Real(t));
+        self.write_temperature_global("global:temperature", temperature);
+        self.write_temperature_global("global:temperature_given", |layout| Self::flag_bytes(layout, given));
+    }
+
+    /// The bytes of a one-bit flag in `layout`: a `bool` when it takes one, `1.0` or `0.0` otherwise.
+    pub(crate) fn flag_bytes(layout: &Layout, on: bool) -> std::result::Result<Vec<u8>, String> {
+        encode(layout, &ParamValue::Bool(on)).or_else(|_| encode(layout, &ParamValue::Real(if on { 1.0 } else { 0.0 })))
+    }
+
+    /// Writes the global net named `key` with the bytes `encoded` gives for its layout, and records the write
+    /// in `temperature` when the net is not at its seed or an earlier write is already recorded.
+    fn write_temperature_global(&mut self, key: &str, encoded: impl FnOnce(&Layout) -> std::result::Result<Vec<u8>, String>) {
+        let Some(net) = self.names.nets.get(key).copied() else { return };
         let Some(layout) = self.digital.plan().net_layout(net) else { return };
-        let Ok(bytes) = encode(layout, &ParamValue::Real(t)) else { return };
+        let Ok(bytes) = encoded(layout) else { return };
         let seeded = self.digital.plan().nets[net.0 as usize].init == bytes;
         if let Some(slot) = self.names.slots.get(&net) {
             self.analog.set_discrete(*slot, &bytes);
         }
-        self.temperature = (!seeded || self.temperature.is_some()).then_some((net, bytes));
+        let earlier = self.temperature.iter().position(|(n, _)| *n == net);
+        if let Some(at) = earlier {
+            self.temperature.remove(at);
+        }
+        if !seeded || earlier.is_some() {
+            self.temperature.push((net, bytes));
+        }
     }
 
     /// Tightens `tol` with the per-node tolerances of the pins: a node keeps
@@ -633,6 +654,11 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                                     "$temperature".into(),
                                     Some(encode(&pin.layout, &ParamValue::Real(temperature)).map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?),
                                 ),
+                                global::TEMPERATURE_GIVEN => (
+                                    "global:temperature_given".into(),
+                                    "$temperature_given".into(),
+                                    Some(Bound::flag_bytes(&pin.layout, false).map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?),
+                                ),
                                 global::RESOLUTION => (
                                     "global:resolution".into(),
                                     "$resolution".into(),
@@ -817,5 +843,5 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         }
     }
     let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() }, time_point_rule);
-    Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
+    Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: Vec::new(), microsteps })
 }

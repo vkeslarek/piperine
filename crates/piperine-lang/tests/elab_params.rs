@@ -110,7 +110,7 @@ fn a_param_read_with_no_binding_is_not_constant() {
 fn an_environment_function_is_dynamic() {
     // A placement's param block is not a const context for the type checker, so `temperature()`
     // reaches the evaluator, which reports it as needing a run.
-    let design = Elab::design("module Leaf() { x: f64 = 1.0; }\nmodule Top() { let l = Leaf { x: temperature() }(); }");
+    let design = Elab::design("module Leaf() { x: f64 = 1.0; }\nmodule Top() { let l = Leaf { x: temperature().unwrap_or(1.0) }(); }");
     assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
     let types = Types::check(&design, "Top").expect("the source is in the subset");
     let top = design.module("Top").expect("Top");
@@ -173,7 +173,7 @@ fn a_false_where_is_e0317_with_the_path() {
 fn a_bound_value_that_is_not_constant_is_refused() {
     // A value that reads a param of the parent is lowered from msl-digital T32 on (DIG-09 AC 11);
     // the case still refused in its place is a form the constant evaluator does not fold.
-    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: (2.0).sin() }(); let b = Leaf { r: temperature() }(); }";
+    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: (2.0).sin() }(); let b = Leaf { r: temperature().unwrap_or(1.0) }(); }";
     let err = Elab::run(src, "Top").expect_err("neither value is constant");
     assert_eq!(Elab::codes(&err), ["P0001", "E0321"]);
     let text = |i: usize| &src[err[i].diagnostic.span().start..err[i].diagnostic.span().end];

@@ -17,7 +17,7 @@ language is defined here ([§0.4](#04-a-complete-specification)).
 1. Every outcome of a simulation is a function of the source and of the host's actions alone.
    There are no races ([§12.1](part_iv_behavior.md#121-reactions)).
 2. A model reuses existing models through `extern` modules: Verilog-A compiled to OSDI, and
-   other simulators by cosimulation ([§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules)).
+   other simulators by cosimulation ([§8.5](part_iii_structure.md#85-run-settings-and-extern-modules)).
 3. A bench, the top module that places a design with its stimulus and its monitors, is
    written in MSL. Sweeps, Monte Carlo, optimization and regression live in the host, a
    program outside the language ([§23](part_viii_host.md#23-testbenches-and-optimization)).
@@ -321,12 +321,12 @@ Each term has one defining occurrence. The table points at it.
 | discrete nature, continuous nature | [§4](part_ii_carriers.md#4-natures) |
 | drive | [§5.2](part_ii_carriers.md#52-drives) |
 | due, pending | [§15](part_v_execution.md#15-time-and-the-instant) |
-| effective multiplicity | [§8.5.3](part_iii_structure.md#85-implicit-params-and-extern-modules) |
+| effective multiplicity | [§8.5.3](part_iii_structure.md#85-run-settings-and-extern-modules) |
 | equilibrium solve, transient step, jump solve, small-signal sweep | [§15](part_v_execution.md#15-time-and-the-instant), "Solves" |
 | event position, guard | [§13](part_iv_behavior.md#13-events) |
 | event time | [§15](part_v_execution.md#15-time-and-the-instant) |
 | event, `Event` | [§13](part_iv_behavior.md#13-events) |
-| extern module, implicit param | [§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules) |
+| extern module, implicit param | [§8.5](part_iii_structure.md#85-run-settings-and-extern-modules) |
 | `force`, `release` | [§23.1](part_viii_host.md#231-testbenches) |
 | function class | [§3](part_i_values.md#3-functions) |
 | generation | [§8.2.7](part_iii_structure.md#82-the-body) |

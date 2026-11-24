@@ -30,6 +30,7 @@ const GLOBALS: &[Named] = &[
     ("START", global::START),
     ("SETTLE", global::SETTLE),
     ("NAMED", global::NAMED),
+    ("TEMPERATURE_GIVEN", global::TEMPERATURE_GIVEN),
 ];
 const PIN_FLAGS: &[Named] = &[
     ("STRUCTURAL", pin_flag::STRUCTURAL),

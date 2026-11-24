@@ -148,7 +148,7 @@ fn embedded() -> Design {
 /// The core names of §14, read from the built-in table, and the four the table does not carry as rows
 /// of those kinds.
 fn core_names() -> Vec<String> {
-    let kinds = [BuiltinKind::Fn, BuiltinKind::Module, BuiltinKind::Event, BuiltinKind::Statement, BuiltinKind::Method, BuiltinKind::Node, BuiltinKind::ImplicitParam];
+    let kinds = [BuiltinKind::Fn, BuiltinKind::Module, BuiltinKind::Event, BuiltinKind::Statement, BuiltinKind::Method, BuiltinKind::Node];
     let mut names: Vec<String> = BUILTINS.iter().filter(|r| kinds.contains(&r.kind)).map(|r| r.name.to_string()).collect();
     names.extend(["Nature", "str", "emit!", "include_str!"].map(String::from));
     names

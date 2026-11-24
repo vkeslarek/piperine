@@ -334,7 +334,7 @@ impl Added {
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let o = x.origin();
         let read = match env {
-            Env::Analysis(_) => {
+            Env::Analysis(_) | Env::TemperatureGiven => {
                 let on = x.b.expr(Expr::Env(env), ValueType::Bool, o);
                 let (one, zero) = (x.real(1.0), x.real(0.0));
                 x.if_(on, one, zero, ValueType::F64)
@@ -944,6 +944,9 @@ fn each_generics_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(plain, Vec::<String>::new());
+    // whether the run set its temperature (GN-29 AC 1, the given half of `temperature()`) is the device ABI's: named
+    let given = Added::refused(|b| Added::env(b, "Given", Env::TemperatureGiven));
+    assert_eq!(given, ["temperature() given"]);
     // a body that lowers an instance of a generic module (GN-15, T66) is named with its instance
     let module = {
         let mut b = IrBuilder::new();

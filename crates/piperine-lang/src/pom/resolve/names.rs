@@ -7,7 +7,7 @@
 //! sources and last the built-in table. A multi-segment path resolves segment
 //! by segment through `Ctx::walk`.
 
-use super::super::builtin::{BuiltinKind, builtin_implicit};
+use super::super::builtin::BuiltinKind;
 use std::collections::BTreeSet;
 
 use super::super::body::{BehaviorKind, BlockNode, ExprKind, GenericArgNode, GenericArgsNode, PatKind, StmtKind, TypeKind};
@@ -362,10 +362,6 @@ impl Names<'_, '_> {
                     let members = self.ctx.scopes.members.get(module);
                     if let Some(d) = members.and_then(|m| m.get(name)).filter(|d| prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0) {
                         return Some(Resolution::Decl(d));
-                    }
-                    // `m` and `dtemp` read the instance's effective values (§8.5.2).
-                    if let Some(implicit) = builtin_implicit(name) {
-                        return Some(Resolution::Builtin(implicit));
                     }
                 }
                 Frame::Generics(owner) => {

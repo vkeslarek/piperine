@@ -172,7 +172,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_core(&mut self, scope: &mut Scope, expr: ExprId, id: BuiltinId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         match id.info().name {
-            "temperature" => Some(self.emit(Expr::Env(Env::Temperature), ty, origin)),
+            "temperature" => Some(self.lower_temperature(origin)),
             "gmin" => Some(self.emit(Expr::Env(Env::Gmin), ty, origin)),
             "source_scale" => Some(self.emit(Expr::Env(Env::SourceScale), ty, origin)),
             "now" => Some(self.emit(Expr::Env(Env::Time), ty, origin)),

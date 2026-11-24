@@ -399,7 +399,7 @@ fn environment_reads_are_nodes() {
             .collect()
     };
     assert_eq!(envs("Vsource"), [Env::SourceScale]);
-    assert_eq!(envs("Diode"), [Env::Gmin]);
+    assert_eq!(envs("Diode"), [Env::Temperature, Env::Gmin]);
     assert_eq!(envs("Everything"), [Env::Temperature]);
 }
 

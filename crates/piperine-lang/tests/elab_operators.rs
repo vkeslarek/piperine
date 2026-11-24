@@ -126,7 +126,7 @@ fn a_delay_without_max_whose_td_varies_is_e0452() {
         assert_eq!(Elab::codes(&err), ["E0452"], "{td}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert!(err[0].diagnostic.message.contains("module `M`"), "{td}: {}", err[0].diagnostic.message);
     }
-    for td in ["1n", "k * 1n", "temperature() * 1p"] {
+    for td in ["1n", "k * 1n", "temperature().unwrap_or(1.0) * 1p"] {
         let ir = Elab::ir(&Sources::design(&format!("v(o, gnd) +> delay(v(a, gnd), {td});")), "Top");
         let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert_eq!(m.delays().len(), 1, "{td}");

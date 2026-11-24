@@ -11,8 +11,8 @@ use rt::{Dual, Real};
 use std::sync::{Arc, OnceLock};
 
 // fn vt @ analog.msl:10:1
-fn vt<R: Real>(temperature_: R) -> R {
-    R::constant(1.380649e-23) * temperature_ / R::constant(1.602176634e-19)
+fn vt<R: Real>(t: R) -> R {
+    R::constant(1.380649e-23) * t / R::constant(1.602176634e-19)
 }
 
 // fn pnjlim @ analog.msl:21:1

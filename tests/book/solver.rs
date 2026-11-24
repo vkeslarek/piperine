@@ -355,12 +355,12 @@ fn a_value_outside_its_range_and_a_key_outside_its_analysis_are_p0010() {
 fn a_nodeset_seeds_the_operating_point_and_the_temperature_reaches_the_models() {
     // The table "The operating point and the environment"; solver~9e407280 "A path that names no node is E0801.": a
     // circuit with one equilibrium ends at it whatever the guess; `temp` is degrees Celsius in the run and kelvin
-    // in `temperature()`, and `vt()` follows it
+    // in `temperature()` (the ambient fallback when none is set), and `vt(t)` follows it
     let seeded = Filter::ran(Filter::asked("op", |o| o.nodeset = vec![("vout".to_string(), 2.5)]));
     assert!((seeded.signal("Filter.vout") - 5.0).abs() < 1e-9, "the one equilibrium, whatever the guess");
     assert!(Filter::refused(Filter::asked("op", |o| o.nodeset = vec![("nope".to_string(), 1.0)])).contains("E0801: the nodeset entry `nope` names no node of the design"));
     let environment = |temp: Option<f64>| {
-        let ran = Filter::watched("on at(1m) { emit!(\"env\", kelvin = temperature(), vt = vt()); }").run(Overrides { temp, ..Faulty::transient_of_top(2e-3, None) }).unwrap_or_else(|failure| panic!("{failure:#}"));
+        let ran = Filter::watched("on at(1m) { emit!(\"env\", kelvin = temperature().unwrap_or(AMBIENT_TEMPERATURE), vt = vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))); }").run(Overrides { temp, ..Faulty::transient_of_top(2e-3, None) }).unwrap_or_else(|failure| panic!("{failure:#}"));
         let record = ran.stream("env")[0].clone();
         (support::records::Fields::real(&record, "kelvin"), support::records::Fields::real(&record, "vt"))
     };

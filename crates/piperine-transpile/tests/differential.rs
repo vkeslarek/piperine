@@ -435,7 +435,8 @@ impl Names {
         let (nvt, vcrit, vd, id) = (0u32, 1u32, 2u32, 3u32);
         let mut e = Ex::new(b, Self::FILE, 20, 5);
         let p = e.param(n);
-        let call = e.call(vt, vec![]);
+        let kelvin = e.env(Env::Temperature);
+        let call = e.call(vt, vec![kelvin]);
         let init = e.binary(BinaryOp::Mul, p, call);
         let let_nvt = e.b.stmt(Stmt::Let { local: nvt, init });
         let (l, l2, two) = (e.local(nvt), e.local(nvt), e.real(2.0));

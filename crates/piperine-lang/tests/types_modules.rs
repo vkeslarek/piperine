@@ -217,8 +217,8 @@ fn a_core_primitive_is_checked_where_it_is_written() {
 #[test]
 fn an_environment_function_in_a_const_context_is_e0323() {
     for (body, text) in [
-        ("module Top() { t: f64 = temperature(); }", "temperature()"),
-        ("module Top() { a: f64 = 1.0 where temperature() > 0.0; }", "temperature()"),
+        ("module Top() { t: Option<f64> = temperature(); }", "temperature()"),
+        ("module Top() { a: f64 = 1.0 where temperature().unwrap_or(1.0) > 0.0; }", "temperature()"),
         ("module Top() where gmin() > 0.0 { }", "gmin()"),
         ("const T0: f64 = source_scale();\nmodule Top() { a: f64 = T0; }", "source_scale()"),
     ] {
