@@ -344,7 +344,7 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [x] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_exempt_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
+- [x] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_a_landing_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
 - [x] Code clarity: the landing is a named method of the protocol (the step loop gains one call, not a block), `///` docs citing S1 to S6; no free function
 - [x] Gate check passes: Full
 
@@ -1121,7 +1121,7 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [x] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_exempt_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
+- [x] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_a_landing_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
 - [x] Code clarity: the landing is a named method of the protocol (the step loop gains one call, not a block), `///` docs citing S1 to S6; no free function
 - [x] Gate check passes: Full
 
@@ -1668,8 +1668,8 @@ Proof: run sourceevents | test settle_does_not_run_at_an_event_time_that_is_not_
 Proof: run sourceevents | test a_settle_commit_is_read_at_the_next_time_point ... ok
 Proof: run prototran | test a_settle_commit_lands_at_the_next_time_point ... ok
 
-**C15** - The step after a settle commit is exempt from the truncation test and restarts the integrator. (UE-03, AC 3; T9)
-Proof: run prototran | test the_step_after_a_settle_commit_is_exempt_and_restarts ... ok
+**C15** - The step after a settle commit is a landing and restarts the integrator. (UE-03, AC 3; T9. Amendment that follows MD-80 and 9ed8cf8b, which amended S3 on main: the step is no longer exempt from the truncation test, it is a landing sized and tested by §15.2 rule 6; the test of the jump rule belongs to `transient-performance`.)
+Proof: run prototran | test the_step_after_a_settle_commit_is_a_landing_and_restarts ... ok
 
 **C16** - An event time strictly between a settle commit and the next time point reads the old value. (UE-03, AC 4; T9, T11)
 Proof: run prototran | test an_event_time_before_the_next_time_point_reads_the_old_value ... ok
