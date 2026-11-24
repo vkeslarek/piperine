@@ -96,6 +96,9 @@ pub(super) struct Checker<'d> {
     /// The bindings of the module-body `let`s whose values are being typed, each with its value (a
     /// read of one is a feedback, `Checker::self_read`).
     pub(super) lets_open: BTreeMap<DeclId, ExprId>,
+    /// The `let`s of module bodies already typed: a `let` is typed where it is first read, whatever its place in the body
+    /// (§8.2: the items of a body appear in any order), and once.
+    pub(super) lets_typed: BTreeSet<DeclId>,
     /// The placements whose arguments are being typed, innermost last: the module, or `None` for
     /// a core module.
     pub(super) placing: Vec<Option<DeclId>>,
@@ -209,6 +212,7 @@ impl<'d> Checker<'d> {
             book: DriveBook::default(),
             records: Records::default(),
             lets_open: BTreeMap::new(),
+            lets_typed: BTreeSet::new(),
             placing: Vec::new(),
             differentiated: 0,
             owner: None,
@@ -754,7 +758,7 @@ impl<'d> Checker<'d> {
             (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
             (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
             (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
-            (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(child, &l.clone()),
+            (DeclKind::Let(_), ItemPhase::Lets) => self.type_module_let(child),
             (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
             (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
             (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}

@@ -141,11 +141,22 @@ impl Checker<'_> {
             self.coded(file, "E0353", span, message, "a cycle with no unknown");
         } else if let Some(ty) = self.feedback_type(binding) {
             return Some(ty);
+        } else if self.placing.iter().all(|placed| placed.is_some_and(|module| !self.has_result(module))) {
+            // through placements of modules with no result there is no instance value to feed back (§8.3.5): the `let`s read each
+            // other (`let p = D2(q.sn); let q = D2(p.sn);`)
+            let cycle = self.cycle_names(&name);
+            let message = format!("the `let` `{name}` reads its own name through other `let`s, {cycle}, and no module on the way has a result to feed back (§8.2.16)");
+            self.coded(file, "E0332", span, message, "a `let` that reads itself");
         } else {
             self.unsupported(file, span, &format!("the feedback of `{name}` through an instance whose value is not a placement of a module with a result"));
         }
         self.poisoned.insert(binding);
         None
+    }
+
+    /// Whether `module` declares a result (`-> T`), the value an instance of it feeds back (§8.3.5).
+    fn has_result(&self, module: DeclId) -> bool {
+        matches!(&self.design.decl_data(module).kind, DeclKind::Module(data) if data.ret.is_some())
     }
 
     /// The names of the cycle `let` -> the placed modules -> `let`, as `y -> twice -> y`.

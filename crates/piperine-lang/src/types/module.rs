@@ -143,6 +143,36 @@ impl Checker<'_> {
         self.within(Context::Const, |this| this.check_as(init, &value, "E0210"));
     }
 
+    /// Types the `let` item `decl` of a module body once: in the body's order, or earlier where a read of its name needs its
+    /// type (§8.2: the items of a body appear in any order, and every name is visible in the whole body).
+    pub(super) fn type_module_let(&mut self, decl: DeclId) {
+        if !self.lets_typed.insert(decl) {
+            return;
+        }
+        let DeclKind::Let(data) = self.design.decl_data(decl).kind.clone() else { return };
+        // typed as the body types it, whatever position reads it first (a param default, a `where`)
+        self.within(super::check::Context::Module, |this| this.module_let(decl, &data));
+    }
+
+    /// Types the module-body `let` that binds `binding` when a read of it comes before it in the body (§8.2: items appear in any
+    /// order); nothing for a binding typed already, one being typed (a self read, §8.2.16) or any other name.
+    pub(super) fn type_module_let_read(&mut self, binding: DeclId) {
+        if !self.locals.contains_key(&binding)
+            && !self.lets_open.contains_key(&binding)
+            && let Some(item) = self.untyped_module_let(binding)
+        {
+            self.type_module_let(item);
+        }
+    }
+
+    /// The `let` item of a module body that binds `binding` and is not typed yet, outside generation (generation types its own).
+    pub(super) fn untyped_module_let(&self, binding: DeclId) -> Option<DeclId> {
+        let item = self.design.decl_data(binding).parent?;
+        let DeclKind::Let(_) = self.design.decl_data(item).kind else { return None };
+        let owner = self.design.decl_data(item).parent?;
+        (matches!(self.design.decl_data(owner).kind, DeclKind::Module(_)) && !self.lets_typed.contains(&item)).then_some(item)
+    }
+
     /// `let x = value;` in a module body: the binding takes the type of the value (a placement
     /// gives it the placed module).
     pub(super) fn module_let(&mut self, decl: DeclId, data: &LetData) {

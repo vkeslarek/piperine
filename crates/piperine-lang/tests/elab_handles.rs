@@ -180,3 +180,23 @@ fn a_node_of_a_child_connects_to_another_placement() {
         assert!(binding(&format!("{path}.th")).contains(&storage), "{top}: th is on c0.sn ({storage}): {}", binding(&format!("{path}.th")));
     }
 }
+
+#[test]
+fn a_body_written_in_reverse_order_elaborates_as_written_forward() {
+    // §8.2: the items of a body appear in any order; a body whose placements and `let`s are written in reverse gives every
+    // instance the same body, params and nodes as the forward one
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd); }\nmodule Th(a: Electrical) { g: f64 = 1.0; }\nanalog for Th { i(a, gnd) +> v(a, gnd) * g; }\n";
+    let forward = Elab::ir(&format!("{modules}module Top() {{ k: f64 = 2.0; signal x: Electrical; let c0 = Dram(x); let g = k * 2.0; let th = Th(c0.sn) {{ g: g }}; }}"), "Top");
+    let reverse = Elab::ir(&format!("{modules}module Top() {{ let th = Th(c0.sn) {{ g: g }}; let g = k * 2.0; let c0 = Dram(x); signal x: Electrical; k: f64 = 2.0; }}"), "Top");
+    for path in ["Top.c0", "Top.th"] {
+        let describe = |ir: &piperine_ir::Ir| {
+            let instance = ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}"));
+            let nodes: Vec<String> = instance.bindings().iter().map(|bound| match bound {
+                piperine_ir::NodeRef::Node(id) => ir.node(*id).path().to_string(),
+                other => format!("{other:?}"),
+            }).collect();
+            (instance.body().name().to_string(), instance.params().to_vec(), nodes)
+        };
+        assert_eq!(describe(&reverse), describe(&forward), "{path}");
+    }
+}

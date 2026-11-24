@@ -643,6 +643,7 @@ impl Checker<'_> {
                         if let Some(read) = self.handle_read(decl) {
                             return Some(read);
                         }
+                        self.type_module_let_read(decl);
                         let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(expr, decl, whole));
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
                         self.open_literals.remove(&decl);
@@ -657,7 +658,8 @@ impl Checker<'_> {
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
-                        if local.is_none() && self.continuous_result_in_const(file, node.span, decl) {
+                        // a continuous `let` read where no probe may be written, typed or not yet (§8.3.10)
+                        if self.continuous_result_in_const(file, node.span, decl) {
                             return None;
                         }
                         if let Some(Ty::Module(module)) = &local {

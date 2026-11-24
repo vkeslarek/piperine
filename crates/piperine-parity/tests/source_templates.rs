@@ -191,3 +191,15 @@ fn a_childs_node_connects_to_another_placement() {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
 }
+
+#[test]
+fn a_body_written_in_reverse_order_runs_as_forward() {
+    // §8.2: `RigFeedReverse` writes `RigFeed`'s body backwards (a placement reads `near.sn` and `amps` before their `let`s), and
+    // its nodes settle where `RigFeed`'s do: 0.5 and 0.125 * 2
+    let forward = RUN.operating_point("items.msl", "RigFeed", &["feeder.c0.sn", "near.sn"]);
+    let reverse = RUN.operating_point("items.msl", "RigFeedReverse", &["feeder.c0.sn", "near.sn"]);
+    for (value, wanted) in reverse.iter().zip([0.5, 0.125 * 2.0]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {reverse:?}");
+    }
+    assert_eq!(forward, reverse, "the reverse body settles where the forward one does");
+}

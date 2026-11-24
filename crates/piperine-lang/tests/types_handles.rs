@@ -327,3 +327,20 @@ fn a_node_of_a_child_is_a_connection() {
         assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
     }
 }
+
+#[test]
+fn a_module_body_is_typed_in_any_order() {
+    // §8.2 ("its items appear in any order; every name is visible in the whole body"): a `let` read before it is written is
+    // typed where it is read, a placement, a node of a child and a value alike; two `let`s that read each other through
+    // placements without a result read themselves, `E0332` (§8.2.16)
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\n";
+    for top in [
+        "module Top() { signal x: Electrical; let th = Th(c0.sn); let c0 = Dram(x); }",
+        "module Top() { let a = b * 2.0; let b = k + 1.0; k: f64 = 1.0; signal p: Electrical; }\nanalog for Top { i(p, gnd) +> v(p) * a; }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+    let cycle = HandleSources::found(&format!("{modules}module Top() {{ let p = Dram(q.sn); let q = Dram(p.sn); }}"));
+    assert_eq!(cycle.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{cycle:?}");
+    assert!(cycle[0].1.contains("reads its own name through other `let`s"), "{cycle:?}");
+}

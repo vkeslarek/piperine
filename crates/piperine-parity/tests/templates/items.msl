@@ -81,3 +81,13 @@ module RigFeed() {
     let feed = Push(near.sn) { amps: 0.25 };
 }
 analog for RigFeed { potential(a) +> 0.5; }
+
+/// `RigFeed` with its body written in reverse (§8.2: the items of a body appear in any order).
+module RigFeedReverse() {
+    let feed = Push(near.sn) { amps: amps };
+    let amps = 0.125 * 2.0;
+    let near = Leaky(a);
+    let feeder = Feeder::<_>(a) { cell: Leaky { } };
+    signal a: Electrical;
+}
+analog for RigFeedReverse { potential(a) +> 0.5; }
