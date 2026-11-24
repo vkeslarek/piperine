@@ -421,7 +421,7 @@ impl<'a> Printer<'a> {
                 CarrierRole::Out => "out".to_string(),
                 CarrierRole::Signal => "signal".to_string(),
                 CarrierRole::Reached => "reached".to_string(),
-                CarrierRole::Resolved { driven } => format!("resolved {driven}"),
+                CarrierRole::Resolved { driven, .. } => format!("resolved {driven}"),
                 CarrierRole::Internal => "internal".to_string(),
             };
             let init = carrier.init.map_or(String::new(), |c| format!(" init {c}"));

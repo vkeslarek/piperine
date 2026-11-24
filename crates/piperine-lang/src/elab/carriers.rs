@@ -297,7 +297,7 @@ impl Elaboration<'_, '_> {
             None => None,
         };
         let name = format!("{}{}", self.frames[frame].prefix, data.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
-        Some(Carrier { name, ty, role: CarrierRole::Resolved { driven }, init, origin: self.locator.decl(decl), count: None })
+        Some(Carrier { name, ty, role: CarrierRole::Resolved { driven, port: matches!(data.kind, DeclKind::Port(_)) }, init, origin: self.locator.decl(decl), count: None })
     }
 
     /// The `impl Resolve` the resolved carrier `decl` of `nature` is driven by, and whether a drive picked it: the one the

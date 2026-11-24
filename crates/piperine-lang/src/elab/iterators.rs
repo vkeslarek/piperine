@@ -391,9 +391,10 @@ impl Elaboration<'_, '_> {
     fn bind_pattern(&mut self, scope: &mut Scope, pat: PatId, value: LoweredExpr, stmts: &mut Vec<LoweredStmt>) -> Option<()> {
         let node = self.design.pat_node(pat).clone();
         match node.kind {
+            // a name over an `Option` is its flag and payload (`bind_names`)
             PatKind::Ident { binding, sub: None, .. } => {
-                let local = self.bind_local(scope, binding)?;
-                stmts.push(self.stmt(Stmt::Let { local, init: value }));
+                let names = self.bind_names(scope, &[(binding, value)])?;
+                stmts.extend(self.binding_lets(&names));
                 Some(())
             }
             PatKind::Wild => Some(()),

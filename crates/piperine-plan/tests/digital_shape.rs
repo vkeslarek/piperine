@@ -1020,7 +1020,7 @@ impl Resolved {
     /// The holder: `w` is resolved (value `u8`, driven `bool`), driven with `true`; `seen` follows `w.others()`.
     fn holder(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Source", Resolved::F, 1));
-        b.carrier(body, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool }, None, Resolved::F, 2, 5));
+        b.carrier(body, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Resolved::F, 2, 5));
         b.carrier(body, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5));
         let mut x = Dx::new(b, Resolved::F, 2, 9);
         let drive = x.boolean(true);

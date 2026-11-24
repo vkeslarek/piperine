@@ -77,7 +77,7 @@ impl Fixture {
     /// `w.others()`.
     fn source(b: &mut IrBuilder, driven: ValueType, drive_value: Expr, drive_ty: ValueType) -> BodyId {
         let body = b.body(Fixture::spec("Source"));
-        b.carrier(body, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven }, init: None, origin: Fixture::origin(4), count: None });
+        b.carrier(body, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven, port: true }, init: None, origin: Fixture::origin(4), count: None });
         b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: Fixture::origin(5), count: None });
         let drive = Fixture::expr(b, drive_value, drive_ty, 4);
         b.drive(body, Drive { carrier: 0, value: drive, after: None, origin: Fixture::origin(4), element: None, path: vec![] });

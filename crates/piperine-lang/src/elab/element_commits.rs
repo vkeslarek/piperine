@@ -55,7 +55,7 @@ impl Elaboration<'_, '_> {
         let carried = self.structure.carriers[carrier as usize].clone();
         // a resolved carrier is written with the type of its drive, not the one it reads (§5.2.15)
         let mut ty = match &carried.role {
-            piperine_ir::CarrierRole::Resolved { driven } => driven.clone(),
+            piperine_ir::CarrierRole::Resolved { driven, .. } => driven.clone(),
             _ => carried.ty.clone(),
         };
         let mut steps = steps.into_iter().peekable();

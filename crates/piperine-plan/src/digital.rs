@@ -429,7 +429,7 @@ impl Digital {
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                let CarrierRole::Resolved { driven } = &c.role else { return None };
+                let CarrierRole::Resolved { driven, .. } = &c.role else { return None };
                 let at = Self::at(&c.origin);
                 let Some(layout) = DriveLayout::of(body.ir(), driven) else {
                     panic!("body {}: carrier {} at {at} is driven with {driven}, which no drive net holds; check() refuses it", body.name(), c.name)
@@ -456,7 +456,7 @@ impl Digital {
     /// The size in bytes of the drive net of resolved carrier `c` of `body`; 0 for a carrier that is not resolved.
     fn drive_size(body: Body<'_>, c: u32) -> u32 {
         match body.carriers().get(c as usize).map(|x| &x.role) {
-            Some(CarrierRole::Resolved { driven }) => DriveLayout::of(body.ir(), driven).map_or(0, |layout| layout.size()),
+            Some(CarrierRole::Resolved { driven, .. }) => DriveLayout::of(body.ir(), driven).map_or(0, |layout| layout.size()),
             _ => 0,
         }
     }
@@ -649,7 +649,7 @@ impl Digital {
                 let at = Self::at(&d.origin);
                 let value = match &carrier.role {
                     // the undelayed drive of a resolved carrier is a drive net's layout: its commit copies `driving` too
-                    CarrierRole::Resolved { driven } => {
+                    CarrierRole::Resolved { driven, .. } => {
                         let layout = DriveLayout::of(body.ir(), driven)?;
                         let fields = layout.fields();
                         let abi = layout.layout(&fields);

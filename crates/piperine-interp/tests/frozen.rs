@@ -527,7 +527,7 @@ fn resolved_forms_are_refused_by_name() {
         let resolve = x.b.expr(Expr::Resolve { by_count: instances, drives: vec![0], except: None }, Ty::u(8), x.origin());
         b.drive(resolver, piperine_ir::Drive { carrier: 1, value: resolve, after: None, origin: Amended::at(3), element: None, path: vec![] });
         let holder = b.body(Buck::spec("Holder", Amended::F, 1));
-        b.carrier(holder, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool }, None, Amended::F, 1, 20));
+        b.carrier(holder, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Amended::F, 1, 20));
         b.carrier(holder, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Amended::F, 1, 30));
         let x = Dx::new(b, Amended::F, 4, 10);
         let others = x.b.expr(Expr::Others(0), Ty::u(8), x.origin());

@@ -320,7 +320,7 @@ impl Elaboration<'_, '_> {
             self.unsupported(data.file, data.span, "a resolved carrier whose drive type has no value in the IR");
             return None;
         };
-        self.structure.carriers[index as usize].role = CarrierRole::Resolved { driven };
+        self.structure.carriers[index as usize].role = CarrierRole::Resolved { driven, port: false };
         self.structure.resolved_carriers.push((index, decl, nature));
         Some(index)
     }
@@ -335,7 +335,7 @@ impl Elaboration<'_, '_> {
         }
         let target = self.reached_item(scope, self.peel_parens(place)).and_then(|(frame, item)| {
             let carrier = self.drivable_reached_carrier(frame, item)?;
-            let CarrierRole::Resolved { driven } = self.structure.carriers[carrier as usize].role.clone() else { return None };
+            let CarrierRole::Resolved { driven, .. } = self.structure.carriers[carrier as usize].role.clone() else { return None };
             Some(PlaceTarget { carrier, element: None, constant: None, path: Vec::new(), ty: driven })
         });
         Some(target)

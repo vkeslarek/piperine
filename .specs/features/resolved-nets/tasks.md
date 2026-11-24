@@ -979,8 +979,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `the_irq_line_runs_on_its_resolved_nature` and `the_four_worked_nets_give_the_tables_of_f_4` pass under `**Run bookdigital**`; `the_resolved_line_runs_on_its_nature` passes under `**Run bookcorestd**`; `**Run bookinventory**` passes
-- [ ] Gate check passes: Full
+- [x] `the_irq_line_runs_on_its_resolved_nature` and `the_four_worked_nets_give_the_tables_of_f_4` pass under `**Run bookdigital**`; `the_resolved_line_runs_on_its_nature` passes under `**Run bookcorestd**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

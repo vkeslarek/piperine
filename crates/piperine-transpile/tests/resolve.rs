@@ -79,7 +79,7 @@ impl Fixture {
     /// The holder: `w` is resolved (value `f64`, driven `u8`), driven with 5; `seen` follows `w.others()`.
     fn source(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Source", F, 6));
-        b.carrier(body, Buck::carrier("w", ValueType::F64, CarrierRole::Resolved { driven: Ty::u(8) }, None, F, 7, 5));
+        b.carrier(body, Buck::carrier("w", ValueType::F64, CarrierRole::Resolved { driven: Ty::u(8), port: true }, None, F, 7, 5));
         b.carrier(body, Buck::carrier("seen", ValueType::F64, CarrierRole::Signal, None, F, 8, 5));
         let mut x = Dx::new(b, F, 7, 9);
         let five = x.int(5, Ty::u(8));

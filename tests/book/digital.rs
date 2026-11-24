@@ -23,7 +23,7 @@ use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::{Model, Ran};
 use support::printed::Printed;
-use support::records::Fields;
+use support::records::{Fields, Rows};
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -403,28 +403,216 @@ fn a_reaction_at_a_time_runs_when_time_reaches_it() {
     Printed::holds("2.500000e-6", Fields::real(hits[0], "t"), "now() inside it");
 }
 
-#[test]
-fn the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve() {
-    // digital#16 (refused, S8): `IrqSource`, `IrqController` and `Board` over `IrqLine`, a nature the model
-    // declares with `impl Resolve<Driven>`; digital#17 to digital#20 (refused, S8): the four worked nets of
-    // "Driving with strength": a plain bool into `AndWire`, the open-drain `Sda` with its pull-up, the
-    // tri-state `TriBus` with a keeper, and the typed `DataBus` with `Resolve<Option<u8>, Data>`. The
-    // trait `Resolve`, the type `Driven` and the library modules are not in the standard library yet, so the
-    // checker reports the name (E0161); the test fails when a listing starts to run, and the row moves to
-    // `run`. The sentences of the section (digital~ids listed in the inventory) are held by these refusals
-    let chapter = Chapter::read();
-    for (id, top) in [("digital#16", "Board"), ("digital#17", "Board"), ("digital#18", "I2cBus"), ("digital#19", "Bus"), ("digital#20", "")] {
-        let model = chapter.lone("net.msl", &[id]);
-        let overrides = if top.is_empty() { Commands::transient_of("Top", 1e-6) } else { Commands::transient_of(top, 1e-6) };
-        let given = Refusal::of(model.run(overrides), id);
-        assert!(given.iter().all(|(code, _)| code == "E0161" || code == "E0112"), "{id}: names the library does not hold yet: {given:?}");
-        assert!(given.iter().any(|(_, message)| message.starts_with("cannot find `Resolve")), "{id}: {given:?}");
+/// A listing of "Driving with strength" wrapped in a bench: the Book's own modules, a replica of the listing's board that
+/// writes the net it resolves (a board keeps its net to itself), and the stimulus the table of the appendix names.
+struct NetBench;
+
+impl NetBench {
+    /// The model of the listing `id` with the bench `after` that follows it; its top is `Top`.
+    fn model(id: &str, after: &str) -> Model {
+        Chapter::read().wrapped("net.msl", "", id, after)
     }
-    Refusal::expect(chapter.lone("net.msl", &["digital#16"]).run(Commands::transient_of("Board", 1e-6)), "digital#16", "E0161", "cannot find `Driven` in this scope");
-    Refusal::expect(chapter.lone("net.msl", &["digital#17"]).run(Commands::transient_of("Board", 1e-6)), "digital#17", "E0161", "cannot find `Resolve` in this scope");
-    Refusal::expect(chapter.lone("net.msl", &["digital#18"]).run(Commands::transient_of("I2cBus", 1e-6)), "digital#18", "E0161", "cannot find `Driven` in this scope");
-    Refusal::expect(chapter.lone("net.msl", &["digital#19"]).run(Commands::transient_of("Bus", 1e-6)), "digital#19", "E0161", "cannot find `Driven` in this scope");
-    Refusal::expect(chapter.lone("net.msl", &["digital#20"]).run(Commands::transient_of("Top", 1e-6)), "digital#20", "E0161", "cannot find `Resolve` in this scope");
+
+    /// The rows of the stream `stream` of `ran` with `fields`, one text per record (`Rows::of`).
+    fn rows(ran: &Ran, stream: &str, fields: &[&str]) -> Vec<String> {
+        Rows::of(&ran.stream(stream), fields)
+    }
+
+    /// The bench of digital#16: a watched copy of the board, one with no pull-up, the listing's own `Board`, and the stimulus.
+    const IRQ_BENCH: &'static str = "\
+module IrqLook(irq_n: IrqLine) {}
+digital for IrqLook { on irq_n.changed() { emit!(\"line\", level = irq_n.v, strength = irq_n.s); } }
+module BareLook(irq_n: IrqLine) {}
+digital for BareLook { on irq_n.changed() { emit!(\"bare\", level = irq_n.v, strength = irq_n.s); } }
+module Watched(in clk: Bit, in req0: Bit, in req1: Bit, out pending: Bit) {
+    signal irq_n: IrqLine;
+    let pu = Pullup(irq_n);
+    let s0 = IrqSource(req0, irq_n);
+    let s1 = IrqSource(req1, irq_n);
+    let ic = IrqController(clk, irq_n, pending);
+    let look = IrqLook(irq_n);
+}
+module Bare(in clk: Bit, in req0: Bit, out pending: Bit) {
+    signal irq_n: IrqLine;
+    let s0 = IrqSource(req0, irq_n);
+    let ic = IrqController(clk, irq_n, pending);
+    let look = BareLook(irq_n);
+}
+module Top() {
+    signal clk: Bit = false;
+    signal r0: Bit = false;
+    signal r1: Bit = false;
+    signal pending: Bit;
+    signal bare_pending: Bit;
+    signal listed: Bit;
+    let w = Watched(clk, r0, r1, pending);
+    let b = Bare(clk, r0, bare_pending);
+    let board = Board(clk, r0, r1, listed);
+}
+digital for Top {
+    on pending.changed() { emit!(\"pending\", v = pending); }
+    on bare_pending.changed() { emit!(\"bare_pending\", v = bare_pending); }
+    on at(500n) { clk <- true; }
+    on at(700n) { clk <- false; }
+    on at(1u) { r0 <- true; }
+    on at(2u) { r1 <- true; }
+    on at(3u) { clk <- true; }
+    on at(3500n) { clk <- false; }
+    on at(4u) { r0 <- false; r1 <- false; }
+    on at(5u) { clk <- true; }
+}
+";
+
+    /// The bench of digital#17: a watched copy of the board, a net nobody drives, the listing's `Board`, and the stimulus.
+    const AND_WIRE_BENCH: &'static str = "\
+module AndLook(irq_n: AndWire) {}
+digital for AndLook { on irq_n.changed() { emit!(\"net\", value = irq_n); } }
+module AloneLook(lone: AndWire) {}
+digital for AloneLook { on lone.changed() { emit!(\"alone\", value = lone); } }
+module Watched(in a: Bit, in b: Bit) {
+    signal irq_n: AndWire;
+    let s0 = IrqSource(irq_n, a);
+    let s1 = IrqSource(irq_n, b);
+    let look = AndLook(irq_n);
+}
+module Top() {
+    signal a: Bit = false;
+    signal b: Bit = false;
+    signal lone: AndWire;
+    let w = Watched(a, b);
+    let board = Board(a, b);
+    let l = AloneLook(lone);
+}
+digital for Top { on at(1u) { a <- true; } on at(2u) { b <- true; } on at(3u) { a <- false; b <- false; } }
+";
+
+    /// The bench of digital#18: a watched copy of the bus, one with no pull-up, the listing's `I2cBus`, and the stimulus.
+    const SDA_BENCH: &'static str = "\
+module SdaLook(sda: Sda) {}
+digital for SdaLook { on sda.changed() { emit!(\"net\", level = sda.v, strength = sda.s); } }
+module BareLook(sda: Sda) {}
+digital for BareLook { on sda.changed() { emit!(\"bare\", level = sda.v, strength = sda.s, z = sda.v.is_z()); } }
+module Watched(in m: Bit, in s: Bit) {
+    signal sda: Sda;
+    let master = OpenDrainPin(sda, m);
+    let slave = OpenDrainPin(sda, s);
+    let rp = Pullup(sda);
+    let look = SdaLook(sda);
+}
+module Bare(in m: Bit, in s: Bit) {
+    signal sda: Sda;
+    let master = OpenDrainPin(sda, m);
+    let slave = OpenDrainPin(sda, s);
+    let look = BareLook(sda);
+}
+module Top() {
+    signal m: Bit = false;
+    signal s: Bit = false;
+    let w = Watched(m, s);
+    let bare = Bare(m, s);
+    let bus = I2cBus(m, s);
+}
+digital for Top { on at(1u) { m <- true; } on at(2u) { s <- true; } on at(3u) { m <- false; s <- false; } }
+";
+
+    /// The bench of digital#19: a watched copy of the bus, the listing's `Bus`, and the stimulus.
+    const BUS_BENCH: &'static str = "\
+module BusLook(line: TriBus) {}
+digital for BusLook { on line.changed() { emit!(\"net\", level = line.v, strength = line.s, x = line.v.is_x(), bit = line.v.to_bit()); } }
+module Watched(in d0: Bit, in oe0: Bit, in d1: Bit, in oe1: Bit) {
+    signal line: TriBus;
+    let a = Tribuf(line, d0, oe0);
+    let b = Tribuf(line, d1, oe1);
+    let k = Keeper(line);
+    let look = BusLook(line);
+}
+module Top() {
+    signal d0: Bit = true;
+    signal oe0: Bit = false;
+    signal d1: Bit = false;
+    signal oe1: Bit = false;
+    let w = Watched(d0, oe0, d1, oe1);
+    let bus = Bus(d0, oe0, d1, oe1);
+}
+digital for Top {
+    on at(1u) { oe0 <- true; }
+    on at(2u) { oe0 <- false; }
+    on at(3u) { oe1 <- true; }
+    on at(4u) { oe1 <- false; }
+    on at(5u) { oe0 <- true; oe1 <- true; }
+    on at(6u) { d1 <- true; }
+    on at(7u) { oe0 <- false; oe1 <- false; }
+}
+";
+
+    /// The bench of digital#20: two drivers of the typed bus, a reader and the stimulus.
+    const DATA_BENCH: &'static str = "\
+module Put(w: DataBus, in v: Bit<Option<u8>> = None) { w = v; }
+module Look(w: DataBus) {}
+digital for Look { on w.changed() { emit!(\"net\", free = w == Data::Free, five = w == Data::Byte(5), seven = w == Data::Byte(7), contended = w == Data::Contended); } }
+module Top() {
+    signal w: DataBus;
+    signal a: Bit<Option<u8>> = None;
+    signal b: Bit<Option<u8>> = None;
+    let p = Put(w, a);
+    let q = Put(w, b);
+    let l = Look(w);
+}
+digital for Top { on at(1u) { a <- Some(5); } on at(2u) { b <- Some(7); } on at(3u) { a <- None; } }
+";
+
+    /// `rows` as the owned texts `NetBench::rows` gives, for a table written in the test.
+    fn table(rows: &[&str]) -> Vec<String> {
+        rows.iter().map(|row| row.to_string()).collect()
+    }
+
+    /// The rows of the strength-resolved nets: the level and the strength.
+    const DRIVEN: [&'static str; 2] = ["level", "strength"];
+}
+
+#[test]
+fn the_irq_line_runs_on_its_resolved_nature() {
+    // digital#16 (run; Appendix E.7): `IrqSource`, `IrqController` and `Board` over `IrqLine`, a nature the model declares with
+    // `impl Resolve<Driven>`. Idle the pull-up wins (1 at Pull); a request drives strong 0; a second request changes nothing;
+    // the controller samples the settled line at a clock edge; with every source released the line is high again. The same
+    // sources and controller on a line with no pull-up read Z while released, and `pending` stays low
+    let ran = NetBench::model("digital#16", NetBench::IRQ_BENCH).run(Commands::transient_of("Top", 6e-6)).unwrap_or_else(|failure| panic!("digital#16: {failure}"));
+    assert_eq!(NetBench::rows(&ran, "line", &NetBench::DRIVEN), NetBench::table(&["0 1 Pull", "1000 0 Strong", "4000 1 Pull"]), "idle, a request, the second request changes nothing, released");
+    assert_eq!(NetBench::rows(&ran, "pending", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "sampled at the edges that follow the request and its release");
+    assert_eq!(NetBench::rows(&ran, "bare", &NetBench::DRIVEN), NetBench::table(&["0 z HighZ", "1000 0 Strong", "4000 z HighZ"]), "no pull-up: Z while released");
+    assert_eq!(NetBench::rows(&ran, "bare_pending", &["v"]), NetBench::table(&["0 false", "3000 true", "5000 false"]), "`pending` stays low on the edge at 0.5 us, while the line reads Z");
+}
+
+#[test]
+fn the_four_worked_nets_give_the_tables_of_f_4() {
+    // digital#17, digital#18, digital#19 and digital#20 (run; Appendix F.4.1 to F.4.4): each net's table of outcomes, one bench per listing
+    // F.4.1: a plain bool into a wired-AND net
+    let ran = NetBench::model("digital#17", NetBench::AND_WIRE_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#17: {failure}"));
+    assert_eq!(NetBench::rows(&ran, "net", &["value"]), NetBench::table(&["0 true", "1000 false", "3000 true"]), "(false, false) high; (true, false) and (true, true) low");
+    assert_eq!(NetBench::rows(&ran, "alone", &["value"]), NetBench::table(&["0 true"]), "no `IrqSource`: `resolve` of an empty array is high");
+    // a drive of another type picks no `impl`: E0180 naming the nature and the type (digital~4b2beb4c)
+    let wrong = format!("{}module Wrong(irq_n: AndWire) {{ irq_n = logic(\"1\"); }}\nmodule Top() {{ signal n: AndWire; let w = Wrong(n); }}\n", Chapter::read().text("digital#17"));
+    let refused = Refusal::of(Model::written("net.msl", &wrong).run(Commands::transient_of("Top", 1e-6)), "digital#17");
+    assert!(refused.iter().any(|(code, message)| code == "E0180" && message.contains("AndWire") && message.contains("Logic")), "{refused:?}");
+    // F.4.2: an open-drain line with a pull-up
+    let ran = NetBench::model("digital#18", NetBench::SDA_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#18: {failure}"));
+    assert_eq!(NetBench::rows(&ran, "net", &NetBench::DRIVEN), NetBench::table(&["0 1 Pull", "1000 0 Strong", "3000 1 Pull"]), "Z and Z: 1 at Pull; strong 0: 0 at Strong; two strong 0: still 0 at Strong");
+    assert_eq!(NetBench::rows(&ran, "bare", &["level", "strength", "z"]), NetBench::table(&["0 z HighZ true", "1000 0 Strong false", "3000 z HighZ true"]), "no `Pullup`: `Driven::Z`, `sda.v.is_z()`");
+    // F.4.3 and F.4.4: a tri-state bus with two drivers and a keeper, and a conflict of equal strengths
+    let ran = NetBench::model("digital#19", NetBench::BUS_BENCH).run(Commands::transient_of("Top", 8e-6)).unwrap_or_else(|failure| panic!("digital#19: {failure}"));
+    let held = NetBench::rows(&ran, "net", &["level", "strength", "x"]);
+    assert_eq!(
+        held,
+        NetBench::table(&["0 x Weak true", "1000 1 Strong false", "2000 1 Weak false", "3000 0 Strong false", "4000 0 Weak false", "5000 x Strong true", "6000 1 Strong false", "7000 1 Weak false"]),
+        "before any drive X at Weak; `d0` at Strong; the keeper's last level at Weak; `d1` at Strong; the conflict X at Strong; agreement 1 at Strong; the keeper remembers the 1"
+    );
+    // F.4.4's typed bus: the driven type is `Option<u8>`, the value a reader sees `Data`
+    let ran = NetBench::model("digital#20", NetBench::DATA_BENCH).run(Commands::transient_of("Top", 4e-6)).unwrap_or_else(|failure| panic!("digital#20: {failure}"));
+    assert_eq!(
+        NetBench::rows(&ran, "net", &["free", "five", "seven", "contended"]),
+        NetBench::table(&["0 true false false false", "1000 false true false false", "2000 false false false true", "3000 false false true false"]),
+        "free, one driver's byte, two drivers contended, the other driver's byte"
+    );
 }
 
 #[test]

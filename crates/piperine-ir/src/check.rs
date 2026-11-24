@@ -556,7 +556,7 @@ impl<'a> Checker<'a> {
                 continue;
             };
             let Some(callee) = ir.bodies.get(child.body.index()) else { continue };
-            let ports: Vec<_> = callee.carriers.iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { .. })).collect();
+            let ports: Vec<_> = callee.carriers.iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { port: true, .. })).collect();
             if bound.len() != ports.len() {
                 self.report(item.clone(), child.origin.clone(), format!("child {} binds {} carriers, body {} has {} carrier ports", child.name, bound.len(), callee.name, ports.len()));
             }
@@ -881,7 +881,7 @@ impl<'a> Checker<'a> {
                 } else if let Some(init) = c.init
                     // a resolved carrier reads `ty` and is driven with `driven`: its initial value is its first drive's (§5.2.3)
                     && let held = match &c.role {
-                        CarrierRole::Resolved { driven } => driven,
+                        CarrierRole::Resolved { driven, .. } => driven,
                         _ => &c.ty,
                     }
                     && !self.holds(held, init)
@@ -1324,7 +1324,7 @@ impl<'a> Checker<'a> {
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 counts: body.carriers.iter().map(|c| c.count).collect(),
                 drive_types: body.carriers.iter().map(|c| match &c.role {
-                    CarrierRole::Resolved { driven } => Some(driven.clone()),
+                    CarrierRole::Resolved { driven, .. } => Some(driven.clone()),
                     _ => None,
                 }).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
@@ -1372,7 +1372,7 @@ impl<'a> Checker<'a> {
                 let mut w = Walk::new(owner(false, format!("body {} drive {name}", body.name)), 0);
                 if let Some(c) = body.carriers.get(drive.carrier as usize) {
                     let held = match &c.role {
-                        CarrierRole::Resolved { driven } => driven,
+                        CarrierRole::Resolved { driven, .. } => driven,
                         _ => &c.ty,
                     };
                     if let Some(written) = self.drive_type(&w, &drive.origin, drive.carrier, held, drive.element, &drive.path) {

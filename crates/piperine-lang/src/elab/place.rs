@@ -127,7 +127,7 @@ impl Elaboration<'_, '_> {
         }
         for resolved in &plan.resolved {
             let carrier = &plan.carriers[resolved.carrier as usize];
-            let CarrierRole::Resolved { driven } = &carrier.role else { continue };
+            let CarrierRole::Resolved { driven, .. } = &carrier.role else { continue };
             // a reached one is recorded once the child is placed and its net is known (`bind_reaches`)
             if plan.is_reached(resolved.carrier) {
                 continue;
@@ -171,7 +171,7 @@ impl Elaboration<'_, '_> {
     fn record_reached_drive(&mut self, plan: &ModulePlan, path: &str, instance: InstanceId, carrier: u32, net: NetId) {
         let Some(resolved) = plan.resolved.iter().find(|resolved| resolved.carrier == carrier) else { return };
         let carried = &plan.carriers[carrier as usize];
-        let CarrierRole::Resolved { driven } = &carried.role else { return };
+        let CarrierRole::Resolved { driven, .. } = &carried.role else { return };
         self.resolvers.record(ResolvedUse { instance, path: path.to_string(), net, plan: resolved.clone(), value: carried.ty.clone(), driven: driven.clone(), host_port: false });
     }
 

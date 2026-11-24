@@ -40,3 +40,31 @@ impl Fields {
         }
     }
 }
+
+/// The records of a stream as one text each, for a table of outcomes a test compares whole.
+pub struct Rows;
+
+impl Rows {
+    /// The text of a field: a variant by its name, a flag as `true` or `false`, a number as itself.
+    fn text(field: &Field) -> String {
+        match field {
+            Field::Variant(name) | Field::Text(name) => name.clone(),
+            Field::Bool(flag) => flag.to_string(),
+            Field::Int(number) => number.to_string(),
+            Field::Real(number) => format!("{number:e}"),
+            other => format!("{other:?}"),
+        }
+    }
+
+    /// One row per record of `records`: its instant in nanoseconds, then the fields `fields` in that order, separated by
+    /// spaces (`1000 0 Strong`).
+    pub fn of(records: &[&Record], fields: &[&str]) -> Vec<String> {
+        records
+            .iter()
+            .map(|record| {
+                let values: Vec<String> = fields.iter().map(|name| Self::text(Fields::of(record, name))).collect();
+                format!("{} {}", (record.time * 1e9).round(), values.join(" "))
+            })
+            .collect()
+    }
+}
