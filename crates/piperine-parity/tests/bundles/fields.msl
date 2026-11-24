@@ -1,0 +1,36 @@
+//! A field of a bundle is a carrier with the rules of §5 (§7 rule 12): committed in a reaction, defined, watched with
+//! `changed()` and `rise()`, and read with `prev()`.
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A level the producer commits and the consumer acknowledges; a `Logic` starts unknown, its `Default` (§5.2.8).
+struct Pipe { out level: Bit<Logic>, in ack: Bit }
+
+/// Commits high to the field `p.level` at the second rising edge of the clock, and low at the fifth.
+module Writer(in clk: Bit, p: Pipe) { signal rises: Bit<u8> = 0; }
+digital for Writer {
+    on clk.rise() { rises <- rises + 1; }
+    on clk.rise() && rises == 1 { p.level <- Logic::H; }
+    on clk.rise() && rises == 4 { p.level <- Logic::L; }
+}
+
+/// Defines `q.ack` over the level, and records each change of the level with the one it replaces, and each rise of the
+/// acknowledgement.
+module Reader(q: flip Pipe) {
+    q.ack = q.level.is_high();
+}
+digital for Reader {
+    on q.level.changed() { emit!("level", high = q.level.is_high(), unknown = q.level.is_x(), before_high = q.level.prev().is_high()); }
+    on q.ack.rise() { emit!("acks", high = q.level.is_high()); }
+}
+
+/// A writer and a reader on one `Pipe` signal.
+module PipeBench() {
+    signal clk: Bit;
+    signal pipe: Pipe;
+    let clock = Clock(clk);
+    let writer = Writer(clk, pipe);
+    let reader = Reader(pipe);
+}

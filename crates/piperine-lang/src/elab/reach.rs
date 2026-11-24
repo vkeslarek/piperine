@@ -93,6 +93,10 @@ impl Elaboration<'_, '_> {
     /// The frame of the child a field read `c.x` names and the item `x` of it. `None` after a
     /// diagnostic.
     pub(super) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
+        // a field of a bundle port or signal is the carrier or node its leaf stands for, in this module's own frame (§7 rule 12)
+        if let Some(leaf) = self.design.bundle_field(expr) {
+            return Some((scope.frame, leaf));
+        }
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Field { expr: receiver, res: Resolution::Decl(item), .. } = &node.kind else {
             self.unsupported(scope.file, node.span, "a field access that is not an item of a placed module");

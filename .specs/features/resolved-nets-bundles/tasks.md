@@ -379,8 +379,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_producer_consumer_and_observer_run_three_beats` and `field_commits_definitions_and_methods_follow_section_5` pass under `**Run sourcebundles**`
-- [ ] Gate check passes: Full
+- [x] `a_producer_consumer_and_observer_run_three_beats` and `field_commits_definitions_and_methods_follow_section_5` pass under `**Run sourcebundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

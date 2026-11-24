@@ -107,20 +107,4 @@ impl Elaboration<'_, '_> {
         bound.windows.push(window);
         true
     }
-
-    /// The read of a field of a bundle, `tx.ready`: the value of the carrier the leaf `leaf` is in the frame. `None` after a
-    /// diagnostic.
-    pub(super) fn lower_leaf_read(&mut self, scope: &Scope, expr: ExprId, leaf: DeclId, origin: piperine_ir::Origin) -> Option<piperine_ir::ExprId> {
-        match self.frame_carrier(scope.frame, leaf) {
-            Some(index) if self.structure.carriers[index as usize].count.is_none() => Some(self.carrier_read(index, origin)),
-            Some(_) => {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a field of a bundle that is an array of carriers");
-                None
-            }
-            None => {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a field of a bundle that is no carrier of this module");
-                None
-            }
-        }
-    }
 }
