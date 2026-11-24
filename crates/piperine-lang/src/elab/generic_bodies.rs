@@ -88,7 +88,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Plans the params of `module` for `instance` once, their defaults folded under its arguments.
-    fn plan_instance_params(&mut self, module: DeclId, instance: &Instance) {
+    pub(super) fn plan_instance_params(&mut self, module: DeclId, instance: &Instance) {
         if self.instance_param_plans.contains_key(instance) {
             return;
         }

@@ -131,7 +131,7 @@ impl Elaboration<'_, '_> {
     /// The values the key params of `module` take at the placement written with `fields`: the value
     /// written, evaluated over the key params of the placing body (`scope.keys`), else the default.
     /// `None` after a diagnostic (`E0319` for a key param with neither).
-    pub(super) fn child_key_values(&mut self, scope: &Scope, module: DeclId, fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
+    pub(super) fn child_key_values(&mut self, scope: &Scope, (module, instance): (DeclId, Option<&Instance>), fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
         let mut values = Bindings::new();
         for key in self.keys.of(module).to_vec() {
             let written = match fields.iter().find(|f| f.res == Resolution::Decl(key)) {
@@ -144,7 +144,7 @@ impl Elaboration<'_, '_> {
                 },
                 None => None,
             };
-            let value = self.key_value(module, key, written, &values, (file, span))?;
+            let value = self.key_value((module, instance), key, written, &values, (file, span))?;
             self.bind_param(&mut values, key, value);
         }
         Some(values)
@@ -153,8 +153,12 @@ impl Elaboration<'_, '_> {
     /// The value key param `key` of `module` takes at a placement: `written`, else the default, folded over the key params
     /// before it (`earlier`) when it reads them (§8.1.16). `None` after `E0319` for a key param with neither, or after the
     /// diagnostic of a default that does not fold.
-    fn key_value(&mut self, module: DeclId, key: DeclId, written: Option<Constant>, earlier: &Bindings, (file, span): (FileId, crate::msl::Span)) -> Option<Constant> {
-        let plan = self.param_plans.get(&module).and_then(|plans| plans.iter().find(|p| p.decl == key)).cloned();
+    fn key_value(&mut self, (module, instance): (DeclId, Option<&Instance>), key: DeclId, written: Option<Constant>, earlier: &Bindings, (file, span): (FileId, crate::msl::Span)) -> Option<Constant> {
+        // an instance of a generic module has the plans of its own arguments (`generic_bodies.rs`)
+        if let Some(instance) = instance {
+            self.plan_instance_params(module, instance);
+        }
+        let plan = self.plans_of(module, instance).and_then(|plans| plans.iter().find(|p| p.decl == key)).cloned();
         let default = match (written, plan) {
             (None, Some(plan)) => match self.default_at(&plan, earlier) {
                 Ok(default) => default,
@@ -202,25 +206,26 @@ impl Elaboration<'_, '_> {
     /// else the ones its block writes (`child_key_values`). `None` after a diagnostic.
     pub(super) fn placement_key_values(&mut self, scope: &Scope, call: ExprId, module: DeclId, span: crate::msl::Span) -> Option<Bindings> {
         let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return None };
+        let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
         match self.template_through(scope, call, &class) {
             Err(()) => None,
-            Ok(Some(template)) => self.template_values(&template, scope.file, span).map(|(_, keys)| keys),
+            Ok(Some(template)) => self.template_values(&template, instance.as_ref(), scope.file, span).map(|(_, keys)| keys),
             Ok(None) => {
                 let fields = self.placement_fields(call, module);
-                self.child_key_values(scope, module, &fields, scope.file, span)
+                self.child_key_values(scope, (module, instance.as_ref()), &fields, scope.file, span)
             }
         }
     }
 
     /// What a placement through a template gives its module: the constant of each param the block
     /// binds, as `lower_child` keeps them, and the values of the module's key params.
-    fn template_values(&mut self, template: &TemplateValue, file: FileId, span: crate::msl::Span) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
+    fn template_values(&mut self, template: &TemplateValue, instance: Option<&Instance>, file: FileId, span: crate::msl::Span) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
         let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let given: Vec<(u32, Option<Constant>, ExprId)> = template.fields.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
         let mut keys = Bindings::new();
         for key in self.keys.of(template.module).to_vec() {
             let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
-            let value = self.key_value(template.module, key, written, &keys, (file, span))?;
+            let value = self.key_value((template.module, instance), key, written, &keys, (file, span))?;
             self.bind_param(&mut keys, key, value);
         }
         Some((given, keys))
@@ -287,8 +292,9 @@ impl Elaboration<'_, '_> {
                 None => ok = false,
             }
         }
+        let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
         let templated = match &through {
-            Some(template) => match self.template_values(template, file, node.span) {
+            Some(template) => match self.template_values(template, instance.as_ref(), file, node.span) {
                 Some(values) => Some(values),
                 None => return None,
             },
@@ -310,7 +316,7 @@ impl Elaboration<'_, '_> {
         }
         let key_values = match templated {
             Some((_, keys)) => keys,
-            None => self.child_key_values(scope, module, &fields, file, node.span)?,
+            None => self.child_key_values(scope, (module, instance.as_ref()), &fields, file, node.span)?,
         };
         let mut shapes_agree = true;
         for (port, arg) in ports.iter().zip(args) {
@@ -319,7 +325,6 @@ impl Elaboration<'_, '_> {
         if !shapes_agree {
             return None;
         }
-        let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
         let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);

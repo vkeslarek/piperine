@@ -186,6 +186,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.build_type_arena();
         self.plan_params(&modules);
         self.classify_module_param_keys(&with_generic);
+        self.classify_folded_param_keys(&with_generic);
         self.classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
         // variants take the ids after them, on request.

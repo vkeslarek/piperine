@@ -374,6 +374,19 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The params of every reached module, a generic one's too, that elaboration folds wherever they are read: those the condition
+    /// of a node chosen at elaboration reads (the body names one node, §1.4.7) and those the default of a later param reads (the
+    /// default is folded, §8.1.16). Both are structural (§8.1.2).
+    pub(super) fn classify_folded_param_keys(&mut self, modules: &[DeclId]) {
+        for module in modules {
+            let order = self.params_of(*module);
+            let read: Vec<DeclId> = self.params_read_by_node_choices(*module).into_iter().chain(self.params_read_by_defaults(*module)).collect();
+            for param in read {
+                self.keys.add(*module, param, &order);
+            }
+        }
+    }
+
     /// Classifies the key params of `modules` (the reached modules with a body): see the module
     /// documentation. Run once, before any body is lowered.
     pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
@@ -422,13 +435,6 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
-        // A param read by the default of a later param is structural too: the default is folded at elaboration (§8.1.2, §8.1.16).
-        for module in modules {
-            let order = self.params_of(*module);
-            for param in self.params_read_by_defaults(*module) {
-                self.keys.add(*module, param, &order);
-            }
-        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -448,6 +454,32 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The params of `module` that the condition or the scrutinee of a node chosen at elaboration reads (`v(if k > 0.5 { x } else
+    /// { p })`), in its body and its behaviors.
+    fn params_read_by_node_choices(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut owners = BTreeSet::new();
+        let mut pending: Vec<DeclId> = std::iter::once(module).chain(data.behaviors.iter().copied()).collect();
+        while let Some(decl) = pending.pop() {
+            if owners.insert(decl) {
+                pending.extend(self.design.decl_data(decl).children.iter().copied());
+            }
+        }
+        let mut found = Vec::new();
+        for index in 0..self.design.expr_count() {
+            let expr = ExprId(index as u32);
+            if !owners.contains(&self.design.expr_node(expr).owner) || !matches!(self.typed(expr), Some(crate::types::Ty::Node(_) | crate::types::Ty::AnyNode)) {
+                continue;
+            }
+            match &self.design.expr_node(expr).kind {
+                ExprKind::If { cond, .. } => self.collect_params(*cond, &mut found),
+                ExprKind::Match { scrutinee, .. } => self.collect_params(*scrutinee, &mut found),
+                _ => {}
+            }
+        }
+        found
     }
 
     /// The params of `module` that the default of a later param reads (`g: f64 = 1.0 / r`); a read of the param itself or of a

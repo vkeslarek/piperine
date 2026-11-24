@@ -699,12 +699,17 @@ Proof: run elabhandles | test an_access_a_let_bound_nodes_nature_lacks_is_e0206 
 Proof: run typeshandles | test parentheses_around_a_node_argument_name_the_node ... ok
 Proof: run elabhandles | test parentheses_around_a_node_argument_lower_to_the_node ... ok
 
-**C117** - A node is never chosen by an expression: an `if`, a `match` or a block whose result is a node is `E0133` naming the form, at run time or over a param, with no second diagnostic, also written straight at a probe, a contribution target or a connection (fix round 6, finding 20); the spec says so (§1.4.7 and the `E0133` row, AFK default pending user review). (fix round 5, verifier's note)
-Proof: run typeshandles | test a_node_chosen_by_an_expression_is_e0133 ... ok
-Proof: run elabhandles | test a_node_chosen_at_run_time_is_e0133_not_an_elaboration_refusal ... ok
-Proof: run spectext | test a_node_chosen_by_an_expression_is_e0133_in_the_spec ... ok
+**C117** - A node chosen at elaboration (an `if`, a `match` or a block whose choice reads only params, constants and generation indexes) names the node it folds to at a probe, a contribution target, a placement's connection and an `Fn` bound's, and its params are structural; a choice that reads a probe, a signal, a variable or a core primitive of the run, or a block with statements before its result, is `E0133` alone, also written straight at a node argument, and so is one through a function that reads the run (elaboration). (§1.4.7, §8.1.2; user ruling 2026-11-24, finding 21; findings 20 and the round-5 note)
+Proof: run typeshandles | test a_node_chosen_by_the_run_is_e0133 ... ok
+Proof: run typeshandles | test a_node_chosen_at_elaboration_is_typed_as_the_node ... ok
 Proof: run typeshandles | test a_node_chosen_at_a_node_argument_is_e0133_alone ... ok
+Proof: run elabhandles | test a_node_chosen_at_run_time_is_e0133_not_an_elaboration_refusal ... ok
 Proof: run elabhandles | test a_node_chosen_at_a_probe_or_a_target_is_e0133_alone ... ok
+Proof: run elabhandles | test a_node_chosen_at_elaboration_folds_to_the_node ... ok
+Proof: run elabhandles | test a_node_chosen_at_elaboration_connects_through_a_template ... ok
+Proof: run elabhandles | test a_node_chosen_through_a_function_that_reads_the_run_is_e0133 ... ok
+Proof: run srctempl | test a_param_picks_the_node_a_module_probes_and_drives ... ok
+Proof: run spectext | test a_node_chosen_by_an_expression_is_e0133_in_the_spec ... ok
 
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
@@ -726,6 +731,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **Fix round 3 (2026-11-24, verification-d.md findings 13 to 15):** (13) one rule decides which params a template or a placement must bind, `types::ParamRequirement` (no default and no `Option<T>`, §8.1.17), used by `require_bound_params` and `absent_option`. (14) Decided by the spec: `as` gives its result a type and never its operand (§1.4.5), so `c0.n as f64` is `E0181` at the read (not a cast from the concrete type). (15) A `let` with no type bound to a template read that no expression names is `E0181` at the read (`report_unread_template_locals`). The §8.4 Resolution lists the three forms with no typing context.
 **Fix round 4 (2026-11-24, finding 16):** fixed in code, no GAPS row: the checker reads the nature of an access name the resolver left ambiguous from the node its operand holds (`access_of_operand`), a `let` bound to a template read counts as that read for a potential access (`reads_through_callable`), and the elaborator lowers a `let` bound to a node as a name for the node (`scope.handles`, as a handle parameter is), so `let y = x; v(y)` runs in all three forms.
 **Fix round 5 (2026-11-24, findings 17 to 19 and the verifier's notes):** (17) the checker records the role of an access the resolver left ambiguous (`Types::access_role`), which the elaborator's `quantity_role` reads, so `v(y) +> 1.0` through a `let` contributes to the node. (18) `access_of_operand` says why it finds nothing (`OperandAccess`), and a missing access is `E0206`/`E0413` as for the node named directly (`missing_access`). Parentheses around a node argument name the node (`lower_terminal`). The spec forbids a node chosen by an expression in spirit (§1.4.7, hardware is not a value) but gave no code: amended (AFK default pending user review) to `E0133`, which the checker reports at the `if`/`match`/block. (19) `names_only_potentials` has its doc comment back, and the access matching is one readable method (`is_accessed_as`, `names_as_path`, `reads_a_template_potential`).
+**Fix round 7 (2026-11-24, finding 21, user ruling):** a node chosen at elaboration runs. The checker refuses only a choice that reads the run (`chooses_a_node` over `run_read`: a probe, a port, a signal, a variable, a core primitive; a block with statements); the elaborator folds the rest (`elab/node_choice.rs`, from `lower_terminal`, so probes, targets and connections alike) and classifies the params a choice reads as structural for every reached module, a generic one's too (`classify_folded_param_keys`, which also takes the defaults of §8.1.16 there); key values of a generic module's instance read its own plans (`key_value` with the instance). `gnd` fits a node of any nature in `Ty::fits` (§6 rule 1), so an arm may be `gnd`. A choice that does not fold (a function that reads the run) is `E0133` at elaboration. Amendments approved by the user: §1.4.7, §8.4 and §8.1.2/§8.1.16; ROADMAP `live-param-defaults` is option 2.
 **Dispatched:** none yet.
 **Walked:** none yet.
 

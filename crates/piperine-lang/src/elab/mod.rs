@@ -39,7 +39,7 @@ mod nature;
 mod origin;
 mod patterns;
 mod place;
-mod reach; mod reach_through_templates; mod reach_values;
+mod reach; mod reach_through_templates; mod reach_values; mod node_choice;
 mod repr;
 mod reactions;
 mod returns;

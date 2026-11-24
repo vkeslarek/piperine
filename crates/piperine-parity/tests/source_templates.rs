@@ -170,3 +170,14 @@ fn a_let_bound_to_a_node_is_a_contribution_target() {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
 }
+
+#[test]
+fn a_param_picks_the_node_a_module_probes_and_drives() {
+    // §1.4.7 (user decision of 2026-11-24): with `k = 1` `Pick` copies `a` (0.2) to its level and holds `t1` at 0.3, `t2` left to its
+    // load at 0; with `k = 0` it copies `b` (0.8) and holds `u2`, `u1` at 0
+    let seen = RUN.operating_point("choices.msl", "RigChoices", &["l1", "t1", "t2", "l2", "u1", "u2"]);
+    let (a, b, held) = (0.2, 0.8, 0.3);
+    for (value, wanted) in seen.iter().zip([a, held, 0.0, b, 0.0, held]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}

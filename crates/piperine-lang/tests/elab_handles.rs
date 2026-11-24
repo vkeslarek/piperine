@@ -106,3 +106,43 @@ fn a_node_chosen_at_a_probe_or_a_target_is_e0133_alone() {
         assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{statement}: {:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn a_node_chosen_at_elaboration_folds_to_the_node() {
+    // §1.4.7, §8.1.2 (user decision of 2026-11-24): `if k > 0.5 { a } else { b }` names `a` where `k` is 1 and `b` where it is 0, at a
+    // probe, a contribution target and a placement's connection; `k` is structural, one body per value
+    let src = "module R(a: Electrical, b: Electrical) { }\nanalog for R { i(a, b) +> v(a, b); }\n\
+               module Pick(a: Electrical, b: Electrical, level: Electrical, t: Electrical) { k: f64 = 1.0; let r = R(level, if k > 0.5 { a } else { b }); }\n\
+               analog for Pick { potential(level) +> v(if k > 0.5 { a } else { b }); v(if k > 0.5 { t } else { level }) +> 0.3; }\n\
+               module Top() { signal a: Electrical; signal b: Electrical; signal l1: Electrical; signal l2: Electrical; signal t: Electrical; let one = Pick(a, b, l1, t) { k: 1.0 }; let zero = Pick(a, b, l2, t) { k: 0.0 }; }";
+    let ir = Elab::ir(src, "Top");
+    let printed = ir.print_structural();
+    let body = |key: &str| printed.split("\nbody ").find(|body| body.starts_with(&format!("\"Pick~k={key}\""))).unwrap_or_else(|| panic!("no body Pick~k={key}: {printed}")).to_string();
+    let (one, zero) = (body("1.0"), body("0.0"));
+    assert!(one.contains("probe(a, gnd)") && one.contains("child r: R  nodes (level, a)") && one.contains("branch b1 (t, gnd) potential"), "{one}");
+    assert!(zero.contains("probe(b, gnd)") && zero.contains("child r: R  nodes (level, b)") && zero.contains("(level, gnd) potential"), "{zero}");
+}
+
+#[test]
+fn a_node_chosen_at_elaboration_connects_through_a_template() {
+    // §1.4.7, §8.4.5: `cell(a, if k > 0.5 { b } else { gnd })` through `C: Fn(Electrical, Electrical)` places the template's module
+    // on `b` where `k` is 1 and on ground where it is 0
+    let src = "module R(a: Electrical, b: Electrical) { }\nanalog for R { i(a, b) +> v(a, b); }\n\
+               module H<C: Fn(Electrical, Electrical)>(a: Electrical) { cell: C; signal b: Electrical; k: f64 = 1.0; let c = cell(a, if k > 0.5 { b } else { gnd }); }\n\
+               module Top() { signal x: Electrical; let one = H::<_>(x) { cell: R { }, k: 1.0 }; let zero = H::<_>(x) { cell: R { }, k: 0.0 }; }";
+    let ir = Elab::ir(src, "Top");
+    let bindings = |path: &str| ir.instance_at(path).map(|instance| format!("{:?}", instance.bindings())).unwrap_or_else(|| panic!("no instance {path}"));
+    let own_b = format!("{:?}", ir.instance_at("Top.one").expect("one").bindings()[1]);
+    assert!(bindings("Top.one.c").contains(&own_b), "one places R on its own b: {} {own_b}", bindings("Top.one.c"));
+    assert!(bindings("Top.zero.c").contains("Ground"), "zero places R on ground: {}", bindings("Top.zero.c"));
+}
+
+#[test]
+fn a_node_chosen_through_a_function_that_reads_the_run_is_e0133() {
+    // §1.4.7: `if late() { x } else { p }` with `late()` reading `now()` does not fold at elaboration: the elaborator refuses it
+    // with `E0133` at the `if`, the code the checker gives a choice that reads the run where it is written
+    let src = "fn late() -> bool { now() > 1.0 }\nmodule Top() { signal x: Electrical; signal p: Electrical; }\nanalog for Top { i(p, gnd) +> v(if late() { x } else { p }); }";
+    let diagnostics = Elab::run(src, "Top").expect_err("the choice is the run's");
+    assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+    assert_eq!(&src[diagnostics[0].diagnostic.span().range()], "if late() { x } else { p }");
+}

@@ -107,6 +107,9 @@ impl Ty {
         match (self, expected) {
             (Ty::Array(found, found_length), Ty::Array(wanted, wanted_length)) => found.fits(wanted) && found_length.fits(wanted_length),
             (Ty::Option(found), Ty::Option(wanted)) => found.fits(wanted),
+            // `gnd` is a node of every continuous nature (§6 rule 1): it stands where a node of a nature is wanted, and one such
+            // node where any node is (the arms of a node chosen at elaboration, §1.4.7)
+            (Ty::AnyNode, Ty::Node(_)) | (Ty::Node(_), Ty::AnyNode) => true,
             (Ty::GenericInteger { signed: found, width: found_width }, Ty::GenericInteger { signed: wanted, width: wanted_width }) => found == wanted && Length::Generic(found_width.clone()).fits(&Length::Generic(wanted_width.clone())),
             (Ty::GenericInteger { signed, .. }, Ty::UInt(_)) | (Ty::UInt(_), Ty::GenericInteger { signed, .. }) if !signed => true,
             (Ty::GenericInteger { signed, .. }, Ty::Int(_)) | (Ty::Int(_), Ty::GenericInteger { signed, .. }) if *signed => true,
