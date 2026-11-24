@@ -106,6 +106,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) type_arena: super::types::TypeArena,
     /// Every trait and `impl` of the design: what a call through a bound resolves against (`methods.rs`).
     pub(super) impls: crate::types::ImplTable<'d>,
+    /// The resolved nets of the placed tree and their resolver bodies (`resolvers.rs`).
+    pub(super) resolvers: super::resolvers::ResolverBodies,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -142,6 +144,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             templates: super::templates::Templates::default(),
             type_arena: super::types::TypeArena::default(),
             impls: crate::types::ImplTable::new(design),
+            resolvers: super::resolvers::ResolverBodies::default(),
             diagnostics: Vec::new(),
         }
     }
@@ -172,6 +175,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.lower_pending_bodies();
         self.pad_child_nodes();
         let top_instance = self.place_top(top);
+        self.build_resolvers();
         let reprs = self.lower_hand_written_reprs();
         self.add_functions();
         self.set_hand_written_reprs(reprs);

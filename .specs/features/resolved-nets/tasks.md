@@ -590,8 +590,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `resolve_is_instantiated_once_per_drive_count`, `drives_are_ordered_by_instance_path_segment_by_segment` and `others_depends_on_the_other_drives_only` pass under `**Run elabnatures**`
-- [ ] Gate check passes: Full
+- [x] `resolve_is_instantiated_once_per_drive_count`, `drives_are_ordered_by_instance_path_segment_by_segment` and `others_depends_on_the_other_drives_only` pass under `**Run elabnatures**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -35,6 +35,12 @@ pub(super) struct Structure {
     /// How many of the leading `carriers` are ports of the body's own module (they come first): a resolved
     /// port binds the parent's net like an `in` or `out` one, a resolved signal makes its own.
     pub(super) port_carriers: usize,
+    /// The resolved carriers of the body, in carrier order: the index, the declaration and the nature (`resolvers.rs`).
+    pub(super) resolved_carriers: Vec<(u32, DeclId, DeclId)>,
+    /// The carriers some reaction of the body commits to.
+    pub(super) committed: BTreeSet<u32>,
+    /// The carriers whose `others()` the body reads.
+    pub(super) others_read: BTreeSet<u32>,
     pub(super) drives: Vec<Drive>,
     pub(super) events: Vec<Event>,
     pub(super) reactions: Vec<Reaction>,
@@ -131,6 +137,13 @@ impl Elaboration<'_, '_> {
                 self.frames[frame].carriers.insert(decl, index);
                 if frame == 0 && matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) {
                     self.structure.port_carriers += 1;
+                }
+                let resolved_nature = match self.types.carrier(decl) {
+                    Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
+                    _ => None,
+                };
+                if let Some(nature) = resolved_nature {
+                    self.structure.resolved_carriers.push((index, decl, nature));
                 }
             }
         }

@@ -13,6 +13,7 @@ use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::host_sources::{HostPort, HostSources};
+use super::resolvers::{DeclaredNet, ResolvedUse};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
 use piperine_ir::NodeRole;
@@ -111,7 +112,12 @@ impl Elaboration<'_, '_> {
         if !nets.is_empty() {
             self.ir.bind_nets(instance, nets.clone());
         }
-
+        for resolved in &plan.resolved {
+            let carrier = &plan.carriers[resolved.carrier as usize];
+            let CarrierRole::Resolved { driven } = &carrier.role else { continue };
+            let host_port = placing.parent.is_none() && (resolved.carrier as usize) < plan.port_carriers;
+            self.resolvers.record(ResolvedUse { instance, path: placing.path.clone(), net: nets[resolved.carrier as usize], plan: resolved.clone(), value: carrier.ty.clone(), driven: driven.clone(), host_port });
+        }
         stack.push(placing.module);
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
@@ -177,7 +183,13 @@ impl Elaboration<'_, '_> {
             let at = if carrier.role == CarrierRole::Reached { format!("{}.reach.{}", placing.path, carrier.name) } else { format!("{}.{}", placing.path, carrier.name) };
             let net = match given {
                 Some(net) => net,
-                None => self.ir.net(NetSpec { path: at, ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() }),
+                None => {
+                    let made = self.ir.net(NetSpec { path: at.clone(), ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() });
+                    if matches!(carrier.role, CarrierRole::Resolved { .. }) {
+                        self.resolvers.declare(made, DeclaredNet { declared_by, path: at, origin: carrier.origin.clone() });
+                    }
+                    made
+                }
             };
             nets.push(net);
         }

@@ -39,7 +39,7 @@ mod nature;
 mod origin;
 mod patterns;
 mod place;
-mod reach;
+mod reach; mod resolvers;
 mod repr;
 mod reactions;
 mod returns;

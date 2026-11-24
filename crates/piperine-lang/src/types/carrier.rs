@@ -61,6 +61,12 @@ impl Checker<'_> {
         // a resolved nature's `impl`s are judged wherever a carrier of it is (§4 rule 8)
         for implementation in super::nature::ResolveImpls::declarations(&self.impls, nature) {
             self.reach(implementation);
+            // the body of `resolve` is run by the net's resolver (`elab/resolvers.rs`): it is checked and typed with the model
+            for item in self.design.decl_data(implementation).children.clone() {
+                if matches!(self.design.decl_data(item).kind, DeclKind::Fn(_)) {
+                    self.reach(item);
+                }
+            }
         }
         if NatureRules::of(self.design, nature).resolved && !self.resolve_tables.contains_key(&nature) {
             let table = super::nature::ResolveImpls::new(self).of(nature);

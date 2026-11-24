@@ -571,6 +571,7 @@ impl Elaboration<'_, '_> {
             Builtin::Others => {
                 let carrier = self.carrier_of(scope, recv)?;
                 let value = self.structure.carriers[carrier as usize].ty.clone();
+                self.structure.others_read.insert(carrier);
                 Some(self.emit(Expr::Others(carrier), value, origin))
             }
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an

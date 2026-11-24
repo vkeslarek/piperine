@@ -70,3 +70,36 @@ fn others_lowers_to_the_bodys_others_read() {
     let text = ir.print_structural();
     assert!(text.contains("others(w)") || text.contains("others("), "{text}");
 }
+
+#[test]
+fn drives_are_ordered_by_instance_path_segment_by_segment() {
+    // §4 rule 2 (Resolution): the drives of a net are in the order of their holders' instance paths, segment by
+    // segment, names by code point, whatever the order the instances are written in.
+    let ir = Elab::ir(&format!("{TOTAL}module Top() {{ signal n: Total; let c = Driver(n); let a = Driver(n); let b = Driver(n); }}"), "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("held by (Top.a, Top.b, Top.c)"), "{text}");
+}
+
+#[test]
+fn resolve_is_instantiated_once_per_drive_count() {
+    // §4 rule 8: a net of `N` drives calls `resolve::<k>` for each `k` in `0..=N`, one IR function each, and a
+    // second net of the same nature and count shares them (one resolver body per count).
+    let source = format!("{TOTAL}module Top() {{ signal n: Total; signal m: Total; let a = Driver(n); let b = Driver(n); let c = Driver(m); let d = Driver(m); }}");
+    let ir = Elab::ir(&source, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("resolve [\"resolve::<0>\", \"resolve::<1>\", \"resolve::<2>\"]"), "{text}");
+    assert_eq!(text.matches("body \"Total<f64>$resolve~2\"").count(), 1, "one resolver body for both nets:\n{text}");
+    assert!(text.contains("resolved by Top.n$resolve") && text.contains("resolved by Top.m$resolve"), "{text}");
+}
+
+#[test]
+fn others_depends_on_the_other_drives_only() {
+    // §5.2.7: the others net of a holder is the `resolve` of every drive but its own: the resolver body of a net with a
+    // reader has an `others` output for it, and a holder that reads nothing gets none.
+    let echo = "module Echo(w: Total, in clk: Bit) { signal seen: Bit<f64> = 0.0; w = 1.0; }\ndigital for Echo { on clk.rise() { seen <- w.others(); } }\n";
+    let source = format!("{TOTAL}{echo}module Top() {{ signal n: Total; signal c: Bit = false; let a = Driver(n); let e = Echo(n, c); }}");
+    let ir = Elab::ir(&source, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("others (1: Top.n$others1)"), "only the reader (drive 1, `Top.e`) has an others net:\n{text}");
+    assert!(text.contains("except"), "the resolver body resolves all but the reader's drive:\n{text}");
+}
