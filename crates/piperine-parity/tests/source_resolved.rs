@@ -128,3 +128,22 @@ fn an_initial_value_is_the_declaring_modules_first_drive() {
     let seen = built.run(10e-9, 1e-9);
     assert_eq!(Model::reals(&built, &seen, "changes"), vec![vec![("total".to_string(), 13.0)]]);
 }
+
+#[test]
+fn others_is_resolve_of_every_drive_but_the_readers() {
+    // §5.2.7: the `others()` of a drive is `resolve` of every drive but its own. With the drives 1, 2 and 4 the three
+    // modules read 2 + 4 = 6, 1 + 4 = 5 and 1 + 2 = 3.
+    let built = Model::of("others.msl").built("EchoBench");
+    let seen = built.run(10e-9, 1e-9);
+    let mut echoes: Vec<(f64, f64)> = Model::reals(&built, &seen, "others").into_iter().map(|record| (record[0].1, record[1].1)).collect();
+    echoes.sort_by(|left, right| left.0.total_cmp(&right.0));
+    assert_eq!(echoes, vec![(1.0, 6.0), (2.0, 5.0), (4.0, 3.0)], "each drive's own amount and the sum of the others");
+}
+
+#[test]
+fn others_of_a_module_without_a_drive_is_the_value() {
+    // §5.2.7: a module that drives nothing has no drive to leave out, so its `others()` is the net's value: 1 + 2 = 3.
+    let built = Model::of("others.msl").built("OnlookerBench");
+    let seen = built.run(10e-9, 1e-9);
+    assert_eq!(Model::reals(&built, &seen, "looks"), vec![vec![("rest".to_string(), 3.0), ("whole".to_string(), 3.0)]]);
+}

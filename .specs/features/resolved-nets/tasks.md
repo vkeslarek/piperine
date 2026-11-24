@@ -696,8 +696,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `others_is_resolve_of_every_drive_but_the_readers` and `others_of_a_module_without_a_drive_is_the_value` pass under `**Run sourceresolved**`
-- [ ] Gate check passes: Quick
+- [x] `others_is_resolve_of_every_drive_but_the_readers` and `others_of_a_module_without_a_drive_is_the_value` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
