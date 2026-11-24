@@ -269,3 +269,19 @@ fn a_cast_of_a_template_item_is_e0181() {
     let typed = bank("let cs: f64 = c0.cs; i(p, gnd) +> v(p, gnd) * (cs as f64);");
     assert_eq!(typed.codes(), Vec::<String>::new(), "{}", typed.message());
 }
+
+#[test]
+fn an_unread_let_of_a_template_item_is_e0181() {
+    // §8.4.8: `let x = c0.cs;` that nothing reads gets no type from a use, so it is `E0181` at the read; a read of it that wants a
+    // value types it
+    let bank = |items: &str| {
+        TemplateSource::new(&format!(
+            "module Bank<C: Fn(E)>(a: E) {{ cell: C; let c0 = cell(a); signal p: E; }}\nanalog<C> for Bank<C> {{ {items} }}\n\
+             module Top(x: E) {{ let bank = Bank::<_>(x) {{ cell: Cell {{ cs: 2.0 }} }}; }}"
+        ))
+    };
+    let unread = bank("let x = c0.cs; i(p, gnd) +> 1.0;");
+    assert_eq!(unread.codes(), ["E0181"], "{}", unread.message());
+    let read = bank("let x = c0.cs; i(p, gnd) +> x;");
+    assert_eq!(read.codes(), Vec::<String>::new(), "{}", read.message());
+}

@@ -64,6 +64,25 @@ impl Checker<'_> {
         }
     }
 
+    /// `E0181` at the read through a template of every `let` with no type that no expression names, so no use gives it a type
+    /// (§8.4.8).
+    pub(super) fn report_unread_template_locals(&mut self) {
+        let named: std::collections::BTreeSet<DeclId> = (0..self.design.expr_count())
+            .filter_map(|index| match &self.design.expr_node(ExprId(index as u32)).kind {
+                ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                    Some(Resolution::Decl(decl)) if self.template_locals.contains_key(&decl) => Some(decl),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        let unread: Vec<ExprId> = self.template_locals.iter().filter(|(local, _)| !named.contains(local)).map(|(_, read)| *read).collect();
+        for read in unread {
+            let (file, span) = (self.file_of_expr(read), self.design.expr_node(read).span);
+            self.report_untyped_template_read(file, span);
+        }
+    }
+
     /// Whether the receiver `recv` of a method call is a read through a template, which nothing gives a type: `E0181` at the read,
     /// the arguments typed for their own diagnostics.
     pub(super) fn untyped_template_receiver(&mut self, recv: ExprId, args: &[crate::pom::Arg]) -> bool {

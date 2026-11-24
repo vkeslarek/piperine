@@ -398,3 +398,15 @@ fn a_cast_of_a_template_item_is_e0181_not_a_node_conversion() {
     assert_eq!(Elab::codes(&diagnostics), ["E0181"]);
     assert_eq!(&source[diagnostics[0].diagnostic.span().range()], "c0.n", "at the read");
 }
+
+#[test]
+fn an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal() {
+    // §8.4.8: an unread `let x = c0.cs;` is refused by the checker with `E0181` at the read, never with the elaborator's `P0001`s
+    let source = "module Dram(a: Electrical) { pub cs: f64 = 1.0; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n\
+                  module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); signal p: Electrical; }\n\
+                  analog<C> for Bank<C> { let x = c0.cs; i(p, gnd) +> 1.0; }\n\
+                  module Top() { signal x: Electrical; let bank = Bank::<_>(x) { cell: Dram { } }; }";
+    let diagnostics = Elab::run(source, "Top").expect_err("nothing types `x`");
+    assert_eq!(Elab::codes(&diagnostics), ["E0181"]);
+    assert_eq!(&source[diagnostics[0].diagnostic.span().range()], "c0.cs", "at the read");
+}

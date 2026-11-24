@@ -248,6 +248,7 @@ impl<'d> Checker<'d> {
         self.check_attributes();
         self.reach(top);
         self.drain();
+        self.report_unread_template_locals();
         if !self.diagnostics.is_empty() {
             return Err(self.sorted_diagnostics());
         }
