@@ -67,3 +67,24 @@ analog for RigAssigned {
     potential(a) +> 0.2;
     potential(b) +> 0.8;
 }
+
+/// Drives `level` with the line chosen by a condition that assigns its `let` first (`{ s = !s; s }`, verification finding 28):
+/// with `sel` false the condition is true and picks `a`.
+module PickInCondition(a: Electrical, b: Electrical, level: Electrical) { sel: bool = false; }
+analog for PickInCondition {
+    let s = sel;
+    potential(level) +> v(if { s = !s; s } { a } else { b });
+}
+
+module RigInCondition() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal l1: Electrical;
+    signal l2: Electrical;
+    let low = PickInCondition(a, b, l1) { sel: false };
+    let high = PickInCondition(a, b, l2) { sel: true };
+}
+analog for RigInCondition {
+    potential(a) +> 0.2;
+    potential(b) +> 0.8;
+}

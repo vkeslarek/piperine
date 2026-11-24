@@ -224,8 +224,8 @@ impl Checker<'_> {
     }
 
     /// What `expr` reads whose value depends on the run: a probe, a port or a signal (`runtime_read`), a core primitive of the
-    /// run (`now()`, `temperature()`, §14), or a variable whose value does (`run_variable`); `followed` holds the variables being
-    /// judged, whose reads of themselves add nothing. `None` for an expression over params, constants, generation indexes and
+    /// run (`now()`, `temperature()`, §14), or a variable whose value does (`run_variable`); `followed` holds the variables judged
+    /// already, each once. `None` for an expression over params, constants, generation indexes and
     /// `let`s of those; the elaborator folds it, and a call that reads the run inside a function is refused there with the same
     /// code.
     fn run_read(&self, expr: ExprId, followed: &mut Vec<DeclId>) -> Option<String> {
@@ -277,10 +277,10 @@ impl Checker<'_> {
                 let Some(init) = self.let_values.get(&decl).copied().or(body_value) else {
                     return Some("a value only a pattern or a loop binds".to_string());
                 };
+                // judged once: a variable met again is being judged or was found to depend on nothing of the run (one that does
+                // ends the search), so following it again adds nothing and the judgement ends
                 followed.push(decl);
-                let read = self.run_read(init, followed).or_else(|| self.places.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)));
-                followed.pop();
-                read
+                self.run_read(init, followed).or_else(|| self.places.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)))
             }
             _ => None,
         }

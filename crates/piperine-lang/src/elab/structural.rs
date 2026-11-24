@@ -474,11 +474,11 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             match &self.design.expr_node(expr).kind {
-                ExprKind::If { cond, .. } => self.collect_choice_params(*cond, &mut found, 0),
+                ExprKind::If { cond, .. } => self.collect_choice_params(*cond, &mut found, &mut Vec::new()),
                 ExprKind::Match { scrutinee, arms } => {
-                    self.collect_choice_params(*scrutinee, &mut found, 0);
+                    self.collect_choice_params(*scrutinee, &mut found, &mut Vec::new());
                     for guard in arms.iter().filter_map(|arm| arm.guard) {
-                        self.collect_choice_params(guard, &mut found, 0);
+                        self.collect_choice_params(guard, &mut found, &mut Vec::new());
                     }
                 }
                 _ => {}
@@ -489,18 +489,20 @@ impl Elaboration<'_, '_> {
 
     /// Adds every param a node choice's condition `expr` reads to `found`, through the initializers of the `let`s it reads
     /// (`let s = sel; if s { .. }`), the values assigned to them and the conditions around those (`if k > 0.5 { s = !s; }`).
-    fn collect_choice_params(&self, expr: ExprId, found: &mut Vec<DeclId>, depth: usize) {
+    fn collect_choice_params(&self, expr: ExprId, found: &mut Vec<DeclId>, followed: &mut Vec<DeclId>) {
         self.collect_params(expr, found);
-        if depth > 64 {
-            return;
-        }
         for local in self.read_bindings(expr) {
+            // each `let` is followed once: one that reads itself (`s = !s`, `{ s = !s; s }`) adds nothing new
+            if followed.contains(&local) {
+                continue;
+            }
+            followed.push(local);
             if let Some(init) = self.let_initializer(local) {
-                self.collect_choice_params(init, found, depth + 1);
+                self.collect_choice_params(init, found, followed);
             }
             if self.types.is_assigned(local) {
                 for read in self.assignment_reads(local) {
-                    self.collect_choice_params(read, found, depth + 1);
+                    self.collect_choice_params(read, found, followed);
                 }
             }
         }

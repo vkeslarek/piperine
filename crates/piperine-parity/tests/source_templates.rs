@@ -227,6 +227,22 @@ fn a_let_assigned_from_params_picks_the_node() {
 }
 
 #[test]
+fn a_condition_that_assigns_its_let_picks_the_node_and_ends() {
+    // §1.4.7 (finding 28): `if { s = !s; s }` folds at elaboration, so `sel` false picks `a` and `sel` true picks `b`; the compile
+    // and the solve run on a thread of their own and must end within 60 s
+    let (a, b) = (0.2, 0.8);
+    let pick = |sel: bool| if !sel { a } else { b };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(RUN.operating_point("choices.msl", "RigInCondition", &["l1", "l2"]));
+    });
+    let seen = receiver.recv_timeout(std::time::Duration::from_secs(60)).expect("the run ends within the bound");
+    for (value, wanted) in seen.iter().zip([pick(false), pick(true)]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}
+
+#[test]
 fn a_childs_node_connects_to_another_placement() {
     // §8.2.8, §8.1.10: `Push(c0.sn)` with `c0` placed through a template, and `Push(near.sn)` with `near` placed by name, drive the
     // storage node of the cell: a 1 S leak to ground fed `amps` settles at `amps` volts (0.5 and 0.25)

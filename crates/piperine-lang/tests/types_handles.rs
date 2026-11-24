@@ -304,6 +304,7 @@ fn a_let_assigned_only_values_of_elaboration_chooses_a_node() {
         "let s = sel; for j in 0..3 { s = !s; }",
         "let s = sel; let w = v(x); s = !s;",
         "let s = true; s = sel; s = !s;",
+        "let s = sel; let c = { s = !s; s };",
     ] {
         let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
         assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{statement}");

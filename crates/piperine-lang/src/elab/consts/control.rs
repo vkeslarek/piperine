@@ -125,6 +125,14 @@ impl ConstEval<'_, '_> {
         value
     }
 
+    /// The value of `expr` over `bindings` with locals of its own: what it assigns (`{ s = !s; s }`) is gone once it is folded.
+    pub(in crate::elab) fn value_in_a_scope_of_its_own(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let outer = std::mem::take(&mut self.locals);
+        let value = self.value(expr, bindings);
+        self.locals = outer;
+        value
+    }
+
     /// The locals the statement `stmt` assigns, anywhere in it.
     fn written_by(&self, stmt: StmtId) -> Vec<DeclId> {
         let mut exprs = Vec::new();

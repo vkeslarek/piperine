@@ -20,6 +20,9 @@ struct ChoiceScope {
     bindings: Bindings,
     /// Each `let` of a block bound to a node, to its initializer.
     nodes: BTreeMap<DeclId, ExprId>,
+    /// The `let`s whose value binding was tried already, each once: a `let` that reads itself (`s = !s`), directly or through
+    /// others, is not followed again, so the fold ends.
+    followed: Vec<DeclId>,
 }
 
 impl Elaboration<'_, '_> {
@@ -29,7 +32,7 @@ impl Elaboration<'_, '_> {
         if !matches!(self.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_)) {
             return None;
         }
-        let mut within = ChoiceScope { bindings: self.frame_bindings(scope.frame).overlaid(&scope.unrolled), nodes: BTreeMap::new() };
+        let mut within = ChoiceScope { bindings: self.frame_bindings(scope.frame).overlaid(&scope.unrolled), nodes: BTreeMap::new(), followed: Vec::new() };
         let chosen = self.fold_choice(&mut within, expr);
         if chosen.is_none() {
             // a condition that does not fold reads what only the run knows, through a function the checker cannot see into
@@ -84,29 +87,27 @@ impl Elaboration<'_, '_> {
     /// The constant `expr` folds to, the `let`s it reads bound first to the constants of their initializers (§1.4.7: a `let` of
     /// params and constants is one).
     fn choice_value(&mut self, within: &mut ChoiceScope, expr: ExprId) -> Result<Constant, super::consts::ConstFault> {
-        self.bind_read_lets(within, expr, 0);
-        self.consts.value(expr, &within.bindings)
+        self.bind_read_lets(within, expr);
+        self.consts.value_in_a_scope_of_its_own(expr, &within.bindings)
     }
 
     /// Binds every `let` `expr` reads that is not bound yet to the constant of its initializer, the `let`s that initializer reads
     /// first, or, for one a body assigns, to the value its statements leave it where `expr` reads it (`value_where_read`); one
     /// that does not fold stays unbound, so what reads it does not fold either.
-    fn bind_read_lets(&mut self, within: &mut ChoiceScope, expr: ExprId, depth: usize) {
-        if depth > 64 {
-            return;
-        }
+    fn bind_read_lets(&mut self, within: &mut ChoiceScope, expr: ExprId) {
         for local in self.read_bindings(expr) {
-            if within.bindings.get(local).is_some() {
+            if within.bindings.get(local).is_some() || within.followed.contains(&local) {
                 continue;
             }
+            within.followed.push(local);
             if self.types.is_assigned(local) {
-                if let Some(value) = self.value_where_read(within, local, expr, depth) {
+                if let Some(value) = self.value_where_read(within, local, expr) {
                     within.bindings.bind(local, value);
                 }
                 continue;
             }
             let Some(init) = self.let_initializer(local) else { continue };
-            self.bind_read_lets(within, init, depth + 1);
+            self.bind_read_lets(within, init);
             if let Ok(value) = self.consts.value(init, &within.bindings) {
                 within.bindings.bind(local, value);
             }
@@ -117,7 +118,7 @@ impl Elaboration<'_, '_> {
     /// every value assigned to it and the conditions around those constant): the statements of its block from its `let` to the
     /// one that holds `at` run at elaboration, the `let`s they read from outside bound first. `None` when they do not fold, or
     /// when the statement that holds `at` assigns `local` before it (a choice nested in a block with an assignment).
-    fn value_where_read(&mut self, within: &mut ChoiceScope, local: DeclId, at: ExprId, depth: usize) -> Option<Constant> {
+    fn value_where_read(&mut self, within: &mut ChoiceScope, local: DeclId, at: ExprId) -> Option<Constant> {
         let (stmts, from) = self.block_declaring(local)?;
         let read = self.design.expr_node(at).span;
         let holds = |span: crate::msl::Span| span.start <= read.start && read.end <= span.end;
@@ -137,7 +138,7 @@ impl Elaboration<'_, '_> {
         }
         for stmt in &stmts[from..to] {
             for child in crate::pom::stmt_children(self.design, *stmt) {
-                self.bind_read_lets(within, child, depth + 1);
+                self.bind_read_lets(within, child);
             }
         }
         self.consts.local_after(at, &stmts[from..to], local, &within.bindings)

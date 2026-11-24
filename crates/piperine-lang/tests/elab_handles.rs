@@ -190,6 +190,54 @@ fn a_let_assigned_only_values_of_elaboration_folds_to_the_node_it_holds_there() 
 }
 
 #[test]
+fn a_choice_whose_condition_assigns_folds_and_ends() {
+    // §1.4.7 (finding 28): an assignment inside a choice's condition folds at elaboration like one before it, and elaboration
+    // ends: with `sel` false, `{ s = !s; s }` is true and names `x`; a condition block that loops on its own variable names `p`
+    // once it ends; each form elaborates within a time bound, on a thread of its own
+    for (analog, node) in [
+        ("let s = sel; let y = if { s = !s; s } { x } else { p };", "x"),
+        ("let s = sel; let y = if { s = !s; s = !s; s } { x } else { p };", "p"),
+        ("let s = sel; let y = if { let t = !s; t } { x } else { p };", "x"),
+        ("let s = sel; let y = match { s = !s; s } { true => x, false => p };", "x"),
+        ("let n = 0; let y = if { while n < 3 { n = n + 1; } n == 3 } { x } else { p };", "x"),
+        ("let s = sel; s = !s; let y = if { s = !s; s } { x } else { p };", "p"),
+    ] {
+        let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; signal q: Electrical; sel: bool = false; }}\nanalog for Top {{ i(x, gnd) +> v(x); i(p, gnd) +> v(p); {analog} i(q, gnd) +> v(y); }}");
+        let printed = Bounded::elaborate(src.clone()).unwrap_or_else(|| panic!("{analog}: elaboration did not end within the bound"));
+        assert!(printed.contains(&format!("b2.flow +> direct probe({node}, gnd)")), "{analog}: {printed}");
+    }
+    // an assignment of the run inside the condition does not fold: `E0133` alone, naming the read, within the bound too
+    let src = "module Top() { signal x: Electrical; signal p: Electrical; sel: bool = false; }\nanalog for Top { let s = sel; let y = if { s = v(x) > 0.5; s } { x } else { p }; i(p, gnd) +> v(y); }".to_string();
+    let refused = Bounded::refusal(src).expect("elaboration ends within the bound");
+    assert_eq!(refused.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{refused:?}");
+    assert!(refused[0].1.contains("a probe"), "{refused:?}");
+}
+
+/// Elaboration on a thread of its own, given a time bound: a fold that never ends fails the test instead of hanging it.
+struct Bounded;
+
+impl Bounded {
+    /// The structural print of `Top`, or `None` when elaboration has not ended after 20 s.
+    fn elaborate(src: String) -> Option<String> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(Elab::ir(&src, "Top").print_structural());
+        });
+        receiver.recv_timeout(std::time::Duration::from_secs(20)).ok()
+    }
+
+    /// The codes and messages with which elaboration refuses `Top`, or `None` when it has not ended after 20 s.
+    fn refusal(src: String) -> Option<Vec<(String, String)>> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let refused = Elab::run(&src, "Top").err().unwrap_or_default();
+            let _ = sender.send(refused.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect());
+        });
+        receiver.recv_timeout(std::time::Duration::from_secs(20)).ok()
+    }
+}
+
+#[test]
 fn a_node_of_a_child_connects_to_another_placement() {
     // §8.2.8, §8.1.10: `Th(c0.sn)` binds `Th`'s port to the storage node of `c0`, placed by name or through a template, and so
     // does `Th(if sel { c0.sn } else { t })` with `sel` true
