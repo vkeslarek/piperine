@@ -65,3 +65,32 @@ analog for RigBare {
     potential(t3) +> v(returned.sn);
     potential(t4) +> v(direct.sn);
 }
+
+/// A template param value over the placing module's params (§8.4.6, finding 36): a literal over a param, a binning function over
+/// the parent's length and a choice over a param, in the top module and in a placed `Binned` whose params its parent binds.
+module Plain(a: Electrical) { cell: Dram; pub let c0 = cell(a); }
+fn sized(cs: f64) -> Dram { Dram { cs: cs } }
+fn bin(l: f64) -> Dram { if l < 1.0 { Dram { cs: 7.0 } } else { Dram { cs: 9.0 } } }
+module Binned(a: Electrical) {
+    l: f64 = 1.0;
+    sel: bool = false;
+    let p = Plain(a) { cell: if sel { bin(l) } else { Dram { cs: l * 10.0 } } };
+    pub signal o: Electrical;
+}
+analog for Binned { potential(o) +> v(p.c0.sn); }
+module RigParamTemplates() {
+    l: f64 = 2.0;
+    signal a: Electrical;
+    let b1 = Plain(a) { cell: Dram { cs: l } };
+    let b2 = Plain(a) { cell: sized(l * 2.0) };
+    let short = Binned(a) { l: 0.5, sel: true };
+    let long = Binned(a) { l: 3.0, sel: true };
+    let scaled = Binned(a) { l: 0.5 };
+    signal t1: Electrical;
+    signal t2: Electrical;
+}
+analog for RigParamTemplates {
+    potential(a) +> 0.5;
+    potential(t1) +> v(b1.c0.sn);
+    potential(t2) +> v(b2.c0.sn);
+}

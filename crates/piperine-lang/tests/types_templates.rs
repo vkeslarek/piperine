@@ -304,6 +304,24 @@ fn an_unread_let_of_a_template_item_is_e0181() {
 }
 
 #[test]
+fn a_template_param_value_may_read_the_placing_modules_params() {
+    // §8.4.6 (finding 36): a template value handed to a param of module type is a const expression over params, so it may read
+    // the placing module's params; one that reads a port is `E0362`
+    let head = "module Plain(a: E) { cell: Cell; let c0 = cell(a); }\nfn sized(l: f64) -> Cell { Cell { cs: l } }\n\
+                fn pick(big: bool) -> Cell { if big { Cell { cs: 2.0 } } else { Cell { cs: 1.0 } } }\n";
+    for (form, codes) in [
+        ("let b = Plain(x) { cell: Cell { cs: l } };", &[][..]),
+        ("let b = Plain(x) { cell: sized(l) };", &[]),
+        ("let b = Plain(x) { cell: pick(sel) };", &[]),
+        ("let b = Plain(x) { cell: if sel { Cell { cs: l } } else { Cell } };", &[]),
+        ("let b = Plain(x) { cell: Cell { cs: v(x) } };", &["E0362"]),
+    ] {
+        let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ l: f64 = 2.0; sel: bool = true; {form} }}"));
+        assert_eq!(source.codes(), codes, "{form}: {}", source.message());
+    }
+}
+
+#[test]
 fn a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none() {
     // finding 37: the arms of a template choice name two modules (`E0180`, §1.5.4); a call through the `let` that holds it adds
     // no second diagnostic, and a template's type is never "no function and no template"

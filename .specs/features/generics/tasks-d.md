@@ -768,6 +768,11 @@ Proof: run typesgen | test phase_d_and_e_forms_stay_p0001_by_name ... ok
 **C127** - A template choice whose arms name two modules is one `E0180`; a call through the `let` that holds it adds no diagnostic, and a value of a module's type is never called "no function and no template". (§1.5.4, §8.4.4; fix round 15, finding 37)
 Proof: run typestempl | test a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none ... ok
 
+**C128** - A template value handed to a param of module type is a const expression over the placing module's params, which become structural: a template literal over a param, a binning function over the parent's length and a choice over a param fold per instance, in the top module and in a placed one whose params its parent binds; one that reads a port is `E0362`. (§8.4.6; fix round 15, finding 36)
+Proof: run typestempl | test a_template_param_value_may_read_the_placing_modules_params ... ok
+Proof: run elabtempl | test a_template_param_value_over_the_placing_modules_params_folds_per_instance ... ok
+Proof: run srctempl | test a_template_param_value_over_the_parents_params_places_per_instance ... ok
+
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 

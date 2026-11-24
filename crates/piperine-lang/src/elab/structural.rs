@@ -640,6 +640,14 @@ impl Elaboration<'_, '_> {
                 if !self.keys.is_key(child, given) {
                     continue;
                 }
+                // a template value (`cell: A { r: l }`, `cell: sized(l)`, `cell: if sel { A {} } else { K }`) is a const expression over
+                // params (§8.4.6): every param it reads is structural, as for the head of a placement through a template
+                if self.is_module_param(given) {
+                    let mut read = Vec::new();
+                    self.collect_choice_params(field.value, &mut read, &mut Vec::new());
+                    out.extend(read.into_iter().map(|param| (child, param)));
+                    continue;
+                }
                 for param in ParamReads::new(self.design, self.types).of(field.value).into_iter().flatten() {
                     out.push((child, param));
                 }

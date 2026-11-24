@@ -420,6 +420,32 @@ fn an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal() {
 }
 
 #[test]
+fn a_template_param_value_over_the_placing_modules_params_folds_per_instance() {
+    // §8.4.6 (finding 36): a template handed to a param of module type is a const expression over the placing module's params,
+    // which become structural: a template literal, a binning function and a choice over them fold per instance, in the top module
+    // and in a placed one whose param its parent binds
+    let head = format!(
+        "{CELL}module Plain(a: Electrical) {{ cell: Cell; let c0 = cell(a); }}\nfn sized(l: f64) -> Cell {{ Cell {{ cs: l }} }}\n\
+         fn pick(big: bool) -> Cell {{ if big {{ Cell {{ cs: 30.0 }} }} else {{ Cell {{ cs: 1.0 }} }} }}\n"
+    );
+    let cs = |value: f64| Constant::Real(Real::new(value));
+    for (form, wanted) in [
+        ("Plain(x) { cell: Cell { cs: l } }", 2.0),
+        ("Plain(x) { cell: sized(l * 2.0) }", 4.0),
+        ("Plain(x) { cell: pick(sel) }", 30.0),
+        ("Plain(x) { cell: if sel { Cell { cs: l } } else { Cell } }", 2.0),
+    ] {
+        let ir = Elab::ir(&format!("{head}module Top() {{ l: f64 = 2.0; sel: bool = true; signal x: Electrical; let b = {form}; }}"), "Top");
+        assert_eq!(Placed::first_param(&ir, "Top.b.c0"), cs(wanted), "{form}");
+    }
+    // a placed `Mid` whose `l` its parent binds, twice with two values: two bodies, each its own cell
+    let mid = format!("{head}module Mid(a: Electrical) {{ l: f64 = 1.0; sel: bool = false; let p = Plain(a) {{ cell: if sel {{ sized(l) }} else {{ Cell {{ cs: l * 10.0 }} }} }}; }}\n");
+    let ir = Elab::ir(&format!("{mid}module Top() {{ signal x: Electrical; let m = Mid(x) {{ l: 3.0, sel: true }}; let n = Mid(x) {{ l: 0.5 }}; }}"), "Top");
+    assert_eq!(Placed::first_param(&ir, "Top.m.p.c0"), cs(3.0));
+    assert_eq!(Placed::first_param(&ir, "Top.n.p.c0"), cs(5.0));
+}
+
+#[test]
 fn a_bare_module_name_used_as_a_value_places_its_template_with_every_default() {
     // §8.4.1 amendment (finding 35): `Cell` used as a value is `Cell {}`, so `let t = Cell; t(x)`, `(Cell)(x)`, a function's
     // result and a param value place the instance `Cell(x)` places; a required param it leaves out is `E0319`, alone

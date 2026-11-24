@@ -330,6 +330,20 @@ fn a_cycle_through_values_is_refused() {
 }
 
 #[test]
+fn a_template_param_value_over_the_parents_params_places_per_instance() {
+    // §8.4.6 (finding 36): a template handed to a cell param reads the placing module's params, which become structural: a literal
+    // over `l` (2.0), a function of it (`sized(2l)`), and in `Binned` a binning by the parent's length (7 below 1.0, else 9) or a
+    // literal scaled by it (10 l), each cell's storage node following the line (0.5) scaled by the `cs` it folds to
+    let bin = |l: f64| if l < 1.0 { 7.0 } else { 9.0 };
+    let wanted = [RustOracle::storage(2.0, 0.5), RustOracle::storage(2.0 * 2.0, 0.5), RustOracle::storage(bin(0.5), 0.5), RustOracle::storage(bin(3.0), 0.5), RustOracle::storage(0.5 * 10.0, 0.5)];
+    let seen = RUN.operating_point("callees.msl", "RigParamTemplates", &["t1", "t2", "short.o", "long.o", "scaled.o"]);
+    assert_eq!(seen.len(), wanted.len());
+    for (value, wanted) in seen.iter().zip(wanted) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}
+
+#[test]
 fn a_bare_module_name_places_its_template_with_every_default() {
     // §8.4.1 amendment (finding 35): `Tall` used as a value is `Tall {}`, so a `let` of it, `(Tall)(a)` and a function returning
     // it place the cell `Tall(a)` places, its storage node following the line (0.5) scaled by the default `cs` (3.0)
