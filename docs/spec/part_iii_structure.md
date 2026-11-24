@@ -617,7 +617,8 @@ Its type is `Name`. Calling it with connections places an instance.
   `nch(l, w)(d, g, s, b)`, takes connections only. It **MUST NOT** carry a param block.
 - **§8.4.5** The bound `C: Fn(P)` holds for every module whose port list has the types and
   directions `P`, in order. Port names do not matter. A value of type `C` is a template of such a
-  module.
+  module. A bound may combine a trait and `Fn(P)`, `N: Mosfet + Fn(Electrical, Electrical)`:
+  only a module that declares `impl Mosfet for` it fits (`E0187` otherwise).
 - **§8.4.6** A template-valued expression is evaluated at elaboration. It **MUST** be a const
   expression over params and constants. Every param it reads is structural (§8.1.2), and so is a
   param of template type.

@@ -125,8 +125,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_module_type_takes_trait_and_inherent_impls_in_the_spec` and `a_bound_combines_a_trait_and_fn_p_in_the_spec` pass under `**Run spectext**`
-- [ ] Gate check passes: Quick
+- [x] `a_module_type_takes_trait_and_inherent_impls_in_the_spec` and `a_bound_combines_a_trait_and_fn_p_in_the_spec` pass under `**Run spectext**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

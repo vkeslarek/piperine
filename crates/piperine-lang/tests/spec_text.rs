@@ -2538,3 +2538,24 @@ fn a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules() {
         assert!(rule.contains(fact), "§3.1.6 lacks \"{fact}\": {rule}");
     }
 }
+
+/// Generics phase D (GN-23, the user's decision of 2026-11-22): §3.1 and §3.7 let a module type
+/// take trait and inherent impls, and `E0130` leaves §3.1's errors.
+#[test]
+fn a_module_type_takes_trait_and_inherent_impls_in_the_spec() {
+    let values = flat(&spec("part_i_values.md"));
+    assert!(values.contains("A module type takes `impl Tr for M { … }` and an inherent `impl M { … }`"), "§3.1.4");
+    assert!(values.contains("A function that probes a node, reads a quantity or time is `E0122`"), "§3.1.4 E0122");
+    assert!(values.contains("for the value type, nature or module type `T`"), "§3.7.4 lists a module type");
+    assert!(!values.contains("| `E0130` |"), "E0130 left the §3.1 errors");
+}
+
+/// Generics phase D (GN-23): §8.4.5 says a bound may combine a trait and `Fn(P)`.
+#[test]
+fn a_bound_combines_a_trait_and_fn_p_in_the_spec() {
+    let structure = flat(&spec("part_iii_structure.md"));
+    assert!(
+        structure.contains("A bound may combine a trait and `Fn(P)`, `N: Mosfet + Fn(Electrical, Electrical)`: only a module that declares `impl Mosfet for` it fits (`E0187` otherwise)."),
+        "§8.4.5"
+    );
+}

@@ -1019,6 +1019,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 | value type | the value | methods, trait implementations |
 | a nature | one carrier, read through a handle | events: `rise`, `fall`; capabilities: `Resolve` |
 | a bundle ([§7](part_ii_carriers.md#7-bundles)) | the bundle | events and queries over several carriers |
+| a module type ([§8.4](part_iii_structure.md#84-templates-and-swappable-modules)) | the template | trait implementations that make a module swappable; values and templates computed from its params |
 
 A **handle** is a read-only reference to one carrier or bundle, bound at elaboration. It is
 the `self` of an `impl` on a nature or bundle, and any function parameter of such a type. It
@@ -1029,8 +1030,11 @@ only reference a function holds, and it is not a value.
 - **§3.1.2** Generic names follow `impl`; bounds come from the declaration
   (`impl<T> Stream<T>`).
 - **§3.1.3** Names may not repeat a carrier method: `changed`, `prev`, `others`, `inflow`.
-- **§3.1.4** There is no `impl` on a module. What a module's blocks share is a `let` in its
-  body ([§8.2](part_iii_structure.md#82-the-body)).
+- **§3.1.4** A module type takes `impl Tr for M { … }` and an inherent `impl M { … }`. `self`
+  is the template. Its functions are pure functions of the template: they read its params,
+  compute, and return values or templates; they run at elaboration. A function that probes a
+  node, reads a quantity or time is `E0122`. What a module's blocks share is still a `let` in
+  its body ([§8.2](part_iii_structure.md#82-the-body)).
 - **§3.1.5** A handle may be read, probed, passed to another function, and have carrier
   methods called on it. It **MUST NOT** be returned, stored in a value, or written through.
 - **§3.1.6** Reading a handle of a discrete carrier yields the carrier's value
@@ -1086,7 +1090,6 @@ only reference a function holds, and it is not a value.
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0130` | an `impl` on a module | elaboration |
 | `E0131` | a method named `changed`, `prev`, `others` or `inflow` | elaboration |
 | `E0132` | an item other than a function in an `impl` on a nature or bundle | elaboration |
 | `E0133` | a handle returned, stored in a value, or written through | elaboration |
@@ -1550,7 +1553,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 - **§3.7.3** `trait A: B + C` makes `B` and `C` supertraits of `A`: a type that implements `A`
   **MUST** implement `B` and `C`, and the items of `B` and `C` may be used on `Self` inside
   `A`.
-- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type or nature `T`
+- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type, nature or module type `T`
   ([§3.1.9](#31-impl)). It defines every item of the trait that has no default and may define
   the others; it defines no item the trait does not have. Each item has the signature the
   trait gives, with `Self` standing for `T`.
