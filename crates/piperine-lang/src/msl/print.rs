@@ -891,7 +891,6 @@ impl<'h> Printer<'h> {
                 format!("{w}: {}{block}", name.spelled())
             }
             NatureFieldKind::Value(t) => format!("value: {}", self.ty(t)),
-            NatureFieldKind::Resolve(e) => format!("resolve: {}", self.expr(e)),
         }
     }
 

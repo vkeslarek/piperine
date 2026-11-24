@@ -431,7 +431,9 @@ fn walk(
 /// The cycle of `fns` through the `RELAX` nets `nets` (abi.md §9 D1): those nets start at zero
 /// bytes (every drive absent: `driving` 0), the functions run in order until no byte changes, at
 /// most `nets.len() + 1` passes. A cycle that still moves after them is `E0511`, naming the loop's
-/// drives in name order (spec §8.2.3 step 4).
+/// drives in name order (spec §8.2.3 step 4). Each pass runs first the functions that write no `RELAX` net (the
+/// resolvers and what derives from them), then the drives, so the first pass of a loop reads what `resolve` of the
+/// absent drives gives and not what an earlier relaxation left on those nets (§8.2.3 steps 1 and 2).
 fn relax(
     plan: &DigitalPlan,
     store: &mut Store,
@@ -443,6 +445,9 @@ fn relax(
     nets: &[NetId],
     cone: bool,
 ) -> Result<(), Stop> {
+    let writes_relax = |f: &usize| plan.dag().function(*f).writes.iter().any(|w| nets.contains(w));
+    let fns: Vec<usize> = fns.iter().copied().filter(|f| !writes_relax(f)).chain(fns.iter().copied().filter(|f| writes_relax(f))).collect();
+    let fns = fns.as_slice();
     let mut written: Vec<NetId> = Vec::new();
     for f in fns {
         for w in &plan.dag().function(*f).writes {

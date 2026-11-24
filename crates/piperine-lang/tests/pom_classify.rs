@@ -568,7 +568,11 @@ struct Pair { a: Electrical }
 impl Pair { pub fn vd(self) -> f64 { 1.0 } }
 impl Electrical { pub fn big(self) -> f64 { 1.0 } }
 impl Bit { pub fn prev(self) -> bool { true } }
-impl Drive { pub fn lowest(self) -> Drive { self } }
+#[derive(Repr, Default)]
+struct Level { v: bool }
+impl Level { pub fn lowest(self) -> Level { self } }
+nature Wire { value: Level }
+impl Resolve<Level> for Wire { fn resolve<const N: usize>(d: [Level; N]) -> Level { Level { v: true } } }
 module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     signal s: Bit;
     let r = clk.rise();
@@ -603,7 +607,7 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     // Then the `impl`s of the nature or bundle, then those of the value type.
     assert_eq!(member_res(&design, "p.big()"), impl_fn("Electrical", "big"));
     assert_eq!(member_res(&design, "pr.vd()"), impl_fn("Pair", "vd"));
-    assert_eq!(member_res(&design, "w.lowest()"), impl_fn("Drive", "lowest"));
+    assert_eq!(member_res(&design, "w.lowest()"), impl_fn("Level", "lowest"));
     // A carrier field is a carrier: `pr.a.changed()` is the built-in too.
     assert_eq!(member_res(&design, "pr.a.changed()"), builtin("changed"));
     // A known receiver with no such method names nothing; an unknown receiver defers.

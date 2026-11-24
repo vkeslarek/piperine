@@ -725,6 +725,8 @@ fn an_unsettled_loop_is_e0511_naming_its_drives() {
         .build();
     let error = solver.tran().expect("transient").solve().expect_err("a loop that does not settle fails the run");
     assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle; its drives: x"), "{error}");
+    let (_, drives) = error.unsettled().expect("the fault carries the loop's drives as data");
+    assert_eq!(drives, ["x"], "the drives are named without reading the message");
 }
 
 /// SAI-15: the target's own device passes the partials verifier (the guard of `abi_devices.rs`).

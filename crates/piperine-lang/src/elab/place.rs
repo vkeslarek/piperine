@@ -7,7 +7,7 @@
 //! a carrier port is bound to the parent's net, and a discrete port of the top is a net of the
 //! top (DIG-09 AC 4 and 5).
 
-use piperine_ir::{CarrierRole, Constant, InstanceId, Reach, ReachedItem, InstanceSpec, NetId, NetSpec, NodeRef, NodeSpec, Origin, Terminal};
+use piperine_ir::{CarrierRole, Constant, InstanceId, ReachedItem, InstanceSpec, NetId, NetSpec, NodeRef, NodeSpec, Origin, Terminal};
 
 use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
@@ -15,6 +15,7 @@ use super::elaborator::Elaboration;
 use super::instances::Instance;
 use super::structural::BodyKey;
 use super::host_sources::{HostPort, HostSources};
+use super::resolvers::{DeclaredNet, ResolvedUse};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
 use piperine_ir::NodeRole;
@@ -119,26 +120,37 @@ impl Elaboration<'_, '_> {
             }
         }
         self.merge_instance_nodes(&plan, &nodes);
-        let nets = self.nets(&placing, &plan.carriers, declared_by);
+        let nets = self.nets(&placing, &plan, declared_by);
         let instance = self.ir.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
         if !nets.is_empty() {
             self.ir.bind_nets(instance, nets.clone());
+        }
+        for resolved in &plan.resolved {
+            let carrier = &plan.carriers[resolved.carrier as usize];
+            let CarrierRole::Resolved { driven, .. } = &carrier.role else { continue };
+            // a reached one is recorded once the child is placed and its net is known (`bind_reaches`)
+            if plan.is_reached(resolved.carrier) {
+                continue;
+            }
+            let host_port = placing.parent.is_none() && (resolved.carrier as usize) < plan.port_carriers;
+            self.resolvers.record(ResolvedUse { instance, path: placing.path.clone(), net: nets[resolved.carrier as usize], plan: resolved.clone(), value: carrier.ty.clone(), driven: driven.clone(), host_port });
         }
         stack.push(key);
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
             if let Some(placed) = self.place_child(child, &parent, stack) {
-                self.bind_reaches(&plan.reaches, index as u32, instance, &placed);
+                self.bind_reaches(&plan, &placing.path, index as u32, instance, &placed);
             }
         }
         stack.pop();
         Some(Placed { instance, nodes, nets, host_ports })
     }
 
-    /// Binds each node and carrier `instance` reads of its child number `child` (`inst.name`, a
-    /// `Reach` of the body) to the child instance's own, now that the child is placed.
-    fn bind_reaches(&mut self, reaches: &[Reach], child: u32, instance: InstanceId, placed: &Placed) {
-        for reach in reaches.iter().filter(|r| r.child == child) {
+    /// Binds each node and carrier `instance` (at `path`) reads of its child number `child` (`inst.name`, a
+    /// `Reach` of the body) to the child instance's own, now that the child is placed. A reached carrier the body drives
+    /// is a holder of the child's net: it is recorded with the net it is bound to.
+    fn bind_reaches(&mut self, plan: &ModulePlan, path: &str, child: u32, instance: InstanceId, placed: &Placed) {
+        for reach in plan.reaches.iter().filter(|r| r.child == child) {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
                     if let Some(own) = placed.nodes.get(child_node as usize) {
@@ -148,10 +160,19 @@ impl Elaboration<'_, '_> {
                 ReachedItem::Carrier { carrier, child_carrier } => {
                     if let Some(own) = placed.nets.get(child_carrier as usize) {
                         self.ir.bind_reached_net(instance, carrier, *own);
+                        self.record_reached_drive(plan, path, instance, carrier, *own);
                     }
                 }
             }
         }
+    }
+
+    /// Remembers the reached carrier `carrier` of `instance` when the body drives it: it is a resolved carrier bound to `net`.
+    fn record_reached_drive(&mut self, plan: &ModulePlan, path: &str, instance: InstanceId, carrier: u32, net: NetId) {
+        let Some(resolved) = plan.resolved.iter().find(|resolved| resolved.carrier == carrier) else { return };
+        let carried = &plan.carriers[carrier as usize];
+        let CarrierRole::Resolved { driven, .. } = &carried.role else { return };
+        self.resolvers.record(ResolvedUse { instance, path: path.to_string(), net, plan: resolved.clone(), value: carried.ty.clone(), driven: driven.clone(), host_port: false });
     }
 
     /// Makes the two ends of each branch the body merges one node in the instance whose nodes are
@@ -174,20 +195,31 @@ impl Elaboration<'_, '_> {
     /// port the parent binds takes the parent's net; any other carrier (a signal, a port of the
     /// top) declares its own, named by its path, with the carrier's initial value as the net's
     /// (§5.2.3: the declaring module gives it).
-    fn nets(&mut self, placing: &Placing, carriers: &[piperine_ir::Carrier], declared_by: InstanceId) -> Vec<NetId> {
+    fn nets(&mut self, placing: &Placing, plan: &ModulePlan, declared_by: InstanceId) -> Vec<NetId> {
+        let (carriers, port_carriers) = (&plan.carriers, plan.port_carriers);
         let mut bound = placing.carrier_ports.iter().copied();
         let mut nets = Vec::new();
-        for carrier in carriers {
+        for (position, carrier) in carriers.iter().enumerate() {
+            let reached = plan.is_reached(position as u32);
             let given = match carrier.role {
                 CarrierRole::In | CarrierRole::Out => bound.next().flatten(),
-                CarrierRole::Signal | CarrierRole::Reached | CarrierRole::Internal => None,
+                // a resolved port is bound to the parent's net, a resolved signal makes its own
+                CarrierRole::Resolved { .. } if reached => None,
+                CarrierRole::Resolved { .. } if position < port_carriers => bound.next().flatten(),
+                CarrierRole::Signal | CarrierRole::Reached | CarrierRole::Internal | CarrierRole::Resolved { .. } => None,
             };
             // A reached carrier has no net of its own: this one is a placeholder `bind_reaches`
             // replaces with the child's, so its path cannot be the child's (`Top.c.state`).
-            let at = if carrier.role == CarrierRole::Reached { format!("{}.reach.{}", placing.path, carrier.name) } else { format!("{}.{}", placing.path, carrier.name) };
+            let at = if reached { format!("{}.reach.{}", placing.path, carrier.name) } else { format!("{}.{}", placing.path, carrier.name) };
             let net = match given {
                 Some(net) => net,
-                None => self.ir.net(NetSpec { path: at, ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() }),
+                None => {
+                    let made = self.ir.net(NetSpec { path: at.clone(), ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() });
+                    if matches!(carrier.role, CarrierRole::Resolved { .. }) && !reached {
+                        self.resolvers.declare(made, DeclaredNet { declared_by, path: at, origin: carrier.origin.clone() });
+                    }
+                    made
+                }
             };
             nets.push(net);
         }

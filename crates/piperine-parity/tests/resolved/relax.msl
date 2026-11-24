@@ -1,0 +1,42 @@
+//! Relaxation from source (§8.2.3): a loop of resolved drives through `others()` settles, and it starts from nothing at
+//! each relaxation, so it cannot latch.
+
+/// A net of flags that are all true: the wired AND (§22.3's `AndWire`).
+nature AndWire { value: bool }
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(d: [bool; N]) -> bool {
+        d.iter().fold(true, |acc, x| acc && x)
+    }
+}
+
+/// A pass element: drives what the rest of its net drives.
+module Pass(w: AndWire) {
+    w = w.others();
+}
+
+/// Pulls the net low while `en` is high, and drives high once released.
+module Seed(w: AndWire, in en: Bit) {
+    w = !en;
+}
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, falls at 10 ns.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A ring of three pass elements and nothing else: it settles on true, the AND of no drive.
+module RingBench() {
+    signal n: AndWire;
+    let a = Pass(n);
+    let b = Pass(n);
+    let c = Pass(n);
+}
+
+/// The same ring with a seed that pulls low from 5 ns to 10 ns: the ring follows it down and, released, back up.
+module ReleaseBench() {
+    signal en: Bit;
+    signal n: AndWire;
+    let clock = Clock(en);
+    let seed = Seed(n, en);
+    let a = Pass(n);
+    let b = Pass(n);
+}

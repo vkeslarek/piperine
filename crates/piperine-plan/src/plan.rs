@@ -132,6 +132,8 @@ pub enum Source {
     ParamChanged(u32),
     /// The `VALUE` of a carrier's pin.
     Carrier(u32),
+    /// The `VALUE` of a resolved carrier's others pin: what the other drives of its net resolve to (`s.others()`).
+    Others(u32),
     /// The `PREVIOUS` of a carrier's pin: its bytes before its most recent change (abi.md §4.1,
     /// msl-digital A7). Between `Carrier` and `CarrierChanged`, so a function that reads all
     /// three of one carrier reads `[VALUE, PREVIOUS, CHANGED]`, the order of abi.md §11.4.
@@ -213,6 +215,8 @@ pub enum Target {
     Check(u32),
     /// The `VALUE` of a carrier's pin.
     Carrier(u32),
+    /// The `VALUE` of a resolved carrier's drive pin: the body's own drive, whose `driving` byte the write sets.
+    ResolvedDrive(u32),
     /// The event pin of event `k`.
     EventPin(u32),
     /// Drive `k`'s undelayed pin.
@@ -307,6 +311,7 @@ impl ReadSet {
         };
         set.0.extend(body.carrier_reads(target).into_iter().map(|c| carrier(c, Source::Carrier(c))));
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
+        set.0.extend(body.others_reads(target).into_iter().map(Source::Others));
         set.0.extend(body.previous_reads(target).into_iter().map(|c| carrier(c, Source::CarrierPrevious(c))));
         set.0.extend(body.whole_changed_reads(target).into_iter().map(Source::Whole));
         set.0.extend(body.element_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::VALUE)));
@@ -392,11 +397,23 @@ pub struct Pins {
     /// pin; `None` for any other drive. It is bound to that element of the array net by a window (abi.md §3: a
     /// function writes one element through a scalar pin).
     pub element_drives: Vec<Option<u32>>,
+    /// The drive pin and the others pin of each carrier of a resolved nature, parallel to the carriers, after the element
+    /// drive pins; `None` for any other carrier (resolved-nets RN-03).
+    pub resolved: Vec<Option<ResolvedPins>>,
     /// The `TRACE` watch of each trace site, after the `CAP` watches.
     pub traces: Vec<u32>,
     /// The `GLOBAL NAMED` pin of each session parameter the body reads, named the parameter,
     /// after every other pin.
     pub session_parameters: Vec<u32>,
+}
+
+/// The pins a carrier of a resolved nature has besides its value pin (`Pins::carrier`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResolvedPins {
+    /// `<carrier>.drive`: the body's own drive, in the drive layout of the driven type (`RELAX`).
+    pub drive: u32,
+    /// `<carrier>.others`: what the other drives resolve to, when the body calls `others()`.
+    pub others: Option<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -417,6 +434,16 @@ impl Pins {
     /// The pin of carrier `i`.
     pub fn carrier(&self, i: u32) -> u32 {
         self.carriers + i
+    }
+
+    /// The drive pin of resolved carrier `i`; `GROUND` for a carrier that is not resolved.
+    pub fn resolved_drive(&self, i: u32) -> u32 {
+        self.resolved.get(i as usize).copied().flatten().map_or(GROUND, |pins| pins.drive)
+    }
+
+    /// The others pin of resolved carrier `i`; `GROUND` when the carrier is not resolved or its body never calls `others()`.
+    pub fn others(&self, i: u32) -> u32 {
+        self.resolved.get(i as usize).copied().flatten().and_then(|pins| pins.others).unwrap_or(GROUND)
     }
 
     /// The pins of drive `k`; `None` for a drive without `after` or out of range.
@@ -660,6 +687,7 @@ impl BodyPlan {
         let delay_maxima = Digital::delay_maximum_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
         let element_drives = Digital::element_drive_pins(&mut s, body);
+        let resolved = Digital::resolved_pins(&mut s, body);
         let session_parameters = Self::session_parameter_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
@@ -687,6 +715,7 @@ impl BodyPlan {
             delay_maxima,
             settle,
             element_drives,
+            resolved,
             traces,
             session_parameters,
         };
@@ -998,6 +1027,7 @@ impl BodyPlan {
                 Target::StimIm(k) => at(cell::INPUT, limits + k, part::IM),
                 Target::Check(p) => value(cell::PIN, pins.checks.get(p as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Carrier(c) => value(cell::PIN, pins.carrier(c)),
+                Target::ResolvedDrive(c) => value(cell::PIN, pins.resolved_drive(c)),
                 // abi.md §4.1: an event pin is written through its `CHANGED` byte (nonzero fires it).
                 Target::EventPin(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
                 Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
@@ -1044,6 +1074,7 @@ impl BodyPlan {
             Source::ParamPrevious(i) => at(cell::PIN, i, part::PREVIOUS),
             Source::ParamChanged(i) => at(cell::PIN, i, part::CHANGED),
             Source::Carrier(c) => value(cell::PIN, pins.carrier(c)),
+            Source::Others(c) => value(cell::PIN, pins.others(c)),
             Source::CarrierPrevious(c) => at(cell::PIN, pins.carrier(c), part::PREVIOUS),
             Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),
             Source::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),

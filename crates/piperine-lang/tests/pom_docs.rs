@@ -479,14 +479,7 @@ struct DocAheadOfTheCode {
 
 impl DocAheadOfTheCode {
     /// The statements that wait for their task. When a task removes a form the entry fails here, naming it.
-    const WAITING: [DocAheadOfTheCode; 6] = [
-        DocAheadOfTheCode { page: "mapping.md", statement: "`NatureFieldNode::Resolve`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-        DocAheadOfTheCode { page: "reflection.md", statement: "`resolve_fn(self)`", source: "crates/piperine-lang/src/pom/reflect/hardware.rs", form: "pub fn resolve_fn", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-        DocAheadOfTheCode { page: "reflection.md", statement: "nature Wire { value: bool, resolve: pick }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-        DocAheadOfTheCode { page: "model.md", statement: "value: T, resolve: f }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-        DocAheadOfTheCode { page: "model.md", statement: "`resolve: expr`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-        DocAheadOfTheCode { page: "resolution.md", statement: "a discrete nature without `resolve`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-    ];
+    const WAITING: [DocAheadOfTheCode; 0] = [];
 
     /// The offences of this statement: the page no longer says it, or the source no longer has the form.
     /// Either way the entry is stale and its owner has delivered.

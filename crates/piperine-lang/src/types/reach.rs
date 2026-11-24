@@ -7,6 +7,7 @@
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
+use super::element_target::{DriveTarget, Element};
 use super::Ty;
 
 impl Checker<'_> {
@@ -27,9 +28,29 @@ impl Checker<'_> {
         }
     }
 
+    /// The target `inst.name` of a definition or a commit when `item` is a resolved carrier of the child that this module may
+    /// drive (§5.2.2: any module that sees a `pub` signal drives it, §22.3): the nature has an `impl Resolve`, the item is no
+    /// `in` port and holds no array. `None` leaves the field to `E0222`: a carrier with one driver is written by its own module.
+    pub(super) fn reached_drive_target(&mut self, place: ExprId, item: DeclId) -> Option<DriveTarget> {
+        let (declared, direction) = match self.design.decl_data(item).kind.clone() {
+            DeclKind::Port(p) => (p.ty, p.dir),
+            DeclKind::Signal(s) => (s.ty, None),
+            _ => return None,
+        };
+        let Some(Ty::Carrier { nature, .. }) = self.port_type(declared) else { return None };
+        if direction == Some(crate::msl::ast::Dir::In) || !super::nature_rules::NatureRules::of(self.design, nature).resolved {
+            return None;
+        }
+        let ExprKind::Field { expr: receiver, .. } = self.design.expr_node(place).kind.clone() else { return None };
+        self.infer_receiver(receiver)?;
+        let held = self.read_type(item, declared)?;
+        self.exprs[place.index()] = Some(held.clone());
+        Some(DriveTarget { carrier: item, held, element: Element::Whole, reached: true })
+    }
+
     /// The receiver of `inst.name`: an instance named there is the place a member is read from, not
     /// a value read (§8.2.14, so no `E0333`); any other receiver is inferred as usual.
-    fn infer_receiver(&mut self, receiver: ExprId) -> Option<Ty> {
+    pub(super) fn infer_receiver(&mut self, receiver: ExprId) -> Option<Ty> {
         if let ExprKind::Path(path) = &self.design.expr_node(receiver).kind {
             if let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) {
                 // a placement in generation is the array of its instances; inside its loops the name is the iteration's (§8.2.23)

@@ -44,6 +44,14 @@ impl Commits {
         self.entries.push(Entry { statement, element: None, offset: 0, bytes: value.pin(), after });
     }
 
+    /// `drive <- value after delay` through statement `statement`, a statement on the drive pin of a resolved carrier:
+    /// the value's bytes, then the plain `driving` byte set to 1 (abi.md §9 D1).
+    pub fn commit_drive<T: Carried>(&mut self, statement: u32, value: T, after: f64) {
+        let mut bytes = value.pin();
+        bytes.push(1);
+        self.entries.push(Entry { statement, element: None, offset: 0, bytes, after });
+    }
+
     /// `array[index] <- value after delay` through statement `statement`, `index` checked against the `count` elements
     /// of `carrier`: an element outside them is a panic naming both (composite-values CV-25 AC 5).
     pub fn commit_element<T: Carried>(&mut self, statement: u32, index: i128, count: u64, carrier: &str, value: T, after: f64) {

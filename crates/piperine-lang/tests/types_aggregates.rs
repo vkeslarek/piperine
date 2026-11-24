@@ -439,6 +439,19 @@ fn composite_params_and_record_fields_type_check() {
 }
 
 #[test]
+fn a_param_of_the_librarys_logic_type_checks() {
+    // §8.1.15: a param's type is any value type; `Logic<N>` is a library struct whose two planes have the generic width `N`, so
+    // it is a plain composite like a project's struct. A default of another type is the plain mismatch
+    let clean = "module Top() { pat: Logic<4> = logic(\"10xz\"); signal s: Bit<Logic<4>>; s = pat; }";
+    if let Err(found) = Types::check(&CheckedSource::standard_design_of(clean), "Top") {
+        panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+    let wrong = "module Top() { pat: Logic<4> = true; }";
+    let found = Types::check(&CheckedSource::standard_design_of(wrong), "Top").err().unwrap_or_default();
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0180"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+}
+
+#[test]
 fn two_sites_giving_a_field_two_composite_types_is_e0605() {
     // CV-19 AC 2, §19 rule 12: one field of one stream has one type in a module.
     let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"trace\", v = (1.0, true)); emit!(\"trace\", v = [1.0, 2.0]); } }";

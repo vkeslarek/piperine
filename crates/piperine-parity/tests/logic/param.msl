@@ -1,0 +1,16 @@
+//! A `Logic<4>` param (§8.1.15: a param's type is any value type): its default is a pattern, a placement binds another,
+//! and a reaction reads it. The expected bytes are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Leaf(in clk: Bit, out m: Bit<Logic<4>>) { pat: Logic<4> = logic("10xz"); }
+digital for Leaf { on clk.rise() { m <- pat; } }
+
+module Bench() {
+    signal clk: Bit;
+    signal by_default: Bit<Logic<4>>; signal by_placement: Bit<Logic<4>>;
+    let osc = Osc(clk) { f: 200M };
+    let a = Leaf(clk, by_default);
+    let b = Leaf(clk, by_placement) { pat: logic("01zx") };
+}

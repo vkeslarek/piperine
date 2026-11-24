@@ -9,6 +9,7 @@ use super::body::{ModulePlan, ParamPlan};
 use super::carriers::{Frame, Structure};
 use super::consts::{Bindings, ConstEval};
 use super::exits::Divergences;
+use super::loops::DriveLoops;
 use super::origin::Locator;
 use super::signal_flow::SignalFlowCheck;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
@@ -114,6 +115,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) type_arena: super::types::TypeArena,
     /// Every trait and `impl` of the design: what a call through a bound resolves against (`methods.rs`).
     pub(super) impls: crate::types::ImplTable<'d>,
+    /// The resolved nets of the placed tree and their resolver bodies (`resolvers.rs`).
+    pub(super) resolvers: super::resolvers::ResolverBodies,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -154,6 +157,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             templates: super::templates::Templates::default(),
             type_arena: super::types::TypeArena::default(),
             impls: crate::types::ImplTable::new(design),
+            resolvers: super::resolvers::ResolverBodies::default(),
             diagnostics: Vec::new(),
         }
     }
@@ -197,6 +201,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         let top_instance = self.place_top(top);
         // a body variant the placement asked for after the first padding (the top's own, keyed by a host override) is padded too
         self.pad_child_nodes();
+        self.build_resolvers();
         let reprs = self.lower_hand_written_reprs();
         self.add_functions();
         self.set_hand_written_reprs(reprs);
@@ -210,6 +215,7 @@ impl<'d, 't> Elaboration<'d, 't> {
                 self.sync_wides();
                 let ir = self.ir.finish(instance);
                 self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
+                self.diagnostics.extend(Self::loop_diagnostics(self.design, top, &ir));
                 if !self.diagnostics.is_empty() {
                     return Err(self.diagnostics);
                 }
@@ -249,6 +255,20 @@ impl<'d, 't> Elaboration<'d, 't> {
                 let drivers = if fault.drivers.is_empty() { "none".to_string() } else { fault.drivers.join(", ") };
                 let message = format!("the signal-flow node `{}` has {} potential driver(s), it takes exactly one (§6 rule 2); drivers: {drivers}", fault.node, fault.drivers.len());
                 DesignDiagnostic { file, diagnostic: Diagnostic::new("E0242", message, span, "a signal-flow node with the wrong number of potential drivers") }
+            })
+            .collect()
+    }
+
+    /// `E0339` for each loop of undelayed drives of `ir` that the placed tree closes through a one-driver net
+    /// (§8.2.3), reported at the top module and naming the drives.
+    fn loop_diagnostics(design: &Design, top: DeclId, ir: &Ir) -> Vec<DesignDiagnostic> {
+        let data = design.decl_data(top);
+        let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
+        DriveLoops::run(ir)
+            .into_iter()
+            .map(|fault| {
+                let message = format!("undelayed definitions of {} depend on each other across instances: a loop through one-driver carriers (§8.2.3)", fault.drives.iter().map(|drive| format!("`{drive}`")).collect::<Vec<_>>().join(", "));
+                DesignDiagnostic { file, diagnostic: Diagnostic::new("E0339", message, span, "a loop of definitions") }
             })
             .collect()
     }

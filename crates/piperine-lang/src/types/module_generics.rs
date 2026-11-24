@@ -49,7 +49,12 @@ impl Checker<'_> {
             let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.infer(arg.value));
             // `gnd` is a node of any nature: it names none, so it teaches nothing
             let Some(given) = given.filter(|ty| *ty != Ty::AnyNode) else { continue };
-            if let (Ty::Param(parameter), Ty::Node(nature) | Ty::Carrier { nature, .. }) = (port.innermost(), given.innermost()) {
+            let declared_parameter = match port.innermost() {
+                Ty::Param(parameter) => Some(parameter),
+                Ty::Carrier { nature, .. } if matches!(self.design.decl_data(*nature).kind, DeclKind::GenericParam(_)) => Some(nature),
+                _ => None,
+            };
+            if let (Some(parameter), Ty::Node(nature) | Ty::Carrier { nature, .. }) = (declared_parameter, given.innermost()) {
                 match natures.iter().find(|(known, _)| known == parameter) {
                     Some((_, first)) if !NatureRules::compatible(self.design, *first, *nature) => {
                         let span = self.design.expr_node(arg.value).span;

@@ -20,10 +20,11 @@ use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRol
 use super::body::NodePlan;
 use super::carriers::Frame;
 use super::hoist::PlacementKey;
+use super::element_commits::PlaceTarget;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
-use crate::types::Callee;
+use crate::types::{Callee, Ty};
 
 impl Elaboration<'_, '_> {
     /// The index each placement that is not hoisted takes in the body's children (`Child` order,
@@ -299,6 +300,45 @@ impl Elaboration<'_, '_> {
         self.structure.reaches.push(Reach { child, item: ReachedItem::Carrier { carrier: index, child_carrier } });
         self.frames[frame].carriers.insert(decl, index);
         Some(index)
+    }
+
+    /// The carrier of the body a drive `c.line = v` or a commit `c.line <- v` of the child's `pub` resolved signal `decl` writes:
+    /// the reached carrier of `frame`, made a resolved carrier of the body (`CarrierRole::Resolved`) so the body holds a drive of
+    /// the child's net, bound to it once the child is placed (`place.rs`). `None` after a diagnostic.
+    pub(super) fn drivable_reached_carrier(&mut self, frame: usize, decl: DeclId) -> Option<u32> {
+        let index = self.frame_carrier(frame, decl)?;
+        if matches!(self.structure.carriers[index as usize].role, CarrierRole::Resolved { .. }) {
+            return Some(index);
+        }
+        let data = self.design.decl_data(decl).clone();
+        let Some(Ty::Carrier { nature, .. }) = self.consts.typed_carrier(decl) else {
+            self.unsupported(data.file, data.span, "a drive of a child's carrier that is not of a resolved nature");
+            return None;
+        };
+        let (chosen, _) = self.chosen_resolve_impl(decl, nature)?;
+        let Some(driven) = self.stored_type(&chosen.driven) else {
+            self.unsupported(data.file, data.span, "a resolved carrier whose drive type has no value in the IR");
+            return None;
+        };
+        self.structure.carriers[index as usize].role = CarrierRole::Resolved { driven, port: false };
+        self.structure.resolved_carriers.push((index, decl, nature));
+        Some(index)
+    }
+
+    /// The place `place` when it is `inst.name`, a resolved carrier of a placed child, lowered as a target of a drive: `None`
+    /// when it is any other place, `Some(None)` after a diagnostic.
+    pub(super) fn reached_place_target(&mut self, scope: &Scope, place: ExprId) -> Option<Option<PlaceTarget>> {
+        let node = self.design.expr_node(self.peel_parens(place)).clone();
+        let ExprKind::Field { res: Resolution::Decl(item), .. } = &node.kind else { return None };
+        if !matches!(self.design.decl_data(*item).kind, DeclKind::Port(_) | DeclKind::Signal(_)) || self.types.carrier(*item).is_none() {
+            return None;
+        }
+        let target = self.reached_item(scope, self.peel_parens(place)).and_then(|(frame, item)| {
+            let carrier = self.drivable_reached_carrier(frame, item)?;
+            let CarrierRole::Resolved { driven, .. } = self.structure.carriers[carrier as usize].role.clone() else { return None };
+            Some(PlaceTarget { carrier, element: None, constant: None, path: Vec::new(), ty: driven })
+        });
+        Some(target)
     }
 
     /// The index the node `decl` of `module` takes among the nodes of the module's body: its node

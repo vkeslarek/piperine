@@ -183,3 +183,45 @@ fn const_expressions_in_written_types_are_accepted_everywhere() {
     let found = GenericModuleCheck::pairs(negative);
     assert!(!found.is_empty() && found.iter().all(|(code, _)| code != "P0001"), "{found:?}");
 }
+
+/// A resolved net nature of the two tests below: `Level` combines drives of `Driven` by strength.
+const RESOLVED_LINE: &str = "nature Line { value: Driven }\n\
+    impl Resolve<Driven> for Line { fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) } }\n\
+    nature Plain { value: bool }\n";
+
+#[test]
+fn a_nature_parameter_bound_by_resolve_is_a_resolved_carrier_in_the_body() {
+    // §22.3, §4 rule 8: `W: Nature + Resolve<Driven>` makes `w` a resolved discrete carrier of the body: it is defined
+    // with a `Driven` (the drive type `X`), read as its value `V` (`X` when the bound is written once) and `others()`
+    // gives `V`; a drive of another type is `E0180` naming `Driven`
+    let clean = "module Drive<W: Nature + Resolve<Driven>>(w: W, in d: Bit) { w = if d { Driven::strong(true) } else { Driven::Z }; }\n\
+                 module Join<W: Nature + Resolve<Driven>>(a: W, b: W) { b = a.others(); }\n\
+                 module Both<W: Nature + Resolve<Driven, Driven>>(w: W) { w = Driven::pull(true); }\n";
+    assert_eq!(GenericModuleCheck::pairs(clean), vec![], "drives typed `Driven`, `others()` typed `Driven`");
+    let wrong = "module Drive<W: Nature + Resolve<Driven>>(w: W) { w = true; }\n";
+    let found = GenericModuleCheck::pairs(wrong);
+    assert!(found.iter().any(|(code, message)| code == "E0180" && message.contains("Driven")), "{found:?}");
+}
+
+#[test]
+fn a_placement_on_a_nature_without_the_resolve_impl_is_e0187_naming_nature_and_bound() {
+    // §3.8.7: the nature a placement gives must satisfy `Resolve<Driven>`: `Line` does, `Plain` has no `impl Resolve`
+    let module = "module Drive<W: Nature + Resolve<Driven>>(w: W) { w = Driven::pull(true); }\n";
+    let on_line = format!("{RESOLVED_LINE}{module}module Top() {{ signal n: Line; let d = Drive(n); }}\n");
+    assert_eq!(GenericModuleCheck::pairs(&on_line), vec![], "`Line` has `impl Resolve<Driven>`");
+    let on_plain = format!("{RESOLVED_LINE}{module}module Top() {{ signal n: Plain; let d = Drive(n); }}\n");
+    let found = GenericModuleCheck::pairs(&on_plain);
+    assert!(found.iter().any(|(code, message)| code == "E0187" && message.contains("Plain") && message.contains("Resolve<Driven>")), "{found:?}");
+}
+
+#[test]
+fn a_resolve_bound_takes_one_or_two_arguments_and_a_nature() {
+    // §4 rule 8: `Resolve` with no argument, with three, or on a parameter that is no nature is `E0187`
+    for (source, what) in [
+        ("module M<W: Nature + Resolve>(w: W) { }\n", "no argument"),
+        ("module M<W: Nature + Resolve<Driven, Driven, Driven>>(w: W) { }\n", "three arguments"),
+        ("module M<W: Resolve<Driven>>(w: W) { }\n", "no `Nature`"),
+    ] {
+        assert!(GenericModuleCheck::codes(source).iter().any(|code| code == "E0187"), "{what}: {:?}", GenericModuleCheck::pairs(source));
+    }
+}

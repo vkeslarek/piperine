@@ -223,7 +223,14 @@ impl Bound {
         let at = self.digital.plan().nets.iter().position(|n| n.name == name).ok_or_else(|| fail("no discrete net of the design has that name".into()))?;
         let net = NetId(at as u32);
         let layout = self.digital.plan().net_layout(net).ok_or_else(|| fail("no device pin reads it, so it has no layout".into()))?;
-        let bytes = encode(layout, value).map_err(fail)?;
+        let mut bytes = encode(layout, value).map_err(fail)?;
+        // a write to a drive net of a resolved net is a drive that is present (abi.md §9 D1): its `driving` byte is 1
+        if let Some(driving) = layout.fields.iter().find(|field| field.name.as_bytes() == b"driving")
+            && let Some(byte) = bytes.get_mut(driving.offset as usize)
+            && !matches!(value, ParamValue::Bytes(_))
+        {
+            *byte = 1;
+        }
         Ok((net, bytes))
     }
 }

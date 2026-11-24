@@ -595,14 +595,13 @@ fn natures_signals_and_sigtypes() {
     let NatureFieldKind::Quantity { which, attrs, .. } = &n.fields[1].kind else { panic!() };
     assert_eq!((*which, attrs.len()), (Quantity::Flow, 1));
 
-    // Discrete natures: `value` and `resolve`; generics; no trailing comma.
-    let src = "nature Bit<T: Repr> { value: T, resolve: wired_or }";
+    // Discrete natures: `value`; generics; no trailing comma.
+    let src = "nature Bit<T: Repr> { value: T }";
     let item = only_item(src);
     let ItemKind::Nature(n) = &item.kind else { panic!() };
     assert!(n.generics.is_some());
     assert!(matches!(n.fields[0].kind, NatureFieldKind::Value(_)));
-    assert!(matches!(&n.fields[1].kind, NatureFieldKind::Resolve(Expr { kind: ExprKind::Path(_), .. })));
-    assert_eq!(text(src, &n.fields[1].span), "resolve: wired_or");
+    assert_eq!(text(src, &n.fields[0].span), "value: T");
 
     // `pub` and attributes in front (B.3.5 amendment 1).
     let item = only_item("#[doc = \"x\"] pub nature N { value: bool }");
@@ -1230,14 +1229,13 @@ fn docs_and_attrs_attach_to_hardware_items() {
     assert!(matches!(m.body[1].kind, ModuleItemKind::Gen(_)));
     assert_eq!((doc_texts(&m.body[1].meta), attr_names(&m.body[1].meta)), (vec!["gen".to_string()], vec!["e".to_string()]));
 
-    // Nature fields: a quantity, a value, a resolve.
+    // Nature fields: a quantity, a value.
     let f = file(
-        "nature N {\n    /// pot\n    potential: V { access: v },\n    #[f]\n    flow: I { access: i },\n}\nnature L {\n    /// level\n    value: bool,\n    /// pick\n    resolve: pick,\n}",
+        "nature N {\n    /// pot\n    potential: V { access: v },\n    #[f]\n    flow: I { access: i },\n}\nnature L {\n    /// level\n    value: bool,\n}",
     );
     let ItemKind::Nature(n) = &f.items[0].kind else { panic!() };
     assert_eq!(doc_texts(&n.fields[0].meta), ["pot"]);
     assert_eq!(attr_names(&n.fields[1].meta), ["f"]);
     let ItemKind::Nature(l) = &f.items[1].kind else { panic!() };
     assert_eq!(doc_texts(&l.fields[0].meta), ["level"]);
-    assert_eq!(doc_texts(&l.fields[1].meta), ["pick"]);
 }

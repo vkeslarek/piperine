@@ -38,7 +38,7 @@ MSL has eleven concepts, each with one rule:
 | Concept | What it is |
 | --- | --- |
 | value and `fn` | Data with no time: integers of any width, `f64`, structs, enums, arrays, `Option`, closures. A function keeps no state and writes no carrier. |
-| nature | What a signal holds and how its drives combine: `Electrical` (potential and flow, conserved), `Bit` (one driver), `Wire` (resolved, with strengths), or your own. |
+| nature | What a signal holds and how its drives combine: `Electrical` (potential and flow, conserved), `Bit` (one driver), or your own: a nature that implements `Resolve` takes several drivers and combines them (`Driven` gives them strengths). |
 | carrier | A `signal` or a port of a nature. It exists over time and is connected by being passed to a port. A bundle is a `struct` of carriers. |
 | drive | What one module writes to one carrier: a definition `y = expr`, a commit `q <- x`, an initial value, or a branch contribution on a node. |
 | param | A value fixed during a solve. The model reads it, the host sets it; a `where` condition is checked on every set. |
@@ -252,7 +252,7 @@ a subset that grows feature by feature; [`GAPS.md`](GAPS.md) is the full list.
   values; every event above; mixed-signal modules; `emit!` and the checks;
   `f64`/`bool` params with `where`, hierarchy and packages; the eight analyses.
 - **Specified, refused by name until implemented:** generic modules and
-  generation, templates and `extern` modules; bundles, resolved natures and
+  generation, templates and `extern` modules; bundles and
   arrays of carriers; enums with fields, structs and closures as values; `idt`,
   `idtmod`, noise and the filters; Monte Carlo and optimization in the host.
 - Of the snippets above, `SampleHold`, the passives, `Switch` and `Monitor` are

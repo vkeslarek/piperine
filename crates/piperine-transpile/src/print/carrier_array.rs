@@ -9,8 +9,8 @@
 //! declares over exactly those levels (`StatementPlan::range`), so the value is printed as the field's own type.
 
 use piperine_abi::raw::part;
-use piperine_ir::{Body, CommitTarget, Expr, ExprId, ValueType};
-use piperine_plan::StatementPlan;
+use piperine_ir::{Body, CarrierRole, CommitTarget, Expr, ExprId, ValueType};
+use piperine_plan::{StatementPlan, Target};
 
 use crate::Error;
 use crate::print::value::{Piece, Prec};
@@ -48,6 +48,8 @@ pub struct CarrierFacts {
     pub ty: ValueType,
     /// The number of elements of an array carrier.
     pub count: Option<u64>,
+    /// Whether the carrier is of a resolved nature: a commit to it writes its drive pin (value, then `driving`).
+    pub resolved: bool,
 }
 
 impl CarrierFacts {
@@ -55,7 +57,7 @@ impl CarrierFacts {
     pub fn of_body(body: Body<'_>) -> Vec<CarrierFacts> {
         body.carriers()
             .iter()
-            .map(|c| CarrierFacts { name: Text::ident(&c.name), path: format!("{}.{}", body.name(), c.name), ty: c.ty.clone(), count: c.count })
+            .map(|c| CarrierFacts { name: Text::ident(&c.name), path: format!("{}.{}", body.name(), c.name), ty: c.ty.clone(), count: c.count, resolved: matches!(c.role, CarrierRole::Resolved { .. }) })
             .collect()
     }
 }
@@ -138,7 +140,9 @@ impl ValuePrinter<'_> {
             return Err(self.unsupported(e, "a commit to a carrier out of range"));
         };
         let path = target.map_or(&[][..], |t| t.path.as_slice());
-        Ok(StatementPlan::commit_through(self.ir, carrier, &held.ty, held.count, after, path))
+        let statement = StatementPlan::commit_through(self.ir, carrier, &held.ty, held.count, after, path);
+        // a commit of a resolved carrier writes its drive pin
+        Ok(if held.resolved { StatementPlan { target: Target::ResolvedDrive(carrier), ..statement } } else { statement })
     }
 
     /// The call that makes a commit through statement number `index`: an element commit names the element, checked
@@ -150,6 +154,7 @@ impl ValuePrinter<'_> {
                 let count = facts.count.unwrap_or(0);
                 Ok(format!("commits_.commit_element({index}, {}, {count}, {:?}, {value}, {after});", self.index_value(element)?, facts.path))
             }
+            None if self.facts[carrier as usize].resolved => Ok(format!("commits_.commit_drive({index}, {value}, {after});")),
             None => Ok(format!("commits_.commit({index}, {value}, {after});")),
         }
     }

@@ -89,6 +89,17 @@ impl CellShape {
         fields.iter().map(|(name, ty)| Some((name.clone(), CellShape::of(ir, ty)?))).collect()
     }
 
+    /// `N` when this is the library's `Logic<N>` (two integer planes `binary` and `value`), else `None`.
+    pub fn logic_levels(&self) -> Option<u32> {
+        let CellShape::Struct { name, declaration, fields, .. } = self else { return None };
+        if declaration.split('<').next() != Some(LogicCell::DECLARATION) {
+            return None;
+        }
+        let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
+        let [(first, CellShape::Scalar(_)), (second, CellShape::Scalar(_))] = fields.as_slice() else { return None };
+        (first == "binary" && second == "value" && levels > 0).then_some(levels)
+    }
+
     /// Whether this is an enum no variant of which has a field: its value is its tag.
     pub fn is_unit_enum(&self) -> bool {
         matches!(self, CellShape::Enum { variants, .. } if variants.iter().all(|v| v.fields.is_empty()))
@@ -98,28 +109,37 @@ impl CellShape {
     /// payload leaf of a variant is one of the shape although the value holds another variant, and so is the
     /// `value` of an `Option` that holds nothing.
     pub fn can_hold_leaf(&self, path: &str) -> bool {
-        let mut paths = Vec::new();
-        self.collect_leaf_paths("", &mut paths);
-        paths.iter().any(|candidate| candidate == path)
+        let mut leaves = Vec::new();
+        self.collect_leaves("", &mut leaves);
+        leaves.iter().any(|(candidate, _)| candidate == path)
     }
 
-    /// Adds to `found` every leaf path of this shape, named under `prefix`.
-    fn collect_leaf_paths(&self, prefix: &str, found: &mut Vec<String>) {
+    /// The type of the scalar leaf `path` (`binary`, `p.x`, `num[2]`, `Data.n`); `None` for a path that names no scalar of the
+    /// shape: none at all, an enum's tag or an `Option`'s presence byte, whose type is their layout's.
+    pub fn leaf_type(&self, path: &str) -> Option<ValueType> {
+        let mut leaves = Vec::new();
+        self.collect_leaves("", &mut leaves);
+        leaves.into_iter().find(|(candidate, _)| candidate == path).and_then(|(_, ty)| ty)
+    }
+
+    /// Adds to `found` every leaf path of this shape, named under `prefix`, with the type of a scalar leaf (`None` for a tag or a
+    /// presence byte).
+    fn collect_leaves(&self, prefix: &str, found: &mut Vec<(String, Option<ValueType>)>) {
         let join = |part: &str| if prefix.is_empty() { part.to_string() } else if part.is_empty() { prefix.to_string() } else { format!("{prefix}.{part}") };
         match self {
-            CellShape::Scalar(_) => found.push(prefix.to_string()),
-            CellShape::Struct { fields, .. } => fields.iter().for_each(|(name, shape)| shape.collect_leaf_paths(&join(name), found)),
-            CellShape::Tuple(parts) => parts.iter().enumerate().for_each(|(k, shape)| shape.collect_leaf_paths(&join(&k.to_string()), found)),
-            CellShape::Array(element, length) => (0..*length).for_each(|k| element.collect_leaf_paths(&format!("{prefix}[{k}]"), found)),
+            CellShape::Scalar(ty) => found.push((prefix.to_string(), Some(ty.clone()))),
+            CellShape::Struct { fields, .. } => fields.iter().for_each(|(name, shape)| shape.collect_leaves(&join(name), found)),
+            CellShape::Tuple(parts) => parts.iter().enumerate().for_each(|(k, shape)| shape.collect_leaves(&join(&k.to_string()), found)),
+            CellShape::Array(element, length) => (0..*length).for_each(|k| element.collect_leaves(&format!("{prefix}[{k}]"), found)),
             CellShape::Enum { variants, .. } => {
-                found.push(prefix.to_string());
+                found.push((prefix.to_string(), None));
                 for variant in variants {
-                    variant.fields.iter().for_each(|(name, shape)| shape.collect_leaf_paths(&join(&format!("{}.{name}", variant.name)), found));
+                    variant.fields.iter().for_each(|(name, shape)| shape.collect_leaves(&join(&format!("{}.{name}", variant.name)), found));
                 }
             }
             CellShape::Option(inner) => {
-                found.push(join("some"));
-                inner.collect_leaf_paths(&join("value"), found);
+                found.push((join("some"), None));
+                inner.collect_leaves(&join("value"), found);
             }
         }
     }
@@ -249,16 +269,28 @@ impl LogicCell {
             return None;
         }
         let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
-        let [(first, CompositeCell::Scalar(Cell::Int(binary))), (second, CompositeCell::Scalar(Cell::Int(value)))] = fields else { return None };
-        if first != "binary" || second != "value" || levels == 0 || levels > 64 {
+        let [(first, CompositeCell::Scalar(binary)), (second, CompositeCell::Scalar(value))] = fields else { return None };
+        let (binary, value) = (Self::limbs(binary)?, Self::limbs(value)?);
+        let held = 64 * binary.len().min(value.len());
+        if first != "binary" || second != "value" || levels == 0 || levels as usize > held {
             return None;
         }
-        Some((0..levels).rev().map(|level| match ((binary >> level) & 1, (value >> level) & 1) {
+        let bit = |limbs: &[u64], level: u32| (limbs[level as usize / 64] >> (level % 64)) & 1;
+        Some((0..levels).rev().map(|level| match (bit(&binary, level), bit(&value, level)) {
             (1, 0) => '0',
             (1, 1) => '1',
             (0, 0) => 'x',
             _ => 'z',
         }).collect())
+    }
+
+    /// The bits of a plane, low limb first: an integer of up to 64 levels or a wide one; `None` for a cell of no integer plane.
+    fn limbs(plane: &Cell) -> Option<Vec<u64>> {
+        match plane {
+            Cell::Int(value) => Some(vec![*value as u64]),
+            Cell::Wide(wide) => Some(wide.limbs.clone()),
+            _ => None,
+        }
     }
 }
 

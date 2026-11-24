@@ -1,0 +1,40 @@
+//! `others()` from source (§5.2.7): what every drive but the module's own resolves to.
+
+/// A net of numbers that add up.
+nature Total { value: f64 }
+impl Resolve<f64> for Total {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        d.iter().sum()
+    }
+}
+
+/// Drives `amount` and writes what the other drives add up to, with its own amount, at each change of the net.
+module Echo(w: Total) {
+    amount: f64 = 1.0;
+    w = amount;
+}
+digital for Echo {
+    on w.changed() { emit!("others", mine = amount, rest = w.others()); }
+}
+
+/// Drives nothing and writes what `others()` and the value are at each change.
+module Onlooker(w: Total) { }
+digital for Onlooker {
+    on w.changed() { emit!("looks", rest = w.others(), whole = w); }
+}
+
+/// Three echoes of 1, 2 and 4: each one's others is the sum of the other two (6, 5, 3).
+module EchoBench() {
+    signal n: Total;
+    let a = Echo(n) { amount: 1.0 };
+    let b = Echo(n) { amount: 2.0 };
+    let c = Echo(n) { amount: 4.0 };
+}
+
+/// Two drivers of 1 and 2 and a module that only reads: its others is the value, 3.
+module OnlookerBench() {
+    signal n: Total;
+    let a = Echo(n) { amount: 1.0 };
+    let b = Echo(n) { amount: 2.0 };
+    let look = Onlooker(n);
+}

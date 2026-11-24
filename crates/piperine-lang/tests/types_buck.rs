@@ -28,7 +28,7 @@ const ROWS: &[Row] = &[
     // `a generation for`, `a generation if` and `a generation in a digital block` left this table when generics T77 and T80 typed
     // and lowered generation (`types_generation`).
     Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
-    Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
+    // `a resolved nature` left this table when resolved-nets T16 typed it (`types_natures::an_impl_resolve_makes_a_discrete_nature_resolved`); the elaborator still refuses it by name (`elab_unlowered`) until T18.
     Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).

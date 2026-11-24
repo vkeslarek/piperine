@@ -653,8 +653,6 @@ pub enum NatureFieldKind {
     Quantity { which: Quantity, name: Ident, attrs: Vec<FieldInit> },
     /// `value: T`
     Value(Type),
-    /// `resolve: expr`
-    Resolve(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -101,7 +101,7 @@ fn unreached_items_are_not_reported() {
 const STD_ROWS: &[Row] = &[
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     // `element definition` left this table when composite-values T76 typed it (`types_carrier_arrays`).
-    Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
+    // `a resolved nature` left this table when resolved-nets T16 typed it (`types_natures::an_impl_resolve_makes_a_discrete_nature_resolved`); the elaborator still refuses it by name (`elab_unlowered`) until T18.
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
 ];
 

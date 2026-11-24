@@ -310,8 +310,6 @@ nature N {
 nature L {
     /// value
     value: bool,
-    /// resolve
-    resolve: pick,
 }
 module M() {
     /// def
@@ -342,7 +340,7 @@ digital for M {
     let first = parsed("docs", src);
     let text = print(&first);
     for doc in [
-        "/// a let", "/// a call", "/// a block", "/// pot", "/// flow", "/// value", "/// resolve", "/// def", "/// gen",
+        "/// a let", "/// a call", "/// a block", "/// pot", "/// flow", "/// value", "/// def", "/// gen",
         "/// inner", "/// gen if", "/// contribution", "/// reaction", "/// commit", "/// dgen", "/// inner reaction",
     ] {
         assert!(text.contains(doc), "{doc} lost in:\n{text}");

@@ -10,7 +10,7 @@
 //! expression are evaluated in the order they are written (§1.3.11): when that is not declaration
 //! order and a field is more than a read, each field is bound to a local first, in written order.
 
-use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Projection, Stmt, TypeId, ValueType};
+use piperine_ir::{Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Place, Projection, Stmt, TypeId, ValueType};
 
 use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
@@ -347,12 +347,13 @@ impl Elaboration<'_, '_> {
         for (index, inner, binding) in fields {
             let whole = self.read_subject(scope, subject, origin.clone())?;
             let part_ty = self.part_types(base).get(index as usize)?.clone();
-            let field = self.emit(Expr::Field { expr: whole, index }, part_ty, origin.clone());
+            let field = self.emit(Expr::Field { expr: whole, index }, part_ty.clone(), origin.clone());
             if let Some(binding) = binding {
                 bindings.push((binding, field));
             }
             if let Some(inner) = inner {
-                let found = self.test_pattern(scope, &Subject::Value(field), inner)?;
+                let field_subject = self.field_subject(field, &part_ty, &origin);
+                let found = self.test_pattern(scope, &field_subject, inner)?;
                 bindings.extend(found.bindings);
                 if let Some(inner_test) = found.test {
                     test = Some(match test {
@@ -363,6 +364,15 @@ impl Elaboration<'_, '_> {
             }
         }
         Some(PatternTest { test, bindings })
+    }
+
+    /// The subject of a pattern over the field `field` of type `ty` of an aggregate: an `Option` field (held packed) is the pair of
+    /// its flag and its payload, any other field the value itself.
+    fn field_subject(&mut self, field: LoweredExpr, ty: &ValueType, origin: &Origin) -> Subject {
+        let ValueType::Option(payload) = ty else { return Subject::Value(field) };
+        let is = self.emit(Expr::OptionPart { option: field, part: LevelPart::Is }, ValueType::Bool, origin.clone());
+        let val = self.emit(Expr::OptionPart { option: field, part: LevelPart::Value }, (**payload).clone(), origin.clone());
+        Subject::Shared { is, val }
     }
 
     /// `Variant(p, ..)` and `Variant { f: p, .. }` over an enum value: the value is that variant and each

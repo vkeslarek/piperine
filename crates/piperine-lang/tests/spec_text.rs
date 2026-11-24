@@ -2240,14 +2240,15 @@ fn the_gallery_works_four_nets() {
     // EU-12 AC 3: F.4 holds four worked nets, each with its nature, its `impl` and its module
     // code: a plain `bool` into a wired-AND nature, an open-drain line with a pull-up, a
     // tri-state bus with two drivers and a keeper, and a conflict of equal strengths; plus the
-    // typed bus of D12 as a fifth listing.
+    // typed bus of D12 as a fifth listing. The first three are `rust` fences in the formatter's form (a nature's body one field a
+    // line, a trailing comma), the typed bus a fragment.
     let f = spec("appendix_f_gallery_mixed.md");
     let s = section(&f, "## F.4");
     for heading in ["### F.4.1 A plain `bool` into a wired-AND net", "### F.4.2 An open-drain line with a pull-up", "### F.4.3 A tri-state bus with two drivers and a keeper", "### F.4.4 A conflict of equal strengths"] {
         assert!(s.contains(heading), "F.4 lacks {heading}");
     }
     let flat_s = flat(&s);
-    for needle in ["pub nature AndWire { value: bool }", "impl Resolve<bool> for AndWire", "pub nature Sda { value: Driven }", "impl Resolve<Driven> for Sda", "pub nature TriBus { value: Driven }", "impl Resolve<Driven> for TriBus", "let rp = Pullup(sda);", "let k = Keeper(line);", "pub nature DataBus { value: Data }", "impl Resolve<Option<u8>, Data> for DataBus", "`Driven { v: Logic::X, s: Strength::Strong }`", "`E0511`"] {
+    for needle in ["pub nature AndWire { value: bool, }", "impl Resolve<bool> for AndWire", "pub nature Sda { value: Driven, }", "impl Resolve<Driven> for Sda", "pub nature TriBus { value: Driven, }", "impl Resolve<Driven> for TriBus", "let rp = Pullup(sda);", "let k = Keeper(line);", "pub nature DataBus { value: Data }", "impl Resolve<Option<u8>, Data> for DataBus", "`Driven { v: Logic::X, s: Strength::Strong }`", "`E0511`"] {
         assert!(flat_s.contains(needle), "F.4 lacks {needle}");
     }
     assert!(!flat_s.contains(": Wire;") && !flat_s.contains(": Wire,"), "no library Wire");
@@ -2536,5 +2537,43 @@ fn a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules() {
     let rule = &text[text.find("- **§3.1.6**").expect("rule 3.1.6")..text.find("- **§3.1.7**").expect("rule 3.1.7")];
     for fact in ["a discrete handle used where a value is expected", "stores or returns that value and is no `E0133`", "`E0133` is for a handle kept as a handle"] {
         assert!(rule.contains(fact), "§3.1.6 lacks \"{fact}\": {rule}");
+    }
+}
+
+#[test]
+fn keeper_and_bidir_blocks_repeat_their_generic_names() {
+    // resolved-nets D26, §10 rule 6: a behavior block of a generic module names the module's generics, so Part VII writes
+    // `digital<W> for Keeper<W>`, `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>`, and says so
+    let text = spec("part_vii_stdlib.md");
+    for header in ["digital<W> for Keeper<W> {", "analog<W> for Bidir<W> {", "digital<W> for Bidir<W> {"] {
+        assert!(text.contains(header), "§22 lacks the block header {header}");
+    }
+    let flat_text = flat(&text);
+    for fact in ["The `digital` block repeats the module's generic names, `digital<W> for Keeper<W>` (§10 rule 6)", "The `analog` and `digital` blocks repeat the module's generic names, `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>` (§10 rule 6)"] {
+        assert!(flat_text.contains(fact), "§22 lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn c_2_3_and_g_38_say_tran_on_a_resolved_nature_runs() {
+    // resolved-nets RN-10 AC 2 (MD-57): the conformance item of Appendix C.2.3 that names `Tran` on nets of a `Resolve<Driven>`
+    // nature is no longer a promise, and G.38 says which of its items the compiler runs
+    let c = one_line(&section(&spec("appendix_c_implementation.md"), "### C.2.3"));
+    let row = c.split("| `Tran` on nets of a `Resolve<Driven>` nature").nth(1).and_then(|rest| rest.split(" | ").nth(1)).unwrap_or_else(|| panic!("C.2.3 has the row of `Tran`: {c}"));
+    assert!(row.contains("**Runs:**") && row.contains("`source_nets`"), "C.2.3 says `Tran` runs and names its test: {row}");
+    let g38 = one_line(&section(&spec("appendix_g_scope.md"), "### G.38"));
+    assert!(g38.contains("`Tran` on nets of a `Resolve<Driven>` nature runs"), "G.38 says `Tran` runs: {g38}");
+    assert!(g38.contains("20 gallery fences"), "G.38 counts the fences the gate builds: {g38}");
+}
+
+#[test]
+fn rule_2_orders_the_drives_of_one_instance_by_carrier_declaration() {
+    // resolved-nets RN-03 AC 3 (round 3 fix F21): the order `resolve` receives its drives in is the order of the holders' instance
+    // paths, and the drives one instance holds on one net follow its carriers' declaration order in its module
+    let resolution = one_line(&section(&spec("part_ii_carriers.md"), "## 4. "));
+    assert!(resolution.contains("The order of rule 2 is the lexicographic order of the hierarchical paths"), "§4 orders the drives by instance path: {resolution}");
+    // the Resolution is a block quote: each of its lines keeps its `>`
+    for needle in ["drives one instance holds on one net (two of its carriers connected to it) are ordered,", "> after the instance path, by the declaration order of those carriers in the instance's > module."] {
+        assert!(resolution.contains(needle), "§4 orders the drives of one instance by its carriers' declaration ({needle}): {resolution}");
     }
 }

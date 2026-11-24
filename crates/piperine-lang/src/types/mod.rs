@@ -43,7 +43,7 @@ mod module; mod module_generics;
 mod obligations; mod operators;
 mod patterns;
 mod plain;
-mod nature_rules;
+mod nature; mod nature_rules;
 mod reach;
 mod reaction;
 mod repr;
@@ -56,5 +56,5 @@ mod ty;
 pub(crate) mod unsupported;
 
 pub(crate) use self::{coverage::ElementCoverage, logic_pattern::LogicPattern};
-pub use self::{traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution};
+pub use self::{nature::ResolveImpl, traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution};
 pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

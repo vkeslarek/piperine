@@ -13,19 +13,17 @@ use crate::pom::ids::DeclId;
 use crate::pom::resolution::{NatureKind, PortKind};
 
 /// The kind of a nature from the fields it declares: one `potential` is
-/// `SignalFlow`, with one `flow` `Conservative`, one `value` `Discrete`, with
-/// one `resolve` `Resolved`; anything else is `Invalid`.
+/// `SignalFlow`, with one `flow` `Conservative`, one `value` `Discrete`; anything else is
+/// `Invalid`. Whether a discrete nature is resolved is the checker's question (its `impl Resolve`).
 fn nature_kind(fields: &[ast::NatureField]) -> NatureKind {
     let count = |f: fn(&ast::NatureFieldKind) -> bool| fields.iter().filter(|n| f(&n.kind)).count();
     let potentials = count(|k| matches!(k, ast::NatureFieldKind::Quantity { which: QuantityRole::Potential, .. }));
     let flows = count(|k| matches!(k, ast::NatureFieldKind::Quantity { which: QuantityRole::Flow, .. }));
     let values = count(|k| matches!(k, ast::NatureFieldKind::Value(_)));
-    let resolves = count(|k| matches!(k, ast::NatureFieldKind::Resolve(_)));
-    match (potentials, flows, values, resolves) {
-        (1, 1, 0, 0) => NatureKind::Conservative,
-        (1, 0, 0, 0) => NatureKind::SignalFlow,
-        (0, 0, 1, 0) => NatureKind::Discrete,
-        (0, 0, 1, 1) => NatureKind::Resolved,
+    match (potentials, flows, values) {
+        (1, 1, 0) => NatureKind::Conservative,
+        (1, 0, 0) => NatureKind::SignalFlow,
+        (0, 0, 1) => NatureKind::Discrete,
         _ => NatureKind::Invalid,
     }
 }
@@ -50,9 +48,6 @@ impl Lowerer<'_> {
                 }
                 ast::NatureFieldKind::Value(t) => {
                     NatureFieldNode::Value { meta: self.meta(&f.meta), ty: self.ty(t), span: f.span.0 }
-                }
-                ast::NatureFieldKind::Resolve(e) => {
-                    NatureFieldNode::Resolve { meta: self.meta(&f.meta), expr: self.expr(e), span: f.span.0 }
                 }
             })
             .collect();

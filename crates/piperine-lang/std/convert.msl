@@ -33,7 +33,7 @@ digital for A2D {
     }
 }
 
-pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
+pub module Bidir<W: Nature + Resolve<Driven>>(d: W, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0;
     tr: f64 = 20p;
     vth: f64 = 0.6;
@@ -41,29 +41,20 @@ pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
     signal seen: Bit = false; // the node, thresholded
     let driving = d.others().s != Strength::HighZ;
     d = if driving {
-        Drive::Z
+        Driven::Z
     } else {
-        Drive::strong(seen)
+        Driven::strong(seen)
     };
-    let ramp = transition(
-        if d.others().v {
-            1.0
-        } else {
-            0.0
-        },
-        0.0,
-        tr,
-        tr,
-    );
+    let ramp = transition(d.others().v.to_volts(1.0), 0.0, tr, tr);
 }
 
-analog for Bidir {
+analog<W> for Bidir<W> {
     if driving {
         i(a) +> (v(a) - ramp * v(vdd)) / rout;
     } // released: no contribution, zero flow
 }
 
-digital for Bidir {
+digital<W> for Bidir<W> {
     on above(v(a) - vth - hyst / 2.0) {
         seen <- true;
     }

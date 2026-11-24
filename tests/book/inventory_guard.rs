@@ -627,11 +627,5 @@ fn every_listing_that_does_not_run_names_its_gap() {
         }
     }
     assert!(offences.is_empty(), "{}", offences.join("\n  "));
-    // the gap of each is the feature that really makes it run (ROADMAP.md, "Every Book listing runs before item 13"):
-    // `resolved-nets` (L21: also natures#2, which needs phases A and B and `composite-values` first); explicit-unknowns phase B
-    // (values#18) runs since T47
-    let gap_of = |id: &str| tree.inventory.rows().iter().find(|row| row.id == id).map(|row| row.gap.clone()).unwrap_or_else(|| panic!("a row {id}"));
-    for id in ["natures#2", "natures#3", "digital#16", "digital#17", "digital#18", "digital#19", "digital#20", "core-std#6"] {
-        assert_eq!(gap_of(id), "L21", "{id}: resolved-nets");
-    }
+
 }

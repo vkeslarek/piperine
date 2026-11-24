@@ -82,7 +82,8 @@ use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Or
 use crate::array::ArrayPin;
 use crate::pin::PinLayout;
 use crate::widths::NumberLayout;
-use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
+use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, ResolvedPins, Source, Target};
+use crate::resolved::DriveLayout;
 
 /// What a reaction of the shape runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,7 +152,9 @@ impl StatementPlan {
                 Stmt::Commit { carrier, after, target, .. } => {
                     let held = body.carriers().get(*carrier as usize)?;
                     let path = target.as_ref().map_or(&[][..], |t| t.path.as_slice());
-                    Some(StatementPlan::commit_through(ir, *carrier, &held.ty, held.count, *after, path))
+                    let statement = StatementPlan::commit_through(ir, *carrier, &held.ty, held.count, *after, path);
+                    // a commit of a resolved carrier writes its drive pin
+                    Some(if Digital::is_resolved(body, *carrier) { StatementPlan { target: Target::ResolvedDrive(*carrier), ..statement } } else { statement })
                 }
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
                 Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } | Stmt::Trace { .. } => None,
@@ -384,12 +387,11 @@ impl Digital {
     /// every carrier holds `bool`, `f64` or an integer type.
     pub(crate) fn carrier_pins(s: &mut ShapeBuf, body: Body<'_>) -> u32 {
         let first = s.shape().pins.len() as u32;
+        let drives = body.resolve_drive_carriers();
         for (i, c) in body.carriers().iter().enumerate() {
             let at = format!("{}:{}:{}", c.origin.file, c.origin.line, c.origin.col);
-            let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
-                panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
-            };
-            let init = match c.init {
+            // a resolved carrier's initial value is its first drive's: it starts the drive pin (`resolved_pins`)
+            let init = match c.init.filter(|_| !matches!(c.role, CarrierRole::Resolved { .. })) {
                 Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
@@ -397,20 +399,79 @@ impl Digital {
             };
             let pin_role = if Self::is_port(body, i as u32) { role::PORT } else { role::PRIVATE };
             let flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
-            let fields = layout.fields();
-            let abi = layout.layout(&fields);
-            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, count: c.count.unwrap_or(0), ..PinSpec::discrete(&c.name, pin_role, &abi) });
+            // a drive of a `resolve` is read through the drive layout of its net: the driven type, then `driving`
+            let pin = if drives.contains(&(i as u32)) {
+                let Some(layout) = DriveLayout::of(body.ir(), &c.ty) else {
+                    panic!("body {}: carrier {} at {at} holds {}, which no drive net holds; check() refuses it", body.name(), c.name, c.ty)
+                };
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, &abi) })
+            } else {
+                let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
+                    panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
+                };
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                s.pin(PinSpec { origin: &at, flags, init: &init, count: c.count.unwrap_or(0), ..PinSpec::discrete(&c.name, pin_role, &abi) })
+            };
             debug_assert_eq!(pin, first + i as u32);
         }
         first
     }
 
+    /// Adds, after the `SETTLE` pin and the element drive pins, the drive pin `<carrier>.drive` of each resolved carrier
+    /// (`PORT`, `RELAX`, the drive layout of its driven type) and, when the body calls `others()` of it, the others
+    /// pin `<carrier>.others` (`PORT`, the carrier's own layout); `None` for every other carrier. The netlist binds
+    /// the drive pin to the carrier's drive net and the others pin to its others net.
+    pub(crate) fn resolved_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<ResolvedPins>> {
+        body.carriers()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let CarrierRole::Resolved { driven, .. } = &c.role else { return None };
+                let at = Self::at(&c.origin);
+                let Some(layout) = DriveLayout::of(body.ir(), driven) else {
+                    panic!("body {}: carrier {} at {at} is driven with {driven}, which no drive net holds; check() refuses it", body.name(), c.name)
+                };
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                // an initial value is the first drive at `(0, 0)`: the value then `driving` 1
+                let init = c.init.and_then(|value| layout.init_bytes(body.ir(), driven, value)).unwrap_or_default();
+                let flags = if init.is_empty() { pin_flag::RELAX } else { pin_flag::RELAX | pin_flag::HAS_INIT };
+                let drive = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&format!("{}.drive", c.name), role::PORT, &abi) });
+                let others = body.reads_others(i as u32).then(|| {
+                    let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
+                        panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
+                    };
+                    let fields = layout.fields();
+                    let abi = layout.layout(&fields);
+                    s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("{}.others", c.name), role::PORT, &abi) })
+                });
+                Some(ResolvedPins { drive, others })
+            })
+            .collect()
+    }
+
+    /// The size in bytes of the drive net of resolved carrier `c` of `body`; 0 for a carrier that is not resolved.
+    fn drive_size(body: Body<'_>, c: u32) -> u32 {
+        match body.carriers().get(c as usize).map(|x| &x.role) {
+            Some(CarrierRole::Resolved { driven, .. }) => DriveLayout::of(body.ir(), driven).map_or(0, |layout| layout.size()),
+            _ => 0,
+        }
+    }
+
+    /// Whether carrier `c` of `body` is a carrier of a resolved nature: a definition or a commit of it writes its drive pin.
+    pub(crate) fn is_resolved(body: Body<'_>, c: u32) -> bool {
+        body.carriers().get(c as usize).is_some_and(|x| matches!(x.role, CarrierRole::Resolved { .. }))
+    }
+
     /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, a `signal` that a
     /// child's carrier port is bound to, or an array `signal` a definition of one element drives.
     pub(crate) fn is_port(body: Body<'_>, c: u32) -> bool {
-        match body.carriers().get(c as usize).map(|x| x.role) {
+        match body.carriers().get(c as usize).map(|x| &x.role) {
             // A reached carrier is a read-only view of a child's: a `PORT` pin, as an `in` port.
-            Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached) => true,
+            Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { .. }) => true,
             // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`), and
             // when a definition of one of its elements writes it: that drive's pin is bound to the element of the array
             // net (`Pins::element_drives`), so the carrier's own pin, which its readers read, must be that net too
@@ -584,11 +645,23 @@ impl Digital {
             .map(|d| {
                 d.after?;
                 let name = Self::carrier_name(body, d.carrier);
-                let layout = body.carriers().get(d.carrier as usize).and_then(|c| PinLayout::in_ir(body.ir(), &c.ty))?;
+                let carrier = body.carriers().get(d.carrier as usize)?;
                 let at = Self::at(&d.origin);
-                let fields = layout.fields();
-                let abi = layout.layout(&fields);
-                let value = s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("drive:{name}.now"), role::PRIVATE, &abi) });
+                let value = match &carrier.role {
+                    // the undelayed drive of a resolved carrier is a drive net's layout: its commit copies `driving` too
+                    CarrierRole::Resolved { driven, .. } => {
+                        let layout = DriveLayout::of(body.ir(), driven)?;
+                        let fields = layout.fields();
+                        let abi = layout.layout(&fields);
+                        s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("drive:{name}.now"), role::PRIVATE, &abi) })
+                    }
+                    _ => {
+                        let layout = PinLayout::in_ir(body.ir(), &carrier.ty)?;
+                        let fields = layout.fields();
+                        let abi = layout.layout(&fields);
+                        s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("drive:{name}.now"), role::PRIVATE, &abi) })
+                    }
+                };
                 let event = s.pin(PinSpec { origin: &at, ..PinSpec::event(&format!("drive:{name}.changed"), role::PRIVATE) });
                 Some(DelayedPins { value, event })
             })
@@ -710,6 +783,7 @@ impl Digital {
             let write = match (d.after.is_some(), d.element.is_some()) {
                 (true, _) => Target::Delayed(k),
                 (false, true) => Target::ElementDrive(k),
+                (false, false) if Self::is_resolved(body, d.carrier) => Target::ResolvedDrive(d.carrier),
                 (false, false) => Target::Carrier(d.carrier),
             };
             let name = Self::drive_name(body, k);
@@ -803,7 +877,10 @@ impl Digital {
                 mode: ReactionMode::Delayed(k),
                 on: vec![delayed.event],
                 reads: set.0.into_iter().collect(),
-                statements: vec![StatementPlan::commit(ir, d.carrier, d.after)],
+                statements: vec![match StatementPlan::commit(ir, d.carrier, d.after) {
+                    statement if Self::is_resolved(body, d.carrier) => StatementPlan { target: Target::ResolvedDrive(d.carrier), ..statement },
+                    statement => statement,
+                }],
             };
             let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
             Self::declare(s, pins, body, &name, &Self::at(&d.origin), &plan);
@@ -841,6 +918,7 @@ impl Digital {
                     Target::Carrier(c) => {
                         (pins.carrier(c), body.carriers().get(c as usize).and_then(|x| PinLayout::in_ir(body.ir(), &x.ty)).map_or(0, |l| l.size()))
                     }
+                    Target::ResolvedDrive(c) => (pins.resolved_drive(c), Self::drive_size(body, c)),
                     Target::EventPin(k) => (pins.events.get(k as usize).copied().unwrap_or(GROUND), 0),
                     Target::Timer(k) => (pins.timer(k), 0),
                     Target::Record(r) => {

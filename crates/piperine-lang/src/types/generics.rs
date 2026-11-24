@@ -45,6 +45,13 @@ pub enum Bound {
     Repr,
     /// `Nature` (§4).
     Nature,
+    /// `Resolve<X>` or `Resolve<X, V>` (§4 rule 8): the nature the parameter stands for has an `impl Resolve` that takes
+    /// drives of `X` and combines them into `V` (`V = X` when written once). A nature parameter with it is a resolved
+    /// discrete carrier in the generic body (§22.3).
+    Resolve {
+        /// The generic arguments written after `Resolve`, as written.
+        arguments: Vec<TypeId>,
+    },
     /// `Fn(A, B) -> R`: the inputs and the output as written, lowered where a callable is checked.
     Callable {
         /// The argument types.
@@ -122,6 +129,15 @@ impl GenericSignature {
         Self::of(design, owner).parameters().iter().any(|parameter| parameter.decl == param && parameter.kind == ParameterKind::Nature)
     }
 
+    /// The `Resolve` bound of the nature parameter `param`, when it has one: the arguments it is written with.
+    pub fn resolve_bound(design: &Design, param: DeclId) -> Option<Vec<TypeId>> {
+        let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &design.decl_data(param).kind else { return None };
+        bounds.iter().find_map(|path| match Self::bound(design, *path) {
+            Some(Bound::Resolve { arguments }) => Some(arguments),
+            _ => None,
+        })
+    }
+
     /// The parameters, in source order.
     pub fn parameters(&self) -> &[GenericParameter] {
         &self.parameters
@@ -140,6 +156,13 @@ impl GenericSignature {
             Resolution::Builtin(builtin) => match builtin.info().name {
                 "Repr" => Some(Bound::Repr),
                 "Nature" => Some(Bound::Nature),
+                "Resolve" => {
+                    let arguments = match &segment.args {
+                        Some(GenericArgsNode::Angle { args, .. }) => args.iter().filter_map(|arg| if let GenericArgNode::Type(ty) = arg { Some(*ty) } else { None }).collect(),
+                        _ => Vec::new(),
+                    };
+                    Some(Bound::Resolve { arguments })
+                }
                 "Fn" => match &segment.args {
                     Some(GenericArgsNode::Paren { inputs, output, .. }) => Some(Bound::Callable { inputs: inputs.clone(), output: *output }),
                     _ => Some(Bound::Callable { inputs: Vec::new(), output: None }),
@@ -207,6 +230,9 @@ impl Checker<'_> {
             }
             GenericParamData::Type { bounds, .. } => {
                 for path in bounds {
+                    if let Some(Bound::Resolve { arguments }) = GenericSignature::bound(self.design, path) {
+                        self.resolve_bound_rules(parameter, &arguments, file);
+                    }
                     if GenericSignature::bound(self.design, path).is_none() {
                         let node = self.design.path_node(path);
                         let (named, at) = (node.segments.last().map_or_else(String::new, |s| s.name.text.clone()), node.span);
@@ -214,6 +240,19 @@ impl Checker<'_> {
                     }
                 }
             }
+        }
+    }
+
+    /// A `Resolve` bound names a nature and takes `<X>` or `<X, V>` (§4 rule 8): anything else is `E0187`.
+    fn resolve_bound_rules(&mut self, parameter: &GenericParameter, arguments: &[TypeId], file: FileId) {
+        let (at, nature) = (self.design.decl_data(parameter.decl).span, parameter.bounds.contains(&Bound::Nature));
+        if !nature {
+            let message = format!("`{}` has the bound `Resolve` and no `Nature`: only a nature can resolve (§4 rule 8)", parameter.name);
+            self.coded(file, "E0187", at, message, "add `Nature`");
+        }
+        if !(1..=2).contains(&arguments.len()) {
+            let message = format!("the bound `Resolve` of `{}` takes `<X>` or `<X, V>`: the type of a drive and the value (§4 rule 8)", parameter.name);
+            self.coded(file, "E0187", at, message, "the arguments of `Resolve`");
         }
     }
 

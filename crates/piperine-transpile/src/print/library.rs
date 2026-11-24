@@ -400,6 +400,14 @@ impl LibraryPrinter {
                         exprs.push(ir.function(*function).body());
                     }
                 }
+                // the instances of a nature's `resolve` a resolver calls, one per count of present drives
+                Expr::Resolve { by_count, .. } => {
+                    for function in by_count {
+                        if found.insert(function.index()) {
+                            exprs.push(ir.function(*function).body());
+                        }
+                    }
+                }
                 other => ValuePrinter::children(ir, other, &mut exprs),
             }
         }

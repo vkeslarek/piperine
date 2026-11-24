@@ -31,8 +31,11 @@ impl Checker<'_> {
         // an array of carriers is directed as its element is (CV-23): the direction is the array's
         let kind = ty.as_ref().map(|t| t.innermost().clone());
         match (&kind, port.dir) {
-            (Some(Ty::Carrier { .. }), None) => {
+            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.design, *nature).one_driver => {
                 self.coded(file, "E0310", span, "a port of a discrete nature takes `in` or `out` (§8.1.5)".to_string(), "no direction");
+            }
+            (Some(Ty::Carrier { nature, .. }), Some(_)) if NatureRules::of(self.design, *nature).resolved => {
+                self.coded(file, "E0310", span, "a port of a resolved nature takes no direction: its drives are combined by `resolve` (§8.1.5)".to_string(), "unexpected direction");
             }
             (Some(Ty::Node(_)), Some(_)) => {
                 self.coded(file, "E0310", span, "a port of a continuous nature takes no direction (§8.1.5)".to_string(), "unexpected direction");
@@ -49,6 +52,11 @@ impl Checker<'_> {
                 self.initial_reads(default);
                 let value = array.read_value();
                 self.within(Context::Const, |this| this.check_as(default, &value, "E0210"));
+            }
+            // the initial value of a resolved port is the module's first drive of it, of the driven type (§5.2.3)
+            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.design, *nature).resolved => {
+                self.initial_reads(default);
+                self.resolved_initial(decl, *nature, default);
             }
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
                 let span = self.design.expr_node(default).span;
@@ -131,6 +139,11 @@ impl Checker<'_> {
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
         self.initial_reads(init);
+        if let Ty::Carrier { nature, .. } = &ty
+            && NatureRules::of(self.design, *nature).resolved
+        {
+            return self.resolved_initial(decl, *nature, init);
+        }
         let value = match &ty {
             Ty::Carrier { value, .. } => (**value).clone(),
             // an array of carriers: the array of their values (`[0; 8]`); an array of nodes: an array of `f64`
@@ -506,15 +519,23 @@ impl Checker<'_> {
         let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            // a resolved carrier has as many drives as modules hand it down or define it (§5.2.1): nothing here is a second one
+            if matches!(self.carriers.get(&decl).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.design, *nature).resolved) {
+                continue;
+            }
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
             // an element only the elaborator folds is judged there against the whole-carrier drives too (`elab/drive_overlaps.rs`)
             let whole_drive = element != super::element_target::Element::Unfolded && (self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl));
             let driven_here = whole_drive || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            let nature = match self.carriers.get(&decl).map(Ty::innermost) {
+                Some(Ty::Carrier { nature, .. }) => self.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+                _ => String::new(),
+            };
             if twice {
-                self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a one-driver carrier has one drive (§5.2.1)"), "a second drive");
+                self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a carrier of `{nature}` has one drive, since `{nature}` has no `impl Resolve` to combine two (§5.2.1)"), "a second drive");
             } else if driven_here {
-                self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too (§5.2.6)"), "a second drive");
+                self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too: a carrier of `{nature}` has one drive, since `{nature}` has no `impl Resolve` to combine two (§5.2.6)"), "a second drive");
             } else {
                 clean.push((decl, element, span, file));
             }
@@ -567,6 +588,10 @@ impl Checker<'_> {
             }) else {
                 continue;
             };
+            if NatureRules::of(self.design, nature).resolved {
+                self.missing_resolved_initial_value(decl);
+                continue;
+            }
             // an array with no element holds nothing to start
             if held.has_fixed_zero_length() {
                 continue;
@@ -649,7 +674,7 @@ impl Checker<'_> {
 impl Checker<'_> {
     /// Brings every hand-written `impl Default` the default of `ty` reads into the check: the `default` function of a struct
     /// that writes one, and of the structs, tuples and arrays holding such a struct.
-    fn reach_written_defaults(&mut self, ty: &Ty) {
+    pub(super) fn reach_written_defaults(&mut self, ty: &Ty) {
         match ty {
             Ty::Struct(nominal) => {
                 let table = std::rc::Rc::clone(&self.impls);

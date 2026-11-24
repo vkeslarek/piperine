@@ -531,11 +531,6 @@ impl<'d> Rebuild<'d> {
                 kind: ast::NatureFieldKind::Value(self.ty(*ty)),
                 span: loc(*span),
             },
-            NatureFieldNode::Resolve { meta, expr, span } => ast::NatureField {
-                meta: self.meta(meta),
-                kind: ast::NatureFieldKind::Resolve(self.expr(*expr)),
-                span: loc(*span),
-            },
         }
     }
 

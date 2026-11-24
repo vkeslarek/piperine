@@ -125,6 +125,18 @@ pub enum Error {
         detail: String,
     },
 
+    /// `E0511`: a relaxing digital loop that did not settle (spec §8.2.3 step 4). The drives
+    /// are data, so the host names them without reading the message.
+    #[error("{domain}: E0511: the loop at tick {tick} did not settle; its drives: {}", .drives.join(", "))]
+    Unsettled {
+        /// The domain whose relaxation did not settle.
+        domain: SolverDomain,
+        /// The tick of the relaxation step that stopped moving nowhere.
+        tick: i64,
+        /// The drive nets of the loop, by path, in the order the engine named them.
+        drives: Vec<String>,
+    },
+
     #[error("{domain}: {detail}\nCaused by: {cause}")]
     WithCause {
         domain: SolverDomain,
@@ -159,6 +171,15 @@ impl Error {
     pub fn code(&self) -> Option<RunCode> {
         match self {
             Error::Run(run) => Some(run.code),
+            _ => None,
+        }
+    }
+
+    /// The tick and the drive nets (as the engine names them) of an unsettled loop, `None` for
+    /// any other error.
+    pub fn unsettled(&self) -> Option<(i64, &[String])> {
+        match self {
+            Error::Unsettled { tick, drives, .. } => Some((*tick, drives)),
             _ => None,
         }
     }
@@ -240,6 +261,14 @@ mod tests {
             "Transient: E0508: step fails at the floor at t = 1.5e-6 s: node of Top.n1.p"
         );
         assert_eq!(timed.code(), Some(RunCode::E0508));
+    }
+
+    #[test]
+    fn an_unsettled_loop_carries_its_drives_and_keeps_its_text() {
+        let err = Error::Unsettled { domain: SolverDomain::Digital, tick: 7, drives: vec!["a$drive0".into(), "a$drive1".into()] };
+        assert_eq!(err.to_string(), "Digital: E0511: the loop at tick 7 did not settle; its drives: a$drive0, a$drive1");
+        assert_eq!(err.unsettled(), Some((7, &["a$drive0".to_string(), "a$drive1".to_string()][..])));
+        assert_eq!(Error::simple(SolverDomain::Digital, "x").unsettled(), None);
     }
 
     #[test]

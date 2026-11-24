@@ -117,7 +117,7 @@ fn a_for_loop_in_a_digital_block_lowers() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    let src = "module Top(a: Wire, b: Wire) { }";
+    let src = "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; let u = Resistor { r: 2.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
@@ -146,9 +146,8 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
     // (msl-digital T9 to T16); the structure passes that lower them come later. Until then every one
     // is refused by name, never dropped and never lowered as a different circuit.
     for (form, src, names) in [
-        // A carrier is lowered from msl-digital T28 on: the form still refused in its place is the
-        // resolved carrier of DIG-07 AC 1.
-        ("a nature with resolve", "module Top(c: Wire) { }", vec!["resolved nature `Wire`"]),
+        // A carrier is lowered from msl-digital T28 on, and a resolved one from resolved-nets T18 on
+        // (`elab_natures::a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive`).
         // An element or field commit left this table when composite-values T76 typed it (`types_carrier_arrays`).
         // `settle` lowers from unknown-semantics-events T5 on (`elab_digital::settle_lowers_to_the_settle_event_source`).
         // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it

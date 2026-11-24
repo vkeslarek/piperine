@@ -239,7 +239,7 @@ pub enum GenericParamData {
     Const { ty: TypeId, default: Option<ExprId> },
 }
 
-/// `nature Name<..> { potential: Voltage { .. }, flow: Current { .. }, value: T, resolve: f }`;
+/// `nature Name<..> { potential: Voltage { .. }, flow: Current { .. }, value: T }`;
 /// generics and quantities are children.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NatureData {
@@ -256,8 +256,6 @@ pub enum NatureFieldNode {
     Quantity(DeclId),
     /// `value: T`; `span` covers the whole field.
     Value { meta: Meta, ty: TypeId, span: Span },
-    /// `resolve: expr`; `span` covers the whole field.
-    Resolve { meta: Meta, expr: ExprId, span: Span },
 }
 
 /// `potential: Voltage { access: v, units: "V" }`: the attribute list as

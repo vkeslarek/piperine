@@ -1,6 +1,6 @@
 //! Scope: chapter 13 of the Book, "Core and standard library" (feature `root-e2e`, RE-02 and RE-03): the
 //! tour modules that run (`Tour`, `VT_300K`, `Rc`, `Latch`, `DacRamp`, `Pad`, `Probe`, a crate's own
-//! `vt`), the ones refused today (the resolved line, `Reg` with its `Setup`, the watchdog's integer
+//! `vt`), the ones refused today (`Reg` with its `Setup`, the watchdog's integer
 //! param, asserted refused with their diagnostics), the statements the chapter makes about the core, the
 //! monitors and the intrinsic items, and the six mistakes of its table, run through `piperine::`. Each
 //! test opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
@@ -24,7 +24,7 @@ use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
 use support::printed::Printed;
-use support::records::Fields;
+use support::records::{DrivenCells, Fields, Rows};
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -34,6 +34,29 @@ struct Bench;
 impl Bench {
     /// A resistor and a DC source, each with its behavior.
     const PARTS: &'static str = "module R(p: Electrical, n: Electrical) { r: f64 = 1k; }\nanalog for R { i(p, n) +> v(p, n) / r; }\nmodule Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\n";
+}
+
+/// The bench of core-std#6.
+impl Bench {
+    /// A watched copy of the board of the listing, the listing's own `Board`, and the stimulus.
+    const IRQ_BENCH: &'static str = "\
+module LineLook(irq_n: IrqLine) {}
+digital for LineLook { on irq_n.changed() { emit!(\"line\", level = irq_n.v, strength = irq_n.s); } }
+module Watched(in req0: Bit, in req1: Bit) {
+    signal irq_n: IrqLine;
+    let pu = Pullup(irq_n);
+    let s0 = IrqSource(req0, irq_n);
+    let s1 = IrqSource(req1, irq_n);
+    let look = LineLook(irq_n);
+}
+module Top() {
+    signal r0: Bit = false;
+    signal r1: Bit = false;
+    let w = Watched(r0, r1);
+    let board = Board(r0, r1);
+}
+digital for Top { on at(1u) { r0 <- true; } on at(2u) { r1 <- true; } on at(3u) { r0 <- false; r1 <- false; } }
+";
 }
 
 /// The runs the chapter's models need.
@@ -106,14 +129,21 @@ fn the_dac_ramp_scales_its_code_by_the_reference() {
 }
 
 #[test]
-fn the_resolved_line_is_refused_until_a_nature_can_implement_resolve() {
-    // core-std#6 (refused, S8): `IrqLine`, a nature the model declares with `impl Resolve<Driven>`, and a `Board`
-    // with a `Pullup`: `Driven` and `Resolve` are not in the library yet (E0161)
+fn the_resolved_line_runs_on_its_nature() {
+    // core-std#6 (run): `IrqLine`, a nature the model declares with `impl Resolve<Driven>`, `IrqSource` and a `Board` with a
+    // `Pullup`. A top's `in` port has no value until it is given one (`bool` has no `Default`, §3.3.4), so the bench gives the
+    // inputs their first value; its own copy of the board writes the line, which `Board` keeps to itself: released, the
+    // pull-up wins (1 at Pull); one source drives strong 0; the second changes nothing
     let chapter = Chapter::read();
-    let model = chapter.lone("board.msl", &["core-std#6"]);
-    let given = Refusal::of(model.run(Faulty::operating_point_of("Board")), "core-std#6");
-    assert!(given.iter().all(|(code, _)| code == "E0161"), "names the library does not hold yet: {given:?}");
-    Refusal::expect(model.run(Faulty::operating_point_of("Board")), "core-std#6", "E0161", "cannot find `Driven` in this scope");
+    let ran = chapter.wrapped("board.msl", "", "core-std#6", Bench::IRQ_BENCH).run(Commands::transient(4e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
+    let rows = Rows::of(&ran.stream("line"), &["level", "strength"]);
+    assert_eq!(rows, ["0 1 Pull", "1000 0 Strong", "3000 1 Pull"].map(str::to_string), "released, one request, the second request changes nothing, released again");
+    let listed = chapter.wrapped("board.msl", "", "core-std#6", Bench::IRQ_BENCH).run(Overrides { print_step: Some(0.5e-6), print: vec!["board.irq_n".to_string()], ..Commands::transient(4e-6, Some(0.5e-6)) }).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(
+        DrivenCells::column(&listed.table, "Top.board.irq_n"),
+        ["1 Pull", "1 Pull", "0 Strong", "0 Strong", "0 Strong", "0 Strong", "1 Pull", "1 Pull", "1 Pull"].map(str::to_string),
+        "the listing's own `Board` holds its line as its watched copy does: every half microsecond from 0 to 4 us"
+    );
 }
 
 #[test]

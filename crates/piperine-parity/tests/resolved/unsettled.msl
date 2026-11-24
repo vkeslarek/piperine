@@ -1,0 +1,33 @@
+//! A loop of resolved drives that does not settle (§8.2.3 step 4): the run stops with `E0511`.
+
+/// A net of flags that are all true: the wired AND (§22.3's `AndWire`).
+nature AndWire { value: bool }
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(d: [bool; N]) -> bool {
+        d.iter().fold(true, |acc, x| acc && x)
+    }
+}
+
+/// Drives the negation of what the rest of its net drives.
+module Invert(w: AndWire) {
+    w = !w.others();
+}
+
+/// Drives true: what a settled loop holds.
+module Pass(w: AndWire) {
+    w = w.others();
+}
+
+/// Two inverters, written `b` then `a`: each drives the negation of the other, 0, 1, 0, 1 for ever.
+module OscillatorBench() {
+    signal n: AndWire;
+    let b = Invert(n);
+    let a = Invert(n);
+}
+
+/// Two pass elements: the loop settles on its first pass.
+module SettlingBench() {
+    signal n: AndWire;
+    let a = Pass(n);
+    let b = Pass(n);
+}

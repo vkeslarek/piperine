@@ -906,7 +906,7 @@ impl Stage {
         });
         let mut types = vec![ValueType::Bool; 4];
         for (name, role, col) in [("hs_cmd", CarrierRole::In, 50), ("ls_cmd", CarrierRole::In, 66), ("hs_gate", CarrierRole::Signal, 15), ("ls_gate", CarrierRole::Signal, 35)] {
-            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, Stage::F, if role == CarrierRole::Signal { 2 } else { 1 }, col));
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, role.clone(), None, Stage::F, if role == CarrierRole::Signal { 2 } else { 1 }, col));
         }
         if let Some(ty) = extra {
             b.carrier(body, Buck::carrier("count", ty.clone(), CarrierRole::Signal, None, Stage::F, 2, 55));

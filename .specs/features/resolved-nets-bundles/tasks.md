@@ -9,8 +9,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/resolved-nets-bundles/design.md`
-**Status**: Approved
-**Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13"
+**Status**: In Progress - B1 (T1 to T4) done and on `main`; B2 onward (T5 to T21) amended 2026-11-22 for the explicit-unknowns model (MD-78) and waiting for the user's approval of this plan
+**Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (B1 as planned then; the amendment of B2 onward has no approval yet)
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run pombundles**: `cargo test -p piperine-lang --test pom_bundles`
 **Run typesbundles**: `cargo test -p piperine-lang --test types_bundles`
@@ -24,35 +24,46 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
-Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`
+Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 
-Executors: **every task is Sonnet**. Opus verifies the feature.
+Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
 
-**Answers.** The spec's delivery question follows `resolved-nets` Q1 (B, user 2026-11-18: "Sobre as open questions, vou de aceito todas ok?"). The defaults taken while the user was away are design.md "Decisions taken (user AFK)" D1 to D8 and `resolved-nets` design D2, D16, D20.
+**Answers.** The spec's delivery question follows `resolved-nets` Q1 (B, user 2026-11-18: "Sobre as open questions, vou de aceito todas ok?"). The defaults taken while the user was away are design.md "Decisions taken (user AFK)" D1 to D10 and `resolved-nets` design D2, D16, D20. The amendment of 2026-11-22 (spec A6) applies the user's decisions of 2026-11-21, quoted in spec.md.
 
-**Base and order.** Branch `feature/resolved-nets`. B1 (phase 1, T1–T4) starts from `main` at `7df9e17c` after `resolved-nets` B2 and needs nothing else. B2 and B3 (phases 2–5, T5–T16) wait for `composite-values` A–B on `main` (T15 also for `resolved-nets` T22 on the branch). B4 (phases 6–8, T17–T21) waits for `generics` B and `unknown-semantics-events` B5 (T17, T18), `generics` A and C and `composite-values` C (T19, T20). A task whose dependency is not on `main` pauses the feature and is reported.
+**Base and order.** Branch `feature/resolved-nets`, kept current by merging `main` into it (by hunk; never one side of a whole file; documents and tests keep both intents). B1 (T1–T4) is on `main`.
+
+| Batch | Tasks | Starts when | Delivers |
+| ----- | ----- | ----------- | -------- |
+| B2 | T5 to T8 (phases 2, 3) | `explicit-unknowns` phase A on `main` (`composite-values` A–B already is) | the contract; bundle types, views, literals, `E0211` |
+| B3 | T9 to T16 (phases 4, 5) | B2; T15 also needs `resolved-nets` T22 on the branch | bundles elaborate and run; host and POM names |
+| B4 | T17 to T21 (phases 6 to 8) | B3, `generics` B and `unknown-semantics-events` B5 (T17, T18), `generics` A and C and `composite-values` C (T19, T20), `generics` C (T21's `Slice<T>`) | functions on a bundle; generic and array bundles; the records |
+
+A task whose dependency is not on `main` pauses the feature and is reported.
 
 Rules every task follows:
 
-- **Environment.** `export CARGO_TARGET_DIR=/var/tmp/piperine-target-a TMPDIR=/var/tmp/piperine-tmp-a CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` before any cargo command. Cargo with `-p <crate>`, never `--workspace` (`piperine-lang-server` is postponed and known broken), never `cargo clean`. Long jobs run in the background with no polling loop; never `pkill` by pattern. If `df /` passes 90 %, stop and report. Never `git stash` (the stash list is shared between worktrees).
+- **Environment.** `export CARGO_TARGET_DIR=/var/tmp/piperine-target-a TMPDIR=/var/tmp/piperine-tmp-a CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` before any cargo command; never a target directory another worktree is building in. Cargo with `-p <crate>`, or plain at the root only at the end of a batch; never `--workspace` (`piperine-lang-server` is postponed and known broken), never `cargo clean`. Long jobs run in the background with no polling loop; never `pkill` by pattern. If `df /` passes 90 %, stop and report. Never `git stash` (the stash list is shared between worktrees).
+- **Gate policy (user, 2026-11-21: "Quero que aplique o dos gates mais leves apenas"; 2026-11-22: "Suite completa é só no fim dos lotes e ponto final!").** Per task: the `**Build**` line and the tests of the crates the task touched, nothing more. The full root suite, the integrated suites, the parity targets and the twins run once, at the end of each batch (the batch's last task carries `Gate: batch`), and never in a fix round or a verification. The buck runs only in a task whose `Done when` says "with the buck".
+- **Explicit model (MD-78).** A one-driver field is a field of a discrete nature that does not implement `Resolve`; every fixture with a `Bit` field or signal gives it an initial value (`E0187` otherwise); a test that needs a resolved field declares its own nature with `impl Resolve<..>`; no test names `Wire`.
 - **Parity is untouchable (ngspice first).** `crates/piperine-parity/src/contract.rs` and every `ToleranceContract` are not edited; the twin goldens, the transpile goldens of `crates/piperine-transpile/tests/golden/` and every parity target stay byte-identical; no tolerance moves. A new comparison uses an existing contract as it is (D12). A fair twin uses the same step configuration on both sides, nothing else. Every buck target passes after every task that touches the printer, the plan, the digital solver, the owner protocol or the elaborator's lowering of an existing form.
 - **Only design.md "Goldens, pins and tests that may move" may move,** under the task it names; a replaced test is replaced by the acceptance test of the criterion that supersedes it, and the commit body names both and the spec line.
 - **The code follows the spec.** `docs/spec/` is the grammar and semantics authority; where today's behaviour contradicts it for a construct this feature touches, the task fixes it (design.md "Divergences found"). A spec text that is wrong is amended explicitly with its `spec_text` guard (MD-57), never left. A divergence a task cannot fix in its scope stops the task and is reported.
 - **Tests state the spec, not the code.** Expected values come from the spec's criteria and the rule each cites (§3.1, §5, §7), or from a value Rust computes in the test; each assertion cites its rule. Test functions have exactly the names `## Checks` cites. No test is removed, weakened or skipped beyond the table above.
+- **Proof lines are real lines.** A check's expected line is confirmed against a real run in the task that first makes it pass; a line that differs from what the runner prints is corrected in that task's commit, never the test renamed to fit.
 - **Code clarity (user rules, `.specs/features/code-clarity/spec.md`) is part of every task's done-criteria.** Readable at a glance; the module tree says where each thing is; each crate one purpose; no free function (every function has an owner type); one purpose per type; object-oriented names with no abbreviation; no god method and no needless abstraction; the data path evident. Every new or changed struct, enum, method, field and variant carries a `///` doc comment; a non-evident block cites its spec rule. AGENTS.md idiom rules bind (MD-13): no macro, no `unwrap()`/`expect()` on a path user input reaches.
 - **Conventions.** New IR enum variants, `CarrierRole` and plan `Source` variants are appended last. The interpreter refuses every new IR form by name (codegen context R1) in the task that adds it. Every new test target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`. Source-level models go in `crates/piperine-parity/tests/bundles/*.msl`.
 - **The Book** (21 chapters, Part 1 Fundamentals and Part 2 In depth): its prose never defers to Rust, its tone is respectful, and a status box that pins a `P0001` message is edited with the test that pins it.
 - **Code owners (`resolved-nets` D16).** A task that first raises `E0260`, `E0261`, `E0262` or `E0264` deletes the code's row from `crates/piperine-lang/tests/support/code_owners.tsv` in its commit when the file is on the branch; otherwise it writes the code on the Handoff and T21 deletes the row.
 - **Cross-lane files** (design.md "Cross-lane touches"): `spec_text.rs` and `docs.rs` are appended to, never edited above; `GAPS.md` keeps its section numbering; `inventory.tsv` rows are edited in place, never reordered.
 - Zero warnings on every crate the `**Build**` line names. In a worktree sharing a target directory, `touch crates/<crate>/src/lib.rs` before a gate.
-- One atomic commit per task, message as given, ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No merge; push only as the orchestrator asks.
+- One atomic commit per task, message as given (lowercase conventional subject of at most 72 characters), ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No merge; push only as the orchestrator asks.
 - **`lessons.py` is not run** during this feature (its `list` rewrites `.specs/lessons.json` and `.specs/LESSONS.md`).
 
 ---
 
 ## Test Coverage Matrix
 
-> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `AGENTS.md`, `CLAUDE.md` ("Where the tests are", MD-28 amended by MD-72), `crates/piperine-lang/tests/suite_hygiene.rs`, `.specs/STATE.md` MD-25 (the POM mirrors the source), MD-57, MD-72.
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `AGENTS.md`, `CLAUDE.md` ("Where the tests are", MD-28 amended by MD-72), `crates/piperine-lang/tests/suite_hygiene.rs`, `.specs/STATE.md` MD-25 (the POM mirrors the source), MD-57, MD-72, MD-77 (the buck runs on demand), MD-78 (the explicit model).
 
 | Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
@@ -62,7 +73,7 @@ Rules every task follows:
 | Source-level runs | integration | one test per run-time AC, from MSL source on the Rust backend | `crates/piperine-parity/tests/source_bundles.rs` | `cargo test -p piperine-parity --test source_bundles` |
 | Host and POM reflection | integration | names by path; the port as written | `crates/piperine-api/tests/metadata.rs`, `crates/piperine-lang/tests/pom_reflect.rs` | `cargo test -p piperine-api --test metadata`, `cargo test -p piperine-lang --test pom_reflect` |
 | The Book and records | integration | each row changed; each removed `GAPS.md` row and code owner row | `tests/book/natures.rs`, `inventory.tsv`, `crates/piperine-cli/tests/docs.rs`, `spec_codes.rs` | `cargo test -p piperine --test book_natures`, `cargo test -p piperine-cli --test docs`, `cargo test -p piperine-lang --test spec_codes` |
-| Contract re-check (T5) | none | - (build gate; findings on the Handoff) | - | build gate only |
+| Contract re-check (T5) | integration | the fixtures given initial values still assert what they asserted; the moved anchors on the Handoff | the targets of the crates it touches | `cargo test -p piperine-lang` |
 
 ## Gate Check Commands
 
@@ -70,23 +81,24 @@ Rules every task follows:
 
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
-| Quick | After a task with one integration target | the `Run` line(s) the task's `Done when` names |
-| Full | After a task that changes the elaborator's lowering or placement | Quick, then the buck targets, `cargo test -p piperine-cli --test buck --test twins --test commands`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity` |
-| Build | After each phase, and after a task with `Tests: none` | the `**Build**` line, then `cargo test` at the repository root |
+| Quick | After a task whose tests are one or two targets of one crate | the `**Build**` line, then the `Run` line(s) the task's `Done when` names |
+| Full | After a task that changes the checker, the elaborator's lowering or placement, or the host | Quick, then `cargo test -p <crate>` for every crate the task touched (for the root package, only the `book_*` targets it touched, with `book_inventory` and `book_claims`); "with the buck" adds the buck targets |
+| Batch | The last task of each batch (T8, T16, T21), once | Full, then `env -u PIPERINE_NGSPICE cargo test --no-fail-fast` at the root, `cargo test -p piperine --test integrated`, `cargo test -p piperine-cli --test integrated`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`, `cargo test -p piperine-cli --test twins` |
+| Build | After a task with `Tests: none` | the `**Build**` line |
 
 ---
 
 ## Execution Plan
 
-Batches (~7 tasks, whole phases): **B1** phase 1 (T1–T4, now) · **B2** phases 2–3 (T5–T8) · **B3** phases 4–5 (T9–T16) · **B4** phases 6–8 (T17–T21).
+Batches (whole phases): **B1** phase 1 (T1–T4, done) · **B2** phases 2–3 (T5–T8) · **B3** phases 4–5 (T9–T16) · **B4** phases 6–8 (T17–T21). See "Base and order" for when each starts.
 
-### Phase 1: Declaration checks (independent)
+### Phase 1: Declaration checks (done)
 
 ```
 T1 → T2 → T3 → T4
 ```
 
-### Phase 2: Contract (waits for `composite-values` A–B on `main`)
+### Phase 2: Contract (waits for `explicit-unknowns` phase A on `main`)
 
 ```
 T5
@@ -213,10 +225,10 @@ T21
 **Commit**: `feat(pom): a bundle is not a value`
 
 ---
-### T5: Contract: rebase and re-read the anchors
+### T5: Contract: merge `main` and re-read the anchors
 
-**What**: Rebase onto `main` with `composite-values` A–B; re-read `types/carrier.rs` (`port_type`), field access and struct types as `composite-values` left them, and `resolved-nets`' `NatureRules`; write the moved anchors on the Handoff. Stop and report if `composite-values` B is not on `main`.
-**Where**: `.specs/features/resolved-nets-bundles/tasks.md`
+**What**: Merge `main` (with `composite-values` A–B and `explicit-unknowns` phase A) into the branch, by hunk; re-read `types/carrier.rs` (`port_type`), field access and struct types as `composite-values` left them, `resolved-nets`' `NatureRules` and `pom/resolve/shape.rs` (`E0261`: still the `resolve` field, or the capability if `resolved-nets` T16 has run); give every fixture of this feature's targets that declares a `Bit` field or signal with no initial value one (`E0187` otherwise, design "Goldens"); write the moved anchors on the Handoff. Stop and report if `explicit-unknowns` phase A is not on `main`.
+**Where**: `crates/piperine-lang/tests/pom_bundles.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: design.md
 **Requirement**: BN-02
@@ -224,19 +236,20 @@ T21
 
 **Done when**:
 
-- [ ] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
+- [ ] The merge is clean or its conflicts are resolved by hunk without changing behaviour; the `**Build**` line passes
+- [ ] `**Run pombundles**` passes with the fixtures given initial values (each named in the commit body)
 - [ ] The Handoff names every moved anchor
-- [ ] Gate check passes: Build
+- [ ] Gate check passes: Full
 
-**Tests**: none
-**Gate**: build
+**Tests**: integration
+**Gate**: full
 
-**Commit**: `docs(specs): bundles contract after the rebase`
+**Commit**: `docs(specs): bundles contract on the explicit model`
 
 ---
 ### T6: Checker: bundle types and views
 
-**What**: Design C2: a bundle port or signal is `Ty::Bundle { decl, view }`, matched before the value-struct arm; `flip` and the observer view set the view; `tx.valid` is a carrier with the view's direction; writing an input field is `E0222`; fields without a direction are drivable in every view (D8). Create `crates/piperine-lang/tests/types_bundles.rs`.
+**What**: Design C2: a bundle port or signal is `Ty::Bundle { decl, view }`, matched before the value-struct arm; `flip` and the observer view set the view; `tx.valid` is a carrier with the view's direction; writing an input field is `E0222`; a field's direction is required exactly when its nature is one-driver (does not implement `Resolve`, §7 rule 2 as amended), and fields without a direction are drivable in every view (D8). Create `crates/piperine-lang/tests/types_bundles.rs`; its fixtures use one-driver and continuous fields only (a resolved field is T15's).
 **Where**: `crates/piperine-lang/src/types/bundle.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `port_type`, `NatureRules`, `types/definition.rs` (`E0222`)
@@ -287,10 +300,10 @@ T21
 **Done when**:
 
 - [ ] `a_carrier_method_on_a_whole_bundle_is_e0211` passes under `**Run pombundles**`
-- [ ] Gate check passes: Quick
+- [ ] Gate check passes: Batch (end of B2)
 
 **Tests**: integration
-**Gate**: quick
+**Gate**: batch
 
 **Commit**: `feat(pom): a carrier method applies to a field, not a bundle`
 
@@ -417,7 +430,7 @@ T21
 ---
 ### T15: A bundle field of a resolved nature
 
-**What**: Waits for `resolved-nets` T22 on the branch. `struct Bus { sda: Wire, out scl: Bit }`: every module that sees the bundle may drive `sda`, the observer included (D8).
+**What**: Waits for `resolved-nets` T22 on the branch. The fixture declares `pub nature Sda { value: Driven }` with `impl Resolve<Driven> for Sda { Driven::strongest }` and `struct Bus { sda: Sda, out scl: Bit }`: every module that sees the bundle may drive `sda`, the observer included (D8), and `sda` is `strongest` of the drives.
 **Where**: `crates/piperine-parity/tests/source_bundles.rs`
 **Depends on**: T14
 **Reuses**: `resolved-nets` resolvers
@@ -448,17 +461,17 @@ T21
 
 - [ ] `a_bundle_field_is_named_by_its_dotted_path` passes under `**Run apimetadata**`
 - [ ] `a_bundle_port_reflects_its_type_and_view` passes under `**Run pomreflect**`
-- [ ] Gate check passes: Quick
+- [ ] Gate check passes: Batch (end of B3)
 
 **Tests**: integration
-**Gate**: quick
+**Gate**: batch
 
 **Commit**: `feat(api): bundle fields by path`
 
 ---
 ### T17: Functions on a bundle
 
-**What**: Waits for `generics` B on `main`. `impl Diff { fn vd(self) -> f64 }`: `self` is a read-only handle (§3.1.1, §1.4.7); `d.vd()` in `analog` gives `v(d.p, d.n)`; a write through it is `E0133` naming the field. Rebase first.
+**What**: Waits for `generics` B on `main`. `impl Diff { fn vd(self) -> f64 }`: `self` is a read-only handle (§3.1.1, §1.4.7); `d.vd()` in `analog` gives `v(d.p, d.n)`; a write through it is `E0133` naming the field; `impl Trait for` a bundle stays `E0134` (§3.1.9 as `explicit-unknowns` narrowed it). Merge `main` first.
 **Where**: `crates/piperine-lang/src/types/bundle.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `generics` handles
@@ -550,10 +563,10 @@ T21
 
 - [ ] `the_memory_bank_of_bundle_cells_runs` passes under `**Run bookmodules**` and `the_template_card_runs` under `**Run bookcheatsheet**`
 - [ ] `the_stream_bundle_and_its_slice_run` passes under `**Run booknatures**`; `gaps_no_longer_lists_bundles` passes under `**Run docs**`; `no_owned_code_is_raised` passes under `**Run speccodes**`; `**Run bookinventory**` passes
-- [ ] Gate check passes: Build
+- [ ] Gate check passes: Batch (end of B4)
 
 **Tests**: integration
-**Gate**: build
+**Gate**: batch
 
 **Commit**: `docs: bundles run`
 
@@ -564,13 +577,13 @@ T21
 **C1** - A struct of carriers, arrays of carriers or bundles is a bundle (BN-01, AC 1)
 Proof: run pombundles | test a_struct_of_carriers_is_a_bundle ... ok
 
-**C2** - Directions on one-driver fields only are accepted (BN-01, AC 2)
+**C2** - Directions on one-driver fields (a discrete nature that does not implement `Resolve`) only are accepted (BN-01, AC 2)
 Proof: run pombundles | test one_driver_fields_carry_a_direction_and_no_other_field_does ... ok
 
 **C3** - A struct mixing carrier and value fields is `E0260` naming one of each (BN-01, AC 3)
 Proof: run pombundles | test a_struct_mixing_carrier_and_value_fields_is_e0260 ... ok
 
-**C4** - A one-driver field without a direction, or a `Wire`/`Electrical` field with one, is `E0261` naming it (BN-01, AC 4)
+**C4** - A one-driver field without a direction, or a field of a nature that implements `Resolve` or of `Electrical` with one, is `E0261` naming it (BN-01, AC 4)
 Proof: run pombundles | test a_misplaced_or_missing_field_direction_is_e0261 ... ok
 
 **C5** - `flip` on a non-bundle, `out` on a bundle port, a direction on a nested bundle field are `E0262` (BN-01, AC 5)
@@ -636,7 +649,7 @@ Proof: run typesbundles | test a_write_through_a_bundle_handle_is_e0133 ... ok
 **C25** - Nested bundles, plain or flipped, take the views recursively (BN-06, AC 1)
 Proof: run sourcebundles | test nested_bundles_apply_flip_recursively ... ok
 
-**C26** - A field of a resolved nature may be driven by every module that sees the bundle (BN-06, AC 2)
+**C26** - A field of a nature with `impl Resolve<Driven>` (`Sda`) may be driven by every module that sees the bundle, the observer included, and holds `strongest` of the drives (BN-06, AC 2)
 Proof: run sourcebundles | test every_view_may_drive_a_resolved_field ... ok
 
 **C27** - `struct Stream<T: Repr>` is instantiated per type argument (BN-06, AC 3)
@@ -681,6 +694,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
 **Settled B1:** B1 (T1-T4) done. Defaults taken (user AFK): `code_owners.tsv` is on the branch after the rebase onto origin/main, so each task deleted its row (E0260 to E0262, E0264) with the GAPS section 10 list and count, and added its row to docs/pom/resolution.md (the `pom_docs` guard). One-driver means a discrete nature without `resolve` (spec part II 5.2), so a signal-flow field takes no direction. A flipped generic or unresolved type, and a field of a generic nature, are not judged by the POM. `E0264` at the declaration covers a param type, a nature's type argument, a function result (not a module result) and an initial value of a bundle signal or port. Two fixtures that declared an invalid bundle were corrected (pom_classify `Port2`, types_buck `Bn`), named in the T1 and T2 bodies. `is_carrier_type` and `has_unresolved_bound` of classify.rs became `pub(super)` for shape.rs.
+**Settled re-plan (2026-11-22):** B2 onward amended for the explicit-unknowns model (MD-78; spec amendment A6, design "Amendment of 2026-11-22"): T5 merges `main` after `explicit-unknowns` phase A and gives the fixtures initial values; T6 states the direction rule on the capability; T15 declares `Sda` with `impl Resolve<Driven>`; T17 keeps `E0134` for `impl Trait for` a bundle; gates follow the user's policy (batch-end tasks T8, T16, T21). `resolved-nets` T16 moves `E0261`'s question and the `Wire` fixtures of `pom_bundles.rs`. No question is open.
 **Dispatched:** none
 **Walked:** none
 
@@ -691,7 +705,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 ```
 Phase 1 → (wait) → Phase 2 → Phase 3 → Phase 4 → Phase 5 → (wait) → Phase 6 → (wait) → Phase 7 → Phase 8
 
-Phase 1:  T1 → T2 → T3 → T4
+Phase 1:  T1 → T2 → T3 → T4    (done)
 Phase 2:  T5
 Phase 3:  T6 → T7 → T8
 Phase 4:  T9 → T10 → T11

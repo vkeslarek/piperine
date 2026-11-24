@@ -1,0 +1,36 @@
+//! Resolved nets in every analysis (§22.3, the per-analysis table; §16.2): a net of `Total`, drivers with a swept
+//! param, and a reader with a reaction.
+
+/// A net of numbers that add up.
+nature Total { value: f64 }
+impl Resolve<f64> for Total {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        d.iter().sum()
+    }
+}
+
+/// Drives `level`.
+module Source(w: Total) {
+    level: f64 = 1.0;
+    w = level;
+}
+
+/// A reaction: at each change of the net it commits what `others()` of it is, plus 10.
+module Echo(w: Total) { signal seen: Bit<f64> = 0.0; }
+digital for Echo {
+    on w.changed() { seen <- w.others() + 10.0; }
+}
+
+/// A constant potential with a unit AC stimulus on a signal-flow node: the circuit an `ac` run solves.
+module Stimulus(o: VSignal) { }
+analog for Stimulus { v(o) +> 1.0 + ac_stim(1.0); }
+
+/// Two drivers of `Total`, one swept by the host (`source.level`), one fixed at 2, a reader, and an analog circuit.
+module AnalysesBench() {
+    signal n: Total;
+    signal a: VSignal;
+    let source = Source(n);
+    let fixed = Source(n) { level: 2.0 };
+    let echo = Echo(n);
+    let stimulus = Stimulus(a);
+}

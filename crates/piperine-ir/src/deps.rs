@@ -174,6 +174,58 @@ impl<'a> Body<'a> {
         self.sources_of(target).previous.iter().copied().collect()
     }
 
+    /// The resolved carriers whose `others()` (`Expr::Others`) `target` reads, by index (`Body::carriers`), sorted,
+    /// through locals and function calls.
+    pub fn others_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).others.iter().copied().collect()
+    }
+
+    /// The carriers `target` reads as the drives of an `Expr::Resolve`, by index (`Body::carriers`), sorted: a resolver
+    /// body's drive carriers, whose pins hold the driven type followed by the `driving` byte.
+    pub fn resolve_drive_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).resolve_drives.iter().copied().collect()
+    }
+
+    /// Every dependency query of the body: each branch's two parts, each site, each param, and each drive, event,
+    /// reaction, `bound_step` site and `cross` tolerance.
+    pub fn targets(&self) -> Vec<Target> {
+        let mut targets: Vec<Target> = Vec::new();
+        for i in 0..self.branches().len() as u32 {
+            targets.extend([Target::Flow(i), Target::Charge(i)]);
+        }
+        targets.extend((0..self.limits().len() as u32).map(Target::Limit));
+        targets.extend((0..self.stims().len() as u32).map(Target::Stim));
+        targets.extend((0..self.params().len() as u32).map(Target::Check));
+        for i in 0..self.drives().len() as u32 {
+            targets.extend([Target::Drive(i), Target::DriveAfter(i)]);
+        }
+        for i in 0..self.events().len() as u32 {
+            targets.extend([Target::Guard(i), Target::Cross(i), Target::At(i)]);
+        }
+        targets.extend((0..self.reactions().len() as u32).map(Target::Reaction));
+        let bound_steps = self.analog().unwrap_or(&[]).iter().filter_map(|s| match self.ir().stmt(*s) {
+            crate::model::Stmt::BoundStep { site, .. } => Some(*site),
+            _ => None,
+        });
+        targets.extend(bound_steps.map(Target::BoundStep));
+        targets.extend((0..self.events().len() as u32).flat_map(|k| [Target::Ttol(k), Target::Etol(k)]));
+        targets
+    }
+
+    /// Whether any query of the body reads `others()` of resolved carrier `carrier` (`Expr::Others`).
+    pub fn reads_others(&self, carrier: u32) -> bool {
+        self.targets().into_iter().any(|target| self.others_reads(target).contains(&carrier))
+    }
+
+    /// The carriers some query of the body reads as the drives of a `resolve`, by index, sorted: the pins that hold a
+    /// drive net's layout.
+    pub fn resolve_drive_carriers(&self) -> Vec<u32> {
+        let mut carriers: Vec<u32> = self.targets().into_iter().flat_map(|target| self.resolve_drive_reads(target)).collect();
+        carriers.sort_unstable();
+        carriers.dedup();
+        carriers
+    }
+
     /// The params whose previous value (`Expr::ParamPrevious`) `target` reads, by index
     /// (`Body::params`), sorted, through locals and function calls.
     pub fn param_previous_reads(&self, target: Target) -> Vec<u32> {
@@ -331,6 +383,10 @@ struct Sources {
     flows: BTreeSet<u32>,
     /// The carriers whose previous value is read (`Expr::Previous`).
     previous: BTreeSet<u32>,
+    /// The resolved carriers whose `others()` is read (`Expr::Others`).
+    others: BTreeSet<u32>,
+    /// The carriers read as the drives of an `Expr::Resolve`.
+    resolve_drives: BTreeSet<u32>,
     /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
     fired: BTreeSet<u32>,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
@@ -363,6 +419,8 @@ impl Sources {
         self.carriers.extend(&other.carriers);
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
+        self.others.extend(&other.others);
+        self.resolve_drives.extend(&other.resolve_drives);
         self.fired.extend(&other.fired);
         self.derivatives.extend(&other.derivatives);
         self.delays.extend(&other.delays);
@@ -925,6 +983,24 @@ impl<'a> Walk<'a> {
                 sources.carriers.insert(*i);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
+            Expr::Others(i) => {
+                if !in_body {
+                    self.refuse(id, "`others()` read outside a body");
+                }
+                let mut sources = Sources::default();
+                sources.others.insert(*i);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
+            Expr::Resolve { drives, .. } => {
+                if !in_body {
+                    self.refuse(id, "`resolve` outside a body");
+                }
+                // the combination of the drives' values: it reads each drive carrier and is no function of them a sum can follow
+                let mut sources = Sources::default();
+                sources.carriers.extend(drives);
+                sources.resolve_drives.extend(drives);
+                return self.done(id, Value::of(sources, Class::Nonlinear));
+            }
             Expr::Previous(i) => {
                 if !in_body {
                     self.refuse(id, "previous-value read outside a body");
@@ -1181,7 +1257,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

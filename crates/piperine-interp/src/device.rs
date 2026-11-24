@@ -93,7 +93,7 @@ impl Interpreted {
                 // the settle pin of a `settle` event: refused by name (§13 rule 17)
                 Source::Settle => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
-                Source::Carrier(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
+                Source::Carrier(_) | Source::Others(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
                 // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
                 // `at` or a carrier (msl-digital T22).
                 Source::Timer(_) | Source::CarrierPrevious(_) => None,

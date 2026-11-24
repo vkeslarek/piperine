@@ -131,6 +131,12 @@ pub(super) struct Checker<'d> {
     /// The locals bound to a bare integer literal whose type no use has fixed yet (§1.4.4), each
     /// with the literal expression: `let mut total = 0;` waits for `total += k`.
     pub(super) open_literals: BTreeMap<DeclId, ExprId>,
+    /// The `impl Resolve` each value written to a resolved carrier picked (`nature.rs`): by the value expression.
+    pub(super) drive_impls: BTreeMap<ExprId, DeclId>,
+    /// The `impl Resolve`s the drives of each carrier of a resolved nature picked, in source order (`nature.rs`).
+    pub(super) carrier_drive_impls: BTreeMap<DeclId, Vec<DeclId>>,
+    /// The typed `impl Resolve`s of each resolved nature a carrier of which was typed.
+    pub(super) resolve_tables: BTreeMap<DeclId, Vec<super::nature::ResolveImpl>>,
     /// The locals declared without a value (`let x;`, §1.7.5).
     pub(super) deferred: BTreeSet<DeclId>,
     /// The control state of the body being checked.
@@ -208,6 +214,9 @@ impl<'d> Checker<'d> {
             fn_where: false,
             places: Places::default(),
             open_literals: BTreeMap::new(),
+            drive_impls: BTreeMap::new(),
+            carrier_drive_impls: BTreeMap::new(),
+            resolve_tables: BTreeMap::new(),
             deferred: BTreeSet::new(),
             flow: Flow::default(),
             closures: BTreeMap::new(),
@@ -247,7 +256,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls, carrier_drive_impls: self.carrier_drive_impls, resolve_tables: self.resolve_tables })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -332,6 +341,18 @@ impl<'d> Checker<'d> {
     }
 
     // ---- reporting -------------------------------------------------------------------------
+
+    /// How many diagnostics are reported so far: a mark for [`Checker::annotate_since`].
+    pub(super) fn diagnostics_mark(&self) -> usize {
+        self.diagnostics.len()
+    }
+
+    /// Appends `note` to the message of each diagnostic coded `code` reported after `mark`.
+    pub(super) fn annotate_since(&mut self, mark: usize, code: &str, note: &str) {
+        for reported in self.diagnostics[mark..].iter_mut().filter(|reported| reported.diagnostic.code == code) {
+            reported.diagnostic.message.push_str(note);
+        }
+    }
 
     /// One diagnostic per construct: a second one at the same span is dropped.
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
@@ -426,7 +447,7 @@ impl<'d> Checker<'d> {
                         None
                     }
                 },
-                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values && NatureRules::of(self.design, d).one_driver => self.discrete_carrier_type(d, file, node.span, *path),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_nominal(*path, d, file, node.span),

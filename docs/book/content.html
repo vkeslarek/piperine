@@ -346,7 +346,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: templates, bundles and resolved natures (a nature that implements <code>Resolve</code>). When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: templates and bundles. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -2117,96 +2117,15 @@ digital for Alarm {
   <p class="callout-label">Run it</p>
   <p>Save the file as <code>alarm.msl</code>. The bench <code>Alarm</code> is its one module without ports, so it is the top:</p>
 <pre data-lang="sh">piperine run alarm.msl --analysis transient --stop 4e-6 --stream line</pre>
-  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs. That is, once a nature can implement <code>Resolve</code>. Today the command refuses the file and runs nothing:</p>
-<pre data-lang="text" data-cli-output="piperine run alarm.msl --analysis transient --stop 4e-6 --stream line" data-cli-stream="stderr" data-cli-lines="1-3">E0161
+  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs. The command prints them:</p>
+<pre data-lang="text" data-cli-output="piperine run alarm.msl --analysis transient --stop 4e-6 --stream line" data-cli-lines="1-4">run alarm: transient, top Alarm, backend rust
+@0.000000e0 Alarm.watch line t=0.000000e0 level=1 strength=Pull
+@1.000000e-6 Alarm.watch line t=1.000000e-6 level=0 strength=Strong
+@3.000000e-6 Alarm.watch line t=3.000000e-6 level=1 strength=Pull
 
-  × cannot find `Driven` in this scope
-   ╭─[alarm.msl:2:31]
- 1 │ /// The nature of the alarm line: what is driven is a level and a strength.
- 2 │ pub nature AlarmLine { value: Driven }
-   ·                               ───┬──
-   ·                                  ╰── not found
- 3 │ 
-   ╰────
-
-E0161
-
-  × cannot find `Resolve` in this scope
-   ╭─[alarm.msl:4:6]
- 3 │ 
- 4 │ impl Resolve&lt;Driven&gt; for AlarmLine {
-   ·      ───────┬───────
-   ·             ╰── not found
- 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
-   ╰────
-
-E0161
-
-  × cannot find `Driven` in this scope
-   ╭─[alarm.msl:4:14]
- 3 │ 
- 4 │ impl Resolve&lt;Driven&gt; for AlarmLine {
-   ·              ───┬──
-   ·                 ╰── not found
- 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
-   ╰────
-
-E0161
-
-  × cannot find `Driven` in this scope
-   ╭─[alarm.msl:6:41]
- 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
- 6 │     fn resolve&lt;const N: usize&gt;(drives: [Driven; N]) -&gt; Driven {
-   ·                                         ───┬──
-   ·                                            ╰── not found
- 7 │         Driven::strongest(drives)
-   ╰────
-
-E0161
-
-  × cannot find `Driven` in this scope
-   ╭─[alarm.msl:6:56]
- 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
- 6 │     fn resolve&lt;const N: usize&gt;(drives: [Driven; N]) -&gt; Driven {
-   ·                                                        ───┬──
-   ·                                                           ╰── not found
- 7 │         Driven::strongest(drives)
-   ╰────
-
-E0161
-
-  × cannot find `Driven` in this scope
-   ╭─[alarm.msl:7:9]
- 6 │     fn resolve&lt;const N: usize&gt;(drives: [Driven; N]) -&gt; Driven {
- 7 │         Driven::strongest(drives)
-   ·         ────────┬────────
-   ·                 ╰── not found
- 8 │     }
-   ╰────
-
-E0161
-
-  × cannot find `Driven` in this scope
-    ╭─[alarm.msl:13:21]
- 12 │ module OpenDrain(in req: Bit, line: AlarmLine) {
- 13 │     line = if req { Driven::strong(false) } else { Driven::Z };
-    ·                     ───────┬──────
-    ·                            ╰── not found
- 14 │ }
-    ╰────
-
-E0161
-
-  × cannot find `Driven` in this scope
-    ╭─[alarm.msl:13:52]
- 12 │ module OpenDrain(in req: Bit, line: AlarmLine) {
- 13 │     line = if req { Driven::strong(false) } else { Driven::Z };
-    ·                                                    ────┬────
-    ·                                                        ╰── not found
- 14 │ }
-    ╰────
-
-error: parse failed with 8 diagnostic(s)</pre>
+time         Alarm.door  Alarm.window  Alarm.alarm_n
+0.000000e0   false       false         Driven { v: 1, s: Strength::Pull }
+4.000000e-6  false       false         Driven { v: 1, s: Strength::Pull }</pre>
 </div>
 
 <h3>Two continuous natures in one module</h3>
