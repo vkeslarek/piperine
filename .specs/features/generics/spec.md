@@ -385,7 +385,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | GN-01, GN-02, GN-03, GN-04, GN-05 |
 | L4 (part) | generic enums (and generic structs) | GN-06 |
 | L8 | `impl` on a nature; a function that takes a carrier or a node and probes it | GN-10, GN-11, GN-12 |
-| L29 | `m` and `dtemp`: binding and reading (closed by the run settings `temperature()` and the stdlib `multiplicity()` over `simparam`, user decision 2026-11-23, amended the same day) | GN-24, GN-25, GN-26 as amended |
+| L29 | `m` and `dtemp`: binding and reading (delivered, phase D batch B16, T94 to T102; closed by the run settings `temperature()` and the stdlib `multiplicity()` over `simparam`, user decision 2026-11-23, amended the same day) | GN-24, GN-25, GN-26 as amended |
 | L30 | generic modules, const generics, `Short<N>` and the stdlib modules on them | GN-13, GN-14, GN-15, GN-16 |
 | L31 | generation `for` and `if` in a body and in a `digital` block | GN-17, GN-18, GN-19, GN-20 |
 | L32 | templates, placement through a template or a function, `Fn(P)` bounds | GN-21, GN-22, GN-23 |

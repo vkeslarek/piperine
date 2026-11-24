@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 0 silent, 2 broken, 17 loud (L1 to L77 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, in six tables) plus
+**Counts.** 0 silent, 2 broken, 16 loud (L1 to L77 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, L29 closed by `generics` phase D, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -108,7 +108,6 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
 | L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
 | L76 | an item (a node, a carrier, a `let`) declared in a generation `if` that only some iterations of the `for` around it elaborate: the array it makes would have elements that do not exist, which neither the IR's arrays of nodes and carriers nor a value array holds. An item of an `if` every iteration takes, or of an `if` outside every `for`, runs; so do definitions and placements in such an arm (not named arrays). Owner `spec-closure` (found by the `generics` phase C round 4 fix; a decision on what a gap reads is the spec's first) | §8.2.23, §8.2.24 | `P0001`: "an item declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps)" | S |
@@ -286,7 +285,7 @@ does not count.
 | II §7 bundles | 0 % | all |
 | III §8–§8.2 modules, ports, params, the body | 90 % | generic modules and generation (the body and a `digital` block) run (phase C): placements, nodes, carriers, definitions, hoisted placements and `let`s in generation; not an item only some iterations make (L76) nor generation inside a hoisted module (L77); arrays of carriers and nodes as ports and signals run |
 | III §8.3 instances in expressions | 80 % | the stdlib `Water` (L40) |
-| III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
+| III §8.4–§8.5 templates, run settings (`temperature()`, `multiplicity()`), extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
 | IV §12–§13 digital, events | 70 % | the forms L75 lists; arrays of carriers, element and field commits run (composite-values phase C) |
 | IV §14 core primitives | 80 % | `others`, `include_str!`, `noise_table` (L58) |
@@ -326,7 +325,7 @@ E0807 E0808 E0809`
 
 | Cluster | Closes | Size |
 | ------- | ------ | ---- |
-| `set` and params | H5, L29, H4 | M |
+| `set` and params | H5, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
 | Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7, L72 | M to L |
 | Composite values | phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows | L |
