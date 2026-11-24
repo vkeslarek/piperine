@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/generics/design-c.md`
 **Status**: Draft
-**Approved**: (written when the user approves)
+**Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`
 **Run typesgenr**: `cargo test -p piperine-lang --test types_generation`
@@ -1092,7 +1092,7 @@ is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C127. B10 = 
 placement typing behind the gate (the draft's `refuse_generic_placements` becomes `UnfinishedForms`); its `GAPS.md` S3 drop
 and `gaps_drops_s3` move to T71.
 **B10 done (T59, T116, T60, T61, T117, T62, T63, T64; 2026-11-23).** Executed under the user's AFK standing instruction; the
-approval of the 2026-11-23 amendment (gate, G1 to G9, T116, T117) is pending, no Approved line written.
+approval of the 2026-11-23 amendment (gate, G1 to G9, T116, T117) was given by the user on 2026-11-23 ("Sim. E aceito os outros"); see the Approved line.
 (1) The draft was taken as code and tests only (specs, `GAPS.md` S3 drop and `gaps_drops_s3` left for T71). The gate is
 `types/unfinished.rs` (`UnfinishedForm`, `UnfinishedForms::{closed, admitting, admits, IN_FORCE}`), `Types::check_admitting` and
 `Types::check_model_admitting`, the `Checker.forms` field; the pin `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed`
