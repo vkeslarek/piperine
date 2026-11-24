@@ -162,7 +162,8 @@ impl Checker<'_> {
     /// The arguments written with `::<..>` after the function's name, in the order of its
     /// parameters (§3.8.5); more than the list takes is `E0187`. `None` after a refusal.
     pub(super) fn explicit_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, callee: ExprId, function: DeclId, file: FileId, span: Span) -> Option<()> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return Some(()) };
+        // a template written in place (`G::<2> { k: 3.0 }(x)`, §8.4.3) names its arguments on the path of its head
+        let (ExprKind::Path(path) | ExprKind::Struct { path, .. }) = &self.design.expr_node(callee).kind else { return Some(()) };
         let nodes = match self.design.path_node(*path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
             _ => return Some(()),

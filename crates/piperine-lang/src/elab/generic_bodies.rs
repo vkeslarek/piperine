@@ -7,9 +7,10 @@ use piperine_ir::Constant;
 
 use super::elaborator::Elaboration;
 use super::instances::Instance;
+use super::lower::Scope;
 use super::structural::BodyKey;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{DeclId, DeclKind, ExprId, FileId, TypeId};
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, TypeId};
 use crate::types::Ty;
 
 /// How many instances of generic modules may place one another before the chain is cut (D7, as for functions).
@@ -34,8 +35,31 @@ impl Elaboration<'_, '_> {
     /// The instance the placement `call` of the generic module `module` makes, folded under the substitution of the body
     /// being lowered, its `where` and length obligations discharged and its params planned. `None` after a diagnostic.
     pub(super) fn module_instance(&mut self, call: ExprId, module: DeclId) -> Option<Instance> {
-        let instance = self.concrete_instance(call)?;
         let (file, span) = (self.design.decl_data(self.design.expr_node(call).owner).file, self.design.expr_node(call).span);
+        if self.types.instantiation(call).is_none() {
+            // never a silent loss: a placement whose instance nothing recorded is refused where it stands
+            self.unsupported(file, span, "a placement of a generic module whose arguments the checker did not record");
+            return None;
+        }
+        let instance = self.concrete_instance(call)?;
+        self.admit_module_instance(module, instance, file, span)
+    }
+
+    /// The instance the placement `call` of the generic module `module` makes: the arguments of the template it goes through
+    /// (`cell(c)`, `T(c)`, §8.4.3), else the ones recorded for the placement itself (`module_instance`). `None` after a diagnostic.
+    pub(super) fn placement_instance(&mut self, scope: &Scope, call: ExprId, module: DeclId) -> Option<Instance> {
+        let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return None };
+        let Ok(through) = self.template_through(scope, call, &class) else { return None };
+        let Some(template) = through else { return self.module_instance(call, module) };
+        let (file, span) = (self.design.decl_data(self.design.expr_node(call).owner).file, self.design.expr_node(call).span);
+        let instance = Instance { item: module, arguments: template.arguments };
+        let bindings = self.instance_bindings(&instance);
+        self.discharge(&instance, &bindings)?;
+        self.admit_module_instance(module, instance, file, span)
+    }
+
+    /// `instance` of `module` with its `where` discharged and its params planned.
+    fn admit_module_instance(&mut self, module: DeclId, instance: Instance, file: FileId, span: Span) -> Option<Instance> {
         self.discharge_module_where(module, &instance, file, span)?;
         self.plan_instance_params(module, &instance);
         Some(instance)

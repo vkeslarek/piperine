@@ -163,7 +163,7 @@ impl Elaboration<'_, '_> {
         }
         // an instance of a generic module reads its names under its own arguments
         if self.is_generic_module(module) {
-            let instance = self.module_instance(call, module)?;
+            let instance = self.placement_instance(scope, call, module)?;
             frame.substitution = self.instance_substitution(instance.item, &instance.arguments);
         }
         self.frames.push(frame);

@@ -418,7 +418,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             ExprKind::Tuple(items) => self.tuple_value(items, bindings),
             ExprKind::Array(items) => self.array_value(items, bindings),
             ExprKind::ArrayRepeat { elem, len } => self.repeat_value(expr, *elem, *len, bindings),
-            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_literal(*module, fields, bindings),
+            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_literal(expr, *module, fields, bindings),
             ExprKind::Struct { path, fields, .. } => self.struct_value(expr, *path, fields, bindings),
             ExprKind::Field { expr: recv, name, .. } => self.field_value(expr, *recv, &name.text, bindings),
             ExprKind::Index { expr: base, index } => self.index_value(expr, *base, *index, bindings),

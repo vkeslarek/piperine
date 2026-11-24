@@ -4,8 +4,10 @@
 use piperine_ir::Constant;
 
 use super::{Bindings, ConstEval, ConstFault};
+use crate::elab::instances::ConcreteValue;
 use crate::elab::templates::{TemplateValue, Templates};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
+use crate::types::{ConstTerm, GenericValue};
 
 impl ConstEval<'_, '_> {
     /// The templates folded so far.
@@ -21,13 +23,40 @@ impl ConstEval<'_, '_> {
     /// A template literal `Name { params }` met in a `const`, a function's result or a param default (§8.4.1): the module
     /// it names and the value of each param its block binds, interned. The literal is a value of the elaboration, so every
     /// param value folds here; a template folded this way and one the placement folds are the same number.
-    pub(in crate::elab) fn template_literal(&mut self, module: DeclId, fields: &[FieldInit], bindings: &Bindings) -> Result<Constant, ConstFault> {
+    pub(in crate::elab) fn template_literal(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let mut folded = Vec::new();
         for field in fields {
             let Resolution::Decl(param) = field.res else { continue };
             folded.push((param, self.fold(field.value, bindings)?, field.value));
         }
-        Ok(self.templates.intern(TemplateValue { module, fields: folded }))
+        let arguments = self.template_arguments(expr, bindings)?;
+        Ok(self.templates.intern(TemplateValue { module, arguments, fields: folded }))
+    }
+
+    /// The generic arguments the template `expr` names (§8.4.3), folded: the ones its head writes or its param values give, empty for
+    /// a template of a module that is not generic.
+    pub(in crate::elab) fn template_arguments(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Vec<ConcreteValue>, ConstFault> {
+        let Some(recorded) = self.types.instantiation(expr).cloned() else { return Ok(Vec::new()) };
+        recorded.arguments.iter().map(|value| self.concrete_generic_value(expr, value, bindings)).collect()
+    }
+
+    /// The argument `value` of the template `expr` with the substitution of the instance being lowered applied and every const folded.
+    fn concrete_generic_value(&mut self, expr: ExprId, value: &GenericValue, bindings: &Bindings) -> Result<ConcreteValue, ConstFault> {
+        match value {
+            GenericValue::Type(ty) => Ok(ConcreteValue::Type(self.substitution.apply(ty))),
+            GenericValue::Function(function) => Ok(ConcreteValue::Function(*function)),
+            GenericValue::Closure(closure) => Ok(ConcreteValue::Closure(*closure)),
+            GenericValue::Const(term) => match self.substitution.apply_term(term) {
+                ConstTerm::Value(number) => Ok(ConcreteValue::Const(number)),
+                ConstTerm::Bool(flag) => Ok(ConcreteValue::Bool(flag)),
+                ConstTerm::Expr(folded) => match self.value(folded, bindings)? {
+                    Constant::Int(number) => Ok(ConcreteValue::Const(number)),
+                    Constant::Bool(flag) => Ok(ConcreteValue::Bool(flag)),
+                    _ => Err(ConstFault::Unsupported { expr, what: "a const argument of a template that is not an integer or a `bool`".to_string() }),
+                },
+                ConstTerm::Param(_) | ConstTerm::Width(_) => Err(ConstFault::Unsupported { expr, what: "a generic argument of a template that is still a parameter".to_string() }),
+            },
+        }
     }
 }
 

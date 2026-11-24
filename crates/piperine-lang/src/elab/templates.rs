@@ -9,6 +9,7 @@ use piperine_ir::Constant;
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
+use super::instances::ConcreteValue;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StructClass};
 use crate::types::Callee;
 
@@ -17,6 +18,8 @@ use crate::types::Callee;
 pub(in crate::elab) struct TemplateValue {
     /// The module the template places.
     pub(super) module: DeclId,
+    /// The generic arguments of the module, in the order of its parameters (§8.4.3); empty for a module that is not generic.
+    pub(super) arguments: Vec<ConcreteValue>,
     /// The params the block binds: the param, its folded value and the expression that gave it.
     pub(super) fields: Vec<(DeclId, Constant, ExprId)>,
 }
@@ -30,7 +33,7 @@ pub(in crate::elab) struct Templates {
 impl Templates {
     /// The number of `value`: the one it was given before, else the next.
     pub(in crate::elab) fn intern(&mut self, value: TemplateValue) -> Constant {
-        let number = match self.values.iter().position(|known| known.module == value.module && known.fields.iter().map(|f| (f.0, f.1)).eq(value.fields.iter().map(|f| (f.0, f.1)))) {
+        let number = match self.values.iter().position(|known| known.module == value.module && known.arguments == value.arguments && known.fields.iter().map(|f| (f.0, f.1)).eq(value.fields.iter().map(|f| (f.0, f.1)))) {
             Some(number) => number,
             None => {
                 self.values.push(value);
@@ -88,6 +91,7 @@ impl Elaboration<'_, '_> {
             let Resolution::Decl(param) = field.res else { continue };
             folded.push((param, self.fold_param_value(field.value, bindings)?, field.value));
         }
-        Ok(self.consts.intern_template(TemplateValue { module, fields: folded }))
+        let arguments = self.consts.template_arguments(expr, bindings)?;
+        Ok(self.consts.intern_template(TemplateValue { module, arguments, fields: folded }))
     }
 }

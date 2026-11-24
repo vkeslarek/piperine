@@ -248,3 +248,55 @@ fn the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl() {
         assert!(!square.contains("1.5") && !linear.contains("6.0"), "{analog}: a body holds only its own model's gain");
     }
 }
+
+/// A generic module with a const parameter and a `where`, its behavior, and `tail` after it.
+fn generic_cell(tail: &str) -> String {
+    format!(
+        "module G<const N: usize>(a: Electrical) where N >= 1 {{ k: f64 = 1.0; }}\n\
+         analog<N> for G<N> {{ i(a, gnd) +> v(a, gnd) * k; }}\n{tail}"
+    )
+}
+
+#[test]
+fn a_template_of_a_generic_module_names_its_arguments() {
+    // §8.4.3 (GN-21 AC 1): `G::<2> { k: 3.0 }(x)` placed in place, from a `const` of type `G<2>`, and through a param of a
+    // callable bound each place the instance `G::<2>(x) { k: 3.0 }` places
+    let direct = Elab::ir(&generic_cell("module Top() { signal x: Electrical; let c = G::<2>(x) { k: 3.0 }; }"), "Top");
+    let written = [
+        "module Top() { signal x: Electrical; let c = G::<2> { k: 3.0 }(x); }",
+        "const T: G<2> = G::<2> { k: 3.0 };\nmodule Top() { signal x: Electrical; let c = T(x); }",
+        "module H<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c = cell(a); }\nmodule Top() { signal x: Electrical; pub let h = H::<_>(x) { cell: G::<2> { k: 3.0 } }; }",
+    ];
+    for tail in written {
+        let ir = Elab::ir(&generic_cell(tail), "Top");
+        let path = if tail.contains("H::<_>") { "Top.h.c" } else { "Top.c" };
+        let instance = ir.instance_at(path).unwrap_or_else(|| panic!("{tail}: no instance at {path}"));
+        assert_eq!(instance.body().name(), "G::<2>", "{tail}");
+        assert_eq!(Placed::first_param(&ir, path), Placed::first_param(&direct, "Top.c"), "{tail}");
+    }
+}
+
+#[test]
+fn two_templates_of_one_generic_module_with_different_arguments_are_two_values() {
+    // §8.4.3: `G::<2> { k: 3.0 }` and `G::<3> { k: 3.0 }` differ by their arguments, so a bank placing each keeps two bodies; equal
+    // arguments are one value
+    let bank = "module H<C: Fn(Electrical)>(a: Electrical) { cell: C; let c = cell(a); }\n\
+        module Top() { signal x: Electrical; let two = H::<_>(x) { cell: G::<2> { k: 3.0 } }; let three = H::<_>(x) { cell: G::<3> { k: 3.0 } }; let again = H::<_>(x) { cell: G::<2> { k: 3.0 } }; }";
+    let ir = Elab::ir(&generic_cell(bank), "Top");
+    let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_eq!(body("Top.two.c").as_deref(), Some("G::<2>"));
+    assert_eq!(body("Top.three.c").as_deref(), Some("G::<3>"));
+    assert_eq!(body("Top.again"), body("Top.two"), "equal templates are one value");
+    assert_ne!(body("Top.two"), body("Top.three"));
+}
+
+#[test]
+fn a_template_of_a_generic_module_obeys_its_where_and_names_its_missing_arguments() {
+    // §8.4.3: the `where` of `G` is discharged for the template's arguments (`E0304`), and an argument nothing gives is `E0181`
+    let zero = generic_cell("const T: G<0> = G::<0> { k: 3.0 };\nmodule Top() { signal x: Electrical; let c = T(x); }");
+    let found = Elab::codes(&Elab::run(&zero, "Top").expect_err("N = 0 breaks the where"));
+    assert_eq!(found, ["E0304"]);
+    let open = generic_cell("module Top() { signal x: Electrical; let c = G { k: 3.0 }(x); }");
+    let found = Elab::run(&open, "Top").expect_err("N is never given");
+    assert_eq!(Elab::codes(&found), ["E0181"], "{found:?}");
+}

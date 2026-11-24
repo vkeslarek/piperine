@@ -9,7 +9,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution, T
 use super::check::Checker;
 use super::inference::Inference;
 use super::nature_rules::NatureRules;
-use super::{GenericValue, Instantiation, Substitution, Ty};
+use super::{GenericSignature, GenericValue, Instantiation, Substitution, Ty};
 
 impl Checker<'_> {
     /// The substitution the placement `expr` of the generic module `module` makes, recorded as its instantiation
@@ -23,9 +23,30 @@ impl Checker<'_> {
         self.explicit_arguments(&mut inference, &signature, callee, module, file, span)?;
         self.learn_from_connections(&mut inference, &declared, args, file)?;
         self.learn_from_templates(&mut inference, module, fields)?;
-        let substitution = self.complete_arguments(&mut inference, &signature, module, module, file, span)?;
+        self.record_module_instantiation(expr, module, &signature, inference)
+    }
+
+    /// The instantiation a template `expr` of the generic module `module` makes (§8.4.3): the arguments written on its head,
+    /// `Name::<G> { .. }`, else the ones its param values give, then the defaults; recorded as the template's instantiation. `None`
+    /// after a diagnostic, `E0181` for an argument nothing gives.
+    pub(super) fn template_instantiation(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Substitution> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let signature = self.generic_signature(module);
+        let mut inference = Inference::new(&signature);
+        self.explicit_arguments(&mut inference, &signature, expr, module, file, span)?;
+        self.learn_from_templates(&mut inference, module, fields)?;
+        self.record_module_instantiation(expr, module, &signature, inference)
+    }
+
+    /// Completes `inference` into the substitution of the generic module `module`, its bounds checked, and records the arguments as the
+    /// instantiation of `expr` (a placement or a template).
+    fn record_module_instantiation(&mut self, expr: ExprId, module: DeclId, signature: &GenericSignature, mut inference: Inference<'_>) -> Option<Substitution> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let substitution = self.complete_arguments(&mut inference, signature, module, module, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
-        self.arguments_satisfy_bounds(&signature, &arguments, module, file, span)?;
+        self.arguments_satisfy_bounds(signature, &arguments, module, file, span)?;
         self.instantiations.insert(expr, Instantiation { item: module, arguments });
         Some(substitution)
     }

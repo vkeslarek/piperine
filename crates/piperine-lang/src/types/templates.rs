@@ -15,6 +15,10 @@ impl Checker<'_> {
         self.param_block(fields, None);
         self.require_bound_params(expr, module, fields);
         self.require_const_params(fields);
+        // a template of a generic module names its arguments or lets them be inferred (§8.4.3); they travel with the template
+        if self.design.decl_data(module).generics_span.is_some() {
+            self.template_instantiation(expr, module, fields)?;
+        }
         // the template's module is placed at elaboration, through a callable param whose module the checker never names
         self.reach(module);
         self.exprs[expr.index()] = Some(Ty::Module(module));

@@ -168,7 +168,7 @@ impl Elaboration<'_, '_> {
     /// body being lowered (`cell(c)`, PI-04: the default or the parent's binding), or the value the head of the placement folds to
     /// over the key params (`C1(c)`, `nch(l, w)(d, g, s, b)`). `Ok(None)` when `class` is a placement of a module by name or of a
     /// template written in place; `Err` after the diagnostic of a head that does not fold.
-    fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
+    pub(super) fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
         let CallClass::Instance { module: placed, via: Some(via) } = class else { return Ok(None) };
         if placed.is_some_and(|placed| *via == placed) {
             return Ok(None);
@@ -308,7 +308,7 @@ impl Elaboration<'_, '_> {
         if !shapes_agree {
             return None;
         }
-        let instance = if self.is_generic_module(module) { Some(self.module_instance(call, module)?) } else { None };
+        let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
         let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);

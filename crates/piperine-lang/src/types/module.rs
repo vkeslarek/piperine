@@ -202,6 +202,7 @@ impl Checker<'_> {
             return None;
         }
         let callee_node = self.design.expr_node(*callee).clone();
+        let mut through_value = false;
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
@@ -213,6 +214,7 @@ impl Checker<'_> {
                     let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     self.coded(file, "E0361", node.span, format!("a placement through a template value of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
                 }
+                through_value = true;
                 Vec::new()
             }
             _ => {
@@ -225,12 +227,20 @@ impl Checker<'_> {
                 return None;
             }
         };
+        if through_value && self.design.decl_data(module).generics_span.is_some() && self.module_port_types(module)?.iter().any(Ty::has_param) {
+            self.unsupported(file, node.span, "a placement through a template of a generic module whose ports are typed by its generic parameters");
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return None;
+        }
         // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
         self.placing.push(Some(module));
         // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
         self.callees.insert(expr, Callee::Module(module));
         self.exprs[callee.index()] = Some(Ty::Module(module));
-        let substitution = if self.design.decl_data(module).generics_span.is_some() {
+        // the arguments of a generic module placed through a template value are the template's own, which only elaboration folds
+        let substitution = if self.design.decl_data(module).generics_span.is_some() && !through_value {
             let Some(given) = self.generic_placement(expr, *callee, module, args, &fields) else {
                 self.placing.pop();
                 self.keep_handed_after_failure(module, args);
