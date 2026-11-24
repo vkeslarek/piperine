@@ -94,7 +94,7 @@ impl Elaboration<'_, '_> {
     /// diagnostic.
     pub(super) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
         // a field of a bundle port or signal is the carrier or node its leaf stands for, in this module's own frame (§7 rule 12)
-        if let Some(leaf) = self.design.bundle_field(expr) {
+        if let Some(leaf) = self.bundle_leaf(scope, expr) {
             return Some((scope.frame, leaf));
         }
         let node = self.design.expr_node(expr).clone();

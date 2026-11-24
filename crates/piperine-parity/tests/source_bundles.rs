@@ -117,6 +117,14 @@ fn a_diff_bundle_connects_its_nodes_like_ports() {
 }
 
 #[test]
+fn vd_on_a_diff_bundle_gives_the_differential_voltage() {
+    // §7 rule 13: `d.vd()` is `v(d.p, d.n)` through the handle `self`: the source holds the pair at 1 V, so the mirror, which
+    // follows `2 * d.vd()`, sits at 2 V.
+    let diff = Model::of("diff.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("vd of a diff bundle", "v(m)", Coordinate::OperatingPoint), 2.0, diff.operating_point("VdBench", "m"));
+}
+
+#[test]
 fn a_bundle_carrier_connects_field_by_field() {
     // §7 rule 14: a bundle port handed on as a bundle carrier (`Wrap` gives its `d` to a source and a load; `Relay` its `c` to a
     // holder) joins each field to the field of the same name: the source's and the load's pair is the bench's pair, and the

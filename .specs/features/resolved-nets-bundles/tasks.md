@@ -480,9 +480,9 @@ T21
 
 **Done when**:
 
-- [ ] `self_on_a_bundle_is_a_read_only_handle` and `a_write_through_a_bundle_handle_is_e0133` pass under `**Run typesbundles**`
-- [ ] `vd_on_a_diff_bundle_gives_the_differential_voltage` passes under `**Run sourcebundles**`
-- [ ] Gate check passes: Full
+- [x] `self_on_a_bundle_is_a_read_only_handle` and `a_write_through_a_bundle_handle_is_e0133` pass under `**Run typesbundles**`
+- [x] `vd_on_a_diff_bundle_gives_the_differential_voltage` passes under `**Run sourcebundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

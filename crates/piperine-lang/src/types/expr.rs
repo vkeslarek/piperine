@@ -618,6 +618,10 @@ impl Checker<'_> {
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
                         if let Some(read) = self.handle_read(decl) {
+                            // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
+                            if self.is_bundle_type(&read) && !self.design.is_method_receiver(expr) && !self.design.is_field_base(expr) {
+                                return self.bundle_as_value(expr);
+                            }
                             return Some(read);
                         }
                         let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(expr, decl, whole));

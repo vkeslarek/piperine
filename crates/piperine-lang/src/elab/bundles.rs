@@ -9,7 +9,7 @@ use piperine_ir::{CarrierWindow, Terminal};
 use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{DeclId, DeclKind, Dir, ExprId, ExprKind, StructClass};
+use crate::pom::{DeclId, DeclKind, Dir, ExprId, ExprKind, Resolution, StructClass};
 
 /// What a placement binds at the ports of the child so far: the terminals of its node ports, the carriers of its carrier ports
 /// and the window of an array of them each is given, each in port order.
@@ -32,6 +32,33 @@ enum LeafSource {
 }
 
 impl Elaboration<'_, '_> {
+    /// The leaf the field access `expr` stands for in `scope`: `tx.valid` of a bundle port or signal of the frame, or `self.valid` of
+    /// a handle an inlined function was given (`handles.rs`), which is the leaf of the bundle the call named (§7 rule 13).
+    pub(super) fn bundle_leaf(&self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
+        self.design.bundle_field_through(expr, &|root| self.handled_bundle(scope, root))
+    }
+
+    /// The bundle port, signal or group the name `root` stands for in `scope`: itself, or what the handle `root` is bound to.
+    fn handled_bundle(&self, scope: &Scope, root: DeclId) -> Option<DeclId> {
+        match scope.handles.get(&root) {
+            Some(bound) => self.named_bundle(scope, *bound),
+            None => Some(root),
+        }
+    }
+
+    /// The bundle port, signal or group the expression `expr` names in `scope` (`s`, `o.inner`, a handle bound to either).
+    pub(super) fn named_bundle(&self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
+        let expr = self.peel_parens(expr);
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
+                Some(Resolution::Decl(decl)) => self.handled_bundle(scope, decl).filter(|named| self.design.is_bundle_owner(*named) || self.design.is_bundle_group(*named)),
+                _ => None,
+            },
+            ExprKind::Field { .. } => self.bundle_leaf(scope, expr).filter(|leaf| self.design.is_bundle_group(*leaf)),
+            _ => None,
+        }
+    }
+
     /// The fields of the bundle port `port` given by `arg`, joined to what `arg` gives them. `false` after a diagnostic.
     pub(super) fn bind_bundle_port(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId, bound: &mut PortBindings) -> bool {
         let mut sources = Vec::new();

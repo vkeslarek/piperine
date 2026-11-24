@@ -163,6 +163,8 @@ pub(super) struct Checker<'d> {
     pub(super) declaring: BTreeSet<DeclId>,
     /// The structs and enums that could not be typed: a use is silent, the cause is reported.
     pub(super) broken: BTreeSet<DeclId>,
+    /// Whether a bundle `struct` is being named as the type of a handle (`bundle_handles.rs`), where it is no refusal.
+    pub(super) naming_bundle: bool,
     queued: BTreeSet<DeclId>,
     /// The declarations already checked, so one reached ahead of the queue (`check_ahead`) is not
     /// checked twice.
@@ -229,6 +231,7 @@ impl<'d> Checker<'d> {
             enum_tags: BTreeMap::new(),
             declaring: BTreeSet::new(),
             broken: BTreeSet::new(),
+            naming_bundle: false,
             queued: BTreeSet::new(),
             checked: BTreeSet::new(),
             queue: VecDeque::new(),

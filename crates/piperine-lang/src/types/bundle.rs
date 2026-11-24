@@ -166,11 +166,6 @@ impl Checker<'_> {
     /// `E0264`: the bundle `what` is read as a value (§7 rule 9).
     pub(super) fn bundle_as_value(&mut self, expr: ExprId) -> Option<Ty> {
         let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
-        // the receiver of a function of the bundle's `impl` is its handle, not a value (§7 rule 13): typed with `resolved-nets-bundles` T17
-        if self.design.is_method_receiver(expr) {
-            self.unsupported(file, span, "a function on a bundle");
-            return None;
-        }
         let message = "a bundle is not a value: it is no operand, argument or result, and has no `Repr` (§7 rule 9)".to_string();
         self.coded(file, "E0264", span, message, "a bundle is not a value");
         None

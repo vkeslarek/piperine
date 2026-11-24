@@ -15,7 +15,7 @@ use super::Ty;
 
 impl Checker<'_> {
     /// What a read of a handle of type `ty` is: the value of a discrete carrier, the node itself.
-    fn handle_read_type(ty: &Ty) -> Ty {
+    pub(super) fn handle_read_type(ty: &Ty) -> Ty {
         match ty {
             Ty::Carrier { value, .. } => (**value).clone(),
             other => other.clone(),
@@ -35,7 +35,7 @@ impl Checker<'_> {
     /// Records the parameter `param` of type `ty` as a handle when `ty` is one: a node or a carrier of a nature, or a
     /// type parameter bound by `Nature`.
     pub(super) fn note_handle(&mut self, param: DeclId, ty: &Ty) {
-        if Self::is_handle_type(ty) || self.is_nature_parameter(ty) {
+        if Self::is_handle_type(ty) || self.is_nature_parameter(ty) || self.is_bundle_type(ty) {
             self.handles.insert(param);
         }
     }
@@ -112,7 +112,7 @@ impl Checker<'_> {
 
     /// Whether every operand of a probe is a handle, which is what a function's probe may read (§3 rule 7).
     pub(super) fn probes_only_handles(&self, operands: &[ExprId]) -> bool {
-        !operands.is_empty() && operands.iter().all(|operand| self.handle_named(*operand).is_some())
+        !operands.is_empty() && operands.iter().all(|operand| self.handle_named(*operand).is_some() || self.bundle_handle_root(*operand).is_some())
     }
 
     /// An argument for a parameter of a nature type: the carrier it names (a port, a signal or a handle of the
@@ -152,6 +152,7 @@ impl Checker<'_> {
         }
         let file = self.design.decl_data(function).file;
         let mut found: Vec<(Span, ExprId, &'static str)> = Vec::new();
+        let mut written: Vec<ExprId> = Vec::new();
         for index in 0..self.design.expr_count() as u32 {
             let expr = ExprId(index);
             let node = self.design.expr_node(expr);
@@ -165,6 +166,7 @@ impl Checker<'_> {
                 ExprKind::ArrayRepeat { elem, .. } if self.handle_held(*elem).is_some() => found.push((self.design.expr_node(*elem).span, *elem, "stored in an array element")),
                 ExprKind::Return(Some(value)) if self.handle_held(*value).is_some() => found.push((self.design.expr_node(*value).span, *value, "returned")),
                 ExprKind::Assign { lhs, .. } if self.handle_named(*lhs).is_some() => found.push((self.design.expr_node(*lhs).span, *lhs, "written through")),
+                ExprKind::Assign { lhs, .. } if self.bundle_handle_root(*lhs).is_some() => written.push(*lhs),
                 ExprKind::Closure { body, .. } => {
                     let mut inside = Vec::new();
                     crate::pom::preorder(self.design, *body, &mut inside);
@@ -181,8 +183,14 @@ impl Checker<'_> {
             match &node.kind {
                 StmtKind::Let { init: Some(init), .. } if self.handle_held(*init).is_some() => found.push((self.design.expr_node(*init).span, *init, "stored in a `let`")),
                 StmtKind::Commit { place, .. } if self.handle_named(*place).is_some() => found.push((self.design.expr_node(*place).span, *place, "written through")),
+                StmtKind::Commit { place, .. } if self.bundle_handle_root(*place).is_some() => written.push(*place),
                 _ => {}
             }
+        }
+        for place in written {
+            let (span, field) = (self.design.expr_node(place).span, self.field_chain_text(place));
+            let message = format!("the field `{field}` of a bundle handle is written through: every field is read-only through a handle, whatever the view (§7 rule 13)");
+            self.coded(file, "E0133", span, message, "a handle written through");
         }
         for (span, expr, how) in found {
             let expr = self.handle_held(expr).unwrap_or(expr);

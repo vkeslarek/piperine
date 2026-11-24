@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::body::{ExprKind, TypeKind};
-use super::decl::Dir;
+use super::decl::{DeclKind, Dir};
 use super::design::Design;
 use super::ids::{DeclId, ExprId, TypeId};
 use super::resolution::Resolution;
@@ -137,6 +137,13 @@ impl Design {
     /// or signal its chain starts at. The expression's own resolution stays the struct's field, as written; `None` when
     /// `expr` is no field of a bundle port or signal (a field of a handle, of a value, of an instance).
     pub(crate) fn bundle_field(&self, expr: ExprId) -> Option<DeclId> {
+        self.bundle_field_through(expr, &|root| Some(root))
+    }
+
+    /// [`Design::bundle_field`] where the root name of the chain is first mapped by `root_bundle`: a name that stands for a
+    /// bundle port, signal or group (a handle `self` an inlined function was given, `pom/bundles.rs`) gives that declaration,
+    /// any other name `None`.
+    pub(crate) fn bundle_field_through(&self, expr: ExprId, root_bundle: &dyn Fn(DeclId) -> Option<DeclId>) -> Option<DeclId> {
         let mut path = Vec::new();
         let mut at = expr;
         loop {
@@ -150,13 +157,33 @@ impl Design {
                     }
                 }
                 ExprKind::Path(root) if !path.is_empty() => {
-                    let Some(Resolution::Decl(owner)) = self.path_node(*root).segments.last().map(|segment| segment.res) else { return None };
+                    let Some(Resolution::Decl(named)) = self.path_node(*root).segments.last().map(|segment| segment.res) else { return None };
+                    let owner = root_bundle(named)?;
                     path.reverse();
-                    return self.leaf_at(owner, &path.join("."));
+                    return self.leaf_under(owner, &path.join("."));
                 }
                 _ => return None,
             }
         }
+    }
+
+    /// The `struct` a bundle type names, through `flip` (`Stream<u8>`, `flip Stream`): `None` for any other type.
+    pub(crate) fn bundle_struct_of_type(&self, ty: TypeId) -> Option<DeclId> {
+        let mut at = ty;
+        while let TypeKind::Flip(inner) = &self.type_node(at).kind {
+            at = *inner;
+        }
+        let TypeKind::Path(path) = &self.type_node(at).kind else { return None };
+        match self.path_node(*path).segments.last().map(|segment| segment.res) {
+            Some(Resolution::Decl(decl)) if matches!(&self.decl_data(decl).kind, DeclKind::Struct(s) if s.bundle == Some(true)) => Some(decl),
+            _ => None,
+        }
+    }
+
+    /// Whether `expr` is the receiver of a field access (`d` of `d.p`).
+    pub(crate) fn is_field_base(&self, expr: ExprId) -> bool {
+        let parent = self.expr_parent.get(expr.index()).copied().flatten();
+        parent.is_some_and(|parent| matches!(&self.expr_node(parent).kind, ExprKind::Field { expr: base, .. } if *base == expr))
     }
 
     /// Whether `expr` is the receiver of a method call (`rx` of `rx.beat(clk)`).

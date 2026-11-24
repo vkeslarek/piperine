@@ -10,7 +10,7 @@ use super::super::decl::{DeclData, DeclKind, Name, PortData, SignalData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, TypeId};
 use super::super::meta::Meta;
-use super::super::resolution::{PortKind, Resolution};
+use super::super::resolution::PortKind;
 
 /// A leaf the stage will add: its data and where it sits in its owner's bundle.
 struct PlannedLeaf {
@@ -55,15 +55,7 @@ impl<'design> LeafPlan<'design> {
 
     /// The bundle struct `ty` names, through `flip` only (an array of bundles is `composite-values` C's).
     fn bundle_of(&self, ty: TypeId) -> Option<DeclId> {
-        let mut at = ty;
-        while let TypeKind::Flip(inner) = &self.design.type_node(at).kind {
-            at = *inner;
-        }
-        let TypeKind::Path(path) = &self.design.type_node(at).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
-            Some(Resolution::Decl(decl)) if matches!(&self.design.decl_data(decl).kind, DeclKind::Struct(s) if s.bundle == Some(true)) => Some(decl),
-            _ => None,
-        }
+        self.design.bundle_struct_of_type(ty)
     }
 
     /// Appends the leaves of `bundle` seen with `view` under the prefix `prefix` of `owner`'s name; a nested bundle

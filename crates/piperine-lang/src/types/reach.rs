@@ -24,6 +24,10 @@ impl Checker<'_> {
             }
             return self.item_type(leaf, file, node.span);
         }
+        // a field of a bundle handle (`self.p`): read through the handle (`bundle_handles.rs`)
+        if let Some((_, ty)) = self.bundle_handle_field(expr) {
+            return if self.is_bundle_type(&ty) && !self.design.is_method_receiver(expr) && !self.design.is_field_base(expr) { self.bundle_as_value(expr) } else { Some(Self::handle_read_type(&ty)) };
+        }
         match res {
             Resolution::Decl(item) if self.is_child_item(*item) => {
                 self.infer_receiver(*receiver)?;

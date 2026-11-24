@@ -28,3 +28,22 @@ module DiffBench() {
     let t = Tie(pair.n);
     let w = Wrap(pair);
 }
+
+/// The difference of a pair, as a function of the bundle: `self` is a handle, its fields are read and probed (§7 rule 13).
+impl Diff {
+    fn vd(self) -> f64 { v(self.p, self.n) }
+}
+
+/// Follows twice the difference of a pair: its output is `2 * d.vd()` volts.
+module Mirror(d: Diff, o: Electrical) { }
+analog for Mirror { v(o) +> 2.0 * d.vd(); }
+
+/// A source holds the pair at 1 V and a mirror reads the difference through the bundle's function.
+module VdBench() {
+    signal pair: Diff;
+    signal m: Electrical;
+    let t = Tie(pair.n);
+    let s = Source(pair);
+    let l = Load(pair);
+    let mirror = Mirror(pair, m);
+}

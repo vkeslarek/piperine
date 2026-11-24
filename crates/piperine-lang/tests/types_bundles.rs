@@ -141,3 +141,36 @@ fn bundles_of_different_types_do_not_connect() {
     let refused = Bundles::refused(&format!("{items}module Top(q: B) {{ q.x = true; let c = Child(q); }}"));
     assert_eq!(refused, [("E0251".to_string(), "q".to_string())]);
 }
+
+#[test]
+fn self_on_a_bundle_is_a_read_only_handle() {
+    // §7 rule 13, §3.1.1: `self` of an `impl` on a bundle is a handle: its fields are read, probed and passed on
+    let diff = "struct Diff { p: Electrical, n: Electrical }\nimpl Diff { fn vd(self) -> f64 { v(self.p, self.n) } }\n";
+    Bundles::accepted(&format!("{diff}module Top(d: Diff) {{ }}\nanalog for Top {{ i(d.p, d.n) +> d.vd(); }}"));
+    // the receiver is a bundle port, a flipped one, an observer's, or a signal; a field of a discrete nature is read as its value
+    let stream = format!("{}impl Stream {{ fn taken(self) -> bool {{ self.valid && self.ready }} }}\n", Bundles::STREAM);
+    Bundles::accepted(&format!("{stream}module Top(rx: flip Stream, in s: Stream) {{ signal ok: Bit; rx.ready = true; ok = rx.taken() && s.taken(); }}"));
+    // a bundle handle is no value (§7 rule 9)
+    let refused = Bundles::refused(&format!("{stream}impl Stream {{ fn whole(self) -> bool {{ let k = self; true }} }}\nmodule Top(rx: flip Stream) {{ rx.ready = rx.whole(); }}"));
+    assert_eq!(refused.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "the handle is not kept (E0133, §3.1.5): {refused:?}");
+}
+
+#[test]
+fn a_write_through_a_bundle_handle_is_e0133() {
+    // §7 rule 13: through a handle every field is read-only, whatever the view; the diagnostic names the field
+    let source = format!("{}impl Stream {{ fn open(self) {{ self.ready = true; }} }}\nmodule Top(rx: flip Stream) {{ rx.ready = true; }}\ndigital for Top {{ on rx.valid.changed() {{ rx.open(); }} }}", Bundles::STREAM);
+    let design = Bundles::design(&source);
+    let found = Types::check(&design, "Top").expect_err("expected diagnostics");
+    let summary = Bundles::summary(&found);
+    assert_eq!(summary.len(), 1, "{summary:?}");
+    assert_eq!(summary[0].0, "E0133");
+    assert!(summary[0].1.contains("`self.ready`"), "names the field: {}", summary[0].1);
+}
+
+#[test]
+fn a_trait_is_not_implemented_for_a_bundle() {
+    // §3.1.9 as `explicit-unknowns` narrowed it: only an inherent `impl` gives a bundle functions
+    let source = "struct Diff { p: Electrical, n: Electrical }\ntrait Gap { fn gap(self) -> f64; }\nimpl Gap for Diff { fn gap(self) -> f64 { v(self.p, self.n) } }\nmodule Top(d: Diff) { }\nanalog for Top { i(d.p, d.n) +> d.gap(); }";
+    let refused = Bundles::refused(source);
+    assert_eq!(refused.first().map(|(code, _)| code.as_str()), Some("E0134"), "{refused:?}");
+}
