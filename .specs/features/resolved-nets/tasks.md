@@ -1315,6 +1315,9 @@ Proof: run hostpatterns | test a_logic_param_of_any_width_is_set_exactly_by_its_
 **C93** - A plane leaf of a `Logic<N>` param of any width is written exactly, as integer text or a whole number, and a value outside the plane's levels is `E0802` (Part VIII §23.1 rule 13, round 3 fix F19)
 Proof: run hostpatterns | test a_logic_param_of_any_width_is_set_exactly_by_its_leaves ... ok
 
+**C94** - `Ir::check` refuses a net's `Resolution` whose holders do not fit: a count other than the drives', a holder instance or carrier out of range, a holder carrier in range that is no resolved carrier (RN-03, round 3 fix F20)
+Proof: run irresolved | test a_resolution_whose_holders_do_not_fit_its_drives_is_refused ... ok
+
 ---
 
 ## Handoff

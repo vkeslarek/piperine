@@ -4,7 +4,7 @@
 //! `Resolution` names its resolver, drives and holders, and `Ir::check` refuses each form that does not fit.
 
 use piperine_ir::{
-    BodyId, BodySpec, Broken, Carrier, Child, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, Holder, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
+    BodyId, BodySpec, Broken, Carrier, Child, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, Holder, InstanceId, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
 };
 
 /// The bodies and designs this target checks, each beside the MSL it transcribes:
@@ -87,8 +87,14 @@ impl Fixture {
     }
 
     /// The design: `Source` is the top, its resolver the child `Source.w$resolve` over two drive nets, the first held
-    /// by the top and the second by the host.
-    fn design(mut b: IrBuilder, source: BodyId, resolver: BodyId) -> Ir {
+    /// by the top's carrier `w` and the second by the host.
+    fn design(b: IrBuilder, source: BodyId, resolver: BodyId) -> Ir {
+        Fixture::design_held(b, source, resolver, &|root| vec![Some(Holder { instance: root, carrier: 0 }), None])
+    }
+
+    /// [`Fixture::design`] with the net's holders given by `holders` from the top's instance: what a test of a wrong holder
+    /// writes.
+    fn design_held(mut b: IrBuilder, source: BodyId, resolver: BodyId, holders: &dyn Fn(InstanceId) -> Vec<Option<Holder>>) -> Ir {
         let top = b.next_instance_id();
         let value = b.net(NetSpec { path: "Source.w".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: Fixture::origin(4) });
         let seen = b.net(NetSpec { path: "Source.seen".into(), ty: ValueType::UInt(8), declared_by: top, init: Some(piperine_ir::Constant::Int(0)), origin: Fixture::origin(5) });
@@ -99,8 +105,17 @@ impl Fixture {
         b.bind_nets(root, vec![value, seen]);
         let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(4) });
         b.bind_nets(child, vec![first, second, value]);
-        b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(Holder { instance: root, carrier: 0 }), None], others: vec![(0, others)] });
+        b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: holders(root), others: vec![(0, others)] });
         b.finish(root)
+    }
+
+    /// The check of the design whose net's holders `holders` gives, everything else well formed.
+    fn held(holders: &dyn Fn(InstanceId) -> Vec<Option<Holder>>) -> Vec<Broken> {
+        let mut b = IrBuilder::new();
+        let by_count = Fixture::instances(&mut b, None);
+        let resolver = Fixture::resolver(&mut b, by_count, vec![0, 1]);
+        let source = Fixture::source(&mut b, ValueType::Bool, Expr::Bool(true), ValueType::Bool);
+        Fixture::design_held(b, source, resolver, holders).check()
     }
 
     /// The whole design with the drive written as `drive_value` of type `drive_ty` for a carrier driven with `driven`,
@@ -208,4 +223,21 @@ fn a_resolved_signal_is_no_port_of_a_child_binding() {
     assert_eq!(Placement::broken(true, vec![Some(0), Some(1)]), vec![], "a resolved port is counted");
     let too_few = Placement::broken(true, vec![Some(0)]);
     assert!(too_few.iter().any(|e| e.what.contains("binds 1 carriers, body Holder has 2 carrier ports")), "a resolved port is counted as a port: {too_few:#?}");
+}
+
+#[test]
+fn a_resolution_whose_holders_do_not_fit_its_drives_is_refused() {
+    // RN-03: a net's `Resolution` has one holder per drive, each an instance of the design and a carrier of that instance's body
+    // that is a resolved carrier (the host's drive has none): every other holder is refused by `Ir::check`
+    assert_eq!(Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 0 }), None]), vec![], "the well formed holders");
+    let short = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 0 })]);
+    assert!(short.iter().any(|e| e.what.contains("1 holders for 2 drives")), "a holder too few: {short:#?}");
+    let long = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 0 }), None, None]);
+    assert!(long.iter().any(|e| e.what.contains("3 holders for 2 drives")), "a holder too many: {long:#?}");
+    let nobody = Fixture::held(&|_| vec![Some(Holder { instance: InstanceId(99), carrier: 0 }), None]);
+    assert!(nobody.iter().any(|e| e.what.contains("holder instance 99 out of range (2 instances)")), "an instance the design does not have: {nobody:#?}");
+    let past = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 2 }), None]);
+    assert!(past.iter().any(|e| e.what.contains("holder carrier 2 out of range for instance Source")), "a carrier the body does not have: {past:#?}");
+    let signal = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 1 }), None]);
+    assert!(signal.iter().any(|e| e.what.contains("holder carrier 1 (`seen`) of instance Source is no resolved carrier")), "a carrier in range that is a plain signal: {signal:#?}");
 }
