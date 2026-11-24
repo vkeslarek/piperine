@@ -131,7 +131,7 @@ impl Checker<'_> {
         if matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
             return self.module_param_callable(decl).map(|_| decl);
         }
-        let Some(Ty::Param(param)) = self.locals.get(&decl).cloned() else { return None };
+        let Some(Ty::Param(param)) = self.binding_type(decl) else { return None };
         self.callable_of(param).map(|_| decl)
     }
 

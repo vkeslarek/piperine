@@ -180,9 +180,8 @@ impl Checker<'_> {
     pub(super) fn infer_receiver(&mut self, receiver: ExprId) -> Option<Ty> {
         if let ExprKind::Path(path) = &self.design.expr_node(receiver).kind {
             if let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) {
-                self.type_module_let_read(decl);
                 // a placement in generation is the array of its instances; inside its loops the name is the iteration's (§8.2.23)
-                let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(receiver, decl, whole));
+                let local = self.binding_type(decl).map(|whole| self.generated_local(receiver, decl, whole));
                 if let Some(instance @ Ty::Module(_)) = local {
                     // a template held by a function parameter (`self` of an `impl` on a module type, §3.1.4) is a value read
                     if matches!(self.design.decl_data(decl).kind, DeclKind::FnParam(_)) {

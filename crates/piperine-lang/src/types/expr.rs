@@ -640,11 +640,11 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
+                        let whole = self.binding_type(decl);
                         if let Some(read) = self.handle_read(decl) {
                             return Some(read);
                         }
-                        self.type_module_let_read(decl);
-                        let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(expr, decl, whole));
+                        let local = whole.map(|whole| self.generated_local(expr, decl, whole));
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
                         self.open_literals.remove(&decl);
                         if self.read_before_assignment(file, node.span, decl) {

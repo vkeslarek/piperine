@@ -404,6 +404,40 @@ fn a_module_body_is_typed_in_any_order() {
 }
 
 #[test]
+fn every_site_reads_a_body_let_written_later_as_one_written_before() {
+    // §8.2 (finding 33, the class "a body `let` read before its text position"): every site where a name resolves to a module-body
+    // `let` goes through one on-demand typing (`Checker::binding_type`), so the body written in either order gives the same
+    // diagnostics. Each row: the site that reads `q`, the `let` of `q`, the codes both orders give.
+    let modules = "module R(a: Electrical) { r: f64 = 1.0; }\nanalog for R { i(a, gnd) +> v(a, gnd) / r; }\n\
+                   module Dram(a: Electrical) { pub signal sn: Electrical; pub k: f64 = 1.0; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n\
+                   fn twice(y: f64) -> f64 { y * 2.0 }\n";
+    let sites: [(&str, &str, &str, &[&str]); 16] = [
+        ("callee, a closure", "let b = q(1.0);", "let q = |y: f64| y * 2.0;", &[]),
+        ("callee, a value", "let b = q(1.0);", "let q = 2.0;", &["E0180"]),
+        ("callee, an instance", "let b = q(x);", "let q = R(x);", &["E0333"]),
+        ("callee, a template", "let b = q(x);", "let q = R { r: 2.0 };", &[]),
+        ("callee, a function value", "let b = q(1.0);", "let q = twice;", &[]),
+        ("operand", "let b = q + 1.0;", "let q = 2.0;", &[]),
+        ("argument", "let b = twice(q);", "let q = 2.0;", &[]),
+        ("`as` operand", "let b = q as i32;", "let q = 2.0;", &[]),
+        ("condition", "let b = if q > 1.0 { 1.0 } else { 0.0 };", "let q = 2.0;", &[]),
+        ("method receiver", "let b = q.abs();", "let q = -2.0;", &[]),
+        ("index base", "let b = q[1];", "let q = [1.0, 2.0];", &[]),
+        ("field receiver, a node", "let b = R(q.sn);", "let q = Dram(x);", &[]),
+        ("field receiver, a param", "let b = q.k * 2.0;", "let q = Dram(x);", &[]),
+        ("connection", "let b = R(q);", "let q = x;", &[]),
+        ("template head through a choice", "let b = q(x);", "let q = if true { R { r: 2.0 } } else { R { r: 3.0 } };", &[]),
+        ("parameter value", "let b = R(x) { r: q };", "let q = 2.0;", &[]),
+    ];
+    for (site, read, written, codes) in sites {
+        let forward = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; {written} {read} }}"));
+        let reverse = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; {read} {written} }}"));
+        assert_eq!(forward.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), codes, "{site}, forward: {forward:?}");
+        assert_eq!(reverse, forward, "{site}: the reverse order gives what the forward order gives");
+    }
+}
+
+#[test]
 fn a_cycle_of_node_connections_is_hardware() {
     // §8.2.14, §8.3.5 (coordinator ruling, finding 25): a node of an instance read at a connection is hardware, not a value, so
     // a cycle of such connections holds an unknown (the node) and types: a cross-coupled pair, an instance wired to its own node,

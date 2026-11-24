@@ -192,9 +192,11 @@ impl Checker<'_> {
     pub(super) fn local_call(&mut self, expr: ExprId, decl: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
+        // a body `let` written after the call is typed first, so a closure it holds is settled by this call as in text order
+        self.binding_type(decl);
         self.settle_pending(decl, args);
         // a value of a type parameter bound by `Fn(A) -> R` is called through the bound (§3.8.6)
-        let local = match self.locals.get(&decl).cloned() {
+        let local = match self.binding_type(decl) {
             Some(Ty::Param(param)) => self.callable_of(param).or(Some(Ty::Param(param))),
             other => other,
         };
@@ -224,6 +226,10 @@ impl Checker<'_> {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let message = format!("the closure `{name}` is {class} and is called where that class is not allowed (§3)");
             self.coded(file, "E0122", span, message, "a call out of its class");
+        }
+        // the callee is a read of the local: it has the local's function type, which the elaborator lowers and calls
+        if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind {
+            self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), result.clone()));
         }
         self.apply(expr, &params, args)?;
         Some(*result)

@@ -167,6 +167,13 @@ impl Checker<'_> {
         self.within(super::check::Context::Module, |this| this.module_let(decl, &data));
     }
 
+    /// The type of the local `binding`, the one entry every read of a local goes through: a module-body `let` read before its
+    /// text position is typed here first (§8.2: the items of a body appear in any order), so no site depends on text order.
+    pub(super) fn binding_type(&mut self, binding: DeclId) -> Option<Ty> {
+        self.type_module_let_read(binding);
+        self.locals.get(&binding).cloned()
+    }
+
     /// Types the module-body `let` that binds `binding` when a read of it comes before it in the body (§8.2: items appear in any
     /// order); nothing for a binding typed already, one being typed (a self read, §8.2.16) or any other name.
     pub(super) fn type_module_let_read(&mut self, binding: DeclId) {
