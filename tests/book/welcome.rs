@@ -245,6 +245,8 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
     };
     let row = "welcome~84a34395";
     p0001(row, "struct Pair { in a: Bit, b: Electrical }\nmodule Top() { signal x: Pair; }\n", "`struct` item used as a type: `Pair` has a carrier field, a bundle is not supported yet");
+    // a module template used as a value (L32, generics phase D): when it runs, this line says so and the sentence is rewritten
+    p0001(row, "module R(a: Electrical) { r: f64 = 1.0; }\nmodule Top() { let t = R { r: 2.0 }; }\n", "module template `Name { .. }` outside a placement is not supported yet");
     // generation in a body and in a `digital` block run
     let generated = Model::written("generated.msl", "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, gnd); } }\ndigital for Top { for k in 0..2 { } }\n");
     generated.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: generation is refused: {:?}", Refusal::of(Err(failure), row)));
