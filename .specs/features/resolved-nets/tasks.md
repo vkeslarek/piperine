@@ -157,7 +157,7 @@ T22 → T23 → T24 → T25 → T26
 ### Phase 8: The library nets of §22.3 and `Bidir` (waits for `generics` C's generic modules, spec Q2)
 
 ```
-T27 → T28 → T29a → T29 → T30 → T31 → T32 → T33
+T27 → T28 → T29 → T30 → T31 → T32 → T33
 ```
 
 ### Phase 9: The Book and the records
@@ -1343,7 +1343,7 @@ Phase 4:  T11                                    (done)
 Phase 5:  T12 → T13 → T14 → T15                  (done)
 Phase 6:  T16 → T17 → T37 → T18 → T19 → T38 → T20 → T21
 Phase 7:  T22 → T23 → T24 → T25 → T26
-Phase 8:  T27 → T28 → T29a → T29 → T30 → T31 → T32 → T33
+Phase 8:  T27 → T28 → T29 → T30 → T31 → T32 → T33
 Phase 9:  T34 → T35 → T39 → T36
 ```
 
