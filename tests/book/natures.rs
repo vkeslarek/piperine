@@ -201,6 +201,7 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
         ("P0001", "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet"),
         ("P0001", "`flip` type is not supported yet"),
         ("E0337", "mismatched types: expected `T`, found `T`"),
+        ("P0001", "a function on a bundle is not supported yet"),
         ("E0432", "mismatched types: expected `T`, found `T`"),
     ];
     assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the bundle's refusals, with no cascade from the definitions through its members");
