@@ -144,6 +144,16 @@ fn strongest_of_equal_drives_is_that_drive_in_any_order() {
 }
 
 #[test]
+fn a_tribuf_over_a_nature_parameter_runs_on_a_declared_nature() {
+    // §22.3.5 over §3.8 and §4 rule 8: `Tribuf<W: Nature + Resolve<Driven>>` is a generic module whose `w` is a resolved
+    // carrier of whatever nature it is placed on; on `Line`, an enabled one drives its input strongly and a disabled one
+    // is `Driven::Z`
+    let line = Model::of("line.msl");
+    assert_eq!(line.settled("TribufOnBench"), Held { level: Held::HIGH, strength: Held::STRONG }, "oe high: the input at Strong");
+    assert_eq!(line.settled("TribufOffBench"), Held { level: Held::Z, strength: Held::HIGH_Z }, "oe low: not driving");
+}
+
+#[test]
 fn a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type() {
     // §4 rule 8, RN-02 AC 9: `Bus` has `impl Resolve<bool>` (high when every drive is) and `impl Resolve<u8, bool>` (high when
     // every drive is non-zero); a carrier resolves by the type its drives have. Two flags, one low, are low; two flags high

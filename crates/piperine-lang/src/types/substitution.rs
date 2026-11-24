@@ -66,7 +66,7 @@ impl Substitution {
             Ty::Fn(params, ret) => Ty::Fn(params.iter().map(|p| self.apply(p)).collect(), Box::new(self.apply(ret))),
             Ty::Option(inner) => Ty::Option(Box::new(self.apply(inner))),
             Ty::Tuple(items) => Ty::Tuple(items.iter().map(|item| self.apply(item)).collect()),
-            Ty::Carrier { nature, value } => Ty::Carrier { nature: *nature, value: Box::new(self.apply(value)) },
+            Ty::Carrier { nature, value } => Ty::Carrier { nature: self.replaced_nature(*nature), value: Box::new(self.apply(value)) },
             Ty::Struct(nominal) => Ty::Struct(self.apply_nominal(nominal)),
             Ty::Enum(nominal) => Ty::Enum(self.apply_nominal(nominal)),
             Ty::Array(element, length) => Ty::Array(Box::new(self.apply(element)), self.apply_length(length)),
@@ -78,6 +78,15 @@ impl Substitution {
                 replaced => Ty::GenericInteger { signed: *signed, width: replaced },
             },
             Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
+        }
+    }
+
+    /// The nature a carrier of the nature parameter `nature` is a carrier of once the parameter is replaced: the nature of the
+    /// node or carrier it was given, or the parameter of an enclosing generic that stands for it.
+    fn replaced_nature(&self, nature: DeclId) -> DeclId {
+        match self.get(nature) {
+            Some(GenericValue::Type(Ty::Node(given) | Ty::Carrier { nature: given, .. } | Ty::Param(given))) => *given,
+            _ => nature,
         }
     }
 

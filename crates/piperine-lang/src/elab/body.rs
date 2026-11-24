@@ -64,7 +64,7 @@ impl Elaboration<'_, '_> {
                 carrier: *carrier,
                 decl: *decl,
                 nature: *nature,
-                implementation: self.types.carrier_drive_impls(*decl).first().copied(),
+                implementation: self.concrete_implementation(*decl, *nature),
                 drives: self.structure.committed.contains(carrier) || self.structure.drives.iter().any(|drive| drive.carrier == *carrier) || self.structure.carriers[*carrier as usize].init.is_some(),
                 reads_others: self.structure.others_read.contains(carrier),
             })

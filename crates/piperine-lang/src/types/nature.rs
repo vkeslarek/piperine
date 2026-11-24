@@ -7,6 +7,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData, NatureFieldNode, NatureKind, Resolution};
 
 use super::check::Checker;
+use super::generics::GenericSignature;
 use super::{ConstTerm, ImplEntry, ImplTarget, Length, Ty};
 
 /// The name of the built-in trait whose `impl`s make a nature resolved.
@@ -39,9 +40,24 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// The `impl`s of `nature` whose arguments type, in declaration order. The one-argument form
     /// `impl Resolve<V>` has `X = V` (spec Q4).
     pub(super) fn of(&mut self, nature: DeclId) -> Vec<ResolveImpl> {
+        if matches!(self.checker.design.decl_data(nature).kind, DeclKind::GenericParam(_)) {
+            return self.of_parameter(nature);
+        }
         let table = std::rc::Rc::clone(&self.checker.impls);
         let entries: Vec<ImplEntry> = table.impls().iter().filter(|entry| entry.builtin_trait == Some(RESOLVE_TRAIT) && entry.target == ImplTarget::Declared(nature)).cloned().collect();
         entries.iter().filter_map(|entry| self.typed(entry)).collect()
+    }
+
+    /// What the `Resolve<X, V>` bound of the nature parameter `parameter` says: one entry, whose `implementation` is the
+    /// parameter itself (the concrete `impl` is the instance's nature's, found by `X` when the instance is lowered).
+    fn of_parameter(&mut self, parameter: DeclId) -> Vec<ResolveImpl> {
+        let Some(arguments) = GenericSignature::resolve_bound(self.checker.design, parameter) else { return Vec::new() };
+        let types: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+        match types.as_deref() {
+            Some([value]) => vec![ResolveImpl { implementation: parameter, driven: value.clone(), value: value.clone() }],
+            Some([driven, value]) => vec![ResolveImpl { implementation: parameter, driven: driven.clone(), value: value.clone() }],
+            _ => Vec::new(),
+        }
     }
 
     /// The `impl` of `nature` the drive `value` picks (§5.2.15): the one whose `X` is the type of

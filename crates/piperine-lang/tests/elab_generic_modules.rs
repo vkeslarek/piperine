@@ -78,3 +78,16 @@ fn a_param_read_by_a_generic_argument_or_a_length_is_structural() {
     assert_eq!(structural, ["count", "n"], "the params the generic argument and the length read");
     assert!(ir.bodies().any(|body| body.name() == "Taps::<2>"), "the instance takes the value of `count`");
 }
+
+#[test]
+fn a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_nature() {
+    // §22.3: `Tribuf<W>` placed on `Line` is the body `Tribuf::<Line>`, whose `w` is a resolved carrier of `Line` driven
+    // by the instance, and the placement on a nature without the `impl` is refused at the check, not here
+    let src = "nature Line { value: Driven }\n\
+               impl Resolve<Driven> for Line { fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) } }\n\
+               module Top() { signal n: Line; let a = Tribuf(n, true, true); let b = Pullup(n); }\n";
+    let ir = ModuleElab::run(src, "Top").unwrap_or_else(|found| panic!("{found:?}"));
+    assert!(ir.check().is_empty(), "{:?}", ir.check());
+    let names: Vec<String> = ir.bodies().map(|body| body.name().to_string()).collect();
+    assert!(names.iter().any(|name| name == "Tribuf::<Line>") && names.iter().any(|name| name == "Pullup::<Line>"), "{names:?}");
+}

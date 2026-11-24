@@ -165,7 +165,7 @@ impl Elaboration<'_, '_> {
                 if frame == 0 && matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) {
                     self.structure.port_carriers += 1;
                 }
-                let resolved_nature = match self.types.carrier(decl) {
+                let resolved_nature = match self.consts.typed_carrier(decl).as_ref() {
                     Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
                     _ => None,
                 };
@@ -223,7 +223,7 @@ impl Elaboration<'_, '_> {
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,
         };
-        let resolved = match self.types.carrier(decl) {
+        let resolved = match self.consts.typed_carrier(decl).as_ref() {
             Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
             Some(array) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { nature, .. } if self.design.is_resolved_nature(*nature)) => {
                 self.unsupported(data.file, data.span, "an array of resolved carriers");
@@ -283,7 +283,7 @@ impl Elaboration<'_, '_> {
     fn lower_resolved_carrier(&mut self, frame: usize, decl: DeclId, nature: DeclId, init: Option<ExprId>) -> Option<Carrier> {
         let data = self.design.decl_data(decl).clone();
         let impls = self.types.resolve_impls(nature).to_vec();
-        let picked = self.types.carrier_drive_impls(decl).first().copied();
+        let picked = self.concrete_implementation(decl, nature);
         let chosen = match picked {
             Some(implementation) => impls.iter().find(|candidate| candidate.implementation == implementation),
             None if impls.len() == 1 => impls.first(),
@@ -305,6 +305,18 @@ impl Elaboration<'_, '_> {
         };
         let name = format!("{}{}", self.frames[frame].prefix, data.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
         Some(Carrier { name, ty, role: CarrierRole::Resolved { driven }, init, origin: self.locator.decl(decl), count: None })
+    }
+
+    /// The `impl Resolve` of `nature` the first drive of the resolved carrier `decl` picked. A carrier of a nature parameter
+    /// bound by `Resolve<X, V>` picked the bound (the checker saw no concrete nature): the instance's nature answers with its
+    /// `impl` whose drive type is `X`. `None` when no drive picked one.
+    pub(super) fn concrete_implementation(&self, decl: DeclId, nature: DeclId) -> Option<DeclId> {
+        let picked = self.types.carrier_drive_impls(decl).first().copied()?;
+        if !matches!(self.design.decl_data(picked).kind, DeclKind::GenericParam(_)) {
+            return Some(picked);
+        }
+        let driven = &self.types.resolve_impls(picked).first()?.driven;
+        self.types.resolve_impls(nature).iter().find(|candidate| candidate.driven == *driven).map(|candidate| candidate.implementation)
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the

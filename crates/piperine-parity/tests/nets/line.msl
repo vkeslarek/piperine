@@ -142,3 +142,17 @@ module EqualDrivesBench() {
     let b = Put(n) { level: 0, strength: 2 };
     let look = Look(n);
 }
+
+/// A library `Tribuf` on `Line` with its output enabled: it drives its input `1` strongly.
+module TribufOnBench() {
+    signal n: Line;
+    let t = Tribuf(n, true, true);
+    let look = Look(n);
+}
+
+/// A library `Tribuf` on `Line` with its output disabled: `Driven::Z`, the net is not driven.
+module TribufOffBench() {
+    signal n: Line;
+    let t = Tribuf(n, true, false);
+    let look = Look(n);
+}

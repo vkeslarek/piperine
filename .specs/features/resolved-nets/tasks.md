@@ -23,6 +23,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run transresolve**: `cargo test -p piperine-transpile --test resolve`
 **Run sourceresolved**: `cargo test -p piperine-parity --test source_resolved`
 **Run sourcenets**: `cargo test -p piperine-parity --test source_nets`
+**Run typesgenmod**: `cargo test -p piperine-lang --test types_generic_modules`
+**Run elabgenmod**: `cargo test -p piperine-lang --test elab_generic_modules`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
 **Run bookdigital**: `cargo test -p piperine --test book_digital`
@@ -811,6 +813,29 @@ T34 → T35 → T39 → T36
 
 ---
 
+### T29a: A generic module over a resolved nature parameter (`W: Nature + Resolve<Driven>`)
+
+**What**: Added 2026-11-24 by the coordinator's ruling: the library of §22.3 (`Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`) is generic over a *discrete* nature, which T27 found the checker could not express (a port typed by a nature parameter was always a node; `Resolve<Driven>` as a bound was `E0161`). `Bound::Resolve { arguments }` in `GenericSignature::bound`; a nature parameter with it is a resolved carrier in the generic body (`Ty::Carrier { nature: <the parameter>, value: V }`, `V` the second argument or `X`; drives typed `X`; `others()` typed `V`; `NatureRules` says resolved, `ResolveImpls::of` answers from the bound); `satisfies` asks `ResolveImpls::of` of the argument nature (`E0187` naming the argument and the bound); `Substitution::apply` replaces the carrier's nature; the placement's inference learns the nature from a carrier meeting a carrier of a parameter; the elaborator reads the instance's carrier (`typed_carrier`) and picks the concrete `impl` by `X` (`concrete_implementation`). A bound with no, or three, arguments or with no `Nature` is `E0187`.
+**Where**: `crates/piperine-lang/src/types/` (`generics.rs`, `bounds.rs`, `carrier.rs`, `nature.rs`, `nature_rules.rs`, `substitution.rs`, `inference.rs`, `module_generics.rs`), `crates/piperine-lang/src/elab/carriers.rs`, `body.rs`
+**Depends on**: T28
+**Reuses**: `ResolveImpls`, `NatureRules`, the generic module instances of `generics` C
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_nature_parameter_bound_by_resolve_is_a_resolved_carrier_in_the_body`, `a_placement_on_a_nature_without_the_resolve_impl_is_e0187_naming_nature_and_bound` and `a_resolve_bound_takes_one_or_two_arguments_and_a_nature` pass under `**Run typesgenmod**`
+- [x] `a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_nature` passes under `**Run elabgenmod**`
+- [x] `a_tribuf_over_a_nature_parameter_runs_on_a_declared_nature` passes under `**Run sourcenets**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(types): a generic module over a resolved nature parameter`
+
+---
+
 ### T29: `Tribuf`, `Pullup`, `Pulldown`
 
 **What**: Source tests of §22.3.5 on `Line`: `Tribuf` with `oe` high and low; a pull that wins only while every stronger drive is released, for `Pullup` and `Pulldown`. A library module placed on a nature without `impl Resolve<Driven>` (`AndWire`) is `E0187` naming the nature and the bound.
@@ -1240,6 +1265,15 @@ Proof: run booknatures | test signals_of_every_family_run ... ok
 
 **C78** - `GAPS.md` §11 holds no row for natures#2, natures#3, natures~e99c1920, natures~91c3bffe, digital#16 to digital#20 or core-std#6 (RN-09, AC 7)
 Proof: run docs | test gaps_section_11_holds_no_net_row ... ok
+
+**C79** - A nature parameter bound by `Resolve<X, V>` is a resolved carrier in a generic body: drives typed `X`, `others()` typed `V` (RN-06, AC 10)
+Proof: run typesgenmod | test a_nature_parameter_bound_by_resolve_is_a_resolved_carrier_in_the_body ... ok
+
+**C80** - A placement on a nature that does not satisfy the `Resolve` bound is `E0187` naming nature and bound (RN-06, AC 10)
+Proof: run typesgenmod | test a_placement_on_a_nature_without_the_resolve_impl_is_e0187_naming_nature_and_bound ... ok
+
+**C81** - `Tribuf` of the library runs on a declared resolved nature (RN-06, AC 1)
+Proof: run sourcenets | test a_tribuf_over_a_nature_parameter_runs_on_a_declared_nature ... ok
 
 ---
 

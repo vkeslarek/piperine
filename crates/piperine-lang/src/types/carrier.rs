@@ -9,6 +9,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
 use super::check::Checker;
+use super::generics::GenericSignature;
 use super::nature_rules::NatureRules;
 use super::{Builtin, Nominal, Ty};
 
@@ -138,6 +139,7 @@ impl Checker<'_> {
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
             // a nature parameter of a generic module (`a: S`, `S: Nature`): a node of the nature the placement gives (GN-13)
+            Ty::Param(param) if GenericSignature::resolve_bound(self.design, param).is_some() => self.resolved_parameter_carrier(param),
             nature @ Ty::Param(_) if self.is_nature_parameter(&nature) => Some(nature),
             // an array of carriers, or of conservative nodes (CV-23)
             array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
@@ -148,6 +150,16 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// The carrier a nature parameter bound by `Resolve<X, V>` stands for in a generic body: a carrier of the parameter that
+    /// holds `V` (`X` when the bound is written `Resolve<X>`), resolved like the nature it becomes (§22.3). `None` for a
+    /// bound whose types are refused.
+    fn resolved_parameter_carrier(&mut self, param: DeclId) -> Option<Ty> {
+        let table = super::nature::ResolveImpls::new(self).of(param);
+        let entry = table.first()?.clone();
+        self.resolve_tables.entry(param).or_insert(table);
+        Some(Ty::Carrier { nature: param, value: Box::new(entry.value) })
     }
 
     /// The type a read of a port or a signal declaration has: a node is a node, a carrier gives
