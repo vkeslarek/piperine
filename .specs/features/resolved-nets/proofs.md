@@ -1,6 +1,6 @@
 # resolved-nets proofs
 
-**HEAD**: 429e5e05a
+**HEAD**: 38c2d0dcd
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 98 pass, 0 fail
@@ -119,7 +119,7 @@ test a_counter_over_a_project_byte_nature_commits_and_records ... ok
 test a_gain_chain_over_vsignal_gives_the_product_of_the_gains ... ok
 test a_project_nature_carrier_connects_to_a_port_of_the_same_nature ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.61s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.55s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_natures.rs (/var/tmp/piperine-target-b/debug/deps/source_natures-b8984ec36a3d3d9a)
@@ -128,30 +128,30 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run typesnatures` - exit 0
 
 ```
+test a_drive_picks_the_impl_of_its_type ... ok
 test a_flow_contribution_to_a_signal_flow_node_is_e0413 ... ok
 test an_impl_resolve_makes_a_discrete_nature_resolved ... ok
-test a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181 ... ok
-test others_on_a_one_driver_carrier_is_e0224 ... ok
 test connecting_byte_to_bit_u8_is_e0251_naming_both_natures ... ok
+test others_on_a_one_driver_carrier_is_e0224 ... ok
+test a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181 ... ok
 test resolve_may_call_a_library_or_project_function ... ok
 test others_of_a_resolved_carrier_has_the_value_type ... ok
 test an_impure_resolve_is_e0203_naming_its_class ... ok
 test an_impl_resolve_of_another_shape_is_e0203 ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.51s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.41s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.75s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_natures.rs (/var/tmp/piperine-target-b/debug/deps/types_natures-c0472f988f483116)
 ```
 
 `Run sourceresolved` - exit 0
 
 ```
-test a_loop_of_resolved_drives_is_accepted_and_settles ... ok
-test an_initial_value_is_the_declaring_modules_first_drive ... ok
-test others_of_a_module_without_a_drive_is_the_value ... ok
 test an_undriven_resolved_carrier_holds_resolve_of_no_drive ... ok
+test a_loop_of_resolved_drives_is_accepted_and_settles ... ok
+test others_of_a_module_without_a_drive_is_the_value ... ok
+test an_initial_value_is_the_declaring_modules_first_drive ... ok
 test a_released_ring_latches_nothing ... ok
 test a_drive_without_initial_value_is_its_types_default_until_its_first_commit ... ok
 test a_drive_change_that_leaves_the_value_fires_no_changed ... ok
@@ -159,7 +159,7 @@ test three_summing_drivers_give_their_sum_in_the_microstep_any_changes ... ok
 test resolve_receives_the_drives_in_instance_path_order ... ok
 test resolved_nets_run_at_the_microsteps_of_each_sweep_point_and_hold_in_ac ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.58s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.95s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_resolved.rs (/var/tmp/piperine-target-b/debug/deps/source_resolved-868a082cd90e56f1)
@@ -168,18 +168,18 @@ test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run elabnatures` - exit 0
 
 ```
-test others_lowers_to_the_bodys_others_read ... ok
-test others_depends_on_the_other_drives_only ... ok
-test resolve_is_instantiated_once_per_drive_count ... ok
+test drives_are_ordered_by_instance_path_segment_by_segment ... ok
 test a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive ... ok
+test others_lowers_to_the_bodys_others_read ... ok
+test a_loop_of_resolved_drives_across_instances_is_accepted ... ok
 test a_node_meeting_a_nature_with_flow_is_not_counted ... ok
 test two_driven_types_on_one_net_are_e0225 ... ok
-test a_signal_flow_node_with_no_or_two_drivers_is_e0242 ... ok
 test a_loop_through_a_one_driver_carrier_across_instances_is_e0339 ... ok
+test a_signal_flow_node_with_no_or_two_drivers_is_e0242 ... ok
 test an_initial_value_is_the_declaring_modules_first_drive_commit ... ok
 test a_resolved_drive_without_default_or_initial_value_is_e0187 ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_natures.rs (/var/tmp/piperine-target-b/debug/deps/elab_natures-2ac1986ae98cf2da)
@@ -189,33 +189,33 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 5 tests
+test a_drive_pin_ends_with_a_plain_driving_byte ... ok
 test an_unsettled_loop_is_e0511_naming_its_drives ... ok
-test a_released_loop_keeps_no_earlier_level ... ok
 test an_absent_drive_is_left_out_and_a_present_one_is_passed_whatever_its_value ... ok
 test a_relaxing_cycle_starts_absent_and_stops_within_drives_plus_one_passes ... ok
-test a_drive_pin_ends_with_a_plain_driving_byte ... ok
+test a_released_loop_keeps_no_earlier_level ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.05s
+    Finished `test` profile [unoptimized] target(s) in 0.04s
      Running tests/relax.rs (/var/tmp/piperine-target-b/debug/deps/relax-b90cf2f70ae93855)
 ```
 
 `Run sourcenets` - exit 0
 
 ```
-test tgate_joins_while_s_high_or_sn_low ... ok
+test a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type ... ok
 test a_match_over_options_and_a_resolve_walking_option_drives_run ... ok
 test strongest_of_equal_drives_is_that_drive_in_any_order ... ok
 test tran_drives_each_side_with_the_others_of_the_other ... ok
+test tgate_joins_while_s_high_or_sn_low ... ok
 test two_carriers_of_one_instance_on_one_net_hold_two_drives ... ok
-test strongest_gives_the_table_of_22_3_2 has been running for over 60 seconds
-test tribuf_drives_strong_or_high_impedance ... ok
 test strongest_gives_the_table_of_22_3_2 ... ok
+test tribuf_drives_strong_or_high_impedance ... ok
 test two_parallel_trans_carry_a_strong_level_and_stay_two_carriers ... ok
 test a_pull_wins_only_while_every_stronger_drive_is_released ... ok
 
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 84.04s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 47.06s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_nets.rs (/var/tmp/piperine-target-b/debug/deps/source_nets-2711638356bfef13)
@@ -224,80 +224,80 @@ test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run booknatures` - exit 0
 
 ```
-test a_bundle_is_refused_where_the_solver_reaches_it ... ok
 test the_slice_listing_bounds_t_by_default_as_gallery_e6_does ... ok
+test a_bundle_is_refused_where_the_solver_reaches_it ... ok
 test the_book_shows_the_natures_the_standard_library_gives ... ok
-test a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out ... ok
-test behavior_crosses_freely_inside_one_module ... ok
 test a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere ... ok
 test an_out_port_gives_the_initial_value ... ok
+test a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out ... ok
+test behavior_crosses_freely_inside_one_module ... ok
 test the_alarm_prints_three_records_of_the_line ... ok
 test the_pulldown_alarm_prints_the_exercise_answer ... ok
 test signals_of_every_family_run ... ok
 
-test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.19s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.57s
 
-    Finished `test` profile [unoptimized] target(s) in 0.31s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/natures.rs (/var/tmp/piperine-target-b/debug/deps/book_natures-573ee03fdb953ba2)
 ```
 
 `Run clibook` - exit 0
 
 ```
-test blinky_runs_to_its_stop_in_the_book ... ok
-test the_cycle_counter_prints_three_pulses ... ok
+test the_chapter_shows_fmt_and_says_comments_stay ... ok
 test a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one ... ok
+test the_chapter_shows_the_session_options ... ok
+test blinky_runs_to_its_stop_in_the_book ... ok
 test the_clipper_runs_as_the_book_prints ... ok
+test the_cycle_counter_prints_three_pulses ... ok
 test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
 test the_chapter_runs_each_new_analysis ... ok
-test every_cli_listing_of_the_book_is_what_the_binary_prints has been running for over 60 seconds
-test the_rc_output_blocks_are_what_the_binary_prints has been running for over 60 seconds
 test the_rc_output_blocks_are_what_the_binary_prints ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 85.97s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 54.08s
 
-    Finished `test` profile [unoptimized] target(s) in 0.31s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/book.rs (/var/tmp/piperine-target-b/debug/deps/book-b94a48232bcc738f)
 ```
 
 `Run docs` - exit 0
 
 ```
-test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
-test state_records_the_unknown_semantics_decision ... ok
+test the_buck_readme_says_when_to_run_the_buck_on_demand ... ok
+test the_buck_readme_says_how_to_run_it ... ok
+test state_records_the_observable_landings_and_the_tick_epoch ... ok
 test the_instruction_files_say_the_host_crates_build ... ok
-test the_scenario_package_states_its_measured_step_count ... ok
-test state_records_root_e2e ... ok
-test the_per_level_feature_is_recorded_as_dropped ... ok
 test transient_performance_closes_v12 ... ok
-test the_roadmap_is_forward_looking ... ok
 test the_buck_spec_holds_the_bench_bounds ... ok
+test the_scenario_package_states_its_measured_step_count ... ok
+test the_roadmap_is_forward_looking ... ok
+test abi_md_describes_the_unreleased_contract ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 
-test result: ok. 57 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 57 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.25s
+    Finished `test` profile [unoptimized] target(s) in 0.13s
      Running tests/docs.rs (/var/tmp/piperine-target-b/debug/deps/docs-8e80bcc00dcc90ee)
 ```
 
 `Run spectext` - exit 0
 
 ```
-test the_library_declares_no_net_nature ... ok
-test value_blocks_may_hold_contributions_and_commits ... ok
+test the_step_that_reads_a_jump_is_first_order ... ok
 test tran_in_fences_is_the_module ... ok
-test zero_bytes_are_the_default_value ... ok
+test the_library_declares_no_net_nature ... ok
 test section_22_no_longer_says_std_is_in_the_earlier_spelling ... ok
+test zero_bytes_are_the_default_value ... ok
 test there_is_no_slice_and_no_borrow_in_the_grammar ... ok
 test no_spec_text_says_stimulus_is_host_only ... ok
 test every_error_code_is_defined_exactly_once ... ok
 test the_removed_words_are_absent_from_the_specification ... ok
 test part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_so ... ok
 
-test result: ok. 140 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 140 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
 
-    Finished `test` profile [unoptimized] target(s) in 0.16s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/spec_text.rs (/var/tmp/piperine-target-b/debug/deps/spec_text-fc077905224603d9)
 ```
 
@@ -306,15 +306,14 @@ test result: ok. 140 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fi
 ```
 running 5 tests
 test every_owned_code_names_its_owner_and_construct ... ok
-test no_owned_code_is_raised ... ok
-test every_spec_code_is_raised_or_owned ... ok
-test no_source_spells_p0002 ... ok
 test this_features_codes_are_all_raised ... ok
+test no_owned_code_is_raised ... ok
+test no_source_spells_p0002 ... ok
+test every_spec_code_is_raised_or_owned ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.32s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/spec_codes.rs (/var/tmp/piperine-target-b/debug/deps/spec_codes-a942a887390f8334)
 ```
 
@@ -327,40 +326,41 @@ test a_resolve_with_a_missing_count_or_another_type_is_refused ... ok
 test a_resolution_whose_holders_do_not_fit_its_drives_is_refused ... ok
 test a_resolved_net_is_built_checked_and_printed ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.08s
+    Finished `test` profile [unoptimized] target(s) in 0.05s
      Running tests/resolved.rs (/var/tmp/piperine-target-b/debug/deps/resolved-fb517c6430ade59b)
 ```
 
 `Run interp` - exit 0
 
 ```
-test the_level_nodes_are_refused_by_name ... ok
-test a_body_with_an_amended_form_is_rejected_by_name ... ok
+test each_generics_form_is_refused_by_name ... ok
 test a_digital_body_is_rejected_by_name ... ok
-test each_number_width_is_refused_by_name ... ok
-test each_composite_values_form_is_refused_by_name ... ok
 test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
+test resolved_forms_are_refused_by_name ... ok
+test each_number_width_is_refused_by_name ... ok
+test the_interpreter_refuses_each_analog_operator_by_name ... ok
+test each_composite_values_form_is_refused_by_name ... ok
+test the_level_nodes_are_refused_by_name ... ok
 test an_analog_body_without_new_forms_still_runs_on_the_interpreter ... ok
 test the_interpreter_refuses_each_new_form_by_name ... ok
 
 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-plan)
-   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-interp)
-    Finished `test` profile [unoptimized] target(s) in 2.47s
+    Finished `test` profile [unoptimized] target(s) in 0.09s
      Running tests/frozen.rs (/var/tmp/piperine-target-b/debug/deps/frozen-1d51dac525b72719)
 ```
 
 `Run planshape` - exit 0
 
 ```
-test a_settle_event_reads_the_global_settle_pin ... ok
 test a_cross_event_is_a_watch_with_partials ... ok
-test a_guard_or_a_decision_adds_no_read_and_no_resolution_pin ... ok
-test only_a_literal_positive_delay_is_later ... ok
+test an_option_carrier_pin_is_presence_then_payload ... ok
+test every_record_layout_holds_its_declared_fields_only ... ok
 test the_drive_layout_appends_a_plain_driving_byte ... ok
+test only_a_literal_positive_delay_is_later ... ok
+test an_event_is_an_event_pin_and_its_function ... ok
 test a_reaction_lists_its_events_reads_and_statements ... ok
 test carriers_are_discrete_pins_that_hold_the_value_only ... ok
 test a_drive_is_a_discrete_function ... ok
@@ -368,8 +368,7 @@ test every_buck_slice_shape_validates ... ok
 
 test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-plan)
-    Finished `test` profile [unoptimized] target(s) in 0.96s
+    Finished `test` profile [unoptimized] target(s) in 0.09s
      Running tests/digital_shape.rs (/var/tmp/piperine-target-b/debug/deps/digital_shape-e3c10ee17d1090e5)
 ```
 
@@ -380,11 +379,9 @@ running 2 tests
 test a_drive_write_marks_the_drive_present ... ok
 test resolve_calls_the_instance_of_the_present_count ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.88s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.13s
 
-   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-interp)
-   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-transpile)
-    Finished `test` profile [unoptimized] target(s) in 1.06s
+    Finished `test` profile [unoptimized] target(s) in 0.09s
      Running tests/resolve.rs (/var/tmp/piperine-target-b/debug/deps/resolve-00b68532899feae0)
 ```
 
@@ -393,18 +390,18 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 test an_off_grid_step_lands_on_the_tick_grid ... ok
 test crossing_retries_count_toward_the_rejection_cap ... ok
+test its_devices_pass_the_partials_verifier ... ok
 test no_landing_means_one_attempt_to_the_proposed_time ... ok
 test no_unknowns_means_no_attempt ... ok
 test the_step_after_a_settle_commit_is_a_landing_and_restarts ... ok
 test settle_runs_at_time_points_and_at_the_stop_time_only ... ok
-test the_proposal_sees_the_next_due_time ... ok
-test its_devices_pass_the_partials_verifier ... ok
-test consecutive_rejections_beyond_the_cap_fail_loud ... ok
 test an_unsettled_loop_is_e0511_naming_its_drives ... ok
+test the_proposal_sees_the_next_due_time ... ok
+test consecutive_rejections_beyond_the_cap_fail_loud ... ok
 
-test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+    Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/protocol_transient.rs (/var/tmp/piperine-target-b/debug/deps/protocol_transient-7b23e51a4de3e365)
 ```
 
@@ -412,17 +409,17 @@ test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test the_book_shows_the_integrator_the_standard_library_gives ... ok
-test the_lowpass_module_runs_over_the_generic_integrator ... ok
 test a_module_body_takes_a_param_with_a_where_and_an_instance_with_a_param_block ... ok
+test the_lowpass_module_runs_over_the_generic_integrator ... ok
 test e0340_a_generation_range_read_from_a_signal ... ok
 test e0320_a_block_names_a_param_the_module_does_not_have ... ok
 test a_ladder_written_out_runs_an_operating_point_and_a_dc_sweep ... ok
 test the_half_reactions_report_each_stage_in_time_order ... ok
 test the_ladder_runs_for_an_operating_point_and_a_sweep ... ok
-test the_switched_capacitor_integrator_is_a_netlist_that_runs ... ok
 test the_pi_controller_runs_with_its_generic_idt ... ok
+test the_switched_capacitor_integrator_is_a_netlist_that_runs ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.74s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.95s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/modules.rs (/var/tmp/piperine-target-b/debug/deps/book_modules-f54c744dbbe5981c)
@@ -434,17 +431,17 @@ test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 test e0501_a_clock_with_no_delay_never_goes_quiet ... ok
 test the_library_declares_the_monitors_and_never_runs ... ok
 test the_phase_detector_runs_assignment_and_events_read_as_bools ... ok
-test the_pwm_latches_its_duty_word_at_the_wrap ... ok
-test the_debouncer_pwm_and_pwm_check_print_their_records ... ok
 test the_set_reset_latch_needs_no_reaction ... ok
+test the_pwm_latches_its_duty_word_at_the_wrap ... ok
 test a_pipeline_in_one_reaction_reads_every_register_before_the_edge ... ok
+test the_debouncer_pwm_and_pwm_check_print_their_records ... ok
 test the_irq_line_runs_on_its_resolved_nature ... ok
 test the_emit_prints_the_same_first_in_the_middle_or_last ... ok
 test the_four_worked_nets_give_the_tables_of_f_4 ... ok
 
-test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.16s
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.47s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.18s
      Running tests/book/digital.rs (/var/tmp/piperine-target-b/debug/deps/book_digital-39a5776c7074e035)
 ```
 
@@ -453,16 +450,16 @@ test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 test the_probe_writes_a_check_and_a_log_record ... ok
 test the_dac_ramp_scales_its_code_by_the_reference ... ok
-test a_crates_own_vt_replaces_the_library_one ... ok
-test the_pad_drives_its_node_and_reads_it_back ... ok
 test the_probes_have_the_short_names_the_nature_gives ... ok
-test the_watchdog_builds_with_its_u16_param ... ok
+test the_pad_drives_its_node_and_reads_it_back ... ok
 test the_tour_module_runs_its_analog_and_digital_blocks ... ok
+test a_crates_own_vt_replaces_the_library_one ... ok
+test the_watchdog_builds_with_its_u16_param ... ok
 test the_watchdog_ends_the_run_at_the_fourth_edge_with_the_button_held ... ok
 test the_resolved_line_runs_on_its_nature ... ok
 test the_register_with_a_setup_check_runs ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.77s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.81s
 
     Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/book/core_std.rs (/var/tmp/piperine-target-b/debug/deps/book_core_std-1339ea21078baf85)
@@ -472,59 +469,59 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test the_owner_and_disputed_rules_name_what_they_break ... ok
-test a_marked_file_joins_its_blocks ... ok
-test refused_rows_name_tests_that_expect_their_refusal ... ok
-test refused_rows_and_gaps_section_11_agree ... ok
-test a_model_across_blocks_names_one_test ... ok
 test no_block_row_is_pending ... ok
+test a_model_across_blocks_names_one_test ... ok
+test a_verdict_fits_its_block ... ok
+test disputed_rows_are_listed_for_the_user ... ok
+test refused_rows_name_tests_that_expect_their_refusal ... ok
 test run_rows_name_tests_that_run_their_model ... ok
 test every_row_names_an_existing_test ... ok
-test the_book_uses_no_removed_name ... ok
 test the_book_reads_every_block ... ok
+test the_book_uses_no_removed_name ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+    Finished `test` profile [unoptimized] target(s) in 0.14s
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-b/debug/deps/book_inventory-4e223d7a754dd3b2)
 ```
 
 `Run typesgenmod` - exit 0
 
 ```
-test a_placement_on_a_nature_without_the_resolve_impl_is_e0187_naming_nature_and_bound ... ok
+test a_carrier_handed_to_a_generic_out_port_needs_no_initial_value ... ok
+test a_nature_parameter_bound_by_resolve_is_a_resolved_carrier_in_the_body ... ok
 test two_natures_for_one_nature_parameter_are_e0180_naming_both ... ok
-test a_param_of_a_type_parameter_is_typed_under_its_bounds ... ok
-test a_behavior_block_binds_its_modules_generic_names ... ok
-test a_generic_module_body_is_checked_once_at_its_definition ... ok
-test behavior_names_that_differ_are_e0403_naming_both_lists ... ok
 test a_resolve_bound_takes_one_or_two_arguments_and_a_nature ... ok
 test const_expressions_in_written_types_are_accepted_everywhere ... ok
+test a_generic_module_body_is_checked_once_at_its_definition ... ok
+test a_param_of_a_type_parameter_is_typed_under_its_bounds ... ok
+test a_behavior_block_binds_its_modules_generic_names ... ok
+test behavior_names_that_differ_are_e0403_naming_both_lists ... ok
 test generic_module_arguments_are_explicit_or_inferred ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.40s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.54s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_generic_modules.rs (/var/tmp/piperine-target-b/debug/deps/types_generic_modules-63c124af6223dbbf)
 ```
 
 `Run typesaggregates` - exit 0
 
 ```
+test every_struct_form_is_a_value_type ... ok
 test tuples_and_tuple_patterns_type_check ... ok
 test an_enum_without_repr_is_a_value_but_not_a_carried_type ... ok
+test the_rows_of_h5_to_h7_type_check ... ok
 test two_sites_giving_a_field_two_composite_types_is_e0605 ... ok
 test generic_arguments_on_a_plain_type_are_refused ... ok
-test the_rows_of_h5_to_h7_type_check ... ok
 test a_param_of_the_librarys_logic_type_checks ... ok
 test composite_params_and_record_fields_type_check ... ok
 test a_carried_type_without_repr_is_e0112 ... ok
 test composite_carriers_type_check ... ok
 
-test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.84s
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.71s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.58s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_aggregates.rs (/var/tmp/piperine-target-b/debug/deps/types_aggregates-9ae44a4f4df4957b)
 ```
 
@@ -534,37 +531,37 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 test logic_and_matches_bits_give_the_table_values ... ok
 test logic_lays_out_two_planes ... ok
 test logic_reads_a_four_state_pattern ... ok
+test not_follows_the_four_state_table ... ok
 test the_tables_hold_at_sixty_four_levels ... ok
 test or_follows_the_four_state_table ... ok
-test shifts_move_states_and_fill_with_zero ... ok
-test not_follows_the_four_state_table ... ok
 test same_compares_the_four_states ... ok
 test the_four_tests_of_a_logic ... ok
+test shifts_move_states_and_fill_with_zero ... ok
 test xor_follows_the_four_state_table ... ok
 
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.95s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.33s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_logic.rs (/var/tmp/piperine-target-b/debug/deps/source_logic-7a1c183f548c2d32)
 ```
 
 `Run hostpatterns` - exit 0
 
 ```
+running 9 tests
 test a_bad_character_and_a_wrong_length_are_e0702 ... ok
 test a_pattern_lays_out_its_two_planes_highest_level_first ... ok
-test the_host_drives_a_four_state_in_port ... ok
-test a_refused_pattern_changes_nothing ... ok
 test a_timed_pattern_lands_at_its_time ... ok
+test a_refused_pattern_changes_nothing ... ok
+test the_host_drives_a_four_state_in_port ... ok
 test a_logic_param_is_set_by_its_pattern ... ok
 test the_host_drive_of_a_resolved_port_is_the_net_when_it_is_the_only_drive ... ok
 test a_logic_param_of_any_width_is_set_exactly_by_its_pattern ... ok
 test a_logic_param_of_any_width_is_set_exactly_by_its_leaves ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.40s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.23s
 
-   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-api)
-    Finished `test` profile [unoptimized] target(s) in 0.97s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/host_patterns.rs (/var/tmp/piperine-target-b/debug/deps/host_patterns-f68bd67ffb1f0328)
 ```
 
@@ -572,14 +569,14 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 6 tests
-test a_param_read_by_a_generic_argument_or_a_length_is_structural ... ok
 test a_false_module_where_is_e0304_naming_the_instance ... ok
+test a_param_read_by_a_generic_argument_or_a_length_is_structural ... ok
 test a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_nature ... ok
 test a_generic_module_passing_its_resolved_nature_on_lowers_its_inner_instances_at_the_nature ... ok
 test one_body_per_distinct_module_instance_and_the_pom_as_written ... ok
 test a_chain_of_growing_module_arguments_is_e0341 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_generic_modules.rs (/var/tmp/piperine-target-b/debug/deps/elab_generic_modules-7bbedd7d1db91076)
