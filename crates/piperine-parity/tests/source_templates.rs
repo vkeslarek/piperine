@@ -121,6 +121,15 @@ fn a_template_of_a_nature_generic_module_runs_through_its_type() {
 }
 
 #[test]
+fn gnd_connects_through_a_callable_bound() {
+    // §8.1.10, §8.4.5: `leg(mid, gnd)` through `C: Fn(Electrical, Electrical)` grounds the lower leg as a placement does, so the
+    // divider sits where `RigNatures` does
+    let mid = RUN.operating_point("natures.msl", "RigBound", &["mid"]);
+    let expected = RustOracle::conductance_divider(1.0, 0.5, 2.0);
+    assert!((mid[0] - expected).abs() < TOLERANCE, "{mid:?} against {expected}");
+}
+
+#[test]
 fn the_items_of_a_template_placed_child_read_as_values() {
     // §8.4.8: `c0.cs + c0.twice` in the bank and `bank.c0.cs`, `bank.cells[1].cs` from the rig read the param and the `pub let` of
     // the `Dram` the template names, at its `cs = 3`: 3 + 2 * 3, 3 and 10 * 3

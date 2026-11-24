@@ -215,3 +215,22 @@ fn a_non_node_item_through_a_template_takes_the_type_its_context_wants() {
     let untyped = bank("i(p, gnd) +> c0.cs.abs();");
     assert_eq!(untyped.codes(), ["E0181"], "{}", untyped.message());
 }
+
+#[test]
+fn gnd_connects_through_a_callable_bound_as_at_a_placement() {
+    // §8.1.10, §8.4.5: a placement through `cell: C`, `C: Fn(E, E)`, takes what a placement of the module takes at each node
+    // input: `gnd`, a node of any nature, as well as a node of `E`; a node of another nature is `E0251`, as at a placement
+    let bank = |connections: &str| {
+        TemplateSource::new(&format!(
+            "module R(a: E, b: E) {{ r: f64 = 1.0; }}\n\
+             nature F {{ potential: T {{ access: te, units: \"K\", abstol: 1u }}, flow: P {{ access: pw, units: \"W\", abstol: 1p }} }}\n\
+             module H<C: Fn(E, E)>(a: E) {{ cell: C; signal f: F; let c = cell({connections}); }}\n\
+             module Top(x: E) {{ let h = H::<_>(x) {{ cell: R {{ r: 2.0 }} }}; }}"
+        ))
+    };
+    for connections in ["a, gnd", "gnd, a", "a, a"] {
+        let source = bank(connections);
+        assert_eq!(source.codes(), Vec::<String>::new(), "{connections}: {}", source.message());
+    }
+    assert_eq!(bank("a, f").codes(), ["E0251"]);
+}

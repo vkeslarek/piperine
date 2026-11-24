@@ -21,3 +21,17 @@ module RigNatures() {
     let divider = Divider(top, mid) { leg: Load::<Electrical> { g: 2.0 } };
 }
 analog for RigNatures { potential(top) +> 1.0; }
+
+/// The same divider with its lower leg placed through `C: Fn(Electrical, Electrical)`, connected to `gnd` (§8.1.10).
+module BoundDivider<C: Fn(Electrical, Electrical)>(top: Electrical, mid: Electrical) {
+    leg: C;
+    let upper = HALF(top, mid);
+    let lower = leg(mid, gnd);
+}
+
+module RigBound() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let divider = BoundDivider::<_>(top, mid) { leg: Load::<Electrical> { g: 2.0 } };
+}
+analog for RigBound { potential(top) +> 1.0; }

@@ -156,10 +156,32 @@ impl Checker<'_> {
         }
         if matches!(self.design.decl_data(parameter).kind, DeclKind::Param(_)) {
             let Some(Ty::Fn(params, result)) = self.module_param_callable(parameter) else { return None };
-            self.apply(expr, &params, args)?;
+            self.connect_through_bound(expr, &params, args)?;
             return Some(*result);
         }
         self.local_call(expr, parameter, args)
+    }
+
+    /// The connections of a placement through a template param bounded by `Fn(P)` (§8.4.5): a node input takes what a port of
+    /// that nature takes at a placement, a node of a compatible nature or `gnd` (§8.1.10, `connect`); any other input is an
+    /// argument of its type. `None` after an arity mismatch.
+    fn connect_through_bound(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        if args.len() != params.len() {
+            self.arity_mismatch(file, span, params.len(), args);
+            return None;
+        }
+        for (position, (arg, ty)) in args.iter().zip(params).enumerate() {
+            match ty {
+                Ty::Node(_) => {
+                    let Some(found) = self.infer(arg.value) else { continue };
+                    self.connect(arg.value, &format!("the node input {} of the `Fn` bound", position + 1), ty, &found);
+                }
+                _ => self.check_argument(arg.value, ty),
+            }
+        }
+        Some(())
     }
 
     /// The function type a type parameter's `Fn(A) -> R` bound gives its values, `None` without one.

@@ -363,3 +363,14 @@ fn a_placement_through_a_template_of_a_nature_generic_module_places_its_instance
         assert_eq!(Placed::first_param(&ir, path), Placed::first_param(&direct, "Top.c"), "{tail}");
     }
 }
+
+#[test]
+fn gnd_at_a_placement_through_a_callable_bound_is_ground() {
+    // §8.1.10, §8.4.5, §8.4.9: `cell(a, gnd)` through `C: Fn(Electrical, Electrical)` places the instance `R(a, gnd)` places
+    let module = "module R(a: Electrical, b: Electrical) { r: f64 = 1.0; }\nanalog for R { i(a, b) +> v(a, b) / r; }\n";
+    let through = Elab::ir(&format!("{module}module H<C: Fn(Electrical, Electrical)>(a: Electrical) {{ cell: C; let c = cell(a, gnd); }}\nmodule Top() {{ signal x: Electrical; let h = H::<_>(x) {{ cell: R {{ r: 2.0 }} }}; }}"), "Top");
+    let direct = Elab::ir(&format!("{module}module H(a: Electrical) {{ let c = R(a, gnd) {{ r: 2.0 }}; }}\nmodule Top() {{ signal x: Electrical; let h = H(x); }}"), "Top");
+    let nodes = |ir: &Ir| ir.instance_at("Top.h.c").map(|instance| format!("{:?}", instance.bindings())).unwrap_or_else(|| panic!("no instance Top.h.c"));
+    assert_eq!(nodes(&through), nodes(&direct), "the second port is ground in both");
+    assert_eq!(Placed::first_param(&through, "Top.h.c"), Placed::first_param(&direct, "Top.h.c"));
+}

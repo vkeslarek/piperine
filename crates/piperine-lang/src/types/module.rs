@@ -349,7 +349,8 @@ impl Checker<'_> {
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    self.connect(arg.value, port_decl, &expected, &found);
+                    let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.connect(arg.value, &format!("the node port `{name}`"), &expected, &found);
                 }
                 // a nature parameter of the enclosing generic module, passed on to a placement: a node of that nature, or `gnd`
                 Some(expected) if self.is_nature_parameter(&expected) => {
@@ -371,10 +372,10 @@ impl Checker<'_> {
         }
     }
 
-    /// One node argument to the port `port_decl`: the nature of its port, or `gnd`. A value (an
-    /// expression that is not a node) at a continuous carrier port is `E0315` naming the port:
-    /// only an `in` port takes an expression, and a node port is never one (§8.1.11).
-    fn connect(&mut self, arg: ExprId, port_decl: DeclId, port: &Ty, found: &Ty) {
+    /// One node argument to the port `port` that `where_` names ("the node port `p`"): the nature of its port, or `gnd`
+    /// (§8.1.10). A value (an expression that is not a node) at a continuous carrier port is `E0315` naming the port: only an
+    /// `in` port takes an expression, and a node port is never one (§8.1.11).
+    pub(super) fn connect(&mut self, arg: ExprId, where_: &str, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -391,8 +392,7 @@ impl Checker<'_> {
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
             }
             (Ty::Node(_), _) => {
-                let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                let message = format!("an expression of type {} is connected to the node port `{name}`: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                let message = format!("an expression of type {} is connected to {where_}: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
                 self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
