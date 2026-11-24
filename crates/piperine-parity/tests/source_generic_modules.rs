@@ -123,3 +123,29 @@ fn a_monitor_over_a_type_reads_its_let_of_the_carrier() {
     let ir = ModuleModels::project("modules.msl").elaborate("Monitored").unwrap_or_else(|r| panic!("{r}"));
     assert!(ir.bodies().any(|body| body.name() == "Watch::<bool>"));
 }
+
+#[test]
+fn short_merges_two_nodes_of_each_nature() {
+    // GN-16 AC 1 (§8.2.8): a divider of 1k over 3k from 4 V has its middle at 4 * 3k / (1k + 3k) = 3 V. Written with one middle
+    // node and written with two nodes a `Short` joins, it is the same solution, over `Electrical`, `Thermal` and the nature
+    // `Heat` the model declares
+    let (top, upper, lower) = (4.0_f64, 1e3_f64, 3e3_f64);
+    let middle = top * lower / (upper + lower);
+    for rig in ["ElectricalRig", "ThermalRig", "HeatRig"] {
+        let seen = ModuleModels::operating_point("short.msl", rig, &["whole_mid", "joined_mid", "whole_top", "joined_top"]);
+        assert!((seen[0] - middle).abs() < 1e-6, "{rig}: the divider written with one middle node: {seen:?}");
+        assert!((seen[1] - seen[0]).abs() < 1e-9, "{rig}: the joined divider is the same solution: {seen:?}");
+        assert!((seen[2] - top).abs() < 1e-9 && (seen[3] - top).abs() < 1e-9, "{rig}: the source holds the top: {seen:?}");
+    }
+}
+
+#[test]
+fn short_over_two_natures_is_refused_naming_both() {
+    // GN-16 AC 2 (DC4): `Short(e, t)` over an `Electrical` and a `Thermal` node gives the one `S` two natures: `E0180`
+    // naming both, at the placement
+    let refused = ModuleModels::project("short_mixed.msl").elaborate("Mixed").expect_err("two natures for one `S`");
+    let found: Vec<(String, String)> = refused.diagnostics.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "E0180");
+    assert!(found[0].1.contains("Electrical") && found[0].1.contains("Thermal"), "{found:?}");
+}

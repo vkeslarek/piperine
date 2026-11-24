@@ -395,6 +395,13 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
+        // A param read by a const generic argument of a placement is structural too (`Taps::<{ count }>`, GN-20).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_generic_arguments(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -426,6 +433,21 @@ impl Elaboration<'_, '_> {
                     found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
                 }
                 at = element;
+            }
+        }
+        found
+    }
+
+    /// The params of `module` that a const generic argument of one of its placements reads (`Taps::<{ count }>`).
+    fn params_read_by_generic_arguments(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut found = Vec::new();
+        for call in &data.instances {
+            let Some(instantiation) = self.types.instantiation(*call) else { continue };
+            for argument in &instantiation.arguments {
+                if let crate::types::GenericValue::Const(crate::types::ConstTerm::Expr(expr)) = argument {
+                    found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
+                }
             }
         }
         found

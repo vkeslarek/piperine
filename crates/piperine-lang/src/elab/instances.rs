@@ -184,10 +184,13 @@ impl Elaboration<'_, '_> {
 
     /// The integer const arguments of the instance being lowered by parameter: what a syntactic fold of an expression reads.
     fn enclosing_values(&self) -> BTreeMap<DeclId, u128> {
-        self.consts.substitution().entries().filter_map(|(parameter, value)| match value {
+        let generic = self.consts.substitution().entries().filter_map(|(parameter, value)| match value {
             GenericValue::Const(ConstTerm::Value(number)) => u128::try_from(*number).ok().map(|number| (parameter, number)),
             _ => None,
-        }).collect()
+        });
+        // the key params of the body being lowered: an argument `{ count }` reads the value the body was lowered for
+        let keys = self.body_keys.integers().into_iter().filter_map(|(param, number)| u128::try_from(number).ok().map(|number| (param, number)));
+        generic.chain(keys).collect()
     }
 
     /// The const parameters of the instance being lowered bound to their values.

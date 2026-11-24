@@ -191,6 +191,8 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.lower_pending_bodies();
         self.pad_child_nodes();
         let top_instance = self.place_top(top);
+        // a body variant the placement asked for after the first padding (the top's own, keyed by a host override) is padded too
+        self.pad_child_nodes();
         let reprs = self.lower_hand_written_reprs();
         self.add_functions();
         self.set_hand_written_reprs(reprs);

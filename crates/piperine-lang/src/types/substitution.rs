@@ -309,6 +309,10 @@ impl Checker<'_> {
         if let Some(value) = self.fold_integer(expr, u8::MAX) {
             return i128::try_from(value).ok().map(ConstTerm::Value);
         }
+        // `{ count }` over a param of the module: the elaborator folds it per body variant, which makes the param structural
+        if self.reads_module_param(expr) {
+            return Some(ConstTerm::Expr(expr));
+        }
         let what = self.expression_name(expr);
         self.coded(file, "E0188", node.span, format!("a generic argument that is a constant must be one the checker folds, and {what} is not (§3.8.5)"), "not a constant");
         None

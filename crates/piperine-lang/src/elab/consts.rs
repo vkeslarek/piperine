@@ -73,6 +73,14 @@ impl Bindings {
         self.trees.insert(param, tree);
     }
 
+    /// The integer value of each param bound to one, by param.
+    pub fn integers(&self) -> Vec<(DeclId, i128)> {
+        self.values.iter().filter_map(|(param, value)| match value {
+            Constant::Int(number) => Some((*param, *number)),
+            _ => None,
+        }).collect()
+    }
+
     /// The value of the composite param `param`, taken apart.
     pub fn tree(&self, param: DeclId) -> Option<&ConstTree> {
         self.trees.get(&param)

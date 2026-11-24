@@ -299,6 +299,14 @@ impl Checker<'_> {
                     let Some(found) = self.infer(arg.value) else { continue };
                     self.connect(arg.value, port_decl, &expected, &found);
                 }
+                // a nature parameter of the enclosing generic module, passed on to a placement: a node of that nature, or `gnd`
+                Some(expected) if self.is_nature_parameter(&expected) => {
+                    let Some(found) = self.infer(arg.value) else { continue };
+                    if found != expected && found != Ty::AnyNode {
+                        let span = self.design.expr_node(arg.value).span;
+                        self.mismatch(file, span, &expected, &found);
+                    }
+                }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
                     self.check_argument(arg.value, &value);

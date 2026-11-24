@@ -24,7 +24,7 @@ const ROWS: &[Row] = &[
     // `an array type` (`signal s: [Bit; 4]`) left this table when composite-values T74 typed it
     // (`types_carrier_arrays::arrays_of_carriers_type_as_signals_and_ports`).
     // `a user trait and impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
-    Row { construct: "a generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: Electrical) { let g = G(a); }", names: "generic module" },
+    // `a generic module` left this table when generics T71 typed it (`types_generic_modules`).
     Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },

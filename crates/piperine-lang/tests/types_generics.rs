@@ -449,10 +449,11 @@ impl LaterPhases {
 
 #[test]
 fn phase_c_d_and_e_forms_stay_p0001_by_name() {
-    // GN-29 AC 2: a form that a later phase delivers stays `P0001` naming the form, never run by another rule: a generic
-    // module and generation (phase C), a template value and a placement through one (phase C, GN-21 to GN-23)
-    let generic_module = "module Hold<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; let h = Hold::<u8>(d); }\n";
-    assert!(LaterPhases::refuses(generic_module, "generic module"), "{:?}", LaterPhases::found(generic_module));
+    // GN-29 AC 2: a form that a later phase delivers stays `P0001` naming the form, never run by another rule: generation
+    // (phase C), a template value and a placement through one (phase C, GN-21 to GN-23); the generic module left this
+    // list when generics T71 typed and lowered it
+    let generic_module = "module Hold<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<u8> = 0; let h = Hold::<u8>(d); }\n";
+    assert!(!LaterPhases::refuses(generic_module, "generic module"), "{:?}", LaterPhases::found(generic_module));
     let generation = "module Top() { signal o: Electrical; for k in 0..2 { let r = 1; } }\n";
     assert!(LaterPhases::refuses(generation, "generation `for`/`if` in a module body"), "{:?}", LaterPhases::found(generation));
     let template = "module Cell(a: Electrical) {}\nmodule Top() { signal a: Electrical; let c = Cell { }; }\n";

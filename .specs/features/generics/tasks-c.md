@@ -566,8 +566,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `short_merges_two_nodes_of_each_nature` and `short_over_two_natures_is_refused_naming_both` pass under `**Run srcmods**`
-- [ ] Gate check passes: Quick
+- [x] `short_merges_two_nodes_of_each_nature` and `short_over_two_natures_is_refused_naming_both` pass under `**Run srcmods**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -587,9 +587,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_param_read_by_a_generic_argument_or_a_length_is_structural` passes under `**Run elabmods**`
-- [ ] `a_structural_param_overrides_before_the_run_and_is_refused_during_it` passes under `**Run apisession**`
-- [ ] Gate check passes: Full (last task of batch B11)
+- [x] `a_param_read_by_a_generic_argument_or_a_length_is_structural` passes under `**Run elabmods**`
+- [x] `a_structural_param_overrides_before_the_run_and_is_refused_during_it` passes under `**Run apisession**`
+- [x] Gate check passes: Full (last task of batch B11)
 
 **Tests**: integration
 **Gate**: full
@@ -1110,6 +1110,7 @@ about 120 s are moved to the background by the harness and notify on completion;
 **B11 progress (T65 to T68, T71; 2026-11-23, executor 2).** Seam first: `Elaborator::admitting` and `Project::admitting` (322f9914), kept for `Generation`/`DigitalGeneration`.
 (1) T65: `BodyKey` carries `instance`; `generic_bodies.rs` (`module_instance`, `discharge_module_where` = `E0304` naming the instance, `admit_instance_depth` = `E0341` at depth 1 024, `place` runs on `Stack::wide`); param plans per instance (`instance_param_plans`); `fold_term` folds `{ N + 1 }` syntactically (`types.fold_with`). (2) T66/T67 as planned (`BodyData::instance`, `mark_body_instance`, `GenericInstance::names_body`); T67 needed no source change (the spelled marks already covered it). (3) T68: the elaborator reads carrier and array types through `ConstEval::typed_carrier*` (substitution); `nature_decl_of` and `GenericSignature::is_nature_parameter` make a nature-parameter port a node, never a value input (`is_value_input`); `Ty::Node` spells as its nature in an instance name. Hoisted generic modules (the stdlib `idt`): `Frame::substitution`, `enter_frame` swaps it, `hoist` folds the instance, `hoist_frame` lowers the caller's drive expressions under the caller's substitution; `Checker::placement` records the callee before typing the arguments so a feedback `let y = idt(.. y ..)` is judged; `param_block` applies the placement substitution (`reset: None` for `T`). The `[Bit; ROWS]` window and `M::<2>` with an array port are not proven by a source test yet (the Book's `M` is refused by L75; `Taps::<2>` proves an array of nodes of length N). (4) T71 flipped `GenericModules` (variant deleted, `IN_FORCE` = `Generation`, `DigitalGeneration`; the checker reads `forms.admits(Generation)`), closed S3 (0 silent, 19 loud). Book: digital#21, core-std#8, modules#6, modules#8 run (modules~8b927a42 holds); cheatsheet#2 `refused` L75 (new, owner `spec-closure`: a module with a value input is hoisted and a hoisted frame holds no `out` carrier; the card without `x` runs); modules#1, modules~b53307eb, modules~4bcb9f1d, the CLI ladder listing and modules#2 are re-pinned to the generation `P0001` (L31); modules#10 to `P0001` bundle `Cell` + generation + `E0181` template `C`; cheatsheet#8 to bundle + 2 template placements + the `Fn` bound `E0187`; natures#8 to the bundle alone (`P0001` struct, `flip`, 3 `E0222`). Test names differ from the plan where the output differs (`the_template_card_is_refused_for_its_template_and_its_bundle`: no generation is reported). welcome~e12daa72 became welcome~1d96407a and generics~00f0fd4f became generics~c212674a and ~e60a0a07 (the Book sentences changed). L30 narrowed to `Short` (T69) and structural params (T70).
 (5) Found, not mine: `emit!(.., some = q.is_some())` of a carrier whose type is `Option` makes the recorder fail ("the net changed without a change reaching the recorder"), generic or not (probe in T71 work; not recorded as a gap row, report to the user). Dependent `E0187` on `q` after `Dff::<u8>` fails its bound (the out-handed carrier is judged as undriven); the Book pin lists both.
+**B11 done (T69, T70 added; 2026-11-23).** T69: a nature parameter passed on to a placement is a node (`connections` accepts it, `gnd` too); `Short` over `Electrical`, `Thermal` and a declared `Heat`, `E0180` naming both natures. T70: `{ count }` over a module param is a const generic argument (`const_term`), classified structural (`params_read_by_generic_arguments`), folded per body key (`enclosing_values` reads `body_keys`); `pad_child_nodes` runs again after `place_top` (a keyed top lowered at placement time). `--param Top.count=3` elaborates `Taps::<3>`; `set_at` is `E0803`. Fixes after the T71 commit: the generic-module rows of `types_buck`, `types_subset`, `types_generics` and `types_model` left their `P0001` tables (the first T71 gate looked at a truncated failure list).
 **Dispatched:** none.
 **Walked:** none yet.
 

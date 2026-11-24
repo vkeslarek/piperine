@@ -64,3 +64,17 @@ fn a_chain_of_growing_module_arguments_is_e0341() {
     let found = ModuleElab::refused(src, "Top");
     assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Grow")), "{found:?}");
 }
+
+#[test]
+fn a_param_read_by_a_generic_argument_or_a_length_is_structural() {
+    // GN-20 AC 1 (§8.1.2): `count` is read by the const generic argument of `Taps::<{ count }>` and `n` by the length of an
+    // array: each fixes structure, so each param is `structural` in the body that holds it and the body is lowered per value
+    let src = "module Taps<const N: usize>(a: Electrical) { signal rails: [Electrical; N]; }\n\
+               module Top() { count: usize = 2; n: usize = 3; signal x: Electrical; signal sized: [Electrical; n]; let t = Taps::<{ count }>(x); }\n";
+    let ir = ModuleElab::run(src, "Top").unwrap_or_else(|found| panic!("{found:?}"));
+    assert!(ir.check().is_empty(), "{:?}", ir.check());
+    let top = ir.bodies().find(|body| body.name().starts_with("Top")).expect("a body of Top");
+    let structural: Vec<&str> = top.params().iter().filter(|param| param.structural).map(|param| param.name.as_str()).collect();
+    assert_eq!(structural, ["count", "n"], "the params the generic argument and the length read");
+    assert!(ir.bodies().any(|body| body.name() == "Taps::<2>"), "the instance takes the value of `count`");
+}

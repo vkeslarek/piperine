@@ -1,0 +1,7 @@
+//! `Short` over a node of each of two natures (generics GN-16 AC 2): the one `S` of `Short` gets two natures.
+
+module Mixed() {
+    signal e: Electrical;
+    signal t: Thermal;
+    let s = Short(e, t);
+}
