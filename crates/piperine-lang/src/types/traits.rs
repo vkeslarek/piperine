@@ -218,7 +218,7 @@ impl<'d> ImplTable<'d> {
             ImplTarget::Declared(decl) => Some(match self.design.decl_data(*decl).kind {
                 DeclKind::Enum(_) => Ty::enumeration(*decl),
                 DeclKind::Nature(_) => Ty::Node(*decl),
-                DeclKind::Module(_) => Ty::Module(*decl),
+                DeclKind::Module(_) => Ty::module(*decl),
                 _ => Ty::structure(*decl),
             }),
             ImplTarget::Primitive(ty) => Some(ty.clone()),
@@ -242,7 +242,7 @@ impl<'d> ImplTable<'d> {
             (ImplTarget::Declared(decl), Ty::Struct(nominal) | Ty::Enum(nominal)) => nominal.decl == *decl,
             (ImplTarget::Declared(decl), Ty::Node(nature)) => nature == decl,
             // a module type is a template of the module (§3.1.4)
-            (ImplTarget::Declared(decl), Ty::Module(module)) => module == decl,
+            (ImplTarget::Declared(decl), Ty::Module(module)) => module.decl == *decl,
             (ImplTarget::Declared(decl), Ty::Carrier { nature, value }) => nature == decl && entry.carried.as_ref().is_none_or(|carried| carried == &**value),
             (ImplTarget::Primitive(primitive), other) => primitive == other,
             (ImplTarget::Integer { signed: false }, Ty::UInt(_) | Ty::GenericInteger { signed: false, .. }) => true,

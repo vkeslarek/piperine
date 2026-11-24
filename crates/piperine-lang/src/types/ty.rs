@@ -25,8 +25,9 @@ pub enum Ty {
     AnyNode,
     /// `fn(A, B) -> R`.
     Fn(Vec<Ty>, Box<Ty>),
-    /// A module, by its declaration.
-    Module(DeclId),
+    /// A module, by its declaration and the generic arguments its template names (§8.4.3): `G<2>` is
+    /// `Module(Nominal { decl: G, arguments: [2] })`; a module that is not generic has none.
+    Module(Nominal),
     /// `UInt<N>` (`uN`), `N` in 1..=2^32 - 1.
     UInt(u32),
     /// `Int<N>` (`iN`), `N` in 1..=2^32 - 1.
@@ -111,7 +112,7 @@ impl Ty {
             (Ty::GenericInteger { signed, .. }, Ty::Int(_)) | (Ty::Int(_), Ty::GenericInteger { signed, .. }) if *signed => true,
             (Ty::Tuple(found), Ty::Tuple(wanted)) => found.len() == wanted.len() && found.iter().zip(wanted).all(|(found, wanted)| found.fits(wanted)),
             (Ty::Fn(found, found_result), Ty::Fn(wanted, wanted_result)) => found.len() == wanted.len() && found.iter().zip(wanted).all(|(found, wanted)| found.fits(wanted)) && found_result.fits(wanted_result),
-            (Ty::Struct(found), Ty::Struct(wanted)) | (Ty::Enum(found), Ty::Enum(wanted)) => {
+            (Ty::Struct(found), Ty::Struct(wanted)) | (Ty::Enum(found), Ty::Enum(wanted)) | (Ty::Module(found), Ty::Module(wanted)) => {
                 found.decl == wanted.decl
                     && found.arguments.len() == wanted.arguments.len()
                     && found.arguments.iter().zip(&wanted.arguments).all(|pair| match pair {
@@ -173,13 +174,18 @@ impl Ty {
             Ty::Option(inner) | Ty::Range { element: inner, .. } | Ty::Iterator { element: inner, .. } | Ty::Carrier { value: inner, .. } => inner.has_param(),
             Ty::Tuple(items) => items.iter().any(Ty::has_param),
             Ty::Array(element, length) => element.has_param() || matches!(length, Length::Generic(_)),
-            Ty::Struct(nominal) | Ty::Enum(nominal) => nominal.arguments.iter().any(|argument| match argument {
+            Ty::Struct(nominal) | Ty::Enum(nominal) | Ty::Module(nominal) => nominal.arguments.iter().any(|argument| match argument {
                 GenericValue::Type(ty) => ty.has_param(),
                 GenericValue::Const(ConstTerm::Param(_) | ConstTerm::Width(_) | ConstTerm::Expr(_)) => true,
                 _ => false,
             }),
             _ => false,
         }
+    }
+
+    /// The module `decl` with no generic argument: a module that is not generic, or one whose arguments are not named here.
+    pub fn module(decl: DeclId) -> Ty {
+        Ty::Module(Nominal::plain(decl))
     }
 
     /// The struct `decl`, not generic.
@@ -493,8 +499,8 @@ impl Ty {
             Ty::Array(element, length) => format!("[{}; {}]", element.name(design), length.name(design)),
             Ty::Range { element, .. } => format!("Range<{}>", element.name(design)),
             Ty::Iterator { element, .. } => format!("Iterator<{}>", element.name(design)),
-            Ty::Module(module) => match &design.decl_data(*module).name {
-                Some(n) => format!("module `{}`", n.text),
+            Ty::Module(module) => match &design.decl_data(module.decl).name {
+                Some(n) => format!("module `{}{}`", n.text, module.arguments_name(design)),
                 None => "module".to_string(),
             },
             Ty::Param(param) => match &design.decl_data(*param).name {

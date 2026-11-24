@@ -5,7 +5,7 @@
 //! `C: Fn(P)` holds for a module whose ports match.
 
 use piperine_lang::pom::{Design, DesignDiagnostic, ExprId};
-use piperine_lang::types::{Callee, Ty, Types};
+use piperine_lang::types::{Callee, ConstTerm, GenericValue, Ty, Types};
 
 /// The natures and the two modules every source of this file shares.
 const PRELUDE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n\
@@ -160,4 +160,40 @@ fn a_param_default_reads_earlier_params_and_a_template_params_trait() {
     assert_eq!(source.codes(), Vec::<String>::new(), "{}", source.message());
     assert_eq!(source.type_of("fet.gain()"), Some(Ty::F64));
     assert_eq!(source.type_of("level / r"), Some(Ty::F64));
+}
+
+/// A module generic over a const and one generic over the nature of its ports.
+const GENERIC_MODULES: &str = "module G<const N: usize>(a: E) where N >= 1 { k: f64 = 1.0; }\n\
+    module S<K: Nature>(a: K, b: K) { r: f64 = 1.0; }\n";
+
+#[test]
+fn the_type_of_a_generic_template_carries_its_arguments() {
+    // §8.4.3: a template of a generic module is of the type `Name<G>`, so `G::<3> { .. }` where a `G<2>` is wanted is `E0180`
+    // naming both, and an argument the template leaves out is the one the wanted type names
+    let wrong = TemplateSource::new(&format!("{GENERIC_MODULES}const T: G<2> = G::<3> {{ k: 3.0 }};\nmodule Top(x: E) {{ let c = T(x); }}"));
+    assert_eq!(wrong.codes(), ["E0180"]);
+    assert!(wrong.message().contains("expected `module `G<2>``, found `module `G<3>``"), "{}", wrong.message());
+    let inferred = TemplateSource::new(&format!("{GENERIC_MODULES}const T: G<2> = G {{ k: 3.0 }};\nmodule Top(x: E) {{ let c = T(x); }}"));
+    assert_eq!(inferred.codes(), Vec::<String>::new(), "{}", inferred.message());
+    let Some(Ty::Module(template)) = inferred.type_of("G { k: 3.0 }") else { panic!("a template is of a module type") };
+    assert_eq!(template.arguments, [GenericValue::Const(ConstTerm::Value(2))], "the template's type names the argument 2");
+}
+
+#[test]
+fn a_placement_through_a_template_of_a_nature_generic_module_checks_its_ports() {
+    // §8.4.3, §8.4.4: the ports of `S<K>` are read under the arguments the template's type names: `S<E>` takes nodes of `E`,
+    // from a template in place, a `const`, a param of type `S<E>` and a param bounded by `Fn(E, E)`; `S<F>` at a node of `E` is
+    // `E0251`, a node of another nature
+    for tail in [
+        "module Top(x: E, y: E) { let c = S::<E> { r: 2.0 }(x, y); }",
+        "const T: S<E> = S::<E> { r: 2.0 };\nmodule Top(x: E, y: E) { let c = T(x, y); }",
+        "module H(a: E, b: E) { cell: S<E>; let c = cell(a, b); }\nmodule Top(x: E, y: E) { let h = H(x, y) { cell: S::<E> { r: 2.0 } }; }",
+        "module H<C: Fn(E, E)>(a: E, b: E) { cell: C; let c = cell(a, b); }\nmodule Top(x: E, y: E) { let h = H::<_>(x, y) { cell: S::<E> { r: 2.0 } }; }",
+    ] {
+        let source = TemplateSource::new(&format!("{GENERIC_MODULES}{tail}"));
+        assert_eq!(source.codes(), Vec::<String>::new(), "{tail}: {}", source.message());
+    }
+    let other = "nature F { potential: T { access: te, units: \"K\", abstol: 1u }, flow: P { access: pw, units: \"W\", abstol: 1p } }\n";
+    let wrong = TemplateSource::new(&format!("{GENERIC_MODULES}{other}const T: S<F> = S::<F> {{ r: 2.0 }};\nmodule Top(x: E, y: E) {{ let c = T(x, y); }}"));
+    assert_eq!(wrong.codes()[0], "E0251", "{}", wrong.message());
 }

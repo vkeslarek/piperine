@@ -227,20 +227,17 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if through_value && self.design.decl_data(module).generics_span.is_some() && self.module_port_types(module)?.iter().any(Ty::has_param) {
-            self.unsupported(file, node.span, "a placement through a template of a generic module whose ports are typed by its generic parameters");
-            for arg in args {
-                self.infer(arg.value);
-            }
-            return None;
-        }
+        // the arguments of a generic module placed through a template value are the ones its type names, `G<2>` (§8.4.3)
+        let generic = self.design.decl_data(module).generics_span.is_some();
+        let through_template = (generic && through_value).then(|| self.template_substitution(*callee, module));
         // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
         self.placing.push(Some(module));
         // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
         self.callees.insert(expr, Callee::Module(module));
-        self.exprs[callee.index()] = Some(Ty::Module(module));
-        // the arguments of a generic module placed through a template value are the template's own, which only elaboration folds
-        let substitution = if self.design.decl_data(module).generics_span.is_some() && !through_value {
+        self.exprs[callee.index()] = Some(Ty::module(module));
+        let substitution = if through_template.is_some() {
+            through_template
+        } else if generic {
             let Some(given) = self.generic_placement(expr, *callee, module, args, &fields) else {
                 self.placing.pop();
                 self.keep_handed_after_failure(module, args);
@@ -295,7 +292,7 @@ impl Checker<'_> {
     /// Whether `callee` is a const expression whose value is a template of `module` (§8.4.4, §8.4.6): a param, a `const`, a
     /// function's result, a template written in place. A callee that reads a port, a signal or a probe is `E0362`.
     fn callee_is_template_of(&mut self, callee: ExprId, module: DeclId) -> bool {
-        if !matches!(self.infer(callee), Some(Ty::Module(found)) if found == module) {
+        if !matches!(self.infer(callee), Some(Ty::Module(found)) if found.decl == module) {
             return false;
         }
         if let Some(read) = self.runtime_read(callee) {

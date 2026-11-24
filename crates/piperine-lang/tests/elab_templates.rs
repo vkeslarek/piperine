@@ -309,3 +309,21 @@ fn a_param_default_dispatches_the_trait_of_a_template_param() {
     assert_eq!(level("Top.a"), Some(Constant::Real(Real::new(3.0 * 2.0))));
     assert_eq!(level("Top.b"), Some(Constant::Real(Real::new(3.0 * 0.5))));
 }
+
+#[test]
+fn a_placement_through_a_template_of_a_nature_generic_module_places_its_instance() {
+    // §8.4.3, §8.4.9: a template of `S<K>`, whose ports are typed by `K`, placed from a `const`, a param of type `S<Electrical>`
+    // and a param bounded by `Fn(Electrical, Electrical)`, places the instance `S::<Electrical>(x, y) { r: 2.0 }` places
+    let module = "module S<K: Nature>(a: K, b: K) { r: f64 = 1.0; }\nanalog<K> for S<K> { flow(a, b) +> potential(a, b) / r; }\n";
+    let direct = Elab::ir(&format!("{module}module Top() {{ signal x: Electrical; signal y: Electrical; let c = S::<Electrical>(x, y) {{ r: 2.0 }}; }}"), "Top");
+    for (tail, path) in [
+        ("const T: S<Electrical> = S::<Electrical> { r: 2.0 };\nmodule Top() { signal x: Electrical; signal y: Electrical; let c = T(x, y); }", "Top.c"),
+        ("module H(a: Electrical, b: Electrical) { cell: S<Electrical>; let c = cell(a, b); }\nmodule Top() { signal x: Electrical; signal y: Electrical; let h = H(x, y) { cell: S::<Electrical> { r: 2.0 } }; }", "Top.h.c"),
+        ("module H<C: Fn(Electrical, Electrical)>(a: Electrical, b: Electrical) { cell: C; let c = cell(a, b); }\nmodule Top() { signal x: Electrical; signal y: Electrical; let h = H::<_>(x, y) { cell: S::<Electrical> { r: 2.0 } }; }", "Top.h.c"),
+    ] {
+        let ir = Elab::ir(&format!("{module}{tail}"), "Top");
+        let instance = ir.instance_at(path).unwrap_or_else(|| panic!("{tail}: no instance at {path}"));
+        assert_eq!(instance.body().name(), "S::<Electrical>", "{tail}");
+        assert_eq!(Placed::first_param(&ir, path), Placed::first_param(&direct, "Top.c"), "{tail}");
+    }
+}

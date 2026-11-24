@@ -123,7 +123,7 @@ fn a_placement_checks_nodes_count_and_params() {
     let placement = expr_of(&design, &src, "Resistor { r: 1k }(a, b)");
     let resistor: DeclId = design.module("Resistor").expect("Resistor").decl().id();
     assert_eq!(types.callee(placement), Some(Callee::Module(resistor)));
-    assert_eq!(types.ty(placement), Some(&Ty::Module(resistor)));
+    assert_eq!(types.ty(placement), Some(&Ty::module(resistor)));
     assert!(types.reached().contains(&resistor));
 
     // A param of the wrong type: at the value.

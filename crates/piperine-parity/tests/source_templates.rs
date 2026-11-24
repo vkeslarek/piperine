@@ -58,6 +58,11 @@ impl RustOracle {
     fn divider(drive: f64, upper: f64, lower: f64) -> f64 {
         drive * lower / (upper + lower)
     }
+
+    /// The middle of a divider of the conductances `upper` and `lower` driven at `drive`.
+    fn conductance_divider(drive: f64, upper: f64, lower: f64) -> f64 {
+        drive * upper / (upper + lower)
+    }
 }
 
 #[test]
@@ -104,4 +109,13 @@ fn a_param_default_reads_the_params_before_it() {
     let gain = RUN.operating_point("defaults.msl", "RigGain", &["d", "s"]);
     let (response, level) = RustOracle::square(3.0, 0.5);
     assert!((gain[0] - response).abs() < TOLERANCE && (gain[1] - level).abs() < TOLERANCE, "{gain:?} against {response} and {level}");
+}
+
+#[test]
+fn a_template_of_a_nature_generic_module_runs_through_its_type() {
+    // §8.4.3: `Load<Electrical>` names the nature of the ports, so the `const` `HALF` (g = 0.5) and the param `leg` (g = 2) place
+    // conductances between nodes of `Electrical`: the divider sits at 0.5 / (0.5 + 2) of the drive
+    let mid = RUN.operating_point("natures.msl", "RigNatures", &["mid"]);
+    let expected = RustOracle::conductance_divider(1.0, 0.5, 2.0);
+    assert!((mid[0] - expected).abs() < TOLERANCE, "{mid:?} against {expected}");
 }

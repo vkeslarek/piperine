@@ -9,7 +9,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution, T
 use super::check::Checker;
 use super::inference::Inference;
 use super::nature_rules::NatureRules;
-use super::{GenericSignature, GenericValue, Instantiation, Substitution, Ty};
+use super::{GenericSignature, GenericValue, Instantiation, Nominal, Substitution, Ty};
 
 impl Checker<'_> {
     /// The substitution the placement `expr` of the generic module `module` makes, recorded as its instantiation
@@ -29,12 +29,22 @@ impl Checker<'_> {
     /// The instantiation a template `expr` of the generic module `module` makes (§8.4.3): the arguments written on its head,
     /// `Name::<G> { .. }`, else the ones its param values give, then the defaults; recorded as the template's instantiation. `None`
     /// after a diagnostic, `E0181` for an argument nothing gives.
-    pub(super) fn template_instantiation(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Substitution> {
+    pub(super) fn template_instantiation(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Nominal>) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let signature = self.generic_signature(module);
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, expr, module, file, span)?;
+        // `const T: G<2> = G { .. }`: an argument the head leaves out is the one the expected type names
+        if let Some(expected) = expected {
+            for (index, parameter) in signature.parameters().iter().enumerate() {
+                if inference.found().get(parameter.decl).is_none()
+                    && let Some(argument) = expected.arguments.get(index)
+                {
+                    inference.give(index, argument.clone());
+                }
+            }
+        }
         self.learn_from_templates(&mut inference, module, fields)?;
         self.record_module_instantiation(expr, module, &signature, inference)
     }
@@ -49,6 +59,17 @@ impl Checker<'_> {
         self.arguments_satisfy_bounds(signature, &arguments, module, file, span)?;
         self.instantiations.insert(expr, Instantiation { item: module, arguments });
         Some(substitution)
+    }
+
+    /// The arguments of the generic module `module` that the type of the template value `callee` names (`G<2>`, §8.4.3), as the
+    /// substitution its ports and result are read under.
+    pub(super) fn template_substitution(&mut self, callee: ExprId, module: DeclId) -> Substitution {
+        let mut substitution = Substitution::new();
+        let Some(Ty::Module(template)) = self.exprs[callee.index()].clone() else { return substitution };
+        for (parameter, argument) in self.generic_signature(module).parameters().iter().zip(template.arguments) {
+            substitution.bind(parameter.decl, argument);
+        }
+        substitution
     }
 
     /// The type of each port of `module` as it is declared, its generic parameters opaque; `None` when one is refused.

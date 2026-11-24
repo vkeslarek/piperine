@@ -6,23 +6,32 @@ use crate::msl::Diagnostic;
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
 
 use super::check::Checker;
-use super::Ty;
+use super::{Nominal, Ty};
 
 impl Checker<'_> {
-    /// A template `Name { params }` (§8.4.1): the type is the module it names, so a template of another module where a
-    /// module type is expected is a mismatch (`E0180`) naming both.
-    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
+    /// A template `Name { params }` (§8.4.1): the type is the module it names with the generic arguments it names or lets be
+    /// inferred, `Name<G>` (§8.4.3), so a template of another module, or of the same module with other arguments, where a module
+    /// type is expected is a mismatch (`E0180`) naming both. An argument left out is taken from the `expected` type first.
+    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Ty>) -> Option<Ty> {
         self.param_block(fields, None);
         self.require_bound_params(expr, module, fields);
         self.require_const_params(fields);
         // a template of a generic module names its arguments or lets them be inferred (§8.4.3); they travel with the template
-        if self.design.decl_data(module).generics_span.is_some() {
-            self.template_instantiation(expr, module, fields)?;
-        }
+        let arguments = if self.design.decl_data(module).generics_span.is_some() {
+            let expected = match expected {
+                Some(Ty::Module(wanted)) if wanted.decl == module => Some(wanted),
+                _ => None,
+            };
+            let substitution = self.template_instantiation(expr, module, fields, expected)?;
+            self.generic_signature(module).parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect()
+        } else {
+            Vec::new()
+        };
         // the template's module is placed at elaboration, through a callable param whose module the checker never names
         self.reach(module);
-        self.exprs[expr.index()] = Some(Ty::Module(module));
-        Some(Ty::Module(module))
+        let ty = Ty::Module(Nominal { decl: module, arguments });
+        self.exprs[expr.index()] = Some(ty.clone());
+        Some(ty)
     }
 
     /// Every param of `module` without a default is bound in the template (§8.4.2), else `E0319` naming the first one.

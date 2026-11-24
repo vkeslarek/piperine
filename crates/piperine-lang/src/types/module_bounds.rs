@@ -3,10 +3,10 @@
 //! that does not is `E0360` naming the first port that differs.
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, FileId, TypeId};
+use crate::pom::{DeclKind, FileId, TypeId};
 
 use super::check::Checker;
-use super::Ty;
+use super::{Nominal, Substitution, Ty};
 
 /// The first port at which a module differs from the inputs of an `Fn(P)` bound.
 pub(super) struct PortDifference {
@@ -16,10 +16,16 @@ pub(super) struct PortDifference {
 
 impl Checker<'_> {
     /// The first port of `module` that differs from the inputs `inputs` of an `Fn(P)` bound (§8.4.5): a port of another type,
-    /// a bound input with no port, or a port the bound has no input for. `None` when the module fits.
-    pub(super) fn first_differing_port(&mut self, module: DeclId, inputs: &[TypeId]) -> Option<PortDifference> {
+    /// a bound input with no port, or a port the bound has no input for. `None` when the module fits. The ports of a generic
+    /// module are read under the arguments its template names (`S<Electrical>`, §8.4.3).
+    pub(super) fn first_differing_port(&mut self, template: &Nominal, inputs: &[TypeId]) -> Option<PortDifference> {
+        let module = template.decl;
         let wanted: Vec<Option<Ty>> = inputs.iter().map(|input| self.lower_type(*input)).collect();
-        let found = self.module_port_types(module)?;
+        let mut arguments = Substitution::new();
+        for (parameter, argument) in self.generic_signature(module).parameters().iter().zip(&template.arguments) {
+            arguments.bind(parameter.decl, argument.clone());
+        }
+        let found: Vec<Ty> = self.module_port_types(module)?.iter().map(|port| arguments.apply(port)).collect();
         let names: Vec<String> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
             DeclKind::Port(_) => Some(self.design.decl_data(*child).name.as_ref().map_or_else(String::new, |name| name.text.clone())),
             _ => None,
@@ -37,10 +43,10 @@ impl Checker<'_> {
         Some(PortDifference { what: format!("it has no port at position {}, and `Fn` wants `{}`", found.len() + 1, missing.name(self.design)) })
     }
 
-    /// `E0360` for the module `module` against the bound `Fn(inputs)` of `parameter`, `false` after it. A module that fits is `true`.
-    pub(super) fn module_fits_callable(&mut self, module: DeclId, parameter: &str, inputs: &[TypeId], file: FileId, span: Span) -> bool {
-        let Some(difference) = self.first_differing_port(module, inputs) else { return true };
-        let name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+    /// `E0360` for the template's module against the bound `Fn(inputs)` of `parameter`, `false` after it. A module that fits is `true`.
+    pub(super) fn module_fits_callable(&mut self, template: &Nominal, parameter: &str, inputs: &[TypeId], file: FileId, span: Span) -> bool {
+        let Some(difference) = self.first_differing_port(template, inputs) else { return true };
+        let name = self.design.decl_data(template.decl).name.as_ref().map_or_else(String::new, |name| name.text.clone());
         let message = format!("module `{name}` does not satisfy the bound `Fn` of `{parameter}`: {} (§8.4.5)", difference.what);
         self.coded(file, "E0360", span, message, "a module whose ports differ from the bound");
         false

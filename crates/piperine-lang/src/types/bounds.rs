@@ -61,7 +61,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 let wanted = self.checker.callable_type(inputs, *output);
                 match (ty, wanted) {
                     (Ty::Param(param), Some(wanted)) => self.checker.bounds_of(*param).iter().any(|own| matches!(own, Bound::Callable { inputs, output } if self.checker.callable_type(inputs, *output).as_ref() == Some(&wanted))),
-                    (Ty::Module(module), Some(_)) => self.checker.first_differing_port(*module, inputs).is_none(),
+                    (Ty::Module(module), Some(_)) => self.checker.first_differing_port(module, inputs).is_none(),
                     (found, Some(wanted)) => *found == wanted,
                     (_, None) => false,
                 }

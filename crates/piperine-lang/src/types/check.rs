@@ -443,8 +443,10 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
-                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
-                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) => Some(Ty::Module(d)),
+                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it; a generic one's names its
+                // arguments, `G<2>` (§8.4.3)
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_module_type(*path, d, file, node.span),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) => self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span).then(|| Ty::module(d)),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));

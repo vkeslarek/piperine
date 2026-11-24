@@ -79,7 +79,7 @@ impl Checker<'_> {
                 ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Name { params }` where a module type is expected: a template value (PI-04).
-                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
+                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields, Some(expected)),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -258,7 +258,7 @@ impl Checker<'_> {
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::IncludeStr(_) => self.include_str(expr),
-            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields),
+            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields, None),
             other => {
                 self.unsupported(file, node.span, Unsupported::expr(other));
                 None
@@ -631,7 +631,7 @@ impl Checker<'_> {
                             return None;
                         }
                         if let Some(Ty::Module(module)) = &local {
-                            return self.instance_as_value(file, node.span, decl, *module);
+                            return self.instance_as_value(file, node.span, decl, module.decl);
                         }
                         if local.is_none() && !self.poisoned.contains(&decl) {
                             let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
