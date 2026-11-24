@@ -101,3 +101,35 @@ fn a_literal_binds_each_named_field_to_its_carrier() {
     assert_eq!(top.child_carriers(0), [at("w"), at("x")], "the child's `c.wl` and `c.sel` are the carriers the literal names, whatever its order");
     assert_eq!(top.children()[0].nodes, [piperine_ir::Terminal::Node(0)], "`c.bl` is `b`");
 }
+
+#[test]
+fn two_producers_of_one_field_is_e0220_naming_its_path() {
+    // §7 rule 15: the one-driver rule is checked field by field after the views: two modules that see one one-driver field
+    // as `out` are `E0220`, and the diagnostic names the field's path
+    let src = "struct Stream { out valid: Bit, in ready: Bit }\n\
+               module Prod(tx: Stream) { signal go: Bit = false; tx.valid = go; }\n\
+               module Cons(rx: flip Stream) { rx.ready = true; }\n\
+               module Top() { signal s: Stream; let a = Prod(s); let b = Prod(s); let c = Cons(s); }";
+    let found = Elab::run(src, "Top").expect_err("two producers of `s.valid`");
+    assert_eq!(Elab::codes(&found), ["E0220"], "{found:?}");
+    assert!(found[0].diagnostic.message.contains("s.valid"), "names the field's path: {}", found[0].diagnostic.message);
+    // a producer and a consumer of the opposite views drive different fields: no overlap
+    let ok = "struct Stream { out valid: Bit, in ready: Bit }\n\
+              module Prod(tx: Stream) { signal go: Bit = false; tx.valid = go; }\n\
+              module Cons(rx: flip Stream) { rx.ready = true; }\n\
+              module Top() { signal s: Stream; let a = Prod(s); let c = Cons(s); }";
+    Elab::ir(ok, "Top");
+}
+
+#[test]
+fn an_observer_view_adds_no_drive() {
+    // §7 rule 3, edge case: an observer reads every field and so adds no drive to any
+    let src = "struct Stream { out valid: Bit, in ready: Bit }\n\
+               module Prod(tx: Stream) { signal go: Bit = false; tx.valid = go; }\n\
+               module Cons(rx: flip Stream) { rx.ready = true; }\n\
+               module Watch(in s: Stream) { signal seen: Bit; seen = s.valid; }\n\
+               module Top() { signal s: Stream; let a = Prod(s); let c = Cons(s); let w = Watch(s); let w2 = Watch(s); }";
+    let ir = Elab::ir(src, "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    assert_eq!(top.child_carriers(2), [Some(0), Some(1)], "the observer is joined to both fields");
+}

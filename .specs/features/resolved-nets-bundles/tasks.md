@@ -359,8 +359,8 @@ T21
 
 **Done when**:
 
-- [ ] `two_producers_of_one_field_is_e0220_naming_its_path` and `an_observer_view_adds_no_drive` pass under `**Run elabbundles**`
-- [ ] Gate check passes: Quick
+- [x] `two_producers_of_one_field_is_e0220_naming_its_path` and `an_observer_view_adds_no_drive` pass under `**Run elabbundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
