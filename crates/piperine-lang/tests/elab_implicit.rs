@@ -36,3 +36,14 @@ fn the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled() {
     let scaled = |text: &str| text.lines().filter(|l| l.contains("probe(p, n)")).map(str::to_string).collect::<Vec<_>>();
     assert_eq!(scaled(&text), scaled(&plain), "a bound `m` scales nothing: {text}");
 }
+
+#[test]
+fn multiplicity_lowers_to_the_session_parameter() {
+    // GN-24 AC 1, AC 3 (§8.5.2): the stdlib `multiplicity()` is the session parameter `multiplicity`, read as `simparam`
+    // does (`Expr::SessionParameter`), one per body; `m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY)` reads
+    // the module's own `m` first and the run's second
+    let body = "let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY); i(p, n) +> count * v(p, n) / r;";
+    let ir = Elab::ir(&Resistors::source(body, "r: 1k, m: Some(4.0)"), "Top");
+    let parameters: Vec<String> = ir.bodies().find(|b| b.name() == "Resistor").expect("the resistor body").session_parameters().iter().map(|p| p.name.to_string()).collect();
+    assert_eq!(parameters, ["multiplicity"], "one session parameter, the run's");
+}

@@ -62,3 +62,33 @@ fn m_and_dtemp_are_ordinary_names() {
     let none = support::build(&format!("{HEAD}module Resistor(a: E, b: E) {{ r: f64 = 1k; }}\nmodule Top() {{ signal a: E; let r1 = Resistor(a, gnd) {{ r: 1k, m: Some(4.0) }}; }}"));
     assert_eq!(support::codes(&none), ["E0320"], "no implicit param exists");
 }
+
+/// Sources over the real standard library (`multiplicity()` and the constants live there).
+struct StdSources;
+
+impl StdSources {
+    /// The type of the binding `name` of `Top` in a clean check of the module `items` over the real `std`.
+    fn local(items: &str, name: &str) -> Ty {
+        let design = Design::builder().source("top.msl", &format!("{HEAD}{items}")).build();
+        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{items}", RunSources::messages(&d)));
+        let decl = design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Binding(_))).unwrap_or_else(|| panic!("no binding `{name}`")).id();
+        types.local(decl).unwrap_or_else(|| panic!("no type for `{name}`")).clone()
+    }
+
+    /// The codes of the diagnostics a check of `Top` over the real `std` reports.
+    fn codes(items: &str) -> Vec<String> {
+        let design = Design::builder().source("top.msl", &format!("{HEAD}{items}")).build();
+        Types::check(&design, "Top").err().unwrap_or_default().iter().map(|d| d.diagnostic.code.to_string()).collect()
+    }
+}
+
+#[test]
+fn multiplicity_is_a_stdlib_function_over_simparam() {
+    // GN-24 AC 1, AC 3 (§8.5.2, §22.2.2): `multiplicity()` is an ordinary `Option<f64>` function of `std`; a module
+    // combines its own `m` with it in a body `let` (the same read in a param default is `E0188` at elaboration, T100)
+    let items = "module Top() { m: Option<f64>; let run = multiplicity(); let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY); }";
+    assert_eq!(StdSources::local(items, "run"), Ty::Option(Box::new(Ty::F64)));
+    assert_eq!(StdSources::local(items, "count"), Ty::F64);
+    assert_eq!(StdSources::codes(items), Vec::<String>::new(), "the whole module checks clean");
+}

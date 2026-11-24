@@ -468,9 +468,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `multiplicity_is_a_stdlib_function_over_simparam` passes under `**Run typesimplicit**`
-- [ ] `multiplicity_lowers_to_the_session_parameter` passes under `**Run elabimplicit**`
-- [ ] Gate check passes: Quick
+- [x] `multiplicity_is_a_stdlib_function_over_simparam` passes under `**Run typesimplicit**`
+- [x] `multiplicity_lowers_to_the_session_parameter` passes under `**Run elabimplicit**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
