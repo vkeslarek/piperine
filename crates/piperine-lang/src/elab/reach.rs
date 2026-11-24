@@ -162,7 +162,7 @@ impl Elaboration<'_, '_> {
         if self.types.carrier(decl).is_some() {
             return None;
         }
-        let nature = self.design.nature_of(ty).and_then(|n| self.nature(n))?;
+        let nature = self.nature_decl_of(ty).and_then(|n| self.nature(n))?;
         let name = format!("{}{}", self.frames[frame].prefix, data.name.as_ref().map_or("", |n| n.text.as_str()));
         let origin = self.locator.decl(decl);
         let spec = BodyNode { name: name.clone(), nature, role: NodeRole::Reached, init: None, origin: origin.clone() };

@@ -115,6 +115,13 @@ impl GenericSignature {
         GenericSignature { parameters }
     }
 
+    /// Whether `param`, a generic parameter declaration, is bound by `Nature`: a type that names it is a node of the
+    /// nature a use gives.
+    pub fn is_nature_parameter(design: &Design, param: DeclId) -> bool {
+        let Some(owner) = design.decl_data(param).parent else { return false };
+        Self::of(design, owner).parameters().iter().any(|parameter| parameter.decl == param && parameter.kind == ParameterKind::Nature)
+    }
+
     /// The parameters, in source order.
     pub fn parameters(&self) -> &[GenericParameter] {
         &self.parameters

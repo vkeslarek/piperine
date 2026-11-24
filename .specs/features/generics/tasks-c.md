@@ -515,8 +515,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generic_modules_run_with_explicit_and_inferred_arguments`, `a_nature_parameter_takes_its_default` and `a_const_generic_of_zero_makes_an_empty_module` pass under `**Run srcmods**`
-- [ ] Gate check passes: Quick
+- [x] `generic_modules_run_with_explicit_and_inferred_arguments`, `a_nature_parameter_takes_its_default` and `a_const_generic_of_zero_makes_an_empty_module` pass under `**Run srcmods**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

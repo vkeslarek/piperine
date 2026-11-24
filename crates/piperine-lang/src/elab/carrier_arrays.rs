@@ -53,7 +53,7 @@ impl Elaboration<'_, '_> {
     /// Whether `decl` is an array of carriers of length 0 in `frame` (§1.2.3: the length is known and not negative, so
     /// zero is legal): it has no element, so the body gets no carrier for it.
     pub(super) fn is_empty_array(&mut self, frame: usize, decl: DeclId) -> bool {
-        let Some(array) = self.types.carrier_array(decl).cloned() else { return false };
+        let Some(array) = self.consts.typed_carrier_array(decl) else { return false };
         self.shape_in(&array, frame).is_some_and(|shape| shape.count() == 0)
     }
 
@@ -122,7 +122,7 @@ impl Elaboration<'_, '_> {
     /// the port's lengths folded over the placed module's params `keys` (CV-23 AC 3, §8.1.10). A shape that does not
     /// fold, or an argument that is no declared array, is left to the bind. Whether it reported.
     pub(super) fn check_array_argument(&mut self, scope: &Scope, port: DeclId, argument: ExprId, keys: &Bindings) -> bool {
-        let Some(wanted) = self.types.carrier_array(port).or_else(|| self.types.node_array(port)).cloned() else { return true };
+        let Some(wanted) = self.consts.typed_carrier_array(port).or_else(|| self.consts.typed_node_array(port)) else { return true };
         let Some(wanted_shape) = self.shape_over(&wanted, keys).ok() else { return true };
         let Some(found) = self.typed(argument).filter(|ty| matches!(ty, Ty::Array(..))) else { return true };
         let Some(found_shape) = self.shape_over(&found, &self.frame_bindings(scope.frame)).ok() else { return true };
@@ -141,7 +141,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carrier_array_shape(&mut self, decl: DeclId, frame: usize) -> Option<(ArrayShape, ValueType)> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        let Some(array) = self.types.carrier_array(decl).cloned() else { return None };
+        let Some(array) = self.consts.typed_carrier_array(decl) else { return None };
         let shape = self.declared_shape(&array, frame, decl, "carriers")?;
         let Ty::Carrier { value, .. } = array.innermost() else { return None };
         match self.stored_type(value) {
@@ -183,7 +183,7 @@ impl Elaboration<'_, '_> {
     /// a diagnostic.
     pub(super) fn add_node_array(&mut self, decl: DeclId, role: piperine_ir::NodeRole, prefix: &str, frame: usize) -> Option<(crate::elab::carrier_arrays::ArrayShape, piperine_ir::Terminal)> {
         let data = self.design.decl_data(decl).clone();
-        let array = self.types.node_array(decl).cloned()?;
+        let array = self.consts.typed_node_array(decl)?;
         let shape = self.declared_shape(&array, frame, decl, "nodes")?;
         let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
         let first = self.structure.nodes.len() as u32;

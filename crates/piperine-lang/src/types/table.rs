@@ -457,6 +457,11 @@ impl<'d> Types<'d> {
         self.written.get(&ty)
     }
 
+    /// Whether the written type `ty` is the name of a nature parameter of a generic item: a node of the nature a use gives.
+    pub fn is_nature_parameter_type(&self, design: &Design, ty: TypeId) -> bool {
+        matches!(self.written.get(&ty), Some(Ty::Param(param)) if super::generics::GenericSignature::is_nature_parameter(design, *param))
+    }
+
     /// The type of a `Binding` declaration.
     pub fn local(&self, binding: DeclId) -> Option<&Ty> {
         self.locals.get(&binding)

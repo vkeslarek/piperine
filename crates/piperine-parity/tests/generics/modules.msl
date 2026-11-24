@@ -1,0 +1,46 @@
+//! Generic modules run at explicit and inferred arguments (generics GN-13, GN-15, part III §8): `Reg` over a type, `Taps`
+//! over a length. The expected values are computed by Rust in `source_generic_modules.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+enum Mode { Idle, Run }
+impl Default for Mode { fn default() -> Mode { Mode::Idle } }
+
+// A register over a type with a first value: its `q` has no initial value and starts at `T::default()`.
+module Reg<T: Repr + Default>(in clk: Bit, in d: Bit<T>, out q: Bit<T>) {}
+digital<T> for Reg<T> { on clk.rise() { q <- d; } }
+
+module Bench() {
+    signal clk: Bit;
+    signal d: Bit<Option<u8>> = Some(7);
+    signal dm: Bit<Mode> = Mode::Run;
+    signal q0: Bit<Option<u8>>;
+    signal q1: Bit<Option<u8>>;
+    signal q2: Bit<Mode>;
+    let osc = Osc(clk);
+    let inferred = Reg(clk, d, q0);
+    let explicit = Reg::<Option<u8>>(clk, d, q1);
+    let enumerated = Reg(clk, dm, q2);
+}
+
+// A nature parameter with a default: nothing connected is typed by `S`, so `Cell(a)` places it at `Electrical`.
+module Cell<S: Nature = Electrical>(a: Electrical) { signal mid: S; level: f64 = 1.5; }
+analog<S> for Cell<S> { potential(mid) +> level; potential(a) +> 0.5; }
+
+// A const generic of any count, zero included: each rail is driven to its own number.
+module Taps<const N: usize>(a: Electrical) { signal rails: [Electrical; N]; }
+analog<N> for Taps<N> {
+    potential(a) +> 1.0;
+    for k in 0..N { potential(rails[k]) +> 2.0 * (k as f64 + 1.0); }
+}
+
+module Rig() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal c: Electrical;
+    let cell = Cell(a);
+    let none = Taps::<0>(b);
+    let two = Taps::<2>(c);
+}

@@ -9,7 +9,8 @@ use super::elaborator::Elaboration;
 use super::instances::Instance;
 use super::structural::BodyKey;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{DeclId, DeclKind, ExprId, FileId};
+use crate::pom::{DeclId, DeclKind, ExprId, FileId, TypeId};
+use crate::types::Ty;
 
 /// How many instances of generic modules may place one another before the chain is cut (D7, as for functions).
 const MOST_NESTED_MODULE_INSTANCES: usize = 1024;
@@ -19,6 +20,15 @@ impl Elaboration<'_, '_> {
     pub(super) fn is_generic_module(&self, module: DeclId) -> bool {
         let data = self.design.decl_data(module);
         matches!(data.kind, DeclKind::Module(_)) && data.generics_span.is_some()
+    }
+
+    /// The nature the node type `ty` is: the one it names, or the one the nature parameter it names takes in the
+    /// instance being lowered.
+    pub(super) fn nature_decl_of(&self, ty: TypeId) -> Option<DeclId> {
+        self.design.nature_of(ty).or_else(|| match self.typed_written(ty)? {
+            Ty::Node(nature) => Some(nature),
+            _ => None,
+        })
     }
 
     /// The instance the placement `call` of the generic module `module` makes, folded under the substitution of the body

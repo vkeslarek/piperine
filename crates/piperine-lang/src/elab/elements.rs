@@ -64,7 +64,7 @@ impl Elaboration<'_, '_> {
         indexes.reverse();
         let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Lookup::No };
         let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Lookup::No };
-        let Some(array) = self.types.carrier_array(decl).cloned() else { return Lookup::No };
+        let Some(array) = self.consts.typed_carrier_array(decl) else { return Lookup::No };
         let span = self.design.expr_node(expr).span;
         if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
             self.element_of_empty_array(scope.file, span);
@@ -257,7 +257,7 @@ impl Elaboration<'_, '_> {
         indexes.reverse();
         let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return None };
         let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return None };
-        let array = self.types.carrier_array(decl).cloned()?;
+        let array = self.consts.typed_carrier_array(decl)?;
         let span = self.design.expr_node(arg).span;
         if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
             self.element_of_empty_array(scope.file, span);

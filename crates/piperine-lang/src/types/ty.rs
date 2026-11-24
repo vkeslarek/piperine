@@ -385,6 +385,8 @@ impl Ty {
                 Some(n) => format!("{}{}", n.text, nominal.arguments_name(design)),
                 None => self.name(design),
             },
+            // a nature argument is spelled as written, `Electrical`
+            Ty::Node(nature) => design.decl_data(*nature).name.as_ref().map_or_else(|| self.name(design), |n| n.text.clone()),
             other => other.name(design),
         }
     }

@@ -277,9 +277,9 @@ impl Elaboration<'_, '_> {
             DeclKind::Signal(s) => (s.ty, s.init),
             _ => return None,
         };
-        let nature = match self.types.node_array(decl).map(|t| t.innermost().clone()) {
+        let nature = match self.consts.typed_node_array(decl).map(|t| t.innermost().clone()) {
             Some(Ty::Node(nature)) => self.nature(nature)?,
-            _ => self.design.nature_of(ty).and_then(|n| self.nature(n))?,
+            _ => self.nature_decl_of(ty).and_then(|n| self.nature(n))?,
         };
         let init = match (init, self.types.node_array(decl).is_some()) {
             (_, true) => None,

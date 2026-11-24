@@ -161,9 +161,9 @@ impl Elaboration<'_, '_> {
     /// The `encode` of the hand-written `Repr` of what the carrier `decl` holds, with the arguments its `impl` takes for
     /// that type; `None` for a derived layout.
     pub(super) fn hand_written_encode(&self, decl: DeclId) -> Option<(DeclId, Vec<ConcreteValue>)> {
-        let Some(Ty::Carrier { value, .. }) = self.types.carrier(decl) else { return None };
-        let entry = self.impls.hand_written_repr(value)?;
-        let arguments = self.hand_written_arguments(entry.decl, value)?;
+        let Some(Ty::Carrier { value, .. }) = self.consts.typed_carrier(decl) else { return None };
+        let entry = self.impls.hand_written_repr(&value)?;
+        let arguments = self.hand_written_arguments(entry.decl, &value)?;
         Some((self.impls.item(entry.decl, "encode")?, arguments))
     }
 

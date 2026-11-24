@@ -261,6 +261,21 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.types.ty(expr).map(|ty| self.resolved(ty))
     }
 
+    /// The type of the port or signal `decl` when it is a carrier or an array of them, under the substitution.
+    pub(super) fn typed_carrier(&self, decl: DeclId) -> Option<Ty> {
+        self.types.carrier(decl).map(|ty| self.resolved(ty))
+    }
+
+    /// The type of the port or signal `decl` when it is an array of carriers, under the substitution.
+    pub(super) fn typed_carrier_array(&self, decl: DeclId) -> Option<Ty> {
+        self.types.carrier_array(decl).map(|ty| self.resolved(ty))
+    }
+
+    /// The type of the port or signal `decl` when it is an array of nodes, under the substitution.
+    pub(super) fn typed_node_array(&self, decl: DeclId) -> Option<Ty> {
+        self.types.node_array(decl).map(|ty| self.resolved(ty))
+    }
+
     /// The type of the binding `binding` under the substitution.
     pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
         self.types.local(binding).map(|ty| self.resolved(ty))

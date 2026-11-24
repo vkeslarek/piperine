@@ -140,7 +140,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carried_type(&mut self, decl: DeclId) -> Option<ValueType> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        let carried = match self.types.carrier(decl) {
+        let carried = match self.consts.typed_carrier(decl).as_ref() {
             Some(Ty::Carrier { value, .. }) => self.stored_type(value),
             // an array of carriers holds its elements' value type (`carrier_arrays.rs`)
             Some(array @ Ty::Array(..)) => match array.innermost() {
@@ -220,7 +220,7 @@ impl Elaboration<'_, '_> {
     /// the `Default::default()` of its type (§3.3.4), when it has one. A type without `Default` (a
     /// `bool`, a number, a `str`) has none here: the checker asks for the written value.
     fn default_initial_value(&mut self, decl: DeclId, stored: &ValueType) -> Option<Constant> {
-        let Some(Ty::Carrier { value, .. }) = self.types.carrier(decl).cloned() else { return None };
+        let Some(Ty::Carrier { value, .. }) = self.consts.typed_carrier(decl) else { return None };
         self.default_constant(&value, stored)
     }
 

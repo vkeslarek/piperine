@@ -124,9 +124,14 @@ impl<'a, 'd> ParamReads<'a, 'd> {
         ParamReads { design, types, placements, through_input: std::cell::Cell::new(false) }
     }
 
+    /// Whether the type `ty` names a nature parameter of a generic module: a node of the nature a placement gives.
+    fn is_nature_parameter_type(&self, ty: crate::pom::TypeId) -> bool {
+        self.types.is_nature_parameter_type(self.design, ty)
+    }
+
     /// Whether `decl` is a port of a value type: a value input.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
-        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none())
+        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none() && !self.is_nature_parameter_type(p.ty))
     }
 
     /// Whether the last `of` read went through a value input of a placement.
