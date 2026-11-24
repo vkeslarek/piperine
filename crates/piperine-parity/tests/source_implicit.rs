@@ -116,10 +116,9 @@ fn an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel() {
 }
 
 #[test]
-fn multiplicity_in_a_param_default_is_e0188() {
+fn multiplicity_in_a_param_default_is_e0321() {
     // GN-24 AC 4 (§8.5.5, §8.1.16): a param default is an expression over params and constants, where a session
-    // parameter is not known: the refusal is `E0321` (the test keeps the name the task gave it; the plan's `E0188` is
-    // the code of a `const` item, §3.9, and a param default has its own, `E0321`)
+    // parameter is not known: the refusal is `E0321` (`E0188` is the code of a `const` item, §3.9; a param default has its own)
     assert_eq!(Bench::refusal("DefaultReadsMultiplicity", Bench::op()), ["E0321"]);
 }
 

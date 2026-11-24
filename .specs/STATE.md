@@ -1879,8 +1879,9 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    module `impl`; a module type takes trait and inherent impls of pure functions over its params. No instance has implicit
    params: the run sets a temperature and a `multiplicity` session parameter, `temperature()` (core) and the stdlib
    `multiplicity()` (over `simparam`) return them as `Option<f64>`, and the model decides how to use them (user decision
-   2026-11-23). `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the temperature read itself, so the twins keep their
-   pins and numbers; `Env::TemperatureGiven` and the ABI `GLOBAL TEMPERATURE_GIVEN` pin (in place, `MINOR` 0) carry the
+   2026-11-23). `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the ordinary `Option` method over the pair the lowering reads
+   (`temperature_given()` selects between `temperature()` and the constant, no peephole and no special case), so the twin
+   goldens and the diode pins moved by one read while every number stayed; `Env::TemperatureGiven` and the ABI `GLOBAL TEMPERATURE_GIVEN` pin (in place, `MINOR` 0) carry the
    other uses. A function that reads a session parameter is inlined where it stands.
 
 
