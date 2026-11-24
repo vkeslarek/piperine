@@ -497,7 +497,13 @@ impl Checker<'_> {
                 self.check_float_literal(file, span, raw, &Ty::F32);
                 Some(Ty::F32)
             }
-            LitKind::Float { .. } => Some(Ty::F64),
+            // an unsuffixed literal with no expected type is an `f64`: one past `f64`'s range is `E0909` (A.8 rule 8, QD5)
+            LitKind::Float { raw, .. } => {
+                if lexer::float_suffix(raw).is_empty() {
+                    self.check_float_literal(file, span, raw, &Ty::F64);
+                }
+                Some(Ty::F64)
+            }
             LitKind::Bool(_) => Some(Ty::Bool),
             LitKind::Int(text) if FloatText::is(text) => {
                 let ty = FloatText::suffix(text);

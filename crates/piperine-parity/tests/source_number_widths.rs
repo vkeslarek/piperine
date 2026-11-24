@@ -538,8 +538,8 @@ impl VectorTable {
         let mut inputs = Vec::new();
         let mut cases = Vec::new();
         for (method, function) in [("exp", "exp"), ("ln", "ln"), ("log10", "log10"), ("log2", "log2"), ("sin", "sin"), ("cos", "cos"), ("tan", "tan"), ("asin", "asin"), ("acos", "acos"), ("atan", "atan"), ("sinh", "sinh"), ("cosh", "cosh"), ("tanh", "tanh"), ("atan2", "atan2"), ("powf", "powf"), ("powi", "powi")] {
-            let rows: Vec<VectorRow> = Vectors::rows(function).into_iter().filter(|row| Self::writable(&table, row.x) && row.y.as_ref().is_none_or(|y| function == "powi" || Self::writable(&table, u128::from_str_radix(y, 16).unwrap_or(u128::MAX)))).collect();
-            assert!(rows.len() >= Self::PER_METHOD, "{function}: {} writable vectors", rows.len());
+            let rows: Vec<VectorRow> = Vectors::rows(function);
+            assert!(rows.len() >= Self::PER_METHOD, "{function}: {} vectors", rows.len());
             let step = rows.len() / Self::PER_METHOD;
             for (k, row) in rows.iter().step_by(step).take(Self::PER_METHOD).enumerate() {
                 let x = format!("x_{method}_{k}");
@@ -565,19 +565,16 @@ impl VectorTable {
         }
     }
 
-    /// Whether a source literal can hold the pattern: finite, within `f64`'s range, and reading back to it.
-    fn writable(table: &FloatTable<'_>, pattern: u128) -> bool {
-        let oracle = ExactOracle::new(BinaryFormat::QUAD);
-        if oracle.is_nan(pattern) || oracle.is_infinite(pattern) {
-            return false;
-        }
-        let magnitude = pattern & !BinaryFormat::QUAD.sign_bit();
-        let largest = Conversions::float_to_float(BinaryFormat::DOUBLE, u128::from(f64::MAX.to_bits()), BinaryFormat::QUAD);
-        magnitude <= largest && table.decimal(&Self::text(pattern)) == pattern
-    }
-
-    /// The decimal text of a pattern that reads back to it, as an MSL float literal (a fraction point always present).
+    /// The source of a pattern: its decimal text as an MSL float literal (a fraction point always present), or, for the
+    /// values no literal spells, the division that gives them (`1.0 / 0.0` is infinite, `0.0 / 0.0` is NaN).
     fn text(pattern: u128) -> String {
+        let oracle = ExactOracle::new(BinaryFormat::QUAD);
+        if oracle.is_nan(pattern) {
+            return "0.0 / 0.0".to_string();
+        }
+        if oracle.is_infinite(pattern) {
+            return if pattern & BinaryFormat::QUAD.sign_bit() == 0 { "1.0 / 0.0" } else { "-1.0 / 0.0" }.to_string();
+        }
         let text = piperine_numbers::decimal::DecimalText::shortest_scientific(pattern, BinaryFormat::QUAD);
         let (mantissa, exponent) = match text.split_once(['e', 'E']) {
             Some((mantissa, exponent)) => (mantissa.to_string(), format!("e{exponent}")),
@@ -629,7 +626,7 @@ fn a_carried_f32_is_the_f32_leaf() {
 #[test]
 fn a_carried_f128_is_a_u64_field_of_count_two() {
     // CV-31 AC 4, §2: a `Bit<f128>` pin is one `U64` field of count 2 (the 16 bytes of the binary128 bits, low limb first),
-    // and `1 + 1` committed reads back as the pattern of 2.0
+    // and `2.5 + 0.1` committed reads back as the exact binary128 sum of the two
     assert_eq!(PinReading::fields("f128.msl", "xa"), (ValueType::F128, vec![(leaf::U64, 2)]));
     let committed = widths::WidthBench::first_commits("f128.msl", &["add"]);
     let wanted = ExactOracle::new(BinaryFormat::QUAD).add(FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.decimal("2.5"), FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.decimal("0.1"));

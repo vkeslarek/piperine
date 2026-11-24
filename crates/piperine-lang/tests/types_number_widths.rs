@@ -43,6 +43,14 @@ impl Fixture {
         (src, found)
     }
 
+    /// The diagnostics of `body` in the analog block of a module with two ports of a nature `E` (potential `v`, flow `i`) `p` and `n`, over a nature of its own.
+    fn analog_diagnostics(body: &str) -> (String, Vec<DesignDiagnostic>) {
+        let src = format!("nature E {{ potential: V {{ access: v, units: \"V\", abstol: 1u }}, flow: I {{ access: i, units: \"A\", abstol: 1p }} }}\nmodule Top(p: E, n: E) {{ }}\nanalog for Top {{ {body} }}");
+        let design = Self::design_of(&src);
+        let found = Types::check(&design, "Top").expect_err("expected diagnostics");
+        (src, found)
+    }
+
     fn messages(found: &[DesignDiagnostic]) -> Vec<(String, String)> {
         found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
     }
@@ -129,6 +137,10 @@ fn a_literal_out_of_its_type_is_e0909() {
         ("let y = 1e39f32;", "1e39f32"),
         ("let y: f32 = 1e39;", "1e39"),
         ("let y: u8 = 256;", "256"),
+        ("let y: f64 = 1e400;", "1e400"),
+        ("let y = 1e400;", "1e400"),
+        ("let y: f128 = 1.2e4932;", "1.2e4932"),
+        ("let y: f128 = 1.1897314953572317650857593266280071e4932;", "1.1897314953572317650857593266280071e4932"),
     ] {
         let (src, found) = Fixture::diagnostics("", body);
         assert_eq!(Fixture::codes(&found), ["E0909"], "{src}: {:?}", Fixture::messages(&found));
@@ -144,6 +156,9 @@ fn a_literal_out_of_its_type_is_e0909() {
     // the edges are values: the largest finite f16 and f32, a subnormal, and an integer at its maximum
     let got = Fixture::types_of("", "let a: f16 = 65504.0; let b = 3.4028235e38f32; let c: f16 = 1e-7; let d = 255u8; let e: UInt<200> = 1;", &["a", "b", "c", "d", "e"]);
     assert_eq!(got, [Ty::F16, Ty::F32, Ty::F16, Ty::UInt(8), Ty::UInt(200)]);
+    // an `f128` literal above `f64::MAX` is read in its own format (A.8 rule 8, QD5): `1e400` and the largest finite `f128` are accepted
+    let got = Fixture::types_of("", "let a: f128 = 1e400; let b: f128 = 1.18973149535723176508575932662800702e4932; let c: f128 = -1e400;", &["a", "b", "c"]);
+    assert_eq!(got, [Ty::F128, Ty::F128, Ty::F128]);
 }
 
 #[test]
@@ -159,4 +174,13 @@ fn an_f32_where_an_f64_is_required_is_a_mismatch() {
     assert_eq!(Fixture::codes(&found), ["E0180"], "§1 rule 7: an integer literal never converts: {src}: {:?}", Fixture::messages(&found));
     let (src, found) = Fixture::diagnostics("", "let a: f64 = 1.0; let b: f32 = a;");
     assert_eq!(Fixture::codes(&found), ["E0180"], "{src}: {:?}", Fixture::messages(&found));
+    // CV-29 AC 3 over the real stdlib: an `f32` contributed to a branch is no `f64`, and an `f32` compared with a probe is no `f64`
+    for (body, code, text) in [
+        ("let a: f32 = 1.0; v(p, n) +> a;", "E0417", "a"),
+        ("let a: f32 = 1.0; let c = v(p, n) > a;", "E0180", "a"),
+    ] {
+        let (src, found) = Fixture::analog_diagnostics(body);
+        assert_eq!(Fixture::codes(&found), [code], "{src}: {:?}", Fixture::messages(&found));
+        assert_eq!(Fixture::snippet(&src, &found[0]), text, "{src}");
+    }
 }

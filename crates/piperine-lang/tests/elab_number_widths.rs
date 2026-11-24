@@ -65,6 +65,13 @@ fn number_widths_lower_to_their_ir_types_and_constants() {
     assert!(bits.contains(&(ValueType::F16, 0x3c00)), "the exact midpoint rounds to even: {bits:?}");
     assert!(bits.contains(&(ValueType::F16, 0x3c01)), "a digit past the midpoint, which an f64 cannot hold, rounds up: {bits:?}");
 
+    // an `f128` literal above `f64::MAX` is read from its text in its own format, never through the `f64` (infinite there):
+    // the nearest binary128 to 1e400, and the largest finite binary128 written as a literal (both from an independent exact-decimal computation)
+    let beyond = Elab::ir(&ElabSource::reaching("fn huge() -> f128 { 1e400 }\nfn largest() -> f128 { 1.18973149535723176508575932662800702e4932 }", &["huge()", "largest()"]), "Top");
+    let literals = Reading::float_literals(&beyond);
+    assert!(literals.contains(&(ValueType::F128, 0x452f_b4ec_7f91_973f_f3cb_1ccf_26fb_c178)), "{literals:?}");
+    assert!(literals.contains(&(ValueType::F128, 0x7ffe_ffff_ffff_ffff_ffff_ffff_ffff_ffff)), "{literals:?}");
+
     // CV-32: an integer wider than 64 bits is a wide constant of the type's limbs, and the types are the IR's
     let wide = Elab::ir(&ElabSource::reaching("fn big() -> UInt<200> { 0x1_0000_0000_0000_0000_0000 }\nfn minus() -> Int<100> { -5 }", &["big()", "minus()"]), "Top");
     assert!(Reading::wide_limbs(&wide).contains(&vec![0, 0x1_0000, 0, 0]), "{:?}", Reading::wide_limbs(&wide));

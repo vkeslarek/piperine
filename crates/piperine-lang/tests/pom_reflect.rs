@@ -679,11 +679,11 @@ struct Lone { z: f64 }
     assert!(design.struct_named("Lone").unwrap().method("go").is_none());
 }
 
-const FLOATS: &str = "const A: f64 = 1e999;\nconst B: f64 = 1e308;\nconst C: f64 = 5e-324;\nconst D: f64 = 1.5k;\nconst E: f64 = 2.5e-3f32;\n";
+const FLOATS: &str = "const A: f64 = 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999T;\nconst B: f64 = 1e308;\nconst C: f64 = 5e-324;\nconst D: f64 = 1.5k;\nconst E: f64 = 2.5e-3f32;\n";
 
 #[test]
 fn float_literals_round_trip_through_json() {
-    // `1e999` is infinite as an `f64`: the lexer reports it, the design still serializes and reads back.
+    // a 310-digit literal with a `T` suffix is infinite as an `f64`: the lexer reports it, the design still serializes and reads back.
     let design = Design::builder().source("top.msl", FLOATS).build();
     assert!(design.diagnostics().iter().any(|d| d.diagnostic.code == "E0909"));
     let json = serde_json::to_string(&design).expect("a design with an infinite literal serializes");
