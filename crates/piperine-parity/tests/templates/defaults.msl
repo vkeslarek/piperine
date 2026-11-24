@@ -39,3 +39,21 @@ module RigGain() {
     let pair = GainPair::<_>(g, d, s) { fet: Square { k: 3.0 } };
 }
 analog for RigGain { potential(g) +> 0.5; }
+
+/// A conductance `g` taken `m` times, `m` an `Option` with no default (§8.1.17): a template may leave it out.
+module Scaled(p: Electrical, n: Electrical) {
+    g: f64 = 1.0;
+    m: Option<f64>;
+}
+analog for Scaled { i(p, n) +> v(p, n) * g * m.unwrap_or(DEFAULT_MULTIPLICITY); }
+
+const UNIT: Scaled = Scaled { g: 1.0 };
+
+/// The upper leg through the `const` that leaves `m` out (one conductance), the lower one bound three times.
+module RigOptional() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let upper = UNIT(top, mid);
+    let lower = Scaled { g: 1.0, m: 3.0 }(mid, gnd);
+}
+analog for RigOptional { potential(top) +> 1.0; }

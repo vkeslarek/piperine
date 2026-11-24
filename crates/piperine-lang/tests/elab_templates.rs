@@ -374,3 +374,14 @@ fn gnd_at_a_placement_through_a_callable_bound_is_ground() {
     assert_eq!(nodes(&through), nodes(&direct), "the second port is ground in both");
     assert_eq!(Placed::first_param(&through, "Top.h.c"), Placed::first_param(&direct, "Top.h.c"));
 }
+
+#[test]
+fn a_template_that_leaves_an_option_param_out_places_none() {
+    // §8.1.17, §3.2.10, §8.4.9: `const T: D = D { r: 2.0 };` leaves `o: Option<f64>` out; the instance it places reads `None`,
+    // the same values the written placement `D(x) { r: 2.0 }` gives
+    let module = "module D(a: Electrical) { r: f64 = 1.0; o: Option<f64>; }\nanalog for D { i(a, gnd) +> v(a, gnd) * o.unwrap_or(r); }\n";
+    let through = Elab::ir(&format!("{module}const T: D = D {{ r: 2.0 }};\nmodule Top() {{ signal x: Electrical; let d = T(x); }}"), "Top");
+    let direct = Elab::ir(&format!("{module}module Top() {{ signal x: Electrical; let d = D(x) {{ r: 2.0 }}; }}"), "Top");
+    let params = |ir: &Ir| ir.instance_at("Top.d").map(|instance| instance.params().to_vec()).expect("the instance");
+    assert_eq!(params(&through), params(&direct));
+}

@@ -139,3 +139,12 @@ fn the_items_of_a_template_placed_child_read_as_values() {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
 }
+
+#[test]
+fn a_const_template_leaves_an_option_param_out() {
+    // §8.1.17, §8.4.2: `const UNIT: Scaled = Scaled { g: 1.0 };` leaves `m: Option<f64>` out, so the upper leg is one conductance
+    // (`m` is `None`, the fallback 1) against three below: the divider sits at 1 / (1 + 3) of the drive
+    let mid = RUN.operating_point("defaults.msl", "RigOptional", &["mid"]);
+    let expected = RustOracle::conductance_divider(1.0, 1.0, 3.0);
+    assert!((mid[0] - expected).abs() < TOLERANCE, "{mid:?} against {expected}");
+}

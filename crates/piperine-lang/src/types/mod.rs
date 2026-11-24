@@ -39,7 +39,7 @@ mod literals; mod widths;
 mod logic_pattern; mod loops;
 mod model;
 mod methods;
-mod module; mod module_bounds; mod module_generics; mod templates; mod template_items;
+mod module; mod module_bounds; mod module_generics; mod templates; mod template_items; mod param_requirement;
 mod obligations; mod operators;
 mod patterns;
 mod plain;
@@ -56,5 +56,5 @@ mod ty;
 pub(crate) mod unsupported;
 
 pub(crate) use self::{coverage::ElementCoverage, logic_pattern::LogicPattern};
-pub use self::{traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution};
+pub use self::{traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution, param_requirement::ParamRequirement};
 pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

@@ -447,7 +447,7 @@ impl Elaboration<'_, '_> {
                     }
                 },
                 // an `Option` param left out is the absent case (§3.2.10), as for a placement that keeps its body
-                None if let Some(absent) = self.absent_option(p.ty) => absent,
+                None if let Some(absent) = self.absent_option(p) => absent,
                 None => {
                     self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
                     ok = false;

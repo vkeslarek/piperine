@@ -6,7 +6,7 @@ use crate::msl::Diagnostic;
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
 
 use super::check::Checker;
-use super::{Nominal, Ty};
+use super::{Nominal, ParamRequirement, Ty};
 
 impl Checker<'_> {
     /// A template `Name { params }` (§8.4.1): the type is the module it names with the generic arguments it names or lets be
@@ -34,16 +34,24 @@ impl Checker<'_> {
         Some(ty)
     }
 
-    /// Every param of `module` without a default is bound in the template (§8.4.2), else `E0319` naming the first one.
+    /// Every required param of `module` (§8.1.17, `ParamRequirement`) is bound in the template (§8.4.2), else `E0319` naming
+    /// the first one; an `Option<T>` param left out is `None`, as at a placement.
     fn require_bound_params(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) {
-        let data = self.design.decl_data(module);
+        let data = self.design.decl_data(module).clone();
         let module_name = data.name.as_ref().map_or("", |name| name.text.as_str()).to_string();
-        let missing = data.children.iter().find_map(|child| {
-            let child_data = self.design.decl_data(*child);
-            let DeclKind::Param(param) = &child_data.kind else { return None };
-            let bound = fields.iter().any(|field| field.res == Resolution::Decl(*child));
-            (param.default.is_none() && !bound).then(|| child_data.name.as_ref().map_or("", |name| name.text.as_str()).to_string())
-        });
+        let mut missing = None;
+        for child in &data.children {
+            let child_data = self.design.decl_data(*child).clone();
+            let DeclKind::Param(param) = &child_data.kind else { continue };
+            if fields.iter().any(|field| field.res == Resolution::Decl(*child)) {
+                continue;
+            }
+            let ty = self.lower_type_quietly(param.ty);
+            if ParamRequirement::new(param, ty.as_ref()).is_required() {
+                missing = child_data.name.as_ref().map(|name| name.text.clone());
+                break;
+            }
+        }
         let Some(name) = missing else { return };
         let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
         let message = format!("the template of `{module_name}` leaves the required param `{name}` unbound (§8.4.2)");

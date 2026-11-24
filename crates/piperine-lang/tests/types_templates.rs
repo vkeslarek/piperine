@@ -234,3 +234,22 @@ fn gnd_connects_through_a_callable_bound_as_at_a_placement() {
     }
     assert_eq!(bank("a, f").codes(), ["E0251"]);
 }
+
+#[test]
+fn a_template_leaves_an_option_param_out_as_a_placement_does() {
+    // §8.1.17, §8.4.2: an `Option<T>` param with no default is not required, so a template that leaves it out is clean in a
+    // `const`, a param value and in place, as the written placement is; a required one it leaves out is still `E0319`
+    let module = "module D(a: E) { r: f64 = 1.0; o: Option<f64>; }\n";
+    for tail in [
+        "const T: D = D { r: 2.0 };\nmodule Top(x: E) { let d = T(x); }",
+        "module Top(x: E) { cell: D = D { r: 2.0 }; }",
+        "module Top(x: E) { let d = D { r: 2.0 }(x); }",
+        "module Top(x: E) { let d = D(x) { r: 2.0 }; }",
+    ] {
+        let source = TemplateSource::new(&format!("{module}{tail}"));
+        assert_eq!(source.codes(), Vec::<String>::new(), "{tail}: {}", source.message());
+    }
+    let required = TemplateSource::new("module D(a: E) { r: f64; o: Option<f64>; }\nconst T: D = D { o: 1.0 };\nmodule Top(x: E) { let d = T(x); }");
+    assert_eq!(required.codes(), ["E0319"], "{}", required.message());
+    assert!(required.message().contains("the required param `r`"), "{}", required.message());
+}

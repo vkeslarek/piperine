@@ -553,8 +553,11 @@ Proof: run elabtempl | test a_template_of_a_generic_module_names_its_arguments .
 Proof: run elabtempl | test two_templates_of_one_generic_module_with_different_arguments_are_two_values ... ok
 Proof: run elabtempl | test a_template_of_a_generic_module_obeys_its_where_and_names_its_missing_arguments ... ok
 
-**C88** - A template leaving a required param unbound is `E0319`. (GN-21, AC 2; T84)
+**C88** - A template leaving a required param unbound is `E0319`; an `Option<T>` param with no default is not required (§8.1.17), one rule with the placement's (`ParamRequirement`; fix round 3, finding 13). (GN-21, AC 2; T84)
 Proof: run typestempl | test a_template_leaving_a_required_param_is_e0319 ... ok
+Proof: run typestempl | test a_template_leaves_an_option_param_out_as_a_placement_does ... ok
+Proof: run elabtempl | test a_template_that_leaves_an_option_param_out_places_none ... ok
+Proof: run srctempl | test a_const_template_leaves_an_option_param_out ... ok
 
 **C89** - A template-valued expression that is not const is `E0362`. (GN-21, AC 3; T84)
 Proof: run typestempl | test a_template_that_is_not_const_is_e0362 ... ok

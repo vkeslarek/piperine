@@ -80,7 +80,7 @@ impl Elaboration<'_, '_> {
                         continue;
                     }
                 },
-                None => (self.absent_option(p.ty), None),
+                None => (self.absent_option(p), None),
             };
             plans.push(ParamPlan { decl: param, name, default, default_over_params, where_: p.where_ });
         }
@@ -120,12 +120,12 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The default of an `Option` param written with none: `None` (§3.2.10, PI-03 AC 1, explicit-unknowns
-    /// EU-06 AC 1), so an instance that binds nothing reads the absent case. Any other type has no
-    /// default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`), so the param is required.
-    pub(super) fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
-        let written = self.typed_written(ty)?;
-        if !matches!(written, crate::types::Ty::Option(_)) {
+    /// The default of a param `declared` with none written: `None` for an `Option` param (§3.2.10, PI-03 AC 1, explicit-unknowns
+    /// EU-06 AC 1), so an instance that binds nothing reads the absent case. A required param (§8.1.17, `ParamRequirement`, the
+    /// rule the checker's templates follow) has no default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`).
+    pub(super) fn absent_option(&mut self, declared: &crate::pom::ParamData) -> Option<Constant> {
+        let written = self.typed_written(declared.ty)?;
+        if crate::types::ParamRequirement::new(declared, Some(&written)).is_required() {
             return None;
         }
         let stored = self.stored_type(&written)?;
