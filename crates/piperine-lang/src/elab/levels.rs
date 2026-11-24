@@ -2,17 +2,17 @@
 //! lowered per instance: the receiver's type is the one the substitution gives `T`, so the levels are written out for it.
 //!
 //! `bool` is one level, an unsigned or signed integer of `N` bits is `N` levels, least significant first, and a type
-//! with a hand-written `impl Repr` is the call of its own `encode` and `decode`. Any other layout (`f64`, a derived
-//! struct, enum, tuple or array) is refused by name: it needs an IR form no phase A task adds.
+//! with a hand-written `impl Repr` is the call of its own `encode` and `decode`. Any other layout (`f64`, a signed
+//! `decode`, a derived struct, enum, tuple or array) is `Expr::LevelCast` between the type and `[bool; WIDTH]`.
 
-use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Origin, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Origin, ValueType};
 
 use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
-use crate::pom::{Arg, DeclId, ExprId, ExprKind, Resolution};
-use crate::types::{ConstTerm, GenericValue, Length, Ty};
+use crate::pom::{Arg, DeclId, ExprId, FileId, ExprKind, Resolution};
+use crate::types::{ConstTerm, GenericValue, Length, Nominal, Ty};
 
 impl Elaboration<'_, '_> {
     /// `ty` with each `[_; T::WIDTH]` that is still generic (the consts evaluator folds the built-in layouts) folded
@@ -22,7 +22,7 @@ impl Elaboration<'_, '_> {
             Ty::Array(element, Length::Generic(ConstTerm::Width(parameter))) => {
                 let element = Box::new(self.with_hand_written_widths(element));
                 let width = match self.consts.substitution().get(*parameter) {
-                    Some(GenericValue::Type(given)) => self.impls.hand_written_repr(given).map(|entry| entry.decl).and_then(|owner| self.hand_written_width(owner)),
+                    Some(GenericValue::Type(given)) => self.level_count(given),
                     _ => None,
                 };
                 match width {
@@ -37,6 +37,13 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The number of levels of the `Repr` of `ty` (§2): the width of its hand-written `impl`, else the count its layout
+    /// gives (rules 2 to 6). `None` for a type with no laid-out value type.
+    pub(super) fn level_count(&self, ty: &Ty) -> Option<u32> {
+        let hand_written = self.impls.hand_written_repr(ty).map(|entry| entry.decl).and_then(|owner| self.hand_written_width(owner, &self.hand_written_arguments(owner, ty)?));
+        hand_written.or_else(|| self.types.repr_levels(ty))
+    }
+
     /// `x.encode()` where the checker typed no method (a `T: Repr` parameter): the levels of the receiver. `None` when
     /// the call is no such encode, with no diagnostic; after a diagnostic when it is one and cannot be lowered.
     pub(super) fn lower_parameter_encode(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, name: &str, origin: Origin) -> Option<Option<LoweredExpr>> {
@@ -45,29 +52,55 @@ impl Elaboration<'_, '_> {
         }
         let span = self.design.expr_node(expr).span;
         let Some(ty) = self.typed(recv) else { return None };
-        Some(self.encode_levels(scope, recv, &ty, span, origin))
+        let result = self.typed(expr);
+        Some(self.encode_levels(scope, recv, &ty, result, span, origin))
     }
 
-    fn encode_levels(&mut self, scope: &mut Scope, recv: ExprId, ty: &Ty, span: crate::msl::Span, origin: Origin) -> Option<LoweredExpr> {
+    /// The levels of `recv` (of type `ty`) as the `result` type `[bool; WIDTH]` the checker gave the call.
+    fn encode_levels(&mut self, scope: &mut Scope, recv: ExprId, ty: &Ty, result: Option<Ty>, span: crate::msl::Span, origin: Origin) -> Option<LoweredExpr> {
         if let Some(owner) = self.impls.hand_written_repr(ty).map(|entry| entry.decl) {
             let item = self.impls.item(owner, "encode")?;
+            let arguments = self.hand_written_arguments(owner, ty)?;
             let argument = self.lower_expr(scope, recv)?;
-            let (function, ret) = self.request(item, Half::Whole)?;
+            let (function, ret) = self.request_instance(item, arguments, Half::Whole)?;
             return Some(self.emit(Expr::Call { function, args: vec![argument] }, ret, origin));
         }
         let value = self.lower_expr(scope, recv)?;
         match ty {
             Ty::Bool => Some(self.emit(Expr::Array(vec![value]), ValueType::Array(Box::new(ValueType::Bool), 1), origin)),
-            Ty::UInt(bits) | Ty::Int(bits) if *bits <= 64 => {
+            Ty::UInt(bits) if *bits <= 64 => {
                 let integer = self.type_of(value);
                 let levels: Vec<LoweredExpr> = (0..u128::from(*bits)).map(|k| self.level_of_bit(value, &integer, k, &origin)).collect();
                 Some(self.emit(Expr::Array(levels), ValueType::Array(Box::new(ValueType::Bool), u64::from(*bits)), origin))
             }
             _ => {
-                self.unsupported(scope.file, span, "`encode` on a value of a type whose layout is derived (only `bool`, integers up to 64 bits and hand-written `Repr` types run)");
-                None
+                // §2 rule 3: a derived layout (`f64`, struct, enum, tuple, array) is its levels, read as `[bool; WIDTH]`;
+                // every level pattern is such an array, so the `Option` of the cast is always `Some` and its value is taken
+                let Some(levels) = result.filter(|result| matches!(result, Ty::Array(_, Length::Fixed(_)))) else {
+                    self.unsupported(scope.file, span, "`encode` on a value whose level count is not known where it is lowered");
+                    return None;
+                };
+                self.level_cast_pair(value, &levels, span, scope.file, origin).map(|pair| pair.val)
             }
         }
+    }
+
+    /// `Expr::LevelCast` of the lowered `operand` to the type `to`, as the pair an `Option<to>` is in value code: the
+    /// flag and the payload are the two halves of one cast, `None` for a tag that names no variant of an enum `to`
+    /// (§22.1.3). `None` after a diagnostic.
+    pub(super) fn level_cast_pair(&mut self, operand: LoweredExpr, to: &Ty, span: crate::msl::Span, file: FileId, origin: Origin) -> Option<Pair> {
+        let Some(target) = self.value_type(to) else {
+            self.unsupported(file, span, "a level cast to a type that has no value type in the IR");
+            return None;
+        };
+        let tags = match to {
+            Ty::Enum(Nominal { decl, .. }) => self.types.enum_tag(*decl).map(|tag| tag.discriminants.clone()),
+            _ => None,
+        };
+        let packed = self.emit(Expr::LevelCast { expr: operand, to: target.clone(), tags }, ValueType::Option(Box::new(target.clone())), origin.clone());
+        let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
+        let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, target, origin);
+        Some(Pair { is, val, literal: None })
     }
 
     /// Level `k` of the integer `value`: `((value >> k) & 1) != 0`.
@@ -99,9 +132,10 @@ impl Elaboration<'_, '_> {
     fn decode_levels(&mut self, scope: &mut Scope, levels: ExprId, target: &Ty, span: crate::msl::Span, origin: &Origin) -> Option<Pair> {
         if let Some(owner) = self.impls.hand_written_repr(target).map(|entry| entry.decl) {
             let item: DeclId = self.impls.item(owner, "decode")?;
+            let arguments = self.hand_written_arguments(owner, target)?;
             let first = self.lower_expr(scope, levels)?;
-            let (presence, is_ty) = self.request(item, Half::Presence)?;
-            let (payload, val_ty) = self.request(item, Half::Payload)?;
+            let (presence, is_ty) = self.request_instance(item, arguments.clone(), Half::Presence)?;
+            let (payload, val_ty) = self.request_instance(item, arguments, Half::Payload)?;
             let second = self.lower_expr(scope, levels)?;
             let is = self.emit(Expr::Call { function: presence, args: vec![first] }, is_ty, origin.clone());
             let val = self.emit(Expr::Call { function: payload, args: vec![second] }, val_ty, origin.clone());
@@ -130,10 +164,8 @@ impl Elaboration<'_, '_> {
                 }
                 Some(Pair { is: present, val: sum, literal: Some(true) })
             }
-            _ => {
-                self.unsupported(scope.file, span, "`decode` into a signed integer or a type whose layout is derived (only `bool`, unsigned integers up to 64 bits and hand-written `Repr` types run)");
-                None
-            }
+            // §2 rule 9: a signed integer or a derived layout is the levels reinterpreted under the type
+            _ => self.level_cast_pair(whole, target, span, scope.file, origin.clone()),
         }
     }
 }

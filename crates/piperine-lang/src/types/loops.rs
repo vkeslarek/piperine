@@ -53,7 +53,7 @@ impl Checker<'_> {
     }
 
     /// The element type of the range `iter` of a `for`: an integer type both bounds have.
-    fn range_element(&mut self, iter: ExprId) -> Option<Ty> {
+    pub(super) fn range_element(&mut self, iter: ExprId) -> Option<Ty> {
         let node = self.design.expr_node(iter).clone();
         let file = self.file_of_expr(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), .. } = &node.kind else { return None };

@@ -61,6 +61,8 @@ impl ValuePrinter<'_> {
                 Ok(Piece::new(format!("if {} {{ Some({}) }} else {{ None }}", self.condition(*is)?, self.expr(*value)?), Prec::Low))
             }
             Expr::OptionPart { option, part: LevelPart::Is } => atom(format!("{}.is_some()", self.operand(*option)?)),
+            // `None` unpacks to the zero of the payload; an array has no `Default` past 32 elements (T54)
+            Expr::OptionPart { option, part: LevelPart::Value } if matches!(self.ir.expr_type(e), ValueType::Array(..)) => atom(format!("{}.unwrap_or_else(rt::Carried::zeroed)", self.operand(*option)?)),
             Expr::OptionPart { option, part: LevelPart::Value } => atom(format!("{}.unwrap_or_default()", self.operand(*option)?)),
             Expr::Default(ty) => atom(format!("<{}>::default()", self.rust_type(ty, &format!("{} e{}", self.path, e.index()))?)),
             _ => Err(self.unsupported(e, "a form that is not an aggregate")),

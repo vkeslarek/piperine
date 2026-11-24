@@ -45,6 +45,16 @@ pub struct TypeId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AggregateId(pub u32);
 
+/// A constant of an integer type wider than 64 bits: an entry of the arena of wide constants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct WideId(pub u32);
+
+impl WideId {
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
 impl NatureId {
     pub fn index(self) -> usize {
         self.0 as usize

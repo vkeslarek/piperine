@@ -289,7 +289,7 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(expr).span;
         // one element of an array of carriers is read through the element, never through the array (`elements.rs`)
         match self.element_lookup(scope, expr) {
-            Lookup::Found(element) => return Some(self.carrier_element_read(element, origin)),
+            Lookup::Found(element) => return Some(self.carrier_element_read(scope, element, origin)),
             Lookup::Failed => return None,
             Lookup::No => {}
         }

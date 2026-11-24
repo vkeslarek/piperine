@@ -1,0 +1,17 @@
+//! A first-order low-pass over the standard library's generic `idt` (generics GN-13, part III §8.1.15): a hoisted generic
+//! module, placed at its default nature.
+
+module lowpass(x: f64, tau: f64) -> f64 {
+    let y = idt((x - y) / tau);
+    y
+}
+
+module SlowBuffer(a: Electrical, b: Electrical) {}
+analog for SlowBuffer { v(b) +> lowpass(v(a), 1u); }
+
+module Top() {
+    signal a: Electrical;
+    signal b: Electrical;
+    let s = SlowBuffer(a, b);
+}
+analog for Top { v(a) +> 1.0; }

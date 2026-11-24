@@ -137,10 +137,12 @@ impl Checker<'_> {
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
+            // a nature parameter of a generic module (`a: S`, `S: Nature`): a node of the nature the placement gives (GN-13)
+            nature @ Ty::Param(_) if self.is_nature_parameter(&nature) => Some(nature),
             // an array of carriers, or of conservative nodes (CV-23)
             array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
-            value @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
+            value @ (Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
                 self.unsupported(file, node.span, &format!("value input port of type `{}`", other.name(self.design)));
                 None
@@ -153,13 +155,15 @@ impl Checker<'_> {
     pub(super) fn read_type(&mut self, decl: DeclId, ty: TypeId) -> Option<Ty> {
         match self.port_type(ty)? {
             carrier @ Ty::Carrier { .. } => {
-                self.carriers.insert(decl, carrier.clone());
+                let held = self.generated_type(decl, carrier.clone());
+                self.carriers.insert(decl, held);
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
             }
             // an array of carriers reads as the array of their values; an array of nodes is the array itself
             array @ Ty::Array(..) if array.is_carrier_element() => {
-                self.carriers.insert(decl, array.clone());
+                let held = self.generated_type(decl, array.clone());
+                self.carriers.insert(decl, held);
                 Some(array.read_value())
             }
             node => Some(node),
@@ -245,7 +249,7 @@ impl Checker<'_> {
     pub(super) fn path_owner_type(&mut self, file: FileId, span: Span, owner: Resolution) -> Option<Ty> {
         match owner {
             Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                ("fN", Some(64)) => Some(Ty::F64),
+                ("fN", Some(w)) => Ty::float(u32::from(w)),
                 ("bool", _) => Some(Ty::Bool),
                 ("str", _) => Some(Ty::Str),
                 ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),

@@ -6,16 +6,48 @@
 use crate::pom::{DeclId, DeclKind, TypeId};
 
 use super::check::Checker;
-use super::Ty;
+use super::{Length, Ty, Types};
 
 impl Checker<'_> {
     /// The number of levels of `ty` when its `Repr` is written by hand: the folded `WIDTH` of its
     /// `impl Repr`. `None` for a type with no such `impl`, or a `WIDTH` the folder cannot read.
-    pub(super) fn hand_written_levels(&self, ty: &Ty) -> Option<u32> {
-        let entry = self.impls.hand_written_repr(ty)?;
+    pub(super) fn hand_written_levels(&mut self, ty: &Ty) -> Option<u32> {
+        let entry = self.impls.hand_written_repr(ty)?.clone();
         let width = self.impls.item(entry.decl, "WIDTH")?;
         let DeclKind::Const(data) = &self.design.decl_data(width).kind else { return None };
-        u32::try_from(self.fold_integer(data.value?, u8::MAX)?).ok()
+        let value = data.value?;
+        let values = self.impl_widths(entry.decl, ty)?;
+        u32::try_from(super::lengths::IntegerFolder::with_values(self.design, values).fold(value, u8::MAX)?).ok()
+    }
+
+    /// What the parameters of the `impl` `owner` take for the type `ty` it is written for: the level count of each
+    /// type argument (`impl<T: Repr> Repr for Pair<T>` meeting `Pair<u8>` gives `T` 8, what `T::WIDTH` reads) and the
+    /// value of each const argument. Empty for an `impl` with no parameters; `None` when a parameter stays open or
+    /// its argument has no `Repr`.
+    fn impl_widths(&mut self, owner: DeclId, ty: &Ty) -> Option<std::collections::BTreeMap<DeclId, u128>> {
+        let mut values = std::collections::BTreeMap::new();
+        if self.design.decl_data(owner).generics_span.is_none() {
+            return Some(values);
+        }
+        let DeclKind::Impl(data) = &self.design.decl_data(owner).kind else { return None };
+        let self_ty = data.self_ty;
+        let declared = self.lower_type_quietly(self_ty)?;
+        let signature = super::GenericSignature::of(self.design, owner);
+        let mut inference = super::inference::Inference::new(&signature);
+        inference.unify(&declared, ty);
+        for parameter in signature.parameters() {
+            match inference.found().get(parameter.decl)? {
+                super::GenericValue::Type(argument) => {
+                    let levels = self.repr_levels(&argument.clone())?;
+                    values.insert(parameter.decl, u128::from(levels));
+                }
+                super::GenericValue::Const(super::ConstTerm::Value(count)) => {
+                    values.insert(parameter.decl, u128::try_from(*count).ok()?);
+                }
+                _ => return None,
+            }
+        }
+        Some(values)
     }
 
     /// Puts the `impl Repr` of `ty`, with its `WIDTH`, `encode` and `decode`, on the worklist: a carrier of the type
@@ -64,6 +96,29 @@ impl Checker<'_> {
                 let (item_file, item_span) = (self.design.decl_data(item).file, self.design.decl_data(item).span);
                 self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, §2 gives it `{}`", found.name(self.design), wanted.name(self.design)), "a signature §2 does not give");
             }
+        }
+    }
+}
+
+impl Types<'_> {
+    /// The number of levels of `ty`'s derived `Repr` (§2 rules 2 to 6): the scalars, a tuple, an array and an `Option` from
+    /// their parts, a struct its fields end to end, an enum its tag then its widest payload. `None` for a type with no
+    /// `Repr` among the types the check reached, and for one whose layout is written by hand (the elaborator reads that
+    /// width from the `impl`).
+    pub fn repr_levels(&self, ty: &Ty) -> Option<u32> {
+        let sum = |parts: &[Ty]| parts.iter().try_fold(0u32, |total, part| total.checked_add(self.repr_levels(part)?));
+        match ty {
+            Ty::Tuple(items) => sum(items),
+            Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
+            Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
+            Ty::Struct(nominal) => sum(&self.instance_fields(nominal.decl, nominal).into_iter().map(|field| field.ty).collect::<Vec<_>>()),
+            Ty::Enum(nominal) => {
+                let tag = self.enum_tag(nominal.decl)?.tag_levels;
+                let variants = self.design.decl_data(nominal.decl).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Variant(_)));
+                let widest = variants.map(|variant| sum(&self.instance_fields(variant, nominal).into_iter().map(|field| field.ty).collect::<Vec<_>>())).try_fold(0u32, |widest, payload| Some(widest.max(payload?)))?;
+                tag.checked_add(widest)
+            }
+            other => other.levels(self.design),
         }
     }
 }

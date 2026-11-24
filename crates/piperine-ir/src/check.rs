@@ -33,6 +33,7 @@ use crate::model::{
 use crate::typing::Typing;
 
 mod aggregates;
+mod widths;
 mod carrier_array;
 mod resolved;
 mod traits;
@@ -216,6 +217,8 @@ impl<'a> Checker<'a> {
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
             }
+            (ValueType::F32 | ValueType::F16 | ValueType::F128, Constant::FloatBits(bits)) => self.float_bits_fit(ty, bits),
+            (ValueType::UInt(_) | ValueType::Int(_), Constant::Wide(id)) => self.wide_fits(ty, id),
             _ => false,
         }
     }
@@ -392,6 +395,11 @@ impl<'a> Checker<'a> {
             }
         }
         for body in &ir.bodies {
+            if let Some(instance) = &body.instance
+                && !instance.names_body(&body.name)
+            {
+                self.report(format!("body {}", body.name), body.origin.clone(), format!("a body of the generic module instance `{}` is named `{}`", instance.name(), body.name));
+            }
             self.child_param_ids(body);
             self.child_carrier_ids(body);
         }
@@ -548,7 +556,7 @@ impl<'a> Checker<'a> {
                 continue;
             };
             let Some(callee) = ir.bodies.get(child.body.index()) else { continue };
-            let ports: Vec<_> = callee.carriers.iter().filter(|c| c.role != CarrierRole::Signal).collect();
+            let ports: Vec<_> = callee.carriers.iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { .. })).collect();
             if bound.len() != ports.len() {
                 self.report(item.clone(), child.origin.clone(), format!("child {} binds {} carriers, body {} has {} carrier ports", child.name, bound.len(), callee.name, ports.len()));
             }
@@ -572,7 +580,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) => {}
             Expr::Resolve { by_count, .. } => {
                 for function in by_count {
                     if function.index() >= ir.functions.len() {
@@ -831,8 +839,9 @@ impl<'a> Checker<'a> {
 
     // ---- types -----------------------------------------------------------------------------
 
-    /// Every type written in the IR is well formed: an integer width in 1..=64 (RS-Q6: the ABI's
-    /// leaves end at 64 bits).
+    /// Every type written in the IR is well formed: an integer width in 1..=2^32 - 1 (Q4 of the
+    /// number widths, which supersedes RS-Q6's 1..=64: a width past 64 is a `U64` field of
+    /// `ceil(N/64)` elements).
     fn types(&mut self) {
         let ir = self.ir;
         let mut found: Vec<(String, Origin, ValueType)> = Vec::new();
@@ -955,8 +964,8 @@ impl<'a> Checker<'a> {
         let mut stack = vec![ty];
         while let Some(t) = stack.pop() {
             match t {
-                ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
-                    return Some(format!("type {t} has a width outside 1..=64"));
+                ValueType::UInt(0) | ValueType::Int(0) => {
+                    return Some(format!("type {t} has a width outside 1..=4294967295"));
                 }
                 ValueType::Fn(params, ret) => {
                     stack.extend(params);
@@ -1018,7 +1027,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } => {}
+                Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -1866,12 +1875,14 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => {
                 if first {
-                    self.own(w, &origin, ty, &ValueType::F64);
+                    // typed by its operand (H.2): a float of any width gives a float of that width, `f64` otherwise
+                    let operand = args.first().and_then(|a| self.ty(*a)).filter(|t| t.is_other_float()).cloned().unwrap_or(ValueType::F64);
+                    self.own(w, &origin, ty, &operand);
                     if args.len() != 1 {
                         self.wrong(w, origin.clone(), format!("a math function takes 1 argument, found {}", args.len()));
                     }
                     for a in args {
-                        self.want(w, *a, &ValueType::F64, "argument of a math function");
+                        self.want(w, *a, &operand, "argument of a math function");
                     }
                 }
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
@@ -1978,6 +1989,16 @@ impl<'a> Checker<'a> {
                 self.site(w, id, &origin, "ac_stim", *site, ctx);
                 next.push(Task::Expr(*mag, ctx));
                 next.extend(phase.iter().map(|p| Task::Expr(*p, ctx)));
+            }
+            Expr::FloatBits(bits) => {
+                if first {
+                    self.float_literal(w, &origin, ty, *bits);
+                }
+            }
+            Expr::Wide(id) => {
+                if first {
+                    self.wide_literal(w, &origin, ty, *id);
+                }
             }
             Expr::Int(value) => {
                 if first {

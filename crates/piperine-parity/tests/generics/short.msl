@@ -1,0 +1,49 @@
+//! `Short` of the prelude placed over each nature (generics GN-16): a divider whose middle is two nodes joined by a `Short` gives
+//! the solution of the divider written with one node. The resistor and the source are generic over the nature, so one divider
+//! serves `Electrical`, `Thermal` and a nature the model declares.
+
+nature Heat { potential: Energy { access: joules, units: "J", abstol: 1m }, flow: Power { access: pwr, units: "W", abstol: 1n } }
+
+module Drive<S: Nature>(p: S) { level: f64 = 1.0; }
+analog<S> for Drive<S> { potential(p) +> level; }
+
+module Link<S: Nature>(p: S, n: S) { r: f64 = 1k; }
+analog<S> for Link<S> { flow(p, n) +> potential(p, n) / r; }
+
+module Divider<S: Nature>(top: S, mid: S, low: S) {
+    r1: f64 = 1k;
+    r2: f64 = 3k;
+    let upper = Link(top, mid) { r: r1 };
+    let lower = Link(mid, low) { r: r2 };
+}
+
+// the middle written as one node, and as two nodes the `Short` makes one
+module Whole<S: Nature>(top: S, mid: S) { let d = Divider(top, mid, gnd); }
+module Joined<S: Nature>(top: S, mid: S) {
+    signal other: S;
+    let u = Link(top, mid) { r: 1k };
+    let l = Link(other, gnd) { r: 3k };
+    let s = Short(mid, other);
+}
+
+module ElectricalRig() {
+    signal whole_top: Electrical; signal whole_mid: Electrical; signal joined_top: Electrical; signal joined_mid: Electrical;
+    let a = Drive(whole_top) { level: 4.0 };
+    let b = Whole(whole_top, whole_mid);
+    let c = Drive(joined_top) { level: 4.0 };
+    let d = Joined(joined_top, joined_mid);
+}
+module ThermalRig() {
+    signal whole_top: Thermal; signal whole_mid: Thermal; signal joined_top: Thermal; signal joined_mid: Thermal;
+    let a = Drive(whole_top) { level: 4.0 };
+    let b = Whole(whole_top, whole_mid);
+    let c = Drive(joined_top) { level: 4.0 };
+    let d = Joined(joined_top, joined_mid);
+}
+module HeatRig() {
+    signal whole_top: Heat; signal whole_mid: Heat; signal joined_top: Heat; signal joined_mid: Heat;
+    let a = Drive(whole_top) { level: 4.0 };
+    let b = Whole(whole_top, whole_mid);
+    let c = Drive(joined_top) { level: 4.0 };
+    let d = Joined(joined_top, joined_mid);
+}

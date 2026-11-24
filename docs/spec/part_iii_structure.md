@@ -329,7 +329,9 @@ a result that does.
 
 > **Resolution.** §8.2.21: an initial value under an undelayed definition would be replaced in the
 > microstep that commits it. Rejecting it keeps `prev()` and `changed()` at `(0, 0)` unambiguous
-> (G.51).
+> (G.51). An array of carriers is judged per element ("on the levels defined"): an initial value
+> beside undelayed definitions of some elements is the value of the others, and is `E0338` only
+> when the definitions name every element. *(AFK default 2026-11-24, pending user review.)*
 
 **Static semantics: generation, visibility**
 
@@ -424,7 +426,7 @@ a result that does.
 | `E0335` | two definitions share a level (§8.2.20) | elaboration |
 | `E0336` | a definition, its delay or an anonymous definition is a continuous expression (§8.2.5) | elaboration |
 | `E0337` | a definition's type differs from its target's (§8.2.19, §8.2.6) | elaboration |
-| `E0338` | an initial value on levels driven by an undelayed definition (§8.2.21) | elaboration |
+| `E0338` | an initial value on levels driven by an undelayed definition: every element of an array, or the carrier (§8.2.21) | elaboration |
 | `E0339` | a loop through a one-driver carrier (§8.2.3) | elaboration |
 | `E0340` | a generation range or condition is not a const expression (§8.2.7) | elaboration |
 | `E0341` | generation recursion does not end | elaboration |

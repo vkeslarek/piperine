@@ -31,6 +31,7 @@ use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
 use crate::print::carrier_array::{CarrierFacts, ElementRead};
+use crate::print::widths::NumberTypes;
 use crate::print::{ContributionSums, Text, TypeItems};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
@@ -343,6 +344,9 @@ impl<'a> ValuePrinter<'a> {
     /// `rt::UInt::<N>::new(0)` or `rt::Int::<N>::new(0)`: the value of an integer param no one
     /// wrote.
     pub fn zero(ty: &ValueType) -> String {
+        if let Some(zero) = Self::number_zero(ty) {
+            return zero;
+        }
         match ty {
             ValueType::UInt(n) => format!("rt::UInt::<{n}>::new(0)"),
             ValueType::Int(n) => format!("rt::Int::<{n}>::new(0)"),
@@ -605,6 +609,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Probe { .. }
             | Expr::Env(_)
             | Expr::Int(_)
+            | Expr::FloatBits(_)
+            | Expr::Wide(_)
             | Expr::Carrier(_)
             | Expr::Others(_)
             | Expr::Resolve { .. }
@@ -658,11 +664,13 @@ impl<'a> ValuePrinter<'a> {
     /// `f64`, so there is nothing of those to refuse.)
     pub(super) fn rust_type(&self, ty: &ValueType, path: &str) -> Result<String, Error> {
         match ty {
+            ValueType::F32 | ValueType::F16 | ValueType::F128 => Ok(NumberTypes::spelled(ty)),
+            ValueType::UInt(n) | ValueType::Int(n) if *n > 64 => Ok(NumberTypes::spelled(ty)),
             ValueType::F64 => Ok(if self.plain { "f64" } else { "R" }.to_string()),
             ValueType::Bool => Ok("bool".to_string()),
             ValueType::Unit => Ok("()".to_string()),
-            ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => Err(Error::Unsupported {
-                form: format!("the type {}, whose width is outside 1..=64", Self::type_name(ty)),
+            ValueType::UInt(n) | ValueType::Int(n) if *n == 0 => Err(Error::Unsupported {
+                form: format!("the type {}, whose width is outside 1..=4294967295", Self::type_name(ty)),
                 path: path.to_string(),
                 origin: self.origin.clone(),
             }),
@@ -732,7 +740,9 @@ impl<'a> ValuePrinter<'a> {
             Expr::Real(r) => atom(format!("R::constant({})", Text::real(r.get()))),
             Expr::Bool(b) => atom(b.to_string()),
             Expr::Unit => atom("()".to_string()),
+            Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) if Self::is_number_width(self.ir.expr_type(e)) => self.number_literal(e),
             Expr::Int(v) => atom(format!("{}::new({v})", self.integer_path(self.ir.expr_type(e), e)?)),
+            Expr::FloatBits(_) | Expr::Wide(_) => self.number_literal(e),
             Expr::Local(i) => match self.locals.get(*i as usize) {
                 Some(name) => atom(name.clone()),
                 None => Err(self.unsupported(e, "a local out of range")),
@@ -891,6 +901,9 @@ impl<'a> ValuePrinter<'a> {
 
     /// `expr as to`.
     fn cast(&self, e: ExprId, expr: ExprId, to: &ValueType) -> Result<Piece, Error> {
+        if let Some(piece) = self.number_cast(e, expr, to)? {
+            return Ok(piece);
+        }
         let from = self.ir.expr_type(expr);
         let (source, target) = (from, to);
         let generic_real = *source == ValueType::F64 && !self.plain;
@@ -942,6 +955,7 @@ impl<'a> ValuePrinter<'a> {
                 // is an `i32` literal: analog code has no `rt::Int`.
                 (Method::Powi, Expr::Int(v)) => format!("{v}_i32"),
                 (Method::Powi, _) => format!("{}.get() as i32", self.piece(*a)?.at(Prec::Atom)),
+                (Method::Pow, _) if self.ir.expr_type(receiver).is_wide_integer() => self.wide_exponent(*a)?,
                 _ => self.expr(*a)?,
             };
             printed.push(text);
@@ -1587,48 +1601,26 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
 
     #[test]
     fn a_type_rust_lacks_is_refused_by_name() {
-        // RS-Q6: `UInt<N>` and `Int<N>` hold 1..=64 bits; the ABI's leaves end at 64. (The IR has
-        // no `Float<16>` or `Float<128>`: its only real is `f64`, so no `Ir` holds one to refuse.)
+        // §1 rule 5: an integer width is any `N >= 1`; a width of 0 has no Rust type and is named. (RS-Q6's 1..=64 is
+        // superseded by Q4 of the number widths: `UInt<65>` and wider print as `rt::WideUInt`, tests/number_widths.rs.)
         let at = Origin { file: "dpwm.msl".into(), line: 1, col: 1 };
-        for (ty, name) in [(Ty::u(65), "UInt<65>"), (Ty::i(65), "Int<65>"), (Ty::u(0), "UInt<0>")] {
+        for (ty, name) in [(Ty::u(0), "UInt<0>"), (Ty::i(0), "Int<0>")] {
             let mut b = IrBuilder::new();
             let f = defined(&mut b, "wide", &[("x", ty.clone())], ValueType::Bool, |x| x.boolean(true));
             let ir = Alone::finish_unchecked(b);
             assert_eq!(
                 ValuePrinter::function(&ir, f),
                 Err(Error::Unsupported {
-                    form: format!("the type {name}, whose width is outside 1..=64"),
+                    form: format!("the type {name}, whose width is outside 1..=4294967295"),
                     path: "fn wide param x".into(),
                     origin: at.clone()
                 }),
                 "a parameter of {name}"
             );
         }
-        // a literal, or a cast, of an integer too wide names the type and the expression
-        let mut b = IrBuilder::new();
-        let mut literal = None;
-        let f = defined(&mut b, "big", &[], Ty::u(65), |x| {
-            let e = x.int(1, Ty::u(65));
-            literal = Some(e);
-            e
-        });
-        let ir = Alone::finish_unchecked(b);
-        let e = literal.expect("built");
-        let err = ValuePrinter::function(&ir, f).expect_err("UInt<65> has no Rust type");
-        assert_eq!(
-            err,
-            Error::Unsupported { form: "the type UInt<65>, whose width is outside 1..=64".into(), path: "fn big return".into(), origin: at.clone() }
-        );
-        let err = ValuePrinter::of_function(&ir, f).expr(e).expect_err("a UInt<65> literal has no Rust form");
-        assert_eq!(
-            err,
-            Error::Unsupported {
-                form: "the type UInt<65>, whose width is outside 1..=64".into(),
-                path: format!("fn big e{}", e.index()),
-                origin: at
-            }
-        );
         // and `check()` refuses the same IR, so `Transpiler` never reaches a printer with it
-        assert!(!ir.check().is_empty(), "check() names the type too");
+        let mut b = IrBuilder::new();
+        defined(&mut b, "wide", &[("x", Ty::u(0))], ValueType::Bool, |x| x.boolean(true));
+        assert!(!Alone::finish_unchecked(b).check().is_empty(), "check() names the type too");
     }
 }

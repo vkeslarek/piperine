@@ -8,13 +8,17 @@
 use super::int::{Int, UInt};
 
 /// A type a pin carries: its value bytes little-endian at offset 0; the layouts of the plan (`piperine_plan::CarrierLayout`, spec RS-12 AC 1).
-pub trait Carried: Copy + Default + PartialEq {
+pub trait Carried: Copy + PartialEq {
     /// The width of the value bytes, which is the pin's size.
     const WIDTH: usize;
     /// Writes the value bytes into `out[..WIDTH]`.
     fn encode(self, out: &mut [u8]);
     /// The value of `bytes[..WIDTH]`.
     fn decode(bytes: &[u8]) -> Self;
+    /// The value whose bytes are all zero: what the payload of a `None` unpacks to, for a type Rust gives no `Default`.
+    fn zeroed() -> Self {
+        Self::decode(&vec![0u8; Self::WIDTH])
+    }
     /// How many levels the type has (§2): the `T::WIDTH` of MSL, not the byte width above.
     const LEVELS: u32;
     /// The levels as bits, level `k` being bit `k`: the form `same` compares and `cast` moves
@@ -340,6 +344,10 @@ impl<A: Carried> Carried for (A,) {
         let mut at = 0;
         (Field::levels(words, &mut at),)
     }
+    fn try_from_levels(words: &LevelWords) -> Option<(A,)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?,))
+    }
 }
 
 impl<A: Carried, B: Carried> Carried for (A, B) {
@@ -360,6 +368,10 @@ impl<A: Carried, B: Carried> Carried for (A, B) {
     fn from_levels(words: &LevelWords) -> (A, B) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
     }
 }
 
@@ -382,6 +394,10 @@ impl<A: Carried, B: Carried, C: Carried> Carried for (A, B, C) {
     fn from_levels(words: &LevelWords) -> (A, B, C) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
     }
 }
 
@@ -406,6 +422,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried> Carried for (A, B, C, D) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
     }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
+    }
 }
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried> Carried for (A, B, C, D, E) {
@@ -429,6 +449,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried> Carried for (A,
     fn from_levels(words: &LevelWords) -> (A, B, C, D, E) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
     }
 }
 
@@ -455,6 +479,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried> Car
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
     }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
+    }
 }
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried> Carried for (A, B, C, D, E, F, G) {
@@ -480,6 +508,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
     fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F, G)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
     }
 }
 
@@ -508,6 +540,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
     }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F, G, H)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
+    }
 }
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried> Carried for (A, B, C, D, E, F, G, H, I) {
@@ -535,6 +571,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
     fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H, I) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F, G, H, I)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
     }
 }
 
@@ -565,6 +605,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
     }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F, G, H, I, J)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
+    }
 }
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried, K: Carried> Carried for (A, B, C, D, E, F, G, H, I, J, K) {
@@ -594,6 +638,10 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
     fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H, I, J, K) {
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F, G, H, I, J, K)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
     }
 }
 
@@ -626,14 +674,15 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
         let mut at = 0;
         (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
     }
+    fn try_from_levels(words: &LevelWords) -> Option<(A, B, C, D, E, F, G, H, I, J, K, L)> {
+        let mut at = 0;
+        Some((Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?, Field::try_levels(words, &mut at)?))
+    }
 }
 
-/// An array is carried where Rust gives it a `Default` (up to 32 elements): element 0 is the
-/// lowest.
-impl<T: Carried, const N: usize> Carried for [T; N]
-where
-    [T; N]: Default,
-{
+/// An array of any length is carried (`Default` is no part of `Carried`: Rust gives it up to 32 elements, and `encode`
+/// of a 64-level layout is a `[bool; 64]`): element 0 is the lowest.
+impl<T: Carried, const N: usize> Carried for [T; N] {
     const WIDTH: usize = N * T::WIDTH;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
@@ -656,6 +705,14 @@ where
     fn from_levels(words: &LevelWords) -> [T; N] {
         let mut at = 0;
         std::array::from_fn(|_| Field::levels(words, &mut at))
+    }
+    fn try_from_levels(words: &LevelWords) -> Option<[T; N]> {
+        let mut at = 0;
+        let mut items = Vec::with_capacity(N);
+        for _ in 0..N {
+            items.push(Field::try_levels(words, &mut at)?);
+        }
+        items.try_into().ok()
     }
 }
 

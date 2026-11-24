@@ -119,7 +119,12 @@ impl Reader<'_> {
         if segment.res != Resolution::Deferred(DeferReason::AmbiguousAccess) {
             return None;
         }
-        let ExprKind::Field { expr: recv, name, .. } = &self.design.expr_node(self.unparenthesized(args.first()?.value)).kind else { return None };
+        // an element `c.tap[k]` of a `pub` array of nodes is read through the item `tap`
+        let mut first = self.unparenthesized(args.first()?.value);
+        while let ExprKind::Index { expr: array, .. } = &self.design.expr_node(first).kind {
+            first = self.unparenthesized(*array);
+        }
+        let ExprKind::Field { expr: recv, name, .. } = &self.design.expr_node(first).kind else { return None };
         let Recv::Instance(module) = self.receiver(*recv) else { return None };
         let item = self.member_of(module, &name.text)?;
         let nature = self.design.nature_of(self.design.declared_type(item)?)?;

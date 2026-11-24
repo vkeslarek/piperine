@@ -1526,7 +1526,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Delivered (batches B1 to B3, T1 to T18, 2026-11-21; one commit per task on `feature/explicit-unknowns`).** The specification, `abi.md`, the records and the Book state the explicit model; the code is untouched. S8 in `GAPS.md` tracks the implementation; MD-78 is in `.specs/STATE.md`.
 
-**Settled mid-build (defaults a later task starts from):**
+**Settled mid-build (defaults a later task starts from):** T48's `cast`/`same` hand-off is done by `generics` T55 (`Intrinsic::{Cast, Same}` and `lower_cast` removed; the source in `std/values.msl` runs).
 
 - **Appendix B counts 62 constructs, not 63.** `level` leaves with `Unknown` and `resolve` (D7): three rows, not two. `b1_counts_62_constructs` replaces `b1_still_counts_65_constructs`.
 - **Retired section and codes.** Appendix A.3 stays as a retired stub (section numbers are not reused); `E0150`, `E0151`, `E0906` and `E0908` are in `RETIRED_CODES` of `spec_text.rs`. `E0225` and `E0511` are owned by `explicit-unknowns` in `code_owners.tsv` and listed in `GAPS.md` section 10.

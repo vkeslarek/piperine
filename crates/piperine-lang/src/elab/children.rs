@@ -10,6 +10,8 @@ use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
+use super::generation::Iteration;
+use super::instances::Instance;
 use super::lower::Scope;
 use super::templates::TemplateValue;
 use super::unlowered::Unlowered;
@@ -22,6 +24,8 @@ use crate::types::{Callee, Ty};
 pub(super) struct ChildPlan {
     pub(super) name: String,
     pub(super) module: DeclId,
+    /// The arguments of the instance of a generic module the child places.
+    pub(super) instance: Option<Instance>,
     /// The body the child places: the variant of the module its key params select.
     pub(super) body: piperine_ir::BodyId,
     pub(super) terminals: Vec<Terminal>,
@@ -66,7 +70,7 @@ impl Elaboration<'_, '_> {
     /// The placements of `module` in source order, each as the `Child` of its body and the plan
     /// placement reads. A placement of a module the type checker did not reach is skipped: it
     /// was refused already.
-    pub(super) fn lower_children(&mut self, scope: &Scope, module: DeclId) -> Vec<(Child, ChildPlan)> {
+    pub(super) fn lower_children(&mut self, scope: &mut Scope, module: DeclId) -> Vec<(Child, ChildPlan)> {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
         let calls = data.instances.clone();
         let mut ordinals: Vec<(DeclId, u32)> = Vec::new();
@@ -77,18 +81,38 @@ impl Elaboration<'_, '_> {
             if self.hoisted_callee(call).is_some() {
                 continue;
             }
-            let ordinal = match ordinals.iter_mut().find(|(m, _)| *m == child_module) {
-                Some((_, k)) => {
-                    *k += 1;
-                    *k
-                }
-                None => {
-                    ordinals.push((child_module, 0));
-                    0
-                }
+            // a placement in generation is one child per iteration, named by its ordinals (`sec[1]`); an arm not elaborated has none
+            let owner = self.design.expr_node(call).owner;
+            let iterations = match self.generated.of(owner) {
+                Some(iterations) => iterations.clone(),
+                None => vec![Iteration::default()],
             };
-            if let Some(child) = self.lower_child(scope, call, child_module, ordinal, out.len() as u32) {
-                out.push(child);
+            for iteration in &iterations {
+                let ordinal = match ordinals.iter_mut().find(|(m, _)| *m == child_module) {
+                    Some((_, k)) => {
+                        *k += 1;
+                        *k
+                    }
+                    None => {
+                        ordinals.push((child_module, 0));
+                        0
+                    }
+                };
+                for (variable, value) in &iteration.values {
+                    scope.unrolled.bind(*variable, Constant::Int(*value));
+                }
+                scope.ordinals = iteration.ordinals.clone();
+                let lowered = self.lower_child(scope, call, child_module, ordinal, out.len() as u32);
+                scope.ordinals.clear();
+                for (variable, _) in &iteration.values {
+                    scope.unrolled.unbind(*variable);
+                }
+                if let Some((mut child, mut plan)) = lowered {
+                    let suffix = iteration.subscripts();
+                    child.name.push_str(&suffix);
+                    plan.name.push_str(&suffix);
+                    out.push((child, plan));
+                }
             }
         }
         out
@@ -111,7 +135,7 @@ impl Elaboration<'_, '_> {
         let mut values = Bindings::new();
         for key in self.keys.of(module).to_vec() {
             let written = match fields.iter().find(|f| f.res == Resolution::Decl(key)) {
-                Some(field) => match self.fold_param_value(field.value, &scope.keys) {
+                Some(field) => match self.fold_param_value(field.value, &scope.keys.overlaid(&scope.unrolled)) {
                     Ok(value) => Some(value),
                     Err(fault) => {
                         self.const_fault(&fault, "the value of a param that fixes structure");
@@ -195,8 +219,14 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             if self.types.carrier(*port).is_some() {
-                match self.lower_carrier_arg(scope, &name, *port, arg.value) {
+                match self.lower_carrier_argument(scope, &name, *port, arg.value) {
                     Some((carrier, window)) => {
+                        if matches!(&self.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
+                            self.structure.handed.push((carrier, window));
+                            let span = self.design.expr_node(arg.value).span;
+                            let reach = super::drive_overlaps::ElementReach::of_window(window);
+                            self.structure.drive_sites.push(super::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::drive_overlaps::DriveWay::Handed, file: scope.file, span });
+                        }
                         carriers.push(Some(carrier));
                         windows.push(window);
                     }
@@ -247,7 +277,8 @@ impl Elaboration<'_, '_> {
         if !shapes_agree {
             return None;
         }
-        let (_, body) = self.request_body(module, &key_values)?;
+        let instance = if self.is_generic_module(module) { Some(self.module_instance(call, module)?) } else { None };
+        let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
         // The slots of the child's own nodes are added once every body is built (`pad_child_nodes`).
@@ -260,22 +291,25 @@ impl Elaboration<'_, '_> {
         if windows.iter().any(Option::is_some) {
             self.structure.child_windows.push((index, windows));
         }
-        Some((child, ChildPlan { name, module, body, terminals, carriers, given, call }))
+        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call }))
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement
     /// `instance` is bound to: the carrier it names, or for an expression at an `in` port the
     /// carrier of its anonymous definition (§8.2.9). `None` after a diagnostic.
-    fn lower_carrier_arg(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
+    pub(super) fn lower_carrier_argument(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
         let node = self.design.expr_node(arg).clone();
-        if let ExprKind::Path(path) = &node.kind
+        // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
+        let generated = !self.generated_carrier_levels(scope, arg).is_empty();
+        if !generated
+            && let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
             && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl))
         {
             return Some((*index, None));
         }
         // an element `x[k]` or a sub-array `g[r]` of an array of carriers: the carrier and its window
-        if let ExprKind::Index { .. } = &node.kind
+        if (generated || matches!(node.kind, ExprKind::Index { .. }))
             && let Some(found) = self.carrier_window(scope, arg)
         {
             return found;
@@ -325,7 +359,7 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             }
-            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() };
+            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
             match self.fold_param_value(field.value, &bindings) {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child

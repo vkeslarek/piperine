@@ -1,9 +1,6 @@
 # code	owner feature	construct (requirement or GAPS id)
 E0123	foreign-models	FM-04 AC 1
 E0124	foreign-models	FM-04 AC 2, 3
-E0322	generics	L31 (generation)
-E0340	generics	L31
-E0342	generics	L31
 E0360	generics	L32 (`Fn(P)`)
 E0362	generics	L32
 E0371	foreign-models	FM-07 AC 1

@@ -7,6 +7,7 @@ edition.workspace = true
 piperine-lang = { path = "../piperine-lang" }
 piperine-project = { path = "../piperine-project" }
 piperine-ir = { path = "../piperine-ir" }
+piperine-numbers = { path = "../piperine-numbers" }
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
 piperine-interp = { path = "../piperine-interp" }

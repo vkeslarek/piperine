@@ -32,8 +32,10 @@ impl Checker<'_> {
     fn infer_receiver(&mut self, receiver: ExprId) -> Option<Ty> {
         if let ExprKind::Path(path) = &self.design.expr_node(receiver).kind {
             if let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) {
-                if let Some(instance @ Ty::Module(_)) = self.locals.get(&decl) {
-                    return Some(instance.clone());
+                // a placement in generation is the array of its instances; inside its loops the name is the iteration's (§8.2.23)
+                let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(receiver, decl, whole));
+                if let Some(instance @ Ty::Module(_)) = local {
+                    return Some(instance);
                 }
             }
         }

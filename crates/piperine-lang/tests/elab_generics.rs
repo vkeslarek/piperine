@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 #[allow(dead_code)]
 mod support;
 
+#[path = "support/elab_forms.rs"]
+#[allow(dead_code)]
+mod elab_forms;
+
+use elab_forms::IrReading;
 use support::Elab;
 
 /// The source files of `piperine_lang::elab`.
@@ -188,24 +193,6 @@ fn a_bound_that_writes_the_trait_arguments_picks_the_impl_of_that_list() {
     assert_eq!(IrFunctions::names(&ir), ["as_real::<Cell>", "Cell.to::<f64>", "as_byte::<Cell>", "Cell.to::<u8>"]);
 }
 
-#[test]
-fn a_carrier_of_a_hand_written_type_with_no_initial_value_is_refused_by_name() {
-    // the `Default` of a hand-written `Repr` type needs `encode` run on a value no expression writes: until phase C the
-    // elaborator refuses it by name instead of starting the carrier at zero levels, which `decode` may not read as the default
-    let src = "#[derive(Default, PartialEq)] struct Slot { v: Option<bool> }\nimpl Repr for Slot {\n    const WIDTH: u32 = 2;\n    fn encode(self) -> [bool; 2] { [true, true] }\n    fn decode(l: [bool; 2]) -> Option<Slot> { Some(Slot { v: None }) }\n}\nmodule Top() { signal s: Bit<Slot>; }\n";
-    let found = Elab::run(src, "Top").err().expect("refused");
-    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a carrier of a type with a hand-written `Repr` and no initial value")), "{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
-}
-
-#[test]
-fn a_hand_written_repr_on_a_generic_type_is_refused_by_name() {
-    // an instance of a generic type would be laid out from its fields although the checker reads its `WIDTH` from the
-    // `impl`: refused by name until phase C instead of carrying the wrong layout
-    let src = "#[derive(PartialEq)] struct Pair<T> { a: T, b: T }\nimpl<T: Repr> Repr for Pair<T> {\n    const WIDTH: u32 = 2;\n    fn encode(self) -> [bool; 2] { [true, true] }\n    fn decode(l: [bool; 2]) -> Option<Pair<T>> { None }\n}\nmodule Top() { signal s: Bit<Pair<bool>> = Pair { a: true, b: false }; }\n";
-    let found = Elab::run(src, "Top").err().expect("refused");
-    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a hand-written `Repr` on a generic type")), "{:?}", found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
-}
-
 /// A call of an `extern "intrinsic"` function, written in each position a function body or a behavior has, and what
 /// elaborating it reports.
 struct ExternCalls;
@@ -261,12 +248,107 @@ fn a_logic_call_in_a_function_tail_lowers() {
     }
 }
 
+/// One value of each layout `encode` and `decode` lower through the level cast, with its level count.
+struct LayoutCases;
+
+impl LayoutCases {
+    /// The `(name, value written in a call, level count)` of each layout of part I §2 rule 2 to 6 that is no `bool`,
+    /// unsigned integer or hand-written type.
+    const ALL: [(&'static str, &'static str, u32); 6] = [
+        ("f64", "1.5", 64),
+        ("i8", "-3i8", 8),
+        ("struct", "Trio { a: 1u8, b: true, c: 2u8 }", 17),
+        ("enum", "Mode::Y", 2),
+        ("tuple", "(1u8, true)", 9),
+        ("array", "[1u8, 2u8]", 16),
+    ];
+
+    /// A source whose reaction calls `function` on `value`, over the declarations every case uses.
+    fn source(function: &str, value: &str) -> String {
+        format!(
+            "#[derive(Repr)]\nstruct Trio {{ a: u8, b: bool, c: u8 }}\n#[derive(Repr, PartialEq)]\nenum Mode {{ X, Y, Z }}\n\
+             fn first<T: Repr>(x: T) -> bool {{ x.encode()[0] }}\n\
+             fn back<T: Repr>(x: T) -> bool {{ match T::decode(x.encode()) {{ Some(_) => true, None => false }} }}\n\
+             module Top(in clk: Bit, out d: Bit = false) {{ }}\n\
+             digital for Top {{ on clk.rise() {{ d <- {function}({value}); }} }}\n"
+        )
+    }
+}
+
 #[test]
-fn encode_and_decode_of_a_derived_layout_are_refused_naming_the_call() {
-    // fix round 2, finding 14: under `T: Repr`, `x.encode()` and `T::decode(levels)` run at `bool`, integers and hand-written
-    // types; a layout the IR cannot pack (`f64`, a derived struct) is `P0001` naming the call, never dropped
-    let encode = ExternCalls::found("fn low<T: Repr>(x: T) -> bool { x.encode()[0] }\nmodule Top(in clk: Bit, out d: Bit = false) { }\ndigital for Top { on clk.rise() { d <- low(1.5); } }\n");
-    assert!(encode.iter().any(|(code, message)| code == "P0001" && message.contains("`encode`")), "{encode:?}");
-    let decode = ExternCalls::found("fn back<T: Repr>(x: T) -> T { T::decode(x.encode()).unwrap() }\nmodule Top(in clk: Bit, out d: Bit<f64> = 0.0) { }\ndigital for Top { on clk.rise() { d <- back(1.5); } }\n");
-    assert!(decode.iter().any(|(code, message)| code == "P0001" && message.contains("`encode`") || message.contains("`decode`")), "{decode:?}");
+fn encode_and_decode_of_every_layout_lower_through_the_level_cast() {
+    // GN-01 AC 1 residual (GAPS L70), §2 rules 2 to 6 and 9: `x.encode()` of `f64`, a signed integer, a derived struct,
+    // enum, tuple and array is a `LevelCast` of `x` to `[bool; WIDTH]`, and `T::decode(levels)` into them a `LevelCast`
+    // of the levels to `T`; the IR checks, and no `P0001` names either call
+    for (name, value, levels) in LayoutCases::ALL {
+        for function in ["first", "back"] {
+            let ir = Elab::ir(&LayoutCases::source(function, value), "Top");
+            let text = ir.to_string();
+            assert!(text.contains("level_cast"), "{name} through `{function}` holds a level cast:\n{text}");
+            assert!(text.contains(&format!("[bool; {levels}]")), "{name} through `{function}` names `[bool; {levels}]`:\n{text}");
+        }
+    }
+}
+
+#[test]
+fn cast_between_widths_is_e0127_naming_both_types() {
+    // §22.1.3 rule 2 as amended by T55: `cast` is `std/values.msl`'s generic function whose `where A::WIDTH == B::WIDTH` is
+    // false for a cast between types of different widths, so the instantiation is `E0127` naming `cast::<Mode, u8>`
+    let found = ExternCalls::found("#[derive(Repr)] enum Mode { Idle, Run, Halt }\nmodule Top() { }\nanalog for Top { let a = cast::<Mode, u8>(Mode::Run); }\n");
+    assert!(found.iter().any(|(code, message)| code == "E0127" && message.contains("Mode") && message.contains("u8")), "{found:?}");
+}
+
+/// A generic `Pair<T>` whose `Repr` is written by hand (two copies of the levels of `T`), carried at two arguments.
+struct HandWrittenPair;
+
+impl HandWrittenPair {
+    /// The source: `Pair<u8>` and `Pair<bool>` each carried, so each instance is reached.
+    const SOURCE: &'static str = "#[derive(PartialEq)] struct Pair<T> { a: T, b: T }\n\
+        impl<T: Repr> Repr for Pair<T> {\n\
+            const WIDTH: u32 = 2 * T::WIDTH;\n\
+            fn encode(self) -> [bool; 2 * T::WIDTH] { let first = self.a.encode(); let second = self.b.encode(); [false; 2 * T::WIDTH] }\n\
+            fn decode(levels: [bool; 2 * T::WIDTH]) -> Option<Pair<T>> { None }\n\
+        }\n\
+        module Top() { signal s: Bit<Pair<u8>> = Pair { a: 1u8, b: 2u8 }; signal t: Bit<Pair<bool>> = Pair { a: true, b: false }; }\n";
+}
+
+#[test]
+fn each_instance_of_a_generic_hand_written_repr_has_its_own_codec() {
+    // GN-32 AC 1 (§2 rule 2, §3.8.10): `Pair<u8>` and `Pair<bool>` are two arena entries, each `ReprForm::HandWritten` with the
+    // folded `WIDTH` (`2 * T::WIDTH`: 16 and 2) and its own `encode` and `decode` named for the instance
+    let ir = Elab::ir(HandWrittenPair::SOURCE, "Top");
+    let mut found: Vec<(String, u32)> = Vec::new();
+    for ty in ir.types() {
+        if let piperine_ir::ReprForm::HandWritten { width, encode, decode } = &ty.repr {
+            let instance = ty.instance.as_ref().expect("a hand-written instance is an instance").arguments.join(", ");
+            assert!(ir.function(*encode).name().contains("encode") && ir.function(*encode).name().contains(&instance), "{}", ir.function(*encode).name());
+            assert!(ir.function(*decode).name().contains("decode") && ir.function(*decode).name().contains(&instance), "{}", ir.function(*decode).name());
+            found.push((instance, *width));
+        }
+    }
+    found.sort();
+    assert_eq!(found, [("bool".to_string(), 2), ("u8".to_string(), 16)]);
+}
+
+#[test]
+fn a_const_fn_and_a_generic_repeat_fold_in_a_const_context() {
+    // GN-14 AC 2 (§3.8, §1.8): a `const fn` called as a param value folds with arrays and loops, and an array repeat whose
+    // length reads a const generic folds in a generic `const fn` called with explicit arguments
+    let src = "\
+        const fn poly_q(coefficients: [f64; 3]) -> f64 { let sum = 0.0; for k in 0..3 { sum += coefficients[k] * (k as f64 + 1.0); } sum }\n\
+        const fn zeros<const N: usize>() -> [f64; N + 1] { [0.0; N + 1] }\n\
+        const fn tail_sum<const N: usize>(xs: [f64; N]) -> f64 { let wide = [1.0; N + 1]; let sum = 0.0; for k in 0..N + 1 { sum += wide[k]; } sum + xs[N - 1] }\n\
+        module Top() {\n\
+            q: f64 = poly_q([1.0, 2.0, 3.0]);\n\
+            z: f64 = zeros::<3>()[3] + 7.0;\n\
+            t: f64 = tail_sum([4.0, 5.0]);\n\
+        }\n";
+    let ir = Elab::ir(src, "Top");
+    let real = |name: &str| match IrReading::default_of(&ir, name) {
+        piperine_ir::Constant::Real(value) => value.get(),
+        other => panic!("{name} is {other:?}"),
+    };
+    assert_eq!(real("q"), 1.0 + 4.0 + 9.0, "a `const fn` over an array and a loop");
+    assert_eq!(real("z"), 7.0, "an array repeat of a generic length (3 + 1 = 4 elements)");
+    assert_eq!(real("t"), 3.0 + 5.0, "a repeat of `N + 1` read in a loop");
 }

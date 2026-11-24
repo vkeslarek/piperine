@@ -99,6 +99,18 @@ impl ConstEval<'_, '_> {
     /// is bit `k` (GN-05). The word is what a carrier of such a type is initialized with.
     pub(in crate::elab) fn encoded_word(&mut self, init: ExprId, encode: DeclId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let value = self.fold(init, bindings)?;
+        self.levels_word(init, encode, value)
+    }
+
+    /// [`ConstEval::encoded_word`] for a value given as a `tree` (the `Default` of a type, which no expression writes);
+    /// `at` is the expression a fault is reported at.
+    pub(in crate::elab) fn encoded_tree_word(&mut self, at: ExprId, encode: DeclId, tree: &ConstTree) -> Result<Constant, ConstFault> {
+        let value = self.adopt(tree);
+        self.levels_word(at, encode, value)
+    }
+
+    /// The levels word the function `encode` gives for `value`, `at` the expression a fault names.
+    fn levels_word(&mut self, init: ExprId, encode: DeclId, value: Constant) -> Result<Constant, ConstFault> {
         let levels = self.apply_function(init, encode, vec![Argument { value: Some(value), function: None }])?;
         let (_, parts) = self.parts_of(init, levels, "the levels of an `encode`")?;
         let mut word: i128 = 0;

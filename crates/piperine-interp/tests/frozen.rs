@@ -980,6 +980,15 @@ fn each_generics_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(plain, Vec::<String>::new());
+    // a body that lowers an instance of a generic module (GN-15, T66) is named with its instance
+    let module = {
+        let mut b = IrBuilder::new();
+        let ladder = b.body(Buck::spec("Ladder::<3>", "top.msl", 1));
+        b.mark_body_instance(ladder, GenericInstance { item: "Ladder".into(), arguments: vec!["3".into()] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: ladder, parent: None, nodes: vec![], params: vec![], origin: Origin { file: "top.msl".into(), line: 1, col: 1 } });
+        Structured::refused(b.finish(top))
+    };
+    assert_eq!(module, ["a generic module instance `Ladder::<3>`"]);
     // `impl Repr for OneHot`, written by the author (GN-05, T9): the type is named, never laid out wrongly
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let one_hot = b.type_data(TypeData {
@@ -1042,4 +1051,27 @@ fn a_table_expression_is_refused_by_name() {
         (vec![], vec![value, slope])
     });
     assert_eq!(named, ["a table model"]);
+}
+
+#[test]
+fn each_number_width_is_refused_by_name() {
+    // CV-34 AC 1 (R1): the interpreter is frozen at the M1 analog subset, so a body that holds a
+    // value of `f32`, `f16`, `f128` or an integer wider than 64 bits is refused, the entry naming the
+    // type; a `u64` and an `f64` are not number widths and name nothing.
+    let local = |name: &str, ty: ValueType| Local { name: name.into(), ty, mutable: false };
+    for (ty, name) in [
+        (ValueType::F32, "a value of type f32"),
+        (ValueType::F16, "a value of type f16"),
+        (ValueType::F128, "a value of type f128"),
+        (ValueType::UInt(200), "a value of type u200"),
+        (ValueType::Int(65), "a value of type i65"),
+    ] {
+        let refused = Composite::refused(|_| (vec![local("x", ty.clone())], vec![]));
+        assert_eq!(refused, [name], "a local of {ty}");
+    }
+    // inside a tuple and an array the type is still named, once
+    let nested = Composite::refused(|_| (vec![local("x", ValueType::Tuple(vec![ValueType::F16, ValueType::Array(Box::new(ValueType::F16), 3)]))], vec![]));
+    assert_eq!(nested, ["a value of type f16"]);
+    let none = Composite::refused(|_| (vec![local("x", ValueType::UInt(64)), local("y", ValueType::F64)], vec![]));
+    assert!(none.is_empty(), "a u64 and an f64 are run: {none:?}");
 }

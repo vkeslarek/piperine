@@ -53,7 +53,7 @@ impl Source {
 fn arrays_of_carriers_type_as_signals_and_ports() {
     // CV-23: `[Bit<u8>; 4]` as a `signal`, a `[Bit; 8]` port with a direction and `[Electrical; 4]` as a signal are
     // types of their own: an array whose length is part of the type
-    let src = "module Top(in a: [Bit; 8], out b: [Bit<u8>; 2]) { signal m: [Bit<u8>; 4] = [0; 4]; signal bl: [Electrical; 4]; signal g: [[Bit; 2]; 3]; }";
+    let src = "module Top(in a: [Bit; 8], out b: [Bit<u8>; 2] = [0; 2]) { signal m: [Bit<u8>; 4] = [0; 4]; signal bl: [Electrical; 4]; signal g: [[Bit; 2]; 3] = [[false; 2]; 3]; }";
     let design = CheckedSource::standard_design_of(src);
     let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     let signal = |name: &str| design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Signal(_) | DeclKind::Port(_))).unwrap_or_else(|| panic!("no `{name}`")).id();
@@ -93,7 +93,7 @@ fn element_reads_history_and_probes_type_per_element() {
     // that element only
     let src = "module Top(in clk: Bit, in at: Bit<u2>, out q: Bit<u8> = 0) {\n\
                signal mem: [Bit<u8>; 4] = [0; 4];\n\
-               signal lines: [Bit; 4];\n\
+               signal lines: [Bit; 4] = [false; 4];\n\
                signal bl: [Electrical; 4];\n}\n\
                digital for Top {\n\
                on clk.rise() { let a = mem[1]; let b = mem[at]; let w = mem; let p = mem[2].prev(); let c = lines[3].changed(); q <- a; }\n\
@@ -115,7 +115,7 @@ fn element_reads_history_and_probes_type_per_element() {
         assert!(bindings.contains(&(name.to_string(), want.to_string())), "`{name}` should be {want}: {bindings:?}");
     }
     // GN-11: an element passed where a nature is wanted binds the handle of that one carrier (QC3)
-    Source::assert_clean("fn level(a: Bit) -> bool { a }\nmodule Top(in clk: Bit) { signal l: [Bit; 4]; }\ndigital for Top { on clk.rise() { let x = level(l[2]); } }");
+    Source::assert_clean("fn level(a: Bit) -> bool { a }\nmodule Top(in clk: Bit) { signal l: [Bit; 4] = [false; 4]; }\ndigital for Top { on clk.rise() { let x = level(l[2]); } }");
     // a constant element past the end is E0104 at elaboration (CV-13), proved by `elab_carrier_arrays`
 }
 
@@ -124,17 +124,17 @@ fn a_carrier_method_on_a_whole_array_is_e0211() {
     // CV-24 AC 3, §5.1.7: `.prev()`, `.changed()`, `.rise()` on a whole array of carriers is E0211 (raised where the
     // POM walks the receiver), and the checker adds no P0001 that would mask it
     for call in ["m.prev()", "m.changed()"] {
-        let src = format!("module Top(in clk: Bit) {{ signal m: [Bit<u8>; 4]; }}\ndigital for Top {{ on clk.rise() {{ let a = {call}; }} }}");
+        let src = format!("module Top(in clk: Bit) {{ signal m: [Bit<u8>; 4] = [0; 4]; }}\ndigital for Top {{ on clk.rise() {{ let a = {call}; }} }}");
         Source::assert_pom_refusal(&src, "E0211");
     }
-    Source::assert_pom_refusal("module Top() { signal l: [Bit; 4]; }\ndigital for Top { on l.rise() { } }", "E0211");
+    Source::assert_pom_refusal("module Top() { signal l: [Bit; 4] = [false; 4]; }\ndigital for Top { on l.rise() { } }", "E0211");
 }
 
 /// The module `Top` of the commit and definition tests: arrays of carriers, a struct-valued carrier and a carrier of
 /// a value array.
 const TARGETS: &str = "#[derive(Repr)] struct S { n: u8, ok: bool }\n\
     module Top(in clk: Bit, in at: Bit<u2>, out q: Bit<u8> = 0) {\n\
-    signal bits: [Bit; 4];\n\
+    signal bits: [Bit; 4] = [false; 4];\n\
     signal word: Bit<[bool; 8]> = [false; 8];\n\
     signal st: Bit<S> = S { n: 0, ok: false };\n\
     signal mem: [Bit<S>; 4] = [S { n: 0, ok: false }; 4];\n}\n";
@@ -165,14 +165,15 @@ fn element_and_field_targets_type_their_levels() {
 fn a_definition_and_commits_of_one_element_are_e0221() {
     // CV-25 AC 3, §5.2.4: one element has one drive. A definition of `bits[0]` and a commit of `bits[0]` are E0221; a
     // commit of `bits[1]` beside it is accepted; two commits of one element are accepted (the later statement wins)
-    let module = |body: &str, reaction: &str| format!("module Top(in clk: Bit) {{ signal bits: [Bit; 4]; {body} }}\ndigital for Top {{ on clk.rise() {{ {reaction} }} }}");
-    Source::assert_one(&module("bits[0] = true;", "bits[0] <- false;"), "E0221", "one element");
-    Source::assert_clean(&module("bits[0] = true;", "bits[1] <- false;"));
-    Source::assert_clean(&module("", "bits[0] <- true; bits[0] <- false;"));
+    let module = |initial: &str, body: &str, reaction: &str| format!("module Top(in clk: Bit) {{ signal bits: [Bit; 4]{initial}; {body} }}\ndigital for Top {{ on clk.rise() {{ {reaction} }} }}");
+    Source::assert_one(&module(" = [false; 4]", "bits[0] = true;", "bits[0] <- false;"), "E0221", "one element");
+    // the initial value of the array is the value of the elements no undelayed definition names (§8.2.21)
+    Source::assert_clean(&module(" = [false; 4]", "bits[0] = true;", "bits[1] <- false;"));
+    Source::assert_clean(&module(" = [false; 4]", "", "bits[0] <- true; bits[0] <- false;"));
     // a commit at a run-time index may reach any element, so it shares one with a definition
-    Source::assert_one("module Top(in clk: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[0] = true; }\ndigital for Top { on clk.rise() { bits[at] <- true; } }", "E0221", "");
+    Source::assert_one("module Top(in clk: Bit, in at: Bit<u2>) { signal bits: [Bit; 4] = [false; 4]; bits[0] = true; }\ndigital for Top { on clk.rise() { bits[at] <- true; } }", "E0221", "");
     // two definitions of one element share a level (E0335); of two elements they do not
-    Source::assert_one("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[0] = !a; }", "E0335", "");
+    Source::assert_one("module Top(in a: Bit) { signal bits: [Bit; 2] = [false; 2]; bits[0] = a; bits[0] = !a; }", "E0335", "");
     Source::assert_clean("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[1] = !a; }");
 }
 
@@ -186,20 +187,23 @@ const CHILDREN: &str = "module Reg(in d: [Bit; 4], out q: [Bit; 4]) { q[0] = d[0
 fn arrays_and_elements_connect_to_ports_of_their_shape() {
     // CV-23 AC 2: an array to an array port of the same shape, an element `x[k]` to a scalar port, a sub-array `g[r]`
     // of a nested array to an array port, an element of a node array to a node port, a node array to an array of nodes
-    let top = |body: &str| format!("{CHILDREN}module Top(in x: [Bit; 4]) {{ signal y: [Bit; 4]; signal g: [[Bit; 4]; 2]; signal h: [[Bit; 4]; 2]; signal bl: [Electrical; 4]; {body} }}");
-    Source::assert_clean(&top("let r = Reg(x, y);"));
-    Source::assert_clean(&top("let c = Cell(x[1], y[2]);"));
-    Source::assert_clean(&top("let r = Reg(g[0], h[1]);"));
-    Source::assert_clean(&top("let l = Ladder(bl); let t = Tap(bl[3]);"));
+    // an array handed to an `out` port is driven by the instance and has no initial value; the others start at `false`.
+    // Each element needs its driver (§3.3.4): an element no instance holds has no value, so the array is E0187 naming it
+    let top = |arrays: &str, body: &str| format!("{CHILDREN}module Top(in x: [Bit; 4]) {{ {arrays} signal bl: [Electrical; 4]; {body} }}");
+    let driven = "signal y: [Bit; 4];";
+    Source::assert_clean(&top(driven, "let r = Reg(x, y);"));
+    Source::assert_one(&top(driven, "let c = Cell(x[1], y[2]);"), "E0187", "`y[0..2], y[3]`");
+    Source::assert_clean(&top("signal g: [[Bit; 4]; 2] = [[false; 4]; 2]; signal h: [[Bit; 4]; 2];", "let r = Reg(g[0], h[1]); let s = Reg(g[1], h[0]);"));
+    Source::assert_clean(&top("", "let l = Ladder(bl); let t = Tap(bl[3]);"));
     // two elements of one array handed to two `out` ports are two drives of two elements, not two of one
-    Source::assert_clean(&top("let a = Cell(x[0], y[0]); let b = Cell(x[1], y[1]);"));
-    Source::assert_one(&top("let a = Cell(x[0], y[0]); let b = Cell(x[1], y[0]);"), "E0220", "second");
+    Source::assert_clean(&top("signal y: [Bit; 2];", "let a = Cell(x[0], y[0]); let b = Cell(x[1], y[1]);"));
+    Source::assert_one(&top("signal y: [Bit; 1];", "let a = Cell(x[0], y[0]); let b = Cell(x[1], y[0]);"), "E0220", "second");
 }
 
 #[test]
 fn an_array_argument_of_another_length_is_e0313_naming_both_lengths() {
     // CV-23 AC 3, §8.1.10: an array argument and its port differ in length: E0313 naming both
-    let top = |body: &str| format!("{CHILDREN}module Top() {{ signal short: [Bit; 3]; signal q: [Bit; 4]; signal one: Bit; signal bl: [Electrical; 3]; {body} }}");
+    let top = |body: &str| format!("{CHILDREN}module Top() {{ signal short: [Bit; 3] = [false; 3]; signal q: [Bit; 4] = [false; 4]; signal one: Bit = false; signal bl: [Electrical; 3]; {body} }}");
     let found = Source::found(&top("let r = Reg(short, q);"));
     assert!(found.iter().any(|(c, m)| c == "E0313" && m.contains("; 3]") && m.contains("; 4]")), "{found:?}");
     // a single carrier at an array port, an array at a scalar port, and nodes of another count
@@ -209,10 +213,59 @@ fn an_array_argument_of_another_length_is_e0313_naming_both_lengths() {
 }
 
 #[test]
-fn an_initialized_array_with_an_element_on_an_out_port_is_e0223() {
-    // DC4, §5.2.6: the initial value is given by the driver; an element handed to a child's `out` port leaves the
-    // array's initial value given twice
-    let top = |decl: &str| format!("{CHILDREN}module Top(in d: Bit) {{ {decl}\nlet c = Cell(d, bits[1]); }}");
-    Source::assert_clean(&top("signal bits: [Bit; 2];"));
-    Source::assert_one(&top("signal bits: [Bit; 2] = [false; 2];"), "E0223", "initial value");
+fn an_initial_value_is_the_value_of_the_elements_no_out_port_holds_and_e0223_once_all_are_handed() {
+    // DC4, §5.2.6, §8.2.21: the instance holds the drive of the element handed to it, so the initial value is the value of
+    // the elements no `out` port holds; it is given twice (E0223) only once every element is handed
+    let top = |decl: &str, body: &str| format!("{CHILDREN}module Top(in d: Bit) {{ {decl}\n{body} }}");
+    Source::assert_clean(&top("signal bits: [Bit; 2] = [false; 2];", "let c = Cell(d, bits[1]);"));
+    Source::assert_clean(&top("signal bits: [Bit; 4] = [false; 4];", "let c = Cell(d, bits[3]); let e = Cell(d, bits[0]);"));
+    Source::assert_one(&top("signal bits: [Bit; 2] = [false; 2];", "let a = Cell(d, bits[0]); let c = Cell(d, bits[1]);"), "E0223", "every element");
+    // a run of a nested array hands its elements: the rows left keep the initial value
+    Source::assert_clean(&top("signal g: [[Bit; 4]; 2] = [[false; 4]; 2]; signal h: [[Bit; 4]; 2] = [[false; 4]; 2];", "let r = Reg(g[0], h[1]);"));
+    Source::assert_one(&top("signal h: [Bit; 4] = [false; 4]; signal q: [Bit; 4] = [false; 4];", "let r = Reg(h, q);"), "E0223", "`q`");
+}
+
+#[test]
+fn an_array_of_carriers_without_a_default_is_judged_per_element() {
+    // §3.3.4, §8.2.20: an element no undelayed definition and no `out` port names has no value and no initial value, so the
+    // array is E0187 naming the elements left (CV-23 AC 2), not exempt because one element has a driver
+    let top = |declaration: &str, body: &str| format!("{CHILDREN}module Top(in clk: Bit) {{ {declaration} {body} }}\ndigital for Top {{ on clk.rise() {{ }} }}");
+    // one element defined: the others are named
+    Source::assert_one(&top("signal b: [Bit; 4];", "b[0] = clk;"), "E0187", "`b[1..4]`");
+    Source::assert_one(&top("signal b: [Bit; 4];", "b[2] = clk;"), "E0187", "`b[0..2], b[3]`");
+    // one element handed to an `out` port: the others are named
+    Source::assert_one(&top("signal y: [Bit; 4];", "let c = Cell(clk, y[2]);"), "E0187", "`y[0..2], y[3]`");
+    // an element defined and another handed over: the rest is named, and the two together are not the whole
+    Source::assert_one(&top("signal y: [Bit; 3];", "y[0] = clk; let c = Cell(clk, y[1]);"), "E0187", "`y[2]`");
+    // a delayed definition and a commit specify no value
+    Source::assert_one(&top("signal b: [Bit; 2];", "b[0] = clk; b[1] = clk after 1n;"), "E0187", "`b[1]`");
+    // every element named, by definitions, by hand-overs or by both: no E0187
+    Source::assert_clean(&top("signal b: [Bit; 2];", "b[0] = clk; b[1] = !clk;"));
+    Source::assert_clean(&top("signal y: [Bit; 2];", "let a = Cell(clk, y[0]); let c = Cell(clk, y[1]);"));
+    Source::assert_clean(&top("signal y: [Bit; 2];", "y[0] = clk; let c = Cell(clk, y[1]);"));
+    // a nested array names its elements row-major
+    Source::assert_one(&top("signal g: [[Bit; 2]; 2];", "g[1][0] = clk;"), "E0187", "`g[0..2], g[3]`");
+}
+
+#[test]
+fn an_initial_value_is_the_value_of_the_elements_no_undelayed_definition_names() {
+    // §8.2.21 "on the levels defined": the initial value of an array applies to the elements left, so it is E0338 only
+    // when every element is defined
+    let top = |declaration: &str, body: &str| format!("module Top(in clk: Bit) {{ {declaration} {body} }}\ndigital for Top {{ on clk.rise() {{ }} }}");
+    Source::assert_clean(&top("signal b: [Bit; 4] = [false; 4];", "b[0] = clk;"));
+    Source::assert_clean(&top("signal b: [Bit; 2] = [false; 2];", "b[0] = clk; b[1] = clk after 1n;"));
+    Source::assert_one(&top("signal b: [Bit; 2] = [false; 2];", "b[0] = clk; b[1] = !clk;"), "E0338", "every element");
+    // a whole undelayed definition is refused (P0001) and an initial value beside it was E0338 before it: unchanged
+    Source::assert_one(&top("signal s: Bit = false;", "s = clk;"), "E0338", "initial value");
+}
+
+#[test]
+fn a_refused_whole_array_definition_is_the_driver_and_raises_no_e0187() {
+    // the P0001 of a definition of a whole array (or of a sub-array) is the one diagnostic: the array counts as driven
+    let found = Source::found("module Top(in x: Bit) { signal s: [Bit; 2]; s = x; }");
+    let codes: Vec<&str> = found.iter().map(|(code, _)| code.as_str()).collect();
+    assert_eq!(codes, ["P0001"], "{found:?}");
+    let found = Source::found("module Top(in x: Bit) { signal g: [[Bit; 2]; 2]; g[0] = x; }");
+    let codes: Vec<&str> = found.iter().map(|(code, _)| code.as_str()).collect();
+    assert_eq!(codes, ["P0001"], "{found:?}");
 }

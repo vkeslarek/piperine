@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use piperine_ir::{BodyId, Constant};
 
 use super::consts::Bindings;
+use super::instances::Instance;
 use super::body::ModulePlan;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
@@ -33,13 +34,15 @@ use crate::types::Types;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct BodyKey {
     pub(super) module: DeclId,
+    /// The generic arguments of the instance of a generic module the body lowers; `None` for a module as written.
+    pub(super) instance: Option<Instance>,
     pub(super) values: Vec<String>,
 }
 
 impl BodyKey {
     /// The key of the one body of a module with no key param.
     pub(super) fn unkeyed(module: DeclId) -> BodyKey {
-        BodyKey { module, values: Vec::new() }
+        BodyKey { module, instance: None, values: Vec::new() }
     }
 }
 
@@ -121,9 +124,14 @@ impl<'a, 'd> ParamReads<'a, 'd> {
         ParamReads { design, types, placements, through_input: std::cell::Cell::new(false) }
     }
 
+    /// Whether the type `ty` names a nature parameter of a generic module: a node of the nature a placement gives.
+    fn is_nature_parameter_type(&self, ty: crate::pom::TypeId) -> bool {
+        self.types.is_nature_parameter_type(self.design, ty)
+    }
+
     /// Whether `decl` is a port of a value type: a value input.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
-        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none())
+        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none() && !self.is_nature_parameter_type(p.ty))
     }
 
     /// Whether the last `of` read went through a value input of a placement.
@@ -143,6 +151,8 @@ impl<'a, 'd> ParamReads<'a, 'd> {
     fn collect(&self, expr: ExprId, depth: usize, params: &mut BTreeSet<DeclId>) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(_) => true,
+            // the bounds of a generation range, or of the range an array length is
+            ExprKind::Range { lo, hi, .. } => lo.iter().chain(hi.iter()).all(|bound| self.collect(*bound, depth, params)),
             ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } | ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: inner } => self.collect(*inner, depth, params),
             ExprKind::Binary { lhs, rhs, .. } => self.collect(*lhs, depth, params) && self.collect(*rhs, depth, params),
             ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some() => self.collect(*recv, depth, params) && args.iter().all(|a| self.collect(a.value, depth, params)),
@@ -387,6 +397,20 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
+        // A param read by the range or the condition of a generation is structural too (§8.2.7, GN-20).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_generation(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
+        // A param read by a const generic argument of a placement is structural too (`Taps::<{ count }>`, GN-20).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_generic_arguments(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -418,6 +442,55 @@ impl Elaboration<'_, '_> {
                     found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
                 }
                 at = element;
+            }
+        }
+        found
+    }
+
+    /// The params of `module` that the range of a generation `for`, or the condition of a generation `if`, reads.
+    fn params_read_by_generation(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut found = Vec::new();
+        // the generation of the body, and of the `digital` blocks, which are written beside the module
+        let mut pending: Vec<DeclId> = self.design.decl_data(module).children.iter().chain(&data.behaviors).copied().collect();
+        while let Some(decl) = pending.pop() {
+            let item = self.design.decl_data(decl);
+            match &item.kind {
+                DeclKind::Generation(crate::pom::GenerationData::For { iter, .. }) => self.collect_params(*iter, &mut found),
+                DeclKind::Generation(crate::pom::GenerationData::If { cond, .. }) => self.collect_params(*cond, &mut found),
+                _ => {}
+            }
+            if matches!(item.kind, DeclKind::Generation(_) | DeclKind::Behavior(_)) {
+                pending.extend(item.children.iter().copied());
+            }
+        }
+        found
+    }
+
+    /// Adds every param `expr` reads, whatever else it reads, to `found`.
+    fn collect_params(&self, expr: ExprId, found: &mut Vec<DeclId>) {
+        let node = self.design.expr_node(expr);
+        if let ExprKind::Path(path) = &node.kind
+            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+            && matches!(self.design.decl_data(decl).kind, DeclKind::Param(_))
+        {
+            found.push(decl);
+        }
+        for child in crate::pom::expr_children(&node.kind, self.design) {
+            self.collect_params(child, found);
+        }
+    }
+
+    /// The params of `module` that a const generic argument of one of its placements reads (`Taps::<{ count }>`).
+    fn params_read_by_generic_arguments(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut found = Vec::new();
+        for call in &data.instances {
+            let Some(instantiation) = self.types.instantiation(*call) else { continue };
+            for argument in &instantiation.arguments {
+                if let crate::types::GenericValue::Const(crate::types::ConstTerm::Expr(expr)) = argument {
+                    found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
+                }
             }
         }
         found
@@ -469,27 +542,31 @@ impl Elaboration<'_, '_> {
     /// a module with no key param has its one body; a variant takes the next id the first time its
     /// values are asked for and is lowered by `lower_pending_bodies`. `None` when a key param has
     /// no value in `values`.
-    pub(super) fn request_body(&mut self, module: DeclId, values: &Bindings) -> Option<(BodyKey, BodyId)> {
+    pub(super) fn request_body(&mut self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<(BodyKey, BodyId)> {
         let keys = self.keys.of(module).to_vec();
-        if keys.is_empty() {
+        if keys.is_empty() && instance.is_none() {
             return Some((BodyKey::unkeyed(module), self.body_ids.get(&module).copied()?));
         }
         let mut keyed = Bindings::new();
-        let mut texts = Vec::new();
         for key in &keys {
-            let value = values.get(*key)?;
-            self.bind_param(&mut keyed, *key, value);
-            texts.push(value.to_string());
+            self.bind_param(&mut keyed, *key, values.get(*key)?);
         }
-        let key = BodyKey { module, values: texts };
+        let key = self.body_key(module, instance, values)?;
         if let Some(id) = self.body_variants.ids.get(&key) {
             return Some((key.clone(), *id));
         }
+        self.admit_instance_depth(&key)?;
         let id = BodyId(self.body_variants.next);
         self.body_variants.next += 1;
         self.body_variants.ids.insert(key.clone(), id);
         self.body_variants.pending.push_back((key.clone(), keyed));
         Some((key, id))
+    }
+
+    /// The key of the body `module` gets when its params hold `values`. `None` when a key param has no value in `values`.
+    pub(super) fn body_key(&self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<BodyKey> {
+        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| value.to_string())).collect::<Option<Vec<_>>>()?;
+        Some(BodyKey { module, instance: instance.cloned(), values: texts })
     }
 
     /// Lowers every variant requested and not yet lowered, in id order; a variant may request
@@ -502,15 +579,18 @@ impl Elaboration<'_, '_> {
 
     /// The plan of the body that `module` gets when its params hold `values`, lowering the
     /// variant if nothing asked for it before (the top, or a binding of the host).
-    pub(super) fn body_plan(&mut self, module: DeclId, values: &Bindings) -> Option<ModulePlan> {
-        let (key, _) = self.request_body(module, values)?;
+    pub(super) fn body_plan(&mut self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<ModulePlan> {
+        let (key, _) = self.request_body(module, instance, values)?;
         self.lower_pending_bodies();
         self.plans.get(&key).cloned()
     }
 
     /// The name of the body of `key`: the module's, then `~param=value` for each key param.
     pub(super) fn body_name(&self, key: &BodyKey) -> String {
-        let name = self.design.decl_data(key.module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = match &key.instance {
+            Some(instance) => instance.name(self),
+            None => self.design.decl_data(key.module).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+        };
         if key.values.is_empty() {
             return name;
         }

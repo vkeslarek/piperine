@@ -1,0 +1,55 @@
+//! `cast` and `same` compiled from `std/values.msl` (GN-27, GN-01): `Some` for a tag an enum names and `None` for one it
+//! does not, a cast to a tuple and to an array that hold an enum, and level-by-level equality. The expected values are
+//! computed by Rust in `source_generics.rs`, from the levels the removed lowering gave.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+enum Mode { X, Y, Z }
+
+fn mode_tag(m: Mode) -> u8 { match m { Mode::X => 0, Mode::Y => 1, Mode::Z => 2 } }
+
+fn enum_to_bits() -> u8 { match cast::<Mode, u2>(Mode::Z) { Some(v) => v as u8, None => 9 } }
+fn bits_to_enum_named() -> u8 { match cast::<u2, Mode>(2_u2) { Some(m) => mode_tag(m), None => 9 } }
+fn bits_to_enum_unnamed() -> u8 { match cast::<u2, Mode>(3_u2) { Some(m) => mode_tag(m), None => 9 } }
+fn bits_to_signed() -> u8 { match cast::<u8, i8>(200_u8) { Some(v) => if v < 0 { 1 } else { 0 }, None => 9 } }
+fn tuple_named() -> u8 { match cast::<u4, (Mode, u2)>(9_u4) { Some((m, v)) => mode_tag(m) * 10 + v as u8, None => 99 } }
+fn tuple_unnamed() -> u8 { match cast::<u4, (Mode, u2)>(3_u4) { Some((m, v)) => mode_tag(m) * 10 + v as u8, None => 99 } }
+fn array_named() -> u8 { match cast::<u4, [Mode; 2]>(9_u4) { Some(a) => mode_tag(a[0]) * 10 + mode_tag(a[1]), None => 99 } }
+fn array_unnamed() -> u8 { match cast::<u4, [Mode; 2]>(12_u4) { Some(a) => mode_tag(a[0]) * 10 + mode_tag(a[1]), None => 99 } }
+
+fn flag(b: bool) -> u8 { if b { 1 } else { 0 } }
+fn same_bytes() -> u8 { flag(same(7_u8, 7_u8)) }
+fn differ_bytes() -> u8 { flag(same(7_u8, 6_u8)) }
+fn same_reals(a: f64, b: f64) -> u8 { flag(same(a, b)) }
+fn same_logic() -> u8 { flag(same(logic::<4>("01xz"), logic::<4>("01xz"))) }
+fn differ_logic() -> u8 { flag(same(logic::<4>("01xz"), logic::<4>("01zx"))) }
+
+module Rows(in clk: Bit, out c0: Bit<u8> = 7, out c1: Bit<u8> = 7, out c2: Bit<u8> = 7, out c3: Bit<u8> = 7, out c4: Bit<u8> = 7, out c5: Bit<u8> = 7, out c6: Bit<u8> = 7, out c7: Bit<u8> = 7, out s0: Bit<u8> = 7, out s1: Bit<u8> = 7, out s2: Bit<u8> = 7, out s3: Bit<u8> = 7, out s4: Bit<u8> = 7, out s5: Bit<u8> = 7) {}
+digital for Rows {
+    on clk.rise() {
+        c0 <- enum_to_bits();
+        c1 <- bits_to_enum_named();
+        c2 <- bits_to_enum_unnamed();
+        c3 <- bits_to_signed();
+        c4 <- tuple_named();
+        c5 <- tuple_unnamed();
+        c6 <- array_named();
+        c7 <- array_unnamed();
+        s0 <- same_bytes();
+        s1 <- differ_bytes();
+        s2 <- same_reals(0.0, -0.0);
+        s3 <- same_reals(0.0 / 0.0, 0.0 / 0.0);
+        s4 <- same_logic();
+        s5 <- differ_logic();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal c0: Bit<u8>; signal c1: Bit<u8>; signal c2: Bit<u8>; signal c3: Bit<u8>; signal c4: Bit<u8>; signal c5: Bit<u8>; signal c6: Bit<u8>; signal c7: Bit<u8>;
+    signal s0: Bit<u8>; signal s1: Bit<u8>; signal s2: Bit<u8>; signal s3: Bit<u8>; signal s4: Bit<u8>; signal s5: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, c0, c1, c2, c3, c4, c5, c6, c7, s0, s1, s2, s3, s4, s5);
+}

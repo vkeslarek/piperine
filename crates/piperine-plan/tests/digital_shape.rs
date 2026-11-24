@@ -962,12 +962,10 @@ impl Levelized {
             .functions
             .iter()
             .enumerate()
-            .map(|(k, f)| FnNode {
-                name: f.name.as_str().to_string(),
-                instance: 0,
-                k: k as u32,
-                reads: f.reads.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect(),
-                writes: f.writes.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect(),
+            .map(|(k, f)| {
+                let reads = f.reads.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect();
+                let writes = f.writes.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect();
+                FnNode::over_whole_nets(f.name.as_str(), 0, k as u32, reads, writes)
             })
             .collect();
         let dag = Dag::build(&nodes, &nets).expect("the functions have no cycle");

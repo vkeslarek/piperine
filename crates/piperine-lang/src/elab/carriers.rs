@@ -42,6 +42,9 @@ pub(super) struct Structure {
     /// The carriers whose `others()` the body reads.
     pub(super) others_read: BTreeSet<u32>,
     pub(super) drives: Vec<Drive>,
+    /// The carriers of the body (with the window of an array of them) that children hold at an `out` port: the part
+    /// of each the instance drives (`element_coverage.rs`).
+    pub(super) handed: Vec<(u32, Option<piperine_ir::CarrierWindow>)>,
     pub(super) events: Vec<Event>,
     pub(super) reactions: Vec<Reaction>,
     pub(super) streams: Vec<Stream>,
@@ -65,6 +68,12 @@ pub(super) struct Structure {
     pub(super) reaches: Vec<Reach>,
     /// The `p.inflow()` ammeters of the body (`inflow.rs`).
     pub(super) inflows: Vec<piperine_ir::Inflow>,
+    /// Where each definition, commit and hand-over of a carrier of the body is written, for the overlaps judged per
+    /// instance (`drive_overlaps.rs`); no part of the IR.
+    pub(super) drive_sites: Vec<super::drive_overlaps::DriveSite>,
+    /// The scalar carrier mirroring each element of an array carrier the `analog` block reads, by (carrier, element)
+    /// (`elements.rs`).
+    pub(super) analog_mirrors: BTreeMap<(u32, u64), u32>,
 }
 
 /// The module whose names an expression of the body reads, and what those names are in the body.
@@ -96,10 +105,10 @@ pub(super) struct Frame {
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
     /// `None` for a trailing `Option` input left out.
     pub(super) inputs: BTreeMap<DeclId, Option<ExprId>>,
-    /// The frames of the placements of modules with a result that `module` writes, by call.
-    pub(super) placements: BTreeMap<ExprId, usize>,
+    /// The frames of the placements of modules with a result that `module` writes, by call and generation iteration.
+    pub(super) placements: BTreeMap<super::hoist::PlacementKey, usize>,
     /// The placements whose hoisting failed, already reported.
-    pub(super) failed: BTreeSet<ExprId>,
+    pub(super) failed: BTreeSet<super::hoist::PlacementKey>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(super) derivatives: BTreeMap<ExprId, u32>,
     /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
@@ -111,12 +120,18 @@ pub(super) struct Frame {
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
     /// each a constant: what the caller's expressions of its inputs read (`unroll.rs`).
     pub(super) unrolled: Bindings,
+    /// The iteration of the generation `for`s the placement sat in when it was hoisted: what the caller's expressions of
+    /// its inputs read of the carriers and `let`s declared in those loops (§8.2.23).
+    pub(super) ordinals: Vec<(DeclId, u32)>,
+    /// What the generic parameters the frame's code names are replaced by: the arguments of the instance of a generic module
+    /// the frame is, else those of the body it sits in (`generic_bodies.rs`).
+    pub(super) substitution: crate::types::Substitution,
 }
 
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 
@@ -124,11 +139,23 @@ impl Elaboration<'_, '_> {
     /// The discrete ports, then the discrete signals, of `module`, as carriers of the frame
     /// `frame`: each added to the structure and named in the frame.
     pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
-        let children = self.design.decl_data(module).children.clone();
+        let mut children = self.design.decl_data(module).children.clone();
+        // the carriers of the body's own module declared in generation are arrays, one element per iteration (`generation.rs`)
+        if frame == 0 {
+            children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
+        }
         let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
         for decl in ports.chain(signals).collect::<Vec<_>>() {
+            // a carrier the frame already holds is the caller's own, bound at an `out` port of a hoisted module (`hoist.rs`)
+            if let Some(held) = self.frames[frame].carriers.get(&decl).copied() {
+                self.give_initial_value(frame, decl, held);
+                continue;
+            }
+            if frame == 0 {
+                self.generated_items_complete(decl);
+            }
             if self.is_empty_array(frame, decl) {
                 self.frames[frame].empty_arrays.insert(decl);
                 self.record_empty_array(frame, decl);
@@ -149,6 +176,17 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The initial value the `out` port `decl` of a hoisted frame gives the caller's carrier `held` it is bound to (§5.2.6: the
+    /// `out` port, not the declaring module, gives it). A carrier that already starts somewhere keeps its value.
+    fn give_initial_value(&mut self, frame: usize, decl: DeclId, held: u32) {
+        if self.structure.carriers[held as usize].init.is_some() {
+            return;
+        }
+        if let Some(carrier) = self.lower_carrier(frame, decl) {
+            self.structure.carriers[held as usize].init = carrier.init;
+        }
+    }
+
     /// Append `carrier` to the body's carriers: its index.
     pub(super) fn add_carrier(&mut self, carrier: Carrier) -> u32 {
         self.structure.carriers.push(carrier);
@@ -159,7 +197,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carried_type(&mut self, decl: DeclId) -> Option<ValueType> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        let carried = match self.types.carrier(decl) {
+        let carried = match self.consts.typed_carrier(decl).as_ref() {
             Some(Ty::Carrier { value, .. }) => self.stored_type(value),
             // an array of carriers holds its elements' value type (`carrier_arrays.rs`)
             Some(array @ Ty::Array(..)) => match array.innermost() {
@@ -180,7 +218,7 @@ impl Elaboration<'_, '_> {
         let (role, init) = match &data.kind {
             // A hoisted module's carriers are signals of the enclosing body: its `in` value input
             // is driven by the caller's expression (`hoist.rs`).
-            DeclKind::Port(_) if frame != 0 => (CarrierRole::Signal, None),
+            DeclKind::Port(p) if frame != 0 => (CarrierRole::Signal, if p.dir == Some(Dir::Out) { p.default } else { None }),
             DeclKind::Port(p) => (if p.dir == Some(Dir::Out) { CarrierRole::Out } else { CarrierRole::In }, p.default),
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,
@@ -201,27 +239,35 @@ impl Elaboration<'_, '_> {
             true => Some(self.carrier_array_shape(decl, frame)?.0),
             false => None,
         };
+        // a generated carrier refused for its gaps keeps no initial value: the refusal is the one diagnostic
+        let init = init.filter(|_| !self.generated.refused.contains(&decl));
         let init = match init {
+            // a carrier declared in generation: its initial value is one element's, folded for each iteration (§8.2.23)
+            Some(expr) if frame == 0 && self.generated.of(decl).is_some() => {
+                let shape = array.clone()?;
+                Some(self.generated_array_init(decl, expr, &shape, &ty)?)
+            }
             Some(expr) if array.is_some() => {
                 let shape = array.clone()?;
                 Some(self.array_init(decl, expr, &shape, &ty, frame)?)
             }
             Some(expr) => match self.hand_written_encode(decl) {
-                Some(encode) => Some(self.encoded_init(expr, encode, frame)?),
+                Some((encode, arguments)) => Some(self.encoded_init(expr, encode, &arguments, frame)?),
                 None => {
                     let value = self.carrier_init(expr, frame)?;
                     Some(self.ir_constant(value, &ty))
                 }
             },
-            // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C
-            // (GAPS L69). A type with no `Default` has none to start at: the carrier takes its value from what drives it
             None if resolved.is_some() => None,
-            None if self.hand_written_encode(decl).is_some() && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) => {
-                if self.default_initial_value(decl, &ty).is_some() {
-                    self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
-                    return None;
+            // a type with a hand-written `Repr` and a `Default` starts at the levels `encode` gives for its default (GN-32 AC 2); a
+            // type with no `Default` has none to start at: the carrier takes its value from what drives it
+            None if let Some((encode, arguments)) = self.hand_written_encode(decl)
+                && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) =>
+            {
+                match self.default_initial_value(decl, &ty) {
+                    Some(default) => Some(self.encoded_default(encode, &arguments, default)?),
+                    None => None,
                 }
-                None
             }
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
@@ -266,6 +312,13 @@ impl Elaboration<'_, '_> {
     /// variant folds its own value (`structural.rs`). `None` is a diagnostic.
     pub(super) fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
+        self.carrier_init_over(expr, &bindings)
+    }
+
+    /// The initial value `expr` of a carrier folded over `bindings`: the params of its frame, and the loop variables of the
+    /// iteration of a carrier declared in generation. `None` is a diagnostic.
+    pub(super) fn carrier_init_over(&mut self, expr: ExprId, bindings: &Bindings) -> Option<Constant> {
+        let bindings = bindings.clone();
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
         let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
         match folded {
@@ -281,7 +334,7 @@ impl Elaboration<'_, '_> {
     /// the `Default::default()` of its type (§3.3.4), when it has one. A type without `Default` (a
     /// `bool`, a number, a `str`) has none here: the checker asks for the written value.
     fn default_initial_value(&mut self, decl: DeclId, stored: &ValueType) -> Option<Constant> {
-        let Some(Ty::Carrier { value, .. }) = self.types.carrier(decl).cloned() else { return None };
+        let Some(Ty::Carrier { value, .. }) = self.consts.typed_carrier(decl) else { return None };
         self.default_constant(&value, stored)
     }
 
@@ -297,7 +350,7 @@ impl Elaboration<'_, '_> {
                 (None, vec![one; usize::try_from(*length).ok()?])
             }
             // a type with a hand-written `impl Default` starts at what its `default` returns (`Logic<N>`: every level X)
-            (Ty::Struct(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(nominal, stored),
+            (Ty::Struct(nominal) | Ty::Enum(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(ty, nominal, stored),
             (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
                 let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
                 let held = self.type_arena.field_types(*id).to_vec();
@@ -310,8 +363,8 @@ impl Elaboration<'_, '_> {
 
     /// The constant a hand-written `impl Default` gives the struct `nominal`, held as `stored`: the tail of its `default`,
     /// folded for the arguments of the `impl` (`N` of a `Logic<N>`). `None` when the body is no tail expression that folds.
-    fn written_default(&mut self, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
-        let function = *self.impls.builtin_functions("Default", "default", &Ty::Struct(nominal.clone())).first()?;
+    fn written_default(&mut self, ty: &Ty, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
+        let function = *self.impls.builtin_functions("Default", "default", ty).first()?;
         let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return None };
         let body = data.body.clone()?;
         let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.design.stmt_node(*stmt).kind.clone()) else { return None };
@@ -325,7 +378,8 @@ impl Elaboration<'_, '_> {
             })
             .collect::<Option<_>>()?;
         let outer = self.consts.set_substitution(self.instance_substitution(function, &arguments));
-        let folded = self.composite_constant(expr, &Bindings::new());
+        // a unit variant of an enum with no field is its tag, no composite
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.consts.value(expr, &Bindings::new()) };
         self.consts.set_substitution(outer);
         let value = folded.ok()?;
         Some(self.ir_constant(value, stored))

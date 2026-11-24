@@ -43,7 +43,7 @@ fn arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes() {
     let src = "module Top() {\n\
                signal mem: [Bit<u8>; 1048576] = [7; 1048576];\n\
                signal row: [Bit<u8>; 3] = [1, 2, 3];\n\
-               signal flags: [Bit; 4];\n\
+               signal flags: [Bit; 4] = [false; 4];\n\
                signal grid: [[Bit; 2]; 3] = [[true; 2]; 3];\n\
                signal bl: [Electrical; 4];\n}";
     let ir = Elab::ir(src, "Top");
@@ -134,7 +134,7 @@ fn element_reads_and_events_lower_per_element() {
     // `on x[k].rise()` an event on that element only, guarded by its edge
     let src = "module Top(in clk: Bit, in at: Bit<u2>, out q: Bit<u8> = 0) {\n\
                signal mem: [Bit<u8>; 4] = [0; 4];\n\
-               signal lines: [Bit; 4];\n\
+               signal lines: [Bit; 4] = [false; 4];\n\
                signal grid: [[Bit<u8>; 2]; 3] = [[0; 2]; 3];\n}\n\
                digital for Top {\n\
                on clk.rise() { let a = mem[1]; let b = mem[at]; let p = mem[2].prev(); let c = lines[at].changed(); let g = grid[2][1]; q <- a + b + p; }\n\
@@ -157,7 +157,7 @@ fn element_reads_and_events_lower_per_element() {
     // §1 rule 11: a constant element past the end is E0104 naming it; an event head that does not fold is E0188 naming it
     let past = Elab::run("module Top() { signal m: [Bit<u8>; 4] = [0; 4]; }\ndigital for Top { on m[0].changed() { let a = m[4]; } }", "Top").expect_err("past the end");
     assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", support::Elab::codes(&past));
-    let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
+    let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4] = [false; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
     assert!(folding.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`l[at]`")), "{:?}", support::Elab::codes(&folding));
 }
 
@@ -165,8 +165,8 @@ fn element_reads_and_events_lower_per_element() {
 fn an_array_length_read_from_a_param_makes_it_structural() {
     // CV-36 AC 1 (§8.1.2, QC2): `[Bit; n]` and `[Electrical; n]` read the param `n`, so each body variant folds the
     // length of its own `n`, and `n` is structural (a host `set` of it during a run is `E0803`)
-    let src = "module Wide(in d: [Bit; 2]) { n: u32 = 3; signal s: [Bit<u8>; n]; signal bl: [Electrical; n + 1]; }\n\
-               module Top() { signal d: [Bit; 2]; let w = Wide { n: 5 }(d); }";
+    let src = "module Wide(in d: [Bit; 2]) { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; signal bl: [Electrical; n + 1]; }\n\
+               module Top() { signal d: [Bit; 2] = [false; 2]; let w = Wide { n: 5 }(d); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     let variant = ir.bodies().find(|b| b.name().starts_with("Wide~n=")).expect("a body of the variant");
@@ -175,7 +175,7 @@ fn an_array_length_read_from_a_param_makes_it_structural() {
     assert_eq!(carriers.iter().find(|c| c.0 == "s").expect("s").1, Some(5), "the array is as long as the param says");
     assert_eq!(variant.node_arrays().iter().map(|a| (a.name.as_str(), a.count)).collect::<Vec<_>>(), [("bl", 6)], "`n + 1` nodes");
     // the default is another variant: its own length
-    let ir = Elab::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n]; }\nmodule Top() { let w = Wide(); }", "Top");
+    let ir = Elab::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; }\nmodule Top() { let w = Wide(); }", "Top");
     let read = Read { ir: &ir };
     let name = ir.bodies().find(|b| b.name().starts_with("Wide")).expect("Wide").name().to_string();
     assert_eq!(read.carriers(&name).iter().find(|c| c.0 == "s").expect("s").1, Some(3));
@@ -189,7 +189,7 @@ fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
     let src = "module Wide(in d: [Bit<u8>; n], in clk: Bit, out q: Bit<u8> = 0) { n: u32 = 3; signal bl: [Electrical; n]; }\n\
                digital for Wide { on clk.rise() { let w = d; let ones: [u8; n] = [1; n]; q <- w[0] + ones[1]; } }\n\
                analog for Wide { let zeros: [f64; n] = [1.0; n]; let first = zeros[0]; }\n\
-               module Top() { signal d: [Bit<u8>; 5]; signal clk: Bit = false; signal q: Bit<u8>; signal d3: [Bit<u8>; 3]; signal q3: Bit<u8>; let w = Wide { n: 5 }(d, clk, q); let v = Wide(d3, clk, q3); }";
+               module Top() { signal d: [Bit<u8>; 5] = [0; 5]; signal clk: Bit = false; signal q: Bit<u8>; signal d3: [Bit<u8>; 3] = [0; 3]; signal q3: Bit<u8>; let w = Wide { n: 5 }(d, clk, q); let v = Wide(d3, clk, q3); }";
     let ir = Elab::ir(src, "Top");
     assert!(ir.bodies().any(|b| b.name().starts_with("Wide~n=")), "the variant of n = 5 is a body");
     assert_eq!(ir.bodies().filter(|b| b.name().starts_with("Wide")).count(), 2, "the default n = 3 is a body of its own");
@@ -210,7 +210,7 @@ fn an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration() {
     // CV-23 AC 3 (§8.1.10): `Child(in d: [Bit<u8>; n])` with n = 3 given 4 elements is E0313 naming both lengths when
     // the design elaborates, not an error of the bind; the same for an array of nodes; a matching length elaborates
     let child = "module Child(in d: [Bit<u8>; n], e: [Electrical; n + 1]) { n: u32 = 3; }\n";
-    let top = |given: u32, nodes: u32| format!("{child}module Top() {{ signal s: [Bit<u8>; {given}]; signal bl: [Electrical; {nodes}]; let c = Child(s, bl); }}");
+    let top = |given: u32, nodes: u32| format!("{child}module Top() {{ signal s: [Bit<u8>; {given}] = [0; {given}]; signal bl: [Electrical; {nodes}]; let c = Child(s, bl); }}");
     Elab::ir(&top(3, 4), "Top");
     for (given, nodes, found_length, wanted_length) in [(4, 4, "[4]", "[3]"), (3, 5, "[5]", "[4]")] {
         let found = Elab::run(&top(given, nodes), "Top").expect_err("a length that is not the port's");
@@ -218,14 +218,14 @@ fn an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration() {
         assert!(mismatch.diagnostic.message.contains(found_length) && mismatch.diagnostic.message.contains(wanted_length), "both lengths are named: {}", mismatch.diagnostic.message);
     }
     // the port's length follows the placement's own `n`
-    Elab::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
+    Elab::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5] = [0; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
 }
 
 #[test]
 fn a_negative_array_length_from_a_param_is_e0104_naming_it() {
     // §1.2.3 (a length is known and not negative): `n = -1` makes `[Bit; n]` a panic of the const expression, E0104
     // (§1 rule 11, §3.9.7), naming the length - not P0001, which would call it a missing feature
-    for (declared, what) in [("signal s: [Bit; n];", "carriers"), ("signal s: [Electrical; n];", "nodes")] {
+    for (declared, what) in [("signal s: [Bit; n] = [false; n];", "carriers"), ("signal s: [Electrical; n];", "nodes")] {
         let src = format!("module Top() {{ n: i32 = -1; {declared} }}");
         let found = Elab::run(&src, "Top").expect_err("a negative length");
         let negative = found.iter().find(|d| d.diagnostic.code == "E0104").unwrap_or_else(|| panic!("E0104 expected: {:?}", Elab::codes(&found)));
@@ -239,7 +239,7 @@ fn an_element_binds_a_handle_parameter() {
     // GN-11, QC3: `f(lines[k])` binds the handle to that one carrier, so `.prev()` and a read inside `f` are the
     // element's
     let src = "fn was(a: Bit) -> bool { a.prev() }\n\
-               module Top(in clk: Bit, out q: Bit = false) { signal lines: [Bit; 4]; }\n\
+               module Top(in clk: Bit, out q: Bit = false) { signal lines: [Bit; 4] = [false; 4]; }\n\
                digital for Top { on clk.rise() { q <- was(lines[2]); } }";
     let text = Read::structure_of(src);
     assert!(text.contains("lines") && text.contains(".prev"), "the handle reads the element's previous value:\n{text}");
@@ -300,7 +300,7 @@ fn element_and_field_commits_lower_to_their_targets() {
     // `word[2] <- true` an element of a value array, `mem[at].n <- 5` a field of an element
     let src = "#[derive(Repr)] struct S { n: u8, ok: bool }\n\
                module Top(in clk: Bit, in at: Bit<u2>) {\n\
-               signal bits: [Bit; 4];\n\
+               signal bits: [Bit; 4] = [false; 4];\n\
                signal word: Bit<[bool; 8]> = [false; 8];\n\
                signal st: Bit<S> = S { n: 0, ok: false };\n\
                signal mem: [Bit<S>; 4] = [S { n: 0, ok: false }; 4];\n}\n\
@@ -338,14 +338,16 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
                module Ladder(a: [Electrical; 4]) { }\n\
                module Top(in x: [Bit; 4]) {\n\
                signal y: [Bit; 4];\n\
-               signal g: [[Bit; 4]; 2];\n\
+               signal g: [[Bit; 4]; 2] = [[false; 4]; 2];\n\
                signal h: [[Bit; 4]; 2];\n\
                signal z: [Bit; 2];\n\
                signal bl: [Electrical; 4];\n\
                let whole = Reg(x, y);\n\
                let row = Reg(g[1], h[0]);\n\
                let one = Cell(x[2], z[1]);\n\
-               let rungs = Ladder(bl);\n}";
+               let rungs = Ladder(bl);\n\
+               let row_rest = Reg(g[0], h[1]);\n\
+               let zero = Cell(x[0], z[0]);\n}";
     let ir = Elab::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let windows: Vec<Vec<Option<piperine_ir::CarrierWindow>>> = (0..top.children().len()).map(|k| top.child_windows(k).to_vec()).collect();
@@ -359,4 +361,165 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
     // the ladder's four nodes are the parent's four
     let rungs = ir.instance_at("Top.rungs").expect("the ladder");
     assert_eq!(rungs.bindings().len(), 4);
+}
+
+/// The `(code, message)` of each diagnostic of elaborating `Top` of `src`.
+struct Refusals;
+
+impl Refusals {
+    /// What elaborating `Top` of `src` refuses; empty when it elaborates.
+    fn of(src: &str) -> Vec<(String, String)> {
+        match Elab::run(src, "Top") {
+            Ok(_) => Vec::new(),
+            Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+        }
+    }
+
+    /// Asserts `src` is refused with the one code `code` whose message contains each of `named`.
+    fn assert_one(src: &str, code: &str, named: &[&str]) {
+        let found = Self::of(src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), [code], "{src}\n{found:?}");
+        for text in named {
+            assert!(found[0].1.contains(text), "`{text}` is named: {}", found[0].1);
+        }
+    }
+}
+
+/// A one-bit cell the per-instance tests place: it drives its `out` port.
+const CELL: &str = "module Cell(in d: Bit, out q: Bit) { q = d; }\n";
+
+#[test]
+fn a_generic_length_array_is_judged_per_element_at_each_instance() {
+    // §3.3.4, §8.2.20: `[Bit; N]` with only `b[0]` driven leaves `b[1..N]` with no value: E0187 naming them and the
+    // instance `M::<4>`, though the length is known only once the instance is
+    let module = |body: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N]; {body} }}\n");
+    let top = "module Top(in clk: Bit) { let m = M::<4>(clk); }";
+    Refusals::assert_one(&format!("{}{top}", module("b[0] = clk;")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
+    // the same module at a length one drive covers is clean, and a length of two names the one element left
+    Refusals::assert_one(&format!("{}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}", module("b[0] = clk;")), "E0187", &["`b[1]`", "`M::<2>`"]);
+    elaborates(&format!("{}module Top(in clk: Bit) {{ let m = M::<1>(clk); }}", module("b[0] = clk;")));
+    // an element handed to an `out` port of a child names its element too
+    Refusals::assert_one(&format!("{CELL}{}{top}", module("let c = Cell(clk, b[0]);")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
+}
+
+/// Elaborates `src` and asserts it holds no diagnostic.
+fn elaborates(src: &str) {
+    Elab::ir(src, "Top");
+}
+
+#[test]
+fn a_param_length_array_is_judged_per_element_at_each_variant() {
+    // §3.3.4, §8.1.2: `[Bit; n]` folds per body variant, so `Wide~n=4` with only `b[0]` driven is E0187 naming `b[1..4]`
+    let module = "module Wide(in clk: Bit) { n: u32 = 2; signal b: [Bit; n]; b[0] = clk; }\n";
+    Refusals::assert_one(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 4 }}(clk); }}"), "E0187", &["`b[1..4]`", "`Wide~n=4`"]);
+    elaborates(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 1 }}(clk); }}"));
+}
+
+#[test]
+fn a_generation_index_names_the_elements_it_reaches() {
+    // §8.2.23: `for k in 0..2 { Cell(clk, y[k]) }` over `[Bit; 4]` hands elements 0 and 1: E0187 names `y[2..4]`; a loop
+    // over every element is clean
+    let top = |range: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in {range} {{ let c = Cell(clk, y[k]); }} }}");
+    Refusals::assert_one(&top("0..2"), "E0187", &["`y[2..4]`"]);
+    elaborates(&top("0..4"));
+    // a definition inside generation drives the elements its iterations name: E0187 names the two it leaves (the refusal it
+    // was is gone, generics finding 14), and a loop over every element is clean
+    Refusals::assert_one("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..2 { y[k] = clk; } }", "E0187", &["`y[2..4]`", "`Top`"]);
+    elaborates("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..4 { y[k] = clk; } }");
+    // and in a generic module, at its length
+    let generic = "module M<const N: usize>(in clk: Bit) { signal y: [Bit; N]; for k in 0..2 { let c = Cell(clk, y[k]); } }\n";
+    Refusals::assert_one(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<4>(clk); }}"), "E0187", &["`y[2..4]`", "`M::<4>`"]);
+    elaborates(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}"));
+}
+
+#[test]
+fn an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_element_is_e0223() {
+    // §5.2.6, §8.2.21: the initial value of an array is the value of the elements no `out` port holds, so it is E0223
+    // only once every element is handed; a generic length is judged at each instance
+    let module = |handed: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal y: [Bit; N] = [false; N]; {handed} }}\n");
+    let top = |length: u32| format!("module Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
+    elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
+    Refusals::assert_one(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(1)), "E0223", &["`y`", "`M::<1>`"]);
+}
+
+#[test]
+fn an_initial_value_beside_definitions_of_every_element_is_e0338_at_the_instance_that_folds_so() {
+    // §8.2.21: an initial value is the value of the elements no undelayed definition names; with a generic length it is
+    // E0338 only at the instance whose elements the definitions all name
+    let src = |length: u32| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N] = [false; N]; b[0] = clk; b[1] = !clk; }}\nmodule Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
+    Refusals::assert_one(&src(2), "E0338", &["`b`", "`M::<2>`"]);
+    elaborates(&src(4));
+}
+
+#[test]
+fn a_nested_array_with_a_generic_inner_length_judges_shared_elements_per_instance() {
+    // §8.2.20: `g[1][0]` and `g[0][1]` of `[[Bit; N]; 2]` are different elements once `N` folds: every element defined once is
+    // clean at `M::<2>`; a second definition of `g[1][1]` is E0335 naming the element and the instance
+    let module = |extra: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; g[1][0] = clk; g[0][1] = clk; g[0][0] = clk; g[1][1] = clk; {extra} }}\n");
+    let top = "module Top(in clk: Bit) { let m = M::<2>(clk); }";
+    elaborates(&format!("{}{top}", module("")));
+    Refusals::assert_one(&format!("{}{top}", module("g[1][1] = !clk;")), "E0335", &["`g[1][1]`", "`M::<2>`"]);
+    // §5.2, §8.2.20: a definition and a commit of different elements compose; of one element they are E0221 at the instance
+    let committed = |element: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2] = [[false; N]; 2]; g[1][0] = clk; }}\ndigital<N> for M<N> {{ on clk.rise() {{ {element} <- true; }} }}\n{top}");
+    elaborates(&committed("g[0][1]"));
+    Refusals::assert_one(&committed("g[1][0]"), "E0221", &["`g[1][0]`", "`M::<2>`"]);
+    // §5.2.6: an element handed to an `out` port and defined here is E0220 at the instance; a different element is clean
+    let handed = |element: &str| format!("{CELL}module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; let c = Cell(clk, g[1][0]); g[0][0] = clk; g[0][1] = clk; g[1][1] = clk; {element} = !clk; }}\n{top}");
+    Refusals::assert_one(&handed("g[1][0]"), "E0220", &["`g[1][0]`", "`M::<2>`"]);
+}
+
+#[test]
+fn drives_written_in_generation_are_judged_where_generation_is_unrolled() {
+    // §8.2.20, §8.2.23: `for k in 0..2 { b[k] = a; }` defines `b[0]` and `b[1]`, so `b[2]` and `b[3]` defined beside it are
+    // clean, and `b[1]` defined again is E0335 naming it
+    let fixed = |extra: &str| format!("module Top(in clk: Bit) {{ signal b: [Bit; 4]; for k in 0..2 {{ b[k] = clk; }} b[3] = !clk; b[2] = clk; {extra} }}");
+    elaborates(&fixed(""));
+    Refusals::assert_one(&fixed("b[1] = !clk;"), "E0335", &["`b[1]`", "`Top`"]);
+    // §8.2.24: two definitions in exclusive arms of an `if` are one drive; one in every iteration of a loop is two
+    elaborates("module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }");
+    elaborates("module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }");
+    Refusals::assert_one("module Top(in clk: Bit) { signal y: Bit; for k in 0..2 { y = clk; } }", "E0335", &["`y`", "`Top`"]);
+    // §5.2.6: placements in a loop hand `y[0]` and `y[1]`; `y[2]` and `y[3]` defined here are clean, `y[1]` is E0220
+    let handed = |extra: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} y[3] = clk; y[2] = clk; {extra} }}");
+    elaborates(&handed(""));
+    Refusals::assert_one(&handed("y[1] = clk;"), "E0220", &["`y[1]`", "`Top`"]);
+    // §5.2: a definition in a loop and a commit of another element compose; of the same element they are E0221
+    let committed = |element: &str| format!("module Top(in clk: Bit) {{ signal y: [Bit; 2] = [false; 2]; for k in 0..1 {{ y[k] = clk; }} }}\ndigital for Top {{ on clk.rise() {{ {element} <- true; }} }}");
+    elaborates(&committed("y[1]"));
+    Refusals::assert_one(&committed("y[0]"), "E0221", &["`y[0]`", "`Top`"]);
+    // §8.2.21, §8.2.24: an initial value beside a definition in an arm not taken stays the carrier's value (clean); in the
+    // taken arm it is E0338 at the instance, and with no initial value an untaken definition leaves `y` undriven (E0187)
+    let arm = |mode: u32, init: &str| format!("module Top(in clk: Bit) {{ mode: usize = {mode}; signal y: Bit{init}; if mode > 1 {{ y = clk; }} }}");
+    elaborates(&arm(0, " = false"));
+    Refusals::assert_one(&arm(2, " = false"), "E0338", &["`y`", "`Top~mode=2`"]);
+    Refusals::assert_one(&arm(0, ""), "E0187", &["`y`", "`Top~mode=0`"]);
+}
+
+#[test]
+fn a_run_time_element_read_in_a_definition_is_one_read_of_the_array() {
+    // §5.1.8, abi.md §3: `q = mem[at]` over 65 536 carriers is one read of `mem` at a run-time element (the array's view),
+    // not one constant read per element: the drive's value holds no array literal, and the elaboration takes well under a
+    // second for any length
+    let src = "module Top(in at: Bit<u16>) { signal mem: [Bit<u8>; 65536] = [7; 65536]; signal q: Bit<u8>; q = mem[at]; }";
+    let started = std::time::Instant::now();
+    let ir = Elab::ir(src, "Top");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "elaborated in {:?}", started.elapsed());
+    let printed = ir.print_structural();
+    let drive = printed.lines().find(|line| line.trim_start().starts_with("drive q")).expect("the drive of q");
+    assert_eq!(drive.trim(), "drive q = mem[at]", "one read at the run-time element");
+}
+
+#[test]
+fn a_loop_of_definitions_through_elements_is_e0339_naming_the_elements() {
+    // §8.2.3: definitions that depend on each other with no reaction and no `after` between are a loop, an error through a
+    // one-driver carrier, found at elaboration where elements fold (it was a bind cycle of the digital solver, after rustc,
+    // naming internal functions): `b[1] = b[2] + 1; b[2] = b[1];` names both elements and the instance
+    Refusals::assert_one("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[2] + 1; b[2] = b[1]; }", "E0339", &["`b[1]`, `b[2]`", "`Top`"]);
+    // a read at a run-time element may be the definition's own element: a loop
+    Refusals::assert_one("module Top(in at: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = at; b[1] = b[at] + 1; b[2] = 0; }", "E0339", &["`b[1]`", "`Top`"]);
+    // a loop across two arrays, and one through a carrier defined in every iteration of a generation `for`
+    Refusals::assert_one("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 2]; signal c: [Bit<u8>; 2]; b[0] = clk; b[1] = c[1]; c[0] = clk; c[1] = b[1] + 1; }", "E0339", &["`b[1]`, `c[1]`"]);
+    Refusals::assert_one("module Top(in clk: Bit<u8>) { signal y: Bit<u8>; for k in 0..1 { y = y + clk; } }", "E0339", &["`y`", "`Top`"]);
+    // a chain through elements is no loop
+    elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
 }

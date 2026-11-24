@@ -345,3 +345,13 @@ fn a_text_field_that_is_not_a_literal_is_p0001() {
     let span = err[0].diagnostic.span();
     assert_eq!(&src[span.start..span.end], "if ok { \"up\" } else { \"down\" }");
 }
+
+#[test]
+fn a_value_input_passed_by_name_reads_its_argument() {
+    // GN-13, GN-28 (§8.1.9, §8.3.7): `scaled(x, gain: 3.0)` binds the trailing `Option` input `gain` by name, so the
+    // result reads it where `scaled(x, 3.0)` does, and an input left out reads `None`
+    let items = "module scaled(x: f64, gain: Option<f64>) -> f64 { x * gain.unwrap_or(1.0) }\n";
+    let positional = format!("{items}module Top(o: Electrical) {{ }}\nanalog for Top {{ v(o) +> scaled(2.0, 3.0); }}\n");
+    let named = format!("{items}module Top(o: Electrical) {{ }}\nanalog for Top {{ v(o) +> scaled(2.0, gain: 3.0); }}\n");
+    assert_eq!(Elab::ir(&named, "Top").print_structural(), Elab::ir(&positional, "Top").print_structural(), "the same body");
+}

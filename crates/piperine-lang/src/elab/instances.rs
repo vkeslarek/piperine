@@ -47,6 +47,11 @@ impl Instance {
         format!("{item}::<{}>", self.argument_names(elaboration).join(", "))
     }
 
+    /// The name of the generic item without its arguments, `clamp`.
+    pub(super) fn item_name(&self, elaboration: &Elaboration<'_, '_>) -> String {
+        elaboration.impl_qualified_name(self.item)
+    }
+
     /// Each argument as the source spells it: a type as written, a number, a function's name, `closure$k`.
     pub(super) fn argument_names(&self, elaboration: &Elaboration<'_, '_>) -> Vec<String> {
         let design = elaboration.design;
@@ -153,6 +158,8 @@ impl Elaboration<'_, '_> {
         match self.consts.substitution().apply_term(term) {
             ConstTerm::Value(value) => Some(ConcreteValue::Const(value)),
             ConstTerm::Bool(value) => Some(ConcreteValue::Bool(value)),
+            // an expression over const parameters folds the way the checker folds a length: syntactically, over their values
+            ConstTerm::Expr(expr) if let Some(value) = self.types.fold_with(expr, self.enclosing_values()).and_then(|value| i128::try_from(value).ok()) => Some(ConcreteValue::Const(value)),
             ConstTerm::Expr(expr) => {
                 let bindings = self.enclosing_bindings();
                 match self.consts.value(expr, &bindings) {
@@ -175,6 +182,17 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The integer const arguments of the instance being lowered by parameter: what a syntactic fold of an expression reads.
+    fn enclosing_values(&self) -> BTreeMap<DeclId, u128> {
+        let generic = self.consts.substitution().entries().filter_map(|(parameter, value)| match value {
+            GenericValue::Const(ConstTerm::Value(number)) => u128::try_from(*number).ok().map(|number| (parameter, number)),
+            _ => None,
+        });
+        // the key params of the body being lowered: an argument `{ count }` reads the value the body was lowered for
+        let keys = self.body_keys.integers().into_iter().filter_map(|(param, number)| u128::try_from(number).ok().map(|number| (param, number)));
+        generic.chain(keys).collect()
+    }
+
     /// The const parameters of the instance being lowered bound to their values.
     fn enclosing_bindings(&self) -> Bindings {
         let mut bindings = Bindings::new();
@@ -188,7 +206,8 @@ impl Elaboration<'_, '_> {
         bindings
     }
 
-    /// The integer const arguments of `instance` by parameter: what an array length folds over.
+    /// The integer const arguments of `instance` by parameter, and the level count of each type argument: what an array
+    /// length folds over.
     fn instance_values(&self, instance: &Instance) -> BTreeMap<DeclId, u128> {
         let signature = GenericSignature::of(self.design, instance.item);
         signature
@@ -197,13 +216,15 @@ impl Elaboration<'_, '_> {
             .zip(&instance.arguments)
             .filter_map(|(parameter, argument)| match argument {
                 ConcreteValue::Const(value) => u128::try_from(*value).ok().map(|value| (parameter.decl, value)),
+                // a type argument stands for its level count, which `T::WIDTH` in a length reads (§2)
+                ConcreteValue::Type(ty) => self.level_count(ty).map(|levels| (parameter.decl, u128::from(levels))),
                 _ => None,
             })
             .collect()
     }
 
     /// The const parameters of `instance`'s function bound to its const arguments.
-    fn instance_bindings(&self, instance: &Instance) -> Bindings {
+    pub(super) fn instance_bindings(&self, instance: &Instance) -> Bindings {
         let mut bindings = Bindings::new();
         let signature = GenericSignature::of(self.design, instance.item);
         for (parameter, argument) in signature.parameters().iter().zip(&instance.arguments) {
@@ -222,6 +243,15 @@ impl Elaboration<'_, '_> {
     /// Discharges what the definition of `instance`'s function deferred (Q1 (c)): the `where`, the pairs of
     /// array lengths and the const expressions, for these arguments. `None` after a diagnostic.
     fn discharge(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
+        // the `where` reads the instance's own type arguments (`A::WIDTH == B::WIDTH`)
+        let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+        let discharged = self.discharge_under_substitution(instance, bindings);
+        self.consts.set_substitution(outer);
+        discharged
+    }
+
+    /// [`Elaboration::discharge`] with the substitution of `instance` set.
+    fn discharge_under_substitution(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
         let name = instance.name(self);
         let values = self.instance_values(instance);
         let mut holds = true;
@@ -242,7 +272,7 @@ impl Elaboration<'_, '_> {
                     }
                 },
                 Obligation::SameLength { file, span, expected, found } => {
-                    let (wanted, given) = (self.fold_length(&expected, &values), self.fold_length(&found, &values));
+                    let (wanted, given) = (self.fold_length(instance, &expected, &values), self.fold_length(instance, &found, &values));
                     if let (Some(wanted), Some(given)) = (wanted, given)
                         && wanted != given
                     {
@@ -262,12 +292,21 @@ impl Elaboration<'_, '_> {
     }
 
     /// The number of elements `length` stands for when the const parameters have `values`, `None` when it does not fold.
-    fn fold_length(&mut self, length: &Length, values: &BTreeMap<DeclId, u128>) -> Option<i128> {
+    fn fold_length(&mut self, instance: &Instance, length: &Length, values: &BTreeMap<DeclId, u128>) -> Option<i128> {
         match length {
             Length::Fixed(count) => Some(i128::from(*count)),
             Length::Generic(ConstTerm::Value(count)) => Some(*count),
             Length::Generic(ConstTerm::Expr(expr)) => self.types.fold_with(*expr, values.clone()).and_then(|count| i128::try_from(count).ok()),
             Length::Generic(ConstTerm::Param(parameter)) => values.get(parameter).and_then(|count| i128::try_from(*count).ok()),
+            // `T::WIDTH` of the argument the instance gives the parameter `T` (§2)
+            Length::Generic(ConstTerm::Width(parameter)) => {
+                let signature = GenericSignature::of(self.design, instance.item);
+                let argument = signature.parameters().iter().zip(&instance.arguments).find_map(|(candidate, argument)| (candidate.decl == *parameter).then_some(argument))?;
+                match argument {
+                    ConcreteValue::Type(given) => self.level_count(given).map(i128::from),
+                    _ => None,
+                }
+            }
             Length::Generic(_) => None,
         }
     }

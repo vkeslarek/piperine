@@ -1,0 +1,282 @@
+//! Scope: generation in a module body elaborated (generics GN-17, GN-20, part III §8.2.7, §8.2.23, §8.2.24): a `for` over
+//! module items unrolls into one element of an array per iteration (placements named `name[k]`, nodes an array of nodes,
+//! carriers an array carrier, definitions one drive each, hoisted placements one frame each, a `let` read outside an array), an
+//! `if` keeps the arm its condition selects, an empty range makes an empty array, and a reference into an arm that was not
+//! elaborated or past a generated array is `E0342`. Each test states the rule it proves.
+
+#[path = "support/elab.rs"]
+#[allow(dead_code)]
+mod support;
+
+use piperine_ir::Ir;
+use piperine_lang::elab::Elaborator;
+use piperine_lang::pom::DesignDiagnostic;
+use support::Elab;
+
+/// Sources elaborated with generation in a body.
+struct GenerationSources;
+
+impl GenerationSources {
+    /// The natures and the parts every source places.
+    const HEAD: &'static str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\nmodule Resistor(p: E, n: E) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n";
+
+    /// `src` after the parts, elaborated from `Top`.
+    fn run(src: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
+        let design = Elab::design(&format!("{}{src}", Self::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
+        Elaborator::new(&design).run("Top")
+    }
+
+    /// The IR of `src`, which elaborates and checks.
+    fn ir(src: &str) -> Ir {
+        let ir = Self::run(src).unwrap_or_else(|found| panic!("elaboration refused: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        assert!(ir.check().is_empty(), "{:?}", ir.check());
+        ir
+    }
+
+    /// The codes and messages of the elaboration of `src`, which fails.
+    fn refused(src: &str) -> Vec<(String, String)> {
+        Self::run(src).err().expect("the elaboration must be refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+    }
+
+    /// The names of the children of the body `Top`.
+    fn children(ir: &Ir) -> Vec<String> {
+        let body = ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).expect("a body Top");
+        body.children().iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// The names of the nodes of the body `Top`, and its arrays of nodes as `(name, count)`.
+    fn nodes(ir: &Ir) -> (Vec<String>, Vec<(String, u32)>) {
+        let body = ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).expect("a body Top");
+        (body.nodes().iter().map(|n| n.name.clone()).collect(), body.node_arrays().iter().map(|a| (a.name.clone(), a.count)).collect())
+    }
+}
+
+#[test]
+fn generation_for_makes_arrays_and_if_keeps_the_taken_arm() {
+    // §8.2.23: one element per iteration, indexed from 0, a nested `for` nesting the array
+    let src = "module Top() {\n  signal a: E;\n  for k in 0..3 { let rk = Resistor(a, gnd) { r: 1k }; }\n  for i in 0..2 { for j in 0..2 { let cell = Resistor(a, gnd) { r: 2k }; } }\n}\n";
+    let ir = GenerationSources::ir(src);
+    assert_eq!(GenerationSources::children(&ir), ["rk[0]", "rk[1]", "rk[2]", "cell[0][0]", "cell[0][1]", "cell[1][0]", "cell[1][1]"]);
+    // the loop variable is a constant of each iteration: a param block over it, and an index of an array of nodes
+    let chain = "module Top() {\n  signal a: E;\n  signal tap: [E; 4];\n  for k in 0..3 { let rk = Resistor(tap[k], tap[k + 1]) { r: 1k * ((k + 1) as f64) }; }\n}\n";
+    let ir = GenerationSources::ir(chain);
+    assert_eq!(GenerationSources::children(&ir), ["rk[0]", "rk[1]", "rk[2]"]);
+    let body = ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).unwrap();
+    let firsts: Vec<_> = body.children().iter().map(|c| c.nodes.clone()).collect();
+    assert_eq!(firsts[0][1], firsts[1][0], "tap[1] joins section 0 and section 1");
+    assert_ne!(firsts[0][0], firsts[2][1]);
+    // a node declared in the loop is an array of nodes, and the name inside is the iteration's element
+    let nodes = "module Top() {\n  signal a: E;\n  for k in 0..3 { signal mid: E; let r1 = Resistor(a, mid) { r: 1k }; let r2 = Resistor(mid, gnd) { r: 1k }; }\n}\n";
+    let ir = GenerationSources::ir(nodes);
+    let (names, arrays) = GenerationSources::nodes(&ir);
+    assert!(["mid[0]", "mid[1]", "mid[2]"].iter().all(|name| names.iter().any(|n| n == name)), "{names:?}");
+    assert_eq!(arrays, [("mid".to_string(), 3)]);
+    // an `if` over a param elaborates its taken arm only
+    let arms = "module Top() {\n  mode: usize = 2;\n  signal a: E;\n  if mode > 1 { let big = Resistor(a, gnd) { r: 1k }; } else { let small = Resistor(a, gnd) { r: 1k }; }\n}\n";
+    assert_eq!(GenerationSources::children(&GenerationSources::ir(arms)), ["big"]);
+    // the param a range reads is structural: the body is one variant per value
+    let counted = "module Top() {\n  count: usize = 2;\n  signal a: E;\n  for k in 0..count { let rk = Resistor(a, gnd) { r: 1k }; }\n}\n";
+    assert_eq!(GenerationSources::children(&GenerationSources::ir(counted)), ["rk[0]", "rk[1]"]);
+}
+
+#[test]
+fn an_untaken_arm_or_an_index_outside_is_e0342() {
+    // §8.2.24: a reference to an item of an arm that was not elaborated
+    let arm = "module Top() {\n  mode: usize = 0;\n  signal a: E;\n  if mode > 1 { signal extra: E; }\n  let r = Resistor(a, extra) { r: 1k };\n}\n";
+    let found = GenerationSources::refused(arm);
+    assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("extra")), "{found:?}");
+    // §8.2.23: an index outside a generated array
+    let outside = "module Top() {\n  signal a: E;\n  for k in 0..3 { signal mid: E; let r1 = Resistor(a, mid) { r: 1k }; }\n  let r = Resistor(a, mid[3]) { r: 1k };\n}\n";
+    let found = GenerationSources::refused(outside);
+    assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("mid")), "{found:?}");
+    let inside = "module Top() {\n  signal a: E;\n  for k in 0..3 { signal mid: E; let r1 = Resistor(a, mid) { r: 1k }; }\n  let r = Resistor(a, mid[2]) { r: 1k };\n}\n";
+    assert!(GenerationSources::run(inside).is_ok(), "the last element exists");
+}
+
+#[test]
+fn an_empty_generation_range_makes_an_empty_array() {
+    // §8.2.23: a range of no iteration is an array of no element
+    let src = "module Top() {\n  count: usize = 0;\n  signal a: E;\n  for k in 0..count { signal mid: E; let rk = Resistor(a, mid) { r: 1k }; }\n  let r = Resistor(a, gnd) { r: 1k };\n}\n";
+    let ir = GenerationSources::ir(src);
+    assert_eq!(GenerationSources::children(&ir), ["r"]);
+    assert!(GenerationSources::nodes(&ir).1.is_empty(), "no node array");
+}
+
+#[test]
+fn a_recursion_by_generation_unrolls() {
+    // §8.2.7: a module that places itself under an `if` whose condition ends the recursion unrolls into nested instances;
+    // the generic form counts down its const generic, the plain form a param it hands to the next level
+    let generic = "module Chain<const N: usize>(a: E, b: E) where N >= 1 {\n  if N == 1 { let last = Resistor(a, b) { r: 1k }; } else {\n    signal mid: E;\n    let head = Resistor(a, mid) { r: 1k };\n    let rest = Chain::<{ N - 1 }>(mid, b);\n  }\n}\nmodule Top() { signal a: E; signal b: E; let c = Chain::<3>(a, b); }\n";
+    let ir = GenerationSources::ir(generic);
+    let names: Vec<String> = ir.bodies().map(|b| b.name().to_string()).collect();
+    assert!(names.iter().any(|n| n.starts_with("Chain::<3>")) && names.iter().any(|n| n.starts_with("Chain::<2>")) && names.iter().any(|n| n.starts_with("Chain::<1>")), "{names:?}");
+    let plain = "module Down(a: E, b: E) {\n  depth: usize = 2;\n  if depth == 0 { let last = Resistor(a, b) { r: 1k }; } else {\n    signal mid: E;\n    let head = Resistor(a, mid) { r: 1k };\n    let rest = Down(mid, b) { depth: depth - 1 };\n  }\n}\nmodule Top() { signal a: E; signal b: E; let c = Down(a, b); }\n";
+    let ir = GenerationSources::ir(plain);
+    assert!(ir.bodies().filter(|b| b.name().starts_with("Down")).count() >= 3, "one body for each depth");
+}
+
+#[test]
+fn a_generation_recursion_that_does_not_end_is_e0341() {
+    // §8.2.7: a recursion that does not end is an error naming the module, at the depth bound
+    let generic = "module Forever<const N: usize>(a: E) {\n  if N > 0 { let next = Forever::<{ N + 1 }>(a); }\n}\nmodule Top() { signal a: E; let c = Forever::<1>(a); }\n";
+    let found = GenerationSources::refused(generic);
+    assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Forever")), "{found:?}");
+    let plain = "module Loop(a: E) {\n  depth: usize = 1;\n  if depth > 0 { let again = Loop(a) { depth: depth + 1 }; }\n}\nmodule Top() { signal a: E; let c = Loop(a); }\n";
+    let found = GenerationSources::refused(plain);
+    assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Loop")), "{found:?}");
+}
+
+/// Sources whose `digital` blocks hold generation.
+struct AdmittedDigital;
+
+impl AdmittedDigital {
+    /// The IR of `src` after the natures, which elaborates and checks.
+    fn ir(src: &str) -> Ir {
+        let design = Elab::design(&format!("{}{src}", GenerationSources::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
+        let ir = Elaborator::new(&design).run("Top").unwrap_or_else(|found| panic!("elaboration refused: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        assert!(ir.check().is_empty(), "{:?}", ir.check());
+        ir
+    }
+
+    /// The reactions of the body `Top`, as the text of the structural print lists them.
+    fn reactions(ir: &Ir) -> usize {
+        ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).expect("a body Top").reactions().len()
+    }
+}
+
+#[test]
+fn generated_reactions_are_one_per_iteration_in_source_order() {
+    // GN-19 AC 1, AC 2 (§12.1.2): a `for` around reactions makes one reaction per iteration, its event over the iteration's
+    // element; the reactions of one iteration keep their source order and the iterations follow one another, all inside the
+    // place the `for` has among the block's reactions
+    let src = "module Top() {\n  signal lines: [Bit; 3] = [false; 3];\n  signal hits: [Bit<u8>; 3] = [0; 3];\n  signal first: Bit<u8> = 0;\n  signal last: Bit<u8> = 0;\n}\ndigital for Top {\n  on lines[0].fall() { first <- 1; }\n  for k in 0..3 {\n    on lines[k].rise() { hits[k] <- (k as u8) + 1; }\n    on lines[k].fall() { hits[k] <- 0; }\n  }\n  on lines[2].fall() { last <- 1; }\n}\n";
+    let ir = AdmittedDigital::ir(src);
+    assert_eq!(AdmittedDigital::reactions(&ir), 1 + 3 * 2 + 1, "the written reactions and two for each iteration");
+    // the order of the sites: the first reaction is the `first` commit, the last is the `last` commit, the six between are the loop's
+    let body = ir.bodies().find(|b| b.name() == "Top").unwrap();
+    let events: Vec<_> = body.reactions().iter().map(|r| format!("{:?}", r.on)).collect();
+    assert_eq!(events.len(), 8);
+    assert_eq!(events[1..7].iter().collect::<std::collections::BTreeSet<_>>().len(), 6, "six distinct events, one reaction for each iteration and edge: {events:?}");
+    // an `if` in the block selects its arm by a param
+    let arms = "module Top() {\n  signal lines: [Bit; 2] = [false; 2];\n  fast: bool = true;\n  signal a: Bit<u8> = 0;\n}\ndigital for Top {\n  if fast { on lines[0].rise() { a <- 1; } } else { on lines[1].rise() { a <- 2; } }\n}\n";
+    assert_eq!(AdmittedDigital::reactions(&AdmittedDigital::ir(arms)), 1);
+}
+
+/// The body `Top` of an elaborated design.
+struct TopBody;
+
+impl TopBody {
+    /// The body `Top` of `ir`.
+    fn of(ir: &Ir) -> piperine_ir::Body<'_> {
+        ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).expect("a body Top")
+    }
+
+    /// The carrier `name` of the body `Top`.
+    fn carrier<'a>(ir: &'a Ir, name: &str) -> &'a piperine_ir::Carrier {
+        Self::of(ir).carriers().iter().find(|c| c.name == name).unwrap_or_else(|| panic!("a carrier `{name}`"))
+    }
+
+    /// The elements of the carrier `name` the definitions of `Top` drive, in the order of the drives.
+    fn defined_elements(ir: &Ir, name: &str) -> Vec<Option<u64>> {
+        let body = Self::of(ir);
+        let index = body.carriers().iter().position(|c| c.name == name).unwrap_or_else(|| panic!("a carrier `{name}`")) as u32;
+        body.drives().iter().filter(|d| d.carrier == index).map(|d| d.element).collect()
+    }
+}
+
+#[test]
+fn a_carrier_declared_in_a_generation_for_is_an_array_of_one_element_per_iteration() {
+    // §8.2.23: `signal s` in `for k in 0..3` is the array `s` of 3 carriers; each starts at its own iteration's initial value,
+    // and the name inside the loop is the iteration's element (the definition of `s` there drives element `k`)
+    let src = "module Top(in clk: Bit) {\n  for k in 0..3 { signal s: Bit<u8> = (k as u8) + 1; }\n  signal z: Bit<u8>;\n  z = s[0] + s[2];\n}\n";
+    let ir = GenerationSources::ir(src);
+    let carrier = TopBody::carrier(&ir, "s");
+    assert_eq!(carrier.count, Some(3), "one carrier per iteration");
+    let Some(piperine_ir::Constant::Aggregate(init)) = carrier.init else { panic!("an array initial value: {:?}", carrier.init) };
+    let parts: Vec<String> = ir.aggregate(init).parts.iter().map(|p| format!("{p:?}")).collect();
+    assert_eq!(parts, ["Int(1)", "Int(2)", "Int(3)"], "element k starts at k + 1");
+    let defined = "module Top(in clk: Bit) {\n  for i in 0..2 { for j in 0..2 { signal s: Bit; s = clk; } }\n}\n";
+    let ir = GenerationSources::ir(defined);
+    assert_eq!(TopBody::carrier(&ir, "s").count, Some(4), "nested loops nest the array: 2 x 2 elements");
+    assert_eq!(TopBody::defined_elements(&ir, "s"), [Some(0), Some(1), Some(2), Some(3)], "each iteration defines its own element, row-major");
+}
+
+#[test]
+fn a_definition_in_generation_is_one_drive_per_iteration_its_arm_takes() {
+    // §8.2.23, §8.2.24: `y[k] = ..` in `for k in 0..3` drives elements 0, 1 and 2; an `if` inside the loop gives each
+    // iteration the arm its condition takes, and an `if` outside a loop elaborates the taken arm's definition only
+    let ir = GenerationSources::ir("module Top(in clk: Bit) { signal y: [Bit; 3]; for k in 0..3 { y[k] = clk; } }\n");
+    assert_eq!(TopBody::defined_elements(&ir, "y"), [Some(0), Some(1), Some(2)]);
+    let arms = "module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }\n";
+    assert_eq!(TopBody::defined_elements(&GenerationSources::ir(arms), "y"), [Some(0), Some(1)]);
+    let chosen = "module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }\n";
+    assert_eq!(TopBody::defined_elements(&GenerationSources::ir(chosen), "y"), [None], "one definition of the whole carrier");
+    // a definition inside the loop of a carrier declared there, and one by index outside it
+    let carriers = "module Top(in clk: Bit) { for k in 0..2 { signal s: Bit; s = !clk; } signal z: Bit; z = s[0] & s[1]; }\n";
+    assert_eq!(TopBody::defined_elements(&GenerationSources::ir(carriers), "s"), [Some(0), Some(1)]);
+}
+
+#[test]
+fn a_hoisted_placement_in_generation_is_one_frame_per_iteration_and_its_let_an_array() {
+    // §8.2.23: `let y = idt(1.0)` in `for k in 0..2` hoists `y[0]` and `y[1]`, each with its own state node; outside the loop
+    // `y[1]` reads the second
+    let src = "module Top(a: E, b: E) { for k in 0..2 { let y = idt(1.0); } }\nanalog for Top { i(a, b) +> y[0] + y[1]; }\n";
+    let ir = GenerationSources::ir(src);
+    let hoisted: Vec<String> = TopBody::of(&ir).hoisted().iter().map(|h| h.name.clone()).collect();
+    assert_eq!(hoisted, ["y[0]", "y[1]"]);
+    let (names, _) = GenerationSources::nodes(&ir);
+    assert!(names.iter().any(|n| n == "y[0].y") && names.iter().any(|n| n == "y[1].y"), "{names:?}");
+    // a module with a value input hoisted in a loop reads the iteration's element of a carrier declared there
+    let digital = "module Not(x: bool) -> bool { !x }\nmodule Top(in clk: Bit) { for k in 0..2 { signal s: Bit; s = clk; signal t: Bit; t = Not(s); } }\n";
+    let ir = GenerationSources::ir(digital);
+    assert_eq!(TopBody::defined_elements(&ir, "t"), [Some(0), Some(1)]);
+}
+
+#[test]
+fn a_let_in_generation_read_outside_its_loops_is_the_array_of_its_values() {
+    // §8.2.23: `c` of `for i in 0..2 { for j in 0..3 { let c = .. } }` is a 2 x 3 array outside the loops: `c[1][2]` is the
+    // value of iteration (1, 2), `1 * 3 + 2 + 1 = 6`, folded into a param
+    let src = "module Top(a: E) { for i in 0..2 { for j in 0..3 { let c = ((i * 3 + j) as f64) + 1.0; } } let r = Resistor(a, gnd) { r: c[1][2] * 1k }; }\n";
+    let ir = GenerationSources::ir(src);
+    let child = &TopBody::of(&ir).children()[0];
+    assert_eq!(child.name, "r");
+    let resistor = ir.instance_at("Top.r").expect("the resistor");
+    assert_eq!(resistor.params().first().map(|p| p.to_string().parse::<f64>().ok()), Some(Some(6e3)));
+    // §8.2.24: a `let` of an arm that was not elaborated, read, is E0342 naming it
+    let untaken = "module Top(a: E) { mode: usize = 0; if mode > 0 { let c = 2.0; } let r = Resistor(a, gnd) { r: c * 1k }; }\n";
+    let found = GenerationSources::refused(untaken);
+    assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("`c`")), "{found:?}");
+}
+
+#[test]
+fn an_item_only_some_iterations_elaborate_and_generation_in_a_hoisted_module_are_refused_by_name() {
+    // an `if` inside a `for` that only some iterations take would make an array with gaps (§8.2.23 with §8.2.24): refused by
+    // that name, the one diagnostic; generation in the body of a module hoisted into its caller is refused by its name
+    let gaps = "module Top(in clk: Bit) { for k in 0..2 { if k == 0 { signal s: Bit = false; } } }\n";
+    let found = GenerationSources::refused(gaps);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].0 == "P0001" && found[0].1.contains("a generated array with gaps"), "{found:?}");
+    let hoisted = "module H(x: f64) -> f64 { for k in 0..2 { signal s: Bit = false; } x }\nmodule Top(in clk: Bit) { let h = H(1.0); signal z: Bit<f64> = 0.0; }\n";
+    let found = GenerationSources::refused(hoisted);
+    assert!(found.iter().all(|(code, _)| code == "P0001") && found.iter().any(|(_, message)| message.contains("generation in its body")), "{found:?}");
+}
+
+#[test]
+fn a_member_of_a_generated_instance_is_read_by_its_iteration_or_its_ordinal() {
+    // §8.2.8, §8.2.23: inside the loop `c.m` is the member of the iteration's instance (`w[k] = c.m` reads `c[k].m`); outside,
+    // `c[1].m` and `c[1][0].m` name one by its ordinals; an ordinal the generation never made is E0342
+    let cell = "module Cell(in d: Bit, out q: Bit) { pub signal m: Bit; m = !d; q = d; }\n";
+    let inside = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 2]; signal w: [Bit; 2]; for k in 0..2 {{ let c = Cell(clk, y[k]); w[k] = c.m; }} }}\n");
+    let ir = GenerationSources::ir(&inside);
+    let reached: Vec<String> = TopBody::of(&ir).carriers().iter().filter(|c| c.role == piperine_ir::CarrierRole::Reached).map(|c| c.name.clone()).collect();
+    assert_eq!(reached, ["c[0].m", "c[1].m"], "each iteration reads its own instance's member");
+    assert_eq!(TopBody::defined_elements(&ir, "w"), [Some(0), Some(1)]);
+    let nested = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for i in 0..2 {{ for j in 0..2 {{ let c = Cell(clk, y[i * 2 + j]); }} }} signal z: Bit; z = c[1][0].m; }}\n");
+    let ir = GenerationSources::ir(&nested);
+    assert!(TopBody::of(&ir).carriers().iter().any(|c| c.name == "c[1][0].m"), "the instance (1, 0) is read");
+    let past = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 2]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} signal z: Bit; z = c[2].m; }}\n");
+    let found = GenerationSources::refused(&past);
+    assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("`c`")), "{found:?}");
+}

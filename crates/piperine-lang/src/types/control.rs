@@ -21,7 +21,7 @@ impl Checker<'_> {
         let ExprKind::Match { scrutinee, arms } = &node.kind else { return None };
         let scrut = self.infer(*scrutinee);
         if let Some(t) = &scrut
-            && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..))
+            && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..))
         {
             let span = self.design.expr_node(*scrutinee).span;
             self.unsupported(file, span, &format!("`match` expression over `{}`", t.name(self.design)));

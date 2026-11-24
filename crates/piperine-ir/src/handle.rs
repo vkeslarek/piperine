@@ -1,11 +1,11 @@
 //! Reading: `Copy` handles that pair a borrow of the [`Ir`] with an id.
 
 use crate::real::Real;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId, WideId};
 use crate::model::{
     CarrierWindow, EmptyArray, NodeArray,
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, TraceSite, PartialDerivative, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Resolution, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Resolution, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData, WideData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
@@ -19,6 +19,16 @@ impl Ir {
     /// A composite constant.
     pub fn aggregate(&self, id: AggregateId) -> &AggregateData {
         &self.aggregates[id.index()]
+    }
+
+    /// A constant of an integer type wider than 64 bits.
+    pub fn wide(&self, id: WideId) -> &WideData {
+        &self.wides[id.index()]
+    }
+
+    /// The constants of integer types wider than 64 bits, in id order.
+    pub fn wides(&self) -> &[WideData] {
+        &self.wides
     }
 
     /// The composite constants, in id order.
@@ -239,6 +249,11 @@ impl<'a> Body<'a> {
 
     pub fn origin(&self) -> &'a Origin {
         &self.data().origin
+    }
+
+    /// The instance of a generic module this body lowers, `None` for a module as written.
+    pub fn instance(&self) -> Option<&'a GenericInstance> {
+        self.data().instance.as_ref()
     }
 
     pub fn params(&self) -> &'a [Param] {

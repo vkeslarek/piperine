@@ -131,12 +131,21 @@ fn the_pad_drives_its_node_and_reads_it_back() {
 }
 
 #[test]
-fn the_register_with_a_setup_check_is_refused_for_the_generic_monitor() {
-    // core-std#8 (refused): `Reg` places `Setup(clk, d) { ts: 100p }`, and `Setup<T: Repr>` is a generic
-    // module (L30)
+fn the_register_with_a_setup_check_runs() {
+    // core-std#8 (run, after T116): `Reg` places `Setup(clk, d, late) { ts: 100p }`, the generic monitor `Setup<T: Repr>`
+    // at `bool`. The clock rises at 1 us. With `d` last changed at 0.5 us it was stable 0.5 us >= 100 ps: the `setup`
+    // check passes. With `d` changed 50 ps before the edge it was stable 50 ps < 100 ps: the check fails
     let chapter = Chapter::read();
-    let after = "module Top(in clk: Bit) { signal d: Bit; signal q: Bit; let r = Reg(clk, d, q); }\n";
-    Refusal::expect(chapter.wrapped("reg.msl", "", "core-std#8", after).run(Commands::operating_point()), "core-std#8", "P0001", "generic module is not supported yet");
+    let ts = 100e-12_f64;
+    for (changed_at, text) in [(0.5e-6_f64, "0.5u"), (1e-6 - 50e-12, "1u - 50p")] {
+        let after = format!("module Top() {{ signal clk: Bit = false; signal d: Bit = false; signal q: Bit; let r = Reg(clk, d, q); }}\ndigital for Top {{ on at({text}) {{ d <- true; }} on at(1u) {{ clk <- true; }} }}\n");
+        let ran = chapter.wrapped("reg.msl", "", "core-std#8", &after).run(Commands::transient(3e-6, None)).unwrap_or_else(|failure| panic!("{:?}", Refusal::of(Err(failure), "core-std#8")));
+        let checks = ran.stream("checks");
+        assert_eq!(checks.len(), 1, "the check runs at the one rising edge: {text}");
+        assert_eq!(Fields::of(checks[0], "name"), &Field::Text("setup".to_string()));
+        let age = 1e-6 - changed_at;
+        assert_eq!(Fields::of(checks[0], "pass"), &Field::Bool(age >= ts), "`d` was stable {age:e} s before the edge: {text}");
+    }
 }
 
 #[test]
@@ -288,4 +297,13 @@ fn e0702_is_raised_for_a_pattern_with_another_character_or_another_length() {
     assert_eq!(character.pointed_at("E0702"), "\"10q1\"");
     let length = Faulty::elaborating("core-std~6e04c51d", "module Top() { signal a: Bit<Logic<4>> = logic(\"101\"); }\n", "Top");
     assert!(length.first("E0702").message.contains("3 characters"), "{}", length.first("E0702").message);
+}
+
+#[test]
+fn a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was() {
+    // core-std#8 amended (T116, BA1): the old listing placed `Setup(clk, d)` and left the `out` carrier port
+    // `viol` unconnected; §8.1.8 "a carrier port is never optional", so the form is refused on a plain module.
+    let source = "module Check(in clk: Bit, in d: Bit, out viol: Bit = false) { ts: f64 = 1n; }\nmodule Reg(in clk: Bit, in d: Bit, out q: Bit = false) { let chk = Check(clk, d) { ts: 100p }; }\nmodule Top() { signal clk: Bit; signal d: Bit; signal q: Bit; let r = Reg(clk, d, q); }\n";
+    let faulty = Faulty::elaborating("core-std#8", source, "Top");
+    faulty.first("E0312");
 }

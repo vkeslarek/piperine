@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/generics/design-d.md`
 **Status**: Draft
-**Approved**: (written when the user approves)
+**Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run typestempl**: `cargo test -p piperine-lang --test types_templates`
 **Run typesimplicit**: `cargo test -p piperine-lang --test types_implicit`
@@ -221,7 +221,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T88: `Fn(P)` bounds on modules
 
-**What**: `types/module_bounds.rs` checks a template bound to `C: Fn(P)`: the module's ports have the types and directions of `P`, in order, names not counting, a module with a result included (§8.4.5), else `E0360` naming the first port that differs; a bound `N: Tr + Fn(P)` also needs `impl Tr for` the module (`E0187` naming the module and the trait).
+**What**: `types/module_bounds.rs` checks a template bound to `C: Fn(P)`: the module's ports have the types and directions of `P`, in order, names not counting, a module with a result included (§8.4.5), else `E0360` naming the first port that differs; a bound `N: Tr + Fn(P)` also needs `impl Tr for` the module (`E0187` naming the module and the trait). **Amended 2026-11-23 (generics C gap verdicts G2, G7):** a param whose type is a parameter bounded by `Fn(P)` (`cell: C`, §8.4.1) holds a template, replacing the `P0001` naming the template form that T60 leaves and T71 pins on modules#10 and cheatsheet#8; that parameter, written `_` or left out, is inferred from the template the placement binds to the param (`MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` infers `C = Dram1T1C`), else `E0181` naming it.
 **Where**: `crates/piperine-lang/src/types/module_bounds.rs`
 **Depends on**: T87
 **Reuses**: `Bound::Callable`, `BoundCheck`
@@ -231,6 +231,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 **Done when**:
 
 - [ ] `a_module_whose_ports_match_fits_fn_p_names_not_counting` and `a_module_whose_ports_differ_is_e0360_naming_the_first` pass under `**Run typestempl**`
+- [ ] `a_fn_bounded_parameter_is_inferred_from_its_template_param` passes under `**Run typestempl**`
 - [ ] Gate check passes: Full (last task of batch B14)
 
 **Tests**: integration
@@ -326,7 +327,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T93: The template Book rows
 
-**What**: Flip modules#12 (`nch(0.13u, 2u)(d, g, s, b)` places `Bsim4` with the binned `vth0`); add the swappable MOSFET listing to the modules chapter after the binning paragraph (DD6) with an inventory row `run` and its test; narrow modules#10 and cheatsheet#8 to the bundle `Cell` (their test asserts only the bundle's refusal) and hand their §11 rows to `resolved-nets-bundles` under L25 (DD2); `inventory.tsv` and `GAPS.md` §11 follow.
+**What**: Flip modules#12 (`nch(0.13u, 2u)(d, g, s, b)` places `Bsim4` with the binned `vth0`); add the swappable MOSFET listing to the modules chapter after the binning paragraph (DD6) with an inventory row `run` and its test; narrow modules#10 and cheatsheet#8 to the bundle `Cell` (their test asserts only the bundle's refusal; from the template and bundle pins T71/T77 of phase C leave) and hand their §11 rows to `resolved-nets-bundles` under L25 (DD2); `inventory.tsv` and `GAPS.md` §11 follow.
 **Where**: `tests/book/modules.rs`
 **Depends on**: T92
 **Reuses**: `Chapter`, `Refusal`
@@ -413,7 +414,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T97: The checker and the elaborator: `temperature()` an option, every caller migrated
 
-**What**: `temperature()` is typed `Option<f64>` (`CORE_ROWS`), environment class "constant during an analysis" (allowed in `analog`, reactions, body `let`s and value inputs; a const context stays `E0188`), lowered per T95; no `multiplicity()` row is added (it is a stdlib function, T99); the POM's `BuiltinKind::ImplicitParam` rows `m` and `dtemp` leave, so the names are ordinary and binding `m` at a placement is `E0320` like any unknown param. `std/constants.msl` gains `pub const AMBIENT_TEMPERATURE: f64 = 300.15;` with its doc comment (27 °C, ngspice's default, the recommended fallback of `temperature()`), and every in-tree caller of `temperature()` outside the Book and `docs/spec` (`std/analog.msl`'s `vt()` and models, the spice-faithful models under `std/`, `tests/e2e/twins/temp_res.msl`, examples, the `piperine-lang`, `piperine-api` and `piperine-parity` test sources) reads `temperature().unwrap_or(AMBIENT_TEMPERATURE)`; every twin prints the same bytes and every parity target passes with `ToleranceContract` unedited.
+**What**: `temperature()` is typed `Option<f64>` (`CORE_ROWS`), environment class "constant during an analysis" (allowed in `analog`, reactions, body `let`s and value inputs; a const context stays `E0188`), lowered per T95; no `multiplicity()` row is added (it is a stdlib function, T99); the POM's `BuiltinKind::ImplicitParam` rows `m` and `dtemp` leave, so the names are ordinary and binding `m` at a placement is `E0320` like any unknown param. `std/constants.msl` gains `pub const AMBIENT_TEMPERATURE: f64 = 300.15;` with its doc comment (27 °C, ngspice's default, the recommended fallback of `temperature()`), and every in-tree caller of `temperature()` outside the Book and `docs/spec` (`std/analog.msl`'s `vt()` and models (user decision 2026-11-23, "Sim. E aceito os outros": `vt()` becomes `vt(t: f64) -> f64` and a model passes the temperature it chose, `vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))`; the spice-faithful models, the Book, the tests and the spec's `vt()` entry follow, and the twins keep their numbers), the spice-faithful models under `std/`, `tests/e2e/twins/temp_res.msl`, examples, the `piperine-lang`, `piperine-api` and `piperine-parity` test sources) reads `temperature().unwrap_or(AMBIENT_TEMPERATURE)`; every twin prints the same bytes and every parity target passes with `ToleranceContract` unedited.
 **Where**: `crates/piperine-lang/src/types/catalogue.rs`
 **Depends on**: T96
 **Reuses**: `CoreSig`, `elab/analog.rs`
@@ -572,6 +573,7 @@ Proof: run srctempl | test binning_places_the_chosen_model ... ok
 **C94** - A module whose port types and directions match `P` fits `C: Fn(P)`, names not counting. (GN-23, AC 1; T88, T92)
 Proof: run typestempl | test a_module_whose_ports_match_fits_fn_p_names_not_counting ... ok
 Proof: run srctempl | test a_memory_bank_places_its_cell_template ... ok
+Proof: run typestempl | test a_fn_bounded_parameter_is_inferred_from_its_template_param ... ok
 
 **C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok

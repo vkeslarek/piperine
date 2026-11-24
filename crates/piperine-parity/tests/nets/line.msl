@@ -1,0 +1,47 @@
+//! Resolution by strength from source (§22.3.1, §22.3.2): a net nature the model declares, `Line`, with the library's
+//! `Driven` and `Driven::strongest`, and drivers that put one level at one strength.
+
+/// A net whose drives resolve by strength: the library declares no nature, the model does (§22.3).
+nature Line { value: Driven }
+impl Resolve<Driven> for Line {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
+        Driven::strongest(drives)
+    }
+}
+
+/// Puts one level at one strength on the net, from the start: `level` 0 is low, 1 high, 2 X, 3 Z; `strength` 0 is
+/// `HighZ` up to 4 `Supply`.
+module Put(w: Line) {
+    level: u8 = 1;
+    strength: u8 = 3;
+    w = Driven {
+        v: if level == 0 {
+            Logic::L
+        } else if level == 1 {
+            Logic::H
+        } else if level == 2 {
+            Logic::X
+        } else {
+            Logic::Z
+        },
+        s: if strength == 0 {
+            Strength::HighZ
+        } else if strength == 1 {
+            Strength::Weak
+        } else if strength == 2 {
+            Strength::Pull
+        } else if strength == 3 {
+            Strength::Strong
+        } else {
+            Strength::Supply
+        },
+    };
+}
+
+/// Writes the level and the strength of the net at each change, as numbers.
+module Look(w: Line) { }
+digital for Look {
+    on w.changed() {
+        emit!("line", level = if w.v.is_x() { 2.0 } else if w.v.is_z() { 3.0 } else if w.v.is_high() { 1.0 } else { 0.0 }, strength = if w.s == Strength::HighZ { 0.0 } else if w.s == Strength::Weak { 1.0 } else if w.s == Strength::Pull { 2.0 } else if w.s == Strength::Strong { 3.0 } else { 4.0 });
+    }
+}

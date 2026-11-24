@@ -1,0 +1,145 @@
+//! `f16` from source (composite-values CV-29 to CV-31, part I §1.4, Appendix H.2): operators, comparisons, methods and `as`.
+//! Generated from the table of `tests/source_number_widths.rs`: that test fails when this text differs.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+const KA: f16 = 2.5;
+const KB: f16 = 0.1;
+const KC: f16 = -3.75;
+
+module Bench() {
+    signal clk: Bit;
+    signal xa: Bit<f16> = 2.5;
+    signal xb: Bit<f16> = 0.1;
+    signal xc: Bit<f16> = -3.75;
+    signal xf: Bit<f64> = 1.1;
+    signal xi: Bit<i32> = -7;
+    signal add: Bit<f16> = 0.0;
+    signal sub: Bit<f16> = 0.0;
+    signal mul: Bit<f16> = 0.0;
+    signal div: Bit<f16> = 0.0;
+    signal lt: Bit<bool> = false;
+    signal le: Bit<bool> = false;
+    signal gt: Bit<bool> = false;
+    signal ge: Bit<bool> = false;
+    signal eq: Bit<bool> = false;
+    signal ne: Bit<bool> = false;
+    signal neg: Bit<f16> = 0.0;
+    signal min: Bit<f16> = 0.0;
+    signal max: Bit<f16> = 0.0;
+    signal atan2: Bit<f16> = 0.0;
+    signal powf: Bit<f16> = 0.0;
+    signal hypot: Bit<f16> = 0.0;
+    signal rem_euclid: Bit<f16> = 0.0;
+    signal powi: Bit<f16> = 0.0;
+    signal clamp: Bit<f16> = 0.0;
+    signal floor: Bit<f16> = 0.0;
+    signal ceil: Bit<f16> = 0.0;
+    signal round: Bit<f16> = 0.0;
+    signal trunc: Bit<f16> = 0.0;
+    signal fract: Bit<f16> = 0.0;
+    signal signum: Bit<f16> = 0.0;
+    signal abs: Bit<f16> = 0.0;
+    signal sin: Bit<f16> = 0.0;
+    signal cos: Bit<f16> = 0.0;
+    signal tan: Bit<f16> = 0.0;
+    signal atan: Bit<f16> = 0.0;
+    signal sinh: Bit<f16> = 0.0;
+    signal cosh: Bit<f16> = 0.0;
+    signal tanh: Bit<f16> = 0.0;
+    signal sqrt: Bit<f16> = 0.0;
+    signal exp: Bit<f16> = 0.0;
+    signal ln: Bit<f16> = 0.0;
+    signal log10: Bit<f16> = 0.0;
+    signal log2: Bit<f16> = 0.0;
+    signal asin: Bit<f16> = 0.0;
+    signal acos: Bit<f16> = 0.0;
+    signal is_nan: Bit<bool> = false;
+    signal is_finite: Bit<bool> = false;
+    signal is_infinite: Bit<bool> = false;
+    signal to_f64: Bit<f64> = 0.0;
+    signal to_f32: Bit<f32> = 0.0;
+    signal to_f128: Bit<f128> = 0.0;
+    signal from_f64: Bit<f16> = 0.0;
+    signal from_i32: Bit<f16> = 0.0;
+    signal to_u8_a: Bit<u8> = 0;
+    signal to_u8_c: Bit<u8> = 0;
+    signal to_i32_a: Bit<i32> = 0;
+    signal to_i32_c: Bit<i32> = 0;
+    signal to_u100_a: Bit<UInt<100>> = 0;
+    signal to_u100_c: Bit<UInt<100>> = 0;
+    signal to_i100_a: Bit<Int<100>> = 0;
+    signal to_i100_c: Bit<Int<100>> = 0;
+    signal k_add: Bit<f16> = 0.0;
+    signal k_mul: Bit<f16> = 0.0;
+    signal k_div: Bit<f16> = 0.0;
+    signal k_sin: Bit<f16> = 0.0;
+    signal k_floor: Bit<f16> = 0.0;
+    let osc = Osc(clk) { f: 200M };
+}
+digital for Bench {
+    on clk.rise() {
+        add <- xa + xb;
+        sub <- xa - xb;
+        mul <- xa * xb;
+        div <- xa / xb;
+        lt <- xa < xb;
+        le <- xa <= xb;
+        gt <- xa > xb;
+        ge <- xa >= xb;
+        eq <- xa == xb;
+        ne <- xa != xb;
+        neg <- -xa;
+        min <- xa.min(xb);
+        max <- xa.max(xb);
+        atan2 <- xa.atan2(xb);
+        powf <- xa.powf(xb);
+        hypot <- xa.hypot(xb);
+        rem_euclid <- xc.rem_euclid(xa);
+        powi <- xa.powi(3);
+        clamp <- xc.clamp(xb, xa);
+        floor <- xc.floor();
+        ceil <- xc.ceil();
+        round <- xc.round();
+        trunc <- xc.trunc();
+        fract <- xc.fract();
+        signum <- xc.signum();
+        abs <- xc.abs();
+        sin <- xc.sin();
+        cos <- xc.cos();
+        tan <- xc.tan();
+        atan <- xc.atan();
+        sinh <- xc.sinh();
+        cosh <- xc.cosh();
+        tanh <- xc.tanh();
+        sqrt <- xa.sqrt();
+        exp <- xa.exp();
+        ln <- xa.ln();
+        log10 <- xa.log10();
+        log2 <- xa.log2();
+        asin <- xb.asin();
+        acos <- xb.acos();
+        is_nan <- xa.is_nan();
+        is_finite <- xa.is_finite();
+        is_infinite <- xa.is_infinite();
+        to_f64 <- xa as f64;
+        to_f32 <- xa as f32;
+        to_f128 <- xa as f128;
+        from_f64 <- xf as f16;
+        from_i32 <- xi as f16;
+        to_u8_a <- xa as u8;
+        to_u8_c <- xc as u8;
+        to_i32_a <- xa as i32;
+        to_i32_c <- xc as i32;
+        to_u100_a <- xa as UInt<100>;
+        to_u100_c <- xc as UInt<100>;
+        to_i100_a <- xa as Int<100>;
+        to_i100_c <- xc as Int<100>;
+        k_add <- KA + KB;
+        k_mul <- KA * KB;
+        k_div <- KA / KB;
+        k_sin <- KC.sin();
+        k_floor <- KC.floor();
+    }
+}

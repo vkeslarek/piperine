@@ -23,12 +23,19 @@
 //! The aggregates of phase B (tuples, arrays, structs, enum variants with fields, `Option`s, ranges
 //! and iterators, with their patterns, comparisons, field and element assignment and the rows of
 //! Appendix H) are `composite.rs`; the public `folded`, `value` and `constant` give a scalar only, a
-//! composite is given out as a [`ConstTree`] (`tree`, `constant_tree`).
+//! composite is given out as a [`ConstTree`] (`tree`, `constant_tree`). A module-body `let` written in generation folds
+//! per iteration, and to the array of its iterations' values outside its loops (`generated.rs`).
 
 mod composite;
 mod control;
+mod floats;
+mod generated;
 mod imported;
+mod integers;
+mod numbers;
 mod parsed;
+
+pub(in crate::elab) use integers::DynamicInteger;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -71,6 +78,14 @@ impl Bindings {
     pub fn bind_composite(&mut self, param: DeclId, value: Constant, tree: ConstTree) {
         self.values.insert(param, value);
         self.trees.insert(param, tree);
+    }
+
+    /// The integer value of each param bound to one, by param.
+    pub fn integers(&self) -> Vec<(DeclId, i128)> {
+        self.values.iter().filter_map(|(param, value)| match value {
+            Constant::Int(number) => Some((*param, *number)),
+            _ => None,
+        }).collect()
     }
 
     /// The value of the composite param `param`, taken apart.
@@ -136,6 +151,8 @@ pub enum ConstFault {
     /// The text `parse_table` or `parse_hex` reads does not fit the `const`'s type (`E0614`) or is not in the
     /// format (`E0706`, §22.6.4): `message` names the source and the row.
     Table { expr: ExprId, code: &'static str, message: String },
+    /// A read of a `let` written in a generation arm the evaluation does not take (§8.2.24, `E0342`): `message` names it.
+    Ungenerated { expr: ExprId, message: String },
     /// A `break`, `continue` or `return` on its way to the loop or function it leaves; the value it
     /// carries waits in the evaluator. Never reaches a caller of [`ConstEval::value`].
     Leaves { expr: ExprId, exit: Exit },
@@ -156,7 +173,7 @@ impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Ungenerated { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -182,6 +199,10 @@ pub struct ConstEval<'d, 't> {
     files: IncludedFiles,
     /// The composite values the evaluation holds (`composite.rs`).
     composites: Vec<Composite>,
+    /// The integers wider than 64 bits the evaluation holds, by handle (`numbers.rs`).
+    wides: Vec<piperine_ir::WideData>,
+    /// How many of them the elaborator has copied into the IR (`take_new_wides`).
+    wides_taken: usize,
     /// What the generic parameters of the function instance being lowered are replaced by (generics
     /// T32): empty outside an instance. Every read of the type table goes through it.
     substitution: crate::types::Substitution,
@@ -221,6 +242,8 @@ impl<'d, 't> ConstEval<'d, 't> {
             .entries()
             .filter_map(|(parameter, value)| match value {
                 GenericValue::Const(ConstTerm::Value(count)) => u128::try_from(*count).ok().map(|count| (parameter, count)),
+                // a type argument stands for its level count, which `T::WIDTH` in a length reads (§2)
+                GenericValue::Type(_) => self.parameter_width(parameter).map(|levels| (parameter, u128::from(levels))),
                 _ => None,
             })
             .chain(self.frame_params.counts())
@@ -259,6 +282,21 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.types.ty(expr).map(|ty| self.resolved(ty))
     }
 
+    /// The type of the port or signal `decl` when it is a carrier or an array of them, under the substitution.
+    pub(super) fn typed_carrier(&self, decl: DeclId) -> Option<Ty> {
+        self.types.carrier(decl).map(|ty| self.resolved(ty))
+    }
+
+    /// The type of the port or signal `decl` when it is an array of carriers, under the substitution.
+    pub(super) fn typed_carrier_array(&self, decl: DeclId) -> Option<Ty> {
+        self.types.carrier_array(decl).map(|ty| self.resolved(ty))
+    }
+
+    /// The type of the port or signal `decl` when it is an array of nodes, under the substitution.
+    pub(super) fn typed_node_array(&self, decl: DeclId) -> Option<Ty> {
+        self.types.node_array(decl).map(|ty| self.resolved(ty))
+    }
+
     /// The type of the binding `binding` under the substitution.
     pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
         self.types.local(binding).map(|ty| self.resolved(ty))
@@ -276,7 +314,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), substitution: crate::types::Substitution::new(), frame_params: Bindings::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), wides: Vec::new(), wides_taken: 0, substitution: crate::types::Substitution::new(), frame_params: Bindings::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -399,6 +437,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             Constant::Bool(_) => Err(ConstFault::Unsupported { expr, what: "a `bool` where an `f64` is required".to_string() }),
             Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where an `f64` is required".to_string() }),
             Constant::Aggregate(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where an `f64` is required".to_string() }),
+            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::Unsupported { expr, what: "a number-width value where an `f64` is required".to_string() }),
         }
     }
 
@@ -408,6 +447,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             Constant::Real(_) => Err(ConstFault::Unsupported { expr, what: "an `f64` where a `bool` is required".to_string() }),
             Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where a `bool` is required".to_string() }),
             Constant::Aggregate(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where a `bool` is required".to_string() }),
+            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::Unsupported { expr, what: "a number-width value where a `bool` is required".to_string() }),
         }
     }
 
@@ -417,8 +457,11 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     /// A literal as the constant it is: a number of its type's width, a bool, a real.
-    fn literal(&self, expr: ExprId, kind: &LitKind) -> Result<Constant, ConstFault> {
+    fn literal(&mut self, expr: ExprId, kind: &LitKind) -> Result<Constant, ConstFault> {
         let known = |value: Constant| Ok(value);
+        if let Some(number) = self.number_literal(expr, kind) {
+            return number;
+        }
         match kind {
             LitKind::Float { value, .. } => known(Constant::Real(Real::new(*value))),
             LitKind::Bool(b) => known(Constant::Bool(*b)),
@@ -455,7 +498,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// The level count of the type the substitution gives the type parameter `parameter`.
     pub(super) fn parameter_width(&self, parameter: DeclId) -> Option<u32> {
         match self.substitution.get(parameter)? {
-            GenericValue::Type(ty) => ty.levels(self.design),
+            GenericValue::Type(ty) => self.types.repr_levels(ty).or_else(|| ty.levels(self.design)),
             _ => None,
         }
     }
@@ -538,7 +581,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
         self.open_lets.push(decl);
         let outer = std::mem::take(&mut self.locals);
-        let result = self.fold(value, bindings);
+        // a `let` written in generation: the iteration's value, or the array of them outside its loops (`generated.rs`)
+        let result = self.generated_let(expr, decl, value, bindings);
         self.locals = outer;
         self.open_lets.pop();
         result.map_err(|fault| match fault {
@@ -576,6 +620,9 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A unary operator over `operand`, wrapped to the width of an integer result.
     fn unary(&mut self, expr: ExprId, op: UnOp, operand: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let value = self.fold(operand, bindings)?;
+        if let Some(number) = self.number_unary(expr, op, operand, value) {
+            return number;
+        }
         if let (Constant::Int(v), Some(width)) = (value, self.width(expr)) {
             return match op {
                 UnOp::Neg => Ok(width.wrap(v.wrapping_neg())),
@@ -605,7 +652,10 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     /// An operator over two operands, `(expression, value)` each.
-    fn known_binary(&self, expr: ExprId, op: BinOp, (lhs, left): (ExprId, Constant), (rhs, right): (ExprId, Constant)) -> Result<Constant, ConstFault> {
+    fn known_binary(&mut self, expr: ExprId, op: BinOp, (lhs, left): (ExprId, Constant), (rhs, right): (ExprId, Constant)) -> Result<Constant, ConstFault> {
+        if let Some(number) = self.number_binary(expr, op, (lhs, left), (rhs, right)) {
+            return number;
+        }
         if let (Constant::Int(a), Constant::Int(b)) = (left, right) {
             return self.integer_binary(expr, op, a, b);
         }
@@ -712,6 +762,11 @@ impl<'d, 't> ConstEval<'d, 't> {
             },
             (_, value) => value,
         };
+        if let Some(source) = self.typed(operand)
+            && let Some(number) = self.number_cast(expr, &source, value)
+        {
+            return number;
+        }
         let converted = match (self.typed(expr), value) {
             (Some(Ty::F64), Constant::Int(v)) => Constant::Real(Real::new(v as f64)),
             (Some(Ty::F64), Constant::Real(r)) => Constant::Real(r),
@@ -719,7 +774,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Some(width), Constant::Int(v)) => width.wrap(v),
                 (Some(width), Constant::Real(r)) => width.saturate(r.get()),
                 (Some(width), Constant::Bool(b)) => width.wrap(i128::from(b)),
-                (None, _) | (Some(_), Constant::Aggregate(_)) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
+                (None, _) | (Some(_), Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_)) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
             },
             (None, _) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
         };
@@ -840,6 +895,9 @@ impl<'d, 't> ConstEval<'d, 't> {
                 return result;
             }
         }
+        if let Some(levels) = self.encoded_levels(expr, recv, args, bindings) {
+            return levels;
+        }
         let receiver = self.fold(recv, bindings);
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
@@ -855,8 +913,35 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.known_method(expr, recv, args, method, receiver, values)
     }
 
+    /// `x.encode()` of a `T: Repr` parameter at `bool`, an integer or `f64` (§2 rules 2 and 3): the levels of the receiver,
+    /// least significant first, as an array of `bool`. `None` when the call is no such `encode`.
+    fn encoded_levels(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
+        let ExprKind::MethodCall { method, .. } = &self.design.expr_node(expr).kind else { return None };
+        if method.text != "encode" || !args.is_empty() || self.types.method(expr).is_some() || self.types.builtin(expr).is_some() {
+            return None;
+        }
+        let width = match self.typed(recv)? {
+            Ty::Bool => 1,
+            Ty::UInt(bits) | Ty::Int(bits) => u32::from(bits),
+            Ty::F64 => 64,
+            _ => return None,
+        };
+        let word = match self.fold(recv, bindings) {
+            Ok(Constant::Bool(high)) => i128::from(high),
+            Ok(Constant::Int(value)) => value,
+            Ok(Constant::Real(real)) => i128::from(real.get().to_bits()),
+            Ok(_) => return Some(Err(ConstFault::Unsupported { expr, what: "an `encode` of a value that is no scalar".to_string() })),
+            Err(fault) => return Some(Err(fault)),
+        };
+        let levels = (0..width).map(|level| Constant::Bool((word >> level) & 1 == 1)).collect();
+        Some(Ok(self.make(CompositeKind::Array, levels)))
+    }
+
     /// A catalogue row applied to constants.
-    fn known_method(&self, expr: ExprId, recv: ExprId, args: &[ExprId], method: Method, receiver: Constant, values: Vec<Constant>) -> Result<Constant, ConstFault> {
+    fn known_method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], method: Method, receiver: Constant, values: Vec<Constant>) -> Result<Constant, ConstFault> {
+        if let Some(number) = self.number_method(expr, recv, args, method, receiver, &values) {
+            return number;
+        }
         let crossed = || Err(ConstFault::Panic { expr, what: "a `clamp` whose lower bound is above its upper bound".to_string() });
         if let Constant::Int(x) = receiver {
             let ints: Vec<i128> = values.iter().filter_map(|v| if let Constant::Int(i) = v { Some(*i) } else { None }).collect();
@@ -924,10 +1009,11 @@ struct Width {
 }
 
 impl Width {
+    /// The width of an integer type of at most 64 bits; a wider one is a `DynamicInteger` (`numbers.rs`).
     fn of(ty: &Ty) -> Option<Width> {
         match *ty {
-            Ty::UInt(n) => Some(Width { bits: u32::from(n), signed: false }),
-            Ty::Int(n) => Some(Width { bits: u32::from(n), signed: true }),
+            Ty::UInt(n) if n <= 64 => Some(Width { bits: n, signed: false }),
+            Ty::Int(n) if n <= 64 => Some(Width { bits: n, signed: true }),
             _ => None,
         }
     }

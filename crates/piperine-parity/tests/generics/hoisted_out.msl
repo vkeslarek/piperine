@@ -1,0 +1,44 @@
+//! Generic modules with a carrier at an `out` port (generics phase C, part III §8.3.12, part II §5.2.6): `Hold` has a value
+//! input, so it is hoisted into the module that places it and its `out` ports are that module's own carriers; `Bank` is placed
+//! over a whole array of carriers and over a row of a nested one (a window) at a port of length `ROWS`. A 10 GHz oscillator gives the edges.
+//! The expected values are computed by Rust in `source_generic_modules.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+// A register with a value input `gain`: hoisted. `ready` has a first value of its own, `out q` has none.
+module Hold<T: Repr + Default>(in clk: Bit, in d: Bit<T>, out q: Bit<T>, out ready: Bit = false, gain: f64) {}
+digital<T> for Hold<T> { on clk.rise() { q <- d; ready <- gain > 1.0; } }
+
+module HoldBench() {
+    signal clk: Bit;
+    signal d: Bit<Option<u8>> = Some(7);
+    signal q: Bit<Option<u8>>;
+    signal ready: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let hold = Hold(clk, d, q, ready, 2.0);
+}
+digital for HoldBench { on clk.rise() { emit!("seen", value = q.unwrap_or(0u8), some = q.is_some(), ready = ready); } }
+
+// A bank writes every element of its `out` array at the first edge.
+module Bank<const ROWS: usize>(in clk: Bit, out word: [Bit; ROWS] = [false; ROWS]) {}
+digital<ROWS> for Bank<ROWS> { on clk.rise() { for k in 0..ROWS { word[k] <- true; } } }
+
+// Holds its `out` array at the first value: the row of the bench no `Bank` writes needs a driver of its own (§3.3.4).
+module Idle<const ROWS: usize>(out word: [Bit; ROWS] = [false; ROWS]) {}
+
+module WindowBench() {
+    signal clk: Bit;
+    signal whole: [Bit; 4];
+    signal grid: [[Bit; 3]; 2];
+    let osc = Osc(clk) { f: 10G };
+    let all = Bank::<4>(clk, whole);
+    let row = Bank::<3>(clk, grid[1]);
+    let rest = Idle::<3>(grid[0]);
+}
+digital for WindowBench {
+    on clk.rise() {
+        emit!("seen", w0 = whole[0], w1 = whole[1], w2 = whole[2], w3 = whole[3],
+              a0 = grid[0][0], a1 = grid[0][1], a2 = grid[0][2], b0 = grid[1][0], b1 = grid[1][1], b2 = grid[1][2]);
+    }
+}

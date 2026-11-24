@@ -203,18 +203,23 @@ impl Checker<'_> {
         }
     }
 
-    /// The `digital` block `behavior`: the head of each reaction is an `Event` (`E0430`). A
-    /// generation in it is outside the subset; a reaction body is typed by `reaction.rs`.
+    /// The `digital` block `behavior`: the head of each reaction is an `Event` (`E0430`), and a generation `for`/`if` around
+    /// reactions is typed per iteration (GN-19); a reaction body is typed by `reaction.rs`.
     pub(super) fn digital_block(&mut self, behavior: DeclId) {
         let block = self.design.decl_data(behavior).clone();
         debug_assert!(matches!(&block.kind, DeclKind::Behavior(b) if b.kind == BehaviorKind::Digital));
         for child in block.children.iter().copied() {
-            let item = self.design.decl_data(child).clone();
-            match &item.kind {
-                DeclKind::Reaction(r) => self.reaction(&r.clone(), item.file),
-                DeclKind::Generation(_) => self.unsupported(item.file, item.span, "generation `for`/`if` in a `digital` block"),
-                _ => {}
-            }
+            self.digital_item(child);
+        }
+    }
+
+    /// One item of a `digital` block, or of a generation in it: a reaction, or a generation whose items are these.
+    fn digital_item(&mut self, child: DeclId) {
+        let item = self.design.decl_data(child).clone();
+        match &item.kind {
+            DeclKind::Reaction(r) => self.reaction(&r.clone(), item.file),
+            DeclKind::Generation(_) => self.generation(child, true, |this, inner| this.digital_item(inner)),
+            _ => {}
         }
     }
 }

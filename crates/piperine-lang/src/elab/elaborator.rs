@@ -20,7 +20,7 @@ use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
 use crate::types::Types;
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Elaborator<'d> {
     design: &'d Design,
 }
@@ -74,6 +74,12 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) plans: BTreeMap<BodyKey, ModulePlan>,
     /// The params of each reached module with a body, planned before any body is lowered.
     pub(super) param_plans: BTreeMap<DeclId, Vec<ParamPlan>>,
+    /// The params of each instance of a generic module requested so far, planned under its arguments (`generic_bodies.rs`).
+    pub(super) instance_param_plans: BTreeMap<super::instances::Instance, Vec<ParamPlan>>,
+    /// How deep each body requested so far sits in the chain of module instances that asked for it (`generic_bodies.rs`).
+    pub(super) body_depths: BTreeMap<BodyKey, usize>,
+    /// The body being lowered.
+    pub(super) lowering: Option<BodyKey>,
     /// The key params of each reached module with a body (`structural.rs`).
     pub(super) keys: KeyParams,
     /// The variants of keyed bodies requested so far.
@@ -86,12 +92,14 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) frames: Vec<Frame>,
     /// The index each placement of the body being lowered takes among its children (`reach.rs`).
     pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
+    /// The items of the body being lowered that are written inside generation, and how each unrolls (`generation.rs`).
+    pub(super) generated: super::generation::GeneratedItems,
     /// The reach frame of each child a body reads: by the frame that reads it and the placement.
     /// The values of the key params of the body being lowered: what its initial values fold over.
     pub(super) body_keys: Bindings,
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
-    pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
+    pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
     /// The diverging expressions lowered so far (`exits.rs`).
     pub(super) divergences: Divergences,
     /// How many placements of a module an unrolled loop has hoisted so far, by the frame that
@@ -129,12 +137,16 @@ impl<'d, 't> Elaboration<'d, 't> {
             expr_origins: Vec::new(),
             plans: BTreeMap::new(),
             param_plans: BTreeMap::new(),
+            instance_param_plans: BTreeMap::new(),
+            body_depths: BTreeMap::new(),
+            lowering: None,
             keys: KeyParams::default(),
             overrides,
             body_variants: BodyVariants::default(),
             structure: Structure::default(),
             frames: Vec::new(),
             child_indices: BTreeMap::new(),
+            generated: super::generation::GeneratedItems::default(),
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
@@ -150,6 +162,15 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
+    /// Copies the wide integer constants the evaluator made into the IR, in handle order, so each
+    /// `Constant::Wide` and `Expr::Wide` the elaboration emitted names the entry it was made as
+    /// (`consts/numbers.rs`).
+    fn sync_wides(&mut self) {
+        for data in self.consts.take_new_wides() {
+            self.ir.wide(data);
+        }
+    }
+
     fn run(mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
         if self.refuse_value_inputs(top) {
             return Err(self.diagnostics);
@@ -158,6 +179,8 @@ impl<'d, 't> Elaboration<'d, 't> {
         // places it. Its natures are still the IR's before any body.
         let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
+        // a generic module has no body of its own: each instance a placement makes is one (`generic_bodies.rs`)
+        let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.is_generic_module(*m)).collect();
         self.read_included_files();
         self.build_type_arena();
         self.plan_params(&modules);
@@ -176,6 +199,8 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.lower_pending_bodies();
         self.pad_child_nodes();
         let top_instance = self.place_top(top);
+        // a body variant the placement asked for after the first padding (the top's own, keyed by a host override) is padded too
+        self.pad_child_nodes();
         self.build_resolvers();
         let reprs = self.lower_hand_written_reprs();
         self.add_functions();
@@ -187,6 +212,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
+                self.sync_wides();
                 let ir = self.ir.finish(instance);
                 self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
                 self.diagnostics.extend(Self::loop_diagnostics(self.design, top, &ir));

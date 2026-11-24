@@ -1,14 +1,17 @@
 //! Modules: params, ports and signals as typed nodes, module-body `let`s, and the placement of
 //! one module in another (§8.1): node arguments by nature and count, param block by type.
 
+use std::collections::BTreeSet;
+
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::coverage::ElementCoverage;
 use super::derives::DerivedTrait;
 use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
-use super::{Callee, Ty};
+use super::{Callee, Substitution, Ty};
 
 impl Checker<'_> {
     /// A diagnostic of a rule of the specification that carries its own code.
@@ -80,6 +83,8 @@ impl Checker<'_> {
             Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
             // An integer, enum, `Option` or composite param (PI-01 to PI-03, CV-18).
             plain if self.is_param_type(&plain) => Some(plain),
+            // a param of a type parameter (`reset: T`, §8.1.15): typed under the parameter's bounds
+            Ty::Param(parameter) if self.is_value_type_parameter(parameter) => Some(Ty::Param(parameter)),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -122,7 +127,15 @@ impl Checker<'_> {
     pub(super) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
         let ty = self.port_type(signal.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
-            self.carriers.insert(decl, carrier.clone());
+            let held = self.generated_type(decl, carrier.clone());
+            self.carriers.insert(decl, held);
+        }
+        // a generated node is an array of nodes, one level for each generation `for` around it (§8.2.23)
+        if let Some(node @ Ty::Node(_)) = ty.as_ref()
+            && !self.generation_loops(decl).is_empty()
+        {
+            let held = self.generated_type(decl, node.clone());
+            self.carriers.insert(decl, held);
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
         self.initial_reads(init);
@@ -143,7 +156,7 @@ impl Checker<'_> {
 
     /// `let x = value;` in a module body: the binding takes the type of the value (a placement
     /// gives it the placed module).
-    pub(super) fn module_let(&mut self, data: &LetData) {
+    pub(super) fn module_let(&mut self, decl: DeclId, data: &LetData) {
         let pat = self.design.pat_node(data.pat).clone();
         let file = self.design.decl_data(pat.owner).file;
         if matches!(pat.kind, PatKind::Tuple(_)) {
@@ -167,7 +180,9 @@ impl Checker<'_> {
                 self.poisoned.insert(*binding);
             }
             Some(ty) => {
-                self.locals.insert(*binding, ty);
+                // inside a generation `for` the binding is the array of its element (§8.2.23)
+                let held = self.generated_type(decl, ty);
+                self.locals.insert(*binding, held);
             }
             None => {
                 self.poisoned.insert(*binding);
@@ -220,18 +235,53 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if self.design.decl_data(module).generics_span.is_some() {
-            self.unsupported(file, node.span, "generic module");
-            return None;
-        }
-        self.reach(module);
+        // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
+        self.placing.push(Some(module));
+        // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
         self.callees.insert(expr, Callee::Module(module));
         self.exprs[callee.index()] = Some(Ty::Module(module));
-        self.placing.push(Some(module));
+        let substitution = if self.design.decl_data(module).generics_span.is_some() {
+            let Some(given) = self.generic_placement(expr, *callee, module, args) else {
+                self.placing.pop();
+                self.keep_handed_after_failure(module, args);
+                return None;
+            };
+            Some(given)
+        } else {
+            None
+        };
+        self.reach(module);
+        let outer = std::mem::replace(&mut self.placement_substitution, substitution.clone());
         self.connections(expr, module, args, file);
+        self.placement_substitution = outer;
         self.placing.pop();
-        self.param_block(&fields);
-        self.placement_type(module)
+        self.param_block(&fields, substitution.as_ref());
+        let placed = self.placement_type(module)?;
+        Some(substitution.map_or(placed.clone(), |substitution| substitution.apply(&placed)))
+    }
+
+    /// The placement of `module` failed its generic arguments and typed no connection: the carriers it was to take at an `out`
+    /// port stay handed over, so the failure is reported once, at the placement, and not again as a carrier nothing drives
+    /// (§5.2.6; the placement's own diagnostic is the cause).
+    fn keep_handed_after_failure(&mut self, module: DeclId, args: &[Arg]) {
+        let outs: Vec<Option<crate::msl::ast::Dir>> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+            DeclKind::Port(p) => Some(p.dir),
+            _ => None,
+        }).collect();
+        let bound = crate::pom::PortArguments::bind(self.design, module, args);
+        for (index, dir) in outs.into_iter().enumerate() {
+            let Some(arg) = bound.at(index) else { continue };
+            if dir != Some(crate::msl::ast::Dir::Out) {
+                continue;
+            }
+            if let Some((decl, Ty::Carrier { .. })) = self.declared_port(arg.value) {
+                let (file, span) = (self.file_of_expr(arg.value), self.design.expr_node(arg.value).span);
+                // a placement is typed once per path that reaches it: it hands the carrier over once
+                if !self.book.handed.iter().any(|(held, _, at, _)| *held == decl && *at == span) {
+                    self.book.handed.push((decl, super::element_target::Element::Whole, span, file));
+                }
+            }
+        }
     }
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
@@ -268,17 +318,13 @@ impl Checker<'_> {
             DeclKind::Port(p) => Some((*c, p.ty, p.dir)),
             _ => None,
         }).collect();
-        let named = args.iter().any(|a| a.name.is_some());
-        if named {
-            for arg in args.iter().filter(|a| a.name.is_some()) {
-                self.unsupported(file, arg.span, "named connection");
-            }
-        }
-        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type(*ty)).collect();
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type_under_placement(*ty)).collect();
         let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
-        if args.len() < min || args.len() > max {
+        // a named connection that is no trailing `Option` input is `E0140` from the POM (`classify.rs`), before this check
+        let positional = args.iter().filter(|arg| arg.name.is_none()).count();
+        if positional < min || args.len() > max {
             let span = self.design.expr_node(expr).span;
             let name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
             if call_rule {
@@ -288,20 +334,29 @@ impl Checker<'_> {
                 let message = format!("`{name}` has {} port(s), found {} connection(s)", ports.len(), args.len());
                 self.coded(file, "E0312", span, message, "wrong number of connections");
             }
-        }
-        let counted = args.len() >= min && args.len() <= max;
-        for (i, arg) in args.iter().enumerate() {
-            let port = ports.get(i).copied().zip(kinds.get(i).cloned()).filter(|_| !named && counted);
-            let Some(((port_decl, _, dir), kind)) = port else {
+            for arg in args {
                 self.infer(arg.value);
-                continue;
-            };
+            }
+            return;
+        }
+        let bound = crate::pom::PortArguments::bind(self.design, module, args);
+        for (index, kind) in kinds.iter().cloned().enumerate() {
+            let Some(arg) = bound.at(index) else { continue };
+            let (port_decl, _, dir) = ports[index];
             match kind {
                 Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
                     self.connect(arg.value, port_decl, &expected, &found);
+                }
+                // a nature parameter of the enclosing generic module, passed on to a placement: a node of that nature, or `gnd`
+                Some(expected) if self.is_nature_parameter(&expected) => {
+                    let Some(found) = self.infer(arg.value) else { continue };
+                    if found != expected && found != Ty::AnyNode {
+                        let span = self.design.expr_node(arg.value).span;
+                        self.mismatch(file, span, &expected, &found);
+                    }
                 }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
@@ -393,7 +448,8 @@ impl Checker<'_> {
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
-        let element = self.element_named_by(arg);
+        let named = self.element_named_by(arg);
+        let element = self.judged_element(arg, decl, named);
         self.book.handed.push((decl, element, span, file));
     }
 
@@ -455,10 +511,12 @@ impl Checker<'_> {
     }
 
     /// A carrier handed to an `out` port has one drive, the instance's: a second hand-over, or
-    /// a definition or a commit of this module, is `E0220`; an initial value is `E0223`.
+    /// a definition or a commit of this module, is `E0220`. An initial value is the value of the elements no `out` port
+    /// holds (§5.2.6, §8.2.21), so it is `E0223` only once every element is handed (`handed_initial_values`).
     pub(super) fn handed_drives(&mut self) {
         let handed = std::mem::take(&mut self.book.handed);
         let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
+        let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             // a resolved carrier has as many drives as modules hand it down or define it (§5.2.1): nothing here is a second one
@@ -467,7 +525,9 @@ impl Checker<'_> {
             }
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
-            let driven_here = self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl) || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            // an element only the elaborator folds is judged there against the whole-carrier drives too (`elab/drive_overlaps.rs`)
+            let whole_drive = element != super::element_target::Element::Unfolded && (self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl));
+            let driven_here = whole_drive || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
             let nature = match self.carriers.get(&decl).map(Ty::innermost) {
                 Some(Ty::Carrier { nature, .. }) => self.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
                 _ => String::new(),
@@ -476,8 +536,32 @@ impl Checker<'_> {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a carrier of `{nature}` has one drive, since `{nature}` has no `impl Resolve` to combine two (§5.2.1)"), "a second drive");
             } else if driven_here {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too: a carrier of `{nature}` has one drive, since `{nature}` has no `impl Resolve` to combine two (§5.2.6)"), "a second drive");
-            } else if self.has_initial(decl) {
-                self.coded(file, "E0223", span, format!("`{name}` has an initial value and is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
+            } else {
+                clean.push((decl, element, span, file));
+            }
+        }
+        self.handed_initial_values(&clean);
+    }
+
+    /// `E0223` for a carrier with an initial value that `out` ports hold every element of: the initial value would apply
+    /// to no element, the instance holds the drive (§5.2.6). With an element no `out` port holds, the initial value is
+    /// that element's. A length not known yet leaves the judgement to the elaborator of each instance.
+    fn handed_initial_values(&mut self, handed: &[(DeclId, super::element_target::Element, Span, FileId)]) {
+        let mut judged = BTreeSet::new();
+        for (decl, _, span, file) in handed {
+            if !judged.insert(*decl) || !self.has_initial(*decl) {
+                continue;
+            }
+            let Some(held) = self.carriers.get(decl).cloned() else { continue };
+            let mut coverage = ElementCoverage::of(&held);
+            for (_, element, _, _) in handed.iter().filter(|(carrier, ..)| carrier == decl) {
+                coverage.cover(*element);
+            }
+            if coverage.is_deferred() {
+                self.deferred_coverage.handed_initial.insert(*decl);
+            } else if coverage.is_complete() {
+                let name = self.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                self.coded(*file, "E0223", *span, format!("`{name}` has an initial value and every element is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
             }
         }
     }
@@ -486,7 +570,8 @@ impl Checker<'_> {
     /// one-driver nature with no initial value needs a value type that implements `Default`, else `E0187` at the
     /// declaration naming the carrier and `Default` (once per declaration). The one driver may specify the value
     /// instead: an undelayed definition of the carrier, or an `out` port of a child instance it is handed to
-    /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An `in` port is driven by its caller.
+    /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An array of carriers is judged per element: the message
+    /// names the elements no driver names (`coverage.rs`). An `in` port is driven by its caller.
     pub(super) fn missing_initial_values(&mut self, children: &[DeclId]) {
         for decl in children.iter().copied() {
             let item = self.design.decl_data(decl).clone();
@@ -495,9 +580,20 @@ impl Checker<'_> {
                 DeclKind::Port(port) => port.dir == Some(crate::msl::ast::Dir::Out),
                 _ => false,
             };
-            let Some(Ty::Carrier { nature, value }) = self.carriers.get(&decl).cloned() else { continue };
+            let Some(held) = self.carriers.get(&decl).cloned() else { continue };
+            // an array of carriers has the rule of its elements: every element starts at the `Default` of the carried type
+            let Some(Ty::Carrier { nature, value }) = (match held.innermost() {
+                carrier @ Ty::Carrier { .. } => Some(carrier.clone()),
+                _ => None,
+            }) else {
+                continue;
+            };
             if NatureRules::of(self.design, nature).resolved {
                 self.missing_resolved_initial_value(decl);
+                continue;
+            }
+            // an array with no element holds nothing to start
+            if held.has_fixed_zero_length() {
                 continue;
             }
             // a carrier with no initial value starts at its `Default`: a hand-written one is a function the elaborator folds
@@ -507,13 +603,16 @@ impl Checker<'_> {
             if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
-            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _, _)| *carrier == decl);
-            if specified_by_the_driver {
+            // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
+            let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let coverage = self.driven_coverage(decl, &held);
+            if coverage.is_deferred() {
+                self.deferred_coverage.missing_initial.insert(decl);
                 continue;
             }
-            let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let Some(unnamed) = coverage.unnamed(&name) else { continue };
             let found = value.name(self.design);
-            let message = format!("`{name}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
+            let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
         }
     }
@@ -522,13 +621,13 @@ impl Checker<'_> {
     /// are checked like a placement's block, and its type is the module it names, so a template
     /// of another module is a mismatch (`E0180`) naming both.
     pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
-        self.param_block(fields);
+        self.param_block(fields, None);
         self.exprs[expr.index()] = Some(Ty::Module(module));
         Some(Ty::Module(module))
     }
 
     /// `{ name: value }` of a placement: each value against the declared type of its param.
-    pub(super) fn param_block(&mut self, fields: &[FieldInit]) {
+    pub(super) fn param_block(&mut self, fields: &[FieldInit], substitution: Option<&Substitution>) {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
@@ -538,7 +637,9 @@ impl Checker<'_> {
                 },
                 _ => None,
             };
-            match param.and_then(|t| self.lower_type(t)) {
+            // a param of a generic module's type `T` takes the type the placement gave `T`
+            let declared = param.and_then(|t| self.lower_type(t)).map(|ty| substitution.map_or(ty.clone(), |given| given.apply(&ty)));
+            match declared {
                 Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
                 // a value of `T` bound to an `Option<T>` param is `Some` of it (§3.2.3, PI-03 AC 2)
                 Some(Ty::Option(inner)) => {

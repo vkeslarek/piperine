@@ -453,26 +453,29 @@ fn a_zero_potential_enabled_through_a_value_input_merges_the_nodes() {
 }
 
 #[test]
-fn the_stdlib_idt_waits_for_generics() {
-    // AS-05 AC 1 (Q2): the stdlib `idt` of section 22.2.8 is generic (`idt<S: Nature = State>`), which
-    // `generics` (L30) owns; until then a placement of it is refused by name, never run as a different
-    // module. The local `Integ` (`tests/structure/modules.msl`) proves the mechanism.
+fn the_stdlib_idt_is_the_generic_module_at_its_default_nature() {
+    // AS-05 AC 1 (Q2), generics T71: the stdlib `idt` of section 22.2.8 is generic (`idt<S: Nature = State>`) and is
+    // placed at its default nature: its `signal y: S` is a node of `State` hoisted into the placing body
     let src = "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> idt(1.0, 0.0); }";
-    let design = Elab::design(src);
-    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic module is refused");
-    assert_eq!(Elab::codes(&found), ["P0001"]);
-    assert!(found[0].diagnostic.message.contains("generic"), "the refusal names the form: {}", found[0].diagnostic.message);
+    let ir = Elab::ir(src, "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("the body Top");
+    assert!(top.nodes().iter().any(|node| node.name.contains("idt$0.y")), "the integral's node is hoisted: {:?}", top.nodes().iter().map(|n| &n.name).collect::<Vec<_>>());
+    let state = ir.natures().find(|nature| nature.name() == "State");
+    assert!(state.is_some(), "the nature `State` is the node's");
 }
 
 #[test]
-fn the_water_model_waits_for_generics() {
-    // AS-05 AC 2 (Q2): `Water` of Part IV section 13 reads `idt::<Heat>`, a generic instantiation: refused
-    // by name until `generics` merges.
+fn the_water_model_places_idt_and_waits_for_the_flow_probe() {
+    // AS-05 AC 2 (Q2), generics T71: `Water` of Part IV section 13 reads `idt::<Heat>`, an instance of the generic module at
+    // a nature the model declares. The generic placement is typed and lowered; what is refused is `pwr(t)`, the flow of a
+    // flow branch read as a value (GAPS L73)
     let src = "#[derive(Repr, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase;\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
-    let design = Elab::design(src);
-    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic instantiation is refused");
-    assert!(Elab::codes(&found).iter().all(|c| c == "P0001"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
-    assert!(found.iter().any(|d| d.diagnostic.message.contains("generic")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    let found = Elab::run(src, "Top");
+    let given: Vec<(String, String)> = match &found {
+        Ok(_) => Vec::new(),
+        Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+    };
+    assert_eq!(given, [("P0001".to_string(), "flow probe read as a value is not supported yet".to_string())], "the one refusal left");
 }
 
 #[test]

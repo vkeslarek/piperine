@@ -142,7 +142,8 @@ impl Text {
     /// The name of an element of an array of nodes (`bl[2]`, `g[1][0]`) adds `[` and `]`, printed `_i` and `_j`
     /// (`bl_i2_j`). The name of a
     /// generic instance (design D8) adds `::<` and `<` printed `_g`, `, ` printed `_c` and `>`
-    /// printed `_e`: `swap::<f64>` is `swap_gf64_e`, `Pair<Pair<f64>, u8>` is `Pair_gPair_gf64_e_cu8_e`
+    /// printed `_e`; a tuple or array argument (`(u8, bool)`, `[u8; 2]`) adds `(` `)` `[` `]` and `; ` printed `_t`, `_z`, `_a`, `_y` and
+    /// `_l`: `word::<(u8, bool)>` is `word_g_tu8_cbool_z_e` (T54). `swap::<f64>` is `swap_gf64_e`, `Pair<Pair<f64>, u8>` is `Pair_gPair_gf64_e_cu8_e`
     /// and `Pair<Pair<f64, u8>>` is `Pair_gPair_gf64_cu8_e_e`, so nested argument lists spell apart. Two names of one owner that
     /// spell alike are refused where the owner is printed, never shadowed. A front-end name is also
     /// lowercased: an unnamed placement is `<module>$<k>`, with the module's own capital (`Lag$0.y`,
@@ -175,7 +176,7 @@ impl Text {
     /// variant's struct, `StartedBench_vv0_q0_d6`, which `LibraryPrinter::camel` turns into
     /// `StartedBenchVv0Q0D6`; a lowercase type name is a rustc warning).
     pub fn spelled_cased(name: &str) -> String {
-        name.replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m").replace('+', "_p").replace('[', "_i").replace(']', "_j")
+        name.replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m").replace('+', "_p").replace("; ", "_l").replace('(', "_t").replace(')', "_z").replace('[', "_i").replace(']', "_j")
     }
 }
 
@@ -197,6 +198,10 @@ mod tests {
         // `::<` and `<` are `_g`, `, ` is `_c`, `>` is `_e`; nested argument lists differ
         assert_eq!(Text::spelled_cased("swap::<f64>"), "swap_gf64_e");
         assert_eq!(Text::spelled_cased("widen::<3, u8>"), "widen_g3_cu8_e");
+        // an instance at a tuple or an array is still one Rust identifier (T54): `( )` are `_t` `_z`, `; ` is `_l`, and the
+        // brackets are `_i` `_j`, the marks `main` gave them for element names (design D8, amended at the B10 merge)
+        assert_eq!(Text::spelled_cased("word::<(u8, bool)>"), "word_g_tu8_cbool_z_e");
+        assert_eq!(Text::spelled_cased("word::<[u8; 2]>"), "word_g_iu8_l2_j_e");
         assert_ne!(Text::spelled_cased("Pair<Pair<f64>, u8>"), Text::spelled_cased("Pair<Pair<f64, u8>>"));
     }
 

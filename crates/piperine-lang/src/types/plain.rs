@@ -5,7 +5,9 @@
 //! are never plain, so a host can read and write every leaf of a plain value.
 
 use super::check::Checker;
-use super::{Nominal, Ty};
+use crate::pom::DeclId;
+
+use super::{Bound, Nominal, Ty};
 
 impl Checker<'_> {
     /// Whether `ty` is a struct, a tuple, an array or an `Option` all of whose leaves are plain
@@ -20,16 +22,22 @@ impl Checker<'_> {
     /// `f64`, `bool` and a module are the caller's.
     pub(super) fn is_param_type(&mut self, ty: &Ty) -> bool {
         match ty {
-            Ty::UInt(_) | Ty::Int(_) => true,
+            Ty::UInt(_) | Ty::Int(_) | Ty::F32 | Ty::F16 | Ty::F128 => true,
             Ty::Enum(_) => true,
             other => self.is_plain_composite(other, false),
         }
     }
 
+    /// Whether the generic parameter `parameter` stands for a value type: not a nature (a node's) and not a template
+    /// (`C: Fn(Cell)`, phase D), so a `param` of it is an ordinary value (§8.1.15).
+    pub(super) fn is_value_type_parameter(&mut self, parameter: DeclId) -> bool {
+        !self.bounds_of(parameter).contains(&Bound::Nature) && self.callable_of(parameter).is_none()
+    }
+
     /// Whether every leaf of `ty` is a plain scalar, or `str` when `text` is allowed.
     fn is_plain(&mut self, ty: &Ty, text: bool) -> bool {
         match ty {
-            Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Unit => true,
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Unit => true,
             Ty::Str => text,
             Ty::Tuple(items) => items.iter().all(|item| self.is_plain(item, text)),
             Ty::Array(element, _) | Ty::Option(element) => self.is_plain(element, text),

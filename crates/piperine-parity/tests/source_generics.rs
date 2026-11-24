@@ -267,6 +267,12 @@ impl Count {
         let gray = self.n ^ (self.n >> 1);
         [gray & 1 == 1, gray & 2 == 2]
     }
+
+    /// `decode` of the model: the Gray code read back, `Some` for every pattern of the two levels.
+    fn decode(levels: [bool; 2]) -> Option<Count> {
+        let gray = u8::from(levels[0]) + 2 * u8::from(levels[1]);
+        Some(Count { n: gray ^ (gray >> 1) })
+    }
 }
 
 /// The byte of a carrier of a hand-written layout: level `k` is bit `k` (the narrowest unsigned integer of the levels).
@@ -448,4 +454,171 @@ fn a_bound_that_writes_the_trait_arguments_runs_the_impl_of_that_list() {
     // own result type
     let (real, byte): (f64, u8) = (Convert::<f64>::to(Cell), Convert::<u8>::to(Cell));
     RUN.assert_commits("trait_args.msl", &["a0", "a1"], &[CarrierBytes::real(real), CarrierBytes::byte(byte)]);
+}
+
+/// `struct Trio { a: u8, b: bool, c: u8 }` of the model `levels.msl`.
+struct Trio {
+    a: u8,
+    b: bool,
+    c: u8,
+}
+
+impl Trio {
+    /// The levels of §2 rule 3, field after field, least significant level first, packed into a word.
+    fn word(&self) -> u64 {
+        u64::from(self.a) | (u64::from(self.b) << 8) | (u64::from(self.c) << 9)
+    }
+}
+
+#[test]
+fn encode_and_decode_run_at_every_layout() {
+    // GN-01 AC 1 residual (GAPS L70), §2 rules 2 to 6 and 9: the levels `encode` gives are what Rust computes (`f64::to_bits`,
+    // two's complement, the fields of a struct and the items of a tuple or an array in order, the tag of an enum), every
+    // value comes back through `decode`, and a tag no variant names is `None`
+    let words = [
+        (-1.5f64).to_bits(),
+        f64::INFINITY.to_bits(),
+        u64::from((-3i8) as u8),
+        Trio { a: 5, b: true, c: 200 }.word(),
+        // `Mode::Z` is the tag 2 of three variants (two levels)
+        2,
+        u64::from(7u8) | (1 << 8),
+        u64::from(3u8) | (u64::from(4u8) << 8),
+    ];
+    let names = ["w0", "w1", "w2", "w3", "w4", "w5", "w6"];
+    let wanted: Vec<Vec<u8>> = words.iter().map(|word| CarrierBytes::unsigned_64(*word)).collect();
+    RUN.assert_commits("levels.msl", &names, &wanted);
+    let returned: Vec<Vec<u8>> = (0..7).map(|_| CarrierBytes::byte(1)).collect();
+    RUN.assert_commits("levels.msl", &["r0", "r1", "r2", "r3", "r4", "r5", "r6"], &returned);
+    // tag 3 names no variant of the three-variant enum, tag 1 names `Y`
+    RUN.assert_commits("levels.msl", &["n0", "n1"], &[CarrierBytes::byte(0), CarrierBytes::byte(1)]);
+}
+
+/// The levels a cast moves, and what `cast` and `same` give them: the contract of part I §22.1.3 and §22.1.4, in Rust, as the
+/// removed lowering computed it (`Expr::LevelCast` and `Expr::Same`).
+struct LevelContract;
+
+impl LevelContract {
+    /// The levels of `value` as `width` booleans, least significant first.
+    fn levels(value: u64, width: u32) -> Vec<bool> {
+        (0..width).map(|k| (value >> k) & 1 == 1).collect()
+    }
+
+    /// The value of `width` levels read back as an integer.
+    fn word(levels: &[bool]) -> u64 {
+        levels.iter().enumerate().fold(0, |word, (k, level)| word | (u64::from(*level) << k))
+    }
+
+    /// `Mode` of the model: the tag of one of its three variants, `None` for a tag no variant names (§22.1.3).
+    fn mode(tag: u64) -> Option<u8> {
+        (tag < 3).then_some(tag as u8)
+    }
+
+    /// `cast::<uW, Mode>`: the two low levels are the tag.
+    fn to_mode(value: u64) -> u8 {
+        Self::mode(Self::word(&Self::levels(value, 2))).unwrap_or(9)
+    }
+
+    /// `cast::<u4, (Mode, u2)>`: the tag from levels 0 and 1, then the `u2` from levels 2 and 3, `99` for no tag.
+    fn to_tuple(value: u64) -> u8 {
+        let levels = Self::levels(value, 4);
+        Self::mode(Self::word(&levels[..2])).map_or(99, |tag| tag * 10 + Self::word(&levels[2..]) as u8)
+    }
+
+    /// `cast::<u4, [Mode; 2]>`: two tags of two levels each, `99` when either names no variant.
+    fn to_array(value: u64) -> u8 {
+        let levels = Self::levels(value, 4);
+        match (Self::mode(Self::word(&levels[..2])), Self::mode(Self::word(&levels[2..]))) {
+            (Some(first), Some(second)) => first * 10 + second,
+            _ => 99,
+        }
+    }
+
+    /// `same`: equal level by level, so `0.0` and `-0.0` differ and a NaN equals itself (§22.1.2 rule 2).
+    fn same(a: f64, b: f64) -> u8 {
+        u8::from(a.to_bits() == b.to_bits())
+    }
+}
+
+#[test]
+fn cast_and_same_from_source_agree_with_the_removed_lowering() {
+    // GN-27 AC 1, GN-01 AC 1 (T55): the source-compiled `cast` gives `Some` for a tag a variant names and `None` for one it
+    // does not, and `same` compares level by level, with the values the removed `LevelCast`/`Same` lowering gave
+    let casts = [
+        // `Mode::Z` is the tag 2, the `u2` two
+        CarrierBytes::byte(LevelContract::word(&LevelContract::levels(2, 2)) as u8),
+        CarrierBytes::byte(LevelContract::to_mode(2)),
+        CarrierBytes::byte(LevelContract::to_mode(3)),
+        // 200 as `i8` is negative
+        CarrierBytes::byte(u8::from((200u8 as i8) < 0)),
+    ];
+    RUN.assert_commits("casts.msl", &["c0", "c1", "c2", "c3"], &casts);
+    let same = [
+        CarrierBytes::byte(LevelContract::same(f64::from_bits(7), f64::from_bits(7))),
+        CarrierBytes::byte(LevelContract::same(f64::from_bits(7), f64::from_bits(6))),
+        CarrierBytes::byte(LevelContract::same(0.0, -0.0)),
+        CarrierBytes::byte(LevelContract::same(f64::NAN, f64::NAN)),
+        // `logic("01xz")` against itself, and against `logic("01zx")`: the four states are compared literally
+        CarrierBytes::byte(1),
+        CarrierBytes::byte(0),
+    ];
+    RUN.assert_commits("casts.msl", &["s0", "s1", "s2", "s3", "s4", "s5"], &same);
+}
+
+#[test]
+fn a_cast_to_a_tuple_holding_an_enum_runs() {
+    // GAPS L58 closed (T55), §22.1.3 rule 1: a tag that names no variant is `None` inside a tuple and an array too
+    let wanted = [
+        CarrierBytes::byte(LevelContract::to_tuple(9)),
+        CarrierBytes::byte(LevelContract::to_tuple(3)),
+        CarrierBytes::byte(LevelContract::to_array(9)),
+        CarrierBytes::byte(LevelContract::to_array(12)),
+    ];
+    RUN.assert_commits("casts.msl", &["c4", "c5", "c6", "c7"], &wanted);
+}
+
+/// `struct Pair<T> { a: T, b: T }` of the model `pair_repr.msl`, whose layout is written by hand: the levels of `b`, then those of `a`.
+struct SwappedPair<T> {
+    a: T,
+    b: T,
+}
+
+impl SwappedPair<u8> {
+    /// `encode` of the model at `u8`: 16 levels, `b` in the low byte and `a` in the high one, packed into a word.
+    fn word(&self) -> u16 {
+        u16::from(self.b) | (u16::from(self.a) << 8)
+    }
+}
+
+impl SwappedPair<bool> {
+    /// `encode` of the model at `bool`: 2 levels, `b` first and then `a`, packed into a byte.
+    fn word(&self) -> u8 {
+        u8::from(self.b) | (u8::from(self.a) << 1)
+    }
+}
+
+#[test]
+fn a_generic_hand_written_repr_is_carried_with_its_layout() {
+    // GN-32 AC 1 (§2 rule 2): each instance of `Pair<T>` commits the levels of its own `encode` (`2 * T::WIDTH` of them, the levels
+    // of `b` and then those of `a`) and reads its start value back through its own `decode`
+    let committed_bytes = SwappedPair { a: 3u8, b: 5u8 }.word();
+    let committed_flags = SwappedPair { a: false, b: true }.word();
+    RUN.assert_commits("pair_repr.msl", &["bytes", "flags"], &[CarrierBytes::word(committed_bytes), CarrierBytes::byte(committed_flags)]);
+    // the carriers start at the levels of `Pair { a: 7, b: 9 }` and `Pair { a: true, b: false }`, and `decode` gives the fields back
+    let start = SwappedPair { a: 7u8, b: 9u8 };
+    let held = SwappedPair { a: true, b: false };
+    RUN.assert_commits("pair_repr.msl", &["ra", "rb", "rc", "rd"], &[CarrierBytes::byte(start.a), CarrierBytes::byte(start.b), CarrierBytes::byte(u8::from(held.a)), CarrierBytes::byte(u8::from(held.b))]);
+    // `back` is `T::decode(x.encode())` at `Pair<u8>`: the two functions are inverses
+    let back = SwappedPair { a: 3u8, b: 5u8 };
+    RUN.assert_commits("pair_repr.msl", &["re", "rf"], &[CarrierBytes::byte(back.a), CarrierBytes::byte(back.b)]);
+}
+
+#[test]
+fn a_carrier_of_a_hand_written_type_starts_at_its_default_levels() {
+    // GN-32 AC 2 (§3.3.4): `Bit<Count>` and `Bit<Phase>` write no initial value, so each starts at the levels `encode` gives for
+    // `Default::default()` of its type: the Gray code of 2, whose `decode` reads 2 back, and the one-hot level of `C`
+    let count = Count { n: 2 };
+    let start = Count::decode(count.encode()).map_or(0, |count| count.n);
+    let one_hot = Phase::decode(Phase::C.encode()).map_or(0, |phase| u8::from(phase == Phase::C));
+    RUN.assert_commits("default_levels.msl", &["n", "is_c"], &[CarrierBytes::byte(start), CarrierBytes::byte(one_hot)]);
 }

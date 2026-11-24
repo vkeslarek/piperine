@@ -320,7 +320,7 @@ impl Elaboration<'_, '_> {
             // one element of an array of carriers that hold `Option`s: its two halves, each unpacked from the element read
             ExprKind::Index { .. } if let Lookup::Found(element) = self.element_lookup(scope, expr) => {
                 let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
-                    let packed = this.carrier_element_read(element, origin.clone());
+                    let packed = this.carrier_element_read(scope, element, origin.clone());
                     Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
                 };
                 let is = half(self, LevelPart::Is, ValueType::Bool)?;
@@ -393,11 +393,6 @@ impl Elaboration<'_, '_> {
                 let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
                 let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
                 Some(Pair { is, val, literal: Some(false) })
-            }
-            // `cast::<A, B>(x)` (§22.1.3): an `Option<B>`, the two halves of one level cast.
-            ExprKind::Call { args, .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Intrinsic(crate::types::Intrinsic::Cast))) => {
-                let [arg] = args.as_slice() else { return unsupported(self) };
-                self.lower_cast(scope, expr, arg.value)
             }
             // `T::decode(levels)` of a `T: Repr` parameter: the value the levels give, per instance (`levels.rs`).
             ExprKind::Call { callee, args, .. } if self.types.callee(expr).is_none() && let Some(decoded) = self.lower_parameter_decode(scope, expr, *callee, args, &origin) => decoded,

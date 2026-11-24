@@ -308,6 +308,8 @@ impl<'a> Walk<'a> {
             Expr::Limit { .. } => "Limit",
             Expr::Stim { .. } => "Stim",
             Expr::Int(_) => "Int",
+            Expr::FloatBits(_) => "FloatBits",
+            Expr::Wide(_) => "Wide",
             Expr::Cast { .. } => "Cast",
             Expr::Method { .. } => "Method",
             Expr::Carrier(_) => "Carrier",

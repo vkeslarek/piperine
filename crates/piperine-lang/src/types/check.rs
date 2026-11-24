@@ -9,6 +9,7 @@ use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Desi
 use super::continuity::Continuity;
 use super::class::FunctionClass;
 use super::closures::ClosureInfo;
+use super::coverage::DeferredCoverage;
 use super::definition::DriveBook;
 use super::assign::Places;
 use super::flow::{ExitFrame, Flow};
@@ -65,6 +66,9 @@ pub(super) struct Checker<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     /// The `Ty::Carrier` of each discrete port and signal declaration read or declared so far.
     pub(super) carriers: BTreeMap<DeclId, Ty>,
+    /// The array carriers whose length is not known yet and whose element drives the checker cannot judge: the
+    /// elaborator judges them per instance (`coverage.rs`, `elab/element_coverage.rs`).
+    pub(super) deferred_coverage: DeferredCoverage,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) widths: BTreeMap<ExprId, u32>,
     /// The type of each `T::default()` call checked so far.
@@ -74,6 +78,8 @@ pub(super) struct Checker<'d> {
     /// The generic function whose definition is being checked or whose signature is being typed:
     /// what a definition defers is recorded under it.
     pub(super) generic_item: Option<DeclId>,
+    /// The arguments of the generic module whose placement is being connected: the ports are typed under it (GN-13).
+    pub(super) placement_substitution: Option<super::Substitution>,
     /// What each generic function defers to its instantiations.
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The instantiation each call of a generic function makes (§3.8.10).
@@ -179,11 +185,13 @@ impl<'d> Checker<'d> {
             reached: Vec::new(),
             somes: BTreeSet::new(),
             carriers: BTreeMap::new(),
+            deferred_coverage: DeferredCoverage::default(),
             builtins: BTreeMap::new(),
             widths: BTreeMap::new(),
             defaults: BTreeMap::new(),
             written: BTreeMap::new(),
             generic_item: None,
+            placement_substitution: None,
             obligations: BTreeMap::new(),
             instantiations: BTreeMap::new(),
             impls: std::rc::Rc::new(super::ImplTable::new(design)),
@@ -248,7 +256,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls, carrier_drive_impls: self.carrier_drive_impls, resolve_tables: self.resolve_tables })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls, carrier_drive_impls: self.carrier_drive_impls, resolve_tables: self.resolve_tables })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -422,7 +430,7 @@ impl<'d> Checker<'d> {
         match &node.kind {
             TypeKind::Path(path) => match self.design.type_resolution(ty) {
                 Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                    ("fN", Some(64)) => Some(Ty::F64),
+                    ("fN", Some(w)) => Ty::float(u32::from(w)),
                     ("bool", _) => Some(Ty::Bool),
                     // §1.2.9: `str` is a value type, the type of a string.
                     ("str", _) => Some(Ty::Str),
@@ -513,13 +521,9 @@ impl<'d> Checker<'d> {
         match family {
             "UInt" => self.integer_type(file, span, Ty::UInt, width, &written),
             "Int" => self.integer_type(file, span, Ty::Int, width, &written),
-            _ => match width {
-                64 => Some(Ty::F64),
-                16 | 32 | 128 => {
-                    self.unsupported(file, span, &format!("type `{written}` (`{family}` of width {width}; the subset's one float is `f64`)"));
-                    None
-                }
-                _ => {
+            _ => match u32::try_from(width).ok().and_then(Ty::float) {
+                Some(float) => Some(float),
+                None => {
                     let message = format!("`{written}`: a float width is one of 16, 32, 64 and 128");
                     self.report(file, Diagnostic::new("E0103", message, span, "float width outside {16, 32, 64, 128}"));
                     None
@@ -528,18 +532,19 @@ impl<'d> Checker<'d> {
         }
     }
 
-    /// An integer type of width `width`, written `written`: 1..=64 is in the subset, a wider one
-    /// is `P0001` naming it, a width below 1 is `E0103` (§1 rule 5).
-    pub(super) fn integer_type(&mut self, file: FileId, span: Span, make: fn(u8) -> Ty, width: u128, written: &str) -> Option<Ty> {
+    /// An integer type of width `width`, written `written`: any width from 1 to 2^32 - 1 (§1 rule 5; the
+    /// limit is an implementation limit, Appendix C.2). A width below 1 or past the limit is `E0103`.
+    pub(super) fn integer_type(&mut self, file: FileId, span: Span, make: fn(u32) -> Ty, width: u128, written: &str) -> Option<Ty> {
         match width {
             0 => {
                 let message = format!("`{written}`: an integer width is a const expression `>= 1`");
                 self.report(file, Diagnostic::new("E0103", message, span, "integer width below 1"));
                 None
             }
-            1..=64 => Some(make(width as u8)),
+            1..=0xFFFF_FFFF => Some(make(width as u32)),
             _ => {
-                self.unsupported(file, span, &format!("integer type `{written}`"));
+                let message = format!("`{written}`: an integer width is at most 2^32 - 1 (Appendix C.2)");
+                self.report(file, Diagnostic::new("E0103", message, span, "integer width past the implementation limit"));
                 None
             }
         }
@@ -721,14 +726,53 @@ impl<'d> Checker<'d> {
         }
     }
 
+    /// Whether `decl`, or a declaration above it, is a generation `for`/`if` (a module body item generated per iteration).
+    pub(super) fn inside_generation(&self, decl: DeclId) -> bool {
+        let mut at = Some(decl);
+        while let Some(current) = at {
+            if matches!(self.design.decl_data(current).kind, DeclKind::Generation(_)) {
+                return true;
+            }
+            at = self.design.decl_data(current).parent;
+        }
+        false
+    }
+
+    /// One item of a module body (or of a generation in it) in `phase`.
+    fn module_item(&mut self, child: DeclId, phase: ItemPhase) {
+        let item = self.design.decl_data(child).clone();
+        match (&item.kind, phase) {
+            (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
+            (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
+            (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
+            (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(child, &l.clone()),
+            (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
+            (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
+            (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
+            // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
+            // module that holds the closure, typed with it, not module items (design D9).
+            (DeclKind::Binding(_), _) => {}
+            (DeclKind::Generation(_), _) => self.generation(child, phase == ItemPhase::Declarations, |this, inner| this.module_item(inner, phase)),
+            (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
+            (_, _) => {}
+        }
+    }
+
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
     /// The modules it places are reached.
     fn module(&mut self, decl: DeclId) {
+        let outer = std::mem::replace(&mut self.generic_item, self.design.decl_data(decl).generics_span.map(|_| decl));
+        self.module_of(decl);
+        self.generic_item = outer;
+    }
+
+    /// [`Checker::module`] with the generic item set: a generic module is typed once at its definition, its type and
+    /// nature parameters opaque (`Ty::Param`) and its const parameters `ConstTerm::Param` (GN-13, Q1 (c)).
+    fn module_of(&mut self, decl: DeclId) {
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Module(m) = &data.kind else { return };
         if data.generics_span.is_some() {
-            self.unsupported(data.file, data.span, "generic module");
-            return;
+            self.generic_signature(decl);
         }
         if m.abi.is_some() {
             self.unsupported(data.file, data.span, "`extern` module");
@@ -743,22 +787,7 @@ impl<'d> Checker<'d> {
         self.book = DriveBook::default();
         for phase in [ItemPhase::Declarations, ItemPhase::Lets, ItemPhase::Definitions] {
             for child in data.children.iter().copied() {
-                let item = self.design.decl_data(child).clone();
-                match (&item.kind, phase) {
-                    (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
-                    (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
-                    (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
-                    (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(&l.clone()),
-                    (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
-                    (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
-                    (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
-                    // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
-                    // module that holds the closure, typed with it, not module items (design D9).
-                    (DeclKind::Binding(_), _) => {}
-                    (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
-                    (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
-                    (_, _) => {}
-                }
+                self.module_item(child, phase);
             }
         }
         self.definition_loops();
@@ -777,11 +806,17 @@ impl<'d> Checker<'d> {
         }
         // A placement no statement above typed (one written where only the module lists it).
         for instance in m.instances.iter().copied() {
-            if self.exprs[instance.index()].is_none() {
+            // a placement inside generation is typed with generation itself (T72); until then its loop variable has no type
+            let in_generation = self.inside_generation(self.design.expr_node(instance).owner);
+            if self.exprs[instance.index()].is_none() && !in_generation {
                 self.infer(instance);
             }
         }
-        self.missing_initial_values(&data.children);
+        // the carriers declared inside generation are the module's too, one array each (§8.2.23)
+        let carriers = self.generated_items(&data.children);
+        self.missing_initial_values(&carriers);
+        self.initial_values_under_element_definitions(&carriers);
+        self.defer_unfolded_overlaps();
         self.handed_drives();
     }
 }

@@ -206,6 +206,8 @@ pub struct Types<'d> {
     pub(super) reached: Vec<DeclId>,
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
+    /// The array carriers whose element drives only the elaborator can judge, per instance (`DeferredCoverage`).
+    pub(super) deferred_coverage: super::coverage::DeferredCoverage,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) event_reads: BTreeSet<ExprId>,
     pub(super) widths: BTreeMap<ExprId, u32>,
@@ -394,6 +396,40 @@ impl<'d> Types<'d> {
         self.carriers.get(&decl)
     }
 
+    /// Whether the elements of the carrier `decl` no initial value covers are judged per instance (`E0187`): a length is
+    /// not known yet and a constant element names some of them, or a drive is written inside generation.
+    pub fn defers_missing_initial_value(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.missing_initial.contains(&decl)
+    }
+
+    /// Whether the array carrier `decl` has an initial value and an `out` port of a child holds some of its elements, with a
+    /// length not known yet: `E0223` is judged per instance, once every element is handed.
+    pub fn defers_handed_initial_value(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.handed_initial.contains(&decl)
+    }
+
+    /// Whether the array carrier `decl` has an initial value and undelayed definitions name some of its elements, with a
+    /// length not known yet: `E0338` is judged per instance, once every element is defined.
+    pub fn defers_defined_initial_value(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.defined_initial.contains(&decl)
+    }
+
+    /// Whether a drive of the carrier `decl` reaches elements only the elaborator folds (a generic level, a generation
+    /// index, a drive written inside generation): two definitions sharing an element (`E0335`), a definition and a commit
+    /// sharing one (`E0221`) and a second drive of an element handed to an `out` port (`E0220`) are judged per instance.
+    pub fn defers_drive_overlaps(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.overlaps.contains(&decl)
+    }
+
+    /// Whether the carrier `decl` (or each carrier of an array of them) has a one-driver nature (§5.2): a loop of
+    /// definitions through it is an error, where one through resolved carriers only settles by relaxation (§8.2.3).
+    pub fn is_one_driver(&self, decl: DeclId) -> bool {
+        match self.carriers.get(&decl).map(Ty::innermost) {
+            Some(Ty::Carrier { nature, .. }) => super::nature_rules::NatureRules::of(self.design, *nature).one_driver,
+            _ => false,
+        }
+    }
+
     /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an
     /// array whose innermost element is a `Ty::Carrier` (CV-23).
     pub fn carrier_array(&self, decl: DeclId) -> Option<&Ty> {
@@ -470,6 +506,11 @@ impl<'d> Types<'d> {
     /// The type a type node of the reachable set writes (a signature, an annotation, a cast).
     pub fn written(&self, ty: TypeId) -> Option<&Ty> {
         self.written.get(&ty)
+    }
+
+    /// Whether the written type `ty` is the name of a nature parameter of a generic item: a node of the nature a use gives.
+    pub fn is_nature_parameter_type(&self, design: &Design, ty: TypeId) -> bool {
+        matches!(self.written.get(&ty), Some(Ty::Param(param)) if super::generics::GenericSignature::is_nature_parameter(design, *param))
     }
 
     /// The type of a `Binding` declaration.

@@ -1,0 +1,49 @@
+//! A carrier of a hand-written `Repr` type that writes no initial value starts at the levels `encode` gives for the `Default`
+//! of its type (GN-32 AC 2, part I §3.3.4): a Gray-coded `Count` whose default is 2 and a one-hot `Phase` whose default is `C`;
+//! the expected values are computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(PartialEq)]
+struct Count { n: u8 }
+impl Repr for Count {
+    const WIDTH: u32 = 2;
+    fn encode(self) -> [bool; 2] {
+        let g = self.n ^ (self.n >> 1);
+        [(g & 1) == 1, (g & 2) == 2]
+    }
+    fn decode(levels: [bool; 2]) -> Option<Count> {
+        let g: u8 = (if levels[0] { 1 } else { 0 }) + (if levels[1] { 2 } else { 0 });
+        Some(Count { n: g ^ (g >> 1) })
+    }
+}
+impl Default for Count { fn default() -> Count { Count { n: 2 } } }
+
+#[derive(PartialEq)]
+enum Phase { A, B, C, D }
+impl Repr for Phase {
+    const WIDTH: u32 = 4;
+    fn encode(self) -> [bool; 4] { [self == Phase::A, self == Phase::B, self == Phase::C, self == Phase::D] }
+    fn decode(levels: [bool; 4]) -> Option<Phase> {
+        if levels[0] { Some(Phase::A) } else if levels[1] { Some(Phase::B) } else if levels[2] { Some(Phase::C) } else if levels[3] { Some(Phase::D) } else { None }
+    }
+}
+impl Default for Phase { fn default() -> Phase { Phase::C } }
+
+fn flag(b: bool) -> u8 { if b { 1 } else { 0 } }
+
+module Bench() {
+    signal clk: Bit;
+    signal count: Bit<Count>;
+    signal phase: Bit<Phase>;
+    signal n: Bit<u8> = 9;
+    signal is_c: Bit<u8> = 9;
+    let osc = Osc(clk) { f: 200M };
+}
+digital for Bench {
+    on clk.rise() {
+        n <- count.n;
+        is_c <- flag(phase == Phase::C);
+    }
+}

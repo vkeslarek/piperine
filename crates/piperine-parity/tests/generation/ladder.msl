@@ -1,0 +1,110 @@
+//! The Book's RC ladder (generics GN-18, chapter 7): `Ladder<const N: usize>` places `N` sections by a generation `for`;
+//! `Written<N>` is the same ladder with its sections written out one by one. The two models differ in nothing but the
+//! generation, so every node of every one of them is the same number, at an operating point and along a transient.
+
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+// 0 V until 1 us, then 1 V by a ramp of 1 us: a source that moves along the transient
+module Ramp(p: Electrical) { rise: f64 = 1u; }
+analog for Ramp { v(p) +> if now() < rise { 0.0 } else if now() < 2.0 * rise { (now() - rise) / rise } else { 1.0 }; }
+
+module RcSection(a: Electrical, b: Electrical) {
+    r: f64 = 1k where r > 0.0;
+    c: f64 = 1n where c > 0.0;
+    let r1 = Resistor(a, b) { r: r };
+    let c1 = Capacitor(b, gnd) { c: c };
+}
+
+/// `N` sections in a row, from `a` to `b`.
+module Ladder<const N: usize>(a: Electrical, b: Electrical) where N >= 1 {
+    r: f64 = 1k;
+    c: f64 = 1n;
+    pub signal tap: [Electrical; N + 1];
+    let head = Short(a, tap[0]);
+    let tail = Short(tap[N], b);
+    for k in 0..N {
+        pub let sec = RcSection(tap[k], tap[k + 1]) { r, c };
+    }
+}
+
+module Written1(a: Electrical, b: Electrical) {
+    r: f64 = 1k;
+    c: f64 = 1n;
+    pub signal tap: [Electrical; 2];
+    let head = Short(a, tap[0]);
+    let tail = Short(tap[1], b);
+    pub let sec0 = RcSection(tap[0], tap[1]) { r, c };
+}
+
+module Generic1() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Ramp(vin);
+    pub let lad = Ladder::<1>(vin, vout) { r: 1k, c: 1n };
+}
+
+module Explicit1() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Ramp(vin);
+    pub let lad = Written1(vin, vout) { r: 1k, c: 1n };
+}
+
+module Written3(a: Electrical, b: Electrical) {
+    r: f64 = 1k;
+    c: f64 = 1n;
+    pub signal tap: [Electrical; 4];
+    let head = Short(a, tap[0]);
+    let tail = Short(tap[3], b);
+    pub let sec0 = RcSection(tap[0], tap[1]) { r, c };
+    pub let sec1 = RcSection(tap[1], tap[2]) { r, c };
+    pub let sec2 = RcSection(tap[2], tap[3]) { r, c };
+}
+
+module Generic3() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Ramp(vin);
+    pub let lad = Ladder::<3>(vin, vout) { r: 1k, c: 1n };
+}
+
+module Explicit3() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Ramp(vin);
+    pub let lad = Written3(vin, vout) { r: 1k, c: 1n };
+}
+
+module Written8(a: Electrical, b: Electrical) {
+    r: f64 = 1k;
+    c: f64 = 1n;
+    pub signal tap: [Electrical; 9];
+    let head = Short(a, tap[0]);
+    let tail = Short(tap[8], b);
+    pub let sec0 = RcSection(tap[0], tap[1]) { r, c };
+    pub let sec1 = RcSection(tap[1], tap[2]) { r, c };
+    pub let sec2 = RcSection(tap[2], tap[3]) { r, c };
+    pub let sec3 = RcSection(tap[3], tap[4]) { r, c };
+    pub let sec4 = RcSection(tap[4], tap[5]) { r, c };
+    pub let sec5 = RcSection(tap[5], tap[6]) { r, c };
+    pub let sec6 = RcSection(tap[6], tap[7]) { r, c };
+    pub let sec7 = RcSection(tap[7], tap[8]) { r, c };
+}
+
+module Generic8() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Ramp(vin);
+    pub let lad = Ladder::<8>(vin, vout) { r: 1k, c: 1n };
+}
+
+module Explicit8() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Ramp(vin);
+    pub let lad = Written8(vin, vout) { r: 1k, c: 1n };
+}

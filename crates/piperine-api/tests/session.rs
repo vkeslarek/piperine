@@ -720,3 +720,31 @@ fn a_refused_text_is_named_as_the_user_wrote_it() {
         }
     }
 }
+
+/// A top whose param `count` is the const generic argument of a placement: the param fixes structure.
+const GENERIC_ARGUMENT: &str = "module Taps<const N: usize>(a: Electrical) { signal rails: [Electrical; N]; }\n\
+    module Top() { count: usize = 2; signal x: Electrical; let t = Taps::<{ count }>(x); }\nanalog for Top { v(x, gnd) +> 1.0; }\n";
+
+#[test]
+fn a_structural_param_overrides_before_the_run_and_is_refused_during_it() {
+    // GN-20 AC 2 and 3 (§8.1.2, MD-71 item 3): `count` is read by a const generic argument, so a `--param` of it elaborates
+    // with its value (`Taps::<3>`, not `Taps::<2>`), and a host `set` of it once the session is open is `E0803` naming it
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let overrides = Overrides { param_texts: vec![("Top.count".to_string(), "3".to_string())], stop: Some(1e-6), ..flags("transient", "rust", Some("Top")) };
+    let mut session = open(GENERIC_ARGUMENT, &overrides, &settings).unwrap_or_else(|failure| panic!("{failure}"));
+    let bodies: Vec<String> = session.ir().bodies().map(|body| body.name().to_string()).collect();
+    assert!(bodies.iter().any(|name| name == "Taps::<3>") && !bodies.iter().any(|name| name == "Taps::<2>"), "the instance takes the overridden value: {bodies:?}");
+    match session.set_at("Top.count", 4.0, 5e-7) {
+        Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("`Top.count` is a structural param"), "{message}"),
+        other => panic!("E0803, found {other:?}"),
+    }
+    // a sweep of it is refused before anything compiles, naming it as structural
+    let sweep = Overrides { sweep: Some("Top.count".to_string()), from: Some(1.0), to: Some(3.0), step: Some(1.0), ..flags("dc", "rust", Some("Top")) };
+    match open(GENERIC_ARGUMENT, &sweep, &settings) {
+        Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("`Top.count` is a structural param"), "{message}"),
+        Err(other) => panic!("E0803, found {other:?}"),
+        Ok(_) => panic!("E0803, the sweep of a structural param opened"),
+    }
+}

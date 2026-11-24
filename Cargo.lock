@@ -1371,6 +1371,7 @@ dependencies = [
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
+ "piperine-numbers",
  "piperine-parity",
  "piperine-plan",
  "piperine-project",
@@ -1426,6 +1427,7 @@ dependencies = [
  "logos",
  "miette",
  "piperine-ir",
+ "piperine-numbers",
  "piperine-transpile",
  "serde",
  "serde_json",
@@ -1449,14 +1451,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-numbers"
+version = "0.2.0"
+dependencies = [
+ "num-bigint",
+]
+
+[[package]]
 name = "piperine-parity"
 version = "0.2.0"
 dependencies = [
+ "num-bigint",
  "piperine-abi",
  "piperine-api",
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
+ "piperine-numbers",
  "piperine-plan",
  "piperine-solver",
  "piperine-transpile",

@@ -61,6 +61,50 @@ fn an_instance_whose_name_disagrees_is_refused() {
     assert!(found[0].what.contains("`swap::<f64>`") && found[0].what.contains("`swap::<u8>`"), "{:?}", found[0]);
 }
 
+impl Designs {
+    /// A design of one empty module named `name`, marked as `instance` when given.
+    fn with_body(name: &str, instance: Option<GenericInstance>) -> Ir {
+        let mut b = IrBuilder::new();
+        let module = b.body(BodySpec { name: name.into(), origin: Self::origin(), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        if let Some(instance) = instance {
+            b.mark_body_instance(module, instance);
+        }
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: module, parent: None, nodes: vec![], params: vec![], origin: Self::origin() });
+        b.finish(top)
+    }
+
+    /// The instance `Ladder::<3>`.
+    fn ladder() -> GenericInstance {
+        GenericInstance { item: "Ladder".into(), arguments: vec!["3".into()] }
+    }
+}
+
+#[test]
+fn a_body_instance_is_built_checked_and_printed() {
+    // GN-15 AC 2: a body that lowers an instance of a generic module is named from the module and its arguments, then the
+    // suffix of its key params; the printer says which module it instantiates and serde keeps it
+    let ir = Designs::with_body("Ladder::<3>", Some(Designs::ladder()));
+    assert_eq!(ir.check(), vec![], "{ir}");
+    assert_eq!(ir.bodies().next().and_then(|body| body.instance()), Some(&Designs::ladder()));
+    assert!(ir.to_string().contains("body \"Ladder::<3>\"") && ir.to_string().contains("instance of Ladder"), "{ir}");
+    assert_eq!(Designs::with_body("Ladder::<3>~r=1k", Some(Designs::ladder())).check(), vec![], "the key params' suffix is allowed");
+    let written = Designs::with_body("Top", None);
+    assert!(written.bodies().next().is_some_and(|body| body.instance().is_none()));
+    assert!(!written.to_string().contains("instance of"), "{written}");
+    let round_trip: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serializes")).expect("deserializes");
+    assert_eq!(round_trip, ir, "the body instance survives serde");
+}
+
+#[test]
+fn a_body_whose_name_disagrees_with_its_instance_is_refused() {
+    // GN-15 AC 2: a body marked as `Ladder::<3>` named anything else, or one that only shares its prefix, is malformed
+    for name in ["Ladder::<4>", "Ladder::<3>x"] {
+        let found = Designs::with_body(name, Some(Designs::ladder())).check();
+        assert_eq!(found.len(), 1, "{name}: {found:?}");
+        assert!(found[0].what.contains("`Ladder::<3>`") && found[0].what.contains(name), "{:?}", found[0]);
+    }
+}
+
 /// A design with a one-hot enum of four variants whose `Repr` is written by hand.
 struct OneHot;
 

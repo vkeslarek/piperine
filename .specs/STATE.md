@@ -1825,9 +1825,10 @@ It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD
 5. **Defaults taken while the user was away** (D1 to D20 of `design.md`, plus B1 to B10 of `tasks.md`'s Handoff).
 6. **Phase C (arrays of carriers, 2026-11-23).** An array of discrete carriers is one sparse array net; a child binds a window of it; an array of nodes is one node per element. The ABI's array pin (`Pin.count`, `Cell.element` as `Function.elements`/`Reaction.elements`, `ArrayView`, `Host.commit_element`, `Host` 24 bytes) was added in place at `MINOR` 0 (MD-78; QC1, approved by the user 2026-11-23, supersedes EU-16 AC 2). An array of carriers is `Ty::Array` over a `Carrier`/`Node`; a definition of one element writes a window-bound scalar pin; an index that must fold and does not is `E0180` (`P0002` is no code a source may spell).
 
+7. **Phase D (number widths, 2026-11-23).** Number widths: `f32` is Rust's `f32`; `f16`, `f128` and integers wider than 64 bits are the leaf crate `piperine-numbers`, embedded verbatim as runtime source (MD-63 item 1 holds); `f16` and `f128` are correctly rounded in every operation and H.2 method; no ABI leaf was added: the IR type is the metadata. A `Logic<N>` of more than 64 levels runs (its planes are wide integers).
 **Scope:** `crates/piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-lang`, `piperine-api`,
 `piperine-cli`, `piperine-parity`, `docs/spec`, the Book, `GAPS.md`.
-**Status:** phases A, B (2026-11-21) and C (arrays of carriers, 2026-11-23) delivered; phase D (`f16`/`f128`) follows.
+**Status:** phases A, B (2026-11-21), C (arrays of carriers, 2026-11-23) and D (number widths, 2026-11-23) delivered.
 
 ### MD-80: the solver lands by the observable rule; every step is tested; time is a tick epoch
 
@@ -1872,7 +1873,8 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    and a recursion through one is `E0126`.
 4. **Hand-written `Repr`.** `encode` and `decode` are IR functions named on the type; a carrier's initial value is the levels
    word `encode` gives for the folded initializer (design D18).
-5. **`check`.** `piperine check` types every item of every non-std crate; a generic module's body waits for phase C (S3).
+5. **`check`.** `piperine check` types every item of every non-std crate; an unreached generic module is typed once at its definition (S3 closed, phase C).
+6. **Generic modules and generation (phase C).** A module instance is monomorphized per `BodyKey` (module, instance, key params): a param read by a generic argument, a generation range or a generation condition is structural, folded per body key, and `E0341` is a module placed again with the same key. Generation (`for`, `if`) in a module body or a `digital` block is unrolled at elaboration into one child, node or reaction per iteration (`elab/generation.rs`, `GeneratedItems`), the POM keeping the loop as written; an array of generated placements is `Ty::Array(Ty::Module(m), Length)`. The interim gate (`UnfinishedForms`) that held these forms back was deleted at T80.
 
 ### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input
 

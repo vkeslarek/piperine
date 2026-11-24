@@ -41,16 +41,6 @@ struct Surroundings;
 impl Surroundings {
     /// A source and a resistor.
     const PARTS: &'static str = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\n";
-
-    /// The diagnostics `model` gives for its top `Top` as `(code, message)`, which must be a refusal.
-    fn refusals(model: &Model, row: &str) -> Vec<(String, String)> {
-        Refusal::of(model.run(Commands::operating_point()), row)
-    }
-
-    /// Whether `given` holds the diagnostic `message` under `code`.
-    fn holds(given: &[(String, String)], code: &str, message: &str) -> bool {
-        given.contains(&(code.to_string(), message.to_string()))
-    }
 }
 
 #[test]
@@ -71,26 +61,43 @@ fn the_nature_card_is_the_standard_librarys() {
 }
 
 #[test]
-fn the_module_card_is_refused_for_its_const_generic() {
-    // cheatsheet#2 (refused): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0, x:
-    // f64) where N >= 1 { .. }` with its params, an `Option<f64>` and an array of carriers, placed as
-    // `M::<2>`: a generic module is `P0001` (L30)
+fn the_module_card_runs_with_its_value_input_and_its_out_carrier() {
+    // cheatsheet#2 (run, L76 closed by `generics`): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0,
+    // x: f64) where N >= 1 { .. }` placed as `M::<2>`. The value input `x` makes `M` a module that is called, hoisted into its
+    // caller, and its `out` carrier `q` is the caller's own carrier for the argument `b`
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: Electrical; signal c: Bit; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\n";
-    Refusal::expect(chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()), "cheatsheet#2", "P0001", "generic module is not supported yet");
+    let after = "analog<N> for M<N> { v(mid) +> x; }\nmodule Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\nanalog for Top { v(a) +> 0.0; }\n";
+    let ran = chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("the card is refused: {:?}", Refusal::of(Err(failure), "cheatsheet#2")));
+    let rows = format!("{:?}", ran.table.rows);
+    assert!(rows.contains("Top.b") && rows.contains("Top.c"), "the operating point lists the top's signals: {rows}");
 }
 
 #[test]
-fn the_body_items_card_is_refused_for_its_generation() {
-    // cheatsheet#3 (refused): the instance, the named expression, the definition, the delayed definition and
-    // `for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }`, placed in a body that declares the names
-    // it uses: the generation `for` is `P0001` (L31)
+fn the_module_card_runs_for_its_const_generic_without_its_value_input() {
+    // cheatsheet#2 (run, T116 amended): the card's params, `Option<f64>` param, node signal and `signal s: [Bit; N] =
+    // [false; N]`, written without the value input `x`, placed as `M::<2>`: `M` is a generic module with a body of its own
     let chapter = Chapter::read();
-    let before = "const N: u32 = 3;\nmodule Resistor(in p: Bit, in n: Bit) { r: f64 = 1k; }\nmodule Top() {\n    r: f64 = 1k;\n    tpd: f64 = 1n;\n    signal a: Bit;\n    signal b: Bit;\n    signal mid: Bit;\n    signal y: Bit;\n    signal q: Bit;\n    signal qn: Bit;\n";
+    let card = chapter.text("cheatsheet#2").replace(", x: f64)", ")");
+    assert_ne!(card, chapter.text("cheatsheet#2"), "the card writes its value input");
+    // the card is syntax alone: the harness holds the node `mid` and `a` with sources, or the operating point is singular
+    let after = "analog<N> for M<N> { v(mid) +> 0.0; }\nmodule Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b); }\nanalog for Top { v(a) +> 0.0; }\n";
+    let model = Model::written("shape.msl", &format!("{card}\n{after}"));
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("the card is refused: {:?}", Refusal::of(Err(failure), "cheatsheet#2")));
+    let rows = format!("{:?}", ran.table.rows);
+    assert!(rows.contains("Top.b") && rows.contains("Top.c"), "the operating point lists the top's signals: {rows}");
+}
+
+#[test]
+fn the_body_items_card_runs_with_its_generation() {
+    // cheatsheet#3 (run): the instance, the named expression, the definition, the delayed definition and
+    // `for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }`, placed in a body that declares the names it uses. The card
+    // reads `y` in its delayed definition (it read the param `r`, a number, as a bit: BA4 of `generics`); the loop makes the
+    // array `rk` of `N` instances, `rk[0]` to `rk[2]` here
+    let chapter = Chapter::read();
+    let before = "const N: usize = 3;\nmodule Resistor(in p: Bit, in n: Bit) { r: f64 = 1k; }\nmodule Top() {\n    r: f64 = 1k;\n    tpd: f64 = 1n;\n    signal a: Bit = false;\n    signal b: Bit = false;\n    signal mid: Bit = false;\n    signal y: Bit;\n    signal q: Bit = false;\n    signal qn: Bit = false;\n";
     let model = chapter.wrapped("body.msl", before, "cheatsheet#3", "}\n");
-    let given = Surroundings::refusals(&model, "cheatsheet#3");
-    assert!(Surroundings::holds(&given, "P0001", "generation `for`/`if` in a module body is not supported yet"), "{given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "cheatsheet#3", "P0001", "generation `for`/`if` in a module body is not supported yet");
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#3: {:?}", Refusal::of(Err(failure), "cheatsheet#3")));
+    assert!(format!("{:?}", ran.table.rows).contains("Top.q"), "the operating point lists the top's signals");
 }
 
 #[test]
@@ -131,14 +138,23 @@ fn the_debug_prints_card_runs_with_its_analog_trace() {
 }
 
 #[test]
-fn the_template_card_is_refused_for_its_generic_module_and_its_placements() {
-    // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a
-    // module generic over the template: a generic module is `P0001` (L32, with the placement through a
-    // function of modules#12)
+fn the_template_card_is_refused_for_its_template_and_bundle() {
+    // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module
+    // generic over the template. The generic module runs (T71); what is left is exactly: the struct `Cell` with a carrier
+    // field, a bundle (L25, `resolved-nets-bundles`), the two placements through a template value or a function and the
+    // `Fn` bound of `C` the module `Bsim4` is checked against (L32, phase D)
     let chapter = Chapter::read();
-    let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
+    let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit = false;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
     let after = "}\nmodule Top() { let i = Inner::<Bsim4>(); }\n";
-    Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", "P0001", "generic module is not supported yet");
+    let given = Refusal::of(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8");
+    let wanted = [
+        ("P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet"),
+        ("P0001", "placement through a template value or a function is not supported yet"),
+        ("P0001", "placement through a template value or a function is not supported yet"),
+        ("P0001", "the template parameter `C` of `Inner`, bounded by `Fn` is not supported yet"),
+    ];
+    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the refusals still owed");
+    Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", wanted[0].0, wanted[0].1);
 }
 
 #[test]
@@ -190,4 +206,23 @@ fn a_name_of_yours_hides_the_library_but_not_the_core() {
     assert!((ran.signal("Top.a") - 20.0).abs() < 1e-9, "the library's db20 of 10 is 20 dB: {}", ran.signal("Top.a"));
     let faulty = Faulty::elaborating("cheatsheet~a9561024", "fn ddt(x: f64) -> f64 { x }\nmodule Top() { }\n", "Top");
     assert_eq!(faulty.first("E0457").message, "`ddt` is a core primitive and cannot be redefined (§14 rule 1)");
+}
+
+#[test]
+fn an_array_of_bits_with_no_initial_value_is_e0187() {
+    // cheatsheet#2 amended (T116, BA2): the old card wrote `signal s: [Bit; N];`; `bool` has no `Default`
+    // (§3.3.4, MD-78), so a carrier array nothing initializes is refused on a plain module.
+    let source = "module M(in clk: Bit) { signal s: [Bit; 2]; }\nmodule Top() { signal c: Bit = false; let m = M(c); }\n";
+    let faulty = Faulty::elaborating("cheatsheet#2", source, "Top");
+    assert_eq!(faulty.given.iter().map(|reported| reported.code.as_str()).collect::<Vec<_>>(), ["E0187"], "only the array is refused");
+    assert!(faulty.first("E0187").message.starts_with("`s` has no initial value and its type `bool` does not implement `Default`"), "{}", faulty.first("E0187").message);
+    // the same hole through a width, a wider carried type, and an array read by a reaction in the top itself
+    for source in [
+        "module M(in clk: Bit) { signal s: [Bit<u8>; 2]; }\nmodule Top() { signal c: Bit = false; let m = M(c); }\n",
+        "module M<const N: usize>(in clk: Bit) { signal s: [Bit; N]; }\nmodule Top() { signal c: Bit = false; let m = M::<2>(c); }\n",
+        "module Top() { signal c: Bit = false; signal s: [Bit; 2]; }\ndigital for Top { on at(1u) { s[0] <- c; } }\n",
+    ] {
+        let faulty = Faulty::elaborating("cheatsheet#2", source, "Top");
+        assert!(faulty.first("E0187").message.starts_with("`s` has no initial value"), "{source}: {}", faulty.first("E0187").message);
+    }
 }

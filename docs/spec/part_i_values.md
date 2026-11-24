@@ -130,7 +130,7 @@ pub const inf: f64 = 1.0 / 0.0;
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0101` | a syntactic form left out by rule 2: a reference or a pointer in a type, an expression or a pattern (`&T`, `&mut T`, `&x`, `*x`, `&p`, `&self`), `unsafe`, `async`, `dyn`. The markers `mut`, `ref` and `move` are reserved words (`E0903`, [A.1](appendix_a_lexical.md#a1-source-text-and-tokens)) and a lifetime is a token of a dropped class (`E0905`, [A.6](appendix_a_lexical.md)). A heap type or a thread API is a path that does not resolve (`E0161`) | parse |
-| `E0103` | an integer width that is not a const expression `>= 1`, or a float width outside {16, 32, 64, 128} | elaboration |
+| `E0103` | an integer width that is not a const expression `>= 1`, an integer width past 2^32 - 1 ([C.2](appendix_c_implementation.md#c2-reference-implementation)), or a float width outside {16, 32, 64, 128} | elaboration |
 | `E0104` | a panic while evaluating a const expression, a param default, a `where` or generation | elaboration |
 | `E0105` | a panic during a run | run |
 
@@ -1191,7 +1191,9 @@ the error of the rule that applies (`E0161`, `E0180`, `E0187`).
   carrier and the trait. The value is given once, by the carrier's driver
   ([§5.2.3](part_ii_carriers.md#52-drives)): `E0187` is for a driver that gives none, never for a
   carrier an undelayed definition drives (its first evaluation, §8.2.29, is its first value) nor
-  for a signal whose `out` port in a child holds the initial value. `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
+  for a signal whose `out` port in a child holds the initial value. An array of carriers is `K`
+  carriers and the rule holds per element: an element no undelayed definition and no `out` port
+  names has neither value nor initial value, and `E0187` names it (`b[1..4]`). A length that is a generic argument or a param is known per instance, so the elements are judged there, and `E0187` names the instance (`b[1..4]` in `M::<4>`); so are elements named through a generation index. `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
   parts all implement `Default`, implement it; **`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and
   `str` do not implement `Default`.** In this the language differs from Rust on purpose: a
   register with no reset value has no meaning that a number can express, so the source says

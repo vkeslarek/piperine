@@ -275,3 +275,80 @@ fn a_ladder_over_an_array_of_nodes_solves_as_written_out() {
     let probed = RUN.operating_point("ladder.msl", "LadderProbed", &["tap"]);
     assert!((probed[0] - wanted[3]).abs() < 1e-9, "`v(bl[3])` is element 3 only: {} V, wanted {}", probed[0], wanted[3]);
 }
+
+/// The chain of `tests/carrier_arrays/element_readers.msl`, run for 4 ns.
+struct ElementReaders;
+
+impl ElementReaders {
+    /// One nanosecond in the ticks the changes are stamped in.
+    const NS: i64 = 1_000_000;
+
+    /// The changes of the net `Chain.<name>` during the transient: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&RUN.project("element_readers.msl"), "Chain");
+        let seen = built.run(4e-9, 0.5e-9);
+        support::transient(&seen, &format!("Chain.{name}"))
+    }
+
+    /// The value `s` holds after `rises` rising edges of `tick` (1 ns and 3 ns): `2 + 10 * rises`.
+    fn s(rises: u8) -> u8 {
+        2 + 10 * rises
+    }
+
+    /// `y[1]` after `rises` edges: `2 * s + 1` (§8.2.1).
+    fn y1(rises: u8) -> u8 {
+        2 * Self::s(rises) + 1
+    }
+
+    /// The changes a reader of `y[1]` makes, its value `of(rises)` after each of the two edges.
+    fn following(of: impl Fn(u8) -> u8) -> Vec<(i64, Vec<u8>)> {
+        vec![(Self::NS, vec![of(1)]), (3 * Self::NS, vec![of(2)])]
+    }
+}
+
+#[test]
+fn a_definition_reading_an_element_a_definition_drives_follows_it() {
+    // §8.2.1, §5.1.8: `total = y[1] + 1` with `y[1] = s * 2 + 1` is recomputed in the microstep `y[1]` changes (it stayed at
+    // its (0, 0) value before the fix, the carrier's pin being apart from the net its element drives write)
+    assert_eq!(ElementReaders::changes("y[1]"), ElementReaders::following(ElementReaders::y1));
+    assert_eq!(ElementReaders::changes("total"), ElementReaders::following(|rises| ElementReaders::y1(rises) + 1));
+    // a chain over two arrays: `z[0] = y[1] + y[0]`, `z[1] = z[0] + 1` (two elements of one array, one reading the other,
+    // with no cycle) and `last = z[1]`
+    assert_eq!(ElementReaders::changes("z[0]"), ElementReaders::following(|rises| ElementReaders::y1(rises) + 2));
+    assert_eq!(ElementReaders::changes("z[1]"), ElementReaders::following(|rises| ElementReaders::y1(rises) + 3));
+    assert_eq!(ElementReaders::changes("last"), ElementReaders::following(|rises| ElementReaders::y1(rises) + 3));
+}
+
+#[test]
+fn whole_array_run_time_element_and_reaction_readers_follow_the_elements() {
+    // §5.1.8: `sum = sum3(y)` reads the whole array, `picked = y[s / 10]` an element decided at run time (`y[1]` after the
+    // first edge, `y[2] = 8` after the second), and `on y[1].changed() { seen <- y[1]; }` reacts to the element
+    assert_eq!(ElementReaders::changes("sum"), ElementReaders::following(|rises| 2 + ElementReaders::y1(rises) + 8));
+    assert_eq!(ElementReaders::changes("picked"), vec![(ElementReaders::NS, vec![ElementReaders::y1(1)]), (3 * ElementReaders::NS, vec![8])]);
+    assert_eq!(ElementReaders::changes("seen"), ElementReaders::following(ElementReaders::y1));
+}
+
+#[test]
+fn an_analog_block_reads_an_element_of_an_array_of_carriers() {
+    // §3.3.6: the `analog` block reads an element a definition drives (`y[1] = 2 * 2 + 1`), and elements of an array with an
+    // initial value of each (`y[1] + 10 * y[0]` of `[3, 4]`), at the operating point
+    let level = RUN.operating_point("element_readers.msl", "Level", &["level"]);
+    assert!((level[0] - 5.0).abs() < 1e-9, "{level:?}");
+    let seeded = RUN.operating_point("element_readers.msl", "Seeded", &["level"]);
+    assert!((seeded[0] - (4.0 + 10.0 * 3.0)).abs() < 1e-9, "{seeded:?}");
+}
+
+#[test]
+fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_element() {
+    // §5.1.8, §8.2.1: `q = mem[at]` over `[Bit<u8>; 65536]` reads one view of the array (it was one read per element, a
+    // build that did not finish): `tick` toggles every ns; a rise moves `at` by 1000 and writes 41 there in the same
+    // microstep, a fall writes 50 at `at`, so `q` is 41 after each rise and 50 after each fall; the build and the run take
+    // seconds, not minutes
+    let started = std::time::Instant::now();
+    let built = support::build(&RUN.project("ram.msl"), "Ram");
+    let seen = built.run(4e-9, 0.5e-9);
+    let q = support::transient(&seen, "Ram.q");
+    let expected: Vec<(i64, Vec<u8>)> = (1..=4).map(|edge: i64| (edge * ElementReaders::NS, vec![if edge % 2 == 1 { 41 } else { 50 }])).collect();
+    assert_eq!(q, expected);
+    assert!(started.elapsed() < std::time::Duration::from_secs(120), "built and ran in {:?}", started.elapsed());
+}

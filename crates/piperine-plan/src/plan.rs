@@ -172,8 +172,9 @@ pub enum Source {
     /// when the host gave the parameter. Discrete, constant during an analysis (§14.4.1).
     SessionParameter(u32),
     /// An array carrier read whole, or at a run-time element, whatever the part (`x`, `x[i]`, `x[i].prev()`,
-    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read
-    /// only (abi.md §3: a function never takes a `WHOLE` read); the cell names the pin with `element` `WHOLE`.
+    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read, or
+    /// a discrete function's (a definition `q = mem[at]`, abi.md §3); the cell names the pin with `element` `WHOLE`. The
+    /// `analog` block reads constant elements only (the elaborator spells a run-time one out).
     Whole(u32),
     /// One constant element of an array carrier: `(carrier, element, part)`, a cell naming the
     /// element (`Function.elements`, `Reaction.elements`).
@@ -558,7 +559,9 @@ impl BodyPlan {
                 Some(Constant::Real(r)) => Self::real_bytes(r.get()),
                 Some(Constant::Bool(b)) => vec![u8::from(b)],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
-                Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                Some(c @ (Constant::Int(_) | Constant::FloatBits(_))) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                // A constant of an integer wider than 64 bits is a `U64` array, laid out as a composite's single leaf.
+                Some(c @ Constant::Wide(_)) => PinLayout::bytes_in(ir, &p.ty, c).unwrap_or_default(),
                 // A composite param has the layout and bytes of a composite carrier (`composite.rs`).
                 Some(c @ Constant::Aggregate(_)) => PinLayout::bytes_in(ir, &p.ty, c).unwrap_or_default(),
                 None => Vec::new(),
@@ -584,7 +587,7 @@ impl BodyPlan {
             let composite_layout = composite.as_ref().map(|c| c.layout(&composite_fields));
             let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
-                ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
+                ty if ty.is_integer() || ty.is_other_float() => CarrierLayout::of(ty).unwrap_or(&F64),
                 // a unit enum is its tag (PI-02)
                 ty @ ValueType::Enum(_) => CarrierLayout::in_ir(ir, ty).unwrap_or(&F64),
                 _ => &F64,
@@ -1011,12 +1014,6 @@ impl BodyPlan {
         let stims = body.stims().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
-        if let Some(Source::Whole(carrier)) = plan.reads.iter().find(|r| matches!(r, Source::Whole(..))) {
-            panic!(
-                "body {}: function {name} reads array carrier {carrier} whole or at a run-time element, which only a reaction can (abi.md §3); the elaborator refuses it",
-                body.name()
-            )
-        }
         let reads = plan.reads.iter().map(|r| Self::read(pins, limits, stims, *r)).collect();
         let elements = Self::elements(&plan.reads);
         let writes = plan

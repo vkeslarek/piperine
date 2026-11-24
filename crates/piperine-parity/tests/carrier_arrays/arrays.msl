@@ -20,13 +20,14 @@ module Reg(in d: [Bit; 4], out q: [Bit; 4]) {
 module Cell(in d: Bit, out q: Bit) { q = d; }
 
 /// At edge `n` element `n % 4` of `x` toggles. `y` is `x` through a register, `z` element 2 of `x` through a cell, and
-/// `lines[3]` element 0 through a cell the child drives.
+/// `lines[3]` element 0 through a cell the child drives while the parent commits `lines[1]` itself: the initial value
+/// of `lines` is the value of the elements no `out` port holds (§5.2.6).
 module Toggles(in clk: Bit) {
     signal n: Bit<u8> = 0;
-    signal x: [Bit; 4];
+    signal x: [Bit; 4] = [false; 4];
     signal y: [Bit; 4];
     signal z: Bit;
-    signal lines: [Bit; 4];
+    signal lines: [Bit; 4] = [false; 4];
     let copy = Reg(x, y);
     let one = Cell(x[2], z);
     let driven = Cell(x[0], lines[3]);
@@ -84,7 +85,7 @@ module Fields(in clk: Bit) {
     signal edge: Bit<u8> = 0;
     signal st: Bit<Frame> = Frame { n: 0, ok: false };
     signal word: Bit<[bool; 8]> = [false; 8];
-    signal bits: [Bit; 2];
+    signal bits: [Bit; 2] = [false; 2];
 }
 digital for Fields {
     on clk.rise() {
@@ -111,7 +112,7 @@ module FieldsBench() {
 /// Commits to element `n + 4` of four carriers at the first edge.
 module Reach(in clk: Bit) {
     signal n: Bit<u8> = 0;
-    signal small: [Bit; 4];
+    signal small: [Bit; 4] = [false; 4];
 }
 digital for Reach { on clk.rise() { small[n + 4] <- true; } }
 
@@ -126,7 +127,7 @@ module Shift(in clk: Bit) {
     signal n: Bit<u8> = 0;
     signal rx: Bit = false;
     signal pat: [Bit; 8] = [true, false, true, true, false, false, true, false];
-    signal sh: [Bit; 8];
+    signal sh: [Bit; 8] = [false; 8];
 }
 digital for Shift {
     on clk.rise() {
@@ -147,7 +148,7 @@ module ShiftBench() {
 /// E.5's RAM: even edges write `1000 + n` at address `n % 16`; every edge reads the address first (before the write).
 module Ram(in clk: Bit) {
     signal n: Bit<u8> = 0;
-    signal mem: [Bit<u32>; 256];
+    signal mem: [Bit<u32>; 256] = [0; 256];
 }
 digital for Ram {
     on clk.rise() {

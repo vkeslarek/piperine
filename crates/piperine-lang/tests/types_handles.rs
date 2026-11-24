@@ -171,7 +171,7 @@ fn a_nature_generic_handle_function_type_checks_and_records_its_nature() {
         let call = (0..design.expr_count()).map(|index| ExprId(index as u32)).find(|expr| types.instantiation(*expr).is_some()).expect("a generic call");
         let instantiation = types.instantiation(call).expect("its instantiation");
         let GenericValue::Type(argument) = &instantiation.arguments[0] else { panic!("a type argument: {instantiation:?}") };
-        assert_eq!(argument.name(&design), format!("node of nature `{nature}`"), "{src}");
+        assert_eq!(argument.name(&design), format!("node of nature {nature}"), "{src}");
     }
     let capability = "trait Drive { fn push(self) -> f64; }\nimpl Drive for Electrical { fn push(self) -> f64 { v(self) } }\nfn go<W: Nature + Drive>(a: W) -> f64 { a.push() }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> go(o); }\n";
     assert_eq!(HandleSources::found(capability), []);

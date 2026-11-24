@@ -20,6 +20,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run pomreflect**: `cargo test -p piperine-lang --test pom_reflect`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run bookmodules**: `cargo test -p piperine --test book_modules`
+**Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
@@ -550,7 +552,7 @@ T21
 ---
 ### T21: Records: Book, GAPS, code owners
 
-**What**: The Book's `natures#8` and `natures~52790298` run (with `Slice<T>`, a generic module: `generics` C on `main`; otherwise they keep only that refusal, owner `generics`); `GAPS.md` loses L25 and §9 gives Part II §7 its share; `tests/book/natures.rs`, `inventory.tsv`, `docs.rs` follow; every `code_owners.tsv` row still owed is deleted.
+**What**: The Book's `natures#8` and `natures~52790298` run (with `Slice<T>` once `generics` C is on `main`; otherwise they keep only that refusal, owner `generics`; `Slice<T: Repr + Default>` since generics T116, harness at a type with a `Default`); **amended 2026-11-23 (generics C gap verdict G3):** modules#10 with modules#11 (`MemoryBank` of `Dram1T1C` cells over the bundle `Cell`) and cheatsheet#8 (the template card), which `generics` phase D T93 hands over refused only for the bundle `Cell` (L25), run too (waits for `generics` D T93 on `main`; otherwise they keep only the bundle's refusal); `GAPS.md` loses L25 and §9 gives Part II §7 its share; `tests/book/natures.rs`, `inventory.tsv`, `docs.rs` follow; every `code_owners.tsv` row still owed is deleted.
 **Where**: `GAPS.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `docs.rs`, `inventory_guard.rs`, `spec_codes.rs`
@@ -559,6 +561,7 @@ T21
 
 **Done when**:
 
+- [ ] `the_memory_bank_of_bundle_cells_runs` passes under `**Run bookmodules**` and `the_template_card_runs` under `**Run bookcheatsheet**`
 - [ ] `the_stream_bundle_and_its_slice_run` passes under `**Run booknatures**`; `gaps_no_longer_lists_bundles` passes under `**Run docs**`; `no_owned_code_is_raised` passes under `**Run speccodes**`; `**Run bookinventory**` passes
 - [ ] Gate check passes: Batch (end of B4)
 
@@ -672,6 +675,10 @@ Proof: run typesbundles | test a_bundle_port_is_not_a_value_input ... ok
 
 **C34** - The Book's `Stream` bundle and its `Slice` run (BN-08, AC 1; Book natures#8)
 Proof: run booknatures | test the_stream_bundle_and_its_slice_run ... ok
+
+**C37** - The Book's `MemoryBank` over the bundle `Cell` and the template card run (BN-08, AC 1; Book modules#10, modules#11, cheatsheet#8; generics C verdict G3)
+Proof: run bookmodules | test the_memory_bank_of_bundle_cells_runs ... ok
+Proof: run bookcheatsheet | test the_template_card_runs ... ok
 
 **C35** - The Book inventory agrees with `GAPS.md` §11 (BN-08, AC 1)
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok

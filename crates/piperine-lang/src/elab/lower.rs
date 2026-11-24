@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, Terminal, UnaryOp, ValueType};
 
+use super::elements::ElementPart;
 use super::compound::EnumLayout;
 use super::control::LoopFrame;
 use super::returns::FunctionResult;
@@ -112,7 +113,11 @@ pub(super) struct Scope {
     /// The constant each loop variable of the unrolled analog loops the code sits in, and each
     /// parameter of the unrolled recursive calls it sits in, stands for (`unroll.rs`).
     pub(super) unrolled: Bindings,
-    /// Whether the code being lowered is a statement of an `analog` block, not a function's body.
+    /// The generation `for`s the code being lowered sits in and the ordinal of the iteration in each (`generation.rs`).
+    pub(super) ordinals: Vec<(DeclId, u32)>,
+    /// Whether the code being lowered is a statement of an `analog` block, not a function's body. The analog side reads
+    /// constant elements of an array of carriers only, each through its mirror (`elements.rs`), so an array read whole
+    /// or at a run-time element is read there as the array of its elements.
     pub(super) in_analog_block: bool,
     /// How many `if` and `match` decisions that did not fold the code being lowered sits under.
     pub(super) decisions: u32,
@@ -139,7 +144,7 @@ impl Scope {
     }
 
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), ordinals: Vec::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -154,10 +159,13 @@ impl ValueTypes<'_> {
     pub(super) fn of(&self, ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
+            Ty::F32 => Some(ValueType::F32),
+            Ty::F16 => Some(ValueType::F16),
+            Ty::F128 => Some(ValueType::F128),
             Ty::Bool => Some(ValueType::Bool),
             Ty::Unit => Some(ValueType::Unit),
-            Ty::UInt(n) => Some(ValueType::UInt(u32::from(*n))),
-            Ty::Int(n) => Some(ValueType::Int(u32::from(*n))),
+            Ty::UInt(n) => Some(ValueType::UInt(*n)),
+            Ty::Int(n) => Some(ValueType::Int(*n)),
             Ty::Fn(params, ret) => {
                 let params: Option<Vec<ValueType>> = params.iter().map(|p| self.of(p)).collect();
                 Some(ValueType::Fn(params?, Box::new(self.of(ret)?)))
@@ -785,6 +793,8 @@ impl Elaboration<'_, '_> {
             // A unit variant is folded to its position among the enum's variants.
             Constant::Int(v) if let ValueType::Enum(id) = ty => self.emit(Expr::VariantOf { ty: id, variant: v as u32, fields: Vec::new() }, ty, origin),
             Constant::Int(v) => self.emit(Expr::Int(v), ty, origin),
+            Constant::FloatBits(bits) => self.emit(Expr::FloatBits(bits), ty, origin),
+            Constant::Wide(id) => self.emit(Expr::Wide(id), ty, origin),
             // The const evaluator builds no composite constant before the aggregate lowering; a
             // composite folded value reaching here would be a lowering bug, never user input.
             Constant::Aggregate(id) => panic!("the composite constant agg{} reached constant_expr before the aggregate lowering exists", id.0),
@@ -830,7 +840,13 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
+            // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
+            DeclKind::Signal(_) if !self.generated_carrier_levels(scope, expr).is_empty() => match self.element_lookup(scope, expr) {
+                super::elements::Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
+                _ => None,
+            },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
+                (Some(index), _) if scope.in_analog_block && self.structure.carriers[index as usize].count.is_some() => Some(self.elements_of_array(scope, index, ElementPart::Value, origin)),
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),
@@ -856,6 +872,8 @@ impl Elaboration<'_, '_> {
                     let ty = scope.locals[*index as usize].ty.clone();
                     Some(self.emit(Expr::Local(*index), ty, origin))
                 }
+                // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
+                None if scope.frame == 0 && self.body_let_value(decl).is_some() && self.generated.of(self.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
                 // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
                 None if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;

@@ -1,0 +1,18 @@
+//! A RAM read port written as a definition (part II §5.1.8, part III §8.2.1): `q = mem[at]` reads an array of 65 536
+//! carriers at a run-time element, through one view of the array, and follows both the address and the element. The
+//! expected values are computed by the test, from the rule it cites.
+
+module Ram() {
+    signal tick: Bit = false;
+    signal mem: [Bit<u8>; 65536] = [7; 65536];
+    signal at: Bit<u16> = 3;
+    signal q: Bit<u8>;
+    q = mem[at];
+}
+
+digital for Ram {
+    on tick.changed() { tick <- !tick after 1n; }
+    // a rise moves the address by 1000 and writes 41 there; a fall writes 50 at the address
+    on tick.rise() { at <- at + 1000; mem[at + 1000] <- 41; }
+    on tick.fall() { mem[at] <- 50; }
+}

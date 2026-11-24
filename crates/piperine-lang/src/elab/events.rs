@@ -56,7 +56,7 @@ impl Elaboration<'_, '_> {
         let any = |es: &[LoweredExpr]| es.iter().any(|e| self.continuous(*e));
         match kind {
             Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
-            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::SessionParameter { .. } | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Others(_) | Expr::Resolve { .. } | Expr::Previous(_) => false,
+            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::SessionParameter { .. } | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => self.continuous(*expr),
             Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => self.continuous(*index),
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
@@ -78,7 +78,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The `digital` blocks of `module`, read in `scope`: their reactions, in source order.
-    pub(super) fn lower_digital(&mut self, scope: &Scope, module: DeclId) {
+    pub(super) fn lower_digital(&mut self, scope: &mut Scope, module: DeclId) {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
         for block in data.behaviors.clone() {
             let decl = self.design.decl_data(block).clone();
@@ -86,9 +86,19 @@ impl Elaboration<'_, '_> {
             if behavior.kind != crate::pom::BehaviorKind::Digital {
                 continue;
             }
-            for child in decl.children {
-                if matches!(self.design.decl_data(child).kind, DeclKind::Reaction(_)) {
-                    self.lower_reaction(scope, child);
+            for (child, iteration) in self.digital_sequence(&decl.children) {
+                if !matches!(self.design.decl_data(child).kind, DeclKind::Reaction(_)) {
+                    continue;
+                }
+                // a reaction made by a generation `for` reads its loop variables as the constants of its iteration
+                for (variable, value) in &iteration.values {
+                    scope.unrolled.bind(*variable, piperine_ir::Constant::Int(*value));
+                }
+                scope.ordinals = iteration.ordinals.clone();
+                self.lower_reaction(scope, child);
+                scope.ordinals.clear();
+                for (variable, _) in &iteration.values {
+                    scope.unrolled.unbind(*variable);
                 }
             }
         }
@@ -219,8 +229,8 @@ impl Elaboration<'_, '_> {
                     // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
                     let at = self.folded_element(scope, *recv, element)?;
                     let discrete = match edge {
-                        Builtin::Rise => vec![self.element_rise_guard(element, origin.clone())],
-                        Builtin::Fall => vec![self.element_fall_guard(element, origin.clone())],
+                        Builtin::Rise => vec![self.element_rise_guard(scope, element, origin.clone())],
+                        Builtin::Fall => vec![self.element_fall_guard(scope, element, origin.clone())],
                         _ => Vec::new(),
                     };
                     Some(vec![Disjunct { source: EventSource::ElementChanged { carrier: element.carrier, element: at }, discrete, continuous: Vec::new(), origin }])
@@ -488,17 +498,17 @@ impl Elaboration<'_, '_> {
     }
 
     /// `x[k].rise()`'s guard: `!ElementPrevious(x, k) && x[k]`.
-    fn element_rise_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        let previous = self.element_previous(element, origin.clone());
+    fn element_rise_guard(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(scope, element, origin.clone());
         let was_low = self.not(previous, origin.clone());
-        let read = self.carrier_element_read(element, origin.clone());
+        let read = self.carrier_element_read(scope, element, origin.clone());
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: was_low, rhs: read }, ValueType::Bool, origin)
     }
 
     /// `x[k].fall()`'s guard: `ElementPrevious(x, k) && !x[k]`.
-    fn element_fall_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        let previous = self.element_previous(element, origin.clone());
-        let read = self.carrier_element_read(element, origin.clone());
+    fn element_fall_guard(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(scope, element, origin.clone());
+        let read = self.carrier_element_read(scope, element, origin.clone());
         let low = self.not(read, origin.clone());
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
     }
@@ -559,7 +569,7 @@ impl Elaboration<'_, '_> {
         match builtin {
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
             Builtin::Prev => match self.element_lookup(scope, recv) {
-                Lookup::Found(element) => Some(self.element_previous(element, origin)),
+                Lookup::Found(element) => Some(self.element_previous(scope, element, origin)),
                 Lookup::Failed => None,
                 Lookup::No => {
                     let carrier = self.carrier_of(scope, recv)?;

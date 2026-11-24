@@ -297,7 +297,8 @@ fn gaps_drops_what_msl_fixes_closed() {
     // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
     // (`### S6.` was kept here until `explicit-unknowns` closed it by the redesign and `### S8.` until its phase A closed that:
     // `gaps_closes_s6_and_tracks_the_flag`)
-    for kept in ["### S3.", "### B3.", "### B4."] {
+    // (`### S3.` was kept here until `generics` phase C closed it: `gaps_drops_s3`)
+    for kept in ["### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
@@ -306,12 +307,12 @@ fn gaps_drops_what_msl_fixes_closed() {
     // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
     // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29, L65 (a flag read on an `Option`) to 30; L66 (a `match` whose value is an `Option`) was found and closed by `composite-values` itself;
     // `explicit-unknowns` replaced S6 by S8 (still 2 silent), and its phase A closed S8 and L64 and L65: 1 silent, 28 loud; the split of L68 from L58 (explicit-unknowns phase B owns it) makes 29; `params-and-io` B5 closed L28 (integer, enum and `Option` params) and B6 L57 (files and tables): 27
-    assert!(gaps.contains("1 silent, 2 broken, 20 loud"), "the counts of §9 follow (20 loud: L75 found by the `unknown-semantics-events` closing round; L53 closed by `unknown-semantics-events`, L72 closed by `analog-operators`, L73 and L74 found by its closing round, since L71, the host write of a `Logic`, was recorded by `explicit-unknowns`)");
+    assert!(gaps.contains("0 silent, 2 broken, 17 loud"), "the counts of §9 follow (17 loud: L13 closed by `composite-values` phase D; L76 and L77 found by the `generics` phase C round 4 fix; 16 before, L30 and L31 closed by `generics` phase C; L72 closed by `analog-operators`, L73 and L74 found by its closing round, since L71, the host write of a `Logic`, was recorded by `explicit-unknowns`)");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
-    assert_eq!(rows("## 3. Silent", "## 4."), 1, "one silent entry");
+    assert_eq!(rows("## 3. Silent", "## 4."), 0, "no silent entry (S3 closed by `generics` phase C)");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 20, "twenty loud rows (`unknown-semantics-events` found L75, the forms of an `Event` function that the inliner cannot run (owner `spec-closure`); `unknown-semantics-events` closed L53; `composite-values` phase C closed L24; `analog-operators` closed L43, L44, L45, L47, L49, L60 and L72, the last of which it found, and found L73, the flow of a flow branch read as a value, and L74, the forms of a `fn` inside a `ddx` that have no finite symbolic reading; L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 17, "seventeen loud rows (`composite-values` phase D closed L13; L76, an item only some iterations make, and L77, generation in a hoisted module, found by the `generics` phase C round 4 fix; `generics` phase C closed L30 and L31; `composite-values` phase C closed L24; `analog-operators` closed L43, L44, L45, L47, L49, L60 and L72, the last of which it found, and found L73, the flow of a flow branch read as a value, and L74, the forms of a `fn` inside a `ddx` that have no finite symbolic reading; L70 closed by T54 and L69 by T58; L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
 }
 
 #[test]
@@ -320,9 +321,9 @@ fn gaps_drops_the_value_semantics_gap() {
     // `value-semantics` as a plan, and no longer says `E0331` is raised
     let gaps = read("GAPS.md");
     assert!(!gaps.contains("### S7."), "S7 is closed");
-    assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && !gaps.contains("| S3, S8 ") && gaps.contains("| S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |"), "the section table lists S3 for generic modules (S6 and S8 closed by `explicit-unknowns`)");
+    assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && !gaps.contains("| S3, S8 ") && gaps.contains("| none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |"), "the section table lists no silent entry (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`)");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
-    assert!(gaps.contains("1 silent, 2 broken, 20 loud"), "the counts follow (19 since `unknown-semantics-events` closed L53; 27 loud after `params-and-io` closed L28 and L57; 28 since composite-values phase B closed L1 to L3 and L16; L64 and L65 came and were closed by `explicit-unknowns`, L66 by `composite-values` itself; S8 closed by `explicit-unknowns`)");
+    assert!(gaps.contains("0 silent, 2 broken, 17 loud"), "the counts follow (17 loud with L76 and L77 and L13 closed by `composite-values` phase D; 27 loud after `params-and-io` closed L28 and L57; 28 since composite-values phase B closed L1 to L3 and L16; L64 and L65 came and were closed by `explicit-unknowns`, L66 by `composite-values` itself; S8 closed by `explicit-unknowns`)");
 }
 
 #[test]
@@ -501,14 +502,11 @@ fn gaps_drops_what_generics_phase_a_closed() {
     for gone in ["| L4 |", "| L7 |", "| L9 |", "- **X6"] {
         assert!(!gaps.contains(gone), "GAPS.md still holds `{gone}`");
     }
-    let start = gaps.find("### S3.").expect("GAPS.md keeps S3");
-    let entry = &gaps[start..start + gaps[start..].find("\n---").expect("S3 closes its section")];
-    assert!(entry.starts_with("### S3. The type checker does not check a generic module's body"), "{entry}");
-    assert!(entry.contains("GN-13") && !entry.contains("A library package with no run"), "{entry}");
+    // S3 was narrowed to the generic module here and closed by phase C (`gaps_drops_s3`)
     let row = gaps.lines().find(|l| l.starts_with("| I §3.4–§3.6 files, crates, packages |")).expect("the Coverage row");
-    assert!(row.contains("unreached generic module (S3)"), "{row}");
+    assert!(row.contains("S3") && row.contains("closed"), "{row}");
     let roadmap = read("ROADMAP.md");
-    assert!(roadmap.contains("phases A and B delivered"), "the ROADMAP lane row says phases A and B are delivered (phase A alone, until T52)");
+    assert!(roadmap.contains("phases A to C delivered"), "the ROADMAP lane row says phases A to C are delivered (phases A and B until T82)");
 }
 
 #[test]
@@ -520,7 +518,7 @@ fn gaps_drops_what_generics_phase_b_closed() {
     assert!(!gaps.contains("| L8 |"), "L8 closed with generics phase B");
     assert!(!gaps.contains("| L53 |"), "L53 closed with unknown-semantics-events");
     let roadmap = read("ROADMAP.md");
-    assert!(roadmap.contains("phases A and B delivered"), "the ROADMAP lane row says phases A and B are delivered");
+    assert!(roadmap.contains("phases A to C delivered"), "the ROADMAP lane row says phases A to C are delivered (phases A and B until T82)");
 }
 
 #[test]
@@ -589,7 +587,7 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
     assert!(values.contains("`let mut`, assignment, patterns"), "{values}");
     // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing), 35 with `params-and-io`
-    assert!(gaps.contains("20 loud"), "the loud count is 28 (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows; L64 and L65 came and were closed by `explicit-unknowns` phase A, L66 by `composite-values` itself)");
+    assert!(gaps.contains("17 loud"), "the loud count is 17 with L76 and L77, L13 closed by `composite-values` phase D (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows; L64 and L65 came and were closed by `explicit-unknowns` phase A, L66 by `composite-values` itself)");
 }
 
 #[test]
@@ -659,8 +657,8 @@ fn gaps_no_longer_lists_project_or_signal_flow_natures() {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
     }
     assert!(!gaps.contains("`discrete nature Byte`") && !gaps.contains("`signal-flow nature VSignal`"), "a probe of the closed rows is still listed");
-    let row = gaps.lines().find(|l| l.starts_with("| modules#8 |")).expect("the Book row modules#8");
-    assert!(row.contains("| L30 |") && row.contains("`generics`") && !row.contains("signal-flow nature"), "modules#8 keeps only the generic `idt`: {row}");
+    // `modules#8` ran once `generics` T71 flipped the generic `idt`: it has no row left
+    assert!(!gaps.lines().any(|l| l.starts_with("| modules#8 |")), "modules#8 runs: it has no Book row");
     assert!(gaps.lines().any(|l| l.starts_with("| L21 |")), "L21 stays: resolved natures are not compiled yet");
 }
 
@@ -694,7 +692,7 @@ fn gaps_drops_what_composite_values_phase_b_closed() {
     assert!(stdlib.contains("`normal` runs"), "{stdlib}");
     let inherited = coverage.lines().find(|l| l.starts_with("| H inherited library")).expect("the coverage row of H");
     assert!(inherited.contains("100 %") && inherited.contains("H.5 to H.7 run"), "{inherited}");
-    assert!(gaps.contains("20 loud"), "the loud count follows");
+    assert!(gaps.contains("17 loud"), "the loud count follows (L76 and L77 found by the `generics` phase C round 4 fix)");
 }
 
 #[test]
@@ -814,6 +812,84 @@ fn gaps_section_10_lists_exactly_the_owned_codes() {
 }
 
 #[test]
+fn gaps_drops_s3() {
+    // generics GN-07 AC 2, GN-13 (T71): generic modules are typed once at their definition, so an unreached one with an error
+    // fails the check; GAPS.md has no entry S3, no silent section entry, and the section table lists none
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("### S3."), "GAPS.md still has the entry S3");
+    assert!(gaps.contains("| §3 Silent (read this first) | none (S3 closed by `generics` phase C"), "the section table lists no silent entry");
+    assert!(gaps.contains("0 silent"), "the counts hold no silent entry");
+    assert!(!gaps.contains("the check of an unreached generic module (S3) |"), "the Coverage row no longer names S3 as a hole");
+}
+
+#[test]
+fn gaps_drops_what_generics_phase_c_closed() {
+    // generics GN-31 AC 1 (T82): generic modules (L30) and generation in a body and a `digital` block (L31) run, so neither row is
+    // in `GAPS.md`; the codes `E0322`, `E0340` and `E0342` are raised and leave the list of codes raised nowhere; the lane row
+    // says phase C is delivered
+    let gaps = read("GAPS.md");
+    for gone in ["| L30 |", "| L31 |", "E0225 E0322", "E0342\n"] {
+        assert!(!gaps.contains(gone), "GAPS.md still holds `{gone}`");
+    }
+    // the stdlib items that check and run left L58 (`since`, `Stable`, `Setup`, `Hold`, `MinPulse`); only the refused remain
+    let stdlib = gaps.lines().find(|line| line.starts_with("| L58 |")).expect("GAPS.md holds L58");
+    for running in ["`since`", "`Stable`", "`Setup`", "`Hold`", "`MinPulse`"] {
+        assert!(!stdlib.contains(running), "L58 still lists {running}, which runs");
+    }
+    for refused in ["`idtmod`", "`noise_table`", "`inertial`", "`AckWithin`"] {
+        assert!(stdlib.contains(refused), "L58 keeps {refused}, still refused");
+    }
+    let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
+    for code in ["E0322", "E0340", "E0342"] {
+        assert!(!owners.contains(code), "code_owners.tsv still lists {code}");
+    }
+    let roadmap = read("ROADMAP.md");
+    assert!(roadmap.contains("phases A to C delivered"), "the ROADMAP lane row says phase C is delivered");
+}
+
+#[test]
+fn state_records_generic_modules_and_generation() {
+    // generics design-c.md "Tech Decisions" (T82): MD-81 gains item 6, the monomorphization of a module per instance and the
+    // unrolling of generation at elaboration
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-81:").expect("STATE.md holds MD-81");
+    let decision = state[at..].split("\n### MD-82").next().expect("MD-81 ends");
+    for needed in ["6. **Generic modules and generation", "BodyKey", "GeneratedItems", "`E0341`"] {
+        assert!(decision.contains(needed), "MD-81 names {needed}");
+    }
+}
+
+#[test]
+fn gaps_drops_l70() {
+    // generics GN-31 (T54): `encode` and `decode` of every layout run, so the row L70 leaves `GAPS.md` and no section of the
+    // gaps record names the two `P0001` refusals it listed
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L70 |"), "GAPS.md still has the row L70");
+    assert!(!gaps.contains("`encode` on a value of a type whose layout is derived"), "the L70 refusal text is gone");
+}
+
+#[test]
+fn gaps_drops_the_cast_and_same_intrinsics() {
+    // generics GN-27 AC 1 (T55): `cast` and `same` compile from `std/values.msl`, so the row L58 no longer says they run as the
+    // checker's own intrinsics, and no source of the language crate names the two variants
+    let gaps = read("GAPS.md");
+    let l58 = gaps.lines().find(|l| l.starts_with("| L58 |")).expect("the row L58").to_string();
+    assert!(!l58.contains("`cast` and `same`") && !l58.contains("Intrinsic::{Cast, Same}"), "L58 still names the intrinsics: {l58}");
+    let intrinsic = read("crates/piperine-lang/src/types/intrinsic.rs");
+    assert!(!intrinsic.contains("Same,") && !intrinsic.contains("Cast,"), "types::intrinsic still has a variant for `cast` or `same`");
+}
+
+#[test]
+fn gaps_drops_l69() {
+    // generics GN-32, GN-31 (T58): a hand-written `Repr` on a generic type runs and a carrier of a hand-written type starts at the
+    // levels of its `Default`, so the row L69 leaves `GAPS.md` with no trace of its refusals
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L69 |"), "GAPS.md still has the row L69");
+    assert!(!gaps.contains("a carrier of a type with a hand-written `Repr` and no initial value"), "the L69 refusal text is gone");
+    assert!(!gaps.contains("a hand-written `Repr` on a generic type"), "the L69 refusal text is gone");
+}
+
+#[test]
 fn gaps_and_roadmap_follow_analog_operators() {
     // analog-operators AO-12 (T44): `GAPS.md` drops L43, L44, L45, L47, L49 and L60, the noise row of H2 and U7; it found L72, the
     // `emit!` reached from `analog` through a `fn`, and closed it in the closing round, and its counts follow; `ROADMAP.md` marks the feature delivered and
@@ -827,7 +903,7 @@ fn gaps_and_roadmap_follow_analog_operators() {
     assert!(h2.contains("`noise` (delivered by `analog-operators`"), "H2 records the noise analysis as delivered: {h2}");
     assert!(!gaps.contains("| L72 |"), "L72, the `emit!` reached from `analog` through a `fn`, runs as a trace of its call and is closed");
     assert!(gaps.contains("| Analog operators (delivered, MD-82) |"), "the cluster is marked delivered");
-    assert!(gaps.contains("1 silent, 2 broken, 20 loud") && gaps.contains("8 unproven"), "the counts follow");
+    assert!(gaps.contains("0 silent, 2 broken, 17 loud") && gaps.contains("8 unproven"), "the counts follow");
     let roadmap = read("ROADMAP.md");
     assert!(roadmap.contains("analog-operators") && roadmap.contains("delivered"), "ROADMAP.md marks analog-operators delivered");
     let state = read(".specs/STATE.md");
@@ -847,13 +923,43 @@ fn gaps_drops_what_composite_values_phase_c_closed() {
     assert!(!book.contains("the arrays of carriers of `MemoryBank`") && !book.contains("(an array of carriers, L24)"), "section 11 still names the array of carriers");
     // the counts follow: the loud count in the header is the number of `L` rows the tables hold
     let rows = gaps.lines().filter(|line| line.strip_prefix("| L").is_some_and(|rest| rest.split_once(" |").is_some_and(|(id, _)| id.chars().all(|c| c.is_ascii_digit())))).count();
-    assert!(gaps.contains(&format!("2 broken, {rows} loud (L1 to L75")), "the header counts the {rows} loud rows");
+    assert!(gaps.contains(&format!("2 broken, {rows} loud (L1 to L77")), "the header counts the {rows} loud rows");
     // section 9: the digital row says the arrays of carriers run; the cluster table says phase C closed L24
     assert!(gaps.contains("arrays of carriers, element and field commits run (composite-values phase C)"), "section 9 says the arrays of carriers run");
     assert!(gaps.contains("phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows"), "the cluster row says phase C closed L24");
     // H9: E0803 is reachable by a param an array length reads, the thing QC2 delivered
     let h9 = gaps.lines().find(|line| line.starts_with("| H9 |")).expect("the row H9");
     assert!(h9.contains("reachable by a param an array length reads") && h9.contains("QC2"), "H9 states what QC2 delivered: {h9}");
+}
+
+#[test]
+fn gaps_drops_what_composite_values_phase_d_closed() {
+    // composite-values CV-37 (T126): L13 leaves `GAPS.md` with no residue (user Q4 (a): `f32`, `f16` and `f128` complete, integers of
+    // any width), the coverage row of I §1-§2 no longer lists floats other than `f64` and widths over 64 as a hole, a `Logic<N>` of
+    // more than 64 levels is no refusal, and the loud count is 19 (17 once merged with `generics` phase C: S3, L30, L31, L69, L70 closed, L76, L77 found)
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L13 |"), "L13 is still a row");
+    assert!(!gaps.contains("`Logic<100>`: its field `binary`"), "the Logic<100> refusal is still listed");
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
+    let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
+    assert!(!values.contains("floats other than `f64`") && !values.contains("widths over 64"), "{values}");
+    assert!(gaps.contains("0 silent, 2 broken, 17 loud"), "the counts follow");
+    // the feature's own records say it: the traceability marks CV-29 to CV-33 done, MD-79 gains the item, the roadmap row says delivered
+    let spec = read(".specs/features/composite-values/spec.md");
+    for id in ["CV-29", "CV-30", "CV-31", "CV-32", "CV-33"] {
+        let row = spec.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a traceability row {id}"));
+        assert!(row.contains("Done"), "{row}");
+    }
+    let state = read(".specs/STATE.md");
+    assert!(state.contains("Number widths: `f32` is Rust's `f32`; `f16`, `f128` and integers wider than 64"), "MD-79 names the number widths");
+    let roadmap = read("ROADMAP.md");
+    let row = roadmap.lines().find(|l| l.contains("`composite-values` phase D")).expect("the roadmap row of phase D");
+    assert!(row.to_lowercase().contains("delivered"), "{row}");
+    let rs = read(".specs/features/ir-rust/spec.md");
+    assert!(rs.contains("superseded by composite-values Q4 (2026-11-23)"), "RS-Q6 is superseded");
+    for table in ["CLAUDE.md", "AGENTS.md"] {
+        assert!(read(table).contains("piperine-numbers"), "{table} lists the crate");
+    }
 }
 
 #[test]
@@ -867,4 +973,15 @@ fn gaps_no_longer_lists_l51_or_l53() {
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     assert!(!coverage.contains("functions that return `Event`") && !coverage.contains("`Event` functions"), "section 9 still lists functions that return `Event`, in either spelling");
     assert!(gaps.contains("L51, L53"), "the closed list of section 4 names L53");
+}
+
+#[test]
+fn gaps_l77_is_owned_by_generics_phase_e() {
+    // generics phase C round 5 finding 18: L77, generation in a hoisted module's body, is the feature's own leftover (generation
+    // and hoisting are both its forms), owned by its phase E task T118, not by a spec lane
+    let gaps = read("GAPS.md");
+    let l77 = gaps.lines().find(|l| l.starts_with("| L77 |")).expect("the row L77");
+    assert!(l77.contains("Owner `generics` phase E, T118") && !l77.contains("Owner `spec-closure`"), "L77 is owned by generics phase E: {l77}");
+    let tasks = read(".specs/features/generics/tasks-e.md");
+    assert!(tasks.contains("### T118: Generation in the body of a hoisted module"), "the task T118 is planned");
 }

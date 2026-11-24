@@ -31,7 +31,7 @@
 pub mod guide;
 mod body;
 mod builtin;
-mod check;
+mod check; mod connections;
 mod crates;
 mod decl;
 mod design;
@@ -48,7 +48,7 @@ mod to_ast;
 
 pub use body::*;
 pub use builtin::{BUILTINS, BuiltinId, BuiltinInfo, BuiltinKind, builtin, builtin_implicit, builtin_member, builtin_method};
-pub use decl::*;
+pub use decl::*; pub(crate) use connections::PortArguments;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use index::{Index, ReferenceId, WriterId};
 pub use crates::{CrateData, CrateGraph, CrateNode, DependencyData, GraphError, is_crate_name};

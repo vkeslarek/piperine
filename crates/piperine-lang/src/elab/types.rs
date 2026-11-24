@@ -59,9 +59,9 @@ impl TypeArena {
         self.shapes.get(id.index()).and_then(|shape| shape.get(variant as usize)).map_or(&[], Vec::as_slice)
     }
 
-    /// Whether an instance of the generic struct or enum `decl` is in the arena.
-    pub(super) fn has_instance_of(&self, decl: DeclId) -> bool {
-        self.instances.keys().any(|nominal| nominal.decl == decl)
+    /// Every instance of the generic struct or enum `decl` in the arena, with its entry.
+    pub(super) fn instances_of(&self, decl: DeclId) -> Vec<(Nominal, TypeId)> {
+        self.instances.iter().filter(|(nominal, _)| nominal.decl == decl).map(|(nominal, id)| (nominal.clone(), *id)).collect()
     }
 
     /// The entry of the struct or enum `decl`, `None` when the check did not reach it.

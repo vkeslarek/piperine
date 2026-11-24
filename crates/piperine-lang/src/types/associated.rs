@@ -47,7 +47,7 @@ impl Checker<'_> {
     }
 
     /// The type a written type is, without a diagnostic of its own: `None` when it has none.
-    fn lower_type_quietly(&mut self, ty: TypeId) -> Option<Ty> {
+    pub(super) fn lower_type_quietly(&mut self, ty: TypeId) -> Option<Ty> {
         self.written.get(&ty).cloned().or_else(|| self.lower_type(ty))
     }
 

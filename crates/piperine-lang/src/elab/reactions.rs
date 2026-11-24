@@ -14,6 +14,9 @@ impl Elaboration<'_, '_> {
     /// checker allows a commit in a reaction body only.
     pub(super) fn lower_commit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, place: ExprId, value: ExprId, after: Option<ExprId>) -> bool {
         let target = self.place_target(scope, place);
+        if let Some(target) = &target {
+            self.record_drive_site(target, super::drive_overlaps::DriveWay::Commit, scope.file, self.design.expr_node(place).span);
+        }
         let wanted = target.as_ref().map(|t| t.ty.clone());
         let value = match &wanted {
             Some(ty) => self.lower_stored(scope, value, ty),

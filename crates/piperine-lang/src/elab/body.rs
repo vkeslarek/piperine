@@ -8,6 +8,7 @@ use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::instances::Instance;
 use super::structural::BodyKey;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId};
@@ -74,31 +75,46 @@ impl Elaboration<'_, '_> {
     /// `where`, which placement reads. A default that does not fold is reported once, here.
     pub(super) fn plan_params(&mut self, modules: &[DeclId]) {
         for module in modules {
-            let mut plans = Vec::new();
-            for param in self.design.decl_data(*module).children.clone() {
-                let data = self.design.decl_data(param).clone();
-                let DeclKind::Param(p) = &data.kind else { continue };
-                let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                let default = match p.default {
-                    Some(expr) => match self.fold_param_value(expr, &Bindings::new()) {
-                        Ok(value) => Some(value),
-                        Err(fault) => {
-                            self.const_fault(&fault, "a param default");
-                            continue;
-                        }
-                    },
-                    None => self.absent_option(p.ty),
-                };
-                plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
-            }
+            let plans = self.plan_module_params(*module);
             self.param_plans.insert(*module, plans);
+        }
+    }
+
+    /// The plan of every param of `module`, its defaults folded under the substitution set now (an instance of a generic
+    /// module sets its own, `generic_bodies.rs`).
+    pub(super) fn plan_module_params(&mut self, module: DeclId) -> Vec<ParamPlan> {
+        let mut plans = Vec::new();
+        for param in self.design.decl_data(module).children.clone() {
+            let data = self.design.decl_data(param).clone();
+            let DeclKind::Param(p) = &data.kind else { continue };
+            let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            let default = match p.default {
+                Some(expr) => match self.fold_param_value(expr, &Bindings::new()) {
+                    Ok(value) => Some(value),
+                    Err(fault) => {
+                        self.const_fault(&fault, "a param default");
+                        continue;
+                    }
+                },
+                None => self.absent_option(p.ty),
+            };
+            plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
+        }
+        plans
+    }
+
+    /// The param plans of `module` as a placement of it sees them: those of its instance when it is generic.
+    pub(super) fn plans_of(&self, module: DeclId, instance: Option<&Instance>) -> Option<&Vec<ParamPlan>> {
+        match instance {
+            Some(instance) => self.instance_param_plans.get(instance),
+            None => self.param_plans.get(&module),
         }
     }
 
     /// The default of an `Option` param written with none: `None` (§3.2.10, PI-03 AC 1, explicit-unknowns
     /// EU-06 AC 1), so an instance that binds nothing reads the absent case. Any other type has no
     /// default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`), so the param is required.
-    fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
+    pub(super) fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
         let written = self.typed_written(ty)?;
         if !matches!(written, crate::types::Ty::Option(_)) {
             return None;
@@ -110,14 +126,28 @@ impl Elaboration<'_, '_> {
     /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
     /// its plan. `expected` is the id the body was promised (`body_ids`, `BodyVariants`).
     pub(super) fn lower_body(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
+        // an instance of a generic module is lowered under its own arguments (`generic_bodies.rs`)
+        let outer = key.instance.as_ref().map(|instance| self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let enclosing = std::mem::replace(&mut self.lowering, Some(key.clone()));
+        self.lower_body_under_substitution(module, keys, key, expected);
+        self.lowering = enclosing;
+        if let Some(outer) = outer {
+            self.consts.set_substitution(outer);
+        }
+    }
+
+    /// [`Elaboration::lower_body`] with the substitution of the body's instance set.
+    fn lower_body_under_substitution(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
         let data = self.design.decl_data(module).clone();
         let name = self.body_name(&key);
         let mut scope = Scope::new(data.file);
         scope.keys = keys.clone();
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
+        self.frames[0].substitution = self.consts.substitution().clone();
         self.body_keys = keys.clone();
         self.consts.set_frame_params(keys.clone());
+        self.expand_generation(module);
         self.index_children(module);
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
@@ -145,8 +175,11 @@ impl Elaboration<'_, '_> {
         }
         self.decide_branch_kinds(&mut scope);
         self.check_selector_rule(&scope);
-        let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
-        self.lower_digital(&scope, module);
+        let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
+        self.lower_digital(&mut scope, module);
+        self.judge_element_coverage(module, &name);
+        self.judge_drive_overlaps(&name);
+        self.judge_drive_loops(&name);
         let carriers = self.structure.carriers.clone();
         let port_carriers = self.structure.port_carriers;
         let resolved = self.resolved_plans();
@@ -166,6 +199,9 @@ impl Elaboration<'_, '_> {
             children,
         });
         debug_assert_eq!(body, expected, "bodies are built in the order of their ids");
+        if let Some(instance) = &key.instance {
+            self.ir.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
+        }
         self.finish_structure(body);
         for (plus, minus) in &merged {
             self.ir.merge(body, Merge { plus: *plus, minus: *minus });
@@ -178,7 +214,7 @@ impl Elaboration<'_, '_> {
     fn lower_param(&mut self, scope: &mut Scope, module: DeclId, param: DeclId) -> Option<Param> {
         let data = self.design.decl_data(param).clone();
         let DeclKind::Param(p) = &data.kind else { return None };
-        let plan = self.param_plans.get(&module)?.iter().find(|plan| plan.decl == param)?.clone();
+        let plan = self.plans_of(module, self.lowering.as_ref().and_then(|key| key.instance.as_ref()))?.iter().find(|plan| plan.decl == param)?.clone();
         // A param of module type holds its template's number (`templates.rs`).
         let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_param_type(data.file, p.ty)? };
         let check = match p.where_ {
@@ -217,25 +253,30 @@ impl Elaboration<'_, '_> {
     /// frame left comes back with `leave_frame`.
     pub(super) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
         let params = self.frame_bindings(frame);
-        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params) }
+        let substitution = self.consts.set_substitution(self.frames[frame].substitution.clone());
+        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params), substitution }
     }
 
     /// Back to the frame `entry` left.
     pub(super) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
         scope.frame = entry.outer;
         self.consts.set_frame_params(entry.params);
+        self.consts.set_substitution(entry.substitution);
     }
 
     /// The nodes of a module, ports first and then signals, each with its nature and initial value,
     /// added to the structure of the body and named in frame 0. A discrete carrier is not a node
     /// (`carriers.rs`).
     fn lower_nodes(&mut self, module: DeclId) {
-        let children = self.design.decl_data(module).children.clone();
+        let mut children = self.design.decl_data(module).children.clone();
+        // the nodes declared in generation are arrays, one element per iteration (`generation.rs`)
+        children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
         let node = |c: &DeclId| self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
             if self.types.node_array(decl).is_some() {
+                self.generated_items_complete(decl);
                 if let Some((shape, first)) = self.add_node_array(decl, role, "", 0) {
                     self.frames[0].nodes.insert(decl, first);
                     self.frames[0].node_shapes.insert(decl, shape);
@@ -269,9 +310,9 @@ impl Elaboration<'_, '_> {
             DeclKind::Signal(s) => (s.ty, s.init),
             _ => return None,
         };
-        let nature = match self.types.node_array(decl).map(|t| t.innermost().clone()) {
+        let nature = match self.consts.typed_node_array(decl).map(|t| t.innermost().clone()) {
             Some(Ty::Node(nature)) => self.nature(nature)?,
-            _ => self.design.nature_of(ty).and_then(|n| self.nature(n))?,
+            _ => self.nature_decl_of(ty).and_then(|n| self.nature(n))?,
         };
         let init = match (init, self.types.node_array(decl).is_some()) {
             (_, true) => None,
@@ -284,8 +325,8 @@ impl Elaboration<'_, '_> {
                     self.unsupported(data.file, self.design.expr_node(expr).span, "a `bool` initial value");
                     return None;
                 }
-                Ok(Constant::Int(_)) => {
-                    self.unsupported(data.file, self.design.expr_node(expr).span, "an integer initial value");
+                Ok(Constant::Int(_) | Constant::FloatBits(_) | Constant::Wide(_)) => {
+                    self.unsupported(data.file, self.design.expr_node(expr).span, "an integer or number-width initial value");
                     return None;
                 }
                 Ok(Constant::Aggregate(_)) => {
@@ -311,4 +352,6 @@ pub(super) struct FrameEntry {
     outer: usize,
     /// The module params the types read before.
     params: Bindings,
+    /// The substitution the types read before.
+    substitution: crate::types::Substitution,
 }

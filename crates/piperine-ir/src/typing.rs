@@ -14,18 +14,18 @@ pub(crate) struct Typing;
 impl Typing {
     /// A type outside the M1 pair `f64`, `bool`: an operand that selects these rules.
     pub(crate) fn digital(t: &ValueType) -> bool {
-        t.is_integer()
+        t.is_integer() || t.is_other_float()
     }
 
-    /// `f64` or an integer type.
+    /// A float of any width or an integer type.
     fn numeric(t: &ValueType) -> bool {
-        *t == ValueType::F64 || t.is_integer()
+        t.is_float() || t.is_integer()
     }
 
     /// A type a carrier can hold: `bool`, `f64`, an integer type or an enum (its tag is its `Repr`
     /// layout, §2).
     pub(crate) fn scalar(t: &ValueType) -> bool {
-        matches!(t, ValueType::Bool | ValueType::F64 | ValueType::Enum(_)) || t.is_integer()
+        matches!(t, ValueType::Bool | ValueType::Enum(_)) || t.is_float() || t.is_integer()
     }
 
     /// A scalar, or a tuple, an array, a struct or an `Option`: a value with a `Repr` layout (§2),
@@ -104,6 +104,9 @@ impl Typing {
         match t {
             ValueType::Bool => Some(1),
             ValueType::F64 => Some(64),
+            ValueType::F32 => Some(32),
+            ValueType::F16 => Some(16),
+            ValueType::F128 => Some(128),
             ValueType::UInt(n) | ValueType::Int(n) => Some(*n),
             _ => None,
         }
@@ -150,7 +153,7 @@ impl Typing {
     pub(crate) fn method(method: Method, receiver: &ValueType, args: &[&ValueType]) -> Option<ValueType> {
         let base = receiver;
         let signed = matches!(base, ValueType::Int(_));
-        let float = *base == ValueType::F64;
+        let float = base.is_float();
         let arity = match method {
             Method::Clamp => 2,
             Method::Min

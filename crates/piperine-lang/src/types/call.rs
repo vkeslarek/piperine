@@ -87,7 +87,7 @@ impl Checker<'_> {
     fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
         let function = self.overload_of(function, args);
         if let Some(intrinsic) = self.intrinsic_of(function) {
-            return self.intrinsic_call(expr, callee, intrinsic, args);
+            return self.intrinsic_call(expr, intrinsic, args);
         }
         self.reach(function);
         self.refuse_outside_class(expr, function);

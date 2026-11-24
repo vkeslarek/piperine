@@ -6,11 +6,11 @@
 use std::collections::BTreeMap;
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
+use crate::pom::{DeclId, DeclKind, ExprId, GenericParamData, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
 
 use super::check::Checker;
 use super::bounds::BoundCheck;
-use super::generics::{GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
+use super::generics::{Bound, GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
 use super::{ConstTerm, GenericValue, Length, Nominal, Ty};
 
 /// The values the parameters of a generic item are replaced by, by parameter declaration.
@@ -73,11 +73,11 @@ impl Substitution {
             Ty::Range { element, iterable } => Ty::Range { element: Box::new(self.apply(element)), iterable: *iterable },
             Ty::Iterator { element, reversible } => Ty::Iterator { element: Box::new(self.apply(element)), reversible: *reversible },
             Ty::GenericInteger { signed, width } => match self.apply_term(width) {
-                ConstTerm::Value(n @ 1..=64) if *signed => Ty::Int(n as u8),
-                ConstTerm::Value(n @ 1..=64) => Ty::UInt(n as u8),
+                ConstTerm::Value(n @ 1..=4_294_967_295) if *signed => Ty::Int(n as u32),
+                ConstTerm::Value(n @ 1..=4_294_967_295) => Ty::UInt(n as u32),
                 replaced => Ty::GenericInteger { signed: *signed, width: replaced },
             },
-            Ty::F64 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
         }
     }
 
@@ -165,38 +165,22 @@ impl Checker<'_> {
         let declared = if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
         declared?;
         self.arguments_have_repr(decl, &arguments, file, span)?;
-        self.fields_fit_integers(decl, &arguments, &substitution, file, span)?;
         let nominal = Nominal { decl, arguments };
         Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
     }
 
-    /// A field of the generic struct `decl` that is an integer of a width the arguments make wider than 64 bits (`Logic<100>`
-    /// has two `UInt<100>` planes) is `P0001` naming the instance, the field and the width, `GAPS.md` L13: the one
-    /// refusal, rather than the errors a type of no layout would raise after it. `None` after a refusal.
-    pub(super) fn fields_fit_integers(&mut self, decl: DeclId, arguments: &[GenericValue], substitution: &Substitution, file: FileId, span: Span) -> Option<()> {
-        let fields = self.fields_of(decl)?;
-        for field in fields {
-            if let Ty::GenericInteger { width, .. } = &field.ty
-                && let ConstTerm::Value(bits @ 65..) = substitution.apply_term(width)
-            {
-                let name = field.name.as_deref().unwrap_or("a field");
-                let instance = Ty::Struct(Nominal { decl, arguments: arguments.to_vec() }).name(self.design);
-                self.unsupported(file, span, &format!("`{instance}`: its field `{name}` is an integer of {bits} bits, wider than 64 (`GAPS.md` L13)"));
-                return None;
-            }
-        }
-        Some(())
-    }
-
     /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
-    /// naming the argument and the bound. `None` after a refusal.
+    /// naming the argument and the bound. A template parameter (`C: Fn(..)`, phase D) is `P0001` naming it. `None` after a refusal.
     pub(super) fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
         let item_name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut satisfied = true;
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {
             let GenericValue::Type(ty) = argument else { continue };
             for bound in &parameter.bounds {
-                if !BoundCheck::new(self).satisfies(ty, bound) {
+                if matches!(bound, Bound::Callable { .. }) {
+                    self.unsupported(file, span, &format!("the template parameter `{}` of `{item_name}`, bounded by `Fn`", parameter.name));
+                    satisfied = false;
+                } else if !BoundCheck::new(self).satisfies(ty, bound) {
                     let message = format!("`{}` does not satisfy the bound `{}` of `{}` in `{item_name}` (§3.8.7)", ty.source_name(self.design), self.bound_name(bound), parameter.name);
                     self.coded(file, "E0187", span, message, "an argument that does not satisfy its bound");
                     satisfied = false;
@@ -309,6 +293,10 @@ impl Checker<'_> {
         if let Some(value) = self.fold_integer(expr, u8::MAX) {
             return i128::try_from(value).ok().map(ConstTerm::Value);
         }
+        // `{ count }` over a param of the module: the elaborator folds it per body variant, which makes the param structural
+        if self.reads_module_param(expr) {
+            return Some(ConstTerm::Expr(expr));
+        }
         let what = self.expression_name(expr);
         self.coded(file, "E0188", node.span, format!("a generic argument that is a constant must be one the checker folds, and {what} is not (§3.8.5)"), "not a constant");
         None
@@ -326,10 +314,18 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether the const expression `expr` names a generic parameter anywhere in it.
+    /// The type parameter `T` the const expression `expr` is `T::WIDTH` of (§2), if it is.
+    pub(super) fn width_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
+        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
+        let [owner, member] = self.design.path_node(*path).segments.as_slice() else { return None };
+        let Resolution::Decl(parameter) = owner.res else { return None };
+        (member.name.text == "WIDTH" && matches!(self.design.decl_data(parameter).kind, DeclKind::GenericParam(GenericParamData::Type { .. }))).then_some(parameter)
+    }
+
+    /// Whether the const expression `expr` names a generic parameter anywhere in it, or the `WIDTH` of one.
     pub(super) fn mentions_generic_parameter(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
-            ExprKind::Path(_) => self.generic_parameter_of(expr).is_some(),
+            ExprKind::Path(_) => self.generic_parameter_of(expr).is_some() || self.width_parameter_of(expr).is_some(),
             ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.mentions_generic_parameter(*inner),
             ExprKind::Binary { lhs, rhs, .. } => self.mentions_generic_parameter(*lhs) || self.mentions_generic_parameter(*rhs),
             ExprKind::Block(block) => block.stmts.iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {

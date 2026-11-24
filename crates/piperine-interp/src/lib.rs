@@ -13,6 +13,7 @@ mod dual;
 mod generics;
 mod operators;
 mod param_types;
+mod widths;
 mod walk;
 
 #[cfg(test)]
@@ -31,6 +32,7 @@ use composite::CompositeForms;
 use generics::GenericForms;
 use operators::OperatorForms;
 use param_types::ParamTypes;
+use widths::NumberWidths;
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
@@ -70,6 +72,9 @@ impl Interpreter {
                     origin: b.origin().clone(),
                     what: format!("body {} has carriers, drives or reactions: the interpreter runs the M1 analog subset only (use the compiled backend)", b.name()),
                 });
+            }
+            for what in NumberWidths::refused(b) {
+                refused.push(Broken { item: format!("body {}", b.name()), origin: b.origin().clone(), what });
             }
             for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)).chain(CompositeForms::of(b)).chain(OperatorForms::of(b)).map(String::from).chain(GenericForms::of(b)) {
                 refused.push(Broken {

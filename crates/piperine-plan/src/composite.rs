@@ -16,6 +16,8 @@
 use piperine_abi::raw::{Field, Str, leaf};
 use piperine_ir::{Constant, Ir, ReprForm, TypeKind, ValueType};
 
+use crate::widths::NumberLayout;
+
 /// One scalar leaf of a composite value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompositeLeaf {
@@ -26,6 +28,9 @@ pub struct CompositeLeaf {
     pub leaf: u32,
     /// The byte offset of the leaf's value bytes.
     pub offset: u32,
+    /// How many elements of the leaf the field holds: 1 for a scalar, 2 for an `f128`,
+    /// `ceil(N/64)` for an integer wider than 64 bits.
+    pub count: u32,
 }
 
 /// The layout of a composite pin: its leaves and the width of its value bytes.
@@ -59,7 +64,7 @@ impl CompositeLayout {
     pub fn abi_fields(&self) -> Vec<Field<'_>> {
         self.leaves
             .iter()
-            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: 1 })
+            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: l.count })
             .collect()
     }
 
@@ -166,6 +171,7 @@ impl LeafWalk<'_> {
         match ty {
             ValueType::Bool => self.scalar(leaf::BOOL, 1, name),
             ValueType::F64 => self.scalar(leaf::F64, 8, name),
+            number if NumberLayout::field_of(number).is_some() => self.number(number, name)?,
             ValueType::UInt(n) => self.integer(*n, false, name),
             ValueType::Int(n) => self.integer(*n, true, name),
             ValueType::Tuple(items) => {
@@ -189,15 +195,24 @@ impl LeafWalk<'_> {
                 self.scalar(leaf::BOOL, 1, &LeafName::join(name, "some"));
                 self.place(inner, &LeafName::join(name, "value"))?;
             }
-            ValueType::Unit | ValueType::Fn(..) => return None,
+            ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Unit | ValueType::Fn(..) => return None,
         }
         Some(())
     }
 
     /// One leaf of `size` bytes at the next offset.
     fn scalar(&mut self, leaf: u32, size: u32, name: &str) {
-        self.leaves.push(CompositeLeaf { name: name.to_string(), leaf, offset: self.at });
+        self.leaves.push(CompositeLeaf { name: name.to_string(), leaf, offset: self.at, count: 1 });
         self.at += size;
+    }
+
+    /// A number-width type (`f32`, `f16`, `f128`, an integer over 64 bits): the one field
+    /// `NumberLayout::field_of` gives, with its element count.
+    fn number(&mut self, ty: &ValueType, name: &str) -> Option<()> {
+        let (leaf, count, size) = NumberLayout::field_of(ty)?;
+        self.leaves.push(CompositeLeaf { name: name.to_string(), leaf, offset: self.at, count });
+        self.at += size;
+        Some(())
     }
 
     /// An `N`-bit integer: the narrowest of 1, 2, 4 and 8 bytes, signed or not.
@@ -262,6 +277,8 @@ impl ConstantBytes<'_> {
         match (ty, value) {
             (ValueType::Bool, Constant::Bool(b)) => self.put(&[u8::from(b)], at),
             (ValueType::F64, Constant::Real(r)) => self.put(&r.get().to_le_bytes(), at),
+            (ValueType::F32 | ValueType::F16 | ValueType::F128, Constant::FloatBits(bits)) => self.put(&NumberLayout::float_bytes(ty, bits)?, at),
+            (ValueType::UInt(_) | ValueType::Int(_), Constant::Wide(id)) => self.put(&NumberLayout::wide_bytes(self.ir, ty, id)?, at),
             (ValueType::UInt(n) | ValueType::Int(n), Constant::Int(v)) => {
                 let (low, high) = ty.integer_range()?;
                 if v < low || v > high {

@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/generics/design-e.md`
 **Status**: Draft
-**Approved**: (written when the user approves)
+**Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run typesmodel**: `cargo test -p piperine-lang --test types_model`
 **Run stdlibrary**: `cargo test -p piperine-lang --test std_library`
@@ -19,6 +19,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run elabgenr**: `cargo test -p piperine-lang --test elab_generation`
+**Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -300,6 +302,29 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 
 ---
 
+### T118: Generation in the body of a hoisted module
+
+**What**: A module with a result or a value input whose body holds generation (`for`/`if` over its items) is hoisted with its generation unrolled under the frame's params, as a body's own module is (`elab/generation.rs`): `GeneratedItems` per frame (keyed by the frame, its range and conditions folded over `frame_bindings`), its carriers, nodes, definitions, placements and `let`s named under the frame's prefix with the iteration's subscripts (`lag.s[1]`); the refusal `"a hoisted module that holds generation in its body,"` (`hoist.rs::hoistable`) leaves and `GAPS.md` L77 closes. Added at the coordinator's request after round 5 of phase C (finding 18: L77 is this feature's leftover, not a spec question); the stdlib's hoisted forms of this phase (`laplace_nd`, `zi_*`) are its first users.
+**Where**: `crates/piperine-lang/src/elab/generation.rs`, `crates/piperine-lang/src/elab/hoist.rs`
+**Depends on**: T112
+**Reuses**: `GeneratedItems`, `Frame`, `PlacementKey`
+**Requirement**: GN-17 (AC 1)
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `generation_in_a_hoisted_module_unrolls_under_its_frame` passes under `**Run elabgenr**`
+- [ ] `a_hoisted_module_with_generation_runs` passes under `**Run srcgenr**`
+- [ ] `GAPS.md` drops L77 (`docs.rs` counts follow)
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(lang): unroll generation in a hoisted module's body`
+
+---
+
 ### T113: No item is refused because it is generic
 
 **What**: `std_library.rs` walks L58's generics group (`Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`, `MinPulse`) placing or calling each and asserts no refusal names "generic"; an item refused for another form names that form (none of the group is expected to be blocked once DE1 holds, so the test proves the rule on a dependency crate's generic module that places an `extern` module, L33: refused naming `extern` module, never "generic") and `GAPS.md` lists it under that form's id; GN-27's list in `spec.md` no longer names `merge` (struck at planning, DE2).
@@ -397,6 +422,10 @@ Proof: run srcstd | test the_water_model_boils_and_vaporizes ... ok
 Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
 Proof: run docs | test the_generics_checks_file_holds_every_phase ... ok
 
+**C135** - A hoisted module whose body holds generation is unrolled under its frame and runs; `GAPS.md` has no L77. (GN-17, AC 1; T118, phase C round 5 finding 18)
+Proof: run elabgenr | test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok
+Proof: run srcgenr | test a_hoisted_module_with_generation_runs ... ok
+
 **C117** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T114)
 Proof: run galleries | test the_fences_of_the_generic_library_are_checked ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
@@ -414,6 +443,7 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 The phase's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none yet. Planning (2026-11-23): design-e.md DE3, DE4; DE1 to DE3 answered by the user 2026-11-23 (design-e.md).
+**Amended (2026-11-24, coordinator, phase C round 5 finding 18):** T118 (generation in a hoisted module's body, GAPS L77) and check C135 join phase 22, after T112; the task was phase C's leftover (`tasks-c.md` Handoff, round 4 fix).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
@@ -425,10 +455,10 @@ The phase's live state, written as it happens - a compaction gives no warning.
 Phase 21 → Phase 22
 
 Phase 21:  T103 → T104 → T105 → T106 → T107 → T108
-Phase 22:  T109 → T110 → T111 → T112 → T113 → T114 → T115
+Phase 22:  T109 → T110 → T111 → T112 → T118 → T113 → T114 → T115
 ```
 
 | Batch | Phases | Tasks | Notes |
 | ----- | ------ | ----- | ----- |
 | B17 | 21 | T103 to T108 | after phase D and `analog-operators` B4–B7 (DE1); `std` joins the model check |
-| B18 | 22 | T109 to T115 | closes the L58 generics group and the feature; then `check_proofs.py generics` and the Verifier |
+| B18 | 22 | T109 to T115, T118 (after T112) | closes the L58 generics group and the feature; then `check_proofs.py generics` and the Verifier |

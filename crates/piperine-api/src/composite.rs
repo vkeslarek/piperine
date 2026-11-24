@@ -79,7 +79,8 @@ impl CellShape {
                     .collect::<Option<Vec<_>>>()?;
                 Some(CellShape::Enum { name: data.name.clone(), tag_width: Tag::width(*tag_levels), variants })
             }
-            ValueType::Unit | ValueType::Fn(..) => None,
+            // a pin of a number-width type is no composite shape: the host reads it as an exact number cell
+            ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Unit | ValueType::Fn(..) => None,
         }
     }
 
@@ -203,6 +204,12 @@ impl CellShape {
 
     /// The scalar of type `ty` at `*at`, moving `*at` past it.
     fn scalar(ty: &ValueType, bytes: &[u8], at: &mut usize) -> Cell {
+        if crate::number_cell::NumberCell::is_number_width(ty) {
+            let width = crate::number_cell::FloatFormat::of(ty).map_or_else(|| 8 * crate::number_cell::WideCell::limb_count(match ty { ValueType::UInt(n) | ValueType::Int(n) => *n, _ => 1 }), crate::number_cell::FloatFormat::bytes);
+            let cell = crate::number_cell::NumberCell::decode(ty, &bytes[*at..*at + width]);
+            *at += width;
+            return cell.unwrap_or(Cell::Absent);
+        }
         let width = match ty {
             ValueType::Bool => 1,
             ValueType::F64 => 8,
@@ -432,6 +439,8 @@ mod tests {
                 Cell::Real(v) => v.to_string(),
                 Cell::Bool(v) => v.to_string(),
                 Cell::Int(v) => v.to_string(),
+                Cell::Float(v) => v.text(),
+                Cell::Wide(v) => v.text(),
                 Cell::Text(v) => v.clone(),
                 Cell::Composite(_) => "composite".into(),
                 Cell::Absent => "absent".into(),

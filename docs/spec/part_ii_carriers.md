@@ -285,7 +285,10 @@ A **resolved carrier** is a carrier of a discrete nature that does
 - **§5.2.5** A module never writes a carrier it has as an `in` port.
 - **§5.2.6** When a module passes a one-driver carrier it declares to an `out` port of an
   instance, the instance holds the drive. The declaring module then holds none, and its
-  `signal` **MUST NOT** have an initial value.
+  `signal` **MUST NOT** have an initial value. An array of carriers is judged per element, as
+  §8.2.21 does for definitions: the instance holds the drive of the elements handed to it only,
+  so an initial value is the value of the elements no `out` port holds, and is `E0223` only once
+  every element is handed. *(AFK default 2026-11-24, pending user review.)*
 - **§5.2.7** `s.others()` is defined on a resolved carrier only. It gives a `V`.
 - **§5.2.8** A one-driver carrier with no drive is allowed. It holds its initial value in every
   analysis; its value type implements `Default` or it is `E0187`.
@@ -327,7 +330,7 @@ On a node, the counterpart of a drive is the module's branches ([§6](#6-continu
 | `E0220` | a second drive of a one-driver carrier; the diagnostic names the nature and `Resolve` | elaboration |
 | `E0221` | a definition and a commit to the same carrier in one module | elaboration |
 | `E0222` | a definition or commit whose target the module may not drive ([§8.2.10](part_iii_structure.md#82-the-body)): an `in` port, a carrier it neither declares nor has as a port, a child's one-driver carrier, or anything that is not a discrete carrier | elaboration |
-| `E0223` | an initial value given by a module that does not hold the drive, or given twice | elaboration |
+| `E0223` | an initial value given by a module that does not hold the drive, or given twice: for an array, over every element handed to `out` ports | elaboration |
 | `E0224` | `others()` on a one-driver carrier | elaboration |
 | `E0225` | two drives of one resolved carrier whose driven types differ | elaboration |
 

@@ -144,8 +144,9 @@ impl<'a> Netlist<'a> {
                     Constant::Bool(b) => ParamValue::Bool(*b),
                     // The solver's integer leaf; an `N`-bit value fits its 64 bits.
                     Constant::Int(v) => ParamValue::Int(*v as i64),
-                    // A composite is exactly the pin's bytes (`CompositeLayout::bytes`).
-                    Constant::Aggregate(_) => ParamValue::Bytes(PinLayout::bytes_in(ir, &param.ty, *given).ok_or_else(|| {
+                    // A composite, a float of a width other than `f64` and an integer wider than 64
+                    // bits are exactly the pin's bytes (`PinLayout::bytes_in`).
+                    Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_) => ParamValue::Bytes(PinLayout::bytes_in(ir, &param.ty, *given).ok_or_else(|| {
                         Error::simple(SolverDomain::Device, format!("instance `{}`: param `{}` holds a composite constant that is no value of {}", instance.path(), param.name, param.ty))
                     })?),
                 };

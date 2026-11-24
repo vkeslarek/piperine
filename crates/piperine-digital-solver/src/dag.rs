@@ -40,33 +40,13 @@ impl Dag {
                 readers[r.0 as usize].push(i);
             }
         }
-        // an edge goes from a function to every function that reads a net it writes
-        let edges: Vec<Vec<usize>> = functions
-            .iter()
-            .map(|f| {
-                let mut to: Vec<usize> = f.writes.iter().flat_map(|w| readers[w.0 as usize].iter().copied()).collect();
-                to.sort_unstable();
-                to.dedup();
-                to
-            })
-            .collect();
+        // an edge goes from a function to every function that reads a part of a net it writes: elements of one array
+        // net that one function writes and another reads are an edge only when they share an element
+        let edges: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |_| true)).collect();
 
         // abi.md §9 D1: every directed cycle passes through a RELAX net. Take the edges through
         // RELAX nets away; what remains must have no cycle.
-        let strict: Vec<Vec<usize>> = functions
-            .iter()
-            .map(|f| {
-                let mut to: Vec<usize> = f
-                    .writes
-                    .iter()
-                    .filter(|w| !nets[w.0 as usize].relax)
-                    .flat_map(|w| readers[w.0 as usize].iter().copied())
-                    .collect();
-                to.sort_unstable();
-                to.dedup();
-                to
-            })
-            .collect();
+        let strict: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |net| !nets[net.0 as usize].relax)).collect();
         for members in components(&strict) {
             if members.len() > 1 || strict[members[0]].contains(&members[0]) {
                 let what = members.iter().map(|m| functions[*m].name.clone()).collect();
@@ -136,6 +116,19 @@ impl Dag {
             }
         }
         Ok(Dag { functions, order, readers })
+    }
+
+    /// The functions that read a part of a net `f` writes, through the nets `through` admits, in increasing order.
+    fn successors(functions: &[FnNode], readers: &[Vec<usize>], f: &FnNode, through: impl Fn(NetId) -> bool) -> Vec<usize> {
+        let mut to: Vec<usize> = f
+            .write_parts
+            .iter()
+            .filter(|written| through(written.net))
+            .flat_map(|written| readers[written.net.0 as usize].iter().copied().filter(move |r| functions[*r].read_parts.iter().any(|read| read.overlaps(written))))
+            .collect();
+        to.sort_unstable();
+        to.dedup();
+        to
     }
 
     /// The steps in the order they run.

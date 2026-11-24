@@ -53,6 +53,10 @@ pub enum Field {
     Real(f64),
     Bool(bool),
     Int(i128),
+    /// An `f16`, `f32` or `f128`, exact.
+    Float(crate::number_cell::FloatCell),
+    /// An integer wider than 64 bits, exact.
+    Wide(crate::number_cell::WideCell),
     /// A text literal of the site.
     Text(String),
     /// The name of the variant an enum with no payload holds (CV-22).
@@ -106,13 +110,6 @@ impl Streams {
         let mut paths: Vec<&str> = self.pins.keys().map(String::as_str).collect();
         paths.sort_unstable();
         paths
-    }
-
-    /// Whether `bytes` at `path` is the write of a stream's `RECORD` pin, which the digital side
-    /// also reports as the net `path` taking a value: a stream may share its name with a signal, and
-    /// a record's bytes are no value of that signal's type.
-    pub fn is_record_write(&self, path: &str, bytes: &[u8]) -> bool {
-        self.pins.get(path).is_some_and(|(_, _, layout)| layout.size as usize == bytes.len())
     }
 
     /// Keeps only the streams `entries` name (CLI-12 AC 1, 2): an entry is a stream's name,
@@ -251,6 +248,8 @@ impl Field {
             Cell::Real(v) => Field::Real(v),
             Cell::Bool(v) => Field::Bool(v),
             Cell::Int(v) => Field::Int(v),
+            Cell::Float(v) => Field::Float(v),
+            Cell::Wide(v) => Field::Wide(v),
             Cell::Text(v) => Field::Variant(v),
             Cell::Composite(v) => Field::Composite(v),
             Cell::Absent => return Err(Failure::Backend("a record field decoded from its bytes is a value, never the absent cell".into())),
@@ -276,7 +275,7 @@ impl Sink for Delivery {
     fn observe(&mut self, o: &Observation) {
         // a change with bytes is a net taking a value; one with none is an event firing
         if let (Some(recorder), ObservationKind::Change { bytes }) = (&self.recorder, &o.kind) {
-            if !bytes.is_empty() && !self.streams.is_record_write(&o.path, bytes) {
+            if !bytes.is_empty() {
                 recorder.borrow_mut().change(&o.path, o.time, bytes);
             }
         }

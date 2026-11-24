@@ -12,6 +12,7 @@ mod netlist;
 mod pin;
 mod plan;
 mod resolved;
+mod widths;
 
 pub use array::ArrayPin;
 pub use composite::{CompositeLayout, CompositeLeaf};
@@ -21,3 +22,4 @@ pub use netlist::{Modules, Netlist};
 pub use pin::PinLayout;
 pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ResolvedPins, Source, Target, Term};
 pub use resolved::DriveLayout;
+pub use widths::NumberLayout;

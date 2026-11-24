@@ -103,7 +103,11 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let statements = if tail.is_some() { &body.stmts[..body.stmts.len() - 1] } else { &body.stmts[..] };
-        let (stmts, _) = self.lower_statements(scope, statements)?;
+        let (mut stmts, last) = self.lower_statements(scope, statements)?;
+        // a block-like statement just before the tail (`for k in .. { }`, `if c { .. }`) comes back as the value of the slice: it still runs
+        if let Some(last) = last {
+            stmts.push(self.stmt(Stmt::Expr(last)));
+        }
         let value = match tail {
             Some(tail) => {
                 let pair = self.lower_option(scope, tail)?;
@@ -184,13 +188,20 @@ impl Elaboration<'_, '_> {
     /// A function that reaches `emit!` or takes a `str` is inlined where it stands (§19 rule 10), and
     /// its body must run once: see `lower_inlined_option_call`.
     pub(super) fn lower_option_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Pair> {
+        // a generic function runs for the arguments the checker recorded at the call, one instance of each half (§3.8.10)
+        let instance = if self.design.decl_data(function).generics_span.is_some() { Some(self.concrete_instance(expr)?) } else { None };
+        let arguments = instance.as_ref().map(|instance| instance.arguments.clone()).unwrap_or_default();
         if self.is_inlined(function) {
-            return self.lower_inlined_option_call(scope, expr, function);
+            let Some(instance) = instance else { return self.lower_inlined_option_call(scope, expr, function) };
+            let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+            let inlined = self.lower_inlined_option_call(scope, expr, function);
+            self.consts.set_substitution(outer);
+            return inlined;
         }
         let origin = self.expr_origin(expr);
         let first = self.lower_arguments(scope, expr, function)?;
-        let (presence, is_ty) = self.request(function, Half::Presence)?;
-        let (payload, val_ty) = self.request(function, Half::Payload)?;
+        let (presence, is_ty) = self.request_instance(function, arguments.clone(), Half::Presence)?;
+        let (payload, val_ty) = self.request_instance(function, arguments, Half::Payload)?;
         let second = self.lower_arguments(scope, expr, function)?;
         let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
         let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);

@@ -81,6 +81,7 @@ use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Or
 
 use crate::array::ArrayPin;
 use crate::pin::PinLayout;
+use crate::widths::NumberLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, ResolvedPins, Source, Target};
 use crate::resolved::DriveLayout;
 
@@ -226,6 +227,10 @@ impl CarrierLayout {
         match *ty {
             ValueType::Bool => Some(&BIT),
             ValueType::F64 => Some(&F64),
+            ValueType::F16 => Some(&U16),
+            ValueType::F32 | ValueType::F128 => NumberLayout::static_layout(ty),
+            // an integer wider than 64 bits is a `U64` array: its layout depends on its width
+            ValueType::UInt(n) | ValueType::Int(n) if n > 64 => None,
             ValueType::UInt(n) => Some(match Self::width(n) {
                 1 => &BYTE,
                 2 => &U16,
@@ -265,6 +270,7 @@ impl CarrierLayout {
         let value: Vec<u8> = match (ty, value) {
             (ValueType::Bool, Constant::Bool(b)) => vec![u8::from(b)],
             (ValueType::F64, Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
+            (ValueType::F32 | ValueType::F16 | ValueType::F128, Constant::FloatBits(bits)) => NumberLayout::float_bytes(ty, bits)?,
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 let (lo, hi) = ty.integer_range()?;
                 if v < lo || v > hi {
@@ -460,16 +466,25 @@ impl Digital {
         body.carriers().get(c as usize).is_some_and(|x| matches!(x.role, CarrierRole::Resolved { .. }))
     }
 
-    /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, or a `signal` that a
-    /// child's carrier port is bound to.
+    /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, a `signal` that a
+    /// child's carrier port is bound to, or an array `signal` a definition of one element drives.
     pub(crate) fn is_port(body: Body<'_>, c: u32) -> bool {
         match body.carriers().get(c as usize).map(|x| &x.role) {
             // A reached carrier is a read-only view of a child's: a `PORT` pin, as an `in` port.
             Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { .. }) => true,
-            // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`).
-            Some(CarrierRole::Signal) => (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c),
+            // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`), and
+            // when a definition of one of its elements writes it: that drive's pin is bound to the element of the array
+            // net (`Pins::element_drives`), so the carrier's own pin, which its readers read, must be that net too
+            Some(CarrierRole::Signal | CarrierRole::Internal) => {
+                (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c) || Self::has_element_drive(body, c)
+            }
             None => false,
         }
+    }
+
+    /// Whether an undelayed definition of one element of the array carrier `c` writes it through an element drive pin.
+    fn has_element_drive(body: Body<'_>, c: u32) -> bool {
+        body.drives().iter().any(|drive| drive.carrier == c && drive.element.is_some() && drive.after.is_none())
     }
 
     /// `origin` as a shape writes it.

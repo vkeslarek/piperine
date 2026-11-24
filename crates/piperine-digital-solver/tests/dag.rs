@@ -5,17 +5,11 @@
 
 use piperine_digital_solver::dag::{Dag, Step};
 use piperine_digital_solver::net::{NetId, NetSpec};
-use piperine_digital_solver::plan::FnNode;
+use piperine_digital_solver::plan::{FnNode, NetPart};
 use piperine_digital_solver::error::DigitalError;
 
 fn func(name: &str, instance: u32, k: u32, reads: &[u32], writes: &[u32]) -> FnNode {
-    FnNode {
-        name: name.to_string(),
-        instance,
-        k,
-        reads: reads.iter().map(|n| NetId(*n)).collect(),
-        writes: writes.iter().map(|n| NetId(*n)).collect(),
-    }
+    FnNode::over_whole_nets(name, instance, k, reads.iter().map(|n| NetId(*n)).collect(), writes.iter().map(|n| NetId(*n)).collect())
 }
 
 fn nets(n: usize, relax: &[usize]) -> Vec<NetSpec> {
@@ -160,4 +154,38 @@ fn an_inner_cycle_through_no_relax_net_inside_a_relax_component_is_refused() {
     // the resolver loop alone, through the RELAX net, is accepted
     let ok = vec![func("g2", 1, 0, &[3], &[2]), func("r", 2, 0, &[2], &[3])];
     assert!(Dag::build(&ok, &nets(4, &[3])).is_ok());
+}
+
+/// A function over elements of array nets: its reads and writes each name one element.
+fn element_func(name: &str, k: u32, reads: &[(u32, u64)], writes: &[(u32, u64)]) -> FnNode {
+    let part = |(net, element): &(u32, u64)| NetPart { net: NetId(*net), elements: Some((*element, 1)) };
+    FnNode {
+        name: name.to_string(),
+        instance: 0,
+        k,
+        reads: reads.iter().map(|(net, _)| NetId(*net)).collect(),
+        writes: writes.iter().map(|(net, _)| NetId(*net)).collect(),
+        read_parts: reads.iter().map(part).collect(),
+        write_parts: writes.iter().map(part).collect(),
+    }
+}
+
+#[test]
+fn definitions_of_different_elements_of_one_array_net_chain_without_a_cycle() {
+    // abi.md §9 D1 at element granularity (part III §8.2.1): `z[1] = z[0] + 1` reads element 0 and writes element 1 of one
+    // net, so it runs after `z[0] = y[1]` and is no cycle; `z[0]` reads `y[1]`, written by `y1`
+    let fns = vec![element_func("z1", 2, &[(1, 0)], &[(1, 1)]), element_func("z0", 1, &[(0, 1)], &[(1, 0)]), element_func("y1", 0, &[(2, 0)], &[(0, 1)])];
+    let dag = Dag::build(&fns, &nets(3, &[])).expect("different elements make no cycle");
+    let order = run_order(&dag);
+    assert!(position(&order, "y1") < position(&order, "z0") && position(&order, "z0") < position(&order, "z1"), "{order:?}");
+    // a function that reads the element it writes is a cycle still
+    let looped = vec![element_func("z1", 0, &[(1, 1)], &[(1, 1)])];
+    assert!(matches!(Dag::build(&looped, &nets(2, &[])), Err(DigitalError::Bind { rule: "cycle", .. })));
+    // a read of the whole net depends on every element's writer
+    let mut whole = element_func("sum", 1, &[], &[(2, 0)]);
+    whole.reads = vec![NetId(1)];
+    whole.read_parts = vec![NetPart::whole(NetId(1))];
+    let fns = vec![whole, element_func("z1", 0, &[(0, 0)], &[(1, 1)])];
+    let order = run_order(&Dag::build(&fns, &nets(3, &[])).expect("acyclic"));
+    assert!(position(&order, "z1") < position(&order, "sum"), "{order:?}");
 }

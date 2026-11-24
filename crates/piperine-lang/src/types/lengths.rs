@@ -6,6 +6,7 @@
 use crate::msl::lexer;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, LitKind, Resolution};
 
+use super::widths::FloatText;
 use super::check::Checker;
 use super::{Length, Ty};
 
@@ -71,7 +72,8 @@ impl Checker<'_> {
 pub(super) struct IntegerFolder<'d> {
     /// The design the expression is read from.
     pub(super) design: &'d crate::pom::Design,
-    /// The value of each const parameter the expression may name (an instantiation's arguments).
+    /// The value of each const parameter the expression may name (an instantiation's arguments), and the level count
+    /// of each type parameter whose `T::WIDTH` it may name.
     values: std::collections::BTreeMap<DeclId, u128>,
 }
 
@@ -95,7 +97,7 @@ impl IntegerFolder<'_> {
         let nesting = nesting.checked_sub(1)?;
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => match &lit.kind {
-                LitKind::Int(text) if !text.ends_with("f64") => lexer::int_value(text),
+                LitKind::Int(text) if !FloatText::is(text) => lexer::int_value(text),
                 _ => None,
             },
             ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } => self.fold(*inner, nesting),
@@ -114,6 +116,8 @@ impl IntegerFolder<'_> {
                     _ => None,
                 }
             }
+            // `T::WIDTH` of a type parameter whose level count the folder was given (a hand-written `Repr` on a generic type)
+            ExprKind::Path(path) if let [owner, member] = self.design.path_node(*path).segments.as_slice() && member.name.text == "WIDTH" && let Resolution::Decl(parameter) = owner.res => self.values.get(&parameter).copied(),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                     DeclKind::Const(data) => self.fold(data.value?, nesting),

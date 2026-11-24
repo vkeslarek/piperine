@@ -349,3 +349,23 @@ fn a_digital_only_run_without_finish_reaches_its_stop() {
     let records = kept.borrow().0.clone();
     assert_eq!(records.iter().filter(|r| r.stream == "s").count(), 1, "{records:?}");
 }
+
+#[test]
+fn a_stream_named_like_a_signal_of_the_same_record_size_keeps_the_signals_changes() {
+    // a record of `v: u8` and `some: bool` is 2 bytes, the size of an `Option<u8>` (a presence byte and the value): the stream `q`
+    // and the signal `Top.q` share the path, and the write of the stream's pin is no change of the signal (part VI §19). The
+    // run holds `q` at `Some(42)` from 1 us on, and the stream's two records show the value before and after
+    let text = "module Top() { signal q: Bit<Option<u8>>; }\n\
+                digital for Top { on at(1u) { q <- Some(42); } on q.changed() { emit!(\"q\", v = q.unwrap_or(7u8), some = q.is_some()); } }\n";
+    let table = table_of(text, None).unwrap_or_else(|f| panic!("{f}"));
+    let column = table.columns.iter().position(|name| name == "Top.q").expect("the signal is a column");
+    let last = table.rows.last().expect("rows")[column].clone();
+    let held = Some(42u8);
+    assert_eq!(format!("{last:?}"), format!("Composite(Option(Some(Scalar(Int({})))))", held.expect("a value")), "the signal ends at what it was committed");
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, text).expect("write");
+    let seen = records_of(&file, "Top", "transient", Some(5e-6)).unwrap_or_else(|f| panic!("{f}"));
+    let values: Vec<(&Field, &Field)> = seen.iter().map(|r| (&r.fields[0].1, &r.fields[1].1)).collect();
+    assert_eq!(values, [(&Field::Int(7), &Field::Bool(false)), (&Field::Int(42), &Field::Bool(true))], "None at the start, then Some(42)");
+}

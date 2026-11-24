@@ -203,7 +203,8 @@ impl Session {
         let ir = self.ir();
         let top = ir.top().path();
         let short = port.strip_prefix(&format!("{top}.")).unwrap_or(port);
-        let carrier = ir.top().body().carriers().iter().find(|c| c.name == short);
+        // an internal carrier is no name of the design: the host holds no drive of it and names it not
+        let carrier = ir.top().body().carriers().iter().find(|c| c.name == short && c.role != CarrierRole::Internal);
         match carrier {
             Some(c) if c.role == CarrierRole::In => {
                 let path = format!("{top}.{short}");

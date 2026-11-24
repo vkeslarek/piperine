@@ -146,7 +146,7 @@ Modules take type and const parameters with conditions, `for` and `if` generate
 structure when the design is built, and a `let` places an instance:
 
 ```rust
-module Delay<T: Repr, const N: usize>(in clk: Bit, in d: Bit<T>, out q: Bit<T>) where N >= 1 {
+module Delay<T: Repr + Default, const N: usize>(in clk: Bit, in d: Bit<T>, out q: Bit<T>) where N >= 1 {
     signal r: [Bit<T>; N];
     q = r[N - 1];
 }

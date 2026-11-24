@@ -69,6 +69,61 @@ pub enum NetWriter {
     Statements { instance: u32 },
 }
 
+impl FnNode {
+    /// A function named `name`, function `k` of `instance`, that reads and writes the nets `reads` and `writes` whole.
+    pub fn over_whole_nets(name: &str, instance: u32, k: u32, reads: Vec<NetId>, writes: Vec<NetId>) -> FnNode {
+        let read_parts = reads.iter().copied().map(NetPart::whole).collect();
+        let write_parts = writes.iter().copied().map(NetPart::whole).collect();
+        FnNode { name: name.to_string(), instance, k, reads, writes, read_parts, write_parts }
+    }
+}
+
+/// The part of a net a function reads or writes: the whole net, or a run of elements of an array net.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NetPart {
+    pub net: NetId,
+    /// `(first, length)` of the elements of an array net; `None` is the whole net.
+    pub elements: Option<(u64, u64)>,
+}
+
+impl NetPart {
+    /// The whole of `net`.
+    pub fn whole(net: NetId) -> NetPart {
+        NetPart { net, elements: None }
+    }
+
+    /// Whether this part and `other` share a byte: the same net and, on an array net, a common element.
+    pub fn overlaps(&self, other: &NetPart) -> bool {
+        self.net == other.net
+            && match (self.elements, other.elements) {
+                (Some((first, length)), Some((other_first, other_length))) => first < other_first + other_length && other_first < first + length,
+                _ => true,
+            }
+    }
+
+    /// The parts of their nets the `PIN` cells `cells` of `input` name; `elements` is the element each cell reads
+    /// (`Function.elements`, `WHOLE` for a whole array; empty when every read is at element 0), `None` for the writes,
+    /// whose cells name a whole net or a pin bound to its element or window.
+    fn of<'a>(input: &ShapeInput<'_>, nets: &[NetSpec], cells: impl Iterator<Item = &'a piperine_abi::raw::Cell>, elements: Option<&[u64]>) -> Vec<NetPart> {
+        let mut out = Vec::new();
+        for (i, c) in cells.enumerate().filter(|(_, c)| c.kind == cell::PIN) {
+            // an empty list is every read at element 0 (abi.md §3: the list is written only when an element is not 0)
+            let element = elements.map(|list| list.get(i).copied().unwrap_or(0)).filter(|e| *e != piperine_abi::raw::WHOLE);
+            let part = match input.pins.get(c.index as usize) {
+                Some(Binding::Net(net)) if nets.get(net.0 as usize).is_some_and(|n| n.count >= 1) => NetPart { net: *net, elements: element.map(|e| (e, 1)) },
+                Some(Binding::Net(net)) => NetPart::whole(*net),
+                Some(Binding::ArrayElement { net, element: at }) => NetPart { net: *net, elements: Some((*at, 1)) },
+                Some(Binding::ArrayWindow { net, first, length }) => NetPart { net: *net, elements: Some(element.map_or((*first, *length), |e| (first + e, 1))) },
+                _ => continue,
+            };
+            if !out.contains(&part) {
+                out.push(part);
+            }
+        }
+        out
+    }
+}
+
 /// A discrete function and the nets it depends on and produces.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FnNode {
@@ -78,6 +133,11 @@ pub struct FnNode {
     pub k: u32,
     pub reads: Vec<NetId>,
     pub writes: Vec<NetId>,
+    /// The part of each net in `reads` it reads, for the order (abi.md §9 D1): a function after the writers of the
+    /// elements it reads, so definitions of different elements of one array net chain without a cycle.
+    pub read_parts: Vec<NetPart>,
+    /// The part of each net in `writes` it writes.
+    pub write_parts: Vec<NetPart>,
 }
 
 /// The result of the discrete bind rules.
@@ -214,6 +274,8 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
                     k: k as u32,
                     reads: nets_of(input, f.reads.iter()),
                     writes: nets_of(input, f.writes.iter()),
+                    read_parts: NetPart::of(input, nets, f.reads.iter(), Some(&f.elements.iter().copied().collect::<Vec<u64>>())),
+                    write_parts: NetPart::of(input, nets, f.writes.iter(), None),
                 });
             }
         }

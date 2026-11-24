@@ -164,7 +164,8 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
                                  on: List<u32>,                                         // event pins
                                  reads: List<Cell>, writes: List<Statement>,
                                  elements: List<u64> }                                  // empty, or one per read: its array element
-// `elements[i]` names the element of an array pin that `reads[i]` reads, or `WHOLE` (= u64::MAX, a reaction only):
+// `elements[i]` names the element of an array pin that `reads[i]` reads, or `WHOLE` (= u64::MAX, a reaction or a
+// discrete function: a definition at a run-time element, `q = mem[at]`; amended by `generics` round 5 finding 17):
 // the cell then holds an `ArrayView`. `Cell` itself is unchanged (a generated device spells `Cell { kind, index, part }`).
 #[repr(C)] pub struct Statement { pin: u32, offset: u32, len: u32, flags: u32,          // LATER | REPLACE
                                   min_after: f64 }                                      // LATER: every delay is at least this
@@ -258,7 +259,11 @@ Rules that hold for every pin, whatever its role:
   `Logic::X` at one level, for `None` and for a derived `Default`), which the owner commits at `(0, 0)`. `piperine-abi` ships the common
   layouts as constants (`BIT`, `BYTE`, `F64`), so an external author does not re-derive them.
   Each has one field `v`: `BIT` is `{ v: BOOL @0 }` (size 1, align 1), `BYTE` is `{ v: U8 @0 }`
-  (size 1, align 1), `F64` is `{ v: F64 @0 }` (size 8, align 8). What may be absent is a field:
+  (size 1, align 1), `F64` is `{ v: F64 @0 }` (size 8, align 8). The number widths add no leaf: `f32` is
+  the `F32` leaf, `f16` one `U16` field, `f128` one `U64` field of `count` 2 and an integer of `N > 64` bits one
+  `U64` field of `count` `ceil(N/64)`, low limb first (the IEEE 754 bits; two's complement). The IR type is the
+  metadata that says these bytes are one number, never the layout: a host reads the type of the pin from the IR.
+  What may be absent is a field:
   an `Option<T>` is `{ some: BOOL @0, v: T }` (P5), and a `Logic<N>` is two fields of the leaf of
   `UInt<N>`, `binary` at offset 0 and `value` at the size of `UInt<N>`, the whole of twice that
   size and packed with alignment 1 like every composite pin (amended, coordinator ruling

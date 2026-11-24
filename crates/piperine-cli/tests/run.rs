@@ -739,3 +739,60 @@ fn a_logic_cell_prints_its_pattern() {
     let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
     assert!(csv.lines().last().is_some_and(|row| row.ends_with(",10xz")), "the last CSV row: {csv}");
 }
+
+/// A design whose carriers hold an `f32`, an `f16`, an `f128` and a `UInt<200>` committed at the first rising edge, a record of
+/// the four and of the two params `k` (`f128`) and `m` (`UInt<200>`).
+const WIDTHS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out s: Bit<f32> = 0.0, out h: Bit<f16> = 0.0, out q: Bit<f128> = 0.0, out w: Bit<UInt<200>> = 0) { k: f128 = 0.5; m: UInt<200> = 7; }\n\
+digital for Logger {\n    on clk.rise() {\n        s <- 0.1;\n        h <- 0.1;\n        q <- 0.1;\n        let big: UInt<200> = (1 << 199u8) + 1;\n        w <- big;\n        emit!(\"sample\", s = 0.1f32, k = k, m = m, w = big);\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal s: Bit<f32>;\n    signal h: Bit<f16>;\n    signal q: Bit<f128>;\n    signal w: Bit<UInt<200>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, s, h, q, w);\n}\n";
+
+/// `2^199 + 1`, the value the carrier `w` holds.
+const TWO_TO_199_PLUS_1: &str = "803469022129495137770981046170581301261101496891396417650689";
+
+/// `piperine run` over `WIDTHS`: the files it wrote and what it printed.
+struct WidthRun;
+
+impl WidthRun {
+    /// The run printing `print`, with `files` writing a CSV, JSON Lines and a plot instead of printing, and `extra` flags.
+    fn of(print: &[&str], files: bool, extra: &[&str]) -> CompositeRun {
+        let dir = written(&[("bench.msl", WIDTHS)]);
+        let mut args: Vec<String> = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9"].iter().map(|s| s.to_string()).collect();
+        for signal in print {
+            args.extend(["--print".to_string(), signal.to_string()]);
+        }
+        if files {
+            args.extend(["--csv", "out.csv", "--records", "out.jsonl", "--plot", "out.svg"].iter().map(|s| s.to_string()));
+        }
+        args.extend(extra.iter().map(|s| s.to_string()));
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        CompositeRun { stdout, dir }
+    }
+}
+
+#[test]
+fn number_widths_print_exactly_in_every_format() {
+    // CV-32 AC 4, CV-21 (Q2 (c), QD6): a carried and an emitted `f32`, `f16`, `f128` and `UInt<200>` are written as the shortest
+    // decimal that reads back in their format (`0.1` in each) and the exact integer, in the text table, the record lines, JSON
+    // Lines (a number each) and CSV; the plot takes the nearest `f64`; `--param` sets an `f128` and a `UInt<200>` param in
+    // their own format
+    let run = WidthRun::of(&["s", "h", "q", "w"], false, &[]);
+    let last = run.stdout.lines().rev().find(|l| l.contains(TWO_TO_199_PLUS_1)).unwrap_or_else(|| panic!("no final row in\n{}", run.stdout));
+    assert_eq!(cells(last)[1..], ["0.1", "0.1", "0.1", TWO_TO_199_PLUS_1], "the text table: {last}");
+    let record = run.stdout.lines().find(|l| l.contains(" sample ")).unwrap_or_else(|| panic!("no record in\n{}", run.stdout));
+    assert!(record.contains("s=0.1 k=0.5 m=7 w=803469022129495137770981046170581301261101496891396417650689"), "the record line: {record}");
+
+    let run = WidthRun::of(&["s", "h", "q", "w"], true, &["--param", "logger.k=0.3", "--param", "logger.m=0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0001"]);
+    let json = run.file("out.jsonl");
+    let line = json.lines().next().unwrap_or_else(|| panic!("no JSON line"));
+    assert!(line.contains("\"s\":0.1,\"k\":0.3,\"m\":3138550867693340381917894711603833208051177722232017256449,\"w\":803469022129495137770981046170581301261101496891396417650689"), "the JSON line (the params as `--param` set them, in their own format): {line}");
+    let csv = run.file("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.s,Top.h,Top.q,Top.w"), "{csv}");
+    assert!(rows.last().expect("a CSV row").ends_with(&format!(",0.1,0.1,0.1,{TWO_TO_199_PLUS_1}")), "the last CSV row: {csv}");
+    let svg = run.file("out.svg");
+    for series in ["Top.s", "Top.h", "Top.q", "Top.w"] {
+        assert!(svg.contains(&format!("data-signal=\"{series}\"")), "the plot has `{series}`: {svg}");
+    }
+}

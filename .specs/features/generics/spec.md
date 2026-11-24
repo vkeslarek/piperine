@@ -411,14 +411,14 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-10 | P1: handles (B) | - | Pending |
 | GN-11 | P1: handles (B) | - | Pending |
 | GN-12 | P1: handles (B) | - | Pending |
-| GN-13 | P1: generic modules and generation (C) | - | Pending |
-| GN-14 | P1: generic modules and generation (C) | - | Pending |
-| GN-15 | P1: generic modules and generation (C) | - | Pending |
-| GN-16 | P1: generic modules and generation (C) | - | Pending |
-| GN-17 | P1: generic modules and generation (C) | - | Pending |
-| GN-18 | P1: generic modules and generation (C) | - | Pending |
-| GN-19 | P1: generic modules and generation (C) | - | Pending |
-| GN-20 | P1: generic modules and generation (C) | - | Pending |
+| GN-13 | P1: generic modules and generation (C) | - | Delivered (phase C) |
+| GN-14 | P1: generic modules and generation (C) | - | Delivered (phase C) |
+| GN-15 | P1: generic modules and generation (C) | - | Delivered (phase C) |
+| GN-16 | P1: generic modules and generation (C) | - | Delivered (phase C) |
+| GN-17 | P1: generic modules and generation (C) | - | Delivered (phase C): every item kind of a generation `for`/`if` (placements, nodes, carriers, definitions, hoisted placements, `let`s) except an item only some iterations of a `for` make (L76) and generation inside a hoisted module (L77, phase E T118), both refused by name |
+| GN-18 | P1: generic modules and generation (C) | - | Delivered (phase C) |
+| GN-19 | P1: generic modules and generation (C) | - | Delivered (phase C) |
+| GN-20 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-21 | P1: templates and implicit params (D) | - | Pending |
 | GN-22 | P1: templates and implicit params (D) | - | Pending |
 | GN-23 | P1: templates and implicit params (D) | - | Pending |
@@ -430,7 +430,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-29 | P1: every phase keeps the rest intact | - | Pending |
 | GN-30 | P1: every phase keeps the rest intact | - | Pending |
 | GN-31 | P1: every phase keeps the rest intact | - | Pending |
-| GN-32 | P1: generic functions, methods and traits (C) | - | Pending |
+| GN-32 | P1: generic functions, methods and traits (C) | - | Delivered (phase C) |
 
 **Coverage:** 32 total, 0 mapped to tasks (spec only).
 

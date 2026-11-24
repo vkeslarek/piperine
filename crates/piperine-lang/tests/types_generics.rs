@@ -448,17 +448,26 @@ impl LaterPhases {
 }
 
 #[test]
-fn phase_c_d_and_e_forms_stay_p0001_by_name() {
-    // GN-29 AC 2: a form that a later phase delivers stays `P0001` naming the form, never run by another rule: a generic
-    // module and generation (phase C), a template value and a placement through one (phase C, GN-21 to GN-23)
-    let generic_module = "module Hold<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; let h = Hold::<u8>(d); }\n";
-    assert!(LaterPhases::refuses(generic_module, "generic module"), "{:?}", LaterPhases::found(generic_module));
+fn phase_d_and_e_forms_stay_p0001_by_name() {
+    // GN-29 AC 2: a form that a later phase delivers stays `P0001` naming the form, never run by another rule: a template
+    // value and a placement through one (phase D, GN-21 to GN-23); the generic module and generation (a body and a `digital`
+    // block) left this list when generics T71, T77 and T80 typed and lowered them
+    let generic_module = "module Hold<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<u8> = 0; let h = Hold::<u8>(d); }\n";
+    assert!(!LaterPhases::refuses(generic_module, "generic module"), "{:?}", LaterPhases::found(generic_module));
     let generation = "module Top() { signal o: Electrical; for k in 0..2 { let r = 1; } }\n";
-    assert!(LaterPhases::refuses(generation, "generation `for`/`if` in a module body"), "{:?}", LaterPhases::found(generation));
+    assert!(!LaterPhases::refuses(generation, "generation"), "{:?}", LaterPhases::found(generation));
     let template = "module Cell(a: Electrical) {}\nmodule Top() { signal a: Electrical; let c = Cell { }; }\n";
     assert!(LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
     let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
     assert!(LaterPhases::refuses(through, "placement through a template value or a function"), "{:?}", LaterPhases::found(through));
+    // a template parameter (`C: Fn(..)`, phase D, GN-21): given as an argument or left to inference, it is `P0001` naming the
+    // parameter, never `E0187` (a bound it does not satisfy) or `E0181` (cannot infer)
+    let bound = "module Cell(a: Electrical) {}\nmodule Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner::<Cell>(); }\n";
+    assert!(LaterPhases::refuses(bound, "the template parameter `C` of `Inner`, bounded by `Fn`"), "{:?}", LaterPhases::found(bound));
+    assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "P0001"), "{:?}", LaterPhases::found(bound));
+    let open = "module Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner(); }\n";
+    assert!(LaterPhases::refuses(open, "the template parameter `C` of `Inner`, bounded by `Fn`"), "{:?}", LaterPhases::found(open));
+    assert!(LaterPhases::found(open).iter().all(|(code, _)| code == "P0001"), "{:?}", LaterPhases::found(open));
 }
 
 #[test]
@@ -494,4 +503,30 @@ fn a_call_of_an_extern_intrinsic_types_over_the_logic_of_std() {
     assert!(unread.iter().all(|(_, message)| !message.contains("generic function")), "{unread:?}");
     let mismatch = messages("fn bad(x: u8) -> bool { matches_bits(x, \"1\") }\n");
     assert!(mismatch.iter().any(|(code, message)| code == "E0180" && message.contains("Logic")), "a subject that is no `Logic` is a mismatch: {mismatch:?}");
+}
+
+/// A source whose calls of the standard library's `cast` and `same` are looked up by what the checker recorded.
+struct StdCalls;
+
+impl StdCalls {
+    /// The name of the function each call of `src` resolves to when it is a function of the project or the standard library.
+    fn function_names(src: &str) -> Vec<String> {
+        let design = Design::builder().source("top.msl", src).build();
+        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>()));
+        (0..design.expr_count())
+            .filter_map(|index| match types.callee(piperine_lang::pom::ExprId(index as u32)) {
+                Some(piperine_lang::types::Callee::Function(function)) => design.decl_data(function).name.as_ref().map(|name| name.text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn no_intrinsic_stands_for_cast_or_same() {
+    // GN-27 AC 1, GN-01 AC 1 (T55): `cast` and `same` are ordinary generic functions of `std/values.msl`, so the checker
+    // records a `Callee::Function` of each call, never a `Callee::Intrinsic` (the enum has no variant for either)
+    let names = StdCalls::function_names("module Top() { }\nanalog for Top { let a = same(3_u8, 4_u8); let b = cast::<u8, i8>(3_u8); }\n");
+    assert!(names.iter().any(|name| name == "same") && names.iter().any(|name| name == "cast"), "{names:?}");
 }

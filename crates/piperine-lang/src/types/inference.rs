@@ -5,7 +5,7 @@
 //! naming it. The call is then typed by the signature with the arguments substituted.
 
 use crate::msl::Span;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgsNode, Resolution};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, Resolution, TypeKind};
 
 use super::check::Checker;
 use super::generics::{Bound, GenericParameter, GenericSignature, ParameterKind};
@@ -57,6 +57,8 @@ impl<'s> Inference<'s> {
                 self.unify_length(declared_length, given_length);
             }
             (Ty::Option(declared), Ty::Option(given)) => self.unify(declared, given),
+            // a carrier meeting a carrier: what each holds (`Bit<T>` meeting `Bit<u8>`)
+            (Ty::Carrier { value: declared, .. }, Ty::Carrier { value: given, .. }) => self.unify(declared, given),
             // `UInt<N>` meeting `u4` gives `N = 4`; meeting `UInt<M>` gives `N = M`
             (Ty::GenericInteger { signed, width: ConstTerm::Param(parameter) }, found) if self.owns(*parameter) && self.found.get(*parameter).is_none() => {
                 let width = match found {
@@ -159,7 +161,7 @@ impl Checker<'_> {
 
     /// The arguments written with `::<..>` after the function's name, in the order of its
     /// parameters (§3.8.5); more than the list takes is `E0187`. `None` after a refusal.
-    fn explicit_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, callee: ExprId, function: DeclId, file: FileId, span: Span) -> Option<()> {
+    pub(super) fn explicit_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, callee: ExprId, function: DeclId, file: FileId, span: Span) -> Option<()> {
         let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return Some(()) };
         let nodes = match self.design.path_node(*path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
@@ -172,6 +174,10 @@ impl Checker<'_> {
             return None;
         }
         for (index, node) in nodes.iter().enumerate() {
+            // `_` is as if left out (§1.2.12): the connections give the argument, else its default
+            if matches!(node, GenericArgNode::Type(ty) if matches!(self.design.type_node(*ty).kind, TypeKind::Infer)) {
+                continue;
+            }
             let value = self.generic_argument(&signature.parameters()[index], node, file)?;
             inference.give(index, value);
         }
@@ -185,7 +191,7 @@ impl Checker<'_> {
         self.argument_types(inference, params, args);
     }
 
-    fn argument_types(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
+    pub(super) fn argument_types(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
         for open_literals in [false, true] {
             for (arg, declared) in args.iter().zip(params) {
                 if self.integer_literal_text(arg.value).is_some() != open_literals || self.callable_bound_of(declared).is_some() {
@@ -247,7 +253,7 @@ impl Checker<'_> {
     }
 
     /// The substitution for every parameter: what was found, else the default, else `E0181` naming
-    /// the first parameter left open.
+    /// the first parameter left open; a template parameter (`Fn` bound, phase D) left open is `P0001`.
     pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, item: DeclId, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
         let mut substitution = Substitution::new();
         for parameter in signature.parameters() {
@@ -257,6 +263,11 @@ impl Checker<'_> {
                 None => None,
             };
             let Some(value) = value else {
+                if parameter.bounds.iter().any(|bound| matches!(bound, Bound::Callable { .. })) {
+                    let (name, _) = self.callee_names(item, function);
+                    self.unsupported(file, span, &format!("the template parameter `{}` of `{name}`, bounded by `Fn`", parameter.name));
+                    return None;
+                }
                 let (name, turbofish) = self.callee_names(item, function);
                 let (kind, how) = match parameter.kind {
                     ParameterKind::Const(_) => ("const parameter", "an array argument or"),

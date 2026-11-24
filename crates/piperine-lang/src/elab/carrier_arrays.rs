@@ -53,7 +53,7 @@ impl Elaboration<'_, '_> {
     /// Whether `decl` is an array of carriers of length 0 in `frame` (§1.2.3: the length is known and not negative, so
     /// zero is legal): it has no element, so the body gets no carrier for it.
     pub(super) fn is_empty_array(&mut self, frame: usize, decl: DeclId) -> bool {
-        let Some(array) = self.types.carrier_array(decl).cloned() else { return false };
+        let Some(array) = self.consts.typed_carrier_array(decl) else { return false };
         self.shape_in(&array, frame).is_some_and(|shape| shape.count() == 0)
     }
 
@@ -107,6 +107,16 @@ impl Elaboration<'_, '_> {
         while let Ty::Array(element, length) = at {
             dims.push(match length {
                 Length::Fixed(length) => *length,
+                // the length of an array a generation `for` makes: the trips of its range (§8.2.23)
+                Length::Generic(crate::types::ConstTerm::Expr(expr)) if let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(*expr).kind => {
+                    let bound = |this: &mut Self, bound| match this.consts.value(bound, bindings) {
+                        Ok(piperine_ir::Constant::Int(value)) => Ok(value),
+                        _ => Err(LengthFault::NotConstant),
+                    };
+                    let (first, last) = (bound(self, lo)?, bound(self, hi)?);
+                    let count = last + i128::from(inclusive) - first;
+                    u64::try_from(count.max(0)).map_err(|_| LengthFault::Negative(count))?
+                }
                 Length::Generic(crate::types::ConstTerm::Expr(expr)) => match self.consts.value(*expr, bindings) {
                     Ok(piperine_ir::Constant::Int(count)) => u64::try_from(count).map_err(|_| LengthFault::Negative(count))?,
                     _ => return Err(LengthFault::NotConstant),
@@ -122,7 +132,7 @@ impl Elaboration<'_, '_> {
     /// the port's lengths folded over the placed module's params `keys` (CV-23 AC 3, §8.1.10). A shape that does not
     /// fold, or an argument that is no declared array, is left to the bind. Whether it reported.
     pub(super) fn check_array_argument(&mut self, scope: &Scope, port: DeclId, argument: ExprId, keys: &Bindings) -> bool {
-        let Some(wanted) = self.types.carrier_array(port).or_else(|| self.types.node_array(port)).cloned() else { return true };
+        let Some(wanted) = self.consts.typed_carrier_array(port).or_else(|| self.consts.typed_node_array(port)) else { return true };
         let Some(wanted_shape) = self.shape_over(&wanted, keys).ok() else { return true };
         let Some(found) = self.typed(argument).filter(|ty| matches!(ty, Ty::Array(..))) else { return true };
         let Some(found_shape) = self.shape_over(&found, &self.frame_bindings(scope.frame)).ok() else { return true };
@@ -141,7 +151,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carrier_array_shape(&mut self, decl: DeclId, frame: usize) -> Option<(ArrayShape, ValueType)> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        let Some(array) = self.types.carrier_array(decl).cloned() else { return None };
+        let Some(array) = self.consts.typed_carrier_array(decl) else { return None };
         let shape = self.declared_shape(&array, frame, decl, "carriers")?;
         let Ty::Carrier { value, .. } = array.innermost() else { return None };
         match self.stored_type(value) {
@@ -178,12 +188,51 @@ impl Elaboration<'_, '_> {
         })
     }
 
+    /// The initial value of the array carrier `decl` declared inside generation (shape `shape`, element type `element`): the
+    /// value written is one generated element's, folded for each iteration with its loop variables bound, so every element
+    /// starts at its own (§8.2.23). An element that is itself an array takes `[x; K]` or `[a, b, c]` as an array declared
+    /// outside generation does. `None` after a diagnostic.
+    pub(super) fn generated_array_init(&mut self, decl: DeclId, init: ExprId, shape: &ArrayShape, element: &ValueType) -> Option<Constant> {
+        let iterations = self.generated.of(decl)?.clone();
+        let loops = self.generation_loops(decl).len();
+        let inner = ArrayShape { dims: shape.dims[loops.min(shape.dims.len())..].to_vec() };
+        let mut parts = Vec::with_capacity(shape.count() as usize);
+        for iteration in &iterations {
+            let bindings = self.iteration_bindings(Some(iteration));
+            parts.extend(self.element_init_parts(decl, init, &inner, element, &bindings)?);
+        }
+        Some(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ValueType::Array(Box::new(element.clone()), parts.len() as u64), variant: None, parts })))
+    }
+
+    /// The initial values of the `inner.count()` carriers one generated element of `decl` holds, `init` folded over
+    /// `bindings`: one value, or each element of an array element's own. `None` after a diagnostic.
+    fn element_init_parts(&mut self, decl: DeclId, init: ExprId, inner: &ArrayShape, element: &ValueType, bindings: &Bindings) -> Option<Vec<Constant>> {
+        let count = inner.count() as usize;
+        let mut repeated = init;
+        while let ExprKind::ArrayRepeat { elem, .. } = self.design.expr_node(repeated).kind.clone() {
+            repeated = elem;
+        }
+        if inner.dims.is_empty() || (repeated != init && !matches!(self.design.expr_node(repeated).kind, ExprKind::Array(_))) {
+            let value = self.carrier_init_over(repeated, bindings)?;
+            return Some(vec![self.ir_constant(value, element); count]);
+        }
+        if inner.dims.len() > 1 {
+            let span = self.design.expr_node(init).span;
+            self.unsupported(self.design.decl_data(decl).file, span, "an initial value of a nested array of carriers other than `[x; K]`");
+            return None;
+        }
+        match self.carrier_init_over(init, bindings)? {
+            Constant::Aggregate(id) => Some(self.ir.aggregate_at(id).parts.clone()),
+            other => Some(vec![self.ir_constant(other, element); count]),
+        }
+    }
+
     /// The nodes of the array `decl` of nodes in `role`, named `name[0]` to `name[K-1]` (row-major for a nested array):
     /// added to the body's nodes with the array's name, `K` consecutive terminals (the first is returned). `None` after
     /// a diagnostic.
     pub(super) fn add_node_array(&mut self, decl: DeclId, role: piperine_ir::NodeRole, prefix: &str, frame: usize) -> Option<(crate::elab::carrier_arrays::ArrayShape, piperine_ir::Terminal)> {
         let data = self.design.decl_data(decl).clone();
-        let array = self.types.node_array(decl).cloned()?;
+        let array = self.consts.typed_node_array(decl)?;
         let shape = self.declared_shape(&array, frame, decl, "nodes")?;
         let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
         let first = self.structure.nodes.len() as u32;

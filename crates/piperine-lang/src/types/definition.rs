@@ -32,6 +32,12 @@ pub(super) struct DriveBook {
     pub(super) elements: Vec<(DeclId, Element, DriveKind, Span)>,
     /// The carriers an undelayed definition drives: the definition gives the carrier its value from `(0, 0)`.
     pub(super) undelayed: BTreeSet<DeclId>,
+    /// The elements of arrays of carriers an undelayed definition drives, with where: those elements have a value from
+    /// `(0, 0)` on (`coverage.rs`).
+    pub(super) undelayed_elements: Vec<(DeclId, Element, Span)>,
+    /// The carriers a drive of which was refused as unsupported (a whole array, a sub-array): the refusal is the one
+    /// diagnostic, so the carrier counts as driven and is not also reported as one nothing drives.
+    pub(super) refused: BTreeSet<DeclId>,
 }
 
 impl Checker<'_> {
@@ -39,16 +45,27 @@ impl Checker<'_> {
     /// else `E0222` naming `what` and `None`. A form of place the subset does not have (an
     /// element, a field) is `P0001`.
     pub(super) fn drive_target(&mut self, place: ExprId, what: &str) -> Option<DriveTarget> {
+        let written = self.written_target(place, what)?;
+        let element = self.judged_element(place, written.carrier, written.element);
+        Some(DriveTarget { element, ..written })
+    }
+
+    /// [`Checker::drive_target`] with the element as the place writes it, before generation is taken into account.
+    fn written_target(&mut self, place: ExprId, what: &str) -> Option<DriveTarget> {
         let node = self.design.expr_node(place).clone();
         let file = self.file_of_expr(place);
         match &node.kind {
-            ExprKind::Paren(inner) => self.drive_target(*inner, what),
+            ExprKind::Paren(inner) => self.written_target(*inner, what),
             ExprKind::Index { .. } | ExprKind::Field { res: Resolution::Deferred(_) | Resolution::Unresolved, .. } => {
                 let target = self.projected_target(place, what)?;
                 self.exprs[place.index()] = Some(target.held.clone());
                 Some(target)
             }
             ExprKind::Field { res: Resolution::Decl(item), .. } => {
+                // a member of a bundle (a field with a direction): the bundle type was refused where it is written, once
+                if matches!(&self.design.decl_data(*item).kind, DeclKind::Field(field) if field.dir.is_some()) {
+                    return None;
+                }
                 let text = match self.design.decl_data(*item).kind {
                     DeclKind::Port(_) | DeclKind::Signal(_) => "a carrier of an instance",
                     _ => "a member of an instance",
@@ -72,7 +89,8 @@ impl Checker<'_> {
                     DeclKind::Binding(_) => return self.not_drivable(file, node.span, what, "a `let` name"),
                     _ => return self.not_drivable(file, node.span, what, "not a discrete carrier"),
                 };
-                let ty = port_ty.and_then(|t| self.port_type(t))?;
+                // a carrier declared inside generation is the array of its elements to a place outside its loops (§8.2.23)
+                let ty = port_ty.and_then(|t| self.port_type(t)).map(|ty| self.generated_read(place, decl, ty))?;
                 match ty {
                     Ty::Carrier { value, .. } => {
                         if direction == Some(crate::msl::ast::Dir::In) {
@@ -83,6 +101,7 @@ impl Checker<'_> {
                     }
                     array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
                         self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+                        self.book.refused.insert(decl);
                         None
                     }
                     _ => self.not_drivable(file, node.span, what, "a node, not a discrete carrier"),
@@ -155,17 +174,18 @@ impl Checker<'_> {
 
     /// A definition of one element of an array of carriers (`bits[0] = a`): `E0335` when another definition shares the
     /// element, `E0221` when a commit does (§5.2.4); a carrier with a definition of a part and an initial value
-    /// is `E0338` when the definition is undelayed.
+    /// is `E0338` once undelayed definitions cover every element (`coverage.rs`).
     fn define_element(&mut self, file: crate::pom::FileId, carrier: DeclId, element: Element, span: Span, undelayed: bool) {
         let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let shared = |kind: DriveKind, book: &DriveBook| book.elements.iter().any(|(c, e, k, _)| *c == carrier && *k == kind && e.overlaps(element));
         if shared(DriveKind::Definition, &self.book) {
             self.coded(file, "E0335", span, format!("two definitions of `{name}` share an element (§8.2.20)"), "defined twice");
-        } else if shared(DriveKind::Commit, &self.book) || self.book.committed.contains_key(&carrier) {
+        } else if shared(DriveKind::Commit, &self.book) || (element != Element::Unfolded && self.book.committed.contains_key(&carrier)) {
             self.coded(file, "E0221", span, format!("`{name}` has a definition and a commit of one element in one module: an element is driven by one or the other (§5.2, §8.2.20)"), "definition and commit");
         }
-        if undelayed && self.has_initial(carrier) {
-            self.coded(file, "E0338", span, format!("`{name}` has an initial value and an undelayed definition of an element: the definition would replace it in the microstep that commits it (§8.2.21)"), "initial value under an undelayed definition");
+        // an initial value under a definition of some elements is the value of the others (§8.2.21, "on the levels defined"): `E0338` is raised once every element is defined (`coverage.rs`)
+        if undelayed {
+            self.book.undelayed_elements.push((carrier, element, span));
         }
         self.book.elements.push((carrier, element, DriveKind::Definition, span));
     }

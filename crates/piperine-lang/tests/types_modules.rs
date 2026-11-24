@@ -332,3 +332,33 @@ fn an_option_param_read_as_a_number_is_e0180() {
     assert_eq!(snippet(&src, &d[0]), "0.0", "the mismatch is at the number compared with the `Option`");
     assert!(d[0].diagnostic.message.contains("Option<f64>"), "names the `Option` type: {}", d[0].diagnostic.message);
 }
+
+#[test]
+fn a_trailing_option_value_input_passed_by_name_binds_it() {
+    // GN-13, GN-28 (§8.1.9, §8.3.7): `M(1.0, y: 2.0)` binds the trailing `Option` input `y` by its name; an input left out
+    // is `None`, a name given in any order binds the same port
+    let items = "module M(x: f64, y: Option<f64>, z: Option<f64>) -> f64 { x }\n";
+    for call in ["M(1.0, y: 2.0)", "M(1.0, z: 3.0, y: 2.0)", "M(1.0, z: 3.0)", "M(1.0, 2.0, z: 3.0)"] {
+        let body = format!("{items}module Top() {{ let m = {call}; }}\n");
+        let design = design_of(&format!("{NATURES}{body}"));
+        assert!(Types::check(&design, "Top").is_ok(), "{call}: {:?}", Types::check(&design, "Top").err().map(|d| codes_of(&d)));
+    }
+    // the argument is held to the input's type: an `f64` for `Option<f64>` is `Some` of it, a `bool` is not
+    let wrong = format!("{items}module Top() {{ let m = M(1.0, y: true); }}\n");
+    let (_, found) = diagnostics(&wrong);
+    assert!(codes_of(&found).iter().any(|code| code == "E0180" || code == "E0432"), "{:?}", codes_of(&found));
+}
+
+#[test]
+fn a_named_connection_that_is_no_trailing_option_input_is_e0140() {
+    // §8.1.9: a name that is no port, a required input, or one already given by position is `E0140`; a required input
+    // left out is `E0141`
+    let items = "module M(x: f64, y: Option<f64>) -> f64 { x }\n";
+    // the POM reports each bad name before any check runs (`classify.rs`): no such port, a required input, a name twice
+    for call in ["M(1.0, w: 2.0)", "M(y: 2.0, x: 1.0)", "M(1.0, 2.0, y: 3.0)"] {
+        let design = support::build(&format!("{NATURES}{items}module Top() {{ let m = {call}; }}\n"));
+        assert_eq!(support::codes(&design), ["E0140"], "{call}");
+    }
+    let (_, found) = diagnostics(&format!("{items}module Top() {{ let m = M(y: 2.0); }}\n"));
+    assert!(codes_of(&found).iter().any(|code| code == "E0141" || code == "E0140"), "{:?}", codes_of(&found));
+}
