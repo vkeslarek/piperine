@@ -52,6 +52,51 @@ same firmware there, compare pin traces and cycle counts) — nothing linked.
   simavr shim) — "Vamos seguir por criar o nosso emulador... vai dar trabalho mas compensa demais".
   simavr stays a local, uncommitted black-box oracle only.
 
+## Proof of concept result (2026-11-24, discarded after recording)
+
+A throwaway prototype (simavr linked locally, never committed, deleted afterwards) co-simulated a
+real ATmega328P firmware (`avr-gcc`, 16 MHz) with a Piperine transient for 3 s: D13 blink, D9 PWM
+(Timer1) into a 10 kΩ / 1 µF RC, ADC0 sampling the RC node every 250 ms, D2 reading a 1 Hz sine
+through a Schmitt input mirrored onto D7, and UART TX at 9600 baud. Two integrations:
+
+| | Device ABI (`piperine-abi`, in-process `CircuitBuilder::device`) | `HostElement` (old host path) |
+| --- | --- | --- |
+| wall time for 3 s | 74.6 s | 9.9 s |
+| accepted steps | 1.9 M | 192 k |
+| PWM duty | 25.390 % (976.56 Hz) | 25.391 % |
+| `filt` mean / ripple | 1.2695 V (= hand RC) / 97.8 mV (hand 96.7) | 1.2696 V / 96.9 mV |
+| D2 crossing error vs analytic | < 0.015 µs (solver locates it) | ~µs |
+| D2 → D7 delay | 4.000 µs (one wake quantum) | 0.9–1.7 µs |
+| ADC vs node voltage at the sample | 0 counts 10/11, −1 once | 0–1 (−3 once) |
+
+How the ABI run was wired: every part a hand-written `piperine_abi::device::Device` in Rust (AVR,
+pin output stage as a 5 V Norton behind 25 Ω, Schmitt input via two `CROSS` watches, sine, LED, R, C
+from the solver's test helpers), bound with `CircuitBuilder::device` and nets named by `Port::Net`;
+the real solver ran it (analog Newton/TR-BDF2, event engine dispatching `START`, `wake` re-armed
+with `REPLACE`, pad edges as timed commits, the ADC `sample` event reading the accepted continuous
+solution, UART as a `RECORD` pin). No cdylib, no MSL, no Session/CLI.
+
+Gaps the real feature must close:
+1. **`HORIZON` forbids run-ahead** when an input of the emulator is reached by a `CROSS` watch
+   (`plan.rs::crossing_reach` sets it to the instant itself; abi.md R5 says "end of the tentative
+   step" — the implementation is stricter than the text). The emulator then polls (4 µs quantum →
+   750 k wakes, 1.9 M steps). Needs run-ahead to the next visible action with exact interruption
+   on an input change (and/or snapshot + rollback).
+2. **No path from MSL to an external ABI library:** `extern "cosim"` parses and reflects, but the
+   transpiler, plan and `Session::open` ignore it; `CircuitBuilder::device` is the only entry.
+3. **Emulator state outside the shape** (behind a `Mutex`) forces `IRREVERSIBLE` and makes the
+   session non-rewindable; our own core should keep its state in the private state pin (R3/F1).
+4. **No text/bytes param** for the firmware path (`ParamValue` lacks it).
+5. **The sink mixes internal `wake` changes with real pad changes**; observations carry the
+   accepted instant, not the emulator's own edge time (UART stamps 1–2 µs late).
+6. **ADC needs the emulator to expose conversion start** (the `sample` event at the start of the
+   sample-and-hold, read from the accepted solution).
+7. **No exported stock devices** (R/C/diode helpers are test-only; the helper diode has no
+   limiting).
+8. simavr quirk (not ours): a PORTB read-modify-write re-raises PB1's IRQ and glitched OC1A.
+
+Result page: https://claude.ai/artifact/BRoyB1LUJ4kVX1k3QCeZ39
+
 ## Questions for the user
 
 1. **Board / core scope.** Start with the Uno (ATmega328P, 16 MHz) only? Later: Mega (ATmega2560),
