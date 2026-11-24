@@ -171,11 +171,11 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
 - **§11 rule 15** The block is executed at every Newton iteration with probes reading the current
   iterate. Locals do not persist between iterations.
 - **§11 rule 16** A branch's equation in a solve, with `Σ` over the contributions enabled in it and
-  `M` the effective multiplicity (§8.5.4):
+  `x` the contribution's value:
 
   | Kind | Equation | Unknown added |
   | --- | --- | --- |
-  | flow | flow of the branch `= M · Σ x`, entered in the rows of both nodes | none |
+  | flow | flow of the branch `= Σ x`, entered in the rows of both nodes | none |
   | potential | `potential(a, b) = Σ x` | the branch flow |
 
 - **§11 rule 17** Per kind of solve, a contribution's right side is evaluated with every primitive in
@@ -756,13 +756,12 @@ library (§22), written in the language over this section.
 
 **Static semantics**
 
-- **§14 rule 1** The names in the table, and `gnd`, `Nature`, `m`, `dtemp` and `str`, are core
+- **§14 rule 1** The names in the table, and `gnd`, `Nature` and `str`, are core
   names. A model **MUST NOT** redefine them at item
   level. An `access` alias is declared by its nature (§4).
 - **§14 rule 2** A core `fn` follows §3: a function that calls one is callable only where that
   primitive is allowed.
-- **§14 rule 3** A core module follows §8.3.1–§8.3.5 and no other rule (§8.3.6). It takes `m`,
-  `dtemp` and no param block of its own. It has no `pub` items.
+- **§14 rule 3** A core module follows §8.3.1–§8.3.5 and no other rule (§8.3.6). It takes no param block of its own. It has no `pub` items.
 - **§14 rule 4** "Everywhere" in the table means every position evaluated during a run. No
   environment function is allowed in a const context (§8.1.21).
 - **§14 rule 5** The value inputs of `ddt`, `delay`, `limit` and `noise` are read by the solver and
@@ -822,7 +821,7 @@ entering the module at its port `p`.
   final solution of the time point; as the argument of `cross`, each successive solution
   (§13 rule 5).
 
-- **§14.1.6** A flow probe and `p.inflow()` are divided by the effective multiplicity (§8.5.4).
+- **§14.1.6** A flow probe and `p.inflow()` are not scaled: nothing in the core reads a multiplicity (§8.5).
 
 ### 14.2 `ddx`
 
@@ -875,7 +874,7 @@ with `mag` and `phase` evaluated at the operating point.
 
 | Function | Returns | Class |
 | --- | --- | --- |
-| `temperature() -> f64` | the analysis temperature plus the instance's effective `dtemp` (§8.5.5), in kelvin | constant during an analysis |
+| `temperature() -> Option<f64>` | `Some` of the run's temperature in kelvin when the run set it, else `None` (§8.5.2) | constant during an analysis |
 | `simparam(name: str) -> Option<f64>` | `Some` of the session parameter `name` when the run gave it, else `None` | constant during an analysis |
 | `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Transient`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
@@ -1002,8 +1001,7 @@ the operating point and the point's `freq()` (§11.1.9).
 
 - **§14.8.3** `psd` is read only where the instance is a source, so `k / freq().powf(exp)` is
   never evaluated at `freq() == 0`.
-- **§14.8.4** `psd` is a one-sided density in the squared unit of the contribution per hertz. It
-  scales with the effective multiplicity as §8.5.4 states.
+- **§14.8.4** `psd` is a one-sided density in the squared unit of the contribution per hertz. Nothing scales it (§8.5.3).
 - **§14.8.5** Read in a reaction or an event argument, the result is 0.
 
 ### 14.9 `cross`, `at`, `changed`, `settle`

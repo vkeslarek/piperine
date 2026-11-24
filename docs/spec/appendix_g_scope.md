@@ -295,7 +295,7 @@ What the gates prove is a front end: the library and the galleries are parsed an
 ### G.39 Size of the addition
 
 **Status: Open.** No action is planned.
-The language has 62 mixed-signal constructs beside its value language (Appendix B.1), for 11 concepts (§0). No further construct has been found that can be removed without a model paying for it.
+The language has 60 mixed-signal constructs beside its value language (Appendix B.1), for 11 concepts (§0). No further construct has been found that can be removed without a model paying for it.
 
 ## Flagged resolutions
 
@@ -317,7 +317,7 @@ Each item is in force through the `Resolution` note cited, which refers back her
 | G.51 | §8.2.21 | an undelayed definition forbids an initial value on the levels it defines | a new static error; no model of this specification is hit |
 | G.52 | §13 rule 16, §5.3.11 | `p.changed()` never fires at `(0, 0)`; a `set` made before the run binds the param | the design commits such a `set` at `(0, 0)` like an initial value |
 | G.53 | §8.4.4 | a placement through a template value takes no param block | removes `cell(c) { m: 2.0 }` |
-| G.54 | §8.5.3 | `m` and `dtemp` are readable names inside a module, with their effective values | the design has them as implicit params only |
+| G.54 | §8.5 | Superseded (generics phase D, 2026-11-23): `m` and `dtemp` are no implicit params; the run sets a temperature and a multiplicity that `temperature()` and `multiplicity()` return | the design had implicit params |
 | G.56 | §8.3.6 | every core result has a direct dependence on its value inputs | `let y = delay(f(y), td);` is an error |
 | G.58 | §11 rule 3 | the selector rule also binds the flow contributions of a potential-capable branch; a probed short is not merged | extends the rule, with one exception clause |
 | G.59 | §6 rule 5 | `p.inflow()` includes the branches of child instances that end on `p` | the design says "this module's branches" |
@@ -432,7 +432,7 @@ For review: that no primitive numeric type implements `Default`, which differs f
 | G.44 | Host actions between two runs of a continued transient; the old stop time | a host `set` or drive is a commit collected at the resume instant. The old stop time remains a time point. | §16.4.1 |
 | D1 | Which forms a reader of Rust would expect are not in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern parameters, references and the markers `mut`, `ref` and `move` (V1, V2). In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
 | D2 | Which library names exist without a declaration | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
-| D3 | `gnd`, `Nature`, `m`, `dtemp` and `str` | core names, in the built-in table, that no declaration can define. | §6 rule 11, §3.4.2, A.1 rule 8 |
+| D3 | `gnd`, `Nature` and `str` | core names, in the built-in table, that no declaration can define. | §6 rule 11, §3.4.2, A.1 rule 8 |
 | D5 | Duplicate names, colliding imports, ambiguous globs | `E0162`, with these rules: one name per table per namespace; an item or an explicit `use` beats a glob; two globs are an error only when the name is used. | §3.4.7, §3.4.8, §3.4.9 |
 | D6 | Generic names of a behavior block | the block repeats the module's generic names in the same order and introduces none of its own. | §10 rule 6, B.3.3 item 14 |
 | D7 | `&` in argument position | superseded by V1: no position takes a borrow, an argument is the value, and `E0102` is retired. | §1 rule 2, §3.2 |

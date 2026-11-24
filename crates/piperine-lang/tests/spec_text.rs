@@ -180,18 +180,18 @@ fn every_error_code_is_defined_exactly_once() {
 const RETIRED_CODES: [&str; 8] = ["E0102", "E0331", "E0150", "E0151", "E0906", "E0908", "E0701", "E0456"];
 
 #[test]
-fn b1_counts_62_constructs() {
+fn b1_counts_60_constructs() {
     // POL-08 AC 8, amended by explicit-unknowns (replaces `b1_still_counts_65_constructs`): the
     // literal `Unknown`, the contextual keyword `resolve` and the method `level` leave, so the
-    // count and the rows agree at 62, and the B.1.1 kinds add up to it.
+    // count and the rows agree at 62 (60 since generics phase D: `m` and `dtemp` left), and the B.1.1 kinds add up to it.
     let sec = section(&spec("appendix_b_grammar.md"), "## B.1 ");
-    assert!(sec.contains("**62**"), "B.1 states 62");
+    assert!(sec.contains("**60**"), "B.1 states 60");
     let rows = table_rows(&section(&sec, "### B.1.2"));
-    assert_eq!(rows.len(), 62, "B.1.2 holds 62 rows");
+    assert_eq!(rows.len(), 60, "B.1.2 holds 60 rows");
     let last: usize = rows.last().unwrap()[0].parse().expect("row numbers are integers");
-    assert_eq!(last, 62);
+    assert_eq!(last, 60);
     let kinds: usize = table_rows(&section(&sec, "### B.1.1")).iter().filter_map(|r| r[2].parse::<usize>().ok()).sum();
-    assert_eq!(kinds, 62, "the kinds of B.1.1 sum to the count");
+    assert_eq!(kinds, 60, "the kinds of B.1.1 sum to the count");
     for gone in ["Unknown", "`resolve`", "`level`"] {
         assert!(!rows.iter().any(|r| r[1] == gone), "B.1.2 still lists {gone}");
     }
@@ -309,10 +309,11 @@ fn appendix_h_is_in_the_file_map_and_nav() {
 }
 
 #[test]
-fn gnd_and_the_implicit_params_are_core_names() {
+fn gnd_and_the_other_core_names_are_core_names() {
     // POL-03 AC 1: §6 rule 11, A.1 rule 8 and §3.4.2 say `core name` and
-    // name all five; no sentence calls `gnd` a prelude name.
-    let five = ["`gnd`", "`Nature`", "`m`", "`dtemp`", "`str`"];
+    // name all three (`m` and `dtemp` left with the implicit params, generics phase D, GN-25 AC 3);
+    // no sentence calls `gnd` a prelude name.
+    let five = ["`gnd`", "`Nature`", "`str`"];
     let carriers = spec("part_ii_carriers.md");
     let rule11 = carriers.split("- **§6 rule 11.**").nth(1).unwrap().split("\n\n").next().unwrap();
     assert!(rule11.contains("`gnd` is a core name"), "{rule11}");
@@ -1456,13 +1457,13 @@ fn appendix_g_records_the_stdlib_decisions() {
 
 #[test]
 fn s1_constants_are_std_items() {
-    // STD-01 AC 6: the six constants are `pub const` items of `std::constants`.
+    // STD-01 AC 6: the eight constants are `pub const` items of `std::constants`.
     let p1 = spec("part_i_values.md");
     let rule3 = one_line(p1.split("- **§1 rule 3.**").nth(1).unwrap().split("- **§1 rule 4.**").next().unwrap());
     assert!(rule3.contains("`pub const` items of `std::constants`"), "{rule3}");
     let at = p1.find("**Prelude constants**").expect("table caption");
     let block = one_line(&p1[at..p1[at..].find("\n- **§1 rule").map_or(p1.len(), |n| at + n)]);
-    assert!(block.contains("six constants are `pub const` items of `std::constants`"), "{block}");
+    assert!(block.contains("eight constants are `pub const` items of `std::constants`"), "{block}");
     assert!(block.contains("re-exported by the prelude"), "{block}");
 }
 
@@ -2558,4 +2559,48 @@ fn a_bound_combines_a_trait_and_fn_p_in_the_spec() {
         structure.contains("A bound may combine a trait and `Fn(P)`, `N: Mosfet + Fn(Electrical, Electrical)`: only a module that declares `impl Mosfet for` it fits (`E0187` otherwise)."),
         "§8.4.5"
     );
+}
+
+/// Generics phase D (GN-25 AC 3, user decision 2026-11-23): an instance has no implicit params.
+#[test]
+fn instances_have_no_implicit_params_in_the_spec() {
+    let structure = flat(&section(&spec("part_iii_structure.md"), "### 8.5 "));
+    assert!(structure.contains("An instance has no implicit params."), "§8.5.1");
+    assert!(structure.contains("a placement that binds a param the module does not declare is `E0320`"), "§8.5.1 E0320");
+    for gone in ["effective multiplicity", "effective temperature offset", "| `E0375` |"] {
+        assert!(!structure.contains(gone), "§8.5 no longer says \"{gone}\"");
+    }
+    let calls = flat(&spec("part_iv_behavior.md"));
+    assert!(calls.contains("`gnd`, `Nature` and `str`, are core names"), "§14 rule 1");
+}
+
+/// Generics phase D (GN-24, GN-25, GN-26): the run sets a temperature and a multiplicity and the model reads them.
+#[test]
+fn temperature_and_multiplicity_are_run_settings_in_the_spec() {
+    let structure = flat(&section(&spec("part_iii_structure.md"), "### 8.5 "));
+    for fact in [
+        "`temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature (`temp`) and `None` otherwise",
+        "`multiplicity() -> Option<f64>` is a function of the standard library",
+        "`simparam(\"multiplicity\")`: `Some(m)` when the run sets the session parameter `multiplicity` and `None` otherwise",
+        "Nothing scales or offsets a model. The model decides whether to use the value as its temperature all along, as an initial temperature, or to ignore it.",
+        "The multiplicity is a `simparam` entry (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`, §23), not a key of its own.",
+        "`let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`",
+        "so `multiplicity()` there is `E0188`",
+    ] {
+        assert!(structure.contains(fact), "§8.5 lacks \"{fact}\"");
+    }
+    let behavior = flat(&spec("part_iv_behavior.md"));
+    assert!(behavior.contains("| `temperature() -> Option<f64>` | `Some` of the run's temperature in kelvin when the run set it, else `None` (§8.5.2) | constant during an analysis |"), "§14.4 row");
+    assert!(!behavior.contains("effective multiplicity"), "§14 no longer scales by a multiplicity");
+}
+
+/// Generics phase D (GN-25 AC 2): the ambient temperature and the default multiplicity are the recommended fallbacks.
+#[test]
+fn the_recommended_fallback_is_the_ambient_temperature_in_the_spec() {
+    let values = flat(&spec("part_i_values.md"));
+    assert!(values.contains("| `AMBIENT_TEMPERATURE` | `f64` | `300.15` | 27 °C in kelvin, ngspice's default temperature"), "§1 constants table");
+    assert!(values.contains("| `DEFAULT_MULTIPLICITY` | `f64` | `1.0` | ngspice's default multiplicity `m`"), "§1 constants table");
+    let stdlib = flat(&section(&spec("part_vii_stdlib.md"), "#### 22.2.2 "));
+    assert!(stdlib.contains("`vt(t)` is the thermal voltage at the temperature `t`, in kelvin"), "§22.2.2 vt takes the temperature");
+    assert!(stdlib.contains("`vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))`"), "§22.2.2 vt fallback");
 }

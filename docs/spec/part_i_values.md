@@ -43,8 +43,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   `ref` and `move`, heap types, `unsafe`, threads, `async`, `dyn`. `&` is the bitwise operator
   only ([§1.5.3](#15-expressions)) and `*` the multiplication only: no type, expression or
   pattern makes a reference or reads through one.
-- **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`
-  and `inf` (table below): they are `pub const` items of `std::constants`, re-exported by the
+- **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`,
+  `inf`, `AMBIENT_TEMPERATURE` and `DEFAULT_MULTIPLICITY` (table below): they are `pub const` items of `std::constants`, re-exported by the
   prelude.
 - **§1 rule 4.** Only a type with `Repr` can be carried: it is the `T` of `Bit<T>` and the
   `value` of a nature ([§4](part_ii_carriers.md#4-natures)).
@@ -74,7 +74,7 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 
 **Prelude constants**
 
-The six constants are `pub const` items of `std::constants` ([§22](part_vii_stdlib.md#22-standard-library)), re-exported by the prelude.
+The eight constants are `pub const` items of `std::constants` ([§22](part_vii_stdlib.md#22-standard-library)), re-exported by the prelude.
 
 | Name | Type | Value | Meaning |
 | --- | --- | --- | --- |
@@ -84,6 +84,8 @@ The six constants are `pub const` items of `std::constants` ([§22](part_vii_std
 | `PI` | `f64` | `3.141592653589793` | π, to the nearest `f64` |
 | `E` | `f64` | `2.718281828459045` | Euler's number, to the nearest `f64` |
 | `inf` | `f64` | `1.0 / 0.0` | positive infinity |
+| `AMBIENT_TEMPERATURE` | `f64` | `300.15` | 27 °C in kelvin, ngspice's default temperature: the recommended fallback, `temperature().unwrap_or(AMBIENT_TEMPERATURE)` ([§8.5](part_iii_structure.md#85-run-settings-and-extern-modules)) |
+| `DEFAULT_MULTIPLICITY` | `f64` | `1.0` | ngspice's default multiplicity `m`: the recommended fallback, `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)` ([§8.5](part_iii_structure.md#85-run-settings-and-extern-modules)) |
 
 ```rust
 pub const Q: f64 = 1.602176634e-19;
@@ -1290,7 +1292,7 @@ path_seg       ::= ( IDENT | 'self' | 'Self' | 'super' | 'crate' ) ( '::'? gener
 - **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the
   `pub` items of `std::prelude`, which re-exports the standard library
   ([§22](part_vii_stdlib.md#22-standard-library)) ([§3.5](#35-crates) rule 9). The **core names** need no
-  import and no declaration: `gnd`, `Nature`, `m`, `dtemp`, `str` and the core primitives
+  import and no declaration: `gnd`, `Nature`, `str` and the core primitives
   ([§14](part_iv_behavior.md#14-core-primitives)).
 - **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file. Each is an
   item at namespace scope, a file or an inline `mod`; a block may sit in any namespace of its
