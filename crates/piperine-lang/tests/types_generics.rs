@@ -457,7 +457,8 @@ fn phase_d_and_e_forms_stay_p0001_by_name() {
     let generation = "module Top() { signal o: Electrical; for k in 0..2 { let r = 1; } }\n";
     assert!(!LaterPhases::refuses(generation, "generation"), "{:?}", LaterPhases::found(generation));
     let template = "module Cell(a: Electrical) {}\nmodule Top() { signal a: Electrical; let c = Cell { }; }\n";
-    assert!(LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
+    // a template is a value from generics T84 on (GN-21): it is no longer refused
+    assert!(!LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
     let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
     assert!(LaterPhases::refuses(through, "placement through a template value or a function"), "{:?}", LaterPhases::found(through));
     // a template parameter (`C: Fn(..)`, phase D, GN-21): given as an argument or left to inference, it is `P0001` naming the

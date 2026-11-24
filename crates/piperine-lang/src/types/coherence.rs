@@ -2,7 +2,7 @@
 //! `impl` the check sees (the whole-model check sees them all): a method may not repeat the name of
 //! a carrier method (`E0131`), an `impl` on a nature or a bundle holds functions only (`E0132`),
 //! `impl Trait for` a bundle is `E0134` while a nature takes trait impls (traits are capabilities,
-//! §3.1.9). An `impl` on a module is `E0130`, which the POM classifier raises (§3.1.4).
+//! §3.1.9). A module type takes `impl`s too (§3.1.4).
 
 use crate::pom::{Decl, DeclId, DeclKind, Reflect, Resolution};
 

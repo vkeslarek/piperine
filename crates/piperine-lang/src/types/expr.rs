@@ -258,10 +258,7 @@ impl Checker<'_> {
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::IncludeStr(_) => self.include_str(expr),
-            ExprKind::Struct { class: StructClass::Template(_), .. } => {
-                self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
-                None
-            }
+            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields),
             other => {
                 self.unsupported(file, node.span, Unsupported::expr(other));
                 None

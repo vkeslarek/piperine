@@ -19,7 +19,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 3. Imports | `use` items, `self`/`super`/`crate`, visibility, `std::prelude` | import resolution |
 | 4. Behaviors | binds each `analog`/`digital` block to its module | `BehaviorData::module`, `ModuleData::behaviors`, `E0401`, `E0402`, `E0403` |
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
-| 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
+| 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle` |
 | 7. Members | `e.name` and `e.m()` through declared types | `ExprKind::Field::res`, `MethodCall::res`, `E0343` |
 | 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields, bundle fields | `E0370`, `E0125`, `E0201`, `E0260`, `E0261`, `E0262`, `E0264` |
 | 9. Index | `references`, `writers`, `instantiated_by` | the [`Index`](model.md#index) |
@@ -322,7 +322,6 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | Code | Stage | Defined in | Meaning | Span |
 | --- | --- | --- | --- | --- |
 | `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one; an `extern "intrinsic"` function in a crate other than `std` (the help reads `only the standard library declares intrinsic functions`). `Function::is_intrinsic` is true exactly for the ABI `intrinsic`; an `extern "intrinsic" fn` of `std` is reported nothing and a call to it is an ordinary `CallClass::Function` | the function's name |
-| `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
 | `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
 | `E0162` | 2, 3, 5 | `§3.4` | a name declared twice in one table of a namespace or of a block (§3.4.10); an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
@@ -365,7 +364,6 @@ assert_eq!(codes("const K: f64 = missing;"), ["E0161"]);
 assert_eq!(codes("mod a { fn hidden() {} }\nconst K: f64 = a::hidden;"), ["E0161"]);
 assert_eq!(codes("nature Bit { value: bool }\nmodule M() { signal s: Bit; signal s: Bit; }"), ["E0330"]);
 assert_eq!(codes("fn ddt() {}"), ["E0457"]);
-assert_eq!(codes("module M() {}\nimpl M {}"), ["E0130"]);
 assert_eq!(codes("analog for Nowhere {}"), ["E0401"]);
 assert_eq!(codes("extern \"osdi\" module D() {}\nanalog for D {}"), ["E0402"]);
 assert_eq!(codes("module M() {}\nanalog<N> for M {}"), ["E0403"]);

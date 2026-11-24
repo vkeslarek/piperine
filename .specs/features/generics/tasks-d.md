@@ -146,8 +146,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_template_is_a_value_of_its_modules_type`, `a_template_leaving_a_required_param_is_e0319`, `a_template_that_is_not_const_is_e0362` and `a_template_is_never_carried_e0112` pass under `**Run typestempl**`
-- [ ] Gate check passes: Quick
+- [x] `a_template_is_a_value_of_its_modules_type`, `a_template_leaving_a_required_param_is_e0319`, `a_template_that_is_not_const_is_e0362` and `a_template_is_never_carried_e0112` pass under `**Run typestempl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

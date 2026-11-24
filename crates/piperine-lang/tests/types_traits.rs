@@ -134,9 +134,9 @@ fn self_outside_an_impl_or_not_first_is_e0187() {
 }
 
 #[test]
-fn an_impl_on_a_module_is_e0130() {
-    // §3.1.4: there is no `impl` on a module; the POM classifier raises it, so the model check gives it back
-    assert_eq!(GenericSources::standard_codes("module M() { }\nimpl M { fn f(self) -> f64 { 1.0 } }\n"), ["E0130"]);
+fn an_impl_on_a_module_type_is_accepted() {
+    // §3.1.4 (the user's decision of 2026-11-22, replaces `an_impl_on_a_module_is_e0130`): a module type takes an inherent `impl`
+    assert_eq!(GenericSources::standard_codes("module M() { }\nimpl M { fn f(self) -> f64 { 1.0 } }\n"), Vec::<String>::new());
 }
 
 #[test]

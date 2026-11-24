@@ -592,15 +592,6 @@ impl Checker<'_> {
         }
     }
 
-    /// A template `Name { params }` where a value of module type is expected (PI-04): its params
-    /// are checked like a placement's block, and its type is the module it names, so a template
-    /// of another module is a mismatch (`E0180`) naming both.
-    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
-        self.param_block(fields, None);
-        self.exprs[expr.index()] = Some(Ty::Module(module));
-        Some(Ty::Module(module))
-    }
-
     /// `{ name: value }` of a placement: each value against the declared type of its param.
     pub(super) fn param_block(&mut self, fields: &[FieldInit], substitution: Option<&Substitution>) {
         for field in fields {

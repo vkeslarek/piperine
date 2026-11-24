@@ -165,15 +165,6 @@ pub(super) fn run(design: &Design) -> Classified {
         match &design.decl_data(id).kind {
             DeclKind::Port(_) => out.port_kinds.push((id, port_kind(design, id, &bundles))),
             DeclKind::Struct(_) => out.bundles.push((id, bundles.contains(&id))),
-            DeclKind::Impl(i) => {
-                if let Resolution::Decl(d) = design.type_resolution(i.self_ty) {
-                    if matches!(design.decl_data(d).kind, DeclKind::Module(_)) {
-                        let message = "an `impl` block cannot be written for a module (§3.1.4)".to_string();
-                        let span = design.type_node(i.self_ty).span;
-                        out.diagnostics.push((design.decl_data(id).file, Diagnostic::new("E0130", message, span, "a module")));
-                    }
-                }
-            }
             _ => {}
         }
     }
