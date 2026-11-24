@@ -27,7 +27,7 @@ impl<'a> Read<'a> {
 
     /// The name, role, type and initial value of each carrier of `body`, in order.
     fn carriers(&self, body: &str) -> Vec<(String, CarrierRole, ValueType, Option<Constant>)> {
-        self.body(body).carriers().iter().map(|c| (c.name.clone(), c.role, c.ty.clone(), c.init)).collect()
+        self.body(body).carriers().iter().map(|c| (c.name.clone(), c.role.clone(), c.ty.clone(), c.init)).collect()
     }
 
     /// The paths of the nets an instance binds, in its body's carrier order.
@@ -258,7 +258,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     let body = read.body("Controller");
     let at = body.carriers().iter().position(|c| c.name == "ramp.target").expect("the carrier `ramp.target`");
     let carrier = &body.carriers()[at];
-    assert_eq!((carrier.role, &carrier.ty, carrier.init), (CarrierRole::Signal, &ValueType::UInt(10), None), "a signal of `target`'s type, its value is the drive's");
+    assert_eq!((carrier.role.clone(), &carrier.ty, carrier.init), (CarrierRole::Signal, &ValueType::UInt(10), None), "a signal of `target`'s type, its value is the drive's");
     let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
     assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
     assert_eq!(drives[0].after, None);

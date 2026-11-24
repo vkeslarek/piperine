@@ -161,6 +161,8 @@ pub enum Builtin {
     Fall,
     /// `p.inflow() -> f64`: the flow entering the module at its port `p` (§6 rule 5).
     Inflow,
+    /// `c.others() -> V` on a resolved carrier: the resolution of every drive but the module's own (§5.2.7).
+    Others,
 }
 
 /// Whether an expression reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or
@@ -219,6 +221,12 @@ pub struct Types<'d> {
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The parameters of the functions of the check that are handles (`handles.rs`).
     pub(super) handles: std::collections::BTreeSet<DeclId>,
+    /// The `impl Resolve` each value written to a resolved carrier picked: by the value expression (`nature.rs`).
+    pub(super) drive_impls: BTreeMap<ExprId, DeclId>,
+    /// The `impl Resolve`s the drives of each carrier of a resolved nature picked, in source order.
+    pub(super) carrier_drive_impls: BTreeMap<DeclId, Vec<DeclId>>,
+    /// The typed `impl Resolve`s of each resolved nature a carrier of which was typed.
+    pub(super) resolve_tables: BTreeMap<DeclId, Vec<super::nature::ResolveImpl>>,
     /// The arguments of the trait bound each call through a bound names (`bounds.rs`).
     pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
@@ -471,6 +479,24 @@ impl<'d> Types<'d> {
     /// gives `[f64]`); empty for a trait with none. The call's `impl` is the one of that argument list (GN-04).
     pub fn bound_arguments(&self, call: ExprId) -> &[Ty] {
         self.bound_arguments.get(&call).map_or(&[], Vec::as_slice)
+    }
+
+    /// The `impl Resolve<X, V> for N` a definition or a commit to a carrier of the resolved nature `N`
+    /// picked through the type of its value `value` (§5.2.15); `None` for any other expression.
+    pub fn drive_impl(&self, value: ExprId) -> Option<DeclId> {
+        self.drive_impls.get(&value).copied()
+    }
+
+    /// The `impl Resolve`s the definitions and commits of the carrier `carrier` (a port or a signal of a resolved
+    /// nature) of one module picked, in source order: what its drive is typed as (§5.2.15).
+    pub fn carrier_drive_impls(&self, carrier: DeclId) -> &[DeclId] {
+        self.carrier_drive_impls.get(&carrier).map_or(&[], Vec::as_slice)
+    }
+
+    /// The `impl Resolve`s of the resolved nature `nature`, in declaration order; empty for a nature no
+    /// carrier of which the check reached.
+    pub fn resolve_impls(&self, nature: DeclId) -> &[super::nature::ResolveImpl] {
+        self.resolve_tables.get(&nature).map_or(&[], Vec::as_slice)
     }
 
     /// Whether the function parameter `param` is a handle: it stands for the carrier the caller passes (§3.1.5).

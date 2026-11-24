@@ -54,6 +54,18 @@ pub trait Carried: Copy + PartialEq {
         let bytes = self.pin();
         out[..bytes.len()].copy_from_slice(&bytes);
     }
+
+    /// Writes the drive net's bytes into `out`, the buffer of a drive pin: the value's bytes, then the plain `driving`
+    /// byte set to 1 (abi.md §9 D1: a driver writes `driving` 1 with every value it writes).
+    fn write_drive(self, out: &mut [u8]) {
+        self.write_pin(out);
+        out[Self::WIDTH] = 1;
+    }
+
+    /// Whether the drive net `bytes` holds a drive present: its `driving` byte, right after the value's bytes, is 1.
+    fn is_driving(bytes: &[u8]) -> bool {
+        bytes.get(Self::WIDTH).is_some_and(|driving| *driving != 0)
+    }
 }
 
 /// The levels of a value as bits, level `k` being bit `k`, in as many 64-bit words as the value's

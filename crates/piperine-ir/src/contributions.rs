@@ -120,7 +120,7 @@ impl<'a> Contributions<'a> {
     fn operands(kind: &Expr) -> Vec<ExprId> {
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => Vec::new(),
-            Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => Vec::new(),
+            Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } => Vec::new(),
             Expr::Closure { .. } | Expr::If { .. } | Expr::Block { .. } => Vec::new(),
             Expr::Unwrap { is, value, .. } => vec![*is, *value],
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => vec![*expr],

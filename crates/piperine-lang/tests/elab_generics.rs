@@ -352,3 +352,17 @@ fn a_const_fn_and_a_generic_repeat_fold_in_a_const_context() {
     assert_eq!(real("z"), 7.0, "an array repeat of a generic length (3 + 1 = 4 elements)");
     assert_eq!(real("t"), 3.0 + 5.0, "a repeat of `N + 1` read in a loop");
 }
+
+#[test]
+fn a_struct_that_holds_a_generic_instance_has_the_instances_entry() {
+    // resolved-nets T27 (the library's `Driven` holds a `Logic<1>`): a struct whose field is the instance `G<1>` of a generic
+    // struct gets an arena entry for that instance too, so its constant is a struct of a struct and the IR checks
+    let src = "\
+        #[derive(Repr)]\n\
+        struct G<const N: usize> { x: UInt<N> }\n\
+        #[derive(Repr)]\n\
+        struct H { g: G<1> }\n\
+        module Top() { signal h: Bit<H> = H { g: G { x: 1 } }; }\n";
+    let ir = Elab::ir(src, "Top");
+    assert!(ir.check().is_empty(), "the IR with a nested generic instance checks");
+}

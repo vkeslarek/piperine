@@ -1001,3 +1001,230 @@ fn an_event_function_reading_another_event_runs_after_it() {
     assert!(levelized.iter().position(|n| n == "event:1") < levelized.iter().position(|n| n == "event:0"), "the dependency order runs the read event first: {levelized:?}");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
+
+/// Bodies of resolved nets (resolved-nets RN-03), each beside the MSL it transcribes:
+///
+/// ```text
+/// module Source() { signal w: Count; w = true; signal seen: Bit<u8> = 0; seen = w.others(); }
+/// // Count: value u8, `impl Resolve<bool, u8>`; the resolver of two drives has the carriers `d0`, `d1` and `v`
+/// ```
+struct Resolved;
+
+impl Resolved {
+    const F: &'static str = "count.msl";
+
+    fn at(line: u32) -> Origin {
+        Alone::origin(Resolved::F, line, 5)
+    }
+
+    /// The holder: `w` is resolved (value `u8`, driven `bool`), driven with `true`; `seen` follows `w.others()`.
+    fn holder(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Source", Resolved::F, 1));
+        b.carrier(body, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Resolved::F, 2, 5));
+        b.carrier(body, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5));
+        let mut x = Dx::new(b, Resolved::F, 2, 9);
+        let drive = x.boolean(true);
+        b.drive(body, piperine_ir::Drive { carrier: 0, value: drive, after: None, origin: Resolved::at(2), element: None, path: vec![] });
+        let others = b.expr(piperine_ir::Expr::Others(0), Ty::u(8), Resolved::at(3));
+        b.drive(body, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Resolved::at(3), element: None, path: vec![] });
+        body
+    }
+
+    /// The resolver of two `bool` drives into a `u8`: `v = resolve(d0, d1)` over one instance per count.
+    fn resolver(b: &mut IrBuilder) -> BodyId {
+        let zero = b.expr(piperine_ir::Expr::Int(0), Ty::u(8), Resolved::at(4));
+        let by_count: Vec<_> = (0..=2u64)
+            .map(|count| {
+                b.function(piperine_ir::FunctionSpec {
+                    name: format!("resolve~{count}"),
+                    origin: Resolved::at(4),
+                    params: vec![piperine_ir::Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueType::Bool), count), mutable: false }],
+                    ret: Ty::u(8),
+                    locals: vec![],
+                    body: zero,
+                })
+            })
+            .collect();
+        let body = b.body(Buck::spec("Count$resolve~2", Resolved::F, 4));
+        for name in ["d0", "d1"] {
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, CarrierRole::In, None, Resolved::F, 4, 5));
+        }
+        b.carrier(body, Buck::carrier("v", Ty::u(8), CarrierRole::Out, None, Resolved::F, 4, 5));
+        let resolve = b.expr(piperine_ir::Expr::Resolve { by_count, drives: vec![0, 1], except: None }, Ty::u(8), Resolved::at(4));
+        b.drive(body, piperine_ir::Drive { carrier: 2, value: resolve, after: None, origin: Resolved::at(4), element: None, path: vec![] });
+        body
+    }
+}
+
+#[test]
+fn a_resolved_carrier_has_value_drive_and_others_pins() {
+    // RN-03 (abi.md §9 D1): a resolved carrier is its value pin (`V`, read), one drive pin (`RELAX`, written) and,
+    // because the body calls `others()`, one others pin (`V`, read); a definition of the carrier writes the drive pin.
+    let (ir, body) = Alone::design(Resolved::holder);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (value, drive, others) = (Find::pin(shape, "w"), Find::pin(shape, "w.drive"), Find::pin(shape, "w.others"));
+    assert!(value < drive && drive < others, "the value pin is the carrier's own; the drive and others pins follow every body pin");
+    assert_eq!(shape.pins.iter().filter(|p| p.name.as_str() == "seen.drive" || p.name.as_str() == "seen.others").count(), 0, "a signal that is not resolved has neither");
+
+    let (value_pin, drive_pin, others_pin) = (PinView::of(shape.pins.get(value as usize).expect("the pin")), PinView::of(shape.pins.get(drive as usize).expect("the pin")), PinView::of(shape.pins.get(others as usize).expect("the pin")));
+    assert_eq!((value_pin.kind, value_pin.role, value_pin.flags), (kind::DISCRETE, role::PORT, 0), "the value pin is a port the net's reader binds");
+    assert_eq!((drive_pin.kind, drive_pin.role, drive_pin.flags), (kind::DISCRETE, role::PORT, pin_flag::RELAX), "the drive pin is a relaxing port");
+    assert_eq!((others_pin.kind, others_pin.role, others_pin.flags), (kind::DISCRETE, role::PORT, 0), "the others pin is a port");
+    assert_eq!(layout(&shape.pins.get(value as usize).expect("the pin").layout), integer(leaf::U8, 1), "the value pin holds `V`");
+    assert_eq!(layout(&shape.pins.get(others as usize).expect("the pin").layout), integer(leaf::U8, 1), "the others pin holds `V`");
+    assert_eq!(
+        layout(&shape.pins.get(drive as usize).expect("the pin").layout),
+        (2, 1, vec![("v".to_string(), leaf::BOOL, 0, 1), ("driving".to_string(), leaf::BOOL, 1, 1)]),
+        "the drive pin holds `X` and a plain `driving` byte"
+    );
+
+    let (_, writes, _) = Find::function(shape, "drive:w");
+    assert_eq!(writes, [pin(drive, part::VALUE)], "a definition of a resolved carrier writes its drive pin, not the value pin");
+    let k = Find::function_names(shape).iter().position(|n| n == "drive:w").expect("its index");
+    assert_eq!(plan.functions()[k].writes, [Target::ResolvedDrive(0)]);
+    let (reads, _, _) = Find::function(shape, "drive:seen");
+    assert_eq!(reads, [pin(others, part::VALUE)], "`w.others()` reads the others pin");
+    let k = Find::function_names(shape).iter().position(|n| n == "drive:seen").expect("its index");
+    assert_eq!(plan.functions()[k].reads, [Source::Others(0)]);
+}
+
+#[test]
+fn the_drive_layout_appends_a_plain_driving_byte() {
+    // abi.md §9 D1: the layout of a drive net is the driven type's fields followed by `driving: BOOL`; the resolver
+    // reads each drive through a pin of that layout, so the nets of a resolved carrier have equal layouts (P4).
+    let (ir, body) = Alone::design(Resolved::resolver);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    for name in ["d0", "d1"] {
+        let drive = shape.pins.get(Find::pin(shape, name) as usize).expect("the pin");
+        assert_eq!(
+            layout(&drive.layout),
+            (2, 1, vec![("v".to_string(), leaf::BOOL, 0, 1), ("driving".to_string(), leaf::BOOL, 1, 1)]),
+            "{name}: the drive input of a resolver is a drive layout"
+        );
+    }
+    assert_eq!(layout(&shape.pins.get(Find::pin(shape, "v") as usize).expect("the pin").layout), integer(leaf::U8, 1), "the value output is `V` alone");
+
+    // the layout is a function of the driven type: an `f64` aligns the byte to 8 and rounds the size to 16
+    let wide = piperine_plan::DriveLayout::of(&ir, &ValueType::F64).expect("an f64 is driven");
+    assert_eq!((wide.driving_at(), wide.size(), wide.align()), (8, 16, 8));
+    let fields = wide.fields();
+    assert_eq!(
+        fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset)).collect::<Vec<_>>(),
+        [("v".to_string(), leaf::F64, 0), ("driving".to_string(), leaf::BOOL, 8)]
+    );
+    let u16 = piperine_plan::DriveLayout::of(&ir, &Ty::u(16)).expect("a u16 is driven");
+    assert_eq!((u16.driving_at(), u16.size(), u16.align()), (2, 4, 2));
+}
+
+/// The stub devices of a resolved design: each serves the shape the plan gives its body, so the netlist binds the pins
+/// the plan declared; neither runs anything.
+struct Stub;
+
+static HOLDER_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+static RESOLVER_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+static HOLDER: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+static RESOLVER: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+
+/// The stub of the holder body.
+struct HolderDevice;
+/// The stub of the resolver body.
+struct ResolverDevice;
+
+impl piperine_abi::device::Device for HolderDevice {
+    fn prototype() -> &'static Shape<'static> {
+        HOLDER_SHAPE.get().expect("the holder plan is set before its module").shape()
+    }
+    fn create(_: &piperine_abi::device::Values<'_>) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((HolderDevice, std::sync::Arc::clone(HOLDER_SHAPE.get().expect("set"))))
+    }
+    fn eval(&self, _: u32, _: &mut piperine_abi::device::Eval<'_>) -> Result<(), piperine_abi::device::Fault> {
+        Ok(())
+    }
+    fn react(&self, _: u32, _: &mut piperine_abi::device::React<'_>) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+impl piperine_abi::device::Device for ResolverDevice {
+    fn prototype() -> &'static Shape<'static> {
+        RESOLVER_SHAPE.get().expect("the resolver plan is set before its module").shape()
+    }
+    fn create(_: &piperine_abi::device::Values<'_>) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((ResolverDevice, std::sync::Arc::clone(RESOLVER_SHAPE.get().expect("set"))))
+    }
+    fn eval(&self, _: u32, _: &mut piperine_abi::device::Eval<'_>) -> Result<(), piperine_abi::device::Fault> {
+        Ok(())
+    }
+    fn react(&self, _: u32, _: &mut piperine_abi::device::React<'_>) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+impl piperine_plan::Modules for Stub {
+    fn module(&self, body: BodyId) -> Option<&'static piperine_abi::raw::Module> {
+        // body 0 is the resolver and body 1 the holder: the order `Resolved::design` adds them in
+        match body.index() {
+            0 => Some(RESOLVER.get_or_init(|| piperine_abi::thunk::module::<ResolverDevice>("resolver"))),
+            1 => Some(HOLDER.get_or_init(|| piperine_abi::thunk::module::<HolderDevice>("holder"))),
+            _ => None,
+        }
+    }
+}
+
+impl Resolved {
+    /// The design of `resolved_design`: the holder `Source` as the top, its resolver the child `Source.w$resolve` over two
+    /// drive nets (the first held by `Source`, the second by the host) and an others net of the first drive, with the
+    /// net `Source.w` recording them.
+    fn design() -> Ir {
+        let mut b = IrBuilder::new();
+        let resolver = Resolved::resolver(&mut b);
+        let holder = Resolved::holder(&mut b);
+        let top = b.next_instance_id();
+        let at = || Resolved::at(1);
+        let net = |b: &mut IrBuilder, path: &str, ty: ValueType| b.net(piperine_ir::NetSpec { path: path.into(), ty, declared_by: top, init: None, origin: at() });
+        let value = net(&mut b, "Source.w", Ty::u(8));
+        let seen = net(&mut b, "Source.seen", Ty::u(8));
+        let first = net(&mut b, "Source.w$drive0", ValueType::Bool);
+        let second = net(&mut b, "Source.w$drive1", ValueType::Bool);
+        let others = net(&mut b, "Source.w$others0", Ty::u(8));
+        let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: holder, parent: None, nodes: vec![], params: vec![], origin: at() });
+        b.bind_nets(root, vec![value, seen]);
+        let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: at() });
+        b.bind_nets(child, vec![first, second, value]);
+        b.resolve_net(
+            value,
+            piperine_ir::Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(piperine_ir::Holder { instance: root, carrier: 0 }), None], others: vec![(0, others)] },
+        );
+        let ir = b.finish(root);
+        assert_eq!(ir.check(), vec![], "the fixture passes check()");
+        ir
+    }
+}
+
+#[test]
+fn a_resolved_net_binds_drives_value_and_others() {
+    // RN-04 (abi.md §9 D1, spec §5.2.11): the holder's drive pin is the net of its drive and its others pin the net of that
+    // drive's others; the resolver reads each drive net and writes the value net, which every reader's value pin meets.
+    let ir = Resolved::design();
+    for (cell, body) in [(&HOLDER_SHAPE, "Source"), (&RESOLVER_SHAPE, "Count$resolve~2")] {
+        let body = ir.bodies().find(|b| b.name() == body).expect("the body");
+        let _ = cell.set(std::sync::Arc::clone(BodyPlan::new(body).shape()));
+    }
+    let circuit = piperine_plan::Netlist::new(&ir).circuit(&Stub).unwrap_or_else(|e| panic!("circuit: {e}"));
+    let names = &circuit.bound().expect("bound").names;
+    let net_of = |instance: &str, pin: &str| -> String {
+        let i = names.instances.iter().position(|p| p == instance).unwrap_or_else(|| panic!("no instance {instance}"));
+        let k = names.pin_names[i].iter().position(|n| n == pin).unwrap_or_else(|| panic!("no pin {pin} on {instance}"));
+        // a site is a net when it prints as `Net(<id>)`; the design-wide net of that name is the one it prints as
+        let site = format!("{:?}", names.pins[i][k]);
+        names.nets.iter().find(|(_, id)| format!("Net({id:?})") == site).map(|(name, _)| name.trim_start_matches("net:").to_string()).unwrap_or(site)
+    };
+    assert_eq!(net_of("Source", "w"), "Source.w", "the value pin meets the value net");
+    assert_eq!(net_of("Source", "w.drive"), "Source.w$drive0", "the holder's drive pin is the net of its drive (the first, in instance-path order)");
+    assert_eq!(net_of("Source", "w.others"), "Source.w$others0", "the holder's others pin is the others net of its drive");
+    assert_eq!(net_of("Source.w$resolve", "d0"), "Source.w$drive0", "the resolver reads the first drive net");
+    assert_eq!(net_of("Source.w$resolve", "d1"), "Source.w$drive1", "and the second, the host's");
+    assert_eq!(net_of("Source.w$resolve", "v"), "Source.w", "and writes the value net, the one the readers meet");
+}

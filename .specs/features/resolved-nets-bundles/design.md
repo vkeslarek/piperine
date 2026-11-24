@@ -7,6 +7,20 @@
 Companion of `.specs/features/resolved-nets/design.md`; its D2 and D20 put both features on
 `feature/resolved-nets`.
 
+**Amended**: 2026-11-22 - the explicit-unknowns model (MD-78, spec amendment A6). The section below rules over every older sentence of this file.
+
+---
+
+## Amendment of 2026-11-22: the explicit-unknowns model (MD-78)
+
+| Older text | Now | Decision (spec A6) |
+| ---------- | --- | ------------------ |
+| "One-driver means a discrete nature without `resolve`" (Handoff of B1; `BundleShape`'s `E0261` reads `NatureKind::Resolved`) | one-driver means a discrete nature that does not implement `Resolve`; `resolved-nets` T16 switches `E0261` to `NatureRules`' capability when it removes the field, and moves the `pom_bundles.rs` fixtures that use the library's `Wire` to a nature the test declares with `impl Resolve<bool>` | A6.1, A6.2 |
+| `sda: Wire` (BN-06 AC 2, T15) | `sda: Sda` with `pub nature Sda { value: Driven }` and `impl Resolve<Driven> for Sda { Driven::strongest }`, declared by the fixture | A6.2 |
+| a field nobody drives is unknown | it holds its initial value; a field type without `Default` and no initial value is `E0187`; T5 gives every fixture's `Bit` field or signal an initial value | A6.3 |
+| `impl` on a bundle | an inherent `impl` (BN-05) as before; `impl Trait for` a bundle stays `E0134` | A6.1 |
+| Gates: "Full" ran the buck, the twins and parity after every elaborator task | per task the `**Build**` line and the touched crates' tests; the full root suite, the integrated suites, parity and the twins only at the end of a batch; the buck only "with the buck" (D9) | the user's gate policy |
+
 ---
 
 ## What the code does today (`main` at `7df9e17c`)
@@ -112,7 +126,9 @@ pub enum View {
 | `types_*` tests pinning "`struct` item used as a type" or "`flip` type" as `P0001` for a bundle | T6 | replaced by the acceptance tests |
 | Book `natures#8`, `natures~52790298` | T21 | the refusal becomes a run (with `Slice<T>` once `generics` C is on `main`) |
 | `GAPS.md` L25, §9 share, §11 rows | T21 | removed in the closing commit |
-| `code_owners.tsv` rows `E0260`, `E0261`, `E0262`, `E0264` | T1 to T4 | deleted when raised (`resolved-nets` D16) |
+| `code_owners.tsv` rows `E0260`, `E0261`, `E0262`, `E0264` | T1 to T4 | deleted when raised (`resolved-nets` D16); done in B1 |
+| fixtures of `types_*`, `elab_*` and `pom_bundles.rs` that declare a `Bit` field or signal with no initial value | T5 | each gains an initial value (`E0187` otherwise, `explicit-unknowns` R4); the assertion is unchanged; the commit body names each |
+| `pom_bundles.rs` fixtures that use the library's `Wire` | `resolved-nets` T16 | a nature the test declares with `impl Resolve<bool>` |
 | Transpile goldens, twin goldens, contracts | none | never |
 
 ## Risks & Concerns
@@ -122,6 +138,7 @@ pub enum View {
 | `composite-values` makes structs value types in the same checker paths | `types/carrier.rs` `port_type`, field access | a bundle read as a value | T5 re-reads the anchors; C2's arm is matched before the value arm, with a test (`a_bundle_port_is_not_a_value_input`) |
 | Generic bundles need `generics`' generic value types | phase 7 | BN-06 AC 3 blocked | waits; the non-generic bundle stands alone |
 | The Book's `natures#8` uses `Slice<T>`, a generic module | T21 | the row cannot run before `generics` C | T21 runs after phase 7; if `generics` C is late the row keeps only that refusal, owner `generics` |
+| `resolved-nets` T16 rewrites `E0261`'s question while bundles B2 or B3 may be in flight on the same branch | `pom/resolve/shape.rs` | a conflict between the two features' tasks | tasks run sequentially on one branch; whichever runs second re-reads `shape.rs` (T5 here, T11 there) |
 
 ## Divergences found (current code vs docs/spec in this area), each a fix task
 
@@ -144,7 +161,9 @@ previsto, parando só depois da revisão no item 13".
 | D5 | BN-04 AC 3's code | `E0211` | §5.1's table names bundles |
 | D6 | BN-05 AC 4's code | `E0133` | §3.1.5 |
 | D7 | `E0264` split | declaration positions in the POM (T4), operand and literal positions in the checker (T7) | each where the information exists |
-| D8 | An observer view of a bundle with a resolved field | the resolved field is drivable in every view, the observer's included (§7 rule 4: fields without a direction are the same in every view) | §5.2.2 any module that sees it may drive |
+| D8 | An observer view of a bundle with a resolved field | the resolved field (its nature implements `Resolve`, amendment) is drivable in every view, the observer's included (§7 rule 4: fields without a direction are the same in every view) | §5.2.2 any module that sees it may drive |
+| D9 | Gates (amendment) | per task: the `**Build**` line and the tests of the crates it touched; the full root suite, the integrated suites, parity and the twins once at the end of each batch, never elsewhere (user, 2026-11-21: "Quero que aplique o dos gates mais leves apenas"; 2026-11-22: "Suite completa é só no fim dos lotes e ponto final!"); the buck only in a task whose `Done when` says "with the buck" (MD-77) | the user's gate policy |
+| D10 | When B2 starts (amendment) | once `explicit-unknowns` phase A is on `main` (`composite-values` A–B already is): the fixtures need `E0187`'s rule before they are rewritten once | `explicit-unknowns` design "`resolved-nets-bundles`", T5 |
 
 ## Tech Decisions
 

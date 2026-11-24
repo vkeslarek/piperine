@@ -67,7 +67,6 @@ pub enum PortKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NatureKind {
     Discrete,
-    Resolved,
     Conservative,
     SignalFlow,
     Invalid,

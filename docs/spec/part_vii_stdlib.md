@@ -102,7 +102,7 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0702` | pattern of `logic` or `matches_bits`: a character outside `0 1 x z`, or a length other than `N` | elaboration |
+| `E0702` | pattern of `logic` or `matches_bits`, or of a host write of a `Logic<N>` (§23.1 rule 13): a character outside `0 1 x z`, or a length other than `N` | elaboration, host |
 | `E0703` | `table_model` control string not of the form in §22.2.15 | elaboration |
 | `E0704` | `table_model` table: abscissae not strictly increasing, or fewer points than the interpolation degree needs | elaboration |
 | `E0705` | `table_model` input outside the table under extrapolation `E`: a panic (§1 rule 11) with its own code | run |
@@ -1508,17 +1508,20 @@ impl Default for Driven {
 impl Driven {
     /// The strongest drive wins; equal strongest drives that disagree give X. A HighZ drive is left out.
     pub fn strongest<const N: usize>(d: [Driven; N]) -> Driven {
-        d.iter().filter(|x| x.s != Strength::HighZ).fold(Driven::Z, |a, x| {
-            if x.s > a.s {
-                x
-            } else if x.s < a.s {
-                a
-            } else if same(a.v, x.v) {
-                a
-            } else {
-                Driven { v: Logic::X, s: a.s }
-            }
-        })
+        d.iter().filter(|x| x.s != Strength::HighZ).fold(
+            Driven::Z,
+            |a, x| {
+                if x.s > a.s {
+                    x
+                } else if x.s < a.s {
+                    a
+                } else if same(a.v, x.v) {
+                    a
+                } else {
+                    Driven { v: Logic::X, s: a.s }
+                }
+            },
+        )
     }
 }
 ```
@@ -1567,7 +1570,11 @@ Each module takes a net of any nature that implements `Resolve<Driven>`: `W: Nat
 
 ```rust
 pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {
-    w = if oe { Driven::strong(d) } else { Driven::Z };
+    w = if oe {
+        Driven::strong(d)
+    } else {
+        Driven::Z
+    };
 }
 
 pub module Pullup<W: Nature + Resolve<Driven>>(w: W) {
@@ -1599,7 +1606,7 @@ pub module Keeper<W: Nature + Resolve<Driven>>(w: W) {
     w = Driven { v: last, s: Strength::Weak };
 }
 
-digital for Keeper {
+digital<W> for Keeper<W> {
     on w.changed() {
         let seen = w.others().v; // what the others drive, without this keeper
         if seen.to_bit().is_some() {
@@ -1612,6 +1619,7 @@ digital for Keeper {
 1. The keeper records the level the other drives give whenever the net changes and that level is 0 or 1.
 2. Its own drive is `Weak`, and `others()` leaves it out, so it never records itself.
 3. `last` starts at X. Until a 0 or a 1 has been seen the keeper drives a weak X: the model says it has never been driven, which a `bool` could not.
+4. The `digital` block repeats the module's generic names, `digital<W> for Keeper<W>` (§10 rule 6).
 
 #### 22.3.7 `Tran`
 
@@ -1619,8 +1627,16 @@ A bidirectional pass gate (Verilog `tranif1`).
 
 ```rust
 pub module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {
-    a = if en { b.others() } else { Driven::Z };
-    b = if en { a.others() } else { Driven::Z };
+    a = if en {
+        b.others()
+    } else {
+        Driven::Z
+    };
+    b = if en {
+        a.others()
+    } else {
+        Driven::Z
+    };
 }
 ```
 
@@ -1753,13 +1769,13 @@ pub module Bidir<W: Nature + Resolve<Driven>>(d: W, a: Electrical, vdd: Electric
     let ramp = transition(d.others().v.to_volts(1.0), 0.0, tr, tr);
 }
 
-analog for Bidir {
+analog<W> for Bidir<W> {
     if driving {
         i(a) +> (v(a) - ramp * v(vdd)) / rout;
     } // released: no contribution, zero flow
 }
 
-digital for Bidir {
+digital<W> for Bidir<W> {
     on above(v(a) - vth - hyst / 2.0) {
         seen <- true;
     }
@@ -1778,6 +1794,7 @@ digital for Bidir {
 2. A change of `driving` is read by `analog`: a time point and a jump.
 3. A pad faces a driver, not another pad. Two `Bidir`s alone on one net each drive because the other does not.
 4. That loop has no fixed point: the run stops with `E0511`, naming the loop's drives (§8.2.3).
+5. The `analog` and `digital` blocks repeat the module's generic names, `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>` (§10 rule 6).
 
 Per-analysis behavior is that of `D2A` while `driving`, and of `A2D` for `seen`.
 

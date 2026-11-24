@@ -28,6 +28,7 @@ impl Elaboration<'_, '_> {
         };
         match (target, value, after) {
             (Some(target), Some(value), Some(after)) => {
+                self.structure.committed.insert(target.carrier);
                 out.push(self.stmt(Stmt::Commit { carrier: target.carrier, value, after, target: target.commit_target() }));
                 true
             }

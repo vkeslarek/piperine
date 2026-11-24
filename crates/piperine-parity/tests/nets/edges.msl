@@ -1,0 +1,150 @@
+//! Edge cases of resolved nets (RN-03): the host's drive of a top port comes first, a panic inside `resolve` is a run fault,
+//! one drive still goes through `resolve`, a parent drives a child's `pub` resolved signal and a net nobody drives follows
+//! the rule for several `impl`s.
+
+/// A net whose value tells the order its drives arrive in: each drive is a digit, so `1, 2, 3` give 123.
+nature Digits { value: f64 }
+impl Resolve<f64> for Digits {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        d.iter().fold(0.0, |acc, x| acc * 10.0 + x)
+    }
+}
+
+/// A constant digit.
+module Digit(w: Digits) {
+    amount: f64 = 1.0;
+    w = amount;
+}
+
+/// Writes the value of a `Digits` net at each of its changes.
+module DigitsLook(w: Digits) { }
+digital for DigitsLook { on w.changed() { emit!("digits", value = w); } }
+
+/// A top module whose port `w` is a `Digits` net: the host drives it, three digits 1, 2 and 3 follow.
+module HostFirstBench(w: Digits) {
+    let a = Digit(w) { amount: 1.0 };
+    let b = Digit(w) { amount: 2.0 };
+    let c = Digit(w) { amount: 3.0 };
+    let look = DigitsLook(w);
+}
+
+/// A net that adds 100 to the sum of its drives: even one drive, and none, go through `resolve`.
+nature Offset { value: f64 }
+impl Resolve<f64> for Offset {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        let sum: f64 = d.iter().sum();
+        sum + 100.0
+    }
+}
+
+/// A drive of `amount` on an `Offset` net.
+module Push(w: Offset) {
+    amount: f64 = 1.0;
+    w = amount;
+}
+
+/// Writes the value of an `Offset` net at each of its changes.
+module OffsetLook(w: Offset) { }
+digital for OffsetLook { on w.changed() { emit!("offsets", value = w); } }
+
+/// One drive of 5 on an `Offset` net: `resolve` of one drive, 105.
+module OneDriveBench() {
+    signal n: Offset;
+    let p = Push(n) { amount: 5.0 };
+    let look = OffsetLook(n);
+}
+
+/// A net with two `impl`s, one of which is `impl Resolve<V>` (`X` is `V`): a net nobody drives takes that one (D21).
+nature Rule { value: f64 }
+impl Resolve<f64> for Rule {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        10.0
+    }
+}
+impl Resolve<u8, f64> for Rule {
+    fn resolve<const N: usize>(d: [u8; N]) -> f64 {
+        20.0
+    }
+}
+
+/// Writes the value of a `Rule` net at each of its changes.
+module RuleLook(w: Rule) { }
+digital for RuleLook { on w.changed() { emit!("rules", value = w); } }
+
+/// Nobody drives the net: the `impl Resolve<V>` answers, 10.
+module UndrivenRuleBench() {
+    signal n: Rule;
+    let look = RuleLook(n);
+}
+
+/// A net with two `impl`s, none of them `impl Resolve<V>`.
+nature Neither { value: f64 }
+impl Resolve<u8, f64> for Neither {
+    fn resolve<const N: usize>(d: [u8; N]) -> f64 {
+        1.0
+    }
+}
+impl Resolve<u16, f64> for Neither {
+    fn resolve<const N: usize>(d: [u16; N]) -> f64 {
+        2.0
+    }
+}
+
+/// Nobody drives the net and no `impl` is the net's: `E0181` naming the carrier.
+module UndrivenNeitherBench() {
+    signal orphan: Neither;
+}
+
+/// A net whose `resolve` divides by the number of its drives minus itself: zero.
+nature Bomb { value: f64 }
+impl Resolve<f64> for Bomb {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        let zero = d.len() - d.len();
+        (10 / zero) as f64
+    }
+}
+
+/// A drive of 1 on a `Bomb` net.
+module Fuse(w: Bomb) {
+    w = 1.0;
+}
+
+/// One drive on a net whose `resolve` panics.
+module BombBench() {
+    signal fuse_net: Bomb;
+    let f = Fuse(fuse_net);
+}
+
+/// A child with a `pub` resolved signal that it drives itself with 1, and whose value `OffsetLook` writes.
+module Holder() {
+    pub signal w: Offset;
+    w = 1.0;
+    let look = OffsetLook(w);
+}
+
+/// The parent drives the child's `pub` resolved signal too, with 20: the drives are the child's 1 and the parent's 20, 121.
+module ParentDrivesBench() {
+    let h = Holder();
+    h.w = 20.0;
+}
+
+/// A module whose two resolved carriers meet on one net, each driven: it holds two drives, `x` first, 1 then 2 (§5.2).
+module Twin(x: Digits, y: Digits) {
+    x = 1.0;
+    y = 2.0;
+}
+
+/// `Twin(n, n)` alone: the two drives of one instance arrive in carrier order, 12.
+module TwinBench() {
+    signal n: Digits;
+    let t = Twin(n, n);
+    let look = DigitsLook(n);
+}
+
+/// `Twin(n, n)` and a drive of 3 from the instance `d`, whose path orders before `t`: 3, then the twin's 1 and 2, 312.
+module TwinAndDigitBench() {
+    signal n: Digits;
+    let d = Digit(n) { amount: 3.0 };
+    let t = Twin(n, n);
+    let look = DigitsLook(n);
+}

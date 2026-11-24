@@ -16,7 +16,7 @@ tree one level at a time.
 | `crate` | a package of the build: the root crate, a named dependency, or `std` | `CrateData` in `Design::crates`, linked from `SourceFileData::krate`, with `DependencyData` edges | `Crate` | `design.krate(name)`, `design.crates()`, `Crate::dependencies`, `Crate::dependency(name)`, `Reflect::krate` |
 | `item` | one top-level item of a file | `DeclKind` under the file's `NamespaceData` | `Decl` | `design.root().children()` |
 | `nature_decl` | `pub nature Electrical<..> { .. }` | `NatureData`, with `QuantityData` children | `Nature` | `design.nature("Electrical")` |
-| `nature_field` | `potential: Voltage { access: v, .. }`, `value: T`, `resolve: f` | `NatureFieldNode` (`Quantity`, `Value`, `Resolve`) | `Quantity` | `Nature::quantities`, `value_type`, `resolve_fn` |
+| `nature_field` | `potential: Voltage { access: v, .. }`, `value: T` | `NatureFieldNode` (`Quantity`, `Value`) | `Quantity` | `Nature::quantities`, `value_type` |
 | `struct_field` | `pub in name: Type` in a struct | `FieldData` | `Field` | `Struct::fields`, `Field::dir` |
 | `impl_block` | `impl<..> Trait for Type { .. }` | `ImplData` | `Impl` | `Nature::impls`, `Impl::trait_path`, `self_ty` |
 | `impl_item` | `pub fn ..` or `pub const ..` inside an `impl` | `FnData`, `ConstData` (children of the impl) | `Function`, `Const` | `Impl::items` |

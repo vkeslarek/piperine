@@ -70,6 +70,7 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("PartialOrd", BuiltinKind::Trait, "App. H"),
     row("Ord", BuiltinKind::Trait, "App. H"),
     row("Default", BuiltinKind::Trait, "App. H"),
+    row("Resolve", BuiltinKind::Trait, "§4"),
     row("Debug", BuiltinKind::Trait, "App. H"),
     row("Hash", BuiltinKind::Trait, "App. H"),
     row("str", BuiltinKind::Type, "§1"),

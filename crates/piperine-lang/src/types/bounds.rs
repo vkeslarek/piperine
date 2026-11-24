@@ -40,6 +40,16 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Nature),
                 other => matches!(other, Ty::Node(_) | Ty::Carrier { .. }),
             },
+            Bound::Resolve { arguments } => {
+                let nature = match ty {
+                    Ty::Param(nature) | Ty::Node(nature) | Ty::Carrier { nature, .. } => *nature,
+                    _ => return false,
+                };
+                let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+                let Some(wanted) = wanted else { return false };
+                let Some(driven) = wanted.first() else { return false };
+                super::nature::ResolveImpls::new(self.checker).of(nature).iter().any(|entry| entry.driven == *driven && wanted.get(1).is_none_or(|value| entry.value == *value))
+            }
             Bound::Trait { decl, arguments } => {
                 if matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)) {
                     return true;
@@ -315,7 +325,19 @@ impl Checker<'_> {
             Bound::Library(name) => (*name).to_string(),
             Bound::Repr => "Repr".to_string(),
             Bound::Nature => "Nature".to_string(),
+            Bound::Resolve { arguments } => {
+                let written: Vec<String> = arguments.iter().map(|argument| self.written_type_name(*argument)).collect();
+                if written.is_empty() { "Resolve".to_string() } else { format!("Resolve<{}>", written.join(", ")) }
+            }
             Bound::Callable { .. } => "Fn".to_string(),
+        }
+    }
+
+    /// The name a type is written with: the last segment of its path, `_` for any other form.
+    fn written_type_name(&self, ty: TypeId) -> String {
+        match &self.design.type_node(ty).kind {
+            crate::pom::TypeKind::Path(path) => self.design.path_node(*path).segments.last().map_or_else(|| "_".to_string(), |segment| segment.name.text.clone()),
+            _ => "_".to_string(),
         }
     }
 

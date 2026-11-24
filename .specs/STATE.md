@@ -1909,6 +1909,28 @@ second). It extends MD-64 (IR functions are pure values) and MD-78, and supersed
    their contracts. ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so
    the closed `noise_switch` is held to its closed form and the same twin opened to `noise_switch_off.cir`.
 
+### MD-83: resolved nets live below the POM; a nature implements `Resolve`, the model declares its nets
+
+`resolved-nets` (2026-11-24; the number follows MD-82, `analog-operators`; a collision at merge is renumbered by whoever
+merges second). It extends MD-78 (unknown is explicit) and the POM rule (MD-44): the authored tree stays walkable.
+
+1. **A resolved carrier is a net with one drive per holder** (D4, D5). Placement groups the resolved carriers bound to one
+   net, orders their drives by the holders' instance paths (§4 rule 2; the host's drive first, D8), makes each drive a net of
+   its own (`<net>$drive<k>`, never a name the author wrote) and instantiates one resolver body per (nature, `impl`, drives,
+   readers of `others()`) that calls `resolve::<k>` for the `k` drives present. The net records it in `NetData::resolution`;
+   the POM is untouched.
+2. **A parent drives a child's `pub` resolved signal** (§5.2.2). The reached carrier becomes a `CarrierRole::Resolved` carrier
+   listed in the body's reaches and is a holder of the child's net; `E0222` stays for a carrier of one driver.
+3. **The `impl` of a net** is the one its drives pick by their type (`E0180`, `E0181`); a net nobody drives takes the nature's
+   only `impl`, else its `impl Resolve<V>`, else `E0181` naming the carrier (D21, Q4). Two drives of different types are
+   `E0225` (D22). `E0511` names a loop's drives by their holders (D24).
+4. **`CarrierRole::Resolved` carries `port`**, so a body's carrier ports are counted without its resolved signals.
+5. **The library nets are source** (`std/nets.msl`, §22.3): `Strength`, `Driven`, `Driven::strongest`, `Pullup`, `Pulldown`,
+   `Keeper`, `Tribuf`, `Tran`, `Tgate`, `Bidir` over `W: Nature + Resolve<Driven>`; the library declares no net nature.
+6. **A top's `in` port has a first value** (`= value`, the host's, or a `Default`; `bool` has none, H.8 rule 4), so a Book
+   listing whose top has `in Bit` ports runs inside a bench that gives them one. The code is right; the listing is not edited.
+7. **Closed:** `GAPS.md` L21, L22 and L23; the §11 rows natures#2, natures#3, digital#16 to digital#20, core-std#6.
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

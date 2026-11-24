@@ -47,12 +47,41 @@ pub(super) struct ModulePlan {
     pub(super) merges: Vec<(Terminal, Terminal)>,
     /// Every carrier of the body, in its order: each is bound to one net per instance.
     pub(super) carriers: Vec<Carrier>,
+    /// How many of the leading carriers are ports of the module itself.
+    pub(super) port_carriers: usize,
+    /// What the body says of each of its resolved carriers (`resolvers.rs`).
+    pub(super) resolved: Vec<super::resolvers::ResolvedPlan>,
     pub(super) children: Vec<ChildPlan>,
     /// The nodes and carriers of children the body reads: placement binds each once the child is placed.
     pub(super) reaches: Vec<piperine_ir::Reach>,
 }
 
+impl ModulePlan {
+    /// Whether carrier `carrier` of the body stands for a carrier of a child (`inst.name`): a resolved one is a drive of the
+    /// child's net, with no net of its own.
+    pub(super) fn is_reached(&self, carrier: u32) -> bool {
+        self.reaches.iter().any(|reach| matches!(reach.item, piperine_ir::ReachedItem::Carrier { carrier: reached, .. } if reached == carrier))
+    }
+}
+
 impl Elaboration<'_, '_> {
+    /// What the body being lowered says of each resolved carrier: its nature, the `impl` its drives picked, whether it
+    /// holds a drive of the net and whether it reads `others()`.
+    fn resolved_plans(&self) -> Vec<super::resolvers::ResolvedPlan> {
+        self.structure
+            .resolved_carriers
+            .iter()
+            .map(|(carrier, decl, nature)| super::resolvers::ResolvedPlan {
+                carrier: *carrier,
+                decl: *decl,
+                nature: *nature,
+                implementation: self.concrete_implementation(*decl, *nature),
+                drives: self.structure.committed.contains(carrier) || self.structure.drives.iter().any(|drive| drive.carrier == *carrier) || self.structure.carriers[*carrier as usize].init.is_some(),
+                reads_others: self.structure.others_read.contains(carrier),
+            })
+            .collect()
+    }
+
     /// The plan of every param of the modules in `modules`: its name, its folded default and its
     /// `where`, which placement reads. A default that does not fold is reported once, here.
     pub(super) fn plan_params(&mut self, modules: &[DeclId]) {
@@ -191,6 +220,8 @@ impl Elaboration<'_, '_> {
         self.judge_drive_overlaps(&name);
         self.judge_drive_loops(&name);
         let carriers = self.structure.carriers.clone();
+        let port_carriers = self.structure.port_carriers;
+        let resolved = self.resolved_plans();
         let reaches = self.structure.reaches.clone();
         let merged = scope.merged.clone();
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = std::mem::take(&mut self.structure.nodes).into_iter().unzip();
@@ -214,7 +245,7 @@ impl Elaboration<'_, '_> {
         for (plus, minus) in &merged {
             self.ir.merge(body, Merge { plus: *plus, minus: *minus });
         }
-        self.plans.insert(key, ModulePlan { body, nodes: node_plans, merges: merged, carriers, children: child_plans, reaches });
+        self.plans.insert(key, ModulePlan { body, nodes: node_plans, merges: merged, carriers, port_carriers, resolved, children: child_plans, reaches });
     }
 
     /// The param `param` of `module` as the body has it: its type, its `where` lowered over the

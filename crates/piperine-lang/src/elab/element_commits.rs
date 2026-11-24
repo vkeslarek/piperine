@@ -43,6 +43,9 @@ enum Step {
 impl Elaboration<'_, '_> {
     /// The place `place` of a commit or a definition, lowered. `None` after a diagnostic.
     pub(super) fn place_target(&mut self, scope: &mut Scope, place: ExprId) -> Option<PlaceTarget> {
+        if let Some(reached) = self.reached_place_target(scope, place) {
+            return reached;
+        }
         let (root, steps) = self.place_steps(place);
         if self.root_decl(root).is_some_and(|d| self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&d))) {
             self.element_of_empty_array(scope.file, self.design.expr_node(place).span);
@@ -50,7 +53,11 @@ impl Elaboration<'_, '_> {
         }
         let carrier = self.drive_target(scope, root)?;
         let carried = self.structure.carriers[carrier as usize].clone();
-        let mut ty = carried.ty.clone();
+        // a resolved carrier is written with the type of its drive, not the one it reads (§5.2.15)
+        let mut ty = match &carried.role {
+            piperine_ir::CarrierRole::Resolved { driven, .. } => driven.clone(),
+            _ => carried.ty.clone(),
+        };
         let mut steps = steps.into_iter().peekable();
         let (mut element, mut constant) = (None, None);
         if let Some(count) = carried.count {

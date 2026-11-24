@@ -400,7 +400,7 @@ fn every_listing_selects_lines_inside_its_block() {
 
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
-    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, language~b8b3f31f, types~a1ff299b, values~4938c15f, solver~1cdf59b8, values~4f830aa0, values~9a0ece05, cli~54e71d59
+    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, language~b8b3f31f, types~a1ff299b, values~4938c15f, solver~1cdf59b8, values~4f830aa0, values~9a0ece05, cli~54e71d59, natures~1197ebef
     // verification F6: every listing of the whole Book that claims to be the binary's output, in
     // every chapter and of any project, is the binary's whole output; `data-cli-lines` only
     // selects the lines the page shows, so a line it leaves out is held all the same

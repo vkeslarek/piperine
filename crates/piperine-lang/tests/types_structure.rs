@@ -143,6 +143,18 @@ fn a_commit_to_a_childs_carrier_is_e0222() {
 }
 
 #[test]
+fn a_parent_may_drive_a_childs_pub_resolved_signal() {
+    // RN-03 edge case (§5.2.2): a resolved carrier has several drivers, so a definition and a commit of `h.w` in the
+    // parent are accepted, where a one-driver carrier is `E0222` (`a_commit_to_a_childs_carrier_is_e0222`)
+    let nature = "nature Sum { value: f64 }\nimpl Resolve<f64> for Sum { fn resolve<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() } }\n";
+    let holder = "module Holder(fed: Sum) { pub signal w: Sum; }\n";
+    let accepted = format!("{nature}{holder}module Top() {{ signal s: Sum; let h = Holder(s); h.w = 2.0; }}\ndigital for Top {{ on at(1m) {{ h.w <- 3.0; }} }}");
+    let design = design_of(&accepted);
+    let checked = Types::check(&design, "Top");
+    assert!(checked.is_ok(), "a drive of `h.w` is accepted: {:?}", checked.err().map(|found| found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>()));
+}
+
+#[test]
 fn inflow_of_a_node_that_is_not_a_port_is_e0243() {
     // AS-13 AC 4 (§6 rule 5): `inflow()` measures the flow entering the module at a port of a nature with
     // `flow`; an internal node `x` is no port: `E0243` at the call.

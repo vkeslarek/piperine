@@ -162,6 +162,19 @@ impl<'a> Printer<'a> {
         if self.structural { String::new() } else { format!("  @{origin}") }
     }
 
+    /// `  resolved by <resolver> of <driven> drives (<net>, ..) held by (<instance>#<carrier>, ..) others (<k>: <net>, ..)` after a
+    /// resolved net: the paths of what the net is made of (RN-03).
+    fn resolution(&self, resolution: &crate::model::Resolution) -> String {
+        let ir = self.ir;
+        let net = |id: &crate::ids::NetId| ir.nets.get(id.index()).map_or("<bad net>".to_string(), |n| Printer::name(&n.path));
+        let instance = |id: &crate::ids::InstanceId| ir.instances.get(id.index()).map_or("<bad instance>".to_string(), |i| Printer::name(&i.path));
+        let resolver = instance(&resolution.resolver);
+        let drives: Vec<String> = resolution.drives.iter().map(net).collect();
+        let holders: Vec<String> = resolution.holders.iter().map(|holder| holder.as_ref().map_or("host".to_string(), |held| format!("{}#{}", instance(&held.instance), held.carrier))).collect();
+        let others: Vec<String> = resolution.others.iter().map(|(drive, id)| format!("{drive}: {}", net(id))).collect();
+        format!("  resolved by {resolver} of {} drives ({}) held by ({}) others ({})", resolution.driven, drives.join(", "), holders.join(", "), others.join(", "))
+    }
+
     /// The text `write` appends to the output, taken out of it.
     fn chunk(&mut self, write: impl FnOnce(&mut Self)) -> String {
         let start = self.out.len();
@@ -244,7 +257,8 @@ impl<'a> Printer<'a> {
                 let declarer = ir.instances.get(net.declared_by.index()).map_or("<bad instance>".to_string(), |i| Printer::name(&i.path));
                 let init = net.init.map_or(String::new(), |c| format!("  init {c}"));
                 let at = self.at(&net.origin);
-                self.chunk(|p| p.line(0, &format!("net {}: {}  declared by {declarer}{init}{at}", Printer::name(&net.path), net.ty)))
+                let resolution = net.resolution.as_ref().map_or(String::new(), |r| self.resolution(r));
+                self.chunk(|p| p.line(0, &format!("net {}: {}  declared by {declarer}{init}{resolution}{at}", Printer::name(&net.path), net.ty)))
             })
             .collect();
         self.items(nets);
@@ -402,12 +416,13 @@ impl<'a> Printer<'a> {
             self.line(1, &format!("node {}: {nature} {role}{init}{at}", Printer::name(&node.name)));
         }
         for carrier in &body.carriers {
-            let role = match carrier.role {
-                CarrierRole::In => "in",
-                CarrierRole::Out => "out",
-                CarrierRole::Signal => "signal",
-                CarrierRole::Reached => "reached",
-                CarrierRole::Internal => "internal",
+            let role = match &carrier.role {
+                CarrierRole::In => "in".to_string(),
+                CarrierRole::Out => "out".to_string(),
+                CarrierRole::Signal => "signal".to_string(),
+                CarrierRole::Reached => "reached".to_string(),
+                CarrierRole::Resolved { driven, .. } => format!("resolved {driven}"),
+                CarrierRole::Internal => "internal".to_string(),
             };
             let init = carrier.init.map_or(String::new(), |c| format!(" init {c}"));
             let at = self.at(&carrier.origin);
@@ -1065,6 +1080,13 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
+            Expr::Others(i) => next.push(text(format!("{}.others()", Printer::carrier(scope, *i)))),
+            Expr::Resolve { by_count, drives, except } => {
+                let functions: Vec<String> = by_count.iter().map(|f| self.ir.functions.get(f.index()).map_or("<bad function>".to_string(), |f| Printer::name(&f.name))).collect();
+                let drives: Vec<String> = drives.iter().map(|c| Printer::carrier(scope, *c)).collect();
+                let except = except.map_or(String::new(), |k| format!(" except {k}"));
+                next.push(text(format!("resolve [{}] of ({}){except}", functions.join(", "), drives.join(", "))));
+            }
             Expr::CarrierElement { carrier, index } => {
                 next.extend([text(format!("{}[", Printer::carrier(scope, *carrier))), Piece::Expr(*index), text("]".into())])
             }
@@ -1169,6 +1191,8 @@ impl<'a> Printer<'a> {
             Expr::Same { a, b } => Typing::same(&ty(a)?, &ty(b)?),
             Expr::LevelCast { expr, to, .. } => Typing::level_cast(&ty(expr)?, to, &ir.types),
             Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of_carrier(c)),
+            Expr::Others(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of(&c.ty)),
+            Expr::Resolve { by_count, .. } => by_count.first().and_then(|f| ir.functions.get(f.index())).map(|f| f.ret.clone()),
             Expr::CarrierElement { carrier, .. } | Expr::ElementPrevious { carrier, .. } => {
                 scope.carriers.get(*carrier as usize).map(|c| Typing::read_of(&c.ty))
             }
@@ -1209,7 +1233,7 @@ impl<'a> Printer<'a> {
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
             Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
-            Expr::Carrier(_) | Expr::Previous(_) | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => None,
+            Expr::Carrier(_) | Expr::Previous(_) | Expr::Others(_) | Expr::Resolve { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => None,
             Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
             Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
@@ -1407,6 +1431,11 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => format!("carrier {i}"),
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
+            Expr::Others(i) => format!("others {i}"),
+            Expr::Resolve { by_count, drives, except } => {
+                let functions: Vec<String> = by_count.iter().map(|f| f.0.to_string()).collect();
+                format!("resolve fns [{}] drives {drives:?} except {except:?}", functions.join(" "))
+            }
             Expr::CarrierElement { carrier, index } => format!("carrier_element {carrier} {}", e(index)),
             Expr::ElementPrevious { carrier, index } => format!("element_previous {carrier} {}", e(index)),
             Expr::ElementChanged { carrier, index } => format!("element_changed {carrier} {}", e(index)),

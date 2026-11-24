@@ -10,7 +10,7 @@
 
 use piperine_abi::raw::part;
 use piperine_ir::{Body, EventSource, Ir, ValueType};
-use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source};
+use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target};
 
 use crate::Error;
 use crate::print::value::Reads;
@@ -45,6 +45,8 @@ impl<'a> DigitalPrinter<'a> {
             session_parameters: (0..self.body.session_parameters().len() as u32).map(|k| self.names.read_name(Source::SessionParameter(k))).collect(),
             param_previous: (0..self.body.params().len() as u32).map(|p| self.names.read_name(Source::ParamPrevious(p))).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
+            others: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "others")).collect(),
+            driving: (0..self.body.carriers().len() as u32).map(|c| ValuePrinter::driving_name(self.body, c)).collect(),
         }
     }
 
@@ -100,7 +102,16 @@ impl<'a> DigitalPrinter<'a> {
         };
         Ok(Some(match s {
             // a previous value is in the carrier's own layout (abi.md §4.1)
-            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
+            // the drive input of a resolver also binds whether the drive is present: the byte after the value (abi.md §9 D1)
+            Source::Carrier(c) if self.body.resolve_drive_carriers().contains(&c) => match self.body.carriers().get(c as usize) {
+                Some(carrier) => {
+                    let driving = ValuePrinter::driving_name(self.body, c);
+                    let rust = values.pin_type(&carrier.ty)?;
+                    format!("{} let {driving} = <{rust} as rt::Carried>::is_driving({cx}.bytes({i}));", pin(&carrier.ty)?)
+                }
+                None => return Ok(None),
+            },
+            Source::Carrier(c) | Source::Others(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => pin(&carrier.ty)?,
                 None => return Ok(None),
             },
@@ -203,7 +214,12 @@ impl<'a> DigitalPrinter<'a> {
             }
             t.comment(&format!("drive of {}.{}: the value its pin takes", self.body.name(), carrier.name), &drive.origin);
             t.line(&format!("let value_ = {value};"));
-            t.line("rt::Carried::write_pin(value_, cx_.out_bytes(0));");
+            // a drive of a resolved carrier writes a drive net: the value, then `driving` set to 1 (abi.md §9 D1)
+            if matches!(f.writes.first(), Some(Target::ResolvedDrive(_))) {
+                t.line("rt::Carried::write_drive(value_, cx_.out_bytes(0));");
+            } else {
+                t.line("rt::Carried::write_pin(value_, cx_.out_bytes(0));");
+            }
             t.line("Ok(())");
         });
         t.line("}");

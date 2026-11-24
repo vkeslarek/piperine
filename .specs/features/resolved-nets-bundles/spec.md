@@ -1,6 +1,7 @@
 # Resolved Nets: Bundles Specification
 
 **Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (the amendment of 2026-11-21 below; the criteria of 2026-11-18 stand under the user's "Sobre as open questions, vou de aceito todas ok?")
+**Amended**: 2026-11-22 - the explicit-unknowns model (MD-78), amendment A6 below; every rule it applies is a decision the user took on 2026-11-21, quoted there. No question is open.
 
 Bundles (§7, L25): a `struct` whose fields are carriers, its views (`flip`, observer `in`),
 bundle literals and functions on a bundle. The companion of `resolved-nets`: a bundle field of a
@@ -19,6 +20,19 @@ D-numbered default of `design.md` "Decisions taken (user AFK)".
 | A3 | The spec-code guard of `params-and-io` (`code_owners.tsv`, PI-13) assigns `E0260`, `E0261`, `E0262`, `E0264` to `resolved-nets` (construct L25) | BN-08 AC 2 is added |
 | A4 | Delivery (design D1): the declaration checks are POM checks beside `E0263` and need nothing (phase 1, now); views, fields, literals and the elaboration wait for `composite-values` A–B on `main` (struct items as types); functions on a bundle wait for `generics` B and `unknown-semantics-events` B5; generic bundles for `generics` A and C; arrays of bundles for `composite-values` C | Dependencies and Size rewritten |
 | A5 | Planned on the branch `feature/resolved-nets`, beside `resolved-nets` (its design D2) | none |
+
+## Amendment of 2026-11-22 (A6: the explicit-unknowns model, MD-78)
+
+`explicit-unknowns` (MD-78, on `main` at `20c285b8`) changed what "one-driver" and "resolved"
+mean and removed the library's net natures. B1 (T1 to T4, on `main`) stands; B2 onward is
+re-planned. Every row applies a rule the user decided on 2026-11-21
+(`.specs/features/explicit-unknowns/spec.md`, "Decision" and "Answers").
+
+| # | The user's decision (2026-11-21) | Effect on this spec |
+| - | -------------------------------- | ------------------- |
+| A6.1 | "passa a exigir que nós discretos só podem ser ligados a multiplos outputs com a trait Resolve" and "Traits como CAPACIDADES" (explicit-unknowns D17, D21) | A one-driver field is a field of a discrete nature that does not implement `Resolve`; a resolved field is one whose nature does. BN-01 AC 2 and AC 4 and BN-06 AC 2 are written on the capability; `impl Trait for` a bundle stays `E0134` (D17 narrows `E0134` to bundles, it does not lift it) |
+| A6.2 | "pq tem Wire? Pq eu simplesmente não declaro a Nature ABC com um resolve específico e uso o tipo dela como normal?" (explicit-unknowns D20) | The library has no `Wire`. BN-01 AC 4 and BN-06 AC 2 name a nature the model declares with `impl Resolve<Driven>` (`Sda`) |
+| A6.3 | "Se o registor inicia sem valor, caso ele seja Bit = Erro" and "tem Default, pode não ser iniciado, não tem default, tem que ser especificado" (MD-78 item 3, explicit-unknowns R4) | A one-driver field nobody drives holds its initial value, and one of a type without `Default` with none is `E0187`; the edge case is rewritten, and every fixture with a `Bit` field or signal and no initial value gains one |
 
 ## Problem Statement
 
@@ -45,7 +59,8 @@ blocked.
 | Arrays of bundles and of carriers, `[flip Stream<T>; N]`, `wl[r]` (L24) | `composite-values`; BN-06 AC 4 applies once they exist |
 | Handles in general: a function taking a carrier or a node (L8) | `generics`; BN-05 uses them |
 | Functions that return `Event` (L53) | `unknown-semantics-events` (UE-04); BN-05 AC 3 uses them |
-| Natures of the fields (`Wire`, `VSignal`, a project's discrete nature) | `resolved-nets` |
+| Natures of the fields (a nature that implements `Resolve`, `VSignal`, a project's discrete nature) | `resolved-nets` |
+| `impl Trait for` a bundle | stays `E0134` (§3.1.9 as `explicit-unknowns` narrowed it); an inherent `impl` on a bundle is BN-05 |
 | Templates and `Fn(Cell)` bounds (L32) | `generics` |
 | Running galleries E.6 and F.3 as gates (U4) | `conformance` |
 | The interpreter | Frozen at the M1 analog subset (codegen context R1) |
@@ -77,9 +92,9 @@ blocked.
 **Acceptance Criteria** (BN-01):
 
 1. WHEN a `struct` has only fields that are carriers, arrays of carriers or bundles THEN the system SHALL accept it as a bundle.
-2. WHEN a bundle field of a one-driver nature has `in` or `out`, and every other field has none THEN the system SHALL accept the directions.
+2. WHEN a bundle field of a one-driver nature (a discrete nature that does not implement `Resolve`) has `in` or `out`, and every other field has none THEN the system SHALL accept the directions.
 3. IF a `struct` mixes carrier fields and value fields THEN the system SHALL report `E0260` naming a field of each kind.
-4. IF a one-driver field has no direction, or a field of any other nature (`Wire`, `Electrical`) has one THEN the system SHALL report `E0261` naming the field.
+4. IF a one-driver field has no direction, or a field of any other nature (a nature that implements `Resolve`, such as `Sda`; `Electrical`) has one THEN the system SHALL report `E0261` naming the field.
 5. IF `flip` is applied to something that is not a bundle, `out` is written on a bundle port, or `in` or `out` is written on a nested bundle field THEN the system SHALL report `E0262`.
 6. IF a bundle is used as a value (a param type, a nature's type argument, a function result, an operand of a value operator) or given an initial value THEN the system SHALL report `E0264`.
 
@@ -166,7 +181,7 @@ blocked.
 **Acceptance Criteria** (BN-06):
 
 1. WHEN a bundle has a field whose type is a bundle, written plain or with `flip` THEN the system SHALL apply the views to it recursively (§7 rule 5).
-2. WHEN a bundle has a field of a resolved nature (`sda: Wire`) THEN the system SHALL let every module that sees the bundle drive that field (§5.2.2).
+2. WHEN a bundle has a field of a nature that implements `Resolve` (`sda: Sda`, with `impl Resolve<Driven> for Sda`) THEN the system SHALL let every module that sees the bundle drive that field, the observer included, and SHALL give the field `resolve` of its drives (§5.2.2, §5.2.10).
 3. WHERE generic bundles exist (`generics`) the system SHALL accept `struct Stream<T: Repr> { .. }` and instantiate it per type argument.
 4. WHERE arrays of carriers exist (`composite-values`, L24) the system SHALL accept an array of bundles (`[flip Stream<T>; N]`) and connect each element field by field.
 
@@ -207,7 +222,7 @@ blocked.
 ## Edge Cases
 
 - WHEN a bundle port is left unconnected at the top THEN the system SHALL treat each field as the top's port of that nature (§23.1 rule 1 and L39 apply per field).
-- WHEN a field of a one-driver nature has no driver THEN the system SHALL leave it unknown in every analysis (§5.2.8).
+- WHEN a field of a one-driver nature has no driver THEN the system SHALL hold its initial value in every analysis, and IF its type does not implement `Default` and no initial value is given THEN the system SHALL report `E0187` (§5.2.8).
 - WHEN two bundles of different types have fields of the same names THEN the system SHALL refuse connecting one to a port of the other with `E0251`.
 - WHEN an observer view reads every field THEN the system SHALL add no drive.
 
@@ -237,10 +252,11 @@ blocked.
 ## Dependencies
 
 - Phase 1 (BN-01 AC 3 to AC 6 at the declaration): none; POM checks beside `E0263`.
-- Phases 2 to 5 (BN-01 AC 1 and AC 2, BN-02, BN-03, BN-04, BN-06 AC 1, BN-07): `composite-values` A–B on `main` (L1, struct items as types, the checker's field access).
+- Phases 2 to 5 (BN-01 AC 1 and AC 2, BN-02, BN-03, BN-04, BN-06 AC 1, BN-07): `composite-values` A–B (on `main`) and `explicit-unknowns` phase A on `main` (`Default`, `E0187`, the fixtures' initial values).
 - BN-06 AC 2 (a field of a resolved nature): `resolved-nets` phase 7 (its T22), on the same branch.
 - Phase 6 (BN-05): `generics` B (L8 handles, `E0133`) and `unknown-semantics-events` B5 (UE-04, functions that return `Event`).
 - Phase 7 (BN-06 AC 3 and AC 4): `generics` A (generic value types) and C (generic modules, the Book's `Slice<T>`); `composite-values` C (L24).
+- Phase 8 (BN-08): the Book's natures#8 places `Slice<T>`, a generic module (`generics` C).
 
 ## Size
 

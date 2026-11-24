@@ -1,0 +1,150 @@
+//! Resolved nets from source (§4 rule 8, §5.2): drives that combine through the nature's `resolve`, in the order of
+//! their holders' instance paths, an undriven net, a drive that changes and one that leaves the value.
+
+/// A net of numbers that add up.
+nature Total { value: f64 }
+impl Resolve<f64> for Total {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        d.iter().sum()
+    }
+}
+
+/// A net whose value tells the order its drives arrive in: each drive is a digit, so `1, 2, 3` give 123.
+nature Digits { value: f64 }
+impl Resolve<f64> for Digits {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        d.iter().fold(0.0, |acc, x| acc * 10.0 + x)
+    }
+}
+
+/// A net of flags that are all true: the wired AND (§22.3's `AndWire`).
+nature AndWire { value: bool }
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(d: [bool; N]) -> bool {
+        d.iter().fold(true, |acc, x| acc && x)
+    }
+}
+
+/// A constant drive of `amount`.
+module Source(w: Total) {
+    amount: f64 = 1.0;
+    w = amount;
+}
+
+/// A constant digit.
+module Digit(w: Digits) {
+    amount: f64 = 1.0;
+    w = amount;
+}
+
+/// Writes the value of the net it reads at each of its changes.
+module Watch(w: Total) { }
+digital for Watch {
+    on w.changed() { emit!("changes", total = w); }
+}
+
+/// Three drivers named out of path order: the value is their sum (4 + 1 + 2 = 7).
+module ThreeBench() {
+    signal n: Total;
+    let c = Source(n) { amount: 4.0 };
+    let a = Source(n) { amount: 1.0 };
+    let b = Source(n) { amount: 2.0 };
+    let w = Watch(n);
+}
+
+/// The same three drivers as digits, written c, a, b: the order of the arguments is a, b, c.
+module OrderBench() {
+    signal n: Digits;
+    let c = Digit(n) { amount: 3.0 };
+    let a = Digit(n) { amount: 1.0 };
+    let b = Digit(n) { amount: 2.0 };
+}
+
+/// A net that answers how many drives it got when they arrive in ascending order of their value, and 0 when any arrives out of it.
+nature Ascending { value: f64 }
+impl Resolve<f64> for Ascending {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        let state = d.iter().fold((0.0, 1.0), |held, x| (x, if x >= held.0 { held.1 } else { 0.0 }));
+        state.1 * (d.len() as f64)
+    }
+}
+
+/// A drive whose value is its own number.
+module Mark(w: Ascending) {
+    index: f64 = 0.0;
+    w = index;
+}
+
+/// Twelve generated drivers, `cell[0]` to `cell[11]`: by name `cell[10]` and `cell[11]` would come before `cell[2]`, by index they
+/// come last (§4 rule 2, array indices numerically), so the drives are ascending and the net answers 12.
+module IndexBench() {
+    signal n: Ascending;
+    for k in 0..12 {
+        let cell = Mark(n) { index: k as f64 };
+    }
+}
+
+/// No module drives the nets: `resolve` of no drive (0 for a sum, true for the wired AND).
+module UndrivenBench() {
+    signal t: Total;
+    signal a: AndWire;
+    let w = Watch(t);
+}
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// What a drive of `Level` holds: one number, `7` until a driver says otherwise.
+#[derive(Repr, PartialEq)]
+struct Cell { v: f64 }
+impl Default for Cell {
+    fn default() -> Cell { Cell { v: 7.0 } }
+}
+
+/// A net whose drives are cells and whose value is the sum of their numbers.
+nature Level { value: f64 }
+impl Resolve<Cell, f64> for Level {
+    fn resolve<const N: usize>(d: [Cell; N]) -> f64 {
+        d.iter().fold(0.0, |acc, x| acc + x.v)
+    }
+}
+
+/// A driver that says nothing until the first rising edge, then drives 2.
+module Late(w: Level, in clk: Bit) { }
+digital for Late { on clk.rise() { w <- Cell { v: 2.0 }; } }
+
+/// Reads a `Level` net at each change.
+module Look(w: Level) { }
+digital for Look { on w.changed() { emit!("levels", level = w); } }
+
+/// A drive with no initial value: its cell starts at the default, 7, and the first rise commits 2.
+module DefaultBench() {
+    signal clk: Bit;
+    signal n: Level;
+    let clock = Clock(clk);
+    let late = Late(n, clk);
+    let look = Look(n);
+}
+
+/// One drive of 1 that becomes 2 and one of 2 that becomes 1 at the first rise: the sum stays 3.
+module Up(w: Total = 1.0, in clk: Bit) { }
+digital for Up { on clk.rise() { w <- 2.0; } }
+module Down(w: Total = 2.0, in clk: Bit) { }
+digital for Down { on clk.rise() { w <- 1.0; } }
+module SwapBench() {
+    signal clk: Bit;
+    signal n: Total;
+    let clock = Clock(clk);
+    let up = Up(n, clk);
+    let down = Down(n, clk);
+    let watch = Watch(n);
+}
+
+/// The declaring module's own initial drive, 10, joins the two sources: 10 + 1 + 2 = 13.
+module InitialBench() {
+    signal n: Total = 10.0;
+    let a = Source(n) { amount: 1.0 };
+    let b = Source(n) { amount: 2.0 };
+    let watch = Watch(n);
+}

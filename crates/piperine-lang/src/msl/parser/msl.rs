@@ -42,12 +42,8 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .ignore_then(punct(Punct::Colon))
         .ignore_then(h.ty.clone())
         .map(NatureFieldKind::Value);
-    let resolve = word("resolve")
-        .ignore_then(punct(Punct::Colon))
-        .ignore_then(h.expr.clone())
-        .map(NatureFieldKind::Resolve);
     let field = item::meta(h)
-        .then(first_of(vec![quantity.boxed(), value.boxed(), resolve.boxed()]))
+        .then(first_of(vec![quantity.boxed(), value.boxed()]))
         .map_with(|(meta, kind), e| NatureField { meta, kind, span: Loc(e.span()) })
         .labelled("nature field");
     kw(Kw::Nature)

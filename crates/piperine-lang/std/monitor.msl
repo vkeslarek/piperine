@@ -84,14 +84,14 @@ digital<T> for inertial<T> {
     } // re-armed by every change: only the last one survives
 }
 
-pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
+pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {
     ton: f64 = 100p;
     toff: f64 = 300p;
     y = inertial(
         if oe {
-            Drive::strong(d)
+            Driven::strong(d)
         } else {
-            Drive::Z
+            Driven::Z
         },
         if oe {
             ton

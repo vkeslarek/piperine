@@ -117,7 +117,8 @@ fn a_for_loop_in_a_digital_block_lowers() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    let src = "module Top(a: Wire, b: Wire) { }";
+    // two bundles (a `struct` with a carrier field, still refused by name; a module template is a value since generics phase D)
+    let src = "struct Pair { in a: Bit, b: Electrical }\nstruct Duo { in c: Bit, d: Electrical }\nmodule Top() { signal x: Pair; signal y: Duo; }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
@@ -145,16 +146,17 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
     // The type checker accepts the digital forms and the flow read of a potential branch
     // (msl-digital T9 to T16); the structure passes that lower them come later. Until then every one
     // is refused by name, never dropped and never lowered as a different circuit.
-    for (form, src, names) in [
-        // A carrier is lowered from msl-digital T28 on: the form still refused in its place is the
-        // resolved carrier of DIG-07 AC 1.
-        ("a nature with resolve", "module Top(c: Wire) { }", vec!["resolved nature `Wire`"]),
+    // Every form this table held now lowers: the merge of `resolved-nets` (others()) and `generics` phase D (templates) left it empty.
+    let forms: [(&str, &str, &[&str]); 0] = [
+        // A carrier is lowered from msl-digital T28 on, and a resolved one from resolved-nets T18 on
+        // (`elab_natures::a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive`).
         // An element or field commit left this table when composite-values T76 typed it (`types_carrier_arrays`).
         // `settle` lowers from unknown-semantics-events T5 on (`elab_digital::settle_lowers_to_the_settle_event_source`).
         // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it
         // (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
         // A template left this table when generics T84 typed it as a value (`types_templates::a_template_is_a_value_of_its_modules_type`).
-    ] {
+    ];
+    for (form, src, names) in forms {
         let err = Elab::run(src, "Top").expect_err(form);
         assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{form}: {:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         for name in names {

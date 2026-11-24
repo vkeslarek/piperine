@@ -1,0 +1,474 @@
+//! Resolution by strength from source (§22.3.1, §22.3.2): a net nature the model declares, `Line`, with the library's
+//! `Driven` and `Driven::strongest`, drivers that put one level at one strength, and a reader that writes what the
+//! net holds as two numbers.
+
+/// A net whose drives resolve by strength. The library declares no nature, the model does (§22.3).
+nature Line { value: Driven }
+impl Resolve<Driven> for Line {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
+        Driven::strongest(drives)
+    }
+}
+
+/// Puts one level at one strength on the net, from the start. `level` 0 is low, 1 high, 2 X and 3 Z; `strength` 0 is
+/// `HighZ`, 1 `Weak`, 2 `Pull`, 3 `Strong` and 4 `Supply`.
+module Put(w: Line) {
+    level: u8 = 1;
+    strength: u8 = 3;
+    w = Driven {
+        v: if level == 0 {
+            Logic::L
+        } else if level == 1 {
+            Logic::H
+        } else if level == 2 {
+            Logic::X
+        } else {
+            Logic::Z
+        },
+        s: if strength == 0 {
+            Strength::HighZ
+        } else if strength == 1 {
+            Strength::Weak
+        } else if strength == 2 {
+            Strength::Pull
+        } else if strength == 3 {
+            Strength::Strong
+        } else {
+            Strength::Supply
+        },
+    };
+}
+
+/// Writes the level and the strength of the net at each of its changes, in the numbers `Put` takes.
+module Look(w: Line) { }
+digital for Look {
+    on w.changed() {
+        emit!(
+            "line",
+            level = if w.v.is_x() {
+                2.0
+            } else if w.v.is_z() {
+                3.0
+            } else if w.v.is_high() {
+                1.0
+            } else {
+                0.0
+            },
+            strength = if w.s == Strength::HighZ {
+                0.0
+            } else if w.s == Strength::Weak {
+                1.0
+            } else if w.s == Strength::Pull {
+                2.0
+            } else if w.s == Strength::Strong {
+                3.0
+            } else {
+                4.0
+            }
+        );
+    }
+}
+
+/// No drive at all: the table's first row.
+module NoneBench() {
+    signal n: Line;
+    let look = Look(n);
+}
+
+/// Two drives, both `HighZ`, a high and a low: they are left out, so the net is `Driven::Z`.
+module AllHighZBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 0 };
+    let b = Put(n) { level: 0, strength: 0 };
+    let look = Look(n);
+}
+
+/// A weak high and a strong low: the one strongest drive is the net.
+module OneStrongestBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 1 };
+    let b = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// Two pull highs and a weak low: several of the greatest strength agree on the level.
+module SameLevelBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 2 };
+    let b = Put(n) { level: 1, strength: 2 };
+    let c = Put(n) { level: 0, strength: 1 };
+    let look = Look(n);
+}
+
+/// A strong high and a strong low: the levels differ, so X at `Strong`.
+module ConflictBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 3 };
+    let b = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// The same three drives, a strong high, a strong low and a pull high, with a different one first by instance path.
+module FirstOrderBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 3 };
+    let b = Put(n) { level: 0, strength: 3 };
+    let c = Put(n) { level: 1, strength: 2 };
+    let look = Look(n);
+}
+
+/// See `FirstOrderBench`: the strong low first.
+module SecondOrderBench() {
+    signal n: Line;
+    let a = Put(n) { level: 0, strength: 3 };
+    let b = Put(n) { level: 1, strength: 2 };
+    let c = Put(n) { level: 1, strength: 3 };
+    let look = Look(n);
+}
+
+/// See `FirstOrderBench`: the pull high first.
+module ThirdOrderBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 2 };
+    let b = Put(n) { level: 1, strength: 3 };
+    let c = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// Two identical drives: `strongest([x, x])` is `x`, a low at `Pull`.
+module EqualDrivesBench() {
+    signal n: Line;
+    let a = Put(n) { level: 0, strength: 2 };
+    let b = Put(n) { level: 0, strength: 2 };
+    let look = Look(n);
+}
+
+/// A library `Tribuf` on `Line` with its output enabled: it drives its input `1` strongly.
+module TribufOnBench() {
+    signal n: Line;
+    let t = Tribuf(n, true, true);
+    let look = Look(n);
+}
+
+/// A library `Tribuf` on `Line` with its output disabled: `Driven::Z`, the net is not driven.
+module TribufOffBench() {
+    signal n: Line;
+    let t = Tribuf(n, true, false);
+    let look = Look(n);
+}
+
+/// A library `Tribuf` on `Line` with its output enabled and its input low: a strong low.
+module TribufLowBench() {
+    signal n: Line;
+    let t = Tribuf(n, false, true);
+    let look = Look(n);
+}
+
+/// A released `Tribuf` beside a weak low: the released one is left out, so the weak low is the net.
+module TribufReleasedBench() {
+    signal n: Line;
+    let t = Tribuf(n, true, false);
+    let w = Put(n) { level: 0, strength: 1 };
+    let look = Look(n);
+}
+
+/// A `Pullup` alone: a high at `Pull`.
+module PullupAloneBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let look = Look(n);
+}
+
+/// A `Pullup` and a strong low: the stronger drive wins.
+module PullupOverriddenBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let s = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// A `Pullup` and a released low: the pull holds.
+module PullupReleasedBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let s = Put(n) { level: 0, strength: 0 };
+    let look = Look(n);
+}
+
+/// A `Pullup` and a weak low: a pull is stronger than a weak drive.
+module PullupOverWeakBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let s = Put(n) { level: 0, strength: 1 };
+    let look = Look(n);
+}
+
+/// A `Pulldown` alone: a low at `Pull`.
+module PulldownAloneBench() {
+    signal n: Line;
+    let p = Pulldown(n);
+    let look = Look(n);
+}
+
+/// A `Pulldown` and a released `Tribuf`: the pull holds.
+module PulldownReleasedBench() {
+    signal n: Line;
+    let p = Pulldown(n);
+    let t = Tribuf(n, true, false);
+    let look = Look(n);
+}
+
+/// A `Pulldown` and an enabled `Tribuf`: the strong high wins.
+module PulldownOverriddenBench() {
+    signal n: Line;
+    let p = Pulldown(n);
+    let t = Tribuf(n, true, true);
+    let look = Look(n);
+}
+
+/// A `Pullup` and a `Pulldown` on one net: equal strengths that disagree, X at `Pull`.
+module PullContendedBench() {
+    signal n: Line;
+    let u = Pullup(n);
+    let d = Pulldown(n);
+    let look = Look(n);
+}
+
+/// A free-running clock of period 10 ns: it rises at 5 ns and falls at 10 ns, 15 ns and 20 ns on.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A `Keeper` alone: it has seen no level, so it drives weak X.
+module KeeperAloneBench() {
+    signal n: Line;
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// A high driven strongly from 5 ns to 10 ns, then released: the keeper holds it weakly.
+module KeeperHoldsHighBench() {
+    signal clk: Bit;
+    signal n: Line;
+    let clock = Clock(clk);
+    let t = Tribuf(n, true, clk);
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// A low driven strongly from 5 ns to 10 ns, then released: the keeper holds it weakly.
+module KeeperHoldsLowBench() {
+    signal clk: Bit;
+    signal n: Line;
+    let clock = Clock(clk);
+    let t = Tribuf(n, false, clk);
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// A strong high and a strong low from 5 ns to 10 ns: the net is X while contended, and the keeper does not record X.
+module KeeperContendedBench() {
+    signal clk: Bit;
+    signal n: Line;
+    let clock = Clock(clk);
+    let high = Tribuf(n, true, clk);
+    let low = Tribuf(n, false, clk);
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// Writes the level of the net it reads at each of its changes, under the number `tag`.
+module Tagged(w: Line) { tag: f64 = 0.0; }
+digital for Tagged {
+    on w.changed() {
+        emit!("tagged", tag = tag, level = if w.v.is_x() {
+            2.0
+        } else if w.v.is_z() {
+            3.0
+        } else if w.v.is_high() {
+            1.0
+        } else {
+            0.0
+        });
+    }
+}
+
+/// `Tran` with its enable high: a strong high on `a` is on `b`.
+module TranOnBench() {
+    signal a: Line;
+    signal b: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let t = Tran(a, b, true);
+    let look = Look(b);
+}
+
+/// `Tran` with its enable low: `b` is not driven.
+module TranOffBench() {
+    signal a: Line;
+    signal b: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let t = Tran(a, b, false);
+    let look = Look(b);
+}
+
+/// `Tran` drives each side with the others of the other: a strong low on `b` is on `a`.
+module TranBackwardBench() {
+    signal a: Line;
+    signal b: Line;
+    let s = Put(b) { level: 0, strength: 3 };
+    let t = Tran(a, b, true);
+    let look = Look(a);
+}
+
+/// `Tran` with both sides on one net (`Tran(a, a, true)`): two carriers of one instance, two drives; a strong high on `a`
+/// is what each drive repeats, so the net settles on it.
+module TranSelfBench() {
+    signal a: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let t = Tran(a, a, true);
+    let look = Look(a);
+}
+
+/// `Tgate` with `s` high and `sn` high: the n side conducts.
+module TgateNBench() {
+    signal a: Line;
+    signal y: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let g = Tgate(a, y, true, true);
+    let look = Look(y);
+}
+
+/// `Tgate` with `s` low and `sn` low: the p side conducts.
+module TgatePBench() {
+    signal a: Line;
+    signal y: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let g = Tgate(a, y, false, false);
+    let look = Look(y);
+}
+
+/// `Tgate` with `s` low and `sn` high: neither side conducts.
+module TgateOffBench() {
+    signal a: Line;
+    signal y: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let g = Tgate(a, y, false, true);
+    let look = Look(y);
+}
+
+/// Two `Tran`s in parallel between `a` and `b`, one module driving `a` strong high: each net has its own reader.
+module ParallelTranBench() {
+    signal a: Line;
+    signal b: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let first = Tran(a, b, true);
+    let second = Tran(a, b, true);
+    let on_a = Tagged(a) { tag: 1.0 };
+    let on_b = Tagged(b) { tag: 2.0 };
+}
+
+/// A ring of three `Tran`s over three nets, one driven strong high: the loop settles on that level everywhere.
+module RingBench() {
+    signal a: Line;
+    signal b: Line;
+    signal c: Line;
+    let s = Put(a) { level: 1, strength: 3 };
+    let ab = Tran(a, b, true);
+    let bc = Tran(b, c, true);
+    let ca = Tran(c, a, true);
+    let on_a = Tagged(a) { tag: 1.0 };
+    let on_b = Tagged(b) { tag: 2.0 };
+    let on_c = Tagged(c) { tag: 3.0 };
+}
+
+/// An ideal source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.8; }
+analog for Vsrc { v(p) +> dc; }
+
+/// A resistor `r` and a capacitor `c` from `p` to ground: what a pad drives.
+module RcLoad(p: Electrical) { r: f64 = 100k; c: f64 = 1p; }
+analog for RcLoad { i(p) +> v(p) / r + ddt(c * v(p)); }
+
+/// A tribuf driving the net high, a `Bidir` pad on it and an RC load on the pad's node: row 1 of the table of §22.4.3, the pad
+/// drives the node as `D2A` does from what the net holds.
+module BidirDrivenBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let t = Tribuf(n, true, true);
+    let pad = Bidir(n, a, vdd);
+    let load = RcLoad(a);
+    let look = Look(n);
+}
+
+/// Nobody drives the net and an ideal source holds the node high: row 2, the pad drives the net with the level it reads.
+module BidirReleasedHighBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let outside = Vsrc(a) { dc: 1.8 };
+    let pad = Bidir(n, a, vdd);
+    let look = Look(n);
+}
+
+/// The same with the node held low.
+module BidirReleasedLowBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let outside = Vsrc(a) { dc: 0.0 };
+    let pad = Bidir(n, a, vdd);
+    let look = Look(n);
+}
+
+/// A strong high and a strong low on the net: X at `Strong`, which the pad treats as driven, toward mid-rail.
+module BidirContendedBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let high = Tribuf(n, true, true);
+    let low = Tribuf(n, false, true);
+    let pad = Bidir(n, a, vdd);
+    let load = RcLoad(a);
+    let look = Look(n);
+}
+
+/// A tribuf that drives the net high from 5 ns on: the pad goes from released to driving, and its node from 0 V to the rail.
+module BidirToggleBench() {
+    signal clk: Bit;
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let clock = Clock(clk);
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let t = Tribuf(n, true, clk);
+    let pad = Bidir(n, a, vdd);
+    let load = RcLoad(a);
+    let look = Look(n);
+}
+
+/// Two pads alone on one net: each drives because the other does not, a loop with no fixed point.
+module TwoBidirsBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal b: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let p = Bidir(n, a, vdd);
+    let q = Bidir(n, b, vdd);
+    let load_a = RcLoad(a);
+    let load_b = RcLoad(b);
+}
+
+/// Three drives, a released low, a released X and a weak high: a `HighZ` drive of any level is left out, so the weak high is
+/// the net.
+module HighZAnyLevelBench() {
+    signal n: Line;
+    let low = Put(n) { level: 0, strength: 0 };
+    let unknown = Put(n) { level: 2, strength: 0 };
+    let high = Put(n) { level: 1, strength: 1 };
+    let look = Look(n);
+}

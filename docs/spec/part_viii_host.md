@@ -89,6 +89,13 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
     it is a commit collected there; otherwise it is an initial value of the next analysis.
 12. The result of a session is a function of the source, the param values, the session
     options and the ordered host actions (§15 I1).
+13. The host writes a `Logic<N>`, for a top's `in` port of that type and for the drive it holds
+    of a top's resolved port whose drive type is `Logic<N>`, as the pattern of §22.1.4: `N`
+    characters of `0`, `1`, `x`, `z`, highest level first, the text it prints a cell as. A
+    character outside the four, or a length other than `N`, is `E0702` (Part VII's code); a port that holds no
+    `Logic<N>` is refused with `E0802`. A `Logic<N>` param (§8.1.15) is written as the same
+    pattern, whole (`--param Top.pat=01zx`, `Session::set_text`), or by the path of one plane leaf
+    (`Top.pat.binary`), at any `N`: the planes are written exactly, never through an `f64`.
 
 > **Resolution.** A host action taken in response to an event the host observed at `(t, n)`,
 > with no wait, is due at `(t, n + 1)`, like a commit with no delay (§15 T3). A host action

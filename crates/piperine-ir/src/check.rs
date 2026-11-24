@@ -35,6 +35,7 @@ use crate::typing::Typing;
 mod aggregates;
 mod widths;
 mod carrier_array;
+mod resolved;
 mod traits;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
@@ -51,6 +52,7 @@ impl Ir {
         let mut checker = Checker { ir: self, out: Vec::new(), cycles: BTreeSet::new() };
         checker.ids();
         checker.instances();
+        checker.resolutions();
         checker.structure();
         checker.paths();
         checker.types();
@@ -85,6 +87,9 @@ struct Owner {
     carriers: Vec<ValueType>,
     /// The element count of each carrier that is an array of carriers, parallel to `carriers`.
     counts: Vec<Option<u64>>,
+    /// The driven type of each `Resolved` carrier, parallel to `carriers` (`None` for every other role): a drive or a
+    /// commit of a resolved carrier writes this type, and only these carriers have `others()`.
+    drive_types: Vec<Option<ValueType>>,
     /// The field types of each of the body's streams.
     streams: Vec<Vec<ValueType>>,
     /// The number of the body's events.
@@ -551,7 +556,7 @@ impl<'a> Checker<'a> {
                 continue;
             };
             let Some(callee) = ir.bodies.get(child.body.index()) else { continue };
-            let ports: Vec<_> = callee.carriers.iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached)).collect();
+            let ports: Vec<_> = callee.carriers.iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached | CarrierRole::Resolved { port: true, .. })).collect();
             if bound.len() != ports.len() {
                 self.report(item.clone(), child.origin.clone(), format!("child {} binds {} carriers, body {} has {} carrier ports", child.name, bound.len(), callee.name, ports.len()));
             }
@@ -575,7 +580,14 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) => {}
+            Expr::Resolve { by_count, .. } => {
+                for function in by_count {
+                    if function.index() >= ir.functions.len() {
+                        self.report(item.to_string(), origin.clone(), format!("function id {} out of range ({} functions)", function.0, ir.functions.len()));
+                    }
+                }
+            }
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::Same { a, b } => exprs.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => exprs.push(*expr),
@@ -748,8 +760,8 @@ impl<'a> Checker<'a> {
                     }
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
-                    if body.carriers.get(carrier as usize).is_none_or(|c| c.role != CarrierRole::Reached) {
-                        self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {carrier}: not a carrier of role `reached`"));
+                    if body.carriers.get(carrier as usize).is_none_or(|c| !matches!(c.role, CarrierRole::Reached | CarrierRole::Resolved { .. })) {
+                        self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {carrier}: not a carrier of role `reached` or `resolved`"));
                     }
                     if child_carrier as usize >= callee.carriers.len() {
                         self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {child_carrier} of child {}, out of range ({} carriers)", child.name, callee.carriers.len()));
@@ -867,14 +879,19 @@ impl<'a> Checker<'a> {
                         format!("a carrier holds `bool`, `f64`, an integer type, an enum, or a tuple, array, struct or `Option` of them, found {}", c.ty),
                     );
                 } else if let Some(init) = c.init
-                    && !self.holds(&c.ty, init)
+                    // a resolved carrier reads `ty` and is driven with `driven`: its initial value is its first drive's (§5.2.3)
+                    && let held = match &c.role {
+                        CarrierRole::Resolved { driven, .. } => driven,
+                        _ => &c.ty,
+                    }
+                    && !self.holds(held, init)
                     // an array carrier's initial value is one element (`[x; K]`) or every element (`[a, b, c]`)
                     && !c.count.is_some_and(|count| self.holds(&ValueType::Array(Box::new(c.ty.clone()), count), init))
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),
                         c.origin.clone(),
-                        format!("the initial value {init} of carrier {} is not a value of its type {}", c.name, c.ty),
+                        format!("the initial value {init} of carrier {} is not a value of its type {held}", c.name),
                     );
                 }
                 found.push((format!("{item} carrier {}", c.name), c.origin.clone(), c.ty.clone()));
@@ -1010,7 +1027,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
+                Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -1306,6 +1323,10 @@ impl<'a> Checker<'a> {
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 counts: body.carriers.iter().map(|c| c.count).collect(),
+                drive_types: body.carriers.iter().map(|c| match &c.role {
+                    CarrierRole::Resolved { driven, .. } => Some(driven.clone()),
+                    _ => None,
+                }).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
@@ -1350,7 +1371,11 @@ impl<'a> Checker<'a> {
                 let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
                 let mut w = Walk::new(owner(false, format!("body {} drive {name}", body.name)), 0);
                 if let Some(c) = body.carriers.get(drive.carrier as usize) {
-                    if let Some(written) = self.drive_type(&w, &drive.origin, drive.carrier, &c.ty, drive.element, &drive.path) {
+                    let held = match &c.role {
+                        CarrierRole::Resolved { driven, .. } => driven,
+                        _ => &c.ty,
+                    };
+                    if let Some(written) = self.drive_type(&w, &drive.origin, drive.carrier, held, drive.element, &drive.path) {
                         self.carried(&w, drive.value, &written, "the value of a drive");
                     }
                 }
@@ -1442,6 +1467,7 @@ impl<'a> Checker<'a> {
                 stims: 0,
                 carriers: Vec::new(),
                 counts: Vec::new(),
+                drive_types: Vec::new(),
                 streams: Vec::new(),
                 events: 0,
                 derivatives: 0,
@@ -1596,7 +1622,8 @@ impl<'a> Checker<'a> {
             }
             Stmt::Commit { carrier, value, after, target } => {
                 match w.owner.carriers.get(*carrier as usize).cloned() {
-                    Some(ty) => {
+                    Some(held) => {
+                        let ty = w.owner.drive_types.get(*carrier as usize).cloned().flatten().unwrap_or(held);
                         if let Some(written) = self.commit_type(w, &origin, *carrier, &ty, target.as_ref()) {
                             self.carried(w, *value, &written, "the value of a commit");
                         }
@@ -2111,6 +2138,22 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
+            }
+            Expr::Others(i) => {
+                if first {
+                    match w.owner.carriers.get(*i as usize) {
+                        _ if !w.owner.in_body => self.wrong(w, origin, "`others()` outside a body".to_string()),
+                        Some(held) if w.owner.drive_types.get(*i as usize).is_some_and(Option::is_some) => self.own(w, &origin, ty, held),
+                        Some(_) => self.wrong(w, origin, format!("`others()` of carrier {i}, which is not a resolved carrier")),
+                        None => self.wrong(w, origin, format!("`others()` of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
+                    }
+                }
+            }
+            Expr::Resolve { by_count, drives, except } => {
+                if first {
+                    self.resolve_form(w, &origin, ty, by_count, drives, *except);
+                }
+                w.calls.extend(by_count.iter().copied().filter(|f| f.index() < self.ir.functions.len()));
             }
             Expr::Previous(i) => {
                 if first {

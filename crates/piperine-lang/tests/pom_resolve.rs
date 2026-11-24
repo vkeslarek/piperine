@@ -71,7 +71,7 @@ fn the_core_rows_are_unchanged() {
         ("Noise", Variant, "§11.1.1"), ("Static", Variant, "§11.1.1"),
         ("Repr", Trait, "§2"), ("Nature", Trait, "§4"), ("Fn", Trait, "§3"),
         ("PartialEq", Trait, "App. H"), ("Eq", Trait, "App. H"), ("PartialOrd", Trait, "App. H"), ("Ord", Trait, "App. H"),
-        ("Default", Trait, "App. H"), ("Debug", Trait, "App. H"), ("Hash", Trait, "App. H"),
+        ("Default", Trait, "App. H"), ("Resolve", Trait, "§4"), ("Debug", Trait, "App. H"), ("Hash", Trait, "App. H"),
         ("str", Type, "§1"), ("gnd", Node, "§6"),
         ("Repr::WIDTH", Member, "§2"), ("Repr::encode", Member, "§2"), ("Repr::decode", Member, "§2"),
         ("potential", Fn, "§14.1"), ("flow", Fn, "§14.1"), ("ddx", Fn, "§14.2"), ("ac_stim", Fn, "§14.3"), ("temperature", Fn, "§14.4"),
@@ -623,7 +623,7 @@ fn embedded_std_builds_clean() {
     assert!(design.check().is_empty());
     // It declares what the spec says the prelude does.
     let std = design.std_crate();
-    for name in ["carriers::Bit", "nets::Wire", "carriers::Electrical", "carriers::Thermal", "carriers::VSignal"] {
+    for name in ["carriers::Bit", "carriers::Electrical", "carriers::Thermal", "carriers::VSignal"] {
         assert!(std.find(name).and_then(|d| d.as_nature()).is_some(), "nature `{name}`");
     }
     for name in ["analog::idt", "analog::above", "analog::transition"] {
@@ -864,9 +864,9 @@ fn builtin_table_matches_appendix_h() {
         piperine_lang::pom::BUILTINS.iter().filter(|b| b.kind == kind).map(|b| b.name.to_string()).collect()
     };
     let own = |names: &[&str]| -> BTreeSet<String> { names.iter().map(|s| s.to_string()).collect() };
-    // Traits: Appendix H's list, plus the language's own `Repr`, `Nature` and `Fn`.
+    // Traits: Appendix H's list, plus the language's own `Repr`, `Nature`, `Fn` and `Resolve`.
     let mut traits: BTreeSet<String> = appendix_h_names("## H.8").into_iter().collect();
-    traits.extend(own(&["Repr", "Nature", "Fn"]));
+    traits.extend(own(&["Repr", "Nature", "Fn", "Resolve"]));
     traits.extend(own(&OPERATOR_TRAITS));
     assert_eq!(rows(BuiltinKind::Trait), traits);
     // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.

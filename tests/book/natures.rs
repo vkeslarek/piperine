@@ -1,7 +1,7 @@
 //! Scope: chapter 6 of the Book, "Natures and carriers" (feature `root-e2e`, RE-02 and RE-03): the
 //! natures the standard library gives, the signal declarations, a resistor that heats itself, the
-//! open-drain line and the bundle the Book builds (both refused today, asserted refused with their
-//! diagnostics), an `out` port that gives the initial value, and the mistakes of the chapter's table,
+//! open-drain alarm line (run, with its `Pulldown` variant) and the bundle the Book builds (refused
+//! today, asserted refused with its diagnostics), an `out` port that gives the initial value, and the mistakes of the chapter's table,
 //! each run through `piperine::`. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 
@@ -18,11 +18,12 @@ mod support {
     pub mod standard_library;
 }
 
-use piperine::{Field, Overrides};
+use piperine::{Field, Overrides, Record};
 use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::Model;
+use support::model::{Model, Ran};
+use support::records::Fields;
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -65,51 +66,107 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
     }
 }
 
-#[test]
-fn the_signal_list_elaborates_and_only_the_net_nature_is_missing() {
-    // natures#2 (refused, the net `Sda`, L21; the array of carriers of L24 runs since composite-values phase C): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
-    // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
-    // `P0001` (L24) and `Sda` is the model's own nature, declared further on in the
-    // chapter's example, so here it is unknown (E0161); the discrete, node and initial-value lines are
-    // accepted. When the block runs this test fails and the row moves to `run`
-    let chapter = Chapter::read();
-    let alone = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
-    let unknown = Refusal::of(alone.run(OperatingPoint::of_top()), "natures#2");
-    assert!(unknown.contains(&("E0161".to_string(), "cannot find `Sda` in this scope".to_string())), "the nature `Sda` is not declared in the block: {unknown:?}");
-    // with a nature of that name in scope the type checker reaches the other lines; the stand-in's value type
-    // has a `Default`, so the line `signal sda: Sda;` stays valid once every carrier starts at its default (phase A)
-    let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
-    let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    // `Logic<4>` is the library's four-state value since `explicit-unknowns` phase B, `Option<u8>` a carried type since
-    // composite-values phase B, `[Bit; 8]` an array of carriers since phase C (CV-23) and the `logic("10xx")` literal a
-    // carrier's initial value since phase C's fix round (the constant evaluator reads `logic` of a literal pattern):
-    // with a nature of the name `Sda` in scope every line of the list elaborates and the design runs. What the stand-in
-    // run reports is the listing's own floating nodes (`mid` and `vout` are connected to nothing, so the operating point
-    // has no equation for `vout`: `E0503`, a singular Jacobian), not a language refusal; the one thing the block still
-    // lacks to run on its own is the nature `Sda`, the model's own nature of the chapter (E0161 below, resolved-nets)
-    assert_eq!(
-        given,
-        vec![("E0503".to_string(), "the op analysis failed: Newton: E0503: the Jacobian is singular (SymbolicSingular { index: 0 }): node of Top.vout".to_string())],
-        "every line of the list elaborates; the run stops at the floating node `vout`: {given:?}"
-    );
-    Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "E0161", "cannot find `Sda` in this scope");
+/// The nature `Sda` of the chapter's own example, the part of the listing digital#18 that declares it.
+struct Sda;
+
+impl Sda {
+    /// The nature and its `impl Resolve<Driven>`, as the Book's listing writes them.
+    fn declaration(chapter: &Chapter) -> String {
+        let listing = chapter.text("digital#18");
+        let (nature, _) = listing.split_once("module OpenDrainPin").expect("the listing declares the nature first");
+        assert!(nature.contains("impl Resolve<Driven> for Sda"), "{nature}");
+        nature.to_string()
+    }
 }
 
 #[test]
-fn the_open_drain_line_is_refused_until_a_nature_can_implement_resolve() {
-    // natures#3 (refused, S8): the alarm.msl of the Book, whose nature `AlarmLine` implements
-    // `Resolve<Driven>`; natures~e99c1920 "Today the command refuses the file and runs nothing" (refused);
-    // natures~6a449552 "Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream" (refused: it
-    // needs the same nature). The names the file uses, `Driven`, `Resolve` and `Pullup`, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
+fn signals_of_every_family_run() {
+    // natures#2 (run; L21, L24 closed): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
+    // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...". `Sda` is the nature of the chapter's own
+    // example (digital#18), so the block elaborates with it declared. Its nodes `mid` and `vout` float, which the block does not
+    // hide, so the operating point of the block alone is singular (E0503): the row is judged by elaboration, and the test ties each
+    // node to ground with a resistor so the design runs and the table holds every carrier's first value
     let chapter = Chapter::read();
-    let model = chapter.marked("alarm.msl", "natures#3");
-    let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() };
-    let given = Refusal::of(model.run(overrides.clone()), "natures#3");
-    assert!(given.iter().all(|(code, _)| code == "E0161"), "every diagnostic is a name the library does not hold yet: {given:?}");
-    for name in ["Driven", "Resolve"] {
-        assert!(given.iter().any(|(_, message)| message == &format!("cannot find `{name}` in this scope")), "{name}: {given:?}");
+    let alone = chapter.wrapped("signals.msl", &format!("{}module Top() {{\n", Sda::declaration(&chapter)), "natures#2", "}\n");
+    let floating = Refusal::of(alone.run(OperatingPoint::of_top()), "natures#2");
+    assert!(floating.iter().all(|(code, _)| code == "E0503"), "the block alone elaborates and stops at its floating nodes: {floating:?}");
+    let before = format!("{}module R(p: Electrical, n: Electrical) {{ r: f64 = 1k; }}\nanalog for R {{ i(p, n) +> v(p, n) / r; }}\nmodule Top() {{\n", Sda::declaration(&chapter));
+    let tied = chapter.wrapped("signals.msl", &before, "natures#2", "let ra = R(mid, gnd);\nlet rb = R(vout, gnd);\n}\n");
+    let ran = tied.run(OperatingPoint::of_top()).unwrap_or_else(|failure| panic!("the block runs once its nodes are tied: {failure}"));
+    let first = |signal: &str| -> String {
+        let row = ran.table.rows.iter().find(|row| format!("{:?}", row[0]) == format!("Text({signal:?})")).unwrap_or_else(|| panic!("no signal `{signal}` in {:?}", ran.table.rows));
+        format!("{:?}", row[1])
+    };
+    assert_eq!(first("Top.en"), "Bool(false)", "`en`");
+    assert_eq!(first("Top.last"), "Composite(Option(None))", "`last` starts at None");
+    assert_eq!(first("Top.count"), "Int(0)", "`count`");
+    assert_eq!(first("Top.level"), "Real(0.0)", "`level`");
+    assert_eq!(first("Top.lines"), format!("Composite(Array([{}]))", ["Scalar(Bool(false))"; 8].join(", ")), "`lines`: eight false");
+    assert_eq!(first("Top.bus"), "Text(\"10xx\")", "`bus`");
+    let sda = first("Top.sda");
+    assert!(sda.contains("Text(\"z\")") && sda.contains("variant: \"HighZ\""), "`sda`: no drive, `Driven::Z`: {sda}");
+}
+
+/// The records of the alarm line the monitor `Alarm.watch` writes: a time, a level and a strength, as the stream prints them.
+struct AlarmLine;
+
+impl AlarmLine {
+    /// The overrides of `piperine run alarm.msl --analysis transient --stop 4e-6 --stream line`.
+    fn overrides() -> Overrides {
+        Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() }
     }
-    Refusal::expect(model.run(overrides), "natures#3", "E0161", "cannot find `Driven` in this scope");
+
+    /// The text of the variant the field `name` of `record` holds.
+    fn variant(record: &Record, name: &str) -> String {
+        match Fields::of(record, name) {
+            Field::Variant(text) => text.to_string(),
+            other => panic!("field `{name}`: a variant, found {other:?}"),
+        }
+    }
+
+    /// Asserts that the records of the stream `line` of `ran` are `expected`: each a time as the Book prints it, a level and a
+    /// strength.
+    fn holds(ran: &Ran, expected: &[(&str, &str, &str)]) {
+        let records = ran.stream("line");
+        assert_eq!(records.len(), expected.len(), "{:?}", ran.records);
+        for (record, (time, level, strength)) in records.iter().zip(expected) {
+            Printed::holds(time, record.time, "the instant of a record");
+            assert_eq!((Self::variant(record, "level").as_str(), Self::variant(record, "strength").as_str()), (*level, *strength), "the record at {time}");
+        }
+    }
+}
+
+#[test]
+fn the_alarm_prints_three_records_of_the_line() {
+    // natures#3: the alarm.msl of the Book, whose nature `AlarmLine` implements `Resolve<Driven>`; natures~e99c1920 "The command
+    // prints them": the line is a pulled high at 0 and at 3 us and a strong low at 1 us, and the second sensor at 2 us changes
+    // nothing, so there are three records and none at 2 us
+    let ran = Chapter::read().marked("alarm.msl", "natures#3").run(AlarmLine::overrides()).unwrap_or_else(|failure| panic!("the alarm is refused: {failure}"));
+    AlarmLine::holds(&ran, &[("0.000000e0", "1", "Pull"), ("1.000000e-6", "0", "Strong"), ("3.000000e-6", "1", "Pull")]);
+}
+
+#[test]
+fn the_pulldown_alarm_prints_the_exercise_answer() {
+    // natures~91c3bffe: with `Pulldown(alarm_n)` in place of `Pullup(alarm_n)` there is "one record at time zero, level = 0,
+    // strength = Pull; then at 1 us the strength becomes Strong with the level still low, and at 3 us it returns to Pull"
+    let chapter = Chapter::read();
+    let text = chapter.text("natures#3");
+    assert!(text.contains("Pullup(alarm_n)"), "the listing places a Pullup");
+    let model = Model::written("alarm.msl", &text.replace("Pullup(alarm_n)", "Pulldown(alarm_n)"));
+    let ran = model.run(AlarmLine::overrides()).unwrap_or_else(|failure| panic!("the pulldown alarm is refused: {failure}"));
+    AlarmLine::holds(&ran, &[("0.000000e0", "0", "Pull"), ("1.000000e-6", "0", "Strong"), ("3.000000e-6", "0", "Pull")]);
+}
+
+#[test]
+fn the_book_no_longer_says_the_alarm_is_refused() {
+    // natures~e99c1920: the sentence that introduced the refusal now introduces the output, and the listing under it is the
+    // command's output (`crates/piperine-cli/tests/book.rs` holds it to the binary)
+    let book = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/book/content.html")).expect("the Book");
+    assert!(!book.contains("Today the command refuses the file"), "the sentence of the refusal is gone");
+    assert!(!book.contains("once a nature can implement <code>Resolve</code>"), "the alarm no longer waits for a nature");
+    let command = "data-cli-output=\"piperine run alarm.msl --analysis transient --stop 4e-6 --stream line\"";
+    let at = book.find(command).expect("the listing of the alarm's output");
+    assert!(!book[at..at + 200].contains("data-cli-stream"), "the listing is standard output, no refusal");
 }
 
 #[test]

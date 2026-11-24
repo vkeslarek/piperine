@@ -522,6 +522,42 @@ fn the_interpreter_refuses_each_new_form_by_name() {
     }
 }
 
+/// Resolved nets (resolved-nets RN-03): the interpreter is frozen at the M1 analog subset, so a body that holds
+/// `others()` of a resolved carrier or a `resolve` of drives is refused by the name of each form.
+#[test]
+fn resolved_forms_are_refused_by_name() {
+    let named = Added::refused(|b| {
+        let mut x = Dx::new(b, Amended::F, 2, 10);
+        let zero = x.int(0, Ty::u(8));
+        let instances: Vec<_> = (0..=1u64)
+            .map(|count| {
+                b.function(FunctionSpec {
+                    name: format!("resolve~{count}"),
+                    origin: Amended::at(2),
+                    params: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueType::Bool), count), mutable: false }],
+                    ret: Ty::u(8),
+                    locals: vec![],
+                    body: zero,
+                })
+            })
+            .collect();
+        let resolver = b.body(Buck::spec("Resolver", Amended::F, 1));
+        b.carrier(resolver, Buck::carrier("d0", ValueType::Bool, CarrierRole::In, None, Amended::F, 1, 20));
+        b.carrier(resolver, Buck::carrier("v", Ty::u(8), CarrierRole::Out, None, Amended::F, 1, 30));
+        let x = Dx::new(b, Amended::F, 3, 10);
+        let resolve = x.b.expr(Expr::Resolve { by_count: instances, drives: vec![0], except: None }, Ty::u(8), x.origin());
+        b.drive(resolver, piperine_ir::Drive { carrier: 1, value: resolve, after: None, origin: Amended::at(3), element: None, path: vec![] });
+        let holder = b.body(Buck::spec("Holder", Amended::F, 1));
+        b.carrier(holder, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Amended::F, 1, 20));
+        b.carrier(holder, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Amended::F, 1, 30));
+        let x = Dx::new(b, Amended::F, 4, 10);
+        let others = x.b.expr(Expr::Others(0), Ty::u(8), x.origin());
+        b.drive(holder, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Amended::at(4), element: None, path: vec![] });
+    });
+    assert!(named.contains(&"others() of a resolved carrier".to_string()), "`others()` is named: {named:?}");
+    assert!(named.contains(&"a resolve of drives".to_string()), "`resolve` is named: {named:?}");
+}
+
 #[test]
 fn the_level_nodes_are_refused_by_name() {
     // The walk names `same` and `cast` when it meets one, as the source spells them (R1, the

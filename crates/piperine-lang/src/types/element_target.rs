@@ -73,6 +73,9 @@ pub(super) struct DriveTarget {
     pub(super) held: Ty,
     /// The element the place names.
     pub(super) element: Element,
+    /// Whether the place is a `pub` resolved signal of a child (`inst.name`), which this module holds a drive of; the
+    /// module's own bookkeeping of definitions and commits does not apply to it.
+    pub(super) reached: bool,
 }
 
 impl Checker<'_> {
@@ -116,7 +119,7 @@ impl Checker<'_> {
         }
         let element = self.element_of(&steps[..levels.len()], &levels);
         let held = self.infer(place)?;
-        Some(DriveTarget { carrier: decl, held, element })
+        Some(DriveTarget { carrier: decl, held, element, reached: false })
     }
 
     /// The steps from the root of `place` to it, outermost last, and the root expression.

@@ -605,7 +605,7 @@ Read through the handle `GenericParam` (see [Reflection](reflection.md#genericpa
 
 *struct* in `src/pom/decl.rs`.
 
-`nature Name<..> { potential: Voltage { .. }, flow: Current { .. }, value: T, resolve: f }`; generics and quantities are children.
+`nature Name<..> { potential: Voltage { .. }, flow: Current { .. }, value: T }`; generics and quantities are children.
 
 Read through the handle `Nature` (see [Reflection](reflection.md#nature)).
 
@@ -624,7 +624,6 @@ One field of a nature, as written.
 | --- | --- | --- |
 | `Quantity` | `(DeclId)` | `potential: Voltage { .. }` or `flow: ..`: the `Quantity` declaration. |
 | `Value` | `{ meta: Meta, ty: TypeId, span: Span }` | `value: T`; `span` covers the whole field; `meta` holds its docs and attributes (a quantity keeps them on its declaration). |
-| `Resolve` | `{ meta: Meta, expr: ExprId, span: Span }` | `resolve: expr`; `span` covers the whole field; `meta` as for `Value`. |
 
 ### `QuantityData`
 
@@ -1153,8 +1152,7 @@ The kind of a nature, from the fields it declares.
 
 | Variant | Payload | Meaning |
 | --- | --- | --- |
-| `Discrete` | — | Only a `value` field. |
-| `Resolved` | — | `value` plus `resolve`. |
+| `Discrete` | — | Only a `value` field (resolved when an `impl Resolve` is written for it). |
 | `Conservative` | — | `potential` and `flow`. |
 | `SignalFlow` | — | `potential` only. |
 | `Invalid` | — | Any other combination. |
@@ -1362,7 +1360,7 @@ Methods: [Reflection](reflection.md#commit).
 
 ### `Nature`
 
-*struct* in `src/pom/reflect/hardware.rs`. `nature Name { potential: .., flow: .., value: .., resolve: .. }`
+*struct* in `src/pom/reflect/hardware.rs`. `nature Name { potential: .., flow: .., value: .. }`
 
 Methods: [Reflection](reflection.md#nature).
 

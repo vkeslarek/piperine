@@ -58,7 +58,7 @@ impl ValuePrinter<'_> {
                 if !matches!(self.ir.expr_type(e), ValueType::Option(_)) {
                     return Err(self.unsupported(e, "an option that is not typed as an Option"));
                 }
-                Ok(Piece::new(format!("if {} {{ Some({}) }} else {{ None }}", self.condition(*is)?, self.expr(*value)?), Prec::Low))
+                Ok(Piece::new(format!("if {} {{ Some({}) }} else {{ None }}", self.if_condition(*is)?, self.expr(*value)?), Prec::Low))
             }
             Expr::OptionPart { option, part: LevelPart::Is } => atom(format!("{}.is_some()", self.operand(*option)?)),
             // `None` unpacks to the zero of the payload; an array has no `Default` past 32 elements (T54)

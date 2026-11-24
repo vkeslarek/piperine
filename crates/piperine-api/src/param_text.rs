@@ -1,7 +1,8 @@
 //! `ParamText`: a param value a host gives as text, read by the param's type (PI-01 to PI-03, design
 //! D24). `--param Top.db.n=6` and `Session::set_text` carry the text; the type of the param decides
 //! what it means: an integer literal of the type and range (decimal, `0x`, `0b`, `_` between
-//! digits), the bare name of a variant of a unit enum, `None` or a value of `T` for an `Option<T>`.
+//! digits), the bare name of a variant of a unit enum, `None` or a value of `T` for an `Option<T>`, the
+//! four-state pattern of §22.1.4 (`10xz`) for a `Logic<N>`.
 //! Anything else is `E0802` naming the param and the value, and for an enum listing its variants.
 
 use piperine_ir::{Ir, ValueType};
@@ -9,6 +10,8 @@ use piperine_lang::elab::LiteralText;
 
 use crate::composite::CellShape;
 use crate::failure::Failure;
+use crate::leaf_input::LeafInput;
+use crate::logic_pattern::LogicPattern;
 use crate::number_cell::{FloatCell, FloatFormat, NumberCell, WideCell};
 use crate::session::ParamPath;
 
@@ -49,6 +52,13 @@ pub enum ParamText {
         /// The payload, zero for `None`.
         value: Scalar,
     },
+    /// A `Logic<N>` param: the exact bytes of its pin, the planes `binary` and `value` its pattern lays out (`abi.md` P3), at any
+    /// `N`.
+    Pattern {
+        /// The pin's bytes: the plane `binary` (1 where a level is 0 or 1), then the plane `value` (the level where binary, else
+        /// X as 0 and Z as 1).
+        bytes: Vec<u8>,
+    },
 }
 
 /// The reading of one text, with the names the refusal uses.
@@ -73,25 +83,33 @@ impl ParamText {
         match &ty {
             number if NumberCell::is_number_width(number) => reading.exact(number).map(|bytes| ParamText::Exact { bytes }),
             ValueType::Option(payload) => reading.option(payload),
+            other if CellShape::of(ir, other).and_then(|shape| LogicPattern::planes_of(&shape)).is_some() => reading.pattern(other),
             other if ir.is_composite_value(other) => Err(reading.refused("a composite param, an enum with fields included, is set by its leaves, `<param>.<leaf>`".to_string())),
             other => reading.scalar(other).map(ParamText::Whole),
         }
     }
 
-    /// The leaves of an `Option` param's pin this text writes, in the order of its layout; a payload an `f64` cannot hold
-    /// is `E0802`.
-    pub fn option_leaves(&self, label: &str) -> Result<Option<[(&'static str, f64); 2]>, Failure> {
-        match self {
-            ParamText::Option { some, value } => {
-                let payload = value.exact_real().ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{label}` refuses a payload an `f64` cannot hold exactly: set the leaf `value` as a number in range") })?;
-                Ok(Some([("some", f64::from(u8::from(*some))), ("value", payload)]))
-            }
-            ParamText::Whole(_) | ParamText::Exact { .. } => Ok(None),
-        }
+    /// The leaves of an `Option` param's pin this text writes, `some` then `value`, each exactly (an integer payload as its
+    /// digits, never through an `f64`); `None` for a text that is no `Option`.
+    pub fn leaves(&self) -> Option<[(&'static str, LeafInput); 2]> {
+        let ParamText::Option { some, value } = self else { return None };
+        let payload = match value {
+            Scalar::Real(real) => LeafInput::Number(*real),
+            Scalar::Integer(integer) => LeafInput::Text(integer.to_string()),
+        };
+        Some([("some", LeafInput::Number(f64::from(u8::from(*some)))), ("value", payload)])
     }
 }
 
 impl Reading<'_> {
+    /// The text as the four-state pattern of a `Logic<N>` param `ty` (§22.1.4): `E0702` for a character outside `0 1 x z` or a
+    /// length other than `N`.
+    fn pattern(&self, ty: &ValueType) -> Result<ParamText, Failure> {
+        let shape = CellShape::of(self.ir, ty).and_then(|shape| LogicPattern::planes_of(&shape));
+        let Some((width, plane)) = shape else { return Err(self.refused(format!("{ty} is no `Logic<N>`"))) };
+        Ok(ParamText::Pattern { bytes: LogicPattern::parse(self.text, width, &format!("`{}`", self.label))?.bytes(plane) })
+    }
+
     /// The pin bytes of the text as a value of the number-width type `ty`, read in its own format (A.8 rule 8; an integer by
     /// its digits, `0x`, `0o` or `0b`), never through an `f64`.
     fn exact(&self, ty: &ValueType) -> Result<Vec<u8>, Failure> {

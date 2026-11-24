@@ -9,6 +9,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
 use super::check::Checker;
+use super::generics::GenericSignature;
 use super::nature_rules::NatureRules;
 use super::{Builtin, Nominal, Ty};
 
@@ -58,6 +59,20 @@ impl Checker<'_> {
             _ => value_type,
         };
         let value = self.carried_type(held)?;
+        // a resolved nature's `impl`s are judged wherever a carrier of it is (§4 rule 8)
+        for implementation in super::nature::ResolveImpls::declarations(&self.impls, nature) {
+            self.reach(implementation);
+            // the body of `resolve` is run by the net's resolver (`elab/resolvers.rs`): it is checked and typed with the model
+            for item in self.design.decl_data(implementation).children.clone() {
+                if matches!(self.design.decl_data(item).kind, DeclKind::Fn(_)) {
+                    self.reach(item);
+                }
+            }
+        }
+        if NatureRules::of(self.design, nature).resolved && !self.resolve_tables.contains_key(&nature) {
+            let table = super::nature::ResolveImpls::new(self).of(nature);
+            self.resolve_tables.insert(nature, table);
+        }
         Some(Ty::Carrier { nature, value: Box::new(value) })
     }
 
@@ -113,21 +128,18 @@ impl Checker<'_> {
         let file = self.design.decl_data(node.owner).file;
         match self.lower_type(ty)? {
             Ty::Node(nature) => {
-                let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                 let rules = NatureRules::of(self.design, nature);
                 if rules.flow || rules.signal_flow {
                     // A conservative node, or a signal-flow node (§6 rule 2): both are nodes of the
                     // analog solver.
                     Some(Ty::Node(nature))
-                } else if rules.resolved {
-                    self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
-                    None
                 } else {
                     None
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
             // a nature parameter of a generic module (`a: S`, `S: Nature`): a node of the nature the placement gives (GN-13)
+            Ty::Param(param) if GenericSignature::resolve_bound(self.design, param).is_some() => self.resolved_parameter_carrier(param),
             nature @ Ty::Param(_) if self.is_nature_parameter(&nature) => Some(nature),
             // an array of carriers, or of conservative nodes (CV-23)
             array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
@@ -138,6 +150,16 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// The carrier a nature parameter bound by `Resolve<X, V>` stands for in a generic body: a carrier of the parameter that
+    /// holds `V` (`X` when the bound is written `Resolve<X>`), resolved like the nature it becomes (§22.3). `None` for a
+    /// bound whose types are refused.
+    fn resolved_parameter_carrier(&mut self, param: DeclId) -> Option<Ty> {
+        let table = super::nature::ResolveImpls::new(self).of(param);
+        let entry = table.first()?.clone();
+        self.resolve_tables.entry(param).or_insert(table);
+        Some(Ty::Carrier { nature: param, value: Box::new(entry.value) })
     }
 
     /// The type a read of a port or a signal declaration has: a node is a node, a carrier gives
@@ -315,6 +337,25 @@ impl Checker<'_> {
             }
             _ => {
                 self.unsupported(file, span, "method `prev` on this receiver");
+                None
+            }
+        }
+    }
+
+    /// `s.others()` on a resolved carrier (§5.2.7): the resolution of every drive but this module's
+    /// own, of the nature's `value` type. The one-driver carrier was `E0224` before this is asked.
+    pub(super) fn others_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        match self.declared_port(recv) {
+            Some((_, Ty::Carrier { nature, value })) if NatureRules::of(self.design, nature).resolved => {
+                self.apply(expr, &[], args)?;
+                self.builtins.insert(expr, Builtin::Others);
+                self.infer(recv);
+                Some(*value)
+            }
+            _ => {
+                self.unsupported(file, span, "method `others` on this receiver");
                 None
             }
         }

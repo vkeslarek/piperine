@@ -126,6 +126,10 @@ impl Checker<'_> {
             self.repr_impl_rules(decl, data.self_ty);
             return;
         }
+        if self.impls.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait == Some("Resolve")) {
+            super::nature::ResolveImpls::new(self).check(decl);
+            return;
+        }
         if self.impls.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait.is_some()) {
             self.builtin_impl_rules(decl, data.self_ty);
             return;

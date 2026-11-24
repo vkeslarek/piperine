@@ -173,7 +173,7 @@ impl<'design> BundleShape<'design> {
         })
     }
 
-    /// §7 rule 2: a field of a one-driver nature (a discrete nature without `resolve`) has `in` or
+    /// §7 rule 2: a field of a one-driver nature (a discrete nature with no `impl Resolve`) has `in` or
     /// `out`; a field of any other nature has none. A field of a generic or an invalid nature is
     /// not judged, and the directions of a nested bundle are `E0262`'s concern.
     fn check_field_directions(&self, bundle: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
@@ -185,9 +185,13 @@ impl<'design> BundleShape<'design> {
             let Some(nature) = self.design.nature_of(data.ty) else { continue };
             let DeclKind::Nature(nature_data) = &self.design.decl_data(nature).kind else { continue };
             let (name, span) = self.field_name(field);
+            let resolved = self.design.is_resolved_nature(nature);
             let message = match (nature_data.kind, data.dir) {
-                (NatureKind::Discrete, None) => format!("the field `{name}` is of a one-driver nature and needs `in` or `out` (§7 rule 2)"),
-                (NatureKind::Resolved | NatureKind::Conservative | NatureKind::SignalFlow, Some(_)) => {
+                (NatureKind::Discrete, None) if !resolved => format!("the field `{name}` is of a one-driver nature and needs `in` or `out` (§7 rule 2)"),
+                (NatureKind::Discrete, Some(_)) if resolved => {
+                    format!("the field `{name}` is of a resolved nature and takes no direction (§7 rule 2)")
+                }
+                (NatureKind::Conservative | NatureKind::SignalFlow, Some(_)) => {
                     format!("the field `{name}` is not of a one-driver nature and takes no direction (§7 rule 2)")
                 }
                 _ => continue,

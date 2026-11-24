@@ -325,6 +325,8 @@ impl<'a> Walk<'a> {
             Expr::CarrierElement { .. } => "CarrierElement",
             Expr::ElementPrevious { .. } => "ElementPrevious",
             Expr::ElementChanged { .. } => "ElementChanged",
+            Expr::Others(_) => "Others",
+            Expr::Resolve { .. } => "Resolve",
             Expr::Fired(_) => "Fired",
             Expr::Unwrap { .. } => "Unwrap",
             Expr::Same { .. } => "Same",

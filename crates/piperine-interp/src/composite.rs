@@ -13,7 +13,7 @@ pub(crate) struct CompositeForms<'a> {
     /// The body being walked.
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 30],
+    met: [bool; 32],
     /// The functions the body calls or names, in the order the walk first met them.
     reached: Vec<FunctionId>,
     /// The expressions the body evaluates, each once, in the order the walk first met them.
@@ -22,7 +22,7 @@ pub(crate) struct CompositeForms<'a> {
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 30] = [
+    const NAMES: [&'static str; 32] = [
         "an assignment",
         "a loop",
         "a while loop",
@@ -53,25 +53,27 @@ impl<'a> CompositeForms<'a> {
         "an element or field commit",
         "an element or field definition",
         "a window of an array of carriers",
+        "others() of a resolved carrier",
+        "a resolve of drives",
     ];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 30], reached: Vec::new(), expressions: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 32], reached: Vec::new(), expressions: Vec::new() };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
 
     /// The functions `body` evaluates (called or named, transitively), each once.
     pub(crate) fn reached_functions(body: Body<'a>) -> Vec<FunctionId> {
-        let mut forms = CompositeForms { body, met: [false; 30], reached: Vec::new(), expressions: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 32], reached: Vec::new(), expressions: Vec::new() };
         forms.walk();
         forms.reached
     }
 
     /// The expressions `body` evaluates (through the functions it calls too), each once.
     pub(crate) fn reached_expressions(body: Body<'a>) -> Vec<ExprId> {
-        let mut forms = CompositeForms { body, met: [false; 30], reached: Vec::new(), expressions: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 32], reached: Vec::new(), expressions: Vec::new() };
         forms.walk();
         forms.expressions
     }
@@ -138,11 +140,16 @@ impl<'a> CompositeForms<'a> {
             if let Some(position) = Self::position(kind) {
                 self.met[position] = true;
             }
-            if let Expr::Call { function, .. } | Expr::FunctionRef(function) = kind
-                && seen_functions.insert(*function)
-            {
-                self.reached.push(*function);
-                exprs.push(ir.function(*function).body());
+            let called: Vec<FunctionId> = match kind {
+                Expr::Call { function, .. } | Expr::FunctionRef(function) => vec![*function],
+                Expr::Resolve { by_count, .. } => by_count.clone(),
+                _ => Vec::new(),
+            };
+            for function in called {
+                if seen_functions.insert(function) {
+                    self.reached.push(function);
+                    exprs.push(ir.function(function).body());
+                }
             }
             exprs.extend(kind.operands());
             stmts.extend(kind.statements());
@@ -178,6 +185,8 @@ impl<'a> CompositeForms<'a> {
             Expr::CarrierElement { .. } => Some(23),
             Expr::ElementPrevious { .. } => Some(24),
             Expr::ElementChanged { .. } => Some(25),
+            Expr::Others(_) => Some(30),
+            Expr::Resolve { .. } => Some(31),
             _ => None,
         }
     }

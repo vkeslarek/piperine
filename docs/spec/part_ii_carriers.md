@@ -129,7 +129,10 @@ nature** declares `potential`.
 > **Resolution.** The order of rule 2 is the lexicographic order of the hierarchical paths of
 > the instances that hold the drives, compared segment by segment: names by code point, array
 > indices numerically. The host's drive of a top-level carrier comes first. An instance with
-> no `let` of its own has the name [§21](part_vi_io.md#21-metadata) rule 3 gives it.
+> no `let` of its own has the name [§21](part_vi_io.md#21-metadata) rule 3 gives it. The
+> drives one instance holds on one net (two of its carriers connected to it) are ordered,
+> after the instance path, by the declaration order of those carriers in the instance's
+> module. *(AFK default 2026-11-24, pending user review.)*
 
 **Dynamic semantics**
 

@@ -380,7 +380,7 @@ nature Electrical {
 }
 nature Signalf { potential: Voltage { access: v } }
 nature Disc { value: f64 }
-nature Res { value: f64, resolve: pick }
+nature Res { value: f64 }
 nature Twice { potential: A { access: a }, potential: B { access: b } }
 nature Mixed { potential: A { access: a }, value: f64 }
 nature Empty { flow: F { access: f } }
@@ -392,7 +392,7 @@ nature Empty { flow: F { access: f } }
     assert_eq!(kind("Electrical"), NatureKind::Conservative);
     assert_eq!(kind("Signalf"), NatureKind::SignalFlow);
     assert_eq!(kind("Disc"), NatureKind::Discrete);
-    assert_eq!(kind("Res"), NatureKind::Resolved);
+    assert_eq!(kind("Res"), NatureKind::Discrete);
     assert_eq!(kind("Twice"), NatureKind::Invalid);
     assert_eq!(kind("Mixed"), NatureKind::Invalid);
     assert_eq!(kind("Empty"), NatureKind::Invalid);
@@ -416,8 +416,6 @@ nature Empty { flow: F { access: f } }
     assert_eq!(design.nature("Twice").unwrap().quantities().len(), 2);
     let res = design.nature("Res").unwrap();
     assert_eq!(res.value_type().map(|t| t.text()), Some("f64"));
-    assert_eq!(res.resolve_fn().map(|x| x.text()), Some("pick"));
-    assert!(design.nature("Disc").unwrap().resolve_fn().is_none());
 }
 
 #[test]

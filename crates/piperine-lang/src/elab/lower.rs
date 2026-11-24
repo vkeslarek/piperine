@@ -154,6 +154,15 @@ pub(super) struct ValueTypes<'a> {
 }
 
 impl ValueTypes<'_> {
+    /// The IR type of an `Option` held as one value (`ValueType::Option`) where it is an element of an array or an item of a
+    /// tuple, as it is a field of a struct; `None` for any other type. An `Option` of value code is the pair of its halves.
+    fn packed_option(&self, ty: &Ty) -> Option<ValueType> {
+        match ty {
+            Ty::Option(inner) => self.of(inner).or_else(|| self.packed_option(inner)).map(|payload| ValueType::Option(Box::new(payload))),
+            _ => None,
+        }
+    }
+
     /// `None` for a type no value has in the IR: a node, a module, an `Option` (a pair of values,
     /// msl-digital T27).
     pub(super) fn of(&self, ty: &Ty) -> Option<ValueType> {
@@ -171,7 +180,7 @@ impl ValueTypes<'_> {
                 Some(ValueType::Fn(params?, Box::new(self.of(ret)?)))
             }
             // A struct, an enum, a tuple and an array are the arena's entries and their composition.
-            Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) => self.arena.of(ty, |part| self.of(part)),
+            Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) => self.arena.of(ty, |part| self.of(part).or_else(|| self.packed_option(part))),
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => None,
             // the elaborator reads types through the substitution (T32): a parameter never reaches the IR
             Ty::Param(_) | Ty::GenericInteger { .. } => None,

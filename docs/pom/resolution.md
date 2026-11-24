@@ -147,7 +147,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | --- | --- |
 | `Type` | `str` (§1), `uN` (§1), `iN` (§1), `fN` (§1), `bool` (§1), `usize` (§1), `isize` (§1), `UInt` (§1), `Int` (§1), `Float` (§1), `Option` (§1), `Event` (§13), `Analysis` (§11.1) |
 | `Variant` | `Some` (§1), `None` (§1), `Dc` (§11.1.1), `Transient` (§11.1.1), `Ac` (§11.1.1), `Noise` (§11.1.1), `Static` (§11.1.1) |
-| `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash`, `From`, `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr` (App. H) |
+| `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash`, `From`, `Resolve` (§4), `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr` (App. H) |
 | `Fn` | `potential` (§14.1), `flow` (§14.1), `ddx` (§14.2), `ac_stim` (§14.3), `temperature` (§14.4), `simparam` (§14.4), `analysis` (§14.4), `now` (§14.4), `freq` (§14.4), `gmin` (§14.4), `source_scale` (§14.4) |
 | `Module` | `ddt` (§14.5), `delay` (§14.6), `limit` (§14.7), `noise` (§14.8), `cross` (§14.9), `at` (§14.9) |
 | `Event` | `settle` (§14.9) |
@@ -207,7 +207,7 @@ its authored shape.
 | | | `PortKind::Unknown` | `T` does not resolve, or is a generic with a bound that does not resolve |
 | `struct S { .. }` | `StructData::bundle` | `Some(true)` | a field is a carrier, an array of carriers or a bundle |
 | | | `Some(false)` | no field is: a plain value struct |
-| `nature N { .. }` | `NatureData::kind` | `NatureKind` | computed from the fields: `potential` + `flow` is `Conservative`; `potential` alone `SignalFlow`; `value` alone `Discrete`; `value` + `resolve` `Resolved`; any other mix `Invalid` |
+| `nature N { .. }` | `NatureData::kind` | `NatureKind` | computed from the fields: `potential` + `flow` is `Conservative`; `potential` alone `SignalFlow`; `value` alone `Discrete`; any other mix `Invalid` |
 
 `StructData::bundle` is `None` only on a design that has not been resolved; after `build()`
 every struct carries `Some(_)`. A named argument of an instance (`n: b`) links to the port it
@@ -333,7 +333,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0244` | 7 | `§6` | a node of an instance that is not `pub`, named as the operand of a probe or a contribution (`v(c.x)`, `i(c.x) +> ..`): the module cannot reach it (§6 rule 7); the member is still resolved | the member name |
 | `E0413` | 6 | `§11` | an access call that is the target of a contribution (`i(o) +> x`), whose first argument has a declared nature without a `flow` and whose access name is that of a flow quantity of another nature (rule 11): a flow contribution to a node with no flow, where the same call read is `E0206`; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
 | `E0260` | 8 | `§7` | a `struct` that is a bundle (it has a carrier field, directly or through a bundle field) and has a field of a value type (§7 rule 1); the message names that field and a carrier field | the value field's name |
-| `E0261` | 8 | `§7` | a field of a bundle whose nature is one-driver (a discrete nature without `resolve`) and has no `in` or `out`, or whose nature is any other (`Wire`, `Electrical`, a signal-flow nature) and has a direction (§7 rule 2); a field of a generic nature is not judged | the field's name |
+| `E0261` | 8 | `§7` | a field of a bundle whose nature is one-driver (a discrete nature with no `impl Resolve`) and has no `in` or `out`, or whose nature is any other (a resolved nature, `Electrical`, a signal-flow nature) and has a direction (§7 rule 2); a field of a generic nature is not judged | the field's name |
 | `E0262` | 8 | `§7` | `flip` on a type that is no bundle (§7 rule 6); `out` on a bundle port (§7 rule 6); `in` or `out` on a field whose type is a bundle (§7 rule 5); a generic or unresolved type is not judged | the field, the port or the `flip` type |
 | `E0263` | 6 | `§7` | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
 | `E0264` | 8 | `§7` | a bundle at a declaration that makes it a value: a param type, a type argument of a nature (`Bit<Stream>`), a function result (§7 rule 9), or a bundle signal or port with an initial value (§7 rule 10); the operand and literal positions are the checker's | the param, the type or the initial value |

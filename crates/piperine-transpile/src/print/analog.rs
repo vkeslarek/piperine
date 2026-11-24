@@ -64,6 +64,8 @@ impl<'a> AnalogPrinter<'a> {
             session_parameters: (0..body.session_parameters().len() as u32).map(|k| Text::generated(&format!("simparam{k}"))).collect(),
             param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
+            others: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "others")).collect(),
+            driving: (0..body.carriers().len() as u32).map(|c| ValuePrinter::driving_name(body, c)).collect(),
         };
         let sums = ContributionSums::needed(body).then(|| ContributionSums::of(body));
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
@@ -104,6 +106,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Carrier(c) => {
                 self.body.carriers().get(c as usize).map_or_else(|| Text::generated(&format!("carrier{c}")), |x| Text::ident(&x.name))
             }
+            Source::Others(c) => Self::carrier_part(self.body, c, "others"),
             Source::ParamPrevious(p) => Self::param_part(self.body, p, "previous"),
             Source::ParamChanged(p) => Self::param_part(self.body, p, "changed"),
             Source::CarrierChanged(c) => Self::carrier_part(self.body, c, "changed"),
@@ -191,6 +194,7 @@ impl<'a> AnalogPrinter<'a> {
                 format!("check:{}", self.body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone()))
             }
             Target::Carrier(c) => self.body.carriers().get(c as usize).map_or_else(|| c.to_string(), |x| x.name.clone()),
+            Target::ResolvedDrive(c) => format!("{}.drive", self.body.carriers().get(c as usize).map_or_else(|| c.to_string(), |x| x.name.clone())),
             Target::EventPin(k) => format!("event:{k}"),
             Target::Delayed(k) | Target::DelayedEventPin(k) => {
                 let carrier = self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
@@ -327,6 +331,11 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
+                // what the other drives of a resolved net hold is its own pin, not the net's value
+                Expr::Others(c) => {
+                    sources.insert(Source::Others(*c));
+                }
+                Expr::Resolve { drives, .. } => sources.extend(drives.iter().map(|c| Source::Carrier(*c))),
                 Expr::SessionParameter { parameter } => {
                     sources.insert(Source::SessionParameter(*parameter));
                 }
@@ -389,7 +398,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) | Source::ParamPrevious(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) | Source::TemperatureGiven | Source::SessionParameter(_) => true,
+            Source::Carrier(_) | Source::Others(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) | Source::TemperatureGiven | Source::SessionParameter(_) => true,
             _ => false,
         }
     }
@@ -402,7 +411,7 @@ impl<'a> AnalogPrinter<'a> {
                 Some(ty) if *ty != ValueType::F64 => self.values.type_of(ty),
                 _ => Ok("R".to_string()),
             },
-            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
+            Source::Carrier(c) | Source::Others(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => self.values.pin_type(&carrier.ty),
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
@@ -432,7 +441,7 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
+            Source::Carrier(c) | Source::Others(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(&carrier.ty)?, &format!("{cx}.bytes({i})"))),
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },

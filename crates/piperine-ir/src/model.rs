@@ -279,7 +279,7 @@ pub struct CommitTarget {
     pub path: Vec<Projection>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CarrierRole {
     In,
     Out,
@@ -287,6 +287,12 @@ pub enum CarrierRole {
     /// A carrier of a child the body reads (`inst.name`): read only, like an `in` port, bound to
     /// the child instance's net (`IrBuilder::bind_reached_net`).
     Reached,
+    /// A carrier of a resolved nature (`signal sda: Sda`, part II §5.2): it reads the net's resolved value, of the
+    /// carrier's `ty` (the nature's `V`), and a definition or a commit of it is the body's own drive, of type `driven`
+    /// (the `X` of the net's `impl Resolve<X, V>`). `Expr::Others` reads what the other drives resolve to. A `Reach` of the
+    /// body may name it: the body then holds a drive of a child's `pub` resolved signal, bound to the child's net. `port` says
+    /// the carrier is a port of the module, which a parent binds to its own net (`false` for a signal and for a reached carrier).
+    Resolved { driven: ValueType, port: bool },
     /// A signal the elaborator makes for its own use, which the source never names (the mirror of an element of an
     /// array of carriers the `analog` block reads): a signal to the solver, never listed to the user (no default probe,
     /// no metadata, no host write).
@@ -492,7 +498,7 @@ pub struct Reach {
     pub item: ReachedItem,
 }
 
-/// What a `Reach` names: the body's own node or carrier of role `Reached` (`node`, `carrier`),
+/// What a `Reach` names: the body's own node or carrier of role `Reached` or `Resolved` (`node`, `carrier`),
 /// and the child's node or carrier it stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReachedItem {
@@ -730,6 +736,13 @@ pub enum Expr {
     ElementPrevious { carrier: u32, index: ExprId },
     /// `x[index].changed()` read as a value in a reaction (§13 rule 9): a `bool`.
     ElementChanged { carrier: u32, index: ExprId },
+    /// `s.others()` (§5.2.11): what the drives of the net but this body's own resolve to, of the type `V` of the
+    /// `Resolved` carrier `carrier`.
+    Others(u32),
+    /// `resolve` of the present drives among the `drives` carriers of the resolver body (part II §4 rule 8), but
+    /// `except` when it is `Some`. `by_count[k]` is the instance `resolve::<k>` of the net's `impl Resolve<X, V>`: it
+    /// takes `[X; k]` and returns `V`, which is the type of the form. A drive is present when its `driving` byte is 1.
+    Resolve { by_count: Vec<FunctionId>, drives: Vec<u32>, except: Option<u32> },
 }
 
 /// The control string of a `table_model` as the elaborator parsed it (§22.2.15 rules 2 to 4): the
@@ -818,6 +831,7 @@ impl Expr {
             Expr::Table { x, .. } | Expr::TableSlope { x, .. } => vec![*x],
             Expr::Index { expr, index } => vec![*expr, *index],
             Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => vec![*index],
+            Expr::Others(_) | Expr::Resolve { .. } => Vec::new(),
         }
     }
 
@@ -1341,4 +1355,34 @@ pub struct NetData {
     pub(crate) declared_by: InstanceId,
     pub(crate) init: Option<Constant>,
     pub(crate) origin: Origin,
+    /// What the net is made of when it is a resolved net: its drives and its resolver instance (RN-03).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) resolution: Option<Resolution>,
+}
+
+/// The holder of one drive of a resolved net: a carrier of an instance. An instance whose two resolved carriers sit on one
+/// net holds two drives, one per carrier (§5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Holder {
+    /// The instance whose body writes the carrier.
+    pub instance: InstanceId,
+    /// The carrier's index in the instance's body.
+    pub carrier: u32,
+}
+
+/// What a resolved net is made of below the POM: one drive net per drive, the resolver instance that combines them and
+/// the nets each holder reads `others()` through (RN-03). The value net is the net that holds this record; its type is
+/// the nature's `V`, each drive net's is `driven`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Resolution {
+    /// The generated resolver instance (`<net path>$resolve`).
+    pub resolver: InstanceId,
+    /// The driven type `X` every drive of the net holds (§5.2.15).
+    pub driven: ValueType,
+    /// One drive net per drive, in instance-path order, the host's first (§4 rule 2).
+    pub drives: Vec<NetId>,
+    /// The carrier holding each drive, index for index with `drives` (`None`: the host).
+    pub holders: Vec<Option<Holder>>,
+    /// The others net of each holder that reads `others()`, by drive index.
+    pub others: Vec<(u32, NetId)>,
 }

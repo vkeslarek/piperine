@@ -58,6 +58,13 @@ impl<'s> Inference<'s> {
             }
             (Ty::Option(declared), Ty::Option(given)) => self.unify(declared, given),
             // a carrier meeting a carrier: what each holds (`Bit<T>` meeting `Bit<u8>`)
+            (Ty::Carrier { nature, value: declared }, Ty::Carrier { nature: given_nature, value: given }) if self.owns(*nature) => {
+                // the carrier of a nature parameter: the parameter takes the nature given, and what it holds is unified too
+                if self.found.get(*nature).is_none() {
+                    self.found.bind(*nature, GenericValue::Type(Ty::Node(*given_nature)));
+                }
+                self.unify(declared, given);
+            }
             (Ty::Carrier { value: declared, .. }, Ty::Carrier { value: given, .. }) => self.unify(declared, given),
             // `UInt<N>` meeting `u4` gives `N = 4`; meeting `UInt<M>` gives `N = M`
             (Ty::GenericInteger { signed, width: ConstTerm::Param(parameter) }, found) if self.owns(*parameter) && self.found.get(*parameter).is_none() => {
