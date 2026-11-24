@@ -341,3 +341,32 @@ fn a_hand_written_repr_on_a_generic_type_is_typed_per_argument() {
     let found = piperine_lang::types::Types::check(&design, "Top").err().expect("Plain has no Repr");
     assert_eq!(found[0].diagnostic.code, "E0112", "{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
 }
+
+#[test]
+fn a_trait_impl_on_a_module_type_is_accepted_and_binds_self_to_the_template() {
+    // §3.1.4, §3.7.4 (the user's decision of 2026-11-22): `impl Mosfet for Bsim4` gives the module type the trait's functions,
+    // `self` being the template whose params it reads
+    let src = "trait Mosfet { fn vth(self) -> f64; }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { vth0: f64 = 0.4; }\nimpl Mosfet for Bsim4 { fn vth(self) -> f64 { self.vth0 } }\nimpl Bsim4 { fn doubled(self) -> f64 { self.vth0 * 2.0 } }\n";
+    assert_eq!(GenericSources::standard_codes(src), Vec::<String>::new());
+}
+
+#[test]
+fn a_module_impl_function_that_reads_the_solve_is_e0122() {
+    // §3.1.4 (DD3): a function of an `impl` on a module type is a pure function of the template, so one that reads time is `E0122`
+    let src = "module Bsim4(d: Electrical) { vth0: f64 = 0.4; }\nimpl Bsim4 { fn late(self) -> f64 { now() } }\n";
+    let found = GenericSources::standard_found(src);
+    assert_eq!(GenericSources::codes_of(&found), ["E0122"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(found[0].diagnostic.message.contains("late"), "names the function: {}", found[0].diagnostic.message);
+}
+
+#[test]
+fn a_trait_plus_fn_bound_admits_only_a_module_that_implements_the_trait() {
+    // §8.4.5 (T88, proven with a real trait): `N: Mosfet + Fn(Electrical)` admits `Bsim4`, which declares `impl Mosfet for`, and
+    // refuses `Plain`, which has the ports but not the impl: `E0187` naming the module and the trait
+    let head = "trait Mosfet { fn vth(self) -> f64; }\nmodule Bsim4(d: Electrical) { vth0: f64 = 0.4; }\nimpl Mosfet for Bsim4 { fn vth(self) -> f64 { self.vth0 } }\nmodule Plain(d: Electrical) { }\n\
+                module Pair<N: Mosfet + Fn(Electrical)>(x: Electrical) { n: N; let one = n(x); }\n";
+    assert_eq!(GenericSources::standard_codes(&format!("{head}module Top() {{ signal x: Electrical; let p = Pair::<Bsim4>(x) {{ n: Bsim4 {{ }} }}; }}\n")), Vec::<String>::new());
+    let refused = GenericSources::standard_found(&format!("{head}module Top() {{ signal x: Electrical; let p = Pair::<Plain>(x) {{ n: Plain {{ }} }}; }}\n"));
+    assert_eq!(GenericSources::codes_of(&refused), ["E0187"], "{:?}", refused.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(refused[0].diagnostic.message.contains("Plain") && refused[0].diagnostic.message.contains("Mosfet"), "{}", refused[0].diagnostic.message);
+}

@@ -252,8 +252,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `an_impl_on_a_module_type_is_accepted` and `a_module_impl_function_that_reads_the_solve_is_e0122` pass under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `an_impl_on_a_module_type_is_accepted` and `a_module_impl_function_that_reads_the_solve_is_e0122` pass under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
