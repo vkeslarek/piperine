@@ -228,7 +228,7 @@ fn a_definition_and_a_commit_of_one_resolved_carrier_is_e0221() {
     // §5.2.4: a module drives a carrier by definitions or by commits, never both, resolved or not.
     let text = format!("{TOTAL}module Top(a: Total, in clk: Bit) {{ a = 1.0; }}\ndigital for Top {{ on clk.rise() {{ a <- 2.0; }} }}");
     assert_eq!(Source::new(&text).codes(), ["E0221"]);
-    let commits = format!("{TOTAL}module Top(a: Total, in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ a <- 2.0; }} }}");
+    let commits = format!("{TOTAL}module Top(a: Total = 0.0, in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ a <- 2.0; }} }}");
     Source::new(&commits).checked();
 }
 
@@ -257,11 +257,11 @@ const TWO_IMPLS: &str = "nature Counted { value: u8 }\nimpl Resolve<bool, u8> fo
 #[test]
 fn a_drive_picks_the_impl_of_its_type() {
     // §5.2.15: the type of a definition or a commit picks the `impl Resolve<X, V>` whose `X` it is.
-    let text = format!("{TWO_IMPLS}module Top(c: Counted, in clk: Bit) {{ signal b: bool; }}\ndigital for Top {{ on clk.rise() {{ let flag: bool = true; c <- flag; }} }}");
+    let text = format!("{TWO_IMPLS}module Top(c: Counted = false, in clk: Bit) {{ signal b: bool; }}\ndigital for Top {{ on clk.rise() {{ let flag: bool = true; c <- flag; }} }}");
     let source = Source::new(&text);
     let types = source.checked();
     let picks = (0..source.design.expr_count()).filter(|index| types.drive_impl(piperine_lang::pom::ExprId(*index as u32)).is_some()).count();
-    assert_eq!(picks, 1, "the commit's value picked one `impl`");
+    assert_eq!(picks, 2, "the initial value and the commit each picked an `impl`");
     let text = format!("{TWO_IMPLS}module Top(c: Counted) {{ c = 7u8; }}");
     Source::new(&text).checked();
 }

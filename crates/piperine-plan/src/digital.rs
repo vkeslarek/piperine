@@ -384,7 +384,8 @@ impl Digital {
         let drives = body.resolve_drive_carriers();
         for (i, c) in body.carriers().iter().enumerate() {
             let at = format!("{}:{}:{}", c.origin.file, c.origin.line, c.origin.col);
-            let init = match c.init {
+            // a resolved carrier's initial value is its first drive's: it starts the drive pin (`resolved_pins`)
+            let init = match c.init.filter(|_| !matches!(c.role, CarrierRole::Resolved { .. })) {
                 Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
@@ -429,7 +430,10 @@ impl Digital {
                 };
                 let fields = layout.fields();
                 let abi = layout.layout(&fields);
-                let drive = s.pin(PinSpec { origin: &at, flags: pin_flag::RELAX, ..PinSpec::discrete(&format!("{}.drive", c.name), role::PORT, &abi) });
+                // an initial value is the first drive at `(0, 0)`: the value then `driving` 1
+                let init = c.init.and_then(|value| layout.init_bytes(body.ir(), driven, value)).unwrap_or_default();
+                let flags = if init.is_empty() { pin_flag::RELAX } else { pin_flag::RELAX | pin_flag::HAS_INIT };
+                let drive = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&format!("{}.drive", c.name), role::PORT, &abi) });
                 let others = body.reads_others(i as u32).then(|| {
                     let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
                         panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)

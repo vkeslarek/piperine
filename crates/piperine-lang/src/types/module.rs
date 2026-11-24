@@ -50,6 +50,11 @@ impl Checker<'_> {
                 let value = array.read_value();
                 self.within(Context::Const, |this| this.check_as(default, &value, "E0210"));
             }
+            // the initial value of a resolved port is the module's first drive of it, of the driven type (§5.2.3)
+            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.design, *nature).resolved => {
+                self.initial_reads(default);
+                self.resolved_initial(decl, *nature, default);
+            }
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
                 let span = self.design.expr_node(default).span;
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
@@ -121,6 +126,11 @@ impl Checker<'_> {
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
         self.initial_reads(init);
+        if let Ty::Carrier { nature, .. } = &ty
+            && NatureRules::of(self.design, *nature).resolved
+        {
+            return self.resolved_initial(decl, *nature, init);
+        }
         let value = match &ty {
             Ty::Carrier { value, .. } => (**value).clone(),
             // an array of carriers: the array of their values (`[0; 8]`); an array of nodes: an array of `f64`
@@ -486,6 +496,10 @@ impl Checker<'_> {
                 _ => false,
             };
             let Some(Ty::Carrier { nature, value }) = self.carriers.get(&decl).cloned() else { continue };
+            if NatureRules::of(self.design, nature).resolved {
+                self.missing_resolved_initial_value(decl);
+                continue;
+            }
             // a carrier with no initial value starts at its `Default`: a hand-written one is a function the elaborator folds
             if !self.has_initial(decl) {
                 self.reach_written_defaults(&value);
@@ -559,7 +573,7 @@ impl Checker<'_> {
 impl Checker<'_> {
     /// Brings every hand-written `impl Default` the default of `ty` reads into the check: the `default` function of a struct
     /// that writes one, and of the structs, tuples and arrays holding such a struct.
-    fn reach_written_defaults(&mut self, ty: &Ty) {
+    pub(super) fn reach_written_defaults(&mut self, ty: &Ty) {
         match ty {
             Ty::Struct(nominal) => {
                 let table = std::rc::Rc::clone(&self.impls);

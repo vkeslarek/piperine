@@ -633,8 +633,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `an_initial_value_is_the_declaring_modules_first_drive_commit` and `a_resolved_drive_without_default_or_initial_value_is_e0187` pass under `**Run elabnatures**`
-- [ ] Gate check passes: Quick
+- [x] `an_initial_value_is_the_declaring_modules_first_drive_commit` and `a_resolved_drive_without_default_or_initial_value_is_e0187` pass under `**Run elabnatures**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

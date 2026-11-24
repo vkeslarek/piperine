@@ -3,7 +3,7 @@
 //! `impl` (generics Q1 (c)); a drive of the nature picks the `impl` whose `X` it is (`E0180`,
 //! `E0181`, §5.2.15).
 
-use crate::msl::Span;
+use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData, NatureFieldNode, NatureKind, Resolution};
 
 use super::check::Checker;
@@ -217,5 +217,39 @@ impl Checker<'_> {
             }
             None => self.check_as(value, &target.held, code),
         }
+    }
+}
+
+impl Checker<'_> {
+    /// The initial value `init` of the resolved carrier `carrier` is the module's first drive of it, at `(0, 0)`: it
+    /// picks the `impl Resolve` its type names like any drive (§5.2.3, §5.2.15).
+    pub(super) fn resolved_initial(&mut self, carrier: DeclId, nature: DeclId, init: ExprId) {
+        self.within(super::check::Context::Const, |this| {
+            if let Some(picked) = ResolveImpls::new(this).pick(nature, init) {
+                this.carrier_drive_impls.entry(carrier).or_default().push(picked.implementation);
+            }
+        });
+    }
+
+    /// `E0187` for a resolved carrier this module drives with no initial value whose driven type has no `Default`
+    /// (§5.2.12): the drive has a value from `(0, 0)` on. An undelayed definition gives it one.
+    pub(super) fn missing_resolved_initial_value(&mut self, carrier: DeclId) {
+        let driven_here = self.book.defined.contains_key(&carrier) || self.book.committed.contains_key(&carrier);
+        if !driven_here || self.has_initial(carrier) || self.book.undelayed.contains(&carrier) {
+            return;
+        }
+        let Some(implementation) = self.carrier_drive_impls.get(&carrier).and_then(|picked| picked.first().copied()) else { return };
+        let Some(Ty::Carrier { nature, .. }) = self.carriers.get(&carrier).cloned() else { return };
+        let Some(driven) = self.resolve_tables.get(&nature).and_then(|table| table.iter().find(|candidate| candidate.implementation == implementation)).map(|candidate| candidate.driven.clone()) else { return };
+        // a hand-written `Default` is a function the elaborator folds
+        self.reach_written_defaults(&driven);
+        if self.implements(&driven, super::derives::DerivedTrait::Default) {
+            return;
+        }
+        let item = self.design.decl_data(carrier).clone();
+        let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let found = driven.name(self.design);
+        let message = format!("`{name}` has no initial value and its drive type `{found}` does not implement `Default`: a drive has a value from (0, 0) on (§5.2.12)");
+        self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or drive an `Option<{found}>`")));
     }
 }

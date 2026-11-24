@@ -118,3 +118,31 @@ fn two_driven_types_on_one_net_are_e0225() {
     let agreeing = format!("{natures}module Top() {{ signal n: Counted; let a = Flag(n); let b = Flag(n); }}");
     Elab::ir(&agreeing, "Top");
 }
+
+#[test]
+fn an_initial_value_is_the_declaring_modules_first_drive_commit() {
+    // §5.2.3 and §5.2.12: `= v` on a resolved port or signal is the declaring module's first drive of it, at `(0, 0)`,
+    // of the driven type; a module that does not drive the carrier needs none; a drive with none starts at the
+    // `Default` of its type (`Option<u8>` into a nature of `impl Resolve<Option<u8>, u8>`).
+    let source = format!("{TOTAL}module Keeper(w: Total = 3.0) {{ }}\nmodule Top() {{ signal n: Total = 1.0; let k = Keeper(n); }}");
+    let text = Elab::ir(&source, "Top").print_structural();
+    assert!(text.contains("carrier w: f64 resolved f64 init 3.0") && text.contains("carrier n: f64 resolved f64 init 1.0"), "{text}");
+    let silent = Elab::ir(&format!("{TOTAL}module Top() {{ signal n: Total; let r = Reader(n); }}"), "Top").print_structural();
+    assert!(!silent.contains("resolved f64 init"), "a carrier nobody drives has no initial value:\n{silent}");
+    let defaulted = "#[derive(Repr, PartialEq)]\nstruct Cell { v: u8 }\nimpl Default for Cell { fn default() -> Cell { Cell { v: 7 } } }\n\
+                     nature Level { value: u8 }\nimpl Resolve<Cell, u8> for Level { fn resolve<const N: usize>(d: [Cell; N]) -> u8 { 0 } }\n\
+                     module Top(in clk: Bit) { signal l: Level; }\ndigital for Top { on clk.rise() { l <- Cell { v: 1 }; } }";
+    let text = Elab::ir(defaulted, "Top").print_structural();
+    assert!(text.contains("carrier l: u8 resolved t0 init agg0") && text.contains("agg0: t0 = Cell(7)"), "a drive of a type with `Default` starts at it:\n{text}");
+}
+
+#[test]
+fn a_resolved_drive_without_default_or_initial_value_is_e0187() {
+    // §5.2.12: a drive has a value from `(0, 0)`: a type with no `Default` needs `= v`, or an undelayed definition.
+    let commit = format!("{TOTAL}module Top(in clk: Bit) {{ signal n: Total; }}\ndigital for Top {{ on clk.rise() {{ n <- 1.0; }} }}");
+    assert_eq!(Elab::codes(&Elab::run(&commit, "Top").expect_err("no default")), ["E0187"]);
+    let delayed = format!("{TOTAL}module Top() {{ signal n: Total; n = 1.0 after 1n; }}");
+    assert_eq!(Elab::codes(&Elab::run(&delayed, "Top").expect_err("no default")), ["E0187"]);
+    Elab::ir(&format!("{TOTAL}module Top() {{ signal n: Total; n = 1.0; }}"), "Top");
+    Elab::ir(&format!("{TOTAL}module Top(in clk: Bit) {{ signal n: Total = 0.0; }}\ndigital for Top {{ on clk.rise() {{ n <- 1.0; }} }}"), "Top");
+}

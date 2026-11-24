@@ -29,6 +29,16 @@ impl DriveLayout {
         Some(DriveLayout { value, driving_at })
     }
 
+    /// The bytes of a drive net that holds `value` of the driven type `driven` as a present drive: the value's bytes,
+    /// then `driving` 1; `None` for a value no pin holds.
+    pub fn init_bytes(&self, ir: &Ir, driven: &ValueType, value: piperine_ir::Constant) -> Option<Vec<u8>> {
+        let mut bytes = PinLayout::bytes_in(ir, driven, value)?;
+        bytes.resize(self.driving_at as usize, 0);
+        bytes.push(1);
+        bytes.resize(self.size() as usize, 0);
+        Some(bytes)
+    }
+
     /// The offset of the `driving` byte inside a drive net.
     pub fn driving_at(&self) -> u32 {
         self.driving_at

@@ -870,14 +870,19 @@ impl<'a> Checker<'a> {
                         format!("a carrier holds `bool`, `f64`, an integer type, an enum, or a tuple, array, struct or `Option` of them, found {}", c.ty),
                     );
                 } else if let Some(init) = c.init
-                    && !self.holds(&c.ty, init)
+                    // a resolved carrier reads `ty` and is driven with `driven`: its initial value is its first drive's (§5.2.3)
+                    && let held = match &c.role {
+                        CarrierRole::Resolved { driven } => driven,
+                        _ => &c.ty,
+                    }
+                    && !self.holds(held, init)
                     // an array carrier's initial value is one element (`[x; K]`) or every element (`[a, b, c]`)
                     && !c.count.is_some_and(|count| self.holds(&ValueType::Array(Box::new(c.ty.clone()), count), init))
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),
                         c.origin.clone(),
-                        format!("the initial value {init} of carrier {} is not a value of its type {}", c.name, c.ty),
+                        format!("the initial value {init} of carrier {} is not a value of its type {held}", c.name),
                     );
                 }
                 found.push((format!("{item} carrier {}", c.name), c.origin.clone(), c.ty.clone()));
