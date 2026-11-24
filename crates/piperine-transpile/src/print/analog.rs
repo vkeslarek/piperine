@@ -117,6 +117,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Crossed(k) => Text::generated(&format!("cross{k}_changed")),
             Source::Timer(k) => Text::generated(&format!("at{k}_changed")),
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
+            Source::TemperatureGiven => ValuePrinter::env_name(Env::TemperatureGiven).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
             Source::LimitLast(k) => site(self.body.limits(), k, "last"),
@@ -364,6 +365,7 @@ impl<'a> AnalogPrinter<'a> {
     fn env_source(env: Env) -> Option<Source> {
         Some(match env {
             Env::Temperature => Source::Temperature,
+            Env::TemperatureGiven => Source::TemperatureGiven,
             Env::Gmin => Source::Gmin,
             Env::SourceScale => Source::SourceScale,
             Env::Time => Source::Time,

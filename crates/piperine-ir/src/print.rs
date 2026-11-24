@@ -1188,7 +1188,7 @@ impl<'a> Printer<'a> {
         let ir = self.ir;
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
-            Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
+            Expr::Env(Env::Static | Env::Analysis(_) | Env::TemperatureGiven) | Expr::Fired(_) => Some(ValueType::Bool),
             Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) => {
                 Some(ValueType::F64)
             }
@@ -1591,6 +1591,7 @@ impl<'a> Printer<'a> {
             Env::Static => "static",
             Env::Freq => "freq",
             Env::Analysis(_) => "analysis",
+            Env::TemperatureGiven => "temperature_given",
         }
     }
 }

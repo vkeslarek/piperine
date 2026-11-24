@@ -147,6 +147,8 @@ pub enum Source {
     /// The `CHANGED` byte of the pin the timer of guarded `at` event `k` fires.
     Timer(u32),
     Temperature,
+    /// Whether the run set its temperature: a `bool`, the `GLOBAL` pin the body reads beside `Temperature`.
+    TemperatureGiven,
     Gmin,
     SourceScale,
     LimitLast(u32),
@@ -281,6 +283,7 @@ impl ReadSet {
         self.0.extend(deps.params.iter().map(|i| Source::Param(*i)));
         self.0.extend(deps.env.iter().filter_map(|e| match e {
             Env::Temperature => Some(Source::Temperature),
+            Env::TemperatureGiven => Some(Source::TemperatureGiven),
             Env::Gmin => Some(Source::Gmin),
             Env::SourceScale => Some(Source::SourceScale),
             // ambient reads (abi.md §4.2): `check()` lets only `terms`, `cross:*` and reactions
@@ -346,6 +349,8 @@ pub struct Pins {
     /// The output pin `delay<k>.value` of each delay site, after the derivative rate pins.
     pub delays: Vec<u32>,
     pub temperature: Option<u32>,
+    /// The `GLOBAL` `BIT` pin saying whether the run set its temperature, after the temperature pin.
+    pub temperature_given: Option<u32>,
     /// The `GLOBAL` pin of each analysis kind the body reads, in `AnalysisKind` order, after the
     /// temperature pin.
     pub analysis: Vec<(AnalysisKind, u32)>,
@@ -670,6 +675,7 @@ impl BodyPlan {
             derivatives,
             delays,
             temperature,
+            temperature_given: None,
             analysis,
             checks,
             carriers,
@@ -1051,6 +1057,7 @@ impl BodyPlan {
             Source::Crossed(k) => at(cell::PIN, pins.crossed.get(k as usize).copied().flatten().unwrap_or(GROUND), part::CHANGED),
             Source::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
             Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
+            Source::TemperatureGiven => value(cell::PIN, pins.temperature_given.unwrap_or(GROUND)),
             Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
             Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),
             Source::LimitLast(k) => at(cell::INPUT, k, part::LAST),

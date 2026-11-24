@@ -404,7 +404,7 @@ impl<'a> ValuePrinter<'a> {
         }
         let envs = Self::env_reads(ir, function);
         for env in &envs {
-            let ty = if matches!(env, Env::Static | Env::Analysis(_)) { "bool" } else { "R" };
+            let ty = if matches!(env, Env::Static | Env::Analysis(_) | Env::TemperatureGiven) { "bool" } else { "R" };
             params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
         // a function on a call cycle carries its depth (Q5 (b)); one that is not keeps its text
@@ -430,7 +430,7 @@ impl<'a> ValuePrinter<'a> {
         let real = |ty: &ValueType| items.holds_real(ty);
         f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
             || real(f.ret())
-            || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
+            || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_) | Env::TemperatureGiven))
             || Self::computes_real_value(ir, function)
     }
 
@@ -530,6 +530,7 @@ impl<'a> ValuePrinter<'a> {
             Env::Time => "time_",
             Env::Static => "is_static_",
             Env::Freq => "freq_",
+            Env::TemperatureGiven => "temperature_given_",
             Env::Analysis(AnalysisKind::Dc) => "is_dc_",
             Env::Analysis(AnalysisKind::Transient) => "is_transient_",
             Env::Analysis(AnalysisKind::Ac) => "is_ac_",

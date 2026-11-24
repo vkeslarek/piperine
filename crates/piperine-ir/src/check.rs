@@ -1928,7 +1928,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Env(env) => {
                 if first {
-                    let want = if matches!(env, Env::Static | Env::Analysis(_)) { ValueType::Bool } else { ValueType::F64 };
+                    let want = if matches!(env, Env::Static | Env::Analysis(_) | Env::TemperatureGiven) { ValueType::Bool } else { ValueType::F64 };
                     self.own(w, &origin, ty, &want);
                 }
             }

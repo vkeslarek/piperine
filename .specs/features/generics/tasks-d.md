@@ -380,9 +380,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `run_setting_reads_are_built_checked_and_printed` passes under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` covers the read under `**Run interp**`
-- [ ] Gate check passes: Quick
+- [x] `run_setting_reads_are_built_checked_and_printed` passes under `**Run irgen**`
+- [x] `each_generics_form_is_refused_by_name` covers the read under `**Run interp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
