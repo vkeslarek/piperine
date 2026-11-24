@@ -459,9 +459,9 @@ T21
 
 **Done when**:
 
-- [ ] `a_bundle_field_is_named_by_its_dotted_path` passes under `**Run apimetadata**`
-- [ ] `a_bundle_port_reflects_its_type_and_view` passes under `**Run pomreflect**`
-- [ ] Gate check passes: Batch (end of B3)
+- [x] `a_bundle_field_is_named_by_its_dotted_path` passes under `**Run apimetadata**`
+- [x] `a_bundle_port_reflects_its_type_and_view` passes under `**Run pomreflect**`
+- [x] Gate check passes: Batch (end of B3)
 
 **Tests**: integration
 **Gate**: batch
@@ -697,6 +697,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Settled B1:** B1 (T1-T4) done. Defaults taken (user AFK): `code_owners.tsv` is on the branch after the rebase onto origin/main, so each task deleted its row (E0260 to E0262, E0264) with the GAPS section 10 list and count, and added its row to docs/pom/resolution.md (the `pom_docs` guard). One-driver means a discrete nature without `resolve` (spec part II 5.2), so a signal-flow field takes no direction. A flipped generic or unresolved type, and a field of a generic nature, are not judged by the POM. `E0264` at the declaration covers a param type, a nature's type argument, a function result (not a module result) and an initial value of a bundle signal or port. Two fixtures that declared an invalid bundle were corrected (pom_classify `Port2`, types_buck `Bn`), named in the T1 and T2 bodies. `is_carrier_type` and `has_unresolved_bound` of classify.rs became `pub(super)` for shape.rs.
 **Settled re-plan (2026-11-22):** B2 onward amended for the explicit-unknowns model (MD-78; spec amendment A6, design "Amendment of 2026-11-22"): T5 merges `main` after `explicit-unknowns` phase A and gives the fixtures initial values; T6 states the direction rule on the capability; T15 declares `Sda` with `impl Resolve<Driven>`; T17 keeps `E0134` for `impl Trait for` a bundle; gates follow the user's policy (batch-end tasks T8, T16, T21). `resolved-nets` T16 moves `E0261`'s question and the `Wire` fixtures of `pom_bundles.rs`. No question is open.
 **Settled T6:** see design.md "Amendment of 2026-11-24" (D11): fields are leaf declarations of `pom/bundles.rs`, no `Ty::Bundle`. `types_buck`/`types_subset` bundle rows left their tables; `std_galleries` and Book natures#8 re-pinned to the new exact refusals (generic bundle `Stream<T>`: T19). `book_claims::every_value_sentence_has_a_claim_row` (natures~1197ebef) fails on the branch before and after T6 (not this feature's).
+**Settled B3 (2026-11-24):** T9 to T16 done on `feature/resolved-nets-bundles`. Host names need no change: a leaf carrier is named by its path, so `--print s.valid`, records and `Metadata::ports` (one entry per field of a top's bundle port, in declaration order) already name fields by dotted path (`metadata.rs::a_bundle_field_is_named_by_its_dotted_path`); `Port::bundle_view` (public `BundleView`) is the POM's reflection of the view (`pom_reflect::a_bundle_port_reflects_its_type_and_view`), documented in docs/pom. A leaf's span is its owner's (declaration order and diagnostics point at the port). Known limits left for B4: arrays as fields of a bundle (`an array field of a bundle`, T20), functions on a bundle (`a function on a bundle`, T17/T18, P0001 by name), generic bundles (T19). Gates run at B3 end: Build line clean, `piperine-lang` (all targets), `piperine-api` (all targets), Book natures/modules/cheatsheet/inventory, parity source_bundles/source_natures/source_nets/source_carrier_arrays/source_aggregates green; `book_claims::every_value_sentence_has_a_claim_row` (natures~1197ebef) fails before and after, not this feature's.
 **Dispatched:** none
 **Walked:** none
 

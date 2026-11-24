@@ -7,15 +7,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::body::ExprKind;
+use super::body::{ExprKind, TypeKind};
 use super::decl::Dir;
 use super::design::Design;
-use super::ids::{DeclId, ExprId};
+use super::ids::{DeclId, ExprId, TypeId};
 use super::resolution::Resolution;
 
 /// The way one module sees a bundle (§7, the use table).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum BundleView {
+pub enum BundleView {
     /// `tx: Stream`: drives the `out` fields, reads the `in` fields.
     Producer,
     /// `rx: flip Stream`: every direction of a one-driver field reversed.
@@ -25,9 +25,18 @@ pub(crate) enum BundleView {
 }
 
 impl BundleView {
+    /// The view of a port written `dir name: ty` (§7 rules 3 to 5): `in` an observer, `flip` a consumer, else a producer.
+    pub(crate) fn of_port(design: &Design, dir: Option<Dir>, ty: TypeId) -> BundleView {
+        match (dir, &design.type_node(ty).kind) {
+            (Some(Dir::In), _) => BundleView::Observer,
+            (_, TypeKind::Flip(_)) => BundleView::Consumer,
+            _ => BundleView::Producer,
+        }
+    }
+
     /// The view of a field written `flip T`, or of the type of a port written `flip`: producer and consumer swap,
     /// an observer stays one (§7 rule 5).
-    pub(crate) fn flipped(self) -> BundleView {
+    pub fn flipped(self) -> BundleView {
         match self {
             BundleView::Producer => BundleView::Consumer,
             BundleView::Consumer => BundleView::Producer,
@@ -37,7 +46,7 @@ impl BundleView {
 
     /// The direction a field written with `written` has under this view (§7 rules 3 to 6): a field without
     /// direction has none in any view.
-    pub(crate) fn field_direction(self, written: Option<Dir>) -> Option<Dir> {
+    pub fn field_direction(self, written: Option<Dir>) -> Option<Dir> {
         let written = written?;
         match self {
             BundleView::Producer => Some(written),

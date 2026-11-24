@@ -474,16 +474,14 @@ fn the_fences_generics_lifted_are_checked() {
 }
 
 /// The only refusals of the seven fences that write a generic module, each with its owner: E.6's `Slice` is a generic bundle
-/// (`flip Stream<T>`, its fields typed by the struct's own `T`, `GAPS.md` L25, `resolved-nets-bundles` T19) and F.3's bundle
-/// `Cell` is read through a probe over several natures. F.3's template parameter `C: Fn(..)` and the placement through it are
+/// (`flip Stream<T>`, its fields typed by the struct's own `T`, `GAPS.md` L25, `resolved-nets-bundles` T19) and F.3's `MemoryBank`
+/// still names the bundle `Cell` through its template parameter. F.3's template parameter `C: Fn(..)` and the placement through it are
 /// phase D, L32 (`generics`). The generic modules themselves check, and the non-generic bundles (`Cell`) type.
-const REMAINING_REFUSALS: [&str; 9] = [
+const REMAINING_REFUSALS: [&str; 7] = [
     "E.6 as `Slice`: P0001: `flip` type is not supported yet",
     "E.6 as `Slice`: E0337: mismatched types: expected `T`, found `T`",
     "E.6 as `Slice`: P0001: a function on a bundle is not supported yet",
     "E.6 as `Slice`: E0432: mismatched types: expected `T`, found `T`",
-    "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
-    "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
     "F.3 as `Dram`: P0001: the template parameter `C` of `MemoryBank`, bounded by `Fn` is not supported yet",
     "F.3 as `MemoryBank`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
     "F.3 as `MemoryBank`: P0001: placement through a template value or a function is not supported yet",

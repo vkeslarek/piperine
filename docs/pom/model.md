@@ -1144,6 +1144,19 @@ The kind of a module port, from its declared type.
 | `Bundle` | — | The port type resolves to a bundle struct. |
 | `ValueInput` | — | The port type is a value type (a built-in or a declared non-bundle type): the port carries a value, not a signal. |
 
+### `BundleView`
+
+*enum* in `src/pom/bundles.rs`.
+
+The way one module sees a bundle (spec part II §7): `Port::bundle_view` reads it from the port as written. The checker and the elaborator
+read the fields the port stands for from a side table of the design, never from `children`.
+
+| Variant | Payload | Meaning |
+| --- | --- | --- |
+| `Producer` | — | `tx: Stream`: drives the `out` fields, reads the `in` fields. |
+| `Consumer` | — | `rx: flip Stream`: every direction of a one-driver field reversed. |
+| `Observer` | — | `in s: Stream`: every one-driver field an input. |
+
 ### `NatureKind`
 
 *enum* in `src/pom/resolution.rs`.

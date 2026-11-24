@@ -10,6 +10,7 @@ use crate::pom::decl::{
     ModuleData, NatureData, NatureFieldNode, ParamData, PortData, QuantityData, ReactionData, SignalData,
 };
 use crate::pom::builtin::{BuiltinId, BuiltinKind};
+use crate::pom::bundles::BundleView;
 use crate::pom::design::Design;
 use crate::pom::ids::DeclId;
 use crate::pom::resolution::{CallClass, NatureKind, PortKind, Resolution};
@@ -331,6 +332,13 @@ impl<'d> Port<'d> {
     pub fn nature(self) -> Option<Nature<'d>> {
         let design = self.decl.design();
         design.nature_of(self.data().ty).and_then(|n| Decl::new(design, n).as_nature())
+    }
+
+    /// The view of a bundle port (`tx: Stream` a producer, `rx: flip Stream` a consumer, `in s: Stream` an observer);
+    /// none for any other port. The port stays one port with its bundle type: its fields are no ports of the module.
+    pub fn bundle_view(self) -> Option<BundleView> {
+        let design = self.decl.design();
+        design.is_bundle_owner(self.decl.id()).then(|| BundleView::of_port(design, self.data().dir, self.data().ty))
     }
 }
 

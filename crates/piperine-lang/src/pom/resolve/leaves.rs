@@ -6,7 +6,7 @@
 
 use super::super::body::TypeKind;
 use super::super::bundles::{BundleLeaf, BundleView};
-use super::super::decl::{DeclData, DeclKind, Dir, Name, PortData, SignalData};
+use super::super::decl::{DeclData, DeclKind, Name, PortData, SignalData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, TypeId};
 use super::super::meta::Meta;
@@ -37,7 +37,7 @@ impl<'design> LeafPlan<'design> {
             let owner = DeclId(index as u32);
             let data = self.design.decl_data(owner);
             let (ty, view) = match &data.kind {
-                DeclKind::Port(port) => (port.ty, self.port_view(port.dir, port.ty)),
+                DeclKind::Port(port) => (port.ty, BundleView::of_port(self.design, port.dir, port.ty)),
                 DeclKind::Signal(signal) => (signal.ty, BundleView::Producer),
                 _ => continue,
             };
@@ -51,15 +51,6 @@ impl<'design> LeafPlan<'design> {
             out.push((owner, leaves));
         }
         out
-    }
-
-    /// The view of a port: `in` an observer, `flip` a consumer, else a producer (§7 rules 3 to 5).
-    fn port_view(&self, dir: Option<Dir>, ty: TypeId) -> BundleView {
-        match (dir, &self.design.type_node(ty).kind) {
-            (Some(Dir::In), _) => BundleView::Observer,
-            (_, TypeKind::Flip(_)) => BundleView::Consumer,
-            _ => BundleView::Producer,
-        }
     }
 
     /// The bundle struct `ty` names, through `flip` only (an array of bundles is `composite-values` C's).
@@ -101,7 +92,8 @@ impl<'design> LeafPlan<'design> {
                 parent: owner_data.parent,
                 children: Vec::new(),
                 file: owner_data.file,
-                span: field_data.span,
+                // at the port or signal that has the field, where a diagnostic about a leaf and the host's declaration order point
+                span: owner_data.span,
                 generics_span: None,
                 public: owner_data.public,
                 meta: Meta::default(),
