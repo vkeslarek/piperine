@@ -1,6 +1,6 @@
 # Generics verification (phase C, T53 to T82, T116, T117)
 
-**Verdict**: PASS (round 6 at 12fc93043: findings 16, 17 and 18 closed; every phase C check proven at HEAD (117 pass); two non-blocking findings recorded: 19, Low, an explicit `--print` of a mirror's internal name still resolves; 20, Low-Medium, a loop through elements of an array is refused by the digital bind after compiling, not by `E0339` - the class is composite-values', this phase's run-time-index reads only widen it)
+**Verdict**: PASS (round 7 at 907f73b74: the post-merge red `book_compiler` is fixed, and findings 19 and 20 are closed; 120 proofs pass; the targeted re-runs of the root package and `piperine-lang` are green; the rest of the final suite at 41cb566b3 stands)
 **Round 2**: re-verification at bc953965 (fixes 26fff208 for 1 and 3, 3b6cdc29 for 2 and 4 to 9; bookkeeping bc953965); `proofs-c.md` rerun at bc953965: 85 pass, 0 fail, tree clean, build and hygiene pass
 **Proofs**: `proofs-c.md` at 9d35727d (84 pass, 2 fail: both C127 rows cite tests that no longer exist; build and hygiene pass)
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-24, branch `feature/generics` at 9d35727d (= origin/feature/generics; diff `a8b1f34f..HEAD`, merge base with origin/main)
@@ -205,8 +205,8 @@
 
 | # | Severity | Finding | Evidence | Failure scenario | Fix | Closed |
 | --- | --- | --- | --- | --- | --- | --- |
-| 19 | Low | `--print` resolves an internal mirror by its name | `piperine run mirror.msl --analysis op --print 'x$analog[0]'` prints `Top.x$analog[0]  true`; `Probe::resolve` does not skip `CarrierRole::Internal` (only the default list does) | a user who guesses or reads (IR print) the name sees an elaborator artifact as a signal; nothing lists it, so it is not discoverable by accident | have `Probe::resolve` refuse an `Internal` carrier as "names no signal of the top" | not blocking; for the next `generics` phase |
-| 20 | Low-Medium | A loop through elements of an array of carriers is refused by the digital bind after rustc compiles the device, not by `E0339` (§8.2.3, "a loop through a one-driver carrier", elaboration) | `b[1] = b[2] + 1; b[2] = b[1];` and `b[1] = b[at] + 1` both end in "Digital: bind rule cycle broken: Top.drive:b[1]..."; the scalar form is refused by the checker | the user waits for a full compile and gets a solver bind message with internal drive labels instead of the language code; the class predates this phase (composite-values' element definitions), and this phase's run-time-index reads only reach it through conservative edges that are sound | raise `E0339` naming the carrier and the elements at elaboration, where element drives are known; record a GAPS row (owner `composite-values` or `spec-closure`) until then | not blocking; route to the class owner |
+| 19 | Low | `--print` resolves an internal mirror by its name | `piperine run mirror.msl --analysis op --print 'x$analog[0]'` prints `Top.x$analog[0]  true`; `Probe::resolve` does not skip `CarrierRole::Internal` (only the default list does) | a user who guesses or reads (IR print) the name sees an elaborator artifact as a signal; nothing lists it, so it is not discoverable by accident | have `Probe::resolve` refuse an `Internal` carrier as "names no signal of the top" | 3dc04344c (`Probe::resolve` skips `Internal`): `--print 'x$analog[0]'` is now `E0801` |
+| 20 | Low-Medium | A loop through elements of an array of carriers is refused by the digital bind after rustc compiles the device, not by `E0339` (§8.2.3, "a loop through a one-driver carrier", elaboration) | `b[1] = b[2] + 1; b[2] = b[1];` and `b[1] = b[at] + 1` both end in "Digital: bind rule cycle broken: Top.drive:b[1]..."; the scalar form is refused by the checker | the user waits for a full compile and gets a solver bind message with internal drive labels instead of the language code; the class predates this phase (composite-values' element definitions), and this phase's run-time-index reads only reach it through conservative edges that are sound | raise `E0339` naming the carrier and the elements at elaboration, where element drives are known; record a GAPS row (owner `composite-values` or `spec-closure`) until then | 85de31fc3 (`elab/drive_loops.rs`): `E0339` at elaboration naming `b[1]`, `b[2]`; round 7 probes hold |
 
 ## Final suite (after the round 6 PASS)
 
@@ -245,3 +245,26 @@
 - No release profile was built.
 
 **Red: 1.** `piperine --test book_compiler` `a_compiler_code_says_what_the_chapter_says` fails with "compiler~79f44db1: now runs: make the row `run` and drop its `GAPS.md` section 11 line". The test shows `P0001` with a generic module (`module Gen<const N: u32>() { }` placed as `Gen::<2>`). Phase C makes that run, so the Book claim "P0001" needs another unfinished form as its example (a template, phase D). The same test text is on both sides of the merge, so this was red on the branch before the merge too. No phase C check covered `book_compiler`; my targeted rounds missed it. Not fixed, per the gate policy.
+
+## Round 7 (907f73b74)
+
+**Fixes**: 7b958522f (`book_compiler`), 3dc04344c (finding 19), 85de31fc3 (finding 20). `proofs-c.md` at 907f73b74: 120 pass, 0 fail, tree clean.
+
+- **`book_compiler`.** compiler~79f44db1 is the claim "P0001" (valid MSL the compiler cannot run yet, named by the construct). It still holds, so keeping the row `holds` and changing only the example is right. The new example, a module template as a value (`let t = R { r: 2.0 };`, phase D, L32), is refused with `P0001`, and the assertion now also requires "module template" in the message. `Refusal::of` panics with "now runs" only when the model runs, and it does not run.
+- **Finding 19.** `piperine run mirror.msl --print 'x$analog[0]'` is now `E0801` "names nothing in the design".
+- **Finding 20, and `.prev()` as a dependency.** A definition that reads its own carrier's `prev()` is a loop under §8.2.3. `prev()` is the value before the most recent change (§5.3.7), so every change of the carrier changes what the definition reads: `x = x.prev() + 1` re-runs in the next microstep, changes `x` again, and never settles with no reaction or `after` between. The scalar checker already says so (`p = p.prev() + 1` is `E0339`, as `p = p + 1` is), so the element rule agrees with the scalar one. It is not a false positive.
+- **Probes at 907f73b74:**
+  - Loops: `b[0] = b[0].prev() + 1` is `E0339` "`b[0]`"; `b[1] = b[2] + 1; b[2] = b[1];` is `E0339` naming `b[1]`, `b[2]`; `b[1] = b[at] + 1` is `E0339`.
+  - No loop: `b[0] = b[1].prev() + 1` elaborates, as do the chain `b[1] = b[0] + 1; b[2] = b[1] + 1` and the generated chain `for k in 1..4 { b[k] = b[k - 1] + 1; }`.
+  - With the CLI, `cyc4.msl` now stops at elaboration (`E0339`), before any compile.
+- **Re-run** (PIPERINE_NGSPICE unset):
+  - `cargo build --workspace --exclude piperine-lang-server --all-targets`: 0 warnings.
+
+| Run | Passed | Failed |
+| --- | --- | --- |
+| `piperine` root, `--no-fail-fast` | 420 | 0 |
+| `piperine-lang` | 1376 | 0 |
+| `piperine-digital-solver` | 160 | 0 |
+| `piperine-api --test probes --test carrier_arrays` | 17 | 0 |
+| `piperine-cli --test docs --test book` | 72 | 0 |
+| `piperine-parity --test source_carrier_arrays --test source_generation` | 24 | 0 |
