@@ -31,8 +31,9 @@ pub(super) struct DriveBook {
     pub(super) elements: Vec<(DeclId, Element, DriveKind, Span)>,
     /// The carriers an undelayed definition drives: the definition gives the carrier its value from `(0, 0)`.
     pub(super) undelayed: BTreeSet<DeclId>,
-    /// The arrays of carriers an undelayed definition of one element drives: those elements have a value from `(0, 0)` on.
-    pub(super) undelayed_elements: BTreeSet<DeclId>,
+    /// The elements of arrays of carriers an undelayed definition drives, with where: those elements have a value from
+    /// `(0, 0)` on (`coverage.rs`).
+    pub(super) undelayed_elements: Vec<(DeclId, Element, Span)>,
 }
 
 impl Checker<'_> {
@@ -160,7 +161,7 @@ impl Checker<'_> {
 
     /// A definition of one element of an array of carriers (`bits[0] = a`): `E0335` when another definition shares the
     /// element, `E0221` when a commit does (§5.2.4); a carrier with a definition of a part and an initial value
-    /// is `E0338` when the definition is undelayed.
+    /// is `E0338` once undelayed definitions cover every element (`coverage.rs`).
     fn define_element(&mut self, file: crate::pom::FileId, carrier: DeclId, element: Element, span: Span, undelayed: bool) {
         let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let shared = |kind: DriveKind, book: &DriveBook| book.elements.iter().any(|(c, e, k, _)| *c == carrier && *k == kind && e.overlaps(element));
@@ -169,11 +170,9 @@ impl Checker<'_> {
         } else if shared(DriveKind::Commit, &self.book) || self.book.committed.contains_key(&carrier) {
             self.coded(file, "E0221", span, format!("`{name}` has a definition and a commit of one element in one module: an element is driven by one or the other (§5.2, §8.2.20)"), "definition and commit");
         }
-        if undelayed && self.has_initial(carrier) {
-            self.coded(file, "E0338", span, format!("`{name}` has an initial value and an undelayed definition of an element: the definition would replace it in the microstep that commits it (§8.2.21)"), "initial value under an undelayed definition");
-        }
+        // an initial value under a definition of some elements is the value of the others (§8.2.21, "on the levels defined"): `E0338` is raised once every element is defined (`coverage.rs`)
         if undelayed {
-            self.book.undelayed_elements.insert(carrier);
+            self.book.undelayed_elements.push((carrier, element, span));
         }
         self.book.elements.push((carrier, element, DriveKind::Definition, span));
     }

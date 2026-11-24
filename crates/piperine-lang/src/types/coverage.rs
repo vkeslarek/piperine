@@ -1,0 +1,135 @@
+//! The elements of a carrier a driver names (§3.3.4, §8.2.20, §8.2.21). A carrier has a value from `(0, 0)` on: its
+//! initial value, or the value its one driver specifies, an undelayed definition or the `out` port of a child it is
+//! handed to. An array of carriers is `K` carriers, so the rule holds per element: an element no driver names has no
+//! value and needs an initial value (`E0187`), and the initial value of an array applies to the elements no undelayed
+//! definition names, so it is `E0338` only once every element is defined.
+
+use std::collections::BTreeSet;
+
+use crate::pom::DeclId;
+
+use super::check::Checker;
+use super::element_target::Element;
+use super::ty::Length;
+use super::Ty;
+
+/// Which elements of one carrier a set of drives names, in row-major order for nested arrays.
+#[derive(Debug)]
+pub(super) struct ElementCoverage {
+    /// The number of elements, `None` while a length is generic (the elaborator folds it per instantiation).
+    total: Option<u64>,
+    /// Whether a drive names every element: the whole carrier, an element decided at run time, or any element of an
+    /// array whose length is not known yet (one element drive stands for all, as for a generic length before).
+    everything: bool,
+    /// The elements `[first, end)` the constant drives name.
+    spans: Vec<(u64, u64)>,
+}
+
+impl ElementCoverage {
+    /// The coverage of the carrier of type `held` with no drive yet.
+    pub(super) fn of(held: &Ty) -> Self {
+        let mut total = Some(1u64);
+        let mut at = held;
+        while let Ty::Array(element, length) = at {
+            total = match (total, length) {
+                (Some(size), Length::Fixed(count)) => size.checked_mul(*count),
+                _ => None,
+            };
+            at = element;
+        }
+        ElementCoverage { total, everything: false, spans: Vec::new() }
+    }
+
+    /// A drive that reaches `element`.
+    pub(super) fn cover(&mut self, element: Element) {
+        match element {
+            Element::Whole | Element::Any => self.everything = true,
+            Element::At(_) | Element::Run(..) if self.total.is_none() => self.everything = true,
+            Element::At(at) => self.spans.push((at, at + 1)),
+            Element::Run(first, length) => self.spans.push((first, first + length)),
+        }
+    }
+
+    /// Every element is named.
+    pub(super) fn is_complete(&self) -> bool {
+        self.everything || (self.total.is_some() && self.gaps().is_empty())
+    }
+
+    /// The runs `[first, end)` of elements no drive names; empty while the total is not known.
+    fn gaps(&self) -> Vec<(u64, u64)> {
+        let Some(total) = self.total else { return Vec::new() };
+        let mut spans = self.spans.clone();
+        spans.sort_unstable();
+        let (mut gaps, mut next) = (Vec::new(), 0u64);
+        for (first, end) in spans {
+            if first > next {
+                gaps.push((next, first.min(total)));
+            }
+            next = next.max(end);
+        }
+        if next < total {
+            gaps.push((next, total));
+        }
+        gaps
+    }
+
+    /// The carrier `name` as the elements no drive names (`b[2]`, `b[1..4]`, `b[0..1], b[3..4]`), `None` when none
+    /// is left; the carrier's own name when there is nothing to tell apart.
+    pub(super) fn unnamed(&self, name: &str) -> Option<String> {
+        if self.is_complete() {
+            return None;
+        }
+        let Some(total) = self.total.filter(|total| *total > 1) else { return Some(name.to_string()) };
+        let runs: Vec<String> = self
+            .gaps()
+            .into_iter()
+            .map(|(first, end)| if end - first == 1 { format!("{name}[{first}]") } else if (first, end) == (0, total) { name.to_string() } else { format!("{name}[{first}..{end}]") })
+            .collect();
+        Some(runs.join(", "))
+    }
+}
+
+impl Checker<'_> {
+    /// The elements of `decl` (of type `held`) an undelayed definition names.
+    pub(super) fn undelayed_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
+        let mut coverage = ElementCoverage::of(held);
+        if self.book.undelayed.contains(&decl) {
+            coverage.cover(Element::Whole);
+        }
+        for (carrier, element, _) in &self.book.undelayed_elements {
+            if *carrier == decl {
+                coverage.cover(*element);
+            }
+        }
+        coverage
+    }
+
+    /// The elements of `decl` a driver specifies the value of: an undelayed definition, an `out` port of a child it is
+    /// handed to.
+    pub(super) fn driven_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
+        let mut coverage = self.undelayed_coverage(decl, held);
+        for (carrier, element, _, _) in &self.book.handed {
+            if *carrier == decl {
+                coverage.cover(*element);
+            }
+        }
+        coverage
+    }
+
+    /// `E0338` for an array of carriers with an initial value whose every element an undelayed definition names: the
+    /// initial value would apply to no element (§8.2.21). With an element left, the initial value is that element's.
+    pub(super) fn initial_values_under_element_definitions(&mut self, children: &[DeclId]) {
+        let defined: BTreeSet<DeclId> = self.book.undelayed_elements.iter().map(|(carrier, _, _)| *carrier).collect();
+        for decl in children.iter().copied().filter(|decl| defined.contains(decl)) {
+            let Some(held) = self.carriers.get(&decl).cloned() else { continue };
+            if !self.has_initial(decl) || !self.undelayed_coverage(decl, &held).is_complete() {
+                continue;
+            }
+            let Some((_, _, span)) = self.book.undelayed_elements.iter().find(|(carrier, _, _)| *carrier == decl).copied() else { continue };
+            let data = self.design.decl_data(decl);
+            let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let message = format!("`{name}` has an initial value and an undelayed definition of every element: the definitions would replace it in the microstep that commits them (§8.2.21)");
+            self.coded(data.file, "E0338", span, message, "initial value under an undelayed definition");
+        }
+    }
+}

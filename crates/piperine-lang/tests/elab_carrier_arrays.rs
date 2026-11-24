@@ -345,7 +345,9 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
                let whole = Reg(x, y);\n\
                let row = Reg(g[1], h[0]);\n\
                let one = Cell(x[2], z[1]);\n\
-               let rungs = Ladder(bl);\n}";
+               let rungs = Ladder(bl);\n\
+               let row_rest = Reg(g[0], h[1]);\n\
+               let zero = Cell(x[0], z[0]);\n}";
     let ir = Elab::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let windows: Vec<Vec<Option<piperine_ir::CarrierWindow>>> = (0..top.children().len()).map(|k| top.child_windows(k).to_vec()).collect();

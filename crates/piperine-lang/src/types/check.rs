@@ -790,6 +790,7 @@ impl<'d> Checker<'d> {
             }
         }
         self.missing_initial_values(&data.children);
+        self.initial_values_under_element_definitions(&data.children);
         self.handed_drives();
     }
 }

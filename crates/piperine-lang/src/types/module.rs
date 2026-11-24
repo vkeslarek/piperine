@@ -517,7 +517,8 @@ impl Checker<'_> {
     /// one-driver nature with no initial value needs a value type that implements `Default`, else `E0187` at the
     /// declaration naming the carrier and `Default` (once per declaration). The one driver may specify the value
     /// instead: an undelayed definition of the carrier, or an `out` port of a child instance it is handed to
-    /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An `in` port is driven by its caller.
+    /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An array of carriers is judged per element: the message
+    /// names the elements no driver names (`coverage.rs`). An `in` port is driven by its caller.
     pub(super) fn missing_initial_values(&mut self, children: &[DeclId]) {
         for decl in children.iter().copied() {
             let item = self.design.decl_data(decl).clone();
@@ -545,13 +546,11 @@ impl Checker<'_> {
             if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
-            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.undelayed_elements.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _, _)| *carrier == decl);
-            if specified_by_the_driver {
-                continue;
-            }
+            // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
             let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let Some(unnamed) = self.driven_coverage(decl, &held).unnamed(&name) else { continue };
             let found = value.name(self.design);
-            let message = format!("`{name}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
+            let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
         }
     }

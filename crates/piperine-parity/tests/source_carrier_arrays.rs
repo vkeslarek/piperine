@@ -184,12 +184,12 @@ fn a_run_time_element_index_out_of_range_names_carrier_index_instance_and_instan
 #[test]
 fn an_element_given_to_an_out_port_is_driven_by_the_child() {
     // CV-25, §5.2.6: `Cell(x[0], lines[3])` hands element 3 of `lines` to the child, which drives it with `x[0]`; the
-    // parent drives `lines[1]` itself (it toggles at every edge), and element 3 follows `x[0]` one microstep behind
+    // parent drives `own[1]` itself (it toggles at every edge), and element 3 follows `x[0]` one microstep behind
     for probe in Records::of("TogglesBench", "probe") {
         let n = Records::integer(&probe, "n") as usize;
         let x0 = (0..n).filter(|m| m % 4 == 0).count() % 2 == 1;
         assert_eq!(Records::boolean(&probe, "l3"), x0, "edge {n}: the child drives lines[3] with x[0]");
-        assert_eq!(Records::boolean(&probe, "l1"), n % 2 == 1, "edge {n}: the parent drives lines[1] itself");
+        assert_eq!(Records::boolean(&probe, "l1"), n % 2 == 1, "edge {n}: the parent drives own[1] itself");
     }
 }
 

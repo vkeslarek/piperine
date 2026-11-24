@@ -22,7 +22,7 @@ mod closures;
 mod coherence;
 mod compound;
 mod continuity;
-mod control;
+mod control; mod coverage;
 mod cover;
 mod definition;
 mod derives; mod element_target;

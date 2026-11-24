@@ -20,25 +20,30 @@ module Reg(in d: [Bit; 4], out q: [Bit; 4]) {
 module Cell(in d: Bit, out q: Bit) { q = d; }
 
 /// At edge `n` element `n % 4` of `x` toggles. `y` is `x` through a register, `z` element 2 of `x` through a cell, and
-/// `lines[3]` element 0 through a cell the child drives.
+/// `lines[3]` element 0 through a cell the child drives (every element of `lines` is handed to a cell, each element needs its
+/// driver), while the parent drives `own[1]` itself.
 module Toggles(in clk: Bit) {
     signal n: Bit<u8> = 0;
     signal x: [Bit; 4] = [false; 4];
     signal y: [Bit; 4];
     signal z: Bit;
     signal lines: [Bit; 4];
+    signal own: [Bit; 2] = [false; 2];
     let copy = Reg(x, y);
     let one = Cell(x[2], z);
     let driven = Cell(x[0], lines[3]);
+    let rest0 = Cell(x[1], lines[0]);
+    let rest1 = Cell(x[2], lines[1]);
+    let rest2 = Cell(x[3], lines[2]);
 }
 digital for Toggles {
     on clk.rise() {
         n <- n + 1;
         let k = n % 4;
         x[k] <- !x[k];
-        lines[1] <- !lines[1];
+        own[1] <- !own[1];
         let w = y;
-        emit!("probe", n = n, y0 = y[0], y1 = y[1], y2 = y[2], y3 = y[3], z = z, l3 = lines[3], l1 = lines[1]);
+        emit!("probe", n = n, y0 = y[0], y1 = y[1], y2 = y[2], y3 = y[3], z = z, l3 = lines[3], l1 = own[1]);
         emit!("whole", w0 = w[0], w1 = w[1], w2 = w[2], w3 = w[3]);
     }
     on x[0].changed() { emit!("changed", element = 0u8, n = n); }

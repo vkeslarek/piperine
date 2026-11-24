@@ -312,6 +312,8 @@ argument, an array length, generation or a template is structural." Supersedes n
 | DC8 | The whole-model check exposed the Book's generic definitions before they could check clean (T60 draft) | option (b): the unfinished-forms gate, flipped in T71, T77, T80 (section "Interim") | the coordinator's recommendation (2026-11-23); no Book test is loosened, every task lands green |
 | DC9 | New tasks need ids | T116, T117, after phase E's T115, so no id of phases D and E moves; checks C120 to C127 | ids stay unique in the feature (DC2) |
 | DC10 | A Book listing that contradicts the spec | corrected in the Book (BA1 to BA3, T116), each old form proven refused on a non-generic model | code follows the spec; the Book follows the spec |
+| DC11 | Round 2 finding 10: an array of carriers with no `Default` and one driven element was exempt from `E0187` as a whole | Per element: an element no undelayed definition and no `out` port names is `E0187` naming it; an initial value on an array with some undelayed element definitions is the value of the others, `E0338` only once every element is defined; `E0223` (an initial value under a hand-over) stays whole-array | §3.3.4, §8.2.20 "a level no definition names holds the initial value", §8.2.21 "on the levels defined"; AFK default 2026-11-24, pending user review. A length not known yet (generic) is judged as before: one element drive stands for all, as does an element index decided at run time |
+| DC12 | Round 2 finding 11: a refused whole-array definition raised `E0187` beside `P0001` | The refused drive counts as the driver for `E0187` (no cascade), as finding 3 | the refusal is the one diagnostic |
 
 ## Open questions (user)
 
