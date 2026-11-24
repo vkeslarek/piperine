@@ -196,3 +196,13 @@ fn every_view_may_drive_a_resolved_field() {
         assert_eq!(records.first(), Some(&vec![("level".to_string(), level), ("strength".to_string(), strength)]), "{top}: the settled `sda` at the first rise");
     }
 }
+
+#[test]
+fn a_generic_bundle_is_instantiated_per_type_argument() {
+    // §7 rule 11: `Pipe<T>` as `Pipe<u8>` and as `Pipe<u16>` are two bundles whose `data` fields hold an 8-bit and a 16-bit number:
+    // the producers offer 200 and 3000, and each tap records the number of its own stream at the first rising edge (5 ns).
+    let built = Model::of("generic.msl").built("PipeBench");
+    let seen = built.run(20e-9, 1e-9);
+    assert_eq!(Model::data(&built, &seen, "narrow").first(), Some(&200), "the 8-bit instance carries 200");
+    assert_eq!(Model::data(&built, &seen, "wide").first(), Some(&3000), "the 16-bit instance carries 3000, which no 8-bit field holds");
+}

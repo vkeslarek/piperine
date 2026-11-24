@@ -192,19 +192,13 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
     let chapter = Chapter::read();
     let placing = "module Top(in clk: Bit) { signal b: Stream<Option<u8>>; signal d: Stream<Option<u8>>; let s = Slice::<Option<u8>>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    // (T6 to T16, bundles type and elaborate: what is left is the generic bundle `Stream<T>`, its `flip`, its fields typed by the
-    // struct's own `T` and its function, `resolved-nets-bundles` T17 to T19, and the two signals' fields no driver of the Book's
-    // harness gives a value (`Bit` has no `Default`, §3.3.4), in the order of the source)
+    // (T6 to T19: the bundle, its `flip`, its generic fields and its function type and elaborate; what is left is the harness: the
+    // signal `b` is driven by no module on `valid` and `d` on `ready`, and a `Bit` has no `Default` (§3.3.4); T21 gives them a value)
     let wanted = [
-        ("P0001", "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet"),
-        ("P0001", "`flip` type is not supported yet"),
-        ("E0337", "mismatched types: expected `T`, found `T`"),
-        ("P0001", "a function on a bundle is not supported yet"),
-        ("E0432", "mismatched types: expected `T`, found `T`"),
         ("E0187", "`b.valid` has no initial value and its type `bool` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)"),
-        ("E0187", "`d.valid` has no initial value and its type `bool` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)"),
+        ("E0187", "`d.ready` has no initial value and its type `bool` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)"),
     ];
-    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the bundle's refusals, with no cascade from the definitions through its members");
+    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the harness's refusals, with no cascade from the bundle");
     Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8", wanted[0].0, wanted[0].1);
 }
 

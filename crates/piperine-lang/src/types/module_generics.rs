@@ -36,7 +36,8 @@ impl Checker<'_> {
             _ => None,
         }).collect();
         let outer = std::mem::replace(&mut self.generic_item, Some(module));
-        let types: Option<Vec<Ty>> = ports.iter().map(|ty| self.port_type(*ty)).collect();
+        // a bundle port is typed as its `struct` with the arguments it is written with (`Stream<T>`), so a connection can teach `T`
+        let types: Option<Vec<Ty>> = ports.iter().map(|ty| if self.design.bundle_struct_of_type(*ty).is_some() { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
         self.generic_item = outer;
         types
     }
@@ -46,7 +47,7 @@ impl Checker<'_> {
     fn learn_from_connections(&mut self, inference: &mut Inference<'_>, declared: &[Ty], args: &[Arg], file: FileId) -> Option<()> {
         let mut natures: Vec<(DeclId, DeclId)> = Vec::new();
         for (arg, port) in args.iter().zip(declared) {
-            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.infer(arg.value));
+            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.bundle_named_type(arg.value)).or_else(|| self.infer(arg.value));
             // `gnd` is a node of any nature: it names none, so it teaches nothing
             let Some(given) = given.filter(|ty| *ty != Ty::AnyNode) else { continue };
             let declared_parameter = match port.innermost() {

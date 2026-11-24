@@ -521,8 +521,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_generic_bundle_is_instantiated_per_type_argument` passes under `**Run sourcebundles**`
-- [ ] Gate check passes: Full
+- [x] `a_generic_bundle_is_instantiated_per_type_argument` passes under `**Run sourcebundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

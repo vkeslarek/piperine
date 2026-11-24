@@ -52,7 +52,7 @@ impl Checker<'_> {
 
     /// One field: the leaf `target` of a port joined to the leaf `from` of a bundle carrier.
     fn connect_leaf(&mut self, arg: ExprId, from: DeclId, target: &BundleLeaf, file: FileId, span: Span) {
-        let (Some(expected), Some(found)) = (self.leaf_type(target.decl), self.leaf_type(from)) else { return };
+        let (Some(expected), Some(found)) = (self.placed_leaf_type(target.decl), self.leaf_type(from)) else { return };
         let same = match (&expected, &found) {
             (Ty::Node(wanted), Ty::Node(given)) => NatureRules::compatible(self.design, *wanted, *given),
             _ => expected == found,
@@ -90,7 +90,7 @@ impl Checker<'_> {
 
     /// One field of a literal given to the leaf `leaf`: a carrier or a node of the leaf's nature, else `E0263`.
     fn connect_literal_leaf(&mut self, field: &FieldInit, leaf: &BundleLeaf, file: FileId) {
-        let Some(expected) = self.leaf_type(leaf.decl) else { return };
+        let Some(expected) = self.placed_leaf_type(leaf.decl) else { return };
         let given = self.declared_port(field.value);
         let fits = match (&expected, given.as_ref().map(|(_, ty)| ty)) {
             (Ty::Node(wanted), Some(Ty::Node(found))) => NatureRules::compatible(self.design, *wanted, *found),
@@ -113,6 +113,14 @@ impl Checker<'_> {
     fn literal_field_mismatch(&mut self, file: FileId, field: &FieldInit, path: &str, what: &str) {
         let message = format!("the field `{path}` of the bundle literal is not {what} (§7 rule 8)");
         self.coded(file, "E0263", field.span, message, "not a carrier of the field's nature");
+    }
+
+    /// The type of the port leaf `leaf` of the module being placed, under the arguments the placement gives its generic parameters.
+    fn placed_leaf_type(&mut self, leaf: DeclId) -> Option<Ty> {
+        match &self.design.decl_data(leaf).kind {
+            DeclKind::Port(p) => self.port_type_under_placement(p.ty),
+            _ => None,
+        }
     }
 
     /// The type of the port or signal of a leaf: a node, a carrier or an array of them.

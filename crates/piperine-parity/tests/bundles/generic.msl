@@ -1,0 +1,42 @@
+//! A generic bundle (§7 rule 11, BN-06 AC 3): `Pipe<T>` is instantiated per type argument, each instance flattened field by field.
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A stream of `T`: the producer drives `valid` and `data`, the consumer drives `ready`.
+struct Pipe<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }
+
+/// Offers `value`, as an 8-bit number.
+module Narrow(tx: Pipe<u8>) { value: u8 = 200; tx.valid = true; tx.data = value; }
+
+/// Offers `value`, as a 16-bit number.
+module Wide(tx: Pipe<u16>) { value: u16 = 3000; tx.valid = true; tx.data = value; }
+
+/// Always ready, for the 8-bit stream.
+module ReadyNarrow(rx: flip Pipe<u8>) { rx.ready = true; }
+
+/// Always ready, for the 16-bit stream.
+module ReadyWide(rx: flip Pipe<u16>) { rx.ready = true; }
+
+/// Records the 8-bit data at each rising edge.
+module TapNarrow(in clk: Bit, in s: Pipe<u8>) { }
+digital for TapNarrow { on clk.rise() { emit!("narrow", data = s.data); } }
+
+/// Records the 16-bit data at each rising edge.
+module TapWide(in clk: Bit, in s: Pipe<u16>) { }
+digital for TapWide { on clk.rise() { emit!("wide", data = s.data); } }
+
+/// Two instances of the generic bundle with different arguments, each produced, consumed and tapped.
+module PipeBench() {
+    signal clk: Bit;
+    signal a: Pipe<u8>;
+    signal b: Pipe<u16>;
+    let clock = Clock(clk);
+    let n = Narrow(a);
+    let w = Wide(b);
+    let rn = ReadyNarrow(a);
+    let rw = ReadyWide(b);
+    let tn = TapNarrow(clk, a);
+    let tw = TapWide(clk, b);
+}
