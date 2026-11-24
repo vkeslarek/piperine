@@ -344,6 +344,25 @@ impl Ty {
         }
     }
 
+    /// The width and sign of this integer type (`UInt<N>` is `(N, false)`, `Int<N>` is `(N, true)`), `None` for any other type.
+    pub fn integer_shape(&self) -> Option<(u32, bool)> {
+        match self {
+            Ty::UInt(width) => Some((*width, false)),
+            Ty::Int(width) => Some((*width, true)),
+            _ => None,
+        }
+    }
+
+    /// Whether this is an integer wider than 64 bits.
+    pub fn is_wide_integer(&self) -> bool {
+        self.integer_shape().is_some_and(|(width, _)| width > 64)
+    }
+
+    /// Whether this is a float of a width other than `f64` or an integer wider than 64 bits: the types the number-width evaluator folds.
+    pub fn is_number_width(&self) -> bool {
+        self.is_other_float() || self.is_wide_integer()
+    }
+
     /// Whether this is a float of any width: `f64`, `f32`, `f16` or `f128`.
     pub fn is_float(&self) -> bool {
         matches!(self, Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128)

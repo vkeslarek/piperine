@@ -24,42 +24,7 @@ use super::integers::DynamicInteger;
 use super::{ConstEval, ConstFault};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ExprId, LitKind, UnOp};
-use crate::types::{Method, Ty};
-
-/// The format of a float type, `None` for any other type.
-fn float_format(ty: &Ty) -> Option<BinaryFormat> {
-    match ty {
-        Ty::F16 => Some(BinaryFormat::HALF),
-        Ty::F32 => Some(BinaryFormat::SINGLE),
-        Ty::F64 => Some(BinaryFormat::DOUBLE),
-        Ty::F128 => Some(BinaryFormat::QUAD),
-        _ => None,
-    }
-}
-
-/// The width and sign of an integer type, `None` for any other type.
-fn integer_shape(ty: &Ty) -> Option<(u32, bool)> {
-    match ty {
-        Ty::UInt(width) => Some((*width, false)),
-        Ty::Int(width) => Some((*width, true)),
-        _ => None,
-    }
-}
-
-/// Whether `ty` is a float of a width other than `f64`.
-fn is_other_float(ty: &Ty) -> bool {
-    matches!(ty, Ty::F16 | Ty::F32 | Ty::F128)
-}
-
-/// Whether `ty` is an integer wider than 64 bits.
-fn is_wide_integer(ty: &Ty) -> bool {
-    integer_shape(ty).is_some_and(|(width, _)| width > 64)
-}
-
-/// Whether `ty` is one of the number widths this file folds.
-fn is_number_width(ty: &Ty) -> bool {
-    is_other_float(ty) || is_wide_integer(ty)
-}
+use crate::types::{FloatText, Method, Ty};
 
 impl ConstEval<'_, '_> {
     /// The wide constants made since the last call, in handle order: the elaborator copies them
@@ -85,7 +50,7 @@ impl ConstEval<'_, '_> {
 
     /// The integer `constant` is, read at the type `ty`.
     fn integer_of(&self, ty: &Ty, constant: Constant) -> Option<DynamicInteger> {
-        let (width, signed) = integer_shape(ty)?;
+        let (width, signed) = ty.integer_shape()?;
         match constant {
             Constant::Int(value) => Some(DynamicInteger::from_i128(width, signed, value)),
             Constant::Wide(id) => self.wides.get(id.index()).map(|data| DynamicInteger::from_pattern(width, signed, &data.limbs)),
@@ -130,10 +95,10 @@ impl ConstEval<'_, '_> {
     /// never through `f64`), an integer wider than 64 bits.
     pub(super) fn number_literal(&mut self, expr: ExprId, kind: &LitKind) -> Option<Result<Constant, ConstFault>> {
         let ty = self.typed(expr)?;
-        if let Some(format) = float_format(&ty).filter(|_| is_other_float(&ty)) {
+        if let Some(format) = FloatText::format(&ty).filter(|_| ty.is_other_float()) {
             return Some(self.float_literal(expr, kind, format));
         }
-        let (width, signed) = integer_shape(&ty).filter(|(width, _)| *width > 64)?;
+        let (width, signed) = ty.integer_shape().filter(|(width, _)| *width > 64)?;
         let LitKind::Int(text) = kind else { return None };
         let value = lexer::int_value(text)?;
         let integer = DynamicInteger::from_pattern(width, signed, &[value as u64, (value >> 64) as u64]);
@@ -162,10 +127,10 @@ impl ConstEval<'_, '_> {
     /// A unary operator over a number width.
     pub(super) fn number_unary(&mut self, expr: ExprId, op: UnOp, operand: ExprId, value: Constant) -> Option<Result<Constant, ConstFault>> {
         let ty = self.typed(operand)?;
-        if !is_number_width(&ty) {
+        if !ty.is_number_width() {
             return None;
         }
-        if is_other_float(&ty) {
+        if ty.is_other_float() {
             return Some(match (op, Self::float_pattern(value)) {
                 (UnOp::Neg, Some(pattern)) => Ok(Constant::FloatBits(Self::negated(&ty, pattern))),
                 _ => Err(Self::unsupported(expr, "this operator on a float")),
@@ -181,17 +146,17 @@ impl ConstEval<'_, '_> {
 
     /// The pattern of `-x` for the float `pattern` of type `ty`: the sign bit flipped (NaN included).
     fn negated(ty: &Ty, pattern: u128) -> u128 {
-        let sign = float_format(ty).map_or(0, |format| format.sign_bit());
+        let sign = FloatText::format(ty).map_or(0, |format| format.sign_bit());
         pattern ^ sign
     }
 
     /// A binary operator when either operand is a number width.
     pub(super) fn number_binary(&mut self, expr: ExprId, op: BinOp, (lhs, left): (ExprId, Constant), (rhs, right): (ExprId, Constant)) -> Option<Result<Constant, ConstFault>> {
         let ty = self.typed(lhs)?;
-        if is_other_float(&ty) {
+        if ty.is_other_float() {
             return Some(self.float_binary(expr, op, &ty, left, right));
         }
-        if is_wide_integer(&ty) {
+        if ty.is_wide_integer() {
             let amount_ty = self.typed(rhs)?;
             return Some(self.integer_binary_wide(expr, op, &ty, left, (&amount_ty, right)));
         }
@@ -263,10 +228,10 @@ impl ConstEval<'_, '_> {
     /// A catalogue row applied to a receiver that is a number width.
     pub(super) fn number_method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], method: Method, receiver: Constant, values: &[Constant]) -> Option<Result<Constant, ConstFault>> {
         let ty = self.typed(recv)?;
-        if is_other_float(&ty) {
+        if ty.is_other_float() {
             return Some(self.float_method(expr, &ty, method, receiver, values));
         }
-        if is_wide_integer(&ty) {
+        if ty.is_wide_integer() {
             let arg_types: Vec<Ty> = args.iter().filter_map(|arg| self.typed(*arg)).collect();
             return Some(self.integer_method(expr, &ty, method, receiver, values, &arg_types));
         }
@@ -331,7 +296,7 @@ impl ConstEval<'_, '_> {
     /// clamped once from the source (§1.4.5), never through an intermediate format.
     pub(super) fn number_cast(&mut self, expr: ExprId, source: &Ty, value: Constant) -> Option<Result<Constant, ConstFault>> {
         let target = self.typed(expr)?;
-        if !is_number_width(source) && !is_number_width(&target) {
+        if !source.is_number_width() && !target.is_number_width() {
             return None;
         }
         Some(self.cast_number(expr, source, &target, value))
@@ -340,28 +305,28 @@ impl ConstEval<'_, '_> {
     /// The conversion of `value` of type `source` to `target`.
     fn cast_number(&mut self, expr: ExprId, source: &Ty, target: &Ty, value: Constant) -> Result<Constant, ConstFault> {
         let refused = || Self::unsupported(expr, "this cast");
-        if let Some(from) = float_format(source) {
+        if let Some(from) = FloatText::format(source) {
             let pattern = Self::float_pattern(value).ok_or_else(refused)?;
-            if let Some(to) = float_format(target) {
+            if let Some(to) = FloatText::format(target) {
                 return Ok(Self::float_constant(target, NumberConversion::float_to_float(from, pattern, to)));
             }
-            let (width, signed) = integer_shape(target).ok_or_else(refused)?;
+            let (width, signed) = target.integer_shape().ok_or_else(refused)?;
             let integer = DynamicInteger::from_float(width, signed, from, pattern);
             return Ok(self.integer_constant(&integer));
         }
         let integer = match (source, value) {
             (Ty::Bool, Constant::Bool(flag)) => {
-                let (width, signed) = integer_shape(target).unwrap_or((1, false));
+                let (width, signed) = target.integer_shape().unwrap_or((1, false));
                 DynamicInteger::from_i128(width, signed, i128::from(flag))
             }
             // an enum without fields converts to its discriminant
-            (_, Constant::Int(discriminant)) if integer_shape(source).is_none() => DynamicInteger::from_i128(128, true, discriminant),
+            (_, Constant::Int(discriminant)) if source.integer_shape().is_none() => DynamicInteger::from_i128(128, true, discriminant),
             (_, constant) => self.integer_of(source, constant).ok_or_else(refused)?,
         };
-        if let Some(to) = float_format(target) {
+        if let Some(to) = FloatText::format(target) {
             return Ok(Self::float_constant(target, integer.to_float(to)));
         }
-        let (width, signed) = integer_shape(target).ok_or_else(refused)?;
+        let (width, signed) = target.integer_shape().ok_or_else(refused)?;
         let converted = integer.convert(width, signed);
         Ok(self.integer_constant(&converted))
     }
