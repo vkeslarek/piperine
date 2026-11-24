@@ -1,0 +1,98 @@
+//! Generation in a module body (generics GN-17): a bank of resistors in parallel made by a `for`, an `if` over a param that
+//! picks one arm, and a grid made by nested `for`s. The expected values are computed by the test, from the rule it cites.
+
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Vdc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vdc { v(p) +> dc; }
+
+// `count` resistors of `r` ohms in parallel: `r / count` ohms
+module Parallel(a: Electrical, b: Electrical) {
+    count: usize = 4;
+    r: f64 = 4k;
+    for k in 0..count {
+        pub let rk = Resistor(a, b) { r };
+    }
+}
+
+// the element `k` is `k + 1` times a unit: a loop variable in the param block
+module Ramp(a: Electrical, b: Electrical) {
+    count: usize = 3;
+    for k in 0..count {
+        pub let rk = Resistor(a, b) { r: 1k * ((k + 1) as f64) };
+    }
+}
+
+// one arm only: a low value for a bypass, a high one otherwise
+module Choice(a: Electrical, b: Electrical) {
+    bypass: bool = false;
+    if bypass {
+        let low = Resistor(a, b) { r: 1.0 };
+    } else {
+        let high = Resistor(a, b) { r: 1M };
+    }
+}
+
+// nested loops: `rows` rows of `columns` resistors; every cell joins the two rails, so `rows * columns` in parallel
+module Grid(a: Electrical, b: Electrical) {
+    rows: usize = 2;
+    columns: usize = 3;
+    for i in 0..rows {
+        for j in 0..columns {
+            pub let cell = Resistor(a, b) { r: 6k };
+        }
+    }
+}
+
+module FourRig() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let src = Vdc(top) { dc: 1.0 };
+    let feed = Resistor(top, mid) { r: 1k };
+    pub let bank = Parallel(mid, gnd) { count: 4, r: 4k };
+}
+
+module OneRig() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let src = Vdc(top) { dc: 1.0 };
+    let feed = Resistor(top, mid) { r: 1k };
+    pub let bank = Parallel(mid, gnd) { count: 1, r: 4k };
+}
+
+module NoneRig() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let src = Vdc(top) { dc: 1.0 };
+    let feed = Resistor(top, mid) { r: 1k };
+    pub let bank = Parallel(mid, gnd) { count: 0, r: 4k };
+    let keep = Resistor(mid, gnd) { r: 1k };
+}
+
+module RampRig() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let src = Vdc(top) { dc: 1.0 };
+    let feed = Resistor(top, mid) { r: 1k };
+    pub let ramp = Ramp(mid, gnd);
+}
+
+module ChoiceRig() {
+    signal top: Electrical;
+    signal low_mid: Electrical;
+    signal high_mid: Electrical;
+    let src = Vdc(top) { dc: 1.0 };
+    let low_feed = Resistor(top, low_mid) { r: 1k };
+    let high_feed = Resistor(top, high_mid) { r: 1k };
+    pub let low = Choice(low_mid, gnd) { bypass: true };
+    pub let high = Choice(high_mid, gnd);
+}
+
+module GridRig() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let src = Vdc(top) { dc: 1.0 };
+    let feed = Resistor(top, mid) { r: 1k };
+    pub let grid = Grid(mid, gnd);
+}
