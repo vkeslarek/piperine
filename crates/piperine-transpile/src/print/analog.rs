@@ -880,12 +880,16 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         // devices.msl:36-42. The terms read the limited `vd` (the site's held value, slot 0), not
         // `v(a, k)`; `vcrit` reaches only the `limit` site's seed and closure, so the terms' slice
         // has no `let vcrit`, and `limit(…)` is the held value `vd_limit_`. Reads in the plan's
-        // order: the limit value, the params is, n, cj0, then temperature_ (through `vt()`) and
+        // order: the limit value, the params is, n, cj0, then temperature_ and temperature_given_ (through `vt()`) and
         // gmin_. Neither term is affine (`exp` of the limited value; a charge).
         let diode = "\
 // Diode.analog @ devices.msl:31:1
-fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, gmin_: R) -> [R; 2] {
-    let nvt = n * vt(temperature_);
+fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, temperature_given_: bool, gmin_: R) -> [R; 2] {
+    let nvt = n * vt(if temperature_given_ {
+        temperature_
+    } else {
+        R::constant(300.15)
+    });
     let vd = vd_limit_;
     let id = is * ((vd / nvt).exp() - R::constant(1.0));
     // contribution to i(a, k), branch b0 @ devices.msl:41:17
@@ -894,16 +898,17 @@ fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, gmin
     [b0_flow_, b0_charge_]
 }
 
-// function 1 `terms`: reads vd_limit_, is, n, cj0, temperature_, gmin_; writes b0.flow, b0.charge @ devices.msl:31:1
+// function 1 `terms`: reads vd_limit_, is, n, cj0, temperature_, temperature_given_, gmin_; writes b0.flow, b0.charge @ devices.msl:31:1
 fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     let vd_limit_ = cx_.f64(0);
     let is = cx_.f64(1);
     let n = cx_.f64(2);
     let cj0 = cx_.f64(3);
     let temperature_ = cx_.f64(4);
-    let gmin_ = cx_.f64(5);
+    let temperature_given_ = cx_.bool(5);
+    let gmin_ = cx_.f64(6);
     // the evaluation at the iterate
-    let at_iterate_ = Self::terms_block(Dual::<1>::seeded(vd_limit_, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature_), Dual::<1>::constant(gmin_));
+    let at_iterate_ = Self::terms_block(Dual::<1>::seeded(vd_limit_, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature_), temperature_given_, Dual::<1>::constant(gmin_));
     // term 0 `b0.flow`: its value at the iterate
     cx_.set(0, at_iterate_[0].v);
     // term 1 `b0.charge`: its value at the iterate

@@ -140,14 +140,13 @@ impl Interpreter {
     /// tolerances it declares.
     fn amended_forms(body: Body<'_>) -> Vec<&'static str> {
         let targets = Self::targets(body);
-        let (mut time, mut stat, mut flow, mut previous, mut fired, mut freq, mut given) = (false, false, false, false, false, false, false);
+        let (mut time, mut stat, mut flow, mut previous, mut fired, mut freq) = (false, false, false, false, false, false);
         let mut analysis = [false; 4];
         for t in targets {
             let deps = body.dependencies(t);
             time |= deps.env.contains(&Env::Time);
             stat |= deps.env.contains(&Env::Static);
             freq |= deps.env.contains(&Env::Freq);
-            given |= deps.env.contains(&Env::TemperatureGiven);
             for (held, kind) in analysis.iter_mut().zip([AnalysisKind::Dc, AnalysisKind::Transient, AnalysisKind::Ac, AnalysisKind::Noise]) {
                 *held |= deps.env.contains(&Env::Analysis(kind));
             }
@@ -171,8 +170,6 @@ impl Interpreter {
             (flow, "the flow of a potential branch"),
             (previous, "the previous value of a carrier"),
             (freq, "freq()"),
-            // GN-29: whether the run set its temperature is the device ABI's; the interpreter has no such flag
-            (given, "temperature() given"),
             (analysis[0], "analysis(Dc)"),
             (analysis[1], "analysis(Transient)"),
             (analysis[2], "analysis(Ac)"),

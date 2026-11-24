@@ -60,15 +60,4 @@ impl Elaboration<'_, '_> {
         let val = self.emit(Expr::Env(Env::Temperature), ValueType::F64, origin);
         Pair { is, val, literal: None }
     }
-
-    /// Whether `default` is the ambient temperature and `pair` the halves of `temperature()`: the run's temperature
-    /// reads the ambient, 300.15 K, when the run sets none (§8.5.3), so `temperature().unwrap_or(AMBIENT_TEMPERATURE)`
-    /// is the temperature read itself and needs no given flag.
-    pub(super) fn is_ambient_fallback(&self, pair: &Pair, default: LoweredExpr) -> bool {
-        let given = matches!(self.ir.expr_kind(pair.is), Some(Expr::Env(Env::TemperatureGiven)));
-        given && matches!(self.ir.expr_kind(default), Some(Expr::Real(ambient)) if ambient.get() == Self::AMBIENT_TEMPERATURE)
-    }
-
-    /// `AMBIENT_TEMPERATURE` of `std::constants` (§1): 27 C in kelvin, the temperature a run that sets none reads.
-    const AMBIENT_TEMPERATURE: f64 = 300.15;
 }

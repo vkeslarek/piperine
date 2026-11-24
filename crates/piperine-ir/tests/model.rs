@@ -399,7 +399,7 @@ fn environment_reads_are_nodes() {
             .collect()
     };
     assert_eq!(envs("Vsource"), [Env::SourceScale]);
-    assert_eq!(envs("Diode"), [Env::Temperature, Env::Gmin]);
+    assert_eq!(envs("Diode"), [Env::TemperatureGiven, Env::Temperature, Env::Gmin]);
     assert_eq!(envs("Everything"), [Env::Temperature]);
 }
 
@@ -468,6 +468,7 @@ fn every_expression_records_its_type() {
         for id in Reach::body(body) {
             let ty = ir.expr_type(id);
             let ok = match ir.expr(id) {
+                Expr::Env(Env::TemperatureGiven) => *ty == ValueType::Bool,
                 Expr::Real(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Math { .. } => *ty == ValueType::F64,
                 Expr::Limit { .. } | Expr::Stim { .. } | Expr::Call { .. } => *ty == ValueType::F64,
                 Expr::Bool(_) | Expr::Unary { op: UnaryOp::Not, .. } => *ty == ValueType::Bool,

@@ -139,11 +139,11 @@ impl CompiledDiode {
     }
 
     /// The limit instance (`limit:limit0`) with `a - k = exponent * nvt`, `n = 1` and the last
-    /// limited value `last`: it reads `a`, `k`, `n`, the temperature, `LAST`, `AGE` (an iteration
+    /// limited value `last`: it reads `a`, `k`, `n`, the temperature, whether the run set it (it did), `LAST`, `AGE` (an iteration
     /// after the first) and `STATIC` (not a small-signal sweep), and writes `PROPOSED`, `LIMITED`.
     fn limit(&self, exponent: f64, last: f64) -> Call {
         let (a, k, n, temperature) = (exponent * Self::scale(), 0.0f64, 1.0f64, Self::TEMPERATURE);
-        self.call("limit:limit0", &[&a.to_le_bytes(), &k.to_le_bytes(), &n.to_le_bytes(), &temperature.to_le_bytes(), &last.to_le_bytes(), &[1u8], &[0u8]])
+        self.call("limit:limit0", &[&a.to_le_bytes(), &k.to_le_bytes(), &n.to_le_bytes(), &temperature.to_le_bytes(), &[1u8], &last.to_le_bytes(), &[1u8], &[0u8]])
     }
 
     /// The current (`terms`) with `a - k = exponent * nvt` and the limited exponent `limited`: it

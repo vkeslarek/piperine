@@ -531,9 +531,6 @@ impl Elaboration<'_, '_> {
                         let default = self.lower_expr(scope, *default);
                         scope.nesting -= 1;
                         let default = default?;
-                        if self.is_ambient_fallback(&pair, default) {
-                            return Some(pair.val);
-                        }
                         let ty = base;
                         Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: default }, ty, origin))
                     }

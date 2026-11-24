@@ -57,22 +57,24 @@ pub mod diode {
             SHAPE.get_or_init(|| {
                 let mut s = ShapeBuf::new();
                 // pin 0 `is` @ devices.msl:32:5
-                s.pin(PinSpec { origin: "devices.msl:32:5", flags: pin_flag::HAS_INIT | pin_flag::HAS_CHECK, init: &f64::to_le_bytes(1e-14), check: 6, ..PinSpec::discrete("is", role::PARAM, &F64) });
+                s.pin(PinSpec { origin: "devices.msl:32:5", flags: pin_flag::HAS_INIT | pin_flag::HAS_CHECK, init: &f64::to_le_bytes(1e-14), check: 7, ..PinSpec::discrete("is", role::PARAM, &F64) });
                 // pin 1 `n` @ devices.msl:33:5
-                s.pin(PinSpec { origin: "devices.msl:33:5", flags: pin_flag::HAS_INIT | pin_flag::HAS_CHECK, init: &f64::to_le_bytes(1.0), check: 7, ..PinSpec::discrete("n", role::PARAM, &F64) });
+                s.pin(PinSpec { origin: "devices.msl:33:5", flags: pin_flag::HAS_INIT | pin_flag::HAS_CHECK, init: &f64::to_le_bytes(1.0), check: 8, ..PinSpec::discrete("n", role::PARAM, &F64) });
                 // pin 2 `cj0` @ devices.msl:34:5
-                s.pin(PinSpec { origin: "devices.msl:34:5", flags: pin_flag::HAS_INIT | pin_flag::HAS_CHECK, init: &f64::to_le_bytes(0.0), check: 8, ..PinSpec::discrete("cj0", role::PARAM, &F64) });
+                s.pin(PinSpec { origin: "devices.msl:34:5", flags: pin_flag::HAS_INIT | pin_flag::HAS_CHECK, init: &f64::to_le_bytes(0.0), check: 9, ..PinSpec::discrete("cj0", role::PARAM, &F64) });
                 // pin 3 `a` @ devices.msl:31:18
                 s.pin(PinSpec { origin: "devices.msl:31:18", abstol: [1e-6, 1e-12], ..PinSpec::continuous("a", role::PORT) });
                 // pin 4 `k` @ devices.msl:31:33
                 s.pin(PinSpec { origin: "devices.msl:31:33", abstol: [1e-6, 1e-12], ..PinSpec::continuous("k", role::PORT) });
                 // pin 5 `temperature` @ devices.msl:31:1
                 s.pin(PinSpec { origin: "devices.msl:31:1", global: global::TEMPERATURE, ..PinSpec::discrete("temperature", role::GLOBAL, &F64) });
-                // pin 6 `check:is` @ devices.msl:32:5
+                // pin 6 `temperature_given` @ devices.msl:31:1
+                s.pin(PinSpec { origin: "devices.msl:31:1", global: global::TEMPERATURE_GIVEN, ..PinSpec::discrete("temperature_given", role::GLOBAL, &BIT) });
+                // pin 7 `check:is` @ devices.msl:32:5
                 s.pin(PinSpec { origin: "devices.msl:32:5", ..PinSpec::discrete("check:is", role::PRIVATE, &BIT) });
-                // pin 7 `check:n` @ devices.msl:33:5
+                // pin 8 `check:n` @ devices.msl:33:5
                 s.pin(PinSpec { origin: "devices.msl:33:5", ..PinSpec::discrete("check:n", role::PRIVATE, &BIT) });
-                // pin 8 `check:cj0` @ devices.msl:34:5
+                // pin 9 `check:cj0` @ devices.msl:34:5
                 s.pin(PinSpec { origin: "devices.msl:34:5", ..PinSpec::discrete("check:cj0", role::PRIVATE, &BIT) });
                 // term 0 `b0.flow` @ devices.msl:41:17
                 s.term(TermSpec { name: "b0.flow", origin: "devices.msl:41:17", op: op::FLOW, plus: 3, minus: 4, abstol: DEFAULT, max: DEFAULT });
@@ -90,6 +92,7 @@ pub mod diode {
                         Cell { kind: cell::PIN, index: 0, part: part::VALUE }, // is
                         Cell { kind: cell::PIN, index: 1, part: part::VALUE }, // n
                         Cell { kind: cell::PIN, index: 5, part: part::VALUE }, // temperature
+                        Cell { kind: cell::PIN, index: 6, part: part::VALUE }, // temperature_given
                         Cell { kind: cell::INPUT, index: 0, part: part::LAST }, // vd.LAST
                         Cell { kind: cell::INPUT, index: 0, part: part::AGE }, // vd.AGE
                         Cell { kind: cell::AMBIENT, index: ambient::STATIC, part: part::VALUE }, // STATIC
@@ -114,6 +117,7 @@ pub mod diode {
                         Cell { kind: cell::PIN, index: 1, part: part::VALUE }, // n
                         Cell { kind: cell::PIN, index: 2, part: part::VALUE }, // cj0
                         Cell { kind: cell::PIN, index: 5, part: part::VALUE }, // temperature
+                        Cell { kind: cell::PIN, index: 6, part: part::VALUE }, // temperature_given
                         Cell { kind: cell::AMBIENT, index: ambient::GMIN, part: part::VALUE }, // GMIN
                     ],
                     writes: vec![
@@ -134,7 +138,7 @@ pub mod diode {
                         Cell { kind: cell::PIN, index: 0, part: part::VALUE }, // is
                     ],
                     writes: vec![
-                        Cell { kind: cell::PIN, index: 6, part: part::VALUE }, // check:is
+                        Cell { kind: cell::PIN, index: 7, part: part::VALUE }, // check:is
                     ],
                     partials: vec![],
                     ..FunctionSpec::default()
@@ -147,7 +151,7 @@ pub mod diode {
                         Cell { kind: cell::PIN, index: 1, part: part::VALUE }, // n
                     ],
                     writes: vec![
-                        Cell { kind: cell::PIN, index: 7, part: part::VALUE }, // check:n
+                        Cell { kind: cell::PIN, index: 8, part: part::VALUE }, // check:n
                     ],
                     partials: vec![],
                     ..FunctionSpec::default()
@@ -160,7 +164,7 @@ pub mod diode {
                         Cell { kind: cell::PIN, index: 2, part: part::VALUE }, // cj0
                     ],
                     writes: vec![
-                        Cell { kind: cell::PIN, index: 8, part: part::VALUE }, // check:cj0
+                        Cell { kind: cell::PIN, index: 9, part: part::VALUE }, // check:cj0
                     ],
                     partials: vec![],
                     ..FunctionSpec::default()
@@ -170,26 +174,31 @@ pub mod diode {
         }
 
         // Diode.analog, `limit` site `vd`: its input, its function and its seed @ devices.msl:39:17
-        fn vd_limit_block<R: Real>(a: R, k: R, is: R, n: R, temperature_: R) -> (R, impl Fn(R, R) -> R, R) {
-            let nvt = n * vt(temperature_);
+        fn vd_limit_block<R: Real>(a: R, k: R, is: R, n: R, temperature_: R, temperature_given_: bool) -> (R, impl Fn(R, R) -> R, R) {
+            let nvt = n * vt(if temperature_given_ {
+                temperature_
+            } else {
+                R::constant(300.15)
+            });
             let vcrit = nvt * (nvt / (R::constant(2.0).sqrt() * is)).ln();
             (a - k, move |new, old| pnjlim(new, old, nvt, vcrit), vcrit)
         }
 
-        // function 0 `limit:vd`: reads a, k, is, n, temperature_, vd_last_, vd_age_, is_static_; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
+        // function 0 `limit:vd`: reads a, k, is, n, temperature_, temperature_given_, vd_last_, vd_age_, is_static_; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
         fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
             let a = cx_.f64(0);
             let k = cx_.f64(1);
             let is = cx_.f64(2);
             let n = cx_.f64(3);
             let temperature_ = cx_.f64(4);
-            let vd_last_ = cx_.f64(5);
-            let vd_age_ = cx_.u8(6);
-            let is_static_ = cx_.bool(7);
+            let temperature_given_ = cx_.bool(5);
+            let vd_last_ = cx_.f64(6);
+            let vd_age_ = cx_.u8(7);
+            let is_static_ = cx_.bool(8);
             // PROPOSED: the input x and its partials, at the iterate
-            let (proposed_, _, _) = Self::vd_limit_block(Dual::<2>::seeded(a, 0), Dual::<2>::seeded(k, 1), Dual::<2>::constant(is), Dual::<2>::constant(n), Dual::<2>::constant(temperature_));
+            let (proposed_, _, _) = Self::vd_limit_block(Dual::<2>::seeded(a, 0), Dual::<2>::seeded(k, 1), Dual::<2>::constant(is), Dual::<2>::constant(n), Dual::<2>::constant(temperature_), temperature_given_);
             // the function and the seed, over plain f64
-            let (_, f_, seed_) = Self::vd_limit_block(a, k, is, n, temperature_);
+            let (_, f_, seed_) = Self::vd_limit_block(a, k, is, n, temperature_, temperature_given_);
             // rule `the seed start`: nothing held (AGE 0), or in an equilibrium solve a value held from the last accepted solution (STATIC, AGE 1)
             let from_seed_ = vd_age_ == 0 || (is_static_ && vd_age_ == 1);
             // rule `old`: LAST, or where the seed starts the seed
@@ -211,8 +220,12 @@ pub mod diode {
         }
 
         // Diode.analog @ devices.msl:31:1
-        fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, gmin_: R) -> [R; 2] {
-            let nvt = n * vt(temperature_);
+        fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, temperature_given_: bool, gmin_: R) -> [R; 2] {
+            let nvt = n * vt(if temperature_given_ {
+                temperature_
+            } else {
+                R::constant(300.15)
+            });
             let vd = vd_limit_;
             let id = is * ((vd / nvt).exp() - R::constant(1.0));
             // contribution to i(a, k), branch b0 @ devices.msl:41:17
@@ -221,16 +234,17 @@ pub mod diode {
             [b0_flow_, b0_charge_]
         }
 
-        // function 1 `terms`: reads vd_limit_, is, n, cj0, temperature_, gmin_; writes b0.flow, b0.charge @ devices.msl:31:1
+        // function 1 `terms`: reads vd_limit_, is, n, cj0, temperature_, temperature_given_, gmin_; writes b0.flow, b0.charge @ devices.msl:31:1
         fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
             let vd_limit_ = cx_.f64(0);
             let is = cx_.f64(1);
             let n = cx_.f64(2);
             let cj0 = cx_.f64(3);
             let temperature_ = cx_.f64(4);
-            let gmin_ = cx_.f64(5);
+            let temperature_given_ = cx_.bool(5);
+            let gmin_ = cx_.f64(6);
             // the evaluation at the iterate
-            let at_iterate_ = Self::terms_block(Dual::<1>::seeded(vd_limit_, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature_), Dual::<1>::constant(gmin_));
+            let at_iterate_ = Self::terms_block(Dual::<1>::seeded(vd_limit_, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature_), temperature_given_, Dual::<1>::constant(gmin_));
             // term 0 `b0.flow`: its value at the iterate
             cx_.set(0, at_iterate_[0].v);
             // term 1 `b0.charge`: its value at the iterate

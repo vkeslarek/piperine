@@ -109,6 +109,12 @@ impl<'b> Ex<'b> {
         self.b.expr(Expr::Env(env), ValueType::F64, o)
     }
 
+    /// A boolean environment read (`temperature_given`).
+    pub fn env_flag(&mut self, env: Env) -> ExprId {
+        let o = self.origin();
+        self.b.expr(Expr::Env(env), ValueType::Bool, o)
+    }
+
     pub fn limit(&mut self, site: u32, x: ExprId, f: ExprId, seed: Option<ExprId>) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Limit { site, x, f, seed }, ValueType::F64, o)
@@ -411,7 +417,10 @@ impl Devices {
         // let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
         let mut e = Ex::new(b, Self::FILE, 37, 17);
         let p = e.param(n);
-        let kelvin = e.env(Env::Temperature);
+        let given = e.env_flag(Env::TemperatureGiven);
+        let temperature = e.env(Env::Temperature);
+        let ambient = e.real(300.15);
+        let kelvin = e.if_f64(given, temperature, ambient);
         let call = e.call(vt, vec![kelvin]);
         let init = e.binary(BinaryOp::Mul, p, call);
         let let_nvt = b.stmt(Stmt::Let { local: nvt, init });

@@ -16,7 +16,7 @@ body Diode
   local vcrit: f64
   local vd: f64
   analog
-    let nvt = (n * vt(temperature()))
+    let nvt = (n * vt(if temperature_given() { temperature() } else { 300.15 }))
     let vcrit = (nvt * ln((nvt / (sqrt(2.0) * is))))
     let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, nvt, vcrit), seed vcrit)
     let id = (is * (exp((vd / nvt)) - 1.0))

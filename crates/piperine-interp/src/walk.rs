@@ -46,6 +46,8 @@ pub(crate) struct Frame {
     pub temperature: Option<Dual>,
     pub gmin: Option<Dual>,
     pub source_scale: Option<Dual>,
+    /// Whether the run set its temperature (`temperature()` is `Some`): a flag, not a number.
+    pub temperature_given: Option<bool>,
 }
 
 impl Frame {
@@ -278,7 +280,6 @@ impl<'a> Walk<'a> {
             // The forms msl-fixes added are named as the source spells them.
             Expr::Method { method, .. } => format!("method `{}`", method.name()),
             Expr::Env(Env::Freq) => "form `freq()`".to_string(),
-            Expr::Env(Env::TemperatureGiven) => "form `temperature()` given".to_string(),
             Expr::Env(Env::Analysis(kind)) => format!("form `analysis({kind:?})`"),
             Expr::Fired(_) => "form `fired`".to_string(),
             Expr::Unwrap { message: Some(_), .. } => "form `expect`".to_string(),
@@ -484,6 +485,9 @@ impl<'a> Walk<'a> {
     fn read_form(&self, id: ExprId) -> Option<Value> {
         let analog = self.analog.as_ref()?;
         let f = &analog.frame;
+        if let Expr::Env(piperine_ir::Env::TemperatureGiven) = self.ir.expr(id) {
+            return Some(f.temperature_given.map_or(Value::Unread, Value::Bool));
+        }
         let read = match self.ir.expr(id) {
             Expr::Probe { plus, minus } => f.probe(*plus, *minus),
             Expr::Env(env) => Frame::read(Some(match env {

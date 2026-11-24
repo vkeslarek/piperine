@@ -1,6 +1,6 @@
 //! The design as one Rust source (feature `ir-rust`, RS-01 AC 2 and 3, RS-02 AC 1, 2 and 5, the
 //! edge cases 1, 2 and 4; checks C2, C3, C6, C10, C100, C101, C103): the five M1 bodies, each the
-//! design alone, print as the pinned files of `tests/golden/`; a second transpilation gives the
+//! design alone, print as the pinned files of `tests/golden/` (`PIPERINE_UPDATE_GOLDEN=1` rewrites them); a second transpilation gives the
 //! same bytes; every module, function, shape entry and function arm sits under a comment with its
 //! IR path and `file:line:col`; each IR function is a generic `fn` and each running body a `mod`
 //! with a `Device` impl; a keyword name is raw in Rust and unchanged as an ABI name; a design
@@ -57,6 +57,9 @@ fn golden(name: &str) -> PathBuf {
 fn the_five_m1_bodies_print_as_the_golden_files() {
     for (name, ir) in m1() {
         let path = golden(name);
+        if std::env::var_os("PIPERINE_UPDATE_GOLDEN").is_some() {
+            std::fs::write(&path, source(ir.clone())).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        }
         let pinned = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         assert_eq!(source(ir), pinned, "{name}: the source differs from {}", path.display());
     }

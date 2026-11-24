@@ -51,7 +51,7 @@ impl Junction {
         }
     }
 
-    /// `limit:vd` reads `[a, k, is, n, temperature, LAST, AGE, STATIC]`.
+    /// `limit:vd` reads `[a, k, is, n, temperature, temperature given, LAST, AGE, STATIC]`; the run set its temperature.
     fn reads(&self, va: f64, vk: f64, last: f64, age: u8, is_static: bool) -> Vec<In> {
         vec![
             In::F64(va),
@@ -59,6 +59,7 @@ impl Junction {
             In::F64(self.is),
             In::F64(self.n),
             In::F64(self.t),
+            In::Byte(1),
             In::F64(last),
             In::Byte(age),
             In::Byte(u8::from(is_static)),

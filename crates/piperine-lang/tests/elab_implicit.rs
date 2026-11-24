@@ -28,10 +28,10 @@ fn the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled() {
     let ir = Elab::ir(&Resistors::source("let t = temperature().unwrap_or(1.0); i(p, n) +> v(p, n) / r;", "r: 1k, m: Some(4.0)"), "Top");
     let text = ir.print_structural();
     assert!(text.contains("temperature_given()") && text.contains("temperature()"), "the pair of environment reads: {text}");
-    // the ambient fallback (§8.5.3) is the run's temperature itself: a run that sets none reads the ambient, so no
-    // given flag is read
+    // the ambient fallback (§8.5.3) is no special case: `unwrap_or` is the ordinary `Option` method, so the given flag
+    // is read and selects between the temperature and the constant
     let ambient = Elab::ir(&Resistors::source("let t = temperature().unwrap_or(AMBIENT_TEMPERATURE); i(p, n) +> v(p, n) / r;", "r: 1k"), "Top").print_structural();
-    assert!(ambient.contains("let t = temperature()") && !ambient.contains("temperature_given"), "{ambient}");
+    assert!(ambient.contains("temperature_given()") && ambient.contains("300.15"), "{ambient}");
     let plain = Elab::ir(&Resistors::source("i(p, n) +> v(p, n) / r;", "r: 1k"), "Top").print_structural();
     let scaled = |text: &str| text.lines().filter(|l| l.contains("probe(p, n)")).map(str::to_string).collect::<Vec<_>>();
     assert_eq!(scaled(&text), scaled(&plain), "a bound `m` scales nothing: {text}");

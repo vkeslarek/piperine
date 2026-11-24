@@ -102,7 +102,7 @@ fn pins_come_in_the_declared_order() {
     assert_eq!(names("Capacitor"), ["c", "p", "n", "check:c"]);
     assert_eq!(names("Vsource"), ["dc", "ac", "p", "n", "b0.flow"]);
     assert_eq!(names("Isource"), ["dc", "ac", "p", "n"]);
-    assert_eq!(names("Diode"), ["is", "n", "cj0", "a", "k", "temperature", "check:is", "check:n", "check:cj0"]);
+    assert_eq!(names("Diode"), ["is", "n", "cj0", "a", "k", "temperature", "temperature_given", "check:is", "check:n", "check:cj0"]);
 
     let diode = m.module("Diode").prototype();
     let pin = |i: usize| diode.pins.get(i).copied().unwrap();
@@ -255,7 +255,7 @@ fn one_function_per_site_and_one_for_terms() {
 #[test]
 fn reads_and_partials_are_the_dependency_sets() {
     let m = Models::all();
-    // Diode pins: is=0 n=1 cj0=2 a=3 k=4 temperature=5; input vd=0.
+    // Diode pins: is=0 n=1 cj0=2 a=3 k=4 temperature=5 temperature_given=6; input vd=0.
     let diode = View { shape: m.module("Diode").prototype() };
     let (reads, _, partials) = diode.function("limit:vd");
     assert_eq!(
@@ -266,6 +266,7 @@ fn reads_and_partials_are_the_dependency_sets() {
             Cells::pin(0),
             Cells::pin(1),
             Cells::pin(5),
+            Cells::pin(6),
             Cells::input(0, part::LAST),
             Cells::input(0, part::AGE),
             Cells::ambient(ambient::STATIC),
@@ -281,6 +282,7 @@ fn reads_and_partials_are_the_dependency_sets() {
             Cells::pin(1),
             Cells::pin(2),
             Cells::pin(5),
+            Cells::pin(6),
             Cells::ambient(ambient::GMIN),
         ]
     );
@@ -328,7 +330,7 @@ fn every_entry_carries_its_origin() {
     let m = Models::all();
     let diode = m.module("Diode").prototype();
     let pins: Vec<&str> = diode.pins.iter().map(|p| p.origin.as_str()).collect();
-    assert_eq!(pins, ["devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5", "devices.msl:31:18", "devices.msl:31:33", "devices.msl:31:1", "devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5"]);
+    assert_eq!(pins, ["devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5", "devices.msl:31:18", "devices.msl:31:33", "devices.msl:31:1", "devices.msl:31:1", "devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5"]);
     let terms: Vec<&str> = diode.terms.iter().map(|t| t.origin.as_str()).collect();
     assert_eq!(terms, ["devices.msl:41:17", "devices.msl:41:17"], "the contribution that writes the branch");
     assert_eq!(diode.inputs.get(0).unwrap().origin.as_str(), "devices.msl:39:17", "the site");

@@ -173,9 +173,9 @@ impl Lab {
         Models::of(ir)
     }
 
-    /// The diode's `terms` reads: `[vd, is, n, cj0, temperature, GMIN]`.
+    /// The diode's `terms` reads: `[vd, is, n, cj0, temperature, temperature given, GMIN]`; the run set its temperature.
     fn diode_reads(vd: f64, is: f64, n: f64, cj0: f64, t: f64, gmin: f64) -> Vec<In> {
-        [vd, is, n, cj0, t, gmin].into_iter().map(In::F64).collect()
+        [In::F64(vd), In::F64(is), In::F64(n), In::F64(cj0), In::F64(t), In::Byte(1), In::F64(gmin)].into()
     }
 }
 
