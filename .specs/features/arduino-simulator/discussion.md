@@ -48,6 +48,10 @@ same firmware there, compare pin traces and cycle counts) — nothing linked.
   the future, no stock host R/D/V, no pin inputs/ADC/UART hooks, simavr sleep uses wall time,
   operating point sees the pin before the AVR ran.
 
+- **Our own emulator, no bridge** (user, 2026-11-24): no GPL bridge process (WebSocket/socket to a
+  simavr shim) — "Vamos seguir por criar o nosso emulador... vai dar trabalho mas compensa demais".
+  simavr stays a local, uncommitted black-box oracle only.
+
 ## Questions for the user
 
 1. **Board / core scope.** Start with the Uno (ATmega328P, 16 MHz) only? Later: Mega (ATmega2560),
