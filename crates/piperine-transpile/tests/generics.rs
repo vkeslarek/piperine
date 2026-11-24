@@ -7,6 +7,9 @@
 #[path = "../../piperine-ir/tests/support/digital.rs"]
 mod digital;
 #[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/devices.rs"]
+mod devices;
+#[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;
 #[allow(dead_code)]
@@ -14,7 +17,11 @@ mod alone;
 mod probe;
 
 use alone::Alone;
+use devices::{Devices, Ex};
 use digital::{Dx, Ty};
+use piperine_ir::{Addend, Branch, BranchKind, BodyId, BodyNode, BodySpec, InstanceSpec, NodeRef, NodeRole, Operator, QuantityRole, Stmt, Terminal};
+use piperine_transpile::{Settings, Transpiler};
+use std::sync::Arc;
 use piperine_ir::{Derives, Expr, FieldsForm, FunctionSpec, GenericInstance, Ir, IrBuilder, Local, Origin, ReprForm, TypeData, TypeId, TypeKind, ValueType, VariantData};
 use piperine_transpile::print::{TypeItems, ValuePrinter};
 use probe::Probe;
@@ -173,4 +180,53 @@ fn main() {
         "lowest true",
     ];
     assert_eq!(out.lines().collect::<Vec<_>>(), expected);
+}
+
+/// Bodies that lower instances of generic modules, built by hand from the MSL each one transcribes.
+struct ModuleInstances;
+
+impl ModuleInstances {
+    /// `module Load(p) { }` with `i(p) +> v(p)`, as the body `name`, an instance of `item` at `arguments`.
+    fn body(b: &mut IrBuilder, name: &str, item: &str, arguments: &[&str]) -> BodyId {
+        let nature = Devices::electrical(b);
+        let value = Ex::new(b, FILE, 2, 5).probe(Terminal::Node(0), Terminal::Ground);
+        let stmt = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
+        let body = b.body(BodySpec {
+            name: name.into(),
+            origin: Instances::origin(1),
+            params: vec![],
+            nodes: vec![BodyNode { name: "p".into(), nature, role: NodeRole::Port, init: None, origin: Instances::origin(1) }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: Some(vec![stmt]),
+            children: vec![],
+        });
+        b.mark_body_instance(body, GenericInstance { item: item.into(), arguments: arguments.iter().map(|a| a.to_string()).collect() });
+        body
+    }
+
+    /// The design of `Ladder::<3>` and the two key variants of `idt::<State>`, the first placed as the top.
+    fn design() -> Ir {
+        let mut b = IrBuilder::new();
+        let ladder = Self::body(&mut b, "Ladder::<3>", "Ladder", &["3"]);
+        Self::body(&mut b, "idt::<State>~r=1k", "idt", &["State"]);
+        Self::body(&mut b, "idt::<State>~r=2k", "idt", &["State"]);
+        let top = b.instance(InstanceSpec { path: "L".into(), name: "L".into(), body: ladder, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: Instances::origin(1) });
+        b.finish(top)
+    }
+}
+
+#[test]
+fn module_instance_names_compile_and_list_in_the_library() {
+    // GN-15 AC 2: a body named for an instance of a generic module (`Ladder::<3>`, `idt::<State>~r=1k`) prints as Rust that
+    // compiles with no warning, two instances never share a spelling, and the library lists each by its MSL name
+    let ir = ModuleInstances::design();
+    assert_eq!(ir.check(), vec![], "{ir}");
+    let cache = tempfile::tempdir().expect("a cache directory");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let compiled = Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(compiled.report().warnings, "", "rustc has nothing to say of the generated source");
+    assert_eq!(compiled.loaded().names(), vec!["Ladder::<3>", "idt::<State>~r=1k", "idt::<State>~r=2k"]);
 }

@@ -494,8 +494,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `module_instance_names_compile_and_list_in_the_library` passes under `**Run tgen**`
-- [ ] Gate check passes: Quick
+- [x] `module_instance_names_compile_and_list_in_the_library` passes under `**Run tgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
