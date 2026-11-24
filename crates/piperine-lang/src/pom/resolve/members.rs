@@ -145,8 +145,12 @@ impl Reader<'_> {
             first = self.unparenthesized(*array);
         }
         let ExprKind::Field { expr: recv, name, .. } = &self.design.expr_node(first).kind else { return None };
-        let Recv::Instance(module) = self.receiver(*recv) else { return None };
-        let item = self.member_of(module, &name.text)?;
+        // the item of a placed child, or the field of a bundle (`v(d.p, d.n)`, §7 rule 12)
+        let item = match self.receiver(*recv) {
+            Recv::Instance(module) => self.member_of(module, &name.text)?,
+            Recv::Struct(bundle) => child_field(self.design, bundle, &name.text)?,
+            _ => return None,
+        };
         let nature = self.design.nature_of(self.design.declared_type(item)?)?;
         let quantity = access.get(&segment.name.text)?.iter().copied().find(|q| self.design.decl_data(*q).parent == Some(nature))?;
         Some((*path, self.design.path_node(*path).segments.len() - 1, Resolution::Decl(quantity)))

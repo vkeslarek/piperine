@@ -399,8 +399,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_diff_bundle_connects_its_nodes_like_ports`, `a_bundle_carrier_connects_field_by_field` and `a_cell_literal_connects_each_named_field` pass under `**Run sourcebundles**`
-- [ ] Gate check passes: Quick
+- [x] `a_diff_bundle_connects_its_nodes_like_ports`, `a_bundle_carrier_connects_field_by_field` and `a_cell_literal_connects_each_named_field` pass under `**Run sourcebundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -6,6 +6,8 @@
 use std::path::{Path, PathBuf};
 
 use piperine_api::{Field, Streams};
+use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_solver::prelude::{Context, NodeIdentifier};
 use piperine_parity::project::Project;
 
 #[allow(dead_code)]
@@ -37,6 +39,13 @@ impl Model {
     /// `top` elaborated and compiled once.
     fn built(&self, top: &str) -> Built {
         build(&self.project, top)
+    }
+
+    /// `v(<name>)` of the bench `top` at its operating point.
+    fn operating_point(&self, top: &str, name: &str) -> f64 {
+        let mut running = self.project.compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let node = NodeIdentifier::Anonymous(running.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("no node `{top}.{name}`")).id().index());
+        running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves").get_node(&node).expect("a node voltage")
     }
 
     /// The integer fields of every record of the stream `name` a run wrote, in order.
@@ -92,4 +101,43 @@ fn field_commits_definitions_and_methods_follow_section_5() {
     let levels: Vec<(i128, i128, i128)> = Model::records(&built, &seen, "level").iter().map(|r| (r[0].1, r[1].1, r[2].1)).collect();
     assert_eq!(levels, [(0, 1, 0), (1, 0, 0), (0, 0, 1)], "(high, unknown, before high): unknown at (0, 0), then high after unknown, then low after high");
     assert_eq!(Model::records(&built, &seen, "acks"), [vec![("high".to_string(), 1)]], "`ack` rises once, when the level is high");
+}
+
+#[test]
+fn a_diff_bundle_connects_its_nodes_like_ports() {
+    // §7 rule 14, BN-03 AC 5: a source holds `v(d.p, d.n)` at 1 V, `d.n` is tied to ground through a field passed as a node,
+    // and the load sits on the same pair: `v(pair.p)` = 1 V, the source's level.
+    let diff = Model::of("diff.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("diff bundle", "v(pair.p)", Coordinate::OperatingPoint), 1.0, diff.operating_point("DiffBench", "pair.p"));
+    // `pair.n` is tied to ground, so the solver merges it with `gnd` (§6): every instance sees the pair as (`pair.p`, ground)
+    let structure = diff.project.elaborate("DiffBench").unwrap_or_else(|r| panic!("{r}")).print_structural();
+    for instance in ["DiffBench.w.s: Source", "DiffBench.w.l: Load"] {
+        assert!(structure.contains(&format!("instance {instance}  nodes (DiffBench.pair.p, gnd)")), "{instance} sees the pair: {structure}");
+    }
+}
+
+#[test]
+fn a_bundle_carrier_connects_field_by_field() {
+    // §7 rule 14: a bundle port handed on as a bundle carrier (`Wrap` gives its `d` to a source and a load; `Relay` its `c` to a
+    // holder) joins each field to the field of the same name: the source's and the load's pair is the bench's pair, and the
+    // holder reached through `Relay` holds the bench's bit line at its 0.5 V and sees the word line rise once, at the first
+    // rising edge, 5 ns.
+    let cells = Model::of("cells.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("relayed cell", "v(b)", Coordinate::OperatingPoint), 0.5, cells.operating_point("RelayBench", "b"));
+    let built = cells.built("RelayBench");
+    let seen = built.run(40e-9, 1e-9);
+    let lines: Vec<i128> = Model::records(&built, &seen, "word_line").iter().map(|r| r[0].1).collect();
+    assert_eq!(lines, [0, 1], "the line is low at (0, 0) and rises once");
+}
+
+#[test]
+fn a_cell_literal_connects_each_named_field() {
+    // §7 rule 8: `Cell { bl: b, wl: w }` names each field once, in an order of its own: `c.bl` is `b` (held at the holder's 0.5 V) and
+    // `c.wl` is `w` (low at (0, 0), high from the first rising edge).
+    let cells = Model::of("cells.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("cell literal", "v(b)", Coordinate::OperatingPoint), 0.5, cells.operating_point("CellBench", "b"));
+    let built = cells.built("CellBench");
+    let seen = built.run(40e-9, 1e-9);
+    let lines: Vec<i128> = Model::records(&built, &seen, "word_line").iter().map(|r| r[0].1).collect();
+    assert_eq!(lines, [0, 1], "the word line changes at (0, 0) and at the first rising edge");
 }
