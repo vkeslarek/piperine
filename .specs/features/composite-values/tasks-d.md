@@ -793,8 +793,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f128_is_ieee_binary128_bit_for_bit_in_every_operation_and_method` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`), then the Batch gate
+- [x] `f128_is_ieee_binary128_bit_for_bit_in_every_operation_and_method` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch

@@ -50,6 +50,9 @@ mod oracle;
 use exact::ExactRational;
 use num_bigint::BigInt;
 use oracle::ExactOracle;
+use piperine_abi::raw::leaf;
+use piperine_ir::ValueType;
+use piperine_plan::CarrierLayout;
 use piperine_numbers::convert::NumberConversion;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::quad::Float128;
@@ -74,6 +77,10 @@ trait Reference {
     fn compares(&self, row: &str, x: u128, y: u128) -> bool;
     /// `is_nan`, `is_finite` or `is_infinite`.
     fn classifies(&self, row: &str, x: u128) -> bool;
+    /// Whether the transcendental rows (`exp`, `sin`, `powf`, `powi`, ...) have a reference here; `f128`'s are the vectors'.
+    fn transcendental(&self) -> bool {
+        true
+    }
     /// The bytes a carrier of the type holds for `pattern`.
     fn bytes(&self, pattern: u128) -> Vec<u8> {
         ValueBytes::of_pattern(pattern, self.format().bits as usize / 8)
@@ -224,6 +231,9 @@ impl ExactReference {
 }
 
 impl Reference for ExactReference {
+    fn transcendental(&self) -> bool {
+        self.format.bits < 128
+    }
     fn name(&self) -> &'static str {
         self.name
     }
@@ -350,16 +360,21 @@ struct FloatTable<'r> {
 }
 
 impl FloatTable<'_> {
-    /// The decimal `text` read in the format (A.8 rule 8), by the exact reference.
+    /// The decimal `text` (`-3.75`, `1.5e-7`) read in the format (A.8 rule 8), by the exact reference.
     fn decimal(&self, text: &str) -> u128 {
         let format = self.reference.format();
         let (negative, digits) = match text.strip_prefix('-') {
             Some(rest) => (true, rest),
             None => (false, text),
         };
-        let (integer, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+        let (mantissa, exponent) = match digits.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => (mantissa, exponent.parse::<i64>().expect("an exponent")),
+            None => (digits, 0),
+        };
+        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
         let numerator: BigInt = format!("{integer}{fraction}").parse().expect("digits");
-        let denominator = BigInt::from(10).pow(fraction.len() as u32);
+        let scale = exponent - fraction.len() as i64;
+        let (numerator, denominator) = if scale >= 0 { (numerator * BigInt::from(10).pow(scale as u32), BigInt::from(1)) } else { (numerator, BigInt::from(10).pow((-scale) as u32)) };
         let exact = ExactRational { numerator: if negative { -numerator } else { numerator }, denominator: denominator.magnitude().clone() };
         ExactOracle::new(format).result(&exact, negative)
     }
@@ -393,19 +408,21 @@ impl FloatTable<'_> {
             cases.push(self.boolean(row, &format!("xa {symbol} xb"), reference.compares(row, a, b)));
         }
         cases.push(self.float("neg", "-xa", reference.unary("neg", a)));
-        for row in ["min", "max", "atan2", "powf", "hypot"] {
+        for row in ["min", "max", "atan2", "powf", "hypot"].into_iter().filter(|row| reference.transcendental() || !matches!(*row, "atan2" | "powf")) {
             cases.push(self.float(row, &format!("xa.{row}(xb)"), reference.binary(row, a, b)));
         }
         cases.push(self.float("rem_euclid", "xc.rem_euclid(xa)", reference.binary("rem_euclid", c, a)));
-        cases.push(self.float("powi", "xa.powi(3)", reference.power_integer(a, 3)));
+        if reference.transcendental() {
+            cases.push(self.float("powi", "xa.powi(3)", reference.power_integer(a, 3)));
+        }
         cases.push(self.float("clamp", "xc.clamp(xb, xa)", reference.clamp(c, b, a)));
-        for row in ["floor", "ceil", "round", "trunc", "fract", "signum", "abs", "sin", "cos", "tan", "atan", "sinh", "cosh", "tanh"] {
+        for row in ["floor", "ceil", "round", "trunc", "fract", "signum", "abs", "sin", "cos", "tan", "atan", "sinh", "cosh", "tanh"].into_iter().filter(|row| reference.transcendental() || !matches!(*row, "sin" | "cos" | "tan" | "atan" | "sinh" | "cosh" | "tanh")) {
             cases.push(self.float(row, &format!("xc.{row}()"), reference.unary(row, c)));
         }
-        for row in ["sqrt", "exp", "ln", "log10", "log2"] {
+        for row in ["sqrt", "exp", "ln", "log10", "log2"].into_iter().filter(|row| reference.transcendental() || *row == "sqrt") {
             cases.push(self.float(row, &format!("xa.{row}()"), reference.unary(row, a)));
         }
-        for row in ["asin", "acos"] {
+        for row in ["asin", "acos"].into_iter().filter(|_| reference.transcendental()) {
             cases.push(self.float(row, &format!("xb.{row}()"), reference.unary(row, b)));
         }
         for row in ["is_nan", "is_finite", "is_infinite"] {
@@ -413,7 +430,7 @@ impl FloatTable<'_> {
         }
         self.casts(&mut cases, a, c);
         // the same expressions over consts, folded at elaboration, are the values the run commits (CV-36)
-        for (row, expression) in [("k_add", "KA + KB"), ("k_mul", "KA * KB"), ("k_div", "KA / KB"), ("k_sin", "KC.sin()"), ("k_floor", "KC.floor()")] {
+        for (row, expression) in [("k_add", "KA + KB"), ("k_mul", "KA * KB"), ("k_div", "KA / KB"), ("k_sin", "KC.sin()"), ("k_floor", "KC.floor()")].into_iter().filter(|(row, _)| reference.transcendental() || *row != "k_sin") {
             let twin = cases.iter().find(|case| case.name == row.trim_start_matches("k_")).expect("the run's twin").expected.clone();
             cases.push(WidthCase { name: row.into(), ty: ty.into(), zero: "0.0".into(), expression: expression.into(), expected: twin });
         }
@@ -473,4 +490,142 @@ fn f16_is_ieee_binary16_bit_for_bit() {
     // once (with a guard against a near-midpoint result), conversions by exact arithmetic for every pair
     let table = FloatTable { reference: &ExactReference { format: BinaryFormat::HALF, name: "f16" } };
     table.bench("f16.msl").assert_first_edge();
+}
+
+/// The reference vectors of `piperine-numbers` (`tests/vectors/<function>.tsv`): binary128 inputs, the exact bits of the
+/// correctly rounded result computed by an independent arbitrary-precision library.
+struct Vectors;
+
+/// One row: the inputs (one or two binary128 patterns, or a pattern and an `i32` exponent) and the expected pattern.
+struct VectorRow {
+    x: u128,
+    y: Option<String>,
+    expected: u128,
+}
+
+impl Vectors {
+    /// The rows of `function`.
+    fn rows(function: &str) -> Vec<VectorRow> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../piperine-numbers/tests/vectors").join(format!("{function}.tsv"));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let bits = |field: &str| u128::from_str_radix(field, 16).expect("32 hex digits");
+        text.lines()
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .map(|line| {
+                let fields: Vec<&str> = line.split('\t').collect();
+                match fields.as_slice() {
+                    [x, expected] => VectorRow { x: bits(x), y: None, expected: bits(expected) },
+                    [x, y, expected] => VectorRow { x: bits(x), y: Some((*y).to_string()), expected: bits(expected) },
+                    other => panic!("a row of {function}.tsv has {} fields", other.len()),
+                }
+            })
+            .collect()
+    }
+}
+
+/// The `f128` rows the exact oracle does not cover: every transcendental method on inputs drawn from the vectors.
+struct VectorTable;
+
+impl VectorTable {
+    /// How many vectors each method is run on (CV-31 AC 1).
+    const PER_METHOD: usize = 50;
+
+    /// The table: for each method, `PER_METHOD` rows spread evenly over its vector file, among those whose inputs a
+    /// source literal can write (finite, within `f64`'s range, A.2 rule 8); the literal's text is checked to read back to
+    /// the row's bits by the exact reader.
+    fn bench() -> WidthBench {
+        let table = FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } };
+        let mut inputs = Vec::new();
+        let mut cases = Vec::new();
+        for (method, function) in [("exp", "exp"), ("ln", "ln"), ("log10", "log10"), ("log2", "log2"), ("sin", "sin"), ("cos", "cos"), ("tan", "tan"), ("asin", "asin"), ("acos", "acos"), ("atan", "atan"), ("sinh", "sinh"), ("cosh", "cosh"), ("tanh", "tanh"), ("atan2", "atan2"), ("powf", "powf"), ("powi", "powi")] {
+            let rows: Vec<VectorRow> = Vectors::rows(function).into_iter().filter(|row| Self::writable(&table, row.x) && row.y.as_ref().is_none_or(|y| function == "powi" || Self::writable(&table, u128::from_str_radix(y, 16).unwrap_or(u128::MAX)))).collect();
+            assert!(rows.len() >= Self::PER_METHOD, "{function}: {} writable vectors", rows.len());
+            let step = rows.len() / Self::PER_METHOD;
+            for (k, row) in rows.iter().step_by(step).take(Self::PER_METHOD).enumerate() {
+                let x = format!("x_{method}_{k}");
+                inputs.push((x.clone(), "f128".to_string(), Self::text(row.x)));
+                let expression = match (&row.y, function) {
+                    (Some(exponent), "powi") => format!("{x}.powi({exponent})"),
+                    (Some(y), _) => {
+                        let y_name = format!("y_{method}_{k}");
+                        inputs.push((y_name.clone(), "f128".to_string(), Self::text(u128::from_str_radix(y, 16).expect("a pattern"))));
+                        format!("{x}.{method}({y_name})")
+                    }
+                    (None, _) => format!("{x}.{method}()"),
+                };
+                cases.push(table.float(&format!("{method}_{k}"), &expression, row.expected));
+            }
+        }
+        WidthBench {
+            file: "f128_vectors.msl",
+            about: format!("`f128` transcendental methods from source (composite-values CV-31 AC 1, Appendix H.2 rule 6): {} vectors of each, drawn evenly from `piperine-numbers/tests/vectors`.", Self::PER_METHOD),
+            constants: Vec::new(),
+            inputs,
+            cases,
+        }
+    }
+
+    /// Whether a source literal can hold the pattern: finite, within `f64`'s range, and reading back to it.
+    fn writable(table: &FloatTable<'_>, pattern: u128) -> bool {
+        let oracle = ExactOracle::new(BinaryFormat::QUAD);
+        if oracle.is_nan(pattern) || oracle.is_infinite(pattern) {
+            return false;
+        }
+        let magnitude = pattern & !BinaryFormat::QUAD.sign_bit();
+        let largest = Conversions::float_to_float(BinaryFormat::DOUBLE, u128::from(f64::MAX.to_bits()), BinaryFormat::QUAD);
+        magnitude <= largest && table.decimal(&Self::text(pattern)) == pattern
+    }
+
+    /// The decimal text of a pattern that reads back to it, as an MSL float literal (a fraction point always present).
+    fn text(pattern: u128) -> String {
+        let text = piperine_numbers::decimal::DecimalText::shortest_scientific(pattern, BinaryFormat::QUAD);
+        let (mantissa, exponent) = match text.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => (mantissa.to_string(), format!("e{exponent}")),
+            None => (text.clone(), String::new()),
+        };
+        let mantissa = if mantissa.contains('.') { mantissa } else { format!("{mantissa}.0") };
+        format!("{mantissa}{exponent}")
+    }
+}
+
+#[test]
+fn f128_is_ieee_binary128_bit_for_bit_in_every_operation_and_method() {
+    // CV-31 AC 1, user Q4 (a): `f128` arithmetic, comparisons, `as` and the exact methods give the correctly rounded
+    // binary128 value by exact rational arithmetic; every transcendental method gives the bits of the independent
+    // vectors, 50 inputs of each drawn from across its file (zeros, subnormals, exact cases, random and extreme values)
+    FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.bench("f128.msl").assert_first_edge();
+    VectorTable::bench().assert_first_edge();
+}
+
+/// What the model of a table declares as carriers: the pin layout each carrier of a type has.
+struct PinReading;
+
+impl PinReading {
+    /// The `(leaf, count)` fields of the pin of the carrier `name` of `Bench` in `file`, and the carrier's IR type.
+    fn fields(file: &str, name: &str) -> (ValueType, Vec<(u32, u32)>) {
+        let ir = widths::WidthBench::project(file).elaborate("Bench").unwrap_or_else(|r| panic!("{r}"));
+        let bench = ir.bodies().find(|body| body.name() == "Bench").expect("Bench");
+        let carrier = bench.carriers().iter().find(|carrier| carrier.name == name).unwrap_or_else(|| panic!("no carrier {name}"));
+        let layout = CarrierLayout::of(&carrier.ty).expect("a one-leaf pin");
+        (carrier.ty.clone(), layout.fields.iter().map(|field| (field.leaf, field.count)).collect())
+    }
+}
+
+#[test]
+fn a_carried_f32_is_the_f32_leaf() {
+    // CV-29 AC 2, abi.md §3.1 P3: a `Bit<f32>` pin is the `F32` leaf of count 1, and the value committed reads back as the
+    // four little-endian bytes of the `f32` (the table's `add` is `2.5 + 0.1`)
+    assert_eq!(PinReading::fields("f32.msl", "xa"), (ValueType::F32, vec![(leaf::F32, 1)]));
+    let committed = widths::WidthBench::first_commits("f32.msl", &["add"]);
+    assert_eq!(committed, vec![(2.5f32 + 0.1f32).to_le_bytes().to_vec()]);
+}
+
+#[test]
+fn a_carried_f128_is_a_u64_field_of_count_two() {
+    // CV-31 AC 4, §2: a `Bit<f128>` pin is one `U64` field of count 2 (the 16 bytes of the binary128 bits, low limb first),
+    // and `1 + 1` committed reads back as the pattern of 2.0
+    assert_eq!(PinReading::fields("f128.msl", "xa"), (ValueType::F128, vec![(leaf::U64, 2)]));
+    let committed = widths::WidthBench::first_commits("f128.msl", &["add"]);
+    let wanted = ExactOracle::new(BinaryFormat::QUAD).add(FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.decimal("2.5"), FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.decimal("0.1"));
+    assert_eq!(committed, vec![wanted.to_le_bytes().to_vec()]);
 }

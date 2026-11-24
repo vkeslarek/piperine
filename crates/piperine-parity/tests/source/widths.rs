@@ -74,6 +74,16 @@ impl WidthBench {
         assert!(held == wanted, "{} is not the text of its table: run the test with WIDTH_MODELS_WRITE=1 to rewrite it", self.file);
     }
 
+    /// The model `file` of the directory as a project.
+    pub fn project(file: &str) -> piperine_parity::project::Project {
+        Self::RUN.project(file)
+    }
+
+    /// The bytes the carriers `names` of `Bench` in `file` hold after the first rising edge.
+    pub fn first_commits(file: &str, names: &[&str]) -> Vec<Vec<u8>> {
+        Self::RUN.first_commits(file, names)
+    }
+
     /// Runs the model to its first edge and compares every case's committed bytes with its expectation;
     /// the failure names the case and its expression.
     pub fn assert_first_edge(&self) {

@@ -1,0 +1,111 @@
+//! `f128` from source (composite-values CV-29 to CV-31, part I §1.4, Appendix H.2): operators, comparisons, methods and `as`.
+//! Generated from the table of `tests/source_number_widths.rs`: that test fails when this text differs.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+const KA: f128 = 2.5;
+const KB: f128 = 0.1;
+const KC: f128 = -3.75;
+
+module Bench() {
+    signal clk: Bit;
+    signal xa: Bit<f128> = 2.5;
+    signal xb: Bit<f128> = 0.1;
+    signal xc: Bit<f128> = -3.75;
+    signal xf: Bit<f64> = 1.1;
+    signal xi: Bit<i32> = -7;
+    signal add: Bit<f128> = 0.0;
+    signal sub: Bit<f128> = 0.0;
+    signal mul: Bit<f128> = 0.0;
+    signal div: Bit<f128> = 0.0;
+    signal lt: Bit<bool> = false;
+    signal le: Bit<bool> = false;
+    signal gt: Bit<bool> = false;
+    signal ge: Bit<bool> = false;
+    signal eq: Bit<bool> = false;
+    signal ne: Bit<bool> = false;
+    signal neg: Bit<f128> = 0.0;
+    signal min: Bit<f128> = 0.0;
+    signal max: Bit<f128> = 0.0;
+    signal hypot: Bit<f128> = 0.0;
+    signal rem_euclid: Bit<f128> = 0.0;
+    signal clamp: Bit<f128> = 0.0;
+    signal floor: Bit<f128> = 0.0;
+    signal ceil: Bit<f128> = 0.0;
+    signal round: Bit<f128> = 0.0;
+    signal trunc: Bit<f128> = 0.0;
+    signal fract: Bit<f128> = 0.0;
+    signal signum: Bit<f128> = 0.0;
+    signal abs: Bit<f128> = 0.0;
+    signal sqrt: Bit<f128> = 0.0;
+    signal is_nan: Bit<bool> = false;
+    signal is_finite: Bit<bool> = false;
+    signal is_infinite: Bit<bool> = false;
+    signal to_f64: Bit<f64> = 0.0;
+    signal to_f32: Bit<f32> = 0.0;
+    signal to_f16: Bit<f16> = 0.0;
+    signal from_f64: Bit<f128> = 0.0;
+    signal from_i32: Bit<f128> = 0.0;
+    signal to_u8_a: Bit<u8> = 0;
+    signal to_u8_c: Bit<u8> = 0;
+    signal to_i32_a: Bit<i32> = 0;
+    signal to_i32_c: Bit<i32> = 0;
+    signal to_u100_a: Bit<UInt<100>> = 0;
+    signal to_u100_c: Bit<UInt<100>> = 0;
+    signal to_i100_a: Bit<Int<100>> = 0;
+    signal to_i100_c: Bit<Int<100>> = 0;
+    signal k_add: Bit<f128> = 0.0;
+    signal k_mul: Bit<f128> = 0.0;
+    signal k_div: Bit<f128> = 0.0;
+    signal k_floor: Bit<f128> = 0.0;
+    let osc = Osc(clk) { f: 200M };
+}
+digital for Bench {
+    on clk.rise() {
+        add <- xa + xb;
+        sub <- xa - xb;
+        mul <- xa * xb;
+        div <- xa / xb;
+        lt <- xa < xb;
+        le <- xa <= xb;
+        gt <- xa > xb;
+        ge <- xa >= xb;
+        eq <- xa == xb;
+        ne <- xa != xb;
+        neg <- -xa;
+        min <- xa.min(xb);
+        max <- xa.max(xb);
+        hypot <- xa.hypot(xb);
+        rem_euclid <- xc.rem_euclid(xa);
+        clamp <- xc.clamp(xb, xa);
+        floor <- xc.floor();
+        ceil <- xc.ceil();
+        round <- xc.round();
+        trunc <- xc.trunc();
+        fract <- xc.fract();
+        signum <- xc.signum();
+        abs <- xc.abs();
+        sqrt <- xa.sqrt();
+        is_nan <- xa.is_nan();
+        is_finite <- xa.is_finite();
+        is_infinite <- xa.is_infinite();
+        to_f64 <- xa as f64;
+        to_f32 <- xa as f32;
+        to_f16 <- xa as f16;
+        from_f64 <- xf as f128;
+        from_i32 <- xi as f128;
+        to_u8_a <- xa as u8;
+        to_u8_c <- xc as u8;
+        to_i32_a <- xa as i32;
+        to_i32_c <- xc as i32;
+        to_u100_a <- xa as UInt<100>;
+        to_u100_c <- xc as UInt<100>;
+        to_i100_a <- xa as Int<100>;
+        to_i100_c <- xc as Int<100>;
+        k_add <- KA + KB;
+        k_mul <- KA * KB;
+        k_div <- KA / KB;
+        k_floor <- KC.floor();
+    }
+}
