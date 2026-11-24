@@ -18,7 +18,7 @@
 | `fn g(x) { if x > 0.0 { return x * x; } x }`, `ddx(g(v(a)), v(a))` at 0.6 V | 1.2 = 2 * 0.6: an early return is differentiated (35) |
 | `ddx(5.0 * i(a, gnd), i(a, gnd))` on a flow-only branch | 5, per §14.2.3; `ddx(i * i, i)` is `P0001` naming the flow read (L73); no silent 0 is left (36) |
 
-L73 (a flow of a flow branch read as a value) and L74 (the `fn` forms inside a `ddx` with no finite symbolic reading) are GAPS rows with an owner. The owner is `spec-closure`, an AFK default pending the user's review. That closes the "no GAPS row" half of 35 and 36. 08e39a25 lets an integer cast run in an analog-only design (the transpiler selects the full runtime when a design has an integer value) and makes `ddx` read a field of a written-out struct. Both are covered by `source_partial`. The proposed §14.2.3 amendment sits in spec.md, marked pending, not written into `docs/spec/`. That is the right place for it.
+L73 (a flow of a flow branch read as a value) and L74 (the `fn` forms inside a `ddx` with no finite symbolic reading) are GAPS rows with an owner. The owner is `spec-closure`, an AFK default, approved by the user 2026-11-23 ("Sim. E aceito os outros"). That closes the "no GAPS row" half of 35 and 36. 08e39a25 lets an integer cast run in an analog-only design (the transpiler selects the full runtime when a design has an integer value) and makes `ddx` read a field of a written-out struct. Both are covered by `source_partial`. The proposed §14.2.3 amendment sits in spec.md, marked pending, not written into `docs/spec/`. That is the right place for it.
 
 **The merge of origin/main (d734d458, `composite-values` phase C) is 24e0a009.** It had eleven conflicted files, all resolved as unions:
 - the IR model imports;
@@ -82,8 +82,8 @@ The diagnostic says "this is a bug in the elaborator, not in the model". §14.3.
 
 **For the user (round 2):**
 - Confirm the five criteria added in the closing round (point (a)).
-- Confirm the two pending amendments: AO-06 AC 2 (`noise_switch`) and the 1.05 us `delay_tline`. The fix round records both as "coordinator ruling, pending user review".
-- Findings 33 to 36 are fixed in round 3 (6c7cbb51, f6158056, 7dbd4ab2), re-verification pending. Three more criteria were added from them (AO-01 AC 12, AO-02 AC 8, AO-03 AC 10: `ac_stim` in a `ddx` value, a `delay` input and a `noise` density), and AO-01 AC 10 and AC 11 were reworded; all are marked pending user review in spec.md. GAPS L73 and L74 are owned by `spec-closure`; a §14.2.3 amendment naming the forms `ddx` differentiates is proposed to you, not written.
+- The two amendments below were approved by the user 2026-11-23 ("Sim. E aceito os outros"): AO-06 AC 2 (`noise_switch`) and the 1.05 us `delay_tline`. The fix round records both as "coordinator ruling, pending user review".
+- Findings 33 to 36 are fixed in round 3 (6c7cbb51, f6158056, 7dbd4ab2), re-verification pending. Three more criteria were added from them (AO-01 AC 12, AO-02 AC 8, AO-03 AC 10: `ac_stim` in a `ddx` value, a `delay` input and a `noise` density), and AO-01 AC 10 and AC 11 were reworded; all are marked approved by the user 2026-11-23 in spec.md. GAPS L73 and L74 are owned by `spec-closure`; a §14.2.3 amendment naming the forms `ddx` differentiates is proposed to you, not written.
 
 ## Round 1: the points the orchestrator asked about
 

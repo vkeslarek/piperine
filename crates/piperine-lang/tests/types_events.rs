@@ -658,3 +658,69 @@ fn a_bool_and_an_event_in_an_event_position_is_e0440() {
     let src = with_body("clk.changed()", "if en && clk.rise() { q <- true; }");
     checked(&design_of(&src), &src);
 }
+
+/// A function that returns `Event` (§13 rule 7) and the module that places it.
+const HANDSHAKE: &str = "fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }\n";
+
+#[test]
+fn a_function_returning_event_is_accepted_in_every_event_position() {
+    // UE-04 AC 1 and 2, §13 rule 7: a function returning `Event` is an `Event` in the head of an `on`, in a body `let`, as
+    // the result of a module, as the return value of another such function and as an operand of `||` and `&&`
+    for (what, body) in [
+        ("a head", "digital for Top { on handshake(req, ack) { } }"),
+        ("an operand of `||`", "digital for Top { on handshake(req, ack) || clk.rise() { } }"),
+        ("an operand of `&&`", "digital for Top { on handshake(req, ack) && en { } }"),
+        ("a body let", "digital for Top { on ready { } }"),
+        ("another function's value", "fn twice(req: Bit, ack: Bit) -> Event { handshake(req, ack) || handshake(ack, req) }\ndigital for Top { on twice(req, ack) { } }"),
+        ("a nested call", "fn gated(req: Bit, ack: Bit, en: Bit) -> Event { handshake(req, ack) && en }\ndigital for Top { on gated(req, ack, en) { } }"),
+    ] {
+        let src = format!("{HANDSHAKE}module Top(in clk: Bit, in req: Bit, in ack: Bit, in en: Bit) {{ let ready = handshake(req, ack); }}\n{body}");
+        let design = design_of(&src);
+        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{what}: {:?}\n{src}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        let calls = exprs_reading(&design, &types, &src, "handshake(req, ack)");
+        assert!(calls.iter().any(|call| types.ty(*call) == Some(&Ty::Event)), "{what}: the call is an `Event`");
+    }
+}
+
+#[test]
+fn a_function_returning_event_is_the_result_of_a_module() {
+    // UE-04 AC 1, §13: the call is the result of a module with an `Event` result, and a head places that module; no other
+    // placement of the call is in the source
+    let src = format!("{HANDSHAKE}module Ready(in req: Bit, in ack: Bit) -> Event {{ handshake(req, ack) }}\nmodule Top(in req: Bit, in ack: Bit) {{ }}\ndigital for Top {{ on Ready(req, ack) {{ }} }}");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let calls = exprs_reading(&design, &types, &src, "handshake(req, ack)");
+    assert!(!calls.is_empty() && calls.iter().all(|call| types.ty(*call) == Some(&Ty::Event)), "the module's result is an `Event`: {calls:?}");
+}
+
+#[test]
+fn a_generic_function_returning_event_is_an_event_at_each_nature() {
+    // UE-04 AC 1, §3.8: `crossed<N>` returns an `Event` whatever nature its argument has
+    let src = "fn crossed<N: Nature>(a: N) -> Event { cross(potential(a)) }\nmodule Top(a: Electrical, t: Thermal, out q: Bit = false) { }\ndigital for Top { on crossed(a) { q <- true; } on crossed(t) { q <- false; } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    for call in ["crossed(a)", "crossed(t)"] {
+        let reads = exprs_reading(&design, &types, src, call);
+        assert!(!reads.is_empty() && reads.iter().all(|read| types.ty(*read) == Some(&Ty::Event)), "{call} is an `Event`: {reads:?}");
+    }
+}
+
+#[test]
+fn a_function_returning_event_outside_an_event_position_is_e0441() {
+    // UE-04 AC 4, §13 rule 8: outside an event position, a guard and a reaction body an `Event` function's call is `E0441`
+    // like any `Event`; inside a guard and a reaction body it reads as a `bool` (UE-01)
+    for (body, at) in [
+        ("module Top(in req: Bit, in ack: Bit, out q: Bit) { q = handshake(req, ack); }", "handshake(req, ack)"),
+        ("module Top(in req: Bit, in ack: Bit) { let y = 1.0 + handshake(req, ack); }", "handshake(req, ack)"),
+    ] {
+        let src = format!("{HANDSHAKE}{body}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0441"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+    }
+    let src = format!("{HANDSHAKE}module Top(in clk: Bit, in req: Bit, in ack: Bit, out q: Bit = false) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- handshake(req, ack); }} on clk.fall() && handshake(req, ack) {{ }} }}");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let reads = exprs_reading(&design, &types, &src, "handshake(req, ack)");
+    assert!(reads.iter().all(|call| types.event_read(*call) && types.ty(*call) == Some(&Ty::Bool)), "read as a `bool` in a body and a guard: {reads:?}");
+}

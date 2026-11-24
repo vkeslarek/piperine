@@ -1662,14 +1662,18 @@ merge renumbers.
    skips (they are typed with their closure), so `limexp` checks and lowers like any module with a
    result; it is one `limit` instance per use, its argument moves by at most 1.0 per iteration and its
    derivative is `limexp` (section 22.2.4 rules 3 to 5).
-4. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
+4. **A function that returns `Event` is inlined where it stands** (B5, 2026-11-23; section 13 rule 7, design D14). Its call is no
+   IR function: `elab/event_functions.rs` walks the event its body yields in the caller's head, body read, guard or
+   module result, with its parameters bound as a handle inlines (`Scope::handles`), a `str` and a value (`Environment`),
+   and a function that calls another nests. The checker needed no change (generics' handle receivers type
+   `req.rise()`); the plain `Pfd3` of the Book runs from source on `composite-values`' assignment.
+5. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
    and the Book's clipper (`tran_clipper.cir`, ngspice given the harness's own step cap) agrees under
    `TRAN_VOLTAGE`; no tolerance moved. The Book's buck holds its `regulated` check from 10 ms on (largest
    deviation 9.4 mV against 50 mV).
 
 **Scope:** `crates/piperine-{ir,plan,transpile,digital-solver,solver,lang}`, the Book's chapters 8 and 10.
-**Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
-`composite-values` and `generics`.
+**Status:** Delivered, B1 to B5 (T1 to T31): L51, L52 and L53 closed.
 
 ### MD-75: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
 

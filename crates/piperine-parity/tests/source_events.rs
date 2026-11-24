@@ -408,3 +408,103 @@ fn a_guard_reads_what_the_reaction_would_read() {
     let run = Scenario::of("reads.msl", "JointBench").transient(50e-9, 10e-9);
     assert_eq!(run.instants(AnalysisKind::Transient, "joint"), [10 * NS]);
 }
+
+impl Run {
+    /// The levels `path` takes after the operating point: instant and `true` or `false`.
+    fn levels(&self, path: &str) -> Vec<(i64, bool)> {
+        self.changes(path).into_iter().filter(|(t, _)| *t > 0).map(|(t, bytes)| (t, bytes[0] == 1)).collect()
+    }
+}
+
+#[test]
+fn pfd3_rising_apart_steps_up_then_down() {
+    // §13 rule 2 (UE-01 AC 3, Independent Test): `fref` alone at 10 ns steps the state up (`up` rises), `fvco` alone at
+    // 20 ns steps it back to 0; `fvco` alone at 100 ns, the state being 0 after the pair at 80 ns, steps it to -1 (`dn`)
+    let run = Scenario::of("pfd3.msl", "PfdBench").transient(120e-9, 10e-9);
+    let up = run.levels("PfdBench.up");
+    assert_eq!(up[..2], [(10 * NS, true), (20 * NS, false)], "{up:?}");
+    let dn = run.levels("PfdBench.dn");
+    assert_eq!(dn, [(100 * NS, true)], "{dn:?}");
+    assert!(up.iter().filter(|(t, _)| *t < 60 * NS).all(|(t, _)| *t == 10 * NS || *t == 20 * NS), "nothing moves at 40 ns: {up:?}");
+}
+
+#[test]
+fn pfd3_rising_together_leaves_state_unchanged() {
+    // §13 rule 2 (UE-01 AC 3): both clocks rise in one microstep. From state 0 (40 ns) the reaction steps up first and
+    // down second, so `up` and `dn` never change there; from state 1 (80 ns, after `fref` alone at 60 ns) it steps
+    // `s < 1` false, then down: the state goes to 0, `up` falls and `dn` stays low
+    let run = Scenario::of("pfd3.msl", "PfdBench").transient(120e-9, 10e-9);
+    let up = run.levels("PfdBench.up");
+    assert!(up.iter().all(|(t, _)| *t != 40 * NS), "up did not move at 40 ns: {up:?}");
+    assert!(run.levels("PfdBench.dn").iter().all(|(t, _)| *t != 40 * NS), "dn did not move at 40 ns");
+    assert_eq!(up, [(10 * NS, true), (20 * NS, false), (60 * NS, true), (80 * NS, false)], "{up:?}");
+}
+
+/// The instants, in ns, at which the stimulus of `handshake.msl` makes a handshake: `req` rises with `ack` high.
+const HANDSHAKES: [i64; 4] = [40, 60, 110, 130];
+
+#[test]
+fn handshake_fires_when_req_rises_with_ack_high() {
+    // §13 rule 7 (UE-04 AC 2): `fn handshake(req, ack) -> Event { req.rise() && ack }` heads a reaction that runs in the
+    // microsteps where `req` rises with `ack` high: 40, 60 (both rise in one microstep), 110 and 130 ns, and not at
+    // 10 ns (`ack` low), 20 ns (`ack` rises, `req` does not) nor 80 ns (`ack` low)
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    let wanted: Vec<i64> = HANDSHAKES.iter().map(|ns| ns * NS).collect();
+    assert_eq!(run.instants(AnalysisKind::Transient, "head"), wanted);
+}
+
+#[test]
+fn an_event_function_in_every_event_position() {
+    // §13 rule 7 (UE-04 AC 1): the call is the same event in a head, a module-body `let`, a guard after another event and
+    // an operand of `||`: the guard holds at 110 ns only (`en` rises with a handshake; at 80 ns it rises with `ack` low),
+    // `either` is the handshakes plus `ack` falling at 50 and 70 ns
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    let wanted: Vec<i64> = HANDSHAKES.iter().map(|ns| ns * NS).collect();
+    assert_eq!(run.instants(AnalysisKind::Transient, "named"), wanted, "a module-body let of the call");
+    assert_eq!(run.instants(AnalysisKind::Transient, "modular"), wanted, "the result of a module");
+    assert_eq!(run.instants(AnalysisKind::Transient, "guarded"), [110 * NS], "a guard after `en.rise()`");
+    let mut either: Vec<i64> = wanted.iter().copied().chain([50 * NS, 70 * NS]).collect();
+    either.sort_unstable();
+    assert_eq!(run.instants(AnalysisKind::Transient, "either"), either, "an operand of `||`");
+}
+
+#[test]
+fn an_event_function_read_as_a_bool_says_whether_it_fired() {
+    // §13 rule 2 (UE-04 AC 3): read in a body run on either edge, the call is true exactly where it fired: at the edges of
+    // 10, 20, 80 and 100 ns it did not, at 40, 60, 110 and 130 ns it did
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    let read: Vec<(i64, bool)> = run.records(AnalysisKind::Transient, "read").into_iter().map(|(t, r)| (t, Run::flag(&r, "shaken"))).collect();
+    let wanted: Vec<(i64, bool)> = [10, 20, 40, 60, 80, 100, 110, 130].iter().map(|ns| (ns * NS, HANDSHAKES.contains(ns))).collect();
+    assert_eq!(read, wanted);
+}
+
+#[test]
+fn an_event_function_calling_another_fires_under_the_outer_guard() {
+    // §13 rule 7 (UE-04 AC 1): `gated` is `handshake(req, ack) && en`: of the handshakes only those with `en` high, 110 and
+    // 130 ns, fire it
+    let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "gated"), [110 * NS, 130 * NS]);
+}
+
+#[test]
+fn an_event_function_binds_named_and_left_out_arguments() {
+    // §3.2 with §13 rule 7 (UE-04 AC 1): `edge(clk, b: Some(true))` leaves `a` out (true), so it fires on both rises of
+    // `clk`, 10 and 30 ns; `edge(clk, Some(false), ..)` binds `a` to false and never fires; `edge(clk, a: Some(true), b:
+    // Some(true))` fires like the first; `edge(clk)` has `b` false and never fires
+    let run = Scenario::of("arguments.msl", "ArgumentsBench").transient(50e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "named"), [10 * NS, 30 * NS], "`b` named, `a` left out");
+    assert_eq!(run.instants(AnalysisKind::Transient, "both"), [10 * NS, 30 * NS], "both named");
+    assert!(run.instants(AnalysisKind::Transient, "positional").is_empty(), "`a` positional false");
+    assert!(run.instants(AnalysisKind::Transient, "neither").is_empty(), "`b` left out is false");
+}
+
+#[test]
+fn an_event_function_chooses_between_events_by_a_value_read_at_the_instant() {
+    // §13 rules 1 and 7 (UE-04): `pick(clk, s)` is `clk.rise()` while `s` holds and `clk.fall()` while it does not. `s` is
+    // low until 25 ns, so the rise at 10 ns is not the event (the fall is) and the fall at 20 ns fires; the rise at 30 ns
+    // fires, `s` being high. A `match` over the flag and an `if` over a counter the body builds with a `for` choose alike.
+    let run = Scenario::of("choice.msl", "ChoiceBench").transient(50e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "pick"), [20 * NS, 30 * NS], "an `if` over a flag");
+    assert_eq!(run.instants(AnalysisKind::Transient, "chosen"), [20 * NS, 30 * NS], "a `match` over a flag");
+    assert_eq!(run.instants(AnalysisKind::Transient, "counted"), [20 * NS, 30 * NS], "an `if` over a `let` reassigned by a `for`");
+}

@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 19 loud (L1 to L74 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
+**Counts.** 1 silent, 2 broken, 19 loud (L1 to L75 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L74 (L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
+| §4 Loud | L1–L75 (L73 and L74 found by the `analog-operators` closing round, L75 by the `unknown-semantics-events` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -132,7 +132,8 @@ blocks.
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
 | L73 | the value of the flow of a branch the module gives no potential contribution, read in `analog` (`i(a, gnd)` beside `i(a, gnd) +> ..`), and so a `ddx` whose derivative still reads it (`ddx(i * i, i)` is `2 i`): no solve reads the sum of the flow contributions of a flow branch. `ddx` against such a flow runs when its derivative reads no value of it (`ddx(5.0 * i(a, gnd), i(a, gnd))` is 5, `analog-operators` round 2 finding 36); the read is the leaf of the derivative only (owner `spec-closure`: the gap was found by the `analog-operators` closing round and has no feature of its own; a flow-read feature would take it) | §6 rule 5, §14.1, §14.2.3 | `P0001`: "a flow probe of a branch without a potential contribution"; "a `ddx` whose derivative reads the value of the flow of a branch with no potential contribution" | M |
-| L74 | a `fn` called inside a `ddx` whose body has a form with no finite symbolic reading: a `while` or `loop`, a `break` or `continue`, a `for` whose bounds do not fold to constants (or that is not over a range), an `if let`, a `let` of a pattern that is no name (`let (a, b) = ..`), an assignment to a field or an element, a composite value that is not a struct or a tuple written out (an array, an index, a struct chosen by an `if`; a struct method, a field of a struct held in a `let` and of a `Gain { k: 7.0 }` run), an expression statement made for its effect, a `match` that is a statement, and a `fn` that emits. The derivative of a loop whose trip count depends on the operating point is a loop over the derivative, which is no expression the symbolic pass builds (`ddx` runs the body symbolically: `if`, early `return`, assignments, a `for` over constant bounds, an `Option`, `str` or handle parameter, a method, a generic `fn` and a recursion that folds run, `analog-operators` round 2 finding 35). Owner `spec-closure`, which is also asked to rule on a spec amendment of §14.2.3 naming the forms `ddx` differentiates (proposed to the user, not written) | §14.2.3 | `P0001`: "a `while` or `loop` in a `fn` called inside a `ddx`"; "a `break`, a `continue` or a nested `while` in a loop"; "a `for` whose bounds do not fold to constants"; "an `if let`"; "a `let` of a pattern that is no name"; "an expression statement that is no assignment, `if` or `for`" | M |
+| L74 | a `fn` called inside a `ddx` whose body has a form with no finite symbolic reading: a `while` or `loop`, a `break` or `continue`, a `for` whose bounds do not fold to constants (or that is not over a range), an `if let`, a `let` of a pattern that is no name (`let (a, b) = ..`), an assignment to a field or an element, a composite value that is not a struct or a tuple written out (an array, an index, a struct chosen by an `if`; a struct method, a field of a struct held in a `let` and of a `Gain { k: 7.0 }` run), an expression statement made for its effect, a `match` that is a statement, and a `fn` that emits. The derivative of a loop whose trip count depends on the operating point is a loop over the derivative, which is no expression the symbolic pass builds (`ddx` runs the body symbolically: `if`, early `return`, assignments, a `for` over constant bounds, an `Option`, `str` or handle parameter, a method, a generic `fn` and a recursion that folds run, `analog-operators` round 2 finding 35). Owner `spec-closure`, whose spec amendment of §14.2.3 naming the forms `ddx` differentiates is approved by the user 2026-11-23 and written into Part IV | §14.2.3 | `P0001`: "a `while` or `loop` in a `fn` called inside a `ddx`"; "a `break`, a `continue` or a nested `while` in a loop"; "a `for` whose bounds do not fold to constants"; "an `if let`"; "a `let` of a pattern that is no name"; "an expression statement that is no assignment, `if` or `for`" | M |
+| L75 | a function that returns `Event` whose body has a form the inliner cannot run: a `match` arm with a guard of its own or a name bound by its pattern, an `if let`, a `while` or `loop`, a `break`, a `continue` or a `return` with no value, a `let` of a pattern that is no name, and an expression statement that is no assignment, `if`, `match` or `for`. What runs: `let`s and assignments, a `for` over constant bounds, an `if` or a `match` that folds (the branch it takes) or is decided at the instant (each branch's event guarded by the choice), a `return`, a call of another event function, a recursion that folds. A `fn` that calls `emit!` is `E0122` in an event position (§3 rule 5, §19 rule 10), by the spec and not a gap. Owner `spec-closure` | §3, §13 rule 7 | `P0001`: "a `match` arm with a guard in a function that returns an `Event`"; "a `match` arm whose pattern binds a name"; "an `if let` in a function that returns an `Event`"; "a `while`, `loop`, `break`, `continue` or `return` with no value"; "a `let` of a pattern that is no name in a `fn` that returns an `Event`"; "a statement that is no `let`, assignment, `if`, `match` or `for`" | M |
 | L40 | the three spec models that wait on another feature's dependency: the stdlib `idt` and `Water` (they need `generics`); the §18 `Diode` with `match rs` runs since `params-and-io`; a contribution under an `if` or a `match`, `Switch`, `CapIc` and `Bounded` run | §11 rules 2, 3, 18, §18 | `generic module` (`idt`, `Water`) | M |
 
 Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, coupled inductors),
@@ -143,7 +144,6 @@ Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, couple
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | `unknown-semantics-events`: a function that returns `Event` has no lowering, and neither has `changed()` (an `Event`) on a parameter generic over a nature; `prev()` on one is written `fn f<T: Repr>(a: Bit<T>) -> T { a.prev() }`, which runs |
 
 Works, by probe: commits with and without `after`, transport per statement (a pulse from two
 commits), `at(0.0)` at `(0, 1)` and a negative `at` never, `every`, `cross` located within 0.1 ps
@@ -289,7 +289,7 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 60 % | generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
-| I §3–§3.3 functions, calls, uncertainty and absence | 70 % | functions that return `Event` (L53); generic functions, `impl`, traits and handles, then loops, recursion, closures, function values, arrays, composites and the level reads run |
+| I §3–§3.3 functions, calls, uncertainty and absence | 70 % | generic functions, `impl`, traits and handles, then loops, recursion, closures, function values, arrays, composites and the level reads run |
 | I §3.4–§3.6 files, crates, packages | 97 % | the check of an unreached generic module (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
@@ -298,7 +298,7 @@ does not count.
 | III §8.3 instances in expressions | 70 % | generic results, the stdlib `idt` and `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
-| IV §12–§13 digital, events | 70 % | `Event` functions; arrays of carriers, element and field commits run (composite-values phase C) |
+| IV §12–§13 digital, events | 70 % | the forms L75 lists; arrays of carriers, element and field commits run (composite-values phase C) |
 | IV §14 core primitives | 80 % | `others`, `include_str!`, `noise_table` (L58) |
 | V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
 | VI §19–§21 output, input, metadata | 45 % | files, host metadata |
@@ -343,7 +343,7 @@ E0807 E0808 E0809`
 | Composite values | phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows | L |
 | Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6) | L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
-| Unknown semantics | L53 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B delivered `Logic<N>`, `logic` and `matches_bits`, L68) | L |
+| Unknown semantics (delivered) | nothing open (L18 and L19 closed by `unknown-semantics`; L51, L52 and L53 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B delivered `Logic<N>`, `logic` and `matches_bits`, L68) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
@@ -363,8 +363,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: this call as an event is not supported yet (the handle `a.rise()` now types; the function that returns an `Event` does not lower) |
-| values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type) and `Slice` is `P0001` (generic module) |

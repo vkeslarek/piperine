@@ -221,26 +221,27 @@ fn e0601_an_emit_in_a_module_body_is_misplaced_output() {
 
 #[test]
 fn a_function_has_the_class_its_body_gives() {
-    // values#8 (refused): `diode_current` is pure and `handshake` returns an `Event`; values~c389077a
-    // (refused): "The compiler infers a class from the body: a pure function, like diode_current, works
-    // anywhere; one that probes a voltage or reads now() works where the solver is running; one that
-    // returns Event, like handshake, works where events go; and one that calls emit! works where emit!
-    // does." The pure, `now()` and `emit!` classes run; an `Event` function is `P0001` (GAPS.md L53)
+    // values#8 (run, L53 closed by unknown-semantics-events): `diode_current` is pure and `handshake` returns an
+    // `Event`; values~c389077a "The compiler infers a class from the body: a pure function, like diode_current,
+    // works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns
+    // Event, like handshake, works where events go; and one that calls emit! works where emit! does." All four
+    // classes run in one model: the block as the Book prints it, the pure function in a body, `now()` in a function,
+    // `emit!` in a function, and `handshake` heading a reaction, which runs only where `req` rises with `ack` high
     let chapter = Chapter::read();
-    let top = Reaction::source("emit!(\"d\", i = diode_current(0.6, 1e-14, 0.026), t = clock(), x = 1);").replace("module Top() { }", "fn clock() -> f64 { now() }\nfn say() { emit!(\"say\", x = 1.0); }\nmodule Top() { }").replace("emit!(\"d\"", "say(); emit!(\"d\"");
-    // the whole-model check (S3) refuses `handshake` where nothing reaches it, so the run is of the block
-    // up to it: the `Event` function is the refused part, and the second model below shows it
-    let block = chapter.text("values#8");
-    let (functions, _) = block.split_once("/// A request that is acknowledged").expect("values#8 lists handshake last");
-    let ran = Transient::ran(&Model::written("functions.msl", &format!("{functions}\n{top}")), "Top", 2e-6);
+    let top = Reaction::source("emit!(\"d\", i = diode_current(0.6, 1e-14, 0.026), t = clock(), x = 1);")
+        .replace("module Top() { }", "fn clock() -> f64 { now() }\nfn say() { emit!(\"say\", x = 1.0); }\nmodule Top() { signal req: Bit = false; signal ack: Bit = false; }")
+        .replace("emit!(\"d\"", "say(); emit!(\"d\"")
+        .replace("digital for Top {", "digital for Top { on at(0.2u) { req <- true; } on at(0.4u) { req <- false; } on at(0.5u) { ack <- true; } on at(1u) { req <- true; } on handshake(req, ack) { emit!(\"h\", t = now()); }");
+    let model = Model::written("functions.msl", &format!("{}\n{top}", chapter.text("values#8")));
+    let ran = model.run(Transient::of("Top", 2e-6)).unwrap_or_else(|failure| panic!("the Book's functions run: {failure}"));
     let d = &ran.stream("d")[0];
     let formula = 1e-14 * ((0.6f64 / 0.026).exp() - 1.0);
     assert!(matches!(Fields::of(d, "i"), Field::Real(i) if (i - formula).abs() < 1e-9 * formula), "diode_current: {:?}", Fields::of(d, "i"));
     assert!(matches!(Fields::of(d, "t"), Field::Real(t) if (t - 1e-6).abs() < 1e-12), "a function that reads now() runs where the solver does: {:?}", Fields::of(d, "t"));
     assert_eq!(ran.stream("say").len(), 1, "a function that calls emit! writes where emit! does");
-    let reaching = "module Top(in req: Bit, in ack: Bit) { }\ndigital for Top { on handshake(req, ack) { emit!(\"h\", t = now()); } }\n";
-    let refused = chapter.wrapped("handshake.msl", "", "values#8", reaching).run(Transient::of("Top", 2e-6));
-    Refusal::expect(refused, "values#8", "P0001", "this call as an event is not supported yet");
+    let handshakes = ran.stream("h");
+    assert_eq!(handshakes.len(), 1, "a function that returns an Event works where events go: `req` rose with `ack` low at 0.2 us and with `ack` high at 1 us only: {:?}", ran.records);
+    Printed::holds("1.000000e-6", handshakes[0].time, "the handshake");
 }
 
 #[test]
