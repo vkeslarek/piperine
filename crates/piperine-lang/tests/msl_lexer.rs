@@ -305,8 +305,10 @@ fn only_code(src: &str, code: &str, span: Span) {
 
 #[test]
 fn float_literal_out_of_range_is_e0909() {
-    // POL-13 AC 2.
-    only_code("1e999", "E0909", Span::new(0, 5));
+    // POL-13 AC 2, A.2 rule 8: an SI-suffixed literal is an `f64`, so its range is the lexer's; an unsuffixed one is read in
+    // the format of its position, so `1e999` lexes clean (the checker refuses it as an `f64`, and `f128` holds it).
+    let (toks, diags) = lex("1e999");
+    assert!(diags.is_empty() && toks.len() == 1, "an unsuffixed float is no lexer error: {diags:?}");
     let big = "9".repeat(310);
     let src = format!("{big}T");
     only_code(&src, "E0909", Span::new(0, src.len()));

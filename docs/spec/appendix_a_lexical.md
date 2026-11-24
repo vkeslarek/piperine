@@ -144,8 +144,9 @@ SI_SUFFIX  ::= 'T' | 'G' | 'M' | 'k' | 'm' | 'u' | 'n' | 'p' | 'f' | 'a'
 6. The value is the nearest `f64` to the exact decimal product. `2.2u` equals the literal
    `2.2e-6`. It is not the rounded product `2.2 * 1e-6`.
 7. A leading `-` is the negation operator, not part of the literal.
-8. A literal out of range is `E0909`: a float whose nearest `f64` is infinite (`1e999`, a
-   310-digit number followed by `T`), and an integer that exceeds `2^N - 1` with a suffix `uN`,
+8. A literal out of range is `E0909`: an SI-suffixed float whose nearest `f64` is infinite (a
+   310-digit number followed by `T`; an unsuffixed float is read in the format of its position, so
+   `1e999` is `E0909` as an `f64` and is the finite value it names as an `f128`, A.8 rule 8), and an integer that exceeds `2^N - 1` with a suffix `uN`,
    `2^(N-1)` with a suffix `iN`, or `2^128 - 1` without a suffix. The token is still produced.
 
 > **Resolution.** An `iN` literal admits `2^(N-1)`, so `128i8` lexes: the minus sign is an

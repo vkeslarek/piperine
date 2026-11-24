@@ -137,7 +137,7 @@ impl Catalogue {
     /// The row named `name` for a receiver of type `recv`.
     pub(super) fn method(recv: &Ty, name: &str) -> Lookup {
         let rows = match recv {
-            Ty::F64 => F64_METHODS,
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 => F64_METHODS,
             Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
             Ty::Array(element, _) => return Self::array(element, name),

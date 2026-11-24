@@ -1,0 +1,16 @@
+//! Params of each new width (composite-values CV-29 to CV-32, abi.md §3.1): the default of a param is its pin's exact bytes, read back by a reaction.
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+module Bench() {
+    signal clk: Bit;
+    p: f32 = 1.5;
+    h: f16 = 0.1;
+    w: UInt<200> = 12345;
+    q: f128 = 0.1;
+    signal rp: Bit<f32> = 0.0;
+    signal rh: Bit<f16> = 0.0;
+    signal rw: Bit<UInt<200>> = 0;
+    signal rq: Bit<f128> = 0.0;
+    let osc = Osc(clk) { f: 200M };
+}
+digital for Bench { on clk.rise() { rp <- p; rh <- h; rw <- w; rq <- q; } }

@@ -132,6 +132,13 @@ impl Transpiler {
         !piperine_plan::DerivePlan::of(&self.ir).bindings().is_empty()
     }
 
+    /// Whether the design uses a number width (`f32`, `f16`, `f128`, an integer wider than 64 bits), whose
+    /// generated code compiles the embedded numeric library (`rt/numbers/*.rs`) and `rt/widths.rs`: `f32` computes
+    /// as Rust's own `f32`, but its pin bytes (`Carried`) and its `as` (`Convert`) live in that runtime.
+    pub fn number_widths(&self) -> bool {
+        crate::print::widths::NumberTypes::used_by(&self.ir)
+    }
+
     /// Whether the design holds a `table_model`, whose generated code builds an `rt::TableModel`.
     pub fn tables(&self) -> bool {
         self.ir.expressions().any(|e| matches!(e, Expr::Table { .. } | Expr::TableSlope { .. }))

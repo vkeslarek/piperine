@@ -5,6 +5,7 @@
 
 use crate::Error;
 use crate::print::TypeItems;
+use crate::print::widths::NumberTypes;
 use piperine_ir::{FieldsForm, Ir, TypeId, TypeKind, ValueType};
 
 /// Prints the lift of the types a design's composite params hold.
@@ -22,6 +23,8 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
     /// The Rust type of a value of `ty` at `f64`: what a pin decodes to.
     pub fn concrete_type(&self, ty: &ValueType) -> String {
         match ty {
+            ValueType::F32 | ValueType::F16 | ValueType::F128 => NumberTypes::spelled(ty),
+            ValueType::UInt(n) | ValueType::Int(n) if *n > 64 => NumberTypes::spelled(ty),
             ValueType::F64 => "f64".to_string(),
             ValueType::Bool => "bool".to_string(),
             ValueType::Unit => "()".to_string(),
@@ -59,7 +62,7 @@ impl<'r, 'ir> RealLift<'r, 'ir> {
                 format!("({source}).map(|element{depth}_| {inner})")
             }
             ValueType::Struct(_) | ValueType::Enum(_) => format!("({source}).lift::<{real}>()"),
-            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) => source.to_string(),
+            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Fn(..) => source.to_string(),
         }
     }
 

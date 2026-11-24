@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::real::Real;
 use crate::deps::DepsMemo;
-use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
-use crate::model::{AggregateData, CarrierWindow, EmptyArray, NodeAlias, NodeArray, 
+use crate::ids::{AggregateId, WideId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
+use crate::model::{AggregateData, WideData, CarrierWindow, EmptyArray, NodeAlias, NodeArray, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, TraceSite, PartialDerivative, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
@@ -126,6 +126,8 @@ pub struct IrBuilder {
     types: Vec<TypeData>,
     /// The composite constants, by `AggregateId`.
     aggregates: Vec<AggregateData>,
+    /// The constants of integer types wider than 64 bits, by `WideId`.
+    wides: Vec<WideData>,
     /// The merges `merge_nodes` asked for, applied by `finish`.
     union: NodeUnion,
     /// The derived function of each `(function, argument)` the differentiation built; `None`
@@ -153,6 +155,17 @@ impl IrBuilder {
     pub fn aggregate(&mut self, data: AggregateData) -> AggregateId {
         self.aggregates.push(data);
         AggregateId((self.aggregates.len() - 1) as u32)
+    }
+
+    /// The wide constant `id` names, as added.
+    pub fn wide_at(&self, id: WideId) -> &WideData {
+        &self.wides[id.index()]
+    }
+
+    /// Adds a constant of an integer type wider than 64 bits; `Constant::Wide` and `Expr::Wide` name it by the id.
+    pub fn wide(&mut self, data: WideData) -> WideId {
+        self.wides.push(data);
+        WideId((self.wides.len() - 1) as u32)
     }
 
     pub fn nature(&mut self, name: &str, potential: Quantity, flow: Option<Quantity>) -> NatureId {
@@ -621,6 +634,7 @@ impl IrBuilder {
             aliases: self.aliases,
             types: self.types,
             aggregates: self.aggregates,
+            wides: self.wides,
         }
     }
 }

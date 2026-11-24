@@ -77,7 +77,7 @@ impl Checker<'_> {
         match ty {
             ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) => true,
             // A float has no `Eq`, `Ord` or `Hash`: NaN is not equal to itself (H.8 resolution).
-            ValueType::F64 => !matches!(which, Trait::Eq | Trait::Ord | Trait::Hash),
+            ValueType::F64 | ValueType::F32 | ValueType::F16 | ValueType::F128 => !matches!(which, Trait::Eq | Trait::Ord | Trait::Hash),
             ValueType::Fn(..) => matches!(which, Trait::Clone | Trait::Copy | Trait::Debug),
             ValueType::Tuple(parts) => parts.iter().all(|part| self.implements_visiting(part, which, visiting)),
             ValueType::Array(element, _) | ValueType::Option(element) => self.implements_visiting(element, which, visiting),

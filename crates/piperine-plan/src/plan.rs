@@ -531,7 +531,9 @@ impl BodyPlan {
                 Some(Constant::Real(r)) => Self::real_bytes(r.get()),
                 Some(Constant::Bool(b)) => vec![u8::from(b)],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
-                Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                Some(c @ (Constant::Int(_) | Constant::FloatBits(_))) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                // A constant of an integer wider than 64 bits is a `U64` array, laid out as a composite's single leaf.
+                Some(c @ Constant::Wide(_)) => PinLayout::bytes_in(ir, &p.ty, c).unwrap_or_default(),
                 // A composite param has the layout and bytes of a composite carrier (`composite.rs`).
                 Some(c @ Constant::Aggregate(_)) => PinLayout::bytes_in(ir, &p.ty, c).unwrap_or_default(),
                 None => Vec::new(),
@@ -557,7 +559,7 @@ impl BodyPlan {
             let composite_layout = composite.as_ref().map(|c| c.layout(&composite_fields));
             let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
-                ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
+                ty if ty.is_integer() || ty.is_other_float() => CarrierLayout::of(ty).unwrap_or(&F64),
                 // a unit enum is its tag (PI-02)
                 ty @ ValueType::Enum(_) => CarrierLayout::in_ir(ir, ty).unwrap_or(&F64),
                 _ => &F64,

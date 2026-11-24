@@ -52,6 +52,14 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    /// The exact cell of a param of a number width: the bytes the table holds for it; `None` for any other type.
+    fn exact_cell(held: &Params, instance: &str, param: &piperine_ir::Param) -> Option<Cell> {
+        if !crate::number_cell::NumberCell::is_number_width(&param.ty) {
+            return None;
+        }
+        held.exact_bytes(instance, &param.name).and_then(|bytes| crate::number_cell::NumberCell::decode(&param.ty, bytes).ok())
+    }
+
     /// The metadata of `ir`, each param shown with its value in `held`, the table a run starts
     /// from: the elaborated value, a `set`'s, or what a placement derives from a `set` param.
     pub(crate) fn of(ir: &Ir, held: &Params) -> Metadata {
@@ -72,13 +80,14 @@ impl Metadata {
                 } else {
                     None
                 };
-                let value = match (composite, instance.param(i), current) {
-                    (Some(value), _, _) => value,
-                    (None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
-                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(held.exact_integer(instance.path(), &param.name).unwrap_or(now as i128)),
-                    (None, Some(_), Some(now)) => Cell::Real(now),
+                let exact = Self::exact_cell(held, instance.path(), param);
+                let value = match (composite, exact, instance.param(i), current) {
+                    (Some(value), _, _, _) | (None, Some(value), _, _) => value,
+                    (None, None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
+                    (None, None, Some(Constant::Int(_)), Some(now)) => Cell::Int(held.exact_integer(instance.path(), &param.name).unwrap_or(now as i128)),
+                    (None, None, Some(_), Some(now)) => Cell::Real(now),
                     // a param with no default holds no value until a placement gives it one: the absent cell
-                    (None, _, _) => Cell::Absent,
+                    (None, None, _, _) => Cell::Absent,
                 };
                 params.push(ParamInfo {
                     name: param.name.clone(),

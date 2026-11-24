@@ -19,6 +19,8 @@ impl RecordLine {
                 Field::Real(v) => Number::text(&Cell::Real(*v)),
                 Field::Bool(v) => Number::text(&Cell::Bool(*v)),
                 Field::Int(v) => Number::text(&Cell::Int(*v)),
+                Field::Float(v) => Number::text(&Cell::Float(*v)),
+                Field::Wide(v) => Number::text(&Cell::Wide(v.clone())),
                 Field::Text(v) => format!("\"{v}\""),
                 Field::Variant(v) => v.clone(),
                 Field::Composite(v) => Number::text(&Cell::Composite(v.clone())),

@@ -1,0 +1,12 @@
+//! A wide integer `/` by zero (composite-values CV-32, part I §1 rule 11): the first rising edge divides `a` by `z`, which is zero.
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Bench() {
+    signal clk: Bit;
+    signal a: Bit<UInt<200>> = 7;
+    signal z: Bit<UInt<200>> = 0;
+    signal q: Bit<UInt<200>> = 0;
+    let osc = Osc(clk) { f: 200M };
+}
+digital for Bench { on clk.rise() { q <- a / z; } }

@@ -232,6 +232,18 @@ struct Slot {
     widths: Vec<usize>,
     /// The composite params of the instance, each as the bytes its pin holds.
     composites: Vec<CompositeParam>,
+    /// The params of a number width (`f32`, `f16`, `f128`, an integer wider than 64 bits), each as the bytes its pin holds: they
+    /// have no `f64` view, so the exact cell reads these.
+    exacts: Vec<ExactParam>,
+}
+
+/// A param of a number width: the bytes its pin holds.
+#[derive(Debug, Clone)]
+struct ExactParam {
+    /// The param's name.
+    name: String,
+    /// The bytes its pin holds: its value.
+    bytes: Vec<u8>,
 }
 
 /// A composite param of an instance: its layout and the bytes its pin holds (its value bytes).
@@ -296,6 +308,14 @@ impl Params {
                         Some(CompositeParam { name: param.name.clone(), layout, bytes })
                     })
                     .collect(),
+                exacts: instance
+                    .body()
+                    .params()
+                    .iter()
+                    .zip(instance.params())
+                    .filter(|(param, _)| crate::number_cell::NumberCell::is_number_width(&param.ty))
+                    .filter_map(|(param, given)| Some(ExactParam { name: param.name.clone(), bytes: PinLayout::bytes_in(ir, &param.ty, *given)? }))
+                    .collect(),
                 widths: instance.body().params().iter().map(|param| PinLayout::in_ir(ir, &param.ty).map_or(0, |layout| layout.size() as usize)).collect(),
                 params: instance
                     .body()
@@ -311,6 +331,8 @@ impl Params {
                             // its place is kept so the declaration order the derive functions read stays,
                             // and `get` reads none.
                             Constant::Aggregate(_) => ir.discriminant(&param.ty, *given).map_or(f64::NAN, |tag| tag as f64),
+                            // A float of another width and a wide integer have no `f64` view either: the exact cell reads their bytes.
+                            Constant::FloatBits(_) | Constant::Wide(_) => f64::NAN,
                         };
                         (param.name.clone(), param.ty.clone(), value)
                     })
@@ -322,12 +344,22 @@ impl Params {
 
     /// The value of `param` of `instance`; `None` when the design has no such param.
     pub fn get(&self, instance: &str, param: &str) -> Option<f64> {
-        self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v).filter(|_| self.composite_bytes(instance, param).is_none())
+        self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v).filter(|_| self.held_bytes(instance, param).is_none())
     }
 
     /// The bytes of the composite param `param` of `instance`: its value.
     pub fn composite_bytes(&self, instance: &str, param: &str) -> Option<&[u8]> {
         self.slot(instance)?.composites.iter().find(|c| c.name == param).map(|c| c.bytes.as_slice())
+    }
+
+    /// The bytes of the param `param` of `instance` when its type is a number width: its exact value.
+    pub fn exact_bytes(&self, instance: &str, param: &str) -> Option<&[u8]> {
+        self.slot(instance)?.exacts.iter().find(|e| e.name == param).map(|e| e.bytes.as_slice())
+    }
+
+    /// The bytes a param holds when no `f64` shows them: a composite's or a number width's.
+    fn held_bytes(&self, instance: &str, param: &str) -> Option<&[u8]> {
+        self.composite_bytes(instance, param).or_else(|| self.exact_bytes(instance, param))
     }
 
     /// The leaves of the composite param `param` of `instance`, as the layout names them; `None`
@@ -458,6 +490,14 @@ impl Params {
         self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old: f64::NAN, value: f64::NAN, derived: false, bytes: Some(bytes), old_bytes: old, text: Some(shown.to_string()) }, derive)
     }
 
+    /// The changes writing the exact `bytes` of a param of a number width (`shown` is the text the host gave).
+    pub fn changes_exact(&self, instance: &str, param: &str, bytes: Vec<u8>, shown: &str, derive: Option<&dyn Derive>) -> Result<Vec<Changed>, Failure> {
+        self.refuse_derived(instance, param)?;
+        let old = self.exact_bytes(instance, param).map(<[u8]>::to_vec);
+        let ty = self.type_of(instance, param);
+        self.changes_from(Changed { instance: instance.to_string(), param: param.to_string(), ty, old: f64::NAN, value: f64::NAN, derived: false, bytes: Some(bytes), old_bytes: old, text: Some(shown.to_string()) }, derive)
+    }
+
     /// `E0802` for a param a placement gives: a host sets the param it derives from instead.
     fn refuse_derived(&self, instance: &str, param: &str) -> Result<(), Failure> {
         match self.plan.giving(instance, param) {
@@ -514,7 +554,7 @@ impl Params {
         let slot = self.slot(instance).ok_or_else(|| Failure::Backend(format!("the derive plan names `{instance}`, which is no instance")))?;
         let mut bytes = Vec::new();
         for ((name, ty, value), width) in slot.params.iter().zip(&slot.widths) {
-            match self.composite_bytes(instance, name) {
+            match self.held_bytes(instance, name) {
                 Some(held) => bytes.extend(held.iter().copied().chain(std::iter::repeat(0)).take(*width)),
                 None => bytes.extend(PinBytes::encode(ty, *value, self.exact_integer(instance, name), *width)),
             }
@@ -524,7 +564,7 @@ impl Params {
 
     /// The change `binding` makes when its expression gives the pin bytes `bytes`.
     fn derived(&self, binding: &Binding, bytes: Vec<u8>) -> Changed {
-        let old_bytes = match self.composite_bytes(&binding.child, &binding.param) {
+        let old_bytes = match self.held_bytes(&binding.child, &binding.param) {
             Some(held) => Some(held.to_vec()),
             None => self.slot(&binding.child).and_then(|s| s.params.iter().zip(&s.widths).find(|((n, _, _), _)| *n == binding.param)).map(|((n, ty, value), width)| PinBytes::encode(ty, *value, self.exact_integer(&binding.child, n), *width)),
         };
@@ -557,6 +597,12 @@ impl Params {
                 && let Some(composite) = slot.composites.iter_mut().find(|c| c.name == change.param)
             {
                 composite.bytes = bytes.clone();
+                continue;
+            }
+            if let Some(bytes) = &change.bytes
+                && let Some(exact) = slot.exacts.iter_mut().find(|e| e.name == change.param)
+            {
+                exact.bytes = bytes.clone();
                 continue;
             }
             let held = match &change.bytes {

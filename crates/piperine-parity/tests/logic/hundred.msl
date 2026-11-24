@@ -1,0 +1,26 @@
+//! `Logic<100>` (§22.1.1): the planes are two `UInt<100>`, integers wider than 64 bits, so the tables hold level by level
+//! beyond the widest width of 64. The expected patterns are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn a() -> Logic<100> { logic("01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz") }
+fn b() -> Logic<100> { logic("1xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz01xz0") }
+
+module Rows(in clk: Bit, out w_and: Bit<Logic<100>>, out w_or: Bit<Logic<100>>, out w_xor: Bit<Logic<100>>, out w_not: Bit<Logic<100>>, out w_shl: Bit<Logic<100>>) {}
+digital for Rows {
+    on clk.rise() {
+        w_and <- a() & b();
+        w_or <- a() | b();
+        w_xor <- a() ^ b();
+        w_not <- !a();
+        w_shl <- a() << 3;
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal w_and: Bit<Logic<100>>; signal w_or: Bit<Logic<100>>; signal w_xor: Bit<Logic<100>>; signal w_not: Bit<Logic<100>>; signal w_shl: Bit<Logic<100>>;
+    let osc = Osc(clk);
+    let rows = Rows(clk, w_and, w_or, w_xor, w_not, w_shl);
+}

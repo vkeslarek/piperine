@@ -1,5 +1,7 @@
 # Composite Values Tasks (phase D: number widths)
 
+**Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
+
 ## Execution Protocol (MANDATORY -- do not skip)
 
 Implement these tasks with the `tlc-spec-driven` skill: **activate it by name and follow its Execute flow and Critical Rules.** Do not search for skill files by filesystem path. The skill is the source of truth for the full flow (per-task cycle, sub-agent delegation, the walk, check_proofs, the Verifier and the screens sub-agent).
@@ -148,9 +150,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `the_numeric_crate_is_embeddable_source` passes under `**Run purity**`
-- [ ] The Handoff names every anchor found or its difference
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `the_numeric_crate_is_embeddable_source` passes under `**Run purity**`
+- [x] The Handoff names every anchor found or its difference
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -170,8 +172,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `limbs_agree_with_big_integers_on_every_operation` passes under `**Run integers**` (edge limbs `0`, `1`, `u64::MAX`, the divisor normalization cases of algorithm D, and 10 000 deterministic random operand pairs of 1 to 40 limbs)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `limbs_agree_with_big_integers_on_every_operation` passes under `**Run integers**` (edge limbs `0`, `1`, `u64::MAX`, the divisor normalization cases of algorithm D, and 10 000 deterministic random operand pairs of 1 to 40 limbs)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -191,9 +193,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `wide_integers_up_to_128_bits_agree_with_u128_and_i128` passes under `**Run integers**` (`N` = 65, 100, 127, 128, every operator and H.1 method, the operands 0, 1, `MAX`, `MIN`, `-1` and 10 000 random pairs, expected values computed with `u128`/`i128` wrapping arithmetic masked to `N` bits in the test)
-- [ ] `wide_integers_above_128_bits_agree_with_big_integers_modulo_two_to_the_n` passes under `**Run integers**` (`N` = 129, 200, 256, 1000)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `wide_integers_up_to_128_bits_agree_with_u128_and_i128` passes under `**Run integers**` (`N` = 65, 100, 127, 128, every operator and H.1 method, the operands 0, 1, `MAX`, `MIN`, `-1` and 10 000 random pairs, expected values computed with `u128`/`i128` wrapping arithmetic masked to `N` bits in the test)
+- [x] `wide_integers_above_128_bits_agree_with_big_integers_modulo_two_to_the_n` passes under `**Run integers**` (`N` = 129, 200, 256, 1000)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -213,8 +215,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `rounding_to_every_format_is_nearest_ties_to_even` passes under `**Run formats**` (for each format: every exact tie, one above and below, the largest finite value and the first overflow, the smallest subnormal and half of it, and 20 000 random exact rationals; for `SINGLE` and `DOUBLE` the expected bits are also Rust's own `f32`/`f64` from the same rational, so the fixture is checked against Rust)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `rounding_to_every_format_is_nearest_ties_to_even` passes under `**Run formats**` (for each format: every exact tie, one above and below, the largest finite value and the first overflow, the smallest subnormal and half of it, and 20 000 random exact rationals; for `SINGLE` and `DOUBLE` the expected bits are also Rust's own `f32`/`f64` from the same rational, so the fixture is checked against Rust)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -234,9 +236,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `every_unary_f16_operation_is_correctly_rounded_over_all_inputs` passes under `**Run half**` (all 65 536 bit patterns: `sqrt`, `-`, the exact H.2 methods and the predicates, against `ExactRational`)
-- [ ] `binary_f16_operations_are_correctly_rounded` passes under `**Run half**` (`+ - * /`, comparisons, `min`, `max`, `rem_euclid`, `hypot` over every pair of the special values and 2^22 deterministic random pairs)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `every_unary_f16_operation_is_correctly_rounded_over_all_inputs` passes under `**Run half**` (all 65 536 bit patterns: `sqrt`, `-`, the exact H.2 methods and the predicates, against `ExactRational`)
+- [x] `binary_f16_operations_are_correctly_rounded` passes under `**Run half**` (`+ - * /`, comparisons, `min`, `max`, `rem_euclid`, `hypot` over every pair of the special values and 2^22 deterministic random pairs)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -256,9 +258,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f128_arithmetic_and_square_root_are_correctly_rounded` passes under `**Run quad**` (special values, subnormal operands and results, exact ties, overflow, cancellation, and 50 000 random pairs per operation against `ExactRational`; `sqrt` checked by squaring the bracketing midpoints exactly)
-- [ ] `f128_exact_methods_follow_h2` passes under `**Run quad**` (every exact H.2 method and predicate, with `-0.0`, `±inf`, NaN, and `hypot` at the largest finite value)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `f128_arithmetic_and_square_root_are_correctly_rounded` passes under `**Run quad**` (special values, subnormal operands and results, exact ties, overflow, cancellation, and 50 000 random pairs per operation against `ExactRational`; `sqrt` checked by squaring the bracketing midpoints exactly)
+- [x] `f128_exact_methods_follow_h2` passes under `**Run quad**` (every exact H.2 method and predicate, with `-0.0`, `±inf`, NaN, and `hypot` at the largest finite value)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -278,8 +280,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `every_as_conversion_follows_the_table_of_1_4_5` passes under `**Run conversions**` (each pair over the special values, the edges of each range and 5 000 random values; the `f32`↔`f64` and `u64`/`i64`↔`f32`/`f64` pairs are compared with Rust's own `as`, the rest with `ExactRational`; a double-rounding case for `f64 → f16` that `f64 → f32 → f16` gets wrong is in the set)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `every_as_conversion_follows_the_table_of_1_4_5` passes under `**Run conversions**` (each pair over the special values, the edges of each range and 5 000 random values; the `f32`↔`f64` and `u64`/`i64`↔`f32`/`f64` pairs are compared with Rust's own `as`, the rest with `ExactRational`; a double-rounding case for `f64 → f16` that `f64 → f32 → f16` gets wrong is in the set)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -299,8 +301,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `decimal_text_reads_to_the_nearest_value_and_prints_the_shortest` passes under `**Run formats**` (for `SINGLE` and `DOUBLE`, 20 000 random texts against Rust's `str::parse` and `Display`; for `HALF` and `QUAD`, the same texts against `ExactRational`, with midpoint texts of 40 digits and every power of ten in range; shortest text read back gives the same bits for every `f16` and 20 000 random `f128`)
-- [ ] Gate check passes: Task (`piperine-numbers`), then the Batch gate
+- [x] `decimal_text_reads_to_the_nearest_value_and_prints_the_shortest` passes under `**Run formats**` (for `SINGLE` and `DOUBLE`, 20 000 random texts against Rust's `str::parse` and `Display`; for `HALF` and `QUAD`, the same texts against `ExactRational`, with midpoint texts of 40 digits and every power of ten in range; shortest text read back gives the same bits for every `f16` and 20 000 random `f128`)
+- [x] Gate check passes: Task (`piperine-numbers`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -320,9 +322,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] Every `.tsv` of the 16 functions and `exact.tsv` exists, generated by the committed script
-- [ ] `the_reference_vectors_are_complete_and_well_formed` passes under `**Run transcendental**`
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] Every `.tsv` of the 16 functions and `exact.tsv` exists, generated by the committed script
+- [x] `the_reference_vectors_are_complete_and_well_formed` passes under `**Run transcendental**`
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -342,8 +344,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `directed_rounding_brackets_the_exact_result` passes under `**Run precision**` (each operation at 120, 240 and 1 000 bits on 5 000 random operands: the lower result is at most, and the upper at least, the exact `ExactRational` result, and each is the adjacent value of its precision)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `directed_rounding_brackets_the_exact_result` passes under `**Run precision**` (each operation at 120, 240 and 1 000 bits on 5 000 random operands: the lower result is at most, and the upper at least, the exact `ExactRational` result, and each is the adjacent value of its precision)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -363,8 +365,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `reference_constants_contain_their_published_digits` passes under `**Run precision**` (π, ln 2 and ln 10 to 1 000 decimal places, written in the test from OEIS A000796, A002162, A002392, lie inside the interval at 3 300 bits; π's interval at 16 600 bits contains the 1 000-digit value)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `reference_constants_contain_their_published_digits` passes under `**Run precision**` (π, ln 2 and ln 10 to 1 000 decimal places, written in the test from OEIS A000796, A002162, A002392, lie inside the interval at 3 300 bits; π's interval at 16 600 bits contains the 1 000-digit value)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -384,8 +386,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `reduction_keeps_full_precision_for_every_finite_argument` passes under `**Run precision**` (the largest finite `f128`, the `f128` nearest to multiples of π/2 found by the T99 generator and written in `exact.tsv`'s neighbours, and 2 000 random arguments: the reduced interval contains the `ExactRational` reduction against π at 20 000 bits and is no wider than `2^-precision` relative)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `reduction_keeps_full_precision_for_every_finite_argument` passes under `**Run precision**` (the largest finite `f128`, the `f128` nearest to multiples of π/2 found by the T99 generator and written in `exact.tsv`'s neighbours, and 2 000 random arguments: the reduced interval contains the `ExactRational` reduction against π at 20 000 bits and is no wider than `2^-precision` relative)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -405,8 +407,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `ziv_rounding_raises_precision_until_the_bounds_agree` passes under `**Run precision**` (a synthetic function whose interval straddles a midpoint at 160 and 320 bits and not at 640 returns the right bits after three evaluations; an exact case returns without evaluating; a function whose value is a midpoint and that offers no exact case returns `None` at the cap)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `ziv_rounding_raises_precision_until_the_bounds_agree` passes under `**Run precision**` (a synthetic function whose interval straddles a midpoint at 160 and 320 bits and not at 640 returns the right bits after three evaluations; an exact case returns without evaluating; a function whose value is a midpoint and that offers no exact case returns `None` at the cap)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -426,8 +428,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `exp_and_logarithms_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `exp.tsv`, `ln.tsv`, `log2.tsv`, `log10.tsv` and their rows of `exact.tsv`)
-- [ ] Gate check passes: Task (`piperine-numbers`), then the Batch gate
+- [x] `exp_and_logarithms_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `exp.tsv`, `ln.tsv`, `log2.tsv`, `log10.tsv` and their rows of `exact.tsv`)
+- [x] Gate check passes: Task (`piperine-numbers`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -447,8 +449,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `powers_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `powf.tsv`, `powi.tsv` and their exact rows, the midpoint cases among them)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `powers_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `powf.tsv`, `powi.tsv` and their exact rows, the midpoint cases among them)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -468,8 +470,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `circular_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `sin.tsv`, `cos.tsv`, `tan.tsv`, the largest finite argument and the arguments nearest multiples of π/2 among them)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `circular_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `sin.tsv`, `cos.tsv`, `tan.tsv`, the largest finite argument and the arguments nearest multiples of π/2 among them)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -489,8 +491,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `inverse_circular_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `asin.tsv`, `acos.tsv`, `atan.tsv`, `atan2.tsv`)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `inverse_circular_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `asin.tsv`, `acos.tsv`, `atan.tsv`, `atan2.tsv`)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -510,8 +512,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `hyperbolic_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `sinh.tsv`, `cosh.tsv`, `tanh.tsv`)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `hyperbolic_functions_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `sinh.tsv`, `cosh.tsv`, `tanh.tsv`)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -531,8 +533,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `every_f16_transcendental_is_correctly_rounded_over_all_inputs` passes under `**Run transcendental**` (each one-argument method over all 65 536 inputs; `powf`, `atan2` over every pair of special values and 2^20 deterministic pairs; `powi` over all inputs with exponents −4 to 4)
-- [ ] Gate check passes: Task (`piperine-numbers`), then the Batch gate
+- [x] `every_f16_transcendental_is_correctly_rounded_over_all_inputs` passes under `**Run transcendental**` (each one-argument method over all 65 536 inputs; `powf`, `atan2` over every pair of special values and 2^20 deterministic pairs; `powi` over all inputs with exponents −4 to 4)
+- [x] Gate check passes: Task (`piperine-numbers`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -552,9 +554,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] Phase C's T90 commit is an ancestor of the branch head; the head is recorded on the Handoff
-- [ ] Every anchor is found or its difference is on the Handoff
-- [ ] Gate check passes: Task (Build line only)
+- [x] Phase C's T90 commit is an ancestor of the branch head; the head is recorded on the Handoff
+- [x] Every anchor is found or its difference is on the Handoff
+- [x] Gate check passes: Task (Build line only)
 
 **Tests**: none
 **Gate**: task
@@ -574,10 +576,10 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_width_types_and_constants_are_checked_printed_and_serialized` passes under `**Run irw**`
-- [ ] `each_number_width_is_refused_by_name` passes under `**Run interp**`
-- [ ] Every existing `piperine-ir` and `piperine-interp` target passes (an IR without the new forms prints and serializes byte-identical)
-- [ ] Gate check passes: Task (`piperine-ir`, `piperine-interp`)
+- [x] `number_width_types_and_constants_are_checked_printed_and_serialized` passes under `**Run irw**`
+- [x] `each_number_width_is_refused_by_name` passes under `**Run interp**`
+- [x] Every existing `piperine-ir` and `piperine-interp` target passes (an IR without the new forms prints and serializes byte-identical)
+- [x] Gate check passes: Task (`piperine-ir`, `piperine-interp`)
 
 **Tests**: integration
 **Gate**: task
@@ -597,8 +599,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `each_new_scalar_has_its_leaf_count_and_bytes` passes under `**Run planw**` (alone, in a struct, in an array and in a record field; two pins of one type have equal layouts, abi.md P4)
-- [ ] Gate check passes: Task (`piperine-plan`, `piperine-abi`)
+- [x] `each_new_scalar_has_its_leaf_count_and_bytes` passes under `**Run planw**` (alone, in a struct, in an array and in a record field; two pins of one type have equal layouts, abi.md P4)
+- [x] Gate check passes: Task (`piperine-plan`, `piperine-abi`)
 
 **Tests**: integration
 **Gate**: task
@@ -618,9 +620,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `the_runtime_raises_msl_panics_and_carries_every_width` passes under `**Run rtw**` (each panic's message, `Carried` bytes and levels round trip for each type, conversions against `NumberConversion`)
-- [ ] `a_design_without_number_widths_gets_todays_runtime_files` passes under `**Run tw**`
-- [ ] Gate check passes: Task (`piperine-transpile`)
+- [x] `the_runtime_raises_msl_panics_and_carries_every_width` passes under `**Run rtw**` (each panic's message, `Carried` bytes and levels round trip for each type, conversions against `NumberConversion`)
+- [x] `a_design_without_number_widths_gets_todays_runtime_files` passes under `**Run tw**`
+- [x] Gate check passes: Task (`piperine-transpile`)
 
 **Tests**: unit
 **Gate**: task
@@ -640,8 +642,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] Every existing `piperine-lang` target passes unchanged
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] Every existing `piperine-lang` target passes unchanged
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: none
 **Gate**: task
@@ -661,11 +663,11 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `every_float_and_integer_width_type_checks` passes under `**Run typesw**`
-- [ ] `a_width_outside_the_rules_is_e0103` passes under `**Run typesw**`
-- [ ] `a_literal_out_of_its_type_is_e0909` passes under `**Run typesw**`
-- [ ] `an_f32_where_an_f64_is_required_is_a_mismatch` passes under `**Run typesw**`
-- [ ] Gate check passes: Task (`piperine-lang`), then the Batch gate
+- [x] `every_float_and_integer_width_type_checks` passes under `**Run typesw**`
+- [x] `a_width_outside_the_rules_is_e0103` passes under `**Run typesw**`
+- [x] `a_literal_out_of_its_type_is_e0909` passes under `**Run typesw**`
+- [x] `an_f32_where_an_f64_is_required_is_a_mismatch` passes under `**Run typesw**`
+- [x] Gate check passes: Task (`piperine-lang`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -685,9 +687,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_widths_compile_and_compute_as_their_library` passes under `**Run tw**` (one function per type with every operator, `as` pair and method, its results compared with Rust's `f32` and with `piperine-numbers` called in the test; a zero divisor panics naming it)
-- [ ] Every transpile golden is byte-identical
-- [ ] Gate check passes: Task (`piperine-transpile`)
+- [x] `number_widths_compile_and_compute_as_their_library` passes under `**Run tw**` (one function per type with every operator, `as` pair and method, its results compared with Rust's `f32` and with `piperine-numbers` called in the test; a zero divisor panics naming it)
+- [x] Every transpile golden is byte-identical
+- [x] Gate check passes: Task (`piperine-transpile`)
 
 **Tests**: integration
 **Gate**: task
@@ -707,8 +709,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_widths_lower_to_their_ir_types_and_constants` passes under `**Run elabw**` (`0.1f32`, `0.1` as `f16` and as `f128` carry the bits Rust's `0.1f32` and the exact rational nearest give; a double-rounding literal is read right)
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `number_widths_lower_to_their_ir_types_and_constants` passes under `**Run elabw**` (`0.1f32`, `0.1` as `f16` and as `f128` carry the bits Rust's `0.1f32` and the exact rational nearest give; a double-rounding literal is read right)
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -728,9 +730,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `const_contexts_compute_every_width_as_the_run_does` passes under `**Run elabw**` (a `const`, a `const fn`, a param default and an array length over each width, compared with the same expression run by the generated code of T116 and with the oracles)
-- [ ] `a_const_panic_of_a_new_width_names_the_expression` passes under `**Run elabw**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `const_contexts_compute_every_width_as_the_run_does` passes under `**Run elabw**` (a `const`, a `const fn`, a param default and an array length over each width, compared with the same expression run by the generated code of T116 and with the oracles)
+- [x] `a_const_panic_of_a_new_width_names_the_expression` passes under `**Run elabw**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -750,9 +752,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f32_computes_what_rust_f32_computes` passes under `**Run srcw**`
-- [ ] `a_carried_f32_is_the_f32_leaf` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `f32_computes_what_rust_f32_computes` passes under `**Run srcw**`
+- [x] `a_carried_f32_is_the_f32_leaf` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task
@@ -772,8 +774,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f16_is_ieee_binary16_bit_for_bit` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `f16_is_ieee_binary16_bit_for_bit` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task
@@ -793,8 +795,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f128_is_ieee_binary128_bit_for_bit_in_every_operation_and_method` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`), then the Batch gate
+- [x] `f128_is_ieee_binary128_bit_for_bit_in_every_operation_and_method` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -814,9 +816,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `wide_integers_wrap_modulo_two_to_the_n_in_every_operation` passes under `**Run srcw**`
-- [ ] `a_wide_literal_past_its_type_is_e0909` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `wide_integers_wrap_modulo_two_to_the_n_in_every_operation` passes under `**Run srcw**`
+- [x] `a_wide_literal_past_its_type_is_e0909` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task
@@ -836,8 +838,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `the_host_reads_each_width_as_one_exact_value` passes under `**Run apiw**` (a `UInt<200>` of value `2^199 + 1` reads as that integer, never as limbs, CV-32 AC 4; `0.1f32`, `f16`, `f128` read with their shortest text; a param set by text reads back)
-- [ ] Gate check passes: Task (`piperine-api`)
+- [x] `the_host_reads_each_width_as_one_exact_value` passes under `**Run apiw**` (a `UInt<200>` of value `2^199 + 1` reads as that integer, never as limbs, CV-32 AC 4; `0.1f32`, `f16`, `f128` read with their shortest text; a param set by text reads back)
+- [x] Gate check passes: Task (`piperine-api`)
 
 **Tests**: integration
 **Gate**: task
@@ -857,8 +859,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_widths_print_exactly_in_every_format` passes under `**Run clirun**`
-- [ ] Gate check passes: Task (`piperine-cli`)
+- [x] `number_widths_print_exactly_in_every_format` passes under `**Run clirun**`
+- [x] Gate check passes: Task (`piperine-cli`)
 
 **Tests**: integration
 **Gate**: task
@@ -878,8 +880,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it` and `floats_of_every_width_and_wide_integers_run` pass under `**Run book**`, and `book_inventory` passes
-- [ ] Gate check passes: Task (`piperine`)
+- [x] `a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it` and `floats_of_every_width_and_wide_integers_run` pass under `**Run book**`, and `book_inventory` passes
+- [x] Gate check passes: Task (`piperine`)
 
 **Tests**: integration
 **Gate**: task
@@ -899,8 +901,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `gaps_drops_what_composite_values_phase_d_closed` passes under `**Run docs**`
-- [ ] Gate check passes: Task (`piperine-cli`), then the Batch gate
+- [x] `gaps_drops_what_composite_values_phase_d_closed` passes under `**Run docs**`
+- [x] Gate check passes: Task (`piperine-cli`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -1062,10 +1064,39 @@ Proof: `cargo build -p piperine-numbers -p piperine-abi -p piperine-digital-solv
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
+**Defaults and findings (D1 to D3, numeric crate):**
+- D4 gate (T110 to T115, 2026-11-23): Build line green with zero warnings; cargo test of piperine-ir, -interp, -plan, -transpile, -api, -lang (--no-fail-fast, full) green; parity targets parity_corpus, source_aggregates, source_carrier_arrays and buck_whole green (release). Commits: 062811d3 T110, 0b44e6a8 T111 (carries the plan sources T112 needed to build), d6fade4e T112, 768bf054 T113, 317a987d T114, 80461e8f T115. Open for D5 (T116 on): the printer refuses an Expr::FloatBits/Wide literal and prints no operator, as or method of the new types yet (rt::WideUInt spelled, rt::Float16/Float128 embedded); rust_type already spells every new type; integer_path still refuses a width over 64; the elaborator (T117) still lowers a float literal typed f32/f16/f128 as Constant::Real and has no wide Constant; --param of f32/f16/f128/wide integers is refused by name in override_text.rs (T123). L13 note: explicit-unknowns refuses Logic<N> for N > 64 citing L13: T126 must make Logic<100> run or re-own the refusal.
+- T115: Ty gains F32, F16, F128 (is_float, is_other_float, is_numeric, Ty::float(width)); types/widths.rs holds FloatText (the float suffix of an integer-spelled literal such as 2f32), the bare float literal test and the E0909 check of a float literal in its own format through piperine-numbers' DecimalText (piperine-lang now depends on piperine-numbers). An unsuffixed float literal takes the expected float type, a literal operand is typed after the other operand (literal_last), arithmetic and unary minus pass an expected non-f64 float down. integer_type accepts 1..=2^32-1 and E0103 names Appendix C.2's limit; Float<N> maps 16/32/64/128; the H.2 rows key every float, the H.1 rows every integer. Exhaustiveness over 126-bit types is Opaque (cover.rs, patterns.rs shifted 1i128 << n). A width that is a const expression (UInt<{ A + 1 }>) already folded through const_term, so VD1 needed no change. The types_aggregates, types_integers, types_subset and types_values rows that asserted f32/u128/Float<N> are P0001 left (the design's 'may move' row) and are rows of every_float_and_integer_width_type_checks; --param text for f32/f16/f128 and wide integers is refused by name until T123. docs: E0103's row and Appendix C.2 name the 2^32-1 limit. Default per spec: a carrier of f32 with no initial value is E0187 (no number has a Default, H.8).
+- T114: Ty::UInt and Ty::Int hold u32 (a pure widening: the lexer's 1..=128 suffixes and the checker's 1..=64 widths are unchanged in this commit, so no behaviour moved; the whole piperine-lang suite passes on it: see the batch run at the end of D4). Checked alone on the T111 to T113 tree by cargo build -p piperine-lang.
+- T113: rt/numbers.rs compiles the leaf crate's own files into piperine-transpile through #[path] (no second copy), and rt::NUMBER_FILES embeds the same files with include_str! as rt/numbers/<file>.rs; Runtime::files_for(RuntimeForms { digital, numbers }) adds rt/numbers.rs, the files and rt/widths.rs only when Transpiler::number_widths() (f16, f128 or an integer over 64 bits anywhere in the IR) holds, so Runtime::files(bool) and every golden/cache key stay as they were. rt/widths.rs: Div/Rem/clamp/rem_euclid of the wide integers and clamp of Float16/Float128 raise rt::Panic, Carried for f32/Float16/Float128/WideUInt/WideInt (bytes of the plan's layout, levels of the §2 table), Default impls, and Convert (float_to_float, integer_to_float, float_to_integer, integer_to_integer over the FloatRepr and IntegerRepr traits, each over NumberConversion). The in-crate test a_type_rust_lacks_is_refused_by_name now keeps only the width-0 rows (its UInt<65> rows are the design's 'type prints' move; the printed forms are T116's test).
+- T112: plan/src/widths.rs (NumberLayout) holds the leaf, count and size of each new scalar and the constant bytes of FloatBits and Wide; f32 is the F32 leaf (static layout), f16 the existing U16 layout, f128 a static {v: U64 x2} (size 16, align 8); an integer over 64 bits has no static layout (CarrierLayout::of is None) and is one composite leaf of count ceil(N/64), so CompositeLeaf gained a count field. abi.md P3 states that the IR type is the metadata. Source landed with T111's commit because interp needs plan to build; this commit holds the test and abi.md.
+- T111: IR gains ValueType::{F32, F16, F128}, Constant::{FloatBits(u128), Wide(WideId)}, Expr::{FloatBits, Wide} (a literal of a non-f64 float / a wide integer; the design named only Constant, an expression literal needs a form), WideData and Ir.wides (serde default, skipped when empty), IrBuilder::wide; check/widths.rs validates them (a FloatBits holds no bit past the width, a Wide holds ceil(N/64) limbs canonical, Int<N> sign-extended); the width rule is 1..=2^32-1 and a width of 0 reads 'type u0 has a width outside 1..=4294967295' (tests/digital.rs's u65 row moved to u0, the design's 'may move' row). Typing: every float width takes the H.2 rows and every integer width the H.1 rows. The interpreter's NumberWidths (interp/src/widths.rs) names each type held in a param, local, carrier, stream field, reaction local or any reached expression, through aggregates and struct fields. Transpile, lang and api got fail-loud stubs where a match is exhaustive (the printer's FloatBits/Wide literal is Unsupported until T116).
+- T110: phase C's merge d734d458 is an ancestor of the branch head (origin/main merged at eeeb0624; Build line green, zero warnings, 2026-11-23). Anchors re-read: `ValueType` is model.rs:990 (F64, Bool, Unit, Fn, UInt(u32), Int(u32), Tuple, Array, Struct, Enum, Option; widths already u32) and `Constant` model.rs:1118 (Real, Bool, Int(i128), Aggregate); phase C added `piperine-transpile/src/rt/array.rs`, `print/carrier_array.rs`, `piperine-plan/src/array.rs`, `piperine-ir/src/check/{aggregates,carrier_array}.rs`; the interpreter's refusal file is `piperine-interp/src/composite.rs`. Design-d.md anchors otherwise stand.
+- T109: every f16 transcendental is Rust's f64 method rounded once to f16 (powi as powf of the integer, since llvm's powi accumulates error): all 65 536 inputs of each of the 13 one-argument methods, powi with exponents -4 to 4 over all inputs, and atan2/powf over every pair of 32 special values plus 2^20 deterministic (splitmix64) pairs each match the f128 library rounded to f16, with no input flagged ambiguous (an f128 result within one f128 unit of an f16 midpoint fails by name; the one exception is an exact x^y, found with ExactPower, whose f128 value is exact so a tie is a true tie). The test uses the f128 library as its oracle (already proven by T104 to T108) and runs on all cores (std::thread::scope): about 3 minutes wall in release. D3 (T105 to T109) closed; per the gate policy no workspace suite was run, only the Build line and cargo test -p piperine-numbers.
+- T108: sinh/cosh use their Taylor series up to |x| = 2 (relatively accurate for a tiny x, no cancellation) and (e^x -+ e^-x)/2 beyond; tanh is sinh/cosh; sinh and cosh give infinity and tanh +-1 past |x| = 12 000 (the Ziv loop decides everything between, including the overflow at about 11 357 and the saturation to 1 near 40). Every row of sinh, cosh, tanh matched at the first attempt.
+- T107: asin = 2 atan(x / (1 + sqrt((1-x)(1+x)))), acos = 2 atan(sqrt((1-x)/(1+x))) (stable at +-1: the factors 1-x and 1+x are exact), asin(+-1) = +-pi/2 and acos(-1) = pi from the pi interval, atan of an infinity is +-pi/2; atan2 follows C's table (signed zero y with a negative or -0 x gives +-pi, y infinite gives +-pi/4, +-3pi/4 or +-pi/2) and otherwise adds pi to atan(|y|/|x|) when x is negative. Every row of asin, acos, atan, atan2 and exact.tsv matched at the first attempt.
+- T106: sin/cos/tan reduce with ArgumentReduction::quarter_turns at precision + 48 guard bits and read the quadrant; tan is sin/cos or -cos/sin of the remainder. Every row of sin, cos and tan.tsv (the largest finite argument, 300 odd multiples of pi/2 rounded to f128 and subnormal arguments among them) matched at the first attempt.
+- T105: ExactPower (src/power.rs, not in the design table) decides every x^y that is rational: x = m*2^a with m odd and y = p/2^j with p odd is a power only when m is a perfect 2^j-th power (j exact integer square roots), then the result t^p is computed exactly with limbs when p*bits(t) <= 230 (else it is neither representable nor a midpoint, so the Ziv loop ends) and a power of two is exact for any exponent; powi(n) is powf of that integer (the same values as IEEE pown). exp() now clamps both bounds into [-13000, 13000] and pins a positive result's lower bound at zero: a bound dragged below zero by the tail rounded to -0 and disagreed with +0 (an infinite Ziv loop that the vector test exposed).
+- T104: ElementaryFunctions (src/elementary.rs, a file the design table did not list) holds the interval-level exp, ln, sin/cos and atan (Taylor series with a proven tail bound, stopping 2^-(precision+8) below the leading term so tiny arguments stay relatively accurate); transcendental.rs is the thin Float128 layer (special values, exact cases, Ziv). exp returns +inf from x >= 11357 and +0 from x <= -11434 without evaluating; the logarithms of 2^k and 10^k (k 0..=48) are exact. Result: every row of exp, ln, log2, log10 and exact.tsv matches bit for bit at the first attempt. D2 (T99 to T104) closed; per the gate policy no workspace suite was run.
+- T103: ZivRounding::round takes the exact case as an Option<Float128> and a closure from the precision to an Interval (None meaning outside the domain); it starts at 160 bits and doubles to 2^20 (thirteen evaluations); the cap returns None.
+- T102: ArgumentReduction::quarter_turns raises its working precision (precision + exponent + 160, doubling) until the remainder interval is relatively narrow; ln_two_steps takes an Interval (so exp can reduce y*ln x) and refuses values above 2^60. ReferenceConstants quantizes the precision up to a multiple of 256 so nearby requests share one cached entry. The reduction test checks the interval against a 20 000-bit pi (floor from pi_bits.hex, so the oracle remainder is exact within |n| * 2^-20001), skipping only arguments within 2^-200 of a quarter turn where the quadrant is ambiguous; ln 2 is checked against the 1000-decimal value.
+- T101: the constants' tests compare with the committed 1000-decimal values (truncated, from mpmath, cross-checked inside generate.py against the well-known leading digits of OEIS A000796, A002162, A002392; the digits were not typed from memory beyond those prefixes) as consistency intervals [T, T + 10^-1000] since the series interval at 3 300 bits is narrower than the 1000th decimal; the returned interval is carried at precision + 32 guard bits, so it is far narrower than two units in the last place. A static OnceLock<Mutex<HashMap>> caches per (constant, precision).
+- T100: Interval ops take their working precision from the interval; a sticky bit is valid only on a magnitude longer than the precision (documented on MultiPrecision::rounded; add pads the larger operand to precision+3 bits before using the far-operand shortcut, which found a bug the directed-rounding test caught). The tests' shared fixtures were split into small files (tests/support/exact*.rs, one concern each, included per target with #[path]) so no target carries unused code.
+- T99: the vectors have 1 300 to 2 700 rows per function (the plan said about 2 000; the test requires at least 1 000), computed by tests/vectors/generate.py with mpmath 1.3.0 at 1 024 bits (Ziv loop on the oracle side, margin 2^-984 relative) and exact Fraction rounding; exact.tsv holds 1 180 exact cases. Extra data files: constants.txt (pi, ln 2, ln 10 to 1 000 decimals, asserted against their well-known leading digits inside the generator), pi_bits.hex (floor(pi * 2^20000)), half_pi.tsv (the f128 nearest to k*pi/2, k odd up to 16 370 bits, hex); the sin/cos/tan sets also contain 300 such arguments each. powi rows carry the i32 exponent in decimal. Special-value rules are those of C99 Annex F / Rust: powf(x, +-0) = 1, powf(1, y) = 1, powi(x, 0) = 1 for any x, atan2 with signed zeros and infinities, min(-0,+0) not involved.
+- T98: DecimalText also reads inf, -inf, NaN (any case) so the host's text reads back; shortest() is plain notation for decimal exponents -5..=16 and d.ddde<x> outside it, shortest_scientific() is always Rust's {:e} form (the tests compare it with Rust's own f32/f64 output); a tie between two equally close shortest candidates goes up, as Rust does. The shortest search is exact (one big division, then 36-digit integers, binary search over the digit count). D1 (T91 to T98) closed; per the gate policy no workspace suite was run, only the Build line and cargo test -p piperine-numbers.
+- T97: float to integer maps a float whose magnitude passes the target to the range edge and truncates the rest exactly; the double-rounding case is 1 + 2^-11 + 2^-40 (f64 to f16 once gives 0x3C01, through f32 gives 0x3C00).
+- T96: the f128 operand generator mixes random bits with exponents near the anchor, sparse significands (ties), subnormals and values near overflow; hypot and rem_euclid are checked on one random pair in four (1 000 pairs) plus every special pair and the largest finite value. All exact operations are IeeeArithmetic, tested against ExactOracle (independent code).
+- Root Cargo.toml gains [profile.dev.package.{piperine-numbers,num-bigint,num-integer,num-traits}] opt-level = 3 so the numeric tests (all 65 536 f16 inputs, 2^22 operand pairs against big-integer arithmetic) run in a dev build in about a minute, not hours; no result depends on it. T95: rem_euclid and hypot are checked on one random pair in eight (2^19 pairs), the other operations on all 2^22. Hypot, like rem_euclid, is the exact IeeeArithmetic (not f64), so it is correctly rounded by construction. IeeeArithmetic (src/arithmetic.rs, exact operations of any BinaryFormat) is a file the design table did not list: Float16 and Float128 delegate their exact methods to it. Decisions the spec left open, followed by code and oracle alike: min(-0,+0) = -0 and max = +0; rem_euclid with an infinite divisor leaves a non-negative x and gives +inf for a negative x (Rust's), and an exact zero remainder keeps the sign of x; fract(x) = x - trunc(x) in IEEE terms (+0 for an integer, NaN for an infinity).
+- Build gate: the Build line already prints one warning on main before this work (dead code 'run' in root test tests/book/types.rs); it is not ours and is untouched; the gate used here is zero warnings and zero errors from piperine-numbers plus no error anywhere.
+- T91 anchors re-read on main (52b2223c): all found. Differences: check.rs sized_type is at 460-475 and integer_type 505-515 (a GenericInteger{signed,width} Ty variant and ConstTerm already exist, so D4's checker widening must carry it); catalogue.rs keys F64_METHODS/INTEGER_METHODS at 69/105 and dispatch at 140-141 (INTEGER_METHODS also covers Ty::GenericInteger); consts.rs wrap is 1i128 << bits at 918/933/942; model.rs ValueType at 906 and Constant at 1034; rt.rs Runtime::files(digital: bool) at 58; Cell at table.rs:19; rust_type refusal at print/value.rs ~605; types check at ir check.rs 773. No tasks-d.md approval line exists; the caller authorized execution.
+
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
 ---
+
+- D5/D6 gate (T116 to T126, 2026-11-23): Build line green with zero warnings; cargo test of piperine-ir, -transpile, -plan, -lang, -api, -cli (docs, run) green; book_language, book_inventory, book_claims, book_types green; parity source_number_widths (release, 9 tests), source_logic, source_aggregates, source_carrier_arrays, source_control green. Commits: dbe2c1ec T116; 6ad639c1 T117 and T118 (one commit: the literal fold is the lowering); 57adf2aa T119 and T120; 9760d834 T121; f868f619 T122; 7a88cb3d T123 and T124 (also carries the Book status-box text edit of T125); f67cf0af T125; c0a4c45a T126.
+- Deviations: T117/T118, T119/T120 and T123/T124 are one commit each (the work shares files). `Expr::Math` is typed by its operand in `Ir::check` (H.2). A design that uses f32 embeds the numeric runtime (Carried and Convert live in rt/widths.rs). The lexer rejects a float literal whose f64 value is infinite (A.2 rule 8), so an f128 literal is limited to the f64 range: the f128 vectors drawn from source are the finite ones within it. `Logic<N>` for N > 64 runs (L13 refusal removed, a generic integer width takes any value up to 2^32 - 1). The `**Approved**` line for this tasks file was relayed by the coordinator and is NOT written: it records the user's own words.
 
 ## Phase Execution Map
 

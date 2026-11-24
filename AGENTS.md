@@ -57,6 +57,7 @@ crates/
 ├── piperine-lang/            parser + type checker + elaborator: msl/ pom/ types/ elab/ (+ std/), msl::format (fmt)
 ├── piperine-ir/              the IR: arenas, builder, check(), printer and parser
 ├── piperine-abi/             device ABI: repr(C) contract, Device trait, thunks, caller::Handle, validate, verify
+├── piperine-numbers/         number widths: integers of any width, f16 and f128 correctly rounded; leaf crate, embedded as runtime source
 ├── piperine-solver/          owner: protocol/, analyses/, bind (core/), Net naming, prelude
 ├── piperine-analog-solver/   analog sub-solver: math/, device/ (Assembly), convergence, TrBdf2
 ├── piperine-digital-solver/  digital sub-solver (the byte-net engine of the device ABI)

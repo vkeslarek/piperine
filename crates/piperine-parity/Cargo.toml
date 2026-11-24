@@ -16,6 +16,8 @@ tempfile.workspace = true
 [dev-dependencies]
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
+piperine-numbers = { path = "../piperine-numbers" }
+num-bigint = "0.4"
 
 # The buck's targets run by name, not by `cargo test` (MD-77; registered in `suite_hygiene.rs`).
 

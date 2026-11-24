@@ -106,7 +106,7 @@ impl<'a> TypeItems<'a> {
                     TypeKind::Enum { variants, .. } => variants.iter().any(|v| v.fields.iter().any(|(_, field)| self.holds_real_visiting(field, visited))),
                 }
             }
-            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::Fn(..) => false,
+            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Fn(..) => false,
         }
     }
 

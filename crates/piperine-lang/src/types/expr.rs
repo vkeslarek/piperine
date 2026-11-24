@@ -11,6 +11,7 @@ use super::check::{Checker, Context};
 use super::derives::DerivedTrait;
 use super::flow::Assigned;
 use super::operators::OperatorTrait;
+use super::widths::FloatText;
 use super::unsupported::Unsupported;
 use super::{Nominal, Ty};
 
@@ -67,8 +68,8 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
-                ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) && *expected == Ty::F64 => {
-                    self.mismatch_coded(file, node.span, code, "f64", "an integer literal");
+                ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) && expected.is_float() => {
+                    self.mismatch_coded(file, node.span, code, &expected.name(self.design), "an integer literal");
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
@@ -86,9 +87,20 @@ impl Checker<'_> {
                     _ => self.some(expr, args, None),
                 },
                 // An integer literal where an integer type is expected takes that type (§1 rule 7).
-                ExprKind::Lit(lit) if expected.is_integer() && matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) => {
+                ExprKind::Lit(lit) if expected.is_integer() && matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) => {
                     let LitKind::Int(text) = &lit.kind else { return };
                     self.integer_literal(file, node.span, text, Some(expected), false)
+                }
+                // `1.5` where a float type is expected takes that type (§1.4.2); one past the type's range is `E0909`.
+                ExprKind::Lit(lit) if expected.is_float() && matches!(&lit.kind, LitKind::Float { raw, .. } if lexer::float_suffix(raw).is_empty()) => {
+                    let LitKind::Float { raw, .. } = &lit.kind else { return };
+                    self.check_float_literal(file, node.span, raw, expected);
+                    Some(expected.clone())
+                }
+                // `-1.5` where a float type other than `f64` is expected: the minus takes the expected type.
+                ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_other_float() && self.bare_float_literal(*operand) => {
+                    self.check_as(*operand, expected, code);
+                    Some(expected.clone())
                 }
                 // `-256` where an `i16` is expected: the minus takes the expected type, and a literal
                 // operand may reach the magnitude of the type's minimum.
@@ -111,7 +123,7 @@ impl Checker<'_> {
                 // An operator whose result has its operands' type passes the expected integer type
                 // down to both, with the rule's code (`count <- count + 1.0` is `E0432`); a shift
                 // passes it to its left operand only.
-                ExprKind::Binary { op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor, lhs, rhs } if expected.is_integer() => {
+                ExprKind::Binary { op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor, lhs, rhs } if expected.is_integer() || expected.is_other_float() => {
                     self.check_as(*lhs, expected, code);
                     self.check_as(*rhs, expected, code);
                     Some(expected.clone())
@@ -196,7 +208,7 @@ impl Checker<'_> {
                     return ty;
                 }
                 match self.infer(*operand) {
-                    Some(t) if t.is_integer() => Some(t),
+                    Some(t) if t.is_integer() || t.is_other_float() => Some(t),
                     Some(Ty::F64) | None => Some(Ty::F64),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
@@ -277,7 +289,7 @@ impl Checker<'_> {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let comparison = matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge);
-                let ty = match self.operands(lhs, rhs, comparison, |t| t.is_integer()) {
+                let ty = match self.operands(lhs, rhs, comparison, |t| t.is_integer() || t.is_other_float()) {
                     Some(t) => t,
                     None => Ty::F64,
                 };
@@ -295,7 +307,7 @@ impl Checker<'_> {
                     return self.operator_call(whole, operator, lhs, ty, Some(rhs));
                 }
                 match first_ty {
-                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Str)) => self.check(second, &t),
+                    Some(t @ (Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Str)) => self.check(second, &t),
                     // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
                     // when it implements `PartialEq`.
                     Some(t) if t.is_composite() || matches!(t, Ty::Param(_)) => {
@@ -391,7 +403,9 @@ impl Checker<'_> {
     /// two operands of one type are typed.
     pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
         let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
-        if bare(self, lhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
+        // a bare float literal takes the type of the other operand (`2.0 * b` with `b: f16`), unless that operand is a bare integer
+        // literal: `1 + 1.0` is typed from the float, so the integer literal is the one that does not convert
+        if bare(self, lhs) && !bare(self, rhs) || self.bare_float_literal(lhs) && !self.bare_float_literal(rhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
     }
 
     /// The right operand of `<<` or `>>`: any integer type (DIG-01 AC 6); a bare literal there
@@ -414,7 +428,7 @@ impl Checker<'_> {
         let target = self.lower_type(ty);
         let source = self.infer(operand);
         let target = target?;
-        let numeric = |t: &Ty| t.is_integer() || *t == Ty::F64;
+        let numeric = |t: &Ty| t.is_numeric();
         // §1.3.7: an enum without fields converts to an integer type; its value is the discriminant.
         if let Some(Ty::Enum(Nominal { decl, .. })) = &source
             && target.is_integer()
@@ -478,15 +492,26 @@ impl Checker<'_> {
 
     fn literal(&mut self, kind: &LitKind, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
         match kind {
-            LitKind::Float { raw, .. } => match raw.rsplit_once('_') {
-                Some((_, suffix)) if suffix.starts_with('f') && suffix != "f64" => {
-                    self.unsupported(file, span, &format!("`{suffix}` literal"));
-                    None
+            // §1.4.2: a suffix gives the type; an SI-suffixed literal is always an `f64` (A.2 rule 1)
+            LitKind::Float { raw, .. } if lexer::float_suffix(raw) == "f32" => {
+                self.check_float_literal(file, span, raw, &Ty::F32);
+                Some(Ty::F32)
+            }
+            // an unsuffixed literal with no expected type is an `f64`: one past `f64`'s range is `E0909` (A.8 rule 8, QD5)
+            LitKind::Float { raw, .. } => {
+                if lexer::float_suffix(raw).is_empty() {
+                    self.check_float_literal(file, span, raw, &Ty::F64);
                 }
-                _ => Some(Ty::F64),
-            },
+                Some(Ty::F64)
+            }
             LitKind::Bool(_) => Some(Ty::Bool),
-            LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
+            LitKind::Int(text) if FloatText::is(text) => {
+                let ty = FloatText::suffix(text);
+                if let Some(ty) = &ty {
+                    self.check_float_literal(file, span, text, ty);
+                }
+                ty
+            }
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => Some(Ty::Str),
         }
@@ -503,8 +528,8 @@ impl Checker<'_> {
             _ => {
                 let width = suffix[1..].parse::<u8>().unwrap_or(u8::MAX);
                 match (&suffix[..1], width) {
-                    ("u", 1..=64) => Ty::UInt(width),
-                    ("i", 1..=64) => Ty::Int(width),
+                    ("u", 1..=128) => Ty::UInt(u32::from(width)),
+                    ("i", 1..=128) => Ty::Int(u32::from(width)),
                     ("u" | "i", _) => {
                         self.unsupported(file, span, &format!("integer type `{suffix}`"));
                         return None;
@@ -537,7 +562,7 @@ impl Checker<'_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_text(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
-                LitKind::Int(text) if !text.ends_with("f64") => Some(text.clone()),
+                LitKind::Int(text) if !FloatText::is(text) => Some(text.clone()),
                 _ => None,
             },
             _ => None,

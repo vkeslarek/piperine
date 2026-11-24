@@ -107,8 +107,8 @@ impl<'d> Coverage<'d> {
                 let items = vec![(**element).clone(); *length as usize];
                 self.missing_product(&items, rest, rows, |parts| format!("[{}]", parts.join(", ")))
             }
-            Ty::UInt(n) => self.missing_integers(0, (1i128 << n) - 1, rest, rows),
-            Ty::Int(n) => self.missing_integers(-(1i128 << (n - 1)), (1i128 << (n - 1)) - 1, rest, rows),
+            Ty::UInt(n) if *n <= 126 => self.missing_integers(0, (1i128 << n) - 1, rest, rows),
+            Ty::Int(n) if *n <= 126 => self.missing_integers(-(1i128 << (n - 1)), (1i128 << (n - 1)) - 1, rest, rows),
             _ => {
                 let sub = Self::specialize(rows, |c| match c {
                     Covers::All => vec![vec![]],

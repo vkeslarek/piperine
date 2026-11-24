@@ -23,6 +23,8 @@ impl JsonRecord {
                 Field::Real(v) => JsonRecord::real(*v),
                 Field::Bool(v) => v.to_string(),
                 Field::Int(v) => v.to_string(),
+                Field::Float(v) => JsonRecord::float(v),
+                Field::Wide(v) => v.text(),
                 Field::Text(v) | Field::Variant(v) => JsonRecord::string(v),
                 Field::Composite(v) => v.json(&JsonRecord::scalar, &JsonRecord::string),
             };
@@ -37,9 +39,21 @@ impl JsonRecord {
             Cell::Real(v) => JsonRecord::real(*v),
             Cell::Bool(v) => v.to_string(),
             Cell::Int(v) => v.to_string(),
+            Cell::Float(v) => JsonRecord::float(v),
+            Cell::Wide(v) => v.text(),
             Cell::Text(v) => JsonRecord::string(v),
             Cell::Composite(_) | Cell::Absent => "null".to_string(),
         }
+    }
+
+    /// An `f16`, `f32` or `f128` as a JSON number in its shortest form that reads back as the same value (a NaN or an infinity
+    /// is the string `"NaN"`, `"inf"` or `"-inf"`, as a real is).
+    fn float(value: &piperine_api::FloatCell) -> String {
+        if value.is_finite() {
+            return value.text();
+        }
+        let nearest = value.nearest_f64();
+        JsonRecord::real(nearest)
     }
 
     fn real(value: f64) -> String {

@@ -261,8 +261,8 @@ impl Elaboration<'_, '_> {
                     self.unsupported(data.file, self.design.expr_node(expr).span, "a `bool` initial value");
                     return None;
                 }
-                Ok(Constant::Int(_)) => {
-                    self.unsupported(data.file, self.design.expr_node(expr).span, "an integer initial value");
+                Ok(Constant::Int(_) | Constant::FloatBits(_) | Constant::Wide(_)) => {
+                    self.unsupported(data.file, self.design.expr_node(expr).span, "an integer or number-width initial value");
                     return None;
                 }
                 Ok(Constant::Aggregate(_)) => {

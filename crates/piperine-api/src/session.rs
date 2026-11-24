@@ -257,13 +257,16 @@ impl Session {
     /// [`Session::set_text_param`] before its refusals are renamed.
     fn write_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
         let read = ParamText::read(ir, path, text)?;
+        if let ParamText::Exact { bytes } = &read {
+            return Session::write_exact(table, derive, circuit, path, bytes.clone(), text);
+        }
         match read.option_leaves(&path.label())? {
             None => match read {
                 ParamText::Whole(scalar) => match scalar.exact_real() {
                     Some(value) => Session::set_param(table, derive, circuit, path, value),
                     None => Session::set_exact_integer(table, derive, circuit, path, scalar),
                 },
-                ParamText::Option { .. } => Ok(()),
+                ParamText::Option { .. } | ParamText::Exact { .. } => Ok(()),
             },
             Some(leaves) => {
                 // both leaves are written on a copy of the table, so the param changes once, whole
@@ -278,6 +281,19 @@ impl Session {
                 Session::write_leaf_change(table, derive, circuit, path, &whole, text)
             }
         }
+    }
+
+    /// Writes the exact `bytes` of a param of a number width to its pin and into the table (`text` is what the host gave).
+    fn write_exact(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, bytes: Vec<u8>, text: &str) -> Result<(), Failure> {
+        let changes = table.changes_exact(&path.instance, &path.param, bytes, text, derive)?;
+        let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
+        let mut write = |change: &Changed| {
+            if Session::unwritten(circuit, change, forwarded) {
+                return Ok(());
+            }
+            circuit.write(&change.instance, &change.param, change.param_value())
+        };
+        table.write_changes(&changes, &mut write)
     }
 
     /// Writes an integer no `f64` holds exactly to its pin as the pin's own bytes, and recomputes what a placement derives from it from

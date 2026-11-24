@@ -146,6 +146,15 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
+    /// Copies the wide integer constants the evaluator made into the IR, in handle order, so each
+    /// `Constant::Wide` and `Expr::Wide` the elaboration emitted names the entry it was made as
+    /// (`consts/numbers.rs`).
+    fn sync_wides(&mut self) {
+        for data in self.consts.take_new_wides() {
+            self.ir.wide(data);
+        }
+    }
+
     fn run(mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
         if self.refuse_value_inputs(top) {
             return Err(self.diagnostics);
@@ -182,6 +191,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
+                self.sync_wides();
                 let ir = self.ir.finish(instance);
                 self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
                 if !self.diagnostics.is_empty() {

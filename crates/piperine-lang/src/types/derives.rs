@@ -96,7 +96,7 @@ impl Checker<'_> {
         match ty {
             Ty::Unit => true,
             Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => which.of_integer(),
-            Ty::F64 => which.of_float(),
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 => which.of_float(),
             Ty::Str => which.of_text(),
             // H.8 rule 4: the default of an `Option` is `None`, whatever its payload.
             Ty::Option(_) if which == DerivedTrait::Default => true,
@@ -230,7 +230,7 @@ impl Checker<'_> {
     /// type without `Repr`.
     pub(super) fn repr_levels(&mut self, ty: &Ty) -> Option<u32> {
         match ty {
-            Ty::Bool | Ty::F64 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.design),
+            Ty::Bool | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.design),
             Ty::Tuple(items) => self.repr_sum(items),
             Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),

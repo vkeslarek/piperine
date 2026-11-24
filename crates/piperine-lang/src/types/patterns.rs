@@ -196,7 +196,7 @@ impl Checker<'_> {
     /// A literal pattern: a `bool`, an integer or a float matched against its own type.
     fn literal_pattern(&mut self, file: FileId, span: Span, expr: ExprId, scrut: &Ty) -> Option<Matched> {
         match scrut {
-            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 => self.check(expr, scrut),
+            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 => self.check(expr, scrut),
             other => {
                 let found = self.infer(expr)?;
                 self.mismatch(file, span, other, &found);
@@ -231,8 +231,9 @@ impl Checker<'_> {
     /// nothing the checker can list otherwise, and for a float.
     fn range_covers(scrut: &Ty, low: Option<Option<Number>>, high: Option<Option<Number>>, inclusive: bool) -> Covers {
         let (type_low, type_high) = match scrut {
-            Ty::UInt(n) => (0, (1i128 << n) - 1),
-            Ty::Int(n) => (-(1i128 << (n - 1)), (1i128 << (n - 1)) - 1),
+            // the checker lists the values of a type up to 126 bits; a wider one is opaque (a wildcard covers it)
+            Ty::UInt(n) if *n <= 126 => (0, (1i128 << n) - 1),
+            Ty::Int(n) if *n <= 126 => (-(1i128 << (n - 1)), (1i128 << (n - 1)) - 1),
             _ => return Covers::Opaque,
         };
         let first = match low {

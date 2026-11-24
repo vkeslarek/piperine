@@ -282,7 +282,7 @@ fn integers_and_their_operators_print() {
         assert!(full.contains(form), "{form} missing from:\n{full}");
     }
 
-    // The typing rules: a literal outside its type, a width outside 1..=64, an operator over two
+    // The typing rules: a literal outside its type, a width of 0, an operator over two
     // integer types, and a node typed other than its form gives are each one entry.
     let mut b = IrBuilder::new();
     let mut x = Dx::new(&mut b, "bad.msl", 1, 1);
@@ -296,9 +296,9 @@ fn integers_and_their_operators_print() {
     let f = b.function(FunctionSpec {
         name: "bad".into(),
         origin: Design::origin("bad.msl", 1, 1),
-        params: vec![Design::local("w", Ty::u(65))],
+        params: vec![Design::local("w", Ty::u(0))],
         ret: Ty::u(9),
-        locals: vec![Design::local("w", Ty::u(65))],
+        locals: vec![Design::local("w", Ty::u(0))],
         body: wrong,
     });
     let _ = f;
@@ -306,7 +306,7 @@ fn integers_and_their_operators_print() {
     let broken = ir.check();
     let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
     assert_eq!(at(1, "integer literal 8 is outside the range of u3"), 1, "{broken:#?}");
-    assert_eq!(at(1, "type u65 has a width outside 1..=64"), 1, "{broken:#?}");
+    assert_eq!(at(1, "type u0 has a width outside 1..=4294967295"), 1, "{broken:#?}");
     assert_eq!(at(2, "the operands of a binary operator do not fit its types"), 1, "{broken:#?}");
     assert_eq!(at(3, "expression is typed u9, its form gives u3"), 1, "{broken:#?}");
     assert_eq!(broken.len(), 4, "{broken:#?}");

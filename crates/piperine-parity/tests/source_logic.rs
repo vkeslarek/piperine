@@ -94,11 +94,11 @@ impl Pin {
     /// `(0, 0)` and `z` is `(0, 1)` (§22.1.1).
     fn pattern(bytes: &[u8], levels: usize) -> String {
         let plane = bytes.len() / 2;
-        let word = |at: usize| bytes[at * plane..(at + 1) * plane].iter().rev().fold(0u64, |word, byte| (word << 8) | u64::from(*byte));
-        let (binary, value) = (word(0), word(1));
+        // level `k` is bit `k` of a plane, whatever its width: byte `k / 8`, bit `k % 8`
+        let bit = |at: usize, level: usize| (bytes[at * plane + level / 8] >> (level % 8)) & 1;
         (0..levels)
             .rev()
-            .map(|level| match ((binary >> level) & 1, (value >> level) & 1) {
+            .map(|level| match (bit(0, level), bit(1, level)) {
                 (1, 0) => '0',
                 (1, 1) => '1',
                 (0, 0) => 'x',
@@ -313,23 +313,23 @@ fn the_tables_hold_at_sixty_four_levels() {
 }
 
 #[test]
-fn a_logic_of_a_hundred_levels_is_refused_by_name() {
-    // §22.1.1 (EU-07, N of 100): two `UInt<100>` planes need integers wider than 64 bits, which `GAPS.md` L13 refuses by
-    // name until they exist (owner `composite-values` phase D): one `P0001` naming the type, the field and the width, and
-    // no error code of the language (`E0112`, `E0181`) for what is a missing feature
-    let project = RUN.project("too_wide.msl");
-    let refused = project.elaborate("Bench").err().map(|rejection| rejection.to_string()).unwrap_or_default();
-    assert!(refused.contains("P0001") && refused.contains("`Logic<100>`") && refused.contains("100 bits") && refused.contains("L13"), "{refused}");
-    assert!(!refused.contains("E0112") && !refused.contains("E0181"), "a language error for a missing feature: {refused}");
+fn a_logic_of_a_hundred_levels_runs() {
+    // §22.1.1, §22.1.2 (EU-07, N of 100; composite-values CV-32, supersedes the refusal naming `GAPS.md` L13): the planes are two
+    // `UInt<100>`, so the tables hold level by level at 100 levels as at 64: `a` cycles `01xz` and `b` cycles `1xz0`
+    let (a, b) = ("01xz".repeat(25), "1xz0".repeat(25));
+    let got = RUN.first_commits("hundred.msl", &["w_and", "w_or", "w_xor", "w_not", "w_shl"]);
+    assert_eq!(Pin::pattern(&got[0], 100), Tables::zip(&a, &b, Tables::and), "`&`");
+    assert_eq!(Pin::pattern(&got[1], 100), Tables::zip(&a, &b, Tables::or), "`|`");
+    assert_eq!(Pin::pattern(&got[2], 100), Tables::zip(&a, &b, Tables::xor), "`^`");
+    assert_eq!(Pin::pattern(&got[3], 100), a.chars().map(Tables::not).collect::<String>(), "`!`");
+    assert_eq!(Pin::pattern(&got[4], 100), format!("{}000", &a[3..]), "`<< 3`");
 }
 
 #[test]
-fn an_inferred_logic_of_seventy_levels_is_refused_by_name() {
-    // §22.1.4 (finding 60): `logic("<70 ones>")` infers a `Logic<70>`; it goes through the same width rule as a written one: one
-    // `P0001` naming the type, the field and the width, and `GAPS.md` L13
-    let refused = RUN.project("inferred_wide.msl").elaborate("Bench").err().map(|rejection| rejection.to_string()).unwrap_or_default();
-    assert!(refused.contains("P0001") && refused.contains("`Logic<70>`") && refused.contains("70 bits") && refused.contains("L13"), "{refused}");
-    assert_eq!(refused.matches("P0001").count(), 1, "one refusal: {refused}");
+fn an_inferred_logic_of_seventy_levels_runs() {
+    // §22.1.4 (finding 60; supersedes the refusal naming `GAPS.md` L13): `logic("<70 ones>")` infers a `Logic<70>`, which
+    // elaborates like a written one, and `is_high` of 70 ones is true: `t` starts false, so the commit at the first rising edge is a change
+    RUN.assert_commits("inferred_wide.msl", &["t"], &[vec![1]]);
 }
 
 #[test]
