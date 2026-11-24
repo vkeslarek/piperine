@@ -87,6 +87,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>, wanted: Option<&ValueType>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
         let mut sub = Self::sub_scope(scope);
         sub.no_locals = true;
+        sub.function_code = true;
         let lowered = match wanted {
             Some(ty) => self.lower_stored(&mut sub, value, ty),
             None => self.lower_expr(&mut sub, value),

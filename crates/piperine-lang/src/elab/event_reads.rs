@@ -29,7 +29,7 @@ impl Elaboration<'_, '_> {
             && element.constant.is_none()
         {
             let origin = self.expr_origin(expr);
-            return Some(self.element_changed(element, origin));
+            return Some(self.element_changed(scope, element, origin));
         }
         let disjuncts = self.disjuncts(scope, expr)?;
         let mut arms = Vec::with_capacity(disjuncts.len());

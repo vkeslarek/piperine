@@ -24,6 +24,36 @@ pub(super) struct ElementRef {
     pub(super) constant: Option<u64>,
 }
 
+/// Which part of an element of an array of carriers a read takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ElementPart {
+    /// `x[i]`.
+    Value,
+    /// `x[i].prev()`.
+    Previous,
+    /// `x[i].changed()`.
+    Changed,
+}
+
+impl ElementPart {
+    /// The read of this part of the element `index` of `carrier`.
+    fn of(self, carrier: u32, index: LoweredExpr) -> Expr {
+        match self {
+            ElementPart::Value => Expr::CarrierElement { carrier, index },
+            ElementPart::Previous => Expr::ElementPrevious { carrier, index },
+            ElementPart::Changed => Expr::ElementChanged { carrier, index },
+        }
+    }
+
+    /// The type this part has, of an element of type `element`.
+    fn value_type(self, element: &ValueType) -> ValueType {
+        match self {
+            ElementPart::Changed => ValueType::Bool,
+            ElementPart::Value | ElementPart::Previous => element.clone(),
+        }
+    }
+}
+
 /// What looking for an element in a source form found.
 pub(super) enum Lookup {
     /// The form is no element of an array of carriers.
@@ -153,20 +183,84 @@ impl Elaboration<'_, '_> {
     }
 
     /// `x[i]`: one element's value, typed as the carrier's value type.
-    pub(super) fn carrier_element_read(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        let ty = self.structure.carriers[element.carrier as usize].ty.clone();
-        self.emit(Expr::CarrierElement { carrier: element.carrier, index: element.index }, ty, origin)
+    pub(super) fn carrier_element_read(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        self.element_part(scope, element, ElementPart::Value, origin)
     }
 
     /// `x[i].prev()`: the value the element had before its last change.
-    pub(super) fn element_previous(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        let ty = self.structure.carriers[element.carrier as usize].ty.clone();
-        self.emit(Expr::ElementPrevious { carrier: element.carrier, index: element.index }, ty, origin)
+    pub(super) fn element_previous(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        self.element_part(scope, element, ElementPart::Previous, origin)
     }
 
     /// `x[i].changed()` read as a `bool`: whether the element changed in this microstep.
-    pub(super) fn element_changed(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        self.emit(Expr::ElementChanged { carrier: element.carrier, index: element.index }, ValueType::Bool, origin)
+    pub(super) fn element_changed(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        self.element_part(scope, element, ElementPart::Changed, origin)
+    }
+
+    /// `part` of one element. In code that becomes a function (`Scope::function_code`), an element decided at run time is
+    /// that index into the array of every element's `part`: a function reads constant elements only (abi.md §3), and so
+    /// it is re-run when any element it may read changes.
+    fn element_part(&mut self, scope: &Scope, element: ElementRef, part: ElementPart, origin: Origin) -> LoweredExpr {
+        let ty = part.value_type(&self.structure.carriers[element.carrier as usize].ty);
+        if let Some(at) = element.constant {
+            return self.constant_element_part(scope, element.carrier, at, part, origin);
+        }
+        if scope.function_code {
+            let array = self.elements_of_array(scope, element.carrier, part, origin.clone());
+            return self.emit(Expr::Index { expr: array, index: element.index }, ty, origin);
+        }
+        self.emit(part.of(element.carrier, element.index), ty, origin)
+    }
+
+    /// `part` of the constant element `at` of the array carrier `carrier`. The `analog` block reads the value and the
+    /// previous value of an element through its mirror (`analog_mirror`): the analog side holds one slot per carrier.
+    fn constant_element_part(&mut self, scope: &Scope, carrier: u32, at: u64, part: ElementPart, origin: Origin) -> LoweredExpr {
+        let ty = part.value_type(&self.structure.carriers[carrier as usize].ty);
+        match part {
+            ElementPart::Value if scope.in_analog_block => {
+                let mirror = self.analog_mirror(carrier, at, origin.clone());
+                self.emit(Expr::Carrier(mirror), ty, origin)
+            }
+            ElementPart::Previous if scope.in_analog_block => {
+                let mirror = self.analog_mirror(carrier, at, origin.clone());
+                self.emit(Expr::Previous(mirror), ty, origin)
+            }
+            _ => {
+                let index = self.emit(Expr::Int(i128::from(at)), ValueType::UInt(64), origin.clone());
+                self.emit(part.of(carrier, index), ty, origin)
+            }
+        }
+    }
+
+    /// The array of `part` of every element of the array carrier `carrier`, each a constant element read: how code that
+    /// becomes a function reads an array of carriers whole (abi.md §3).
+    pub(super) fn elements_of_array(&mut self, scope: &Scope, carrier: u32, part: ElementPart, origin: Origin) -> LoweredExpr {
+        let held = self.structure.carriers[carrier as usize].clone();
+        let count = held.count.unwrap_or(0);
+        let ty = part.value_type(&held.ty);
+        let mut parts = Vec::with_capacity(count as usize);
+        for at in 0..count {
+            parts.push(self.constant_element_part(scope, carrier, at, part, origin.clone()));
+        }
+        self.emit(Expr::Array(parts), ValueType::Array(Box::new(ty), count), origin)
+    }
+
+    /// The scalar carrier that mirrors the element `at` of the array carrier `carrier` for the `analog` block: a signal
+    /// `<array>$analog[<at>]` defined as that element, made once per body. The analog side holds one slot per carrier
+    /// it reads, the size of one value; the definition is a function of the digital side, re-run when the element
+    /// changes, so the mirror and the element hold one value at every instant.
+    fn analog_mirror(&mut self, carrier: u32, at: u64, origin: Origin) -> u32 {
+        if let Some(mirror) = self.structure.analog_mirrors.get(&(carrier, at)) {
+            return *mirror;
+        }
+        let held = self.structure.carriers[carrier as usize].clone();
+        let name = format!("{}$analog[{at}]", held.name);
+        let mirror = self.add_carrier(piperine_ir::Carrier { name, ty: held.ty.clone(), role: piperine_ir::CarrierRole::Signal, init: None, origin: origin.clone(), count: None });
+        let index = self.emit(Expr::Int(i128::from(at)), ValueType::UInt(64), origin.clone());
+        let value = self.emit(Expr::CarrierElement { carrier, index }, held.ty, origin.clone());
+        self.structure.drives.push(piperine_ir::Drive { carrier: mirror, value, after: None, origin, element: None, path: Vec::new() });
+        self.structure.analog_mirrors.insert((carrier, at), mirror);
+        mirror
     }
 
     /// The element of an event head's receiver, folded: the mismatch of a constant expected naming the index when it

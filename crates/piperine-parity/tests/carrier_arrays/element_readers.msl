@@ -1,0 +1,56 @@
+//! Readers of elements of arrays of carriers driven by definitions (part II §5.1.8, part III §8.2.1): a definition, a chain
+//! of definitions over two arrays, a whole-array reader, a reader at a run-time element, a reaction on an element and an
+//! `analog` block are recomputed when an element they read changes. The expected values are computed by the test, from the
+//! rule it cites.
+
+fn sum3(v: [u8; 3]) -> u8 { v[0] + v[1] + v[2] }
+
+module Chain() {
+    signal tick: Bit = false;
+    signal s: Bit<u8> = 2;
+    // `y[1]` follows `s`; the other elements are constants
+    signal y: [Bit<u8>; 3];
+    y[0] = 2;
+    y[1] = s * 2 + 1;
+    y[2] = 8;
+    // a definition that reads one element
+    signal total: Bit<u8>;
+    total = y[1] + 1;
+    // a chain over two arrays, ending in a scalar
+    signal z: [Bit<u8>; 2];
+    z[0] = y[1] + y[0];
+    z[1] = z[0] + 1;
+    signal last: Bit<u8>;
+    last = z[1];
+    // a reader of the whole array, through a function
+    signal sum: Bit<u8>;
+    sum = sum3(y);
+    // a reader of an element decided at run time: the index is `s / 10`, 0 before the first rise and 1 after it
+    signal picked: Bit<u8>;
+    picked = y[(s / 10) as usize];
+    signal seen: Bit<u8> = 0;
+}
+
+digital for Chain {
+    on tick.changed() { tick <- !tick after 1n; }
+    on tick.rise() { s <- s + 10; }
+    // a reaction on the change of an element a definition drives
+    on y[1].changed() { seen <- y[1]; }
+}
+
+// an `analog` block that reads an element a definition drives: `y[1]` is `2 * 2 + 1` at the operating point
+module Level() {
+    signal s: Bit<u8> = 2;
+    signal y: [Bit<u8>; 2];
+    y[0] = 0;
+    y[1] = s * 2 + 1;
+    signal level: Electrical;
+}
+analog for Level { v(level) +> y[1] as f64; }
+
+// an `analog` block that reads an element of an array carrier with an initial value of every element
+module Seeded() {
+    signal y: [Bit<u8>; 2] = [3, 4];
+    signal level: Electrical;
+}
+analog for Seeded { v(level) +> (y[1] as f64) + 10.0 * (y[0] as f64); }

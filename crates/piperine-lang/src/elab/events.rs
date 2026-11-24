@@ -111,7 +111,11 @@ impl Elaboration<'_, '_> {
         let DeclKind::Reaction(r) = &data.kind else { return };
         let origin = self.locator.decl(reaction);
         let mut head = Self::sub_scope(scope);
-        let Some(disjuncts) = self.disjuncts(&mut head, r.event) else { return };
+        // an event's guard is a function of the device; the reaction's body is not
+        head.function_code = true;
+        let disjuncts = self.disjuncts(&mut head, r.event);
+        head.function_code = false;
+        let Some(disjuncts) = disjuncts else { return };
         let split = disjuncts.len() > 1 && disjuncts.iter().any(|d| !d.continuous.is_empty());
         if !split {
             let mut on = Vec::new();
@@ -229,8 +233,8 @@ impl Elaboration<'_, '_> {
                     // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
                     let at = self.folded_element(scope, *recv, element)?;
                     let discrete = match edge {
-                        Builtin::Rise => vec![self.element_rise_guard(element, origin.clone())],
-                        Builtin::Fall => vec![self.element_fall_guard(element, origin.clone())],
+                        Builtin::Rise => vec![self.element_rise_guard(scope, element, origin.clone())],
+                        Builtin::Fall => vec![self.element_fall_guard(scope, element, origin.clone())],
                         _ => Vec::new(),
                     };
                     Some(vec![Disjunct { source: EventSource::ElementChanged { carrier: element.carrier, element: at }, discrete, continuous: Vec::new(), origin }])
@@ -498,17 +502,17 @@ impl Elaboration<'_, '_> {
     }
 
     /// `x[k].rise()`'s guard: `!ElementPrevious(x, k) && x[k]`.
-    fn element_rise_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        let previous = self.element_previous(element, origin.clone());
+    fn element_rise_guard(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(scope, element, origin.clone());
         let was_low = self.not(previous, origin.clone());
-        let read = self.carrier_element_read(element, origin.clone());
+        let read = self.carrier_element_read(scope, element, origin.clone());
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: was_low, rhs: read }, ValueType::Bool, origin)
     }
 
     /// `x[k].fall()`'s guard: `ElementPrevious(x, k) && !x[k]`.
-    fn element_fall_guard(&mut self, element: ElementRef, origin: Origin) -> LoweredExpr {
-        let previous = self.element_previous(element, origin.clone());
-        let read = self.carrier_element_read(element, origin.clone());
+    fn element_fall_guard(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+        let previous = self.element_previous(scope, element, origin.clone());
+        let read = self.carrier_element_read(scope, element, origin.clone());
         let low = self.not(read, origin.clone());
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
     }
@@ -569,7 +573,7 @@ impl Elaboration<'_, '_> {
         match builtin {
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
             Builtin::Prev => match self.element_lookup(scope, recv) {
-                Lookup::Found(element) => Some(self.element_previous(element, origin)),
+                Lookup::Found(element) => Some(self.element_previous(scope, element, origin)),
                 Lookup::Failed => None,
                 Lookup::No => {
                     let carrier = self.carrier_of(scope, recv)?;

@@ -27,7 +27,9 @@ impl Elaboration<'_, '_> {
             // After a diagnostic the block is empty: no `Ir` is built anyway.
             scope.analog = true;
             scope.in_analog_block = true;
+            scope.function_code = true;
             let (mut lowered, value) = self.lower_statements(scope, &behavior.body).unwrap_or_default();
+            scope.function_code = false;
             scope.in_analog_block = false;
             scope.analog = false;
             // At the top of the block a trailing expression without `;` is a statement like any other.

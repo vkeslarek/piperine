@@ -320,7 +320,7 @@ impl Elaboration<'_, '_> {
             // one element of an array of carriers that hold `Option`s: its two halves, each unpacked from the element read
             ExprKind::Index { .. } if let Lookup::Found(element) = self.element_lookup(scope, expr) => {
                 let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
-                    let packed = this.carrier_element_read(element, origin.clone());
+                    let packed = this.carrier_element_read(scope, element, origin.clone());
                     Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
                 };
                 let is = half(self, LevelPart::Is, ValueType::Bool)?;

@@ -62,6 +62,9 @@ pub(super) struct Structure {
     /// Where each definition, commit and hand-over of a carrier of the body is written, for the overlaps judged per
     /// instance (`drive_overlaps.rs`); no part of the IR.
     pub(super) drive_sites: Vec<super::drive_overlaps::DriveSite>,
+    /// The scalar carrier mirroring each element of an array carrier the `analog` block reads, by (carrier, element)
+    /// (`elements.rs`).
+    pub(super) analog_mirrors: BTreeMap<(u32, u64), u32>,
 }
 
 /// The module whose names an expression of the body reads, and what those names are in the body.

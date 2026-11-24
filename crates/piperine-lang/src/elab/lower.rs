@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, Terminal, UnaryOp, ValueType};
 
+use super::elements::ElementPart;
 use super::compound::EnumLayout;
 use super::control::LoopFrame;
 use super::returns::FunctionResult;
@@ -114,6 +115,10 @@ pub(super) struct Scope {
     pub(super) unrolled: Bindings,
     /// The generation `for`s the code being lowered sits in and the ordinal of the iteration in each (`generation.rs`).
     pub(super) ordinals: Vec<(DeclId, u32)>,
+    /// Whether the code being lowered becomes a function of the device, not a reaction: a definition's value, an event's
+    /// guard, the `analog` block. A function reads constant elements of an array of carriers only (abi.md §3), so an
+    /// array read whole or at a run-time element is read there as the array of its elements (`elements.rs`).
+    pub(super) function_code: bool,
     /// Whether the code being lowered is a statement of an `analog` block, not a function's body.
     pub(super) in_analog_block: bool,
     /// How many `if` and `match` decisions that did not fold the code being lowered sits under.
@@ -141,7 +146,7 @@ impl Scope {
     }
 
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), ordinals: Vec::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), ordinals: Vec::new(), function_code: false, in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -834,10 +839,11 @@ impl Elaboration<'_, '_> {
             },
             // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
             DeclKind::Signal(_) if !self.generated_carrier_levels(scope, expr).is_empty() => match self.element_lookup(scope, expr) {
-                super::elements::Lookup::Found(element) => Some(self.carrier_element_read(element, origin)),
+                super::elements::Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
                 _ => None,
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
+                (Some(index), _) if scope.function_code && self.structure.carriers[index as usize].count.is_some() => Some(self.elements_of_array(scope, index, ElementPart::Value, origin)),
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),

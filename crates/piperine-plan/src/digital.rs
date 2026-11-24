@@ -399,16 +399,25 @@ impl Digital {
         first
     }
 
-    /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, or a `signal` that a
-    /// child's carrier port is bound to.
+    /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, a `signal` that a
+    /// child's carrier port is bound to, or an array `signal` a definition of one element drives.
     pub(crate) fn is_port(body: Body<'_>, c: u32) -> bool {
         match body.carriers().get(c as usize).map(|x| x.role) {
             // A reached carrier is a read-only view of a child's: a `PORT` pin, as an `in` port.
             Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached) => true,
-            // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`).
-            Some(CarrierRole::Signal) => (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c),
+            // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`), and
+            // when a definition of one of its elements writes it: that drive's pin is bound to the element of the array
+            // net (`Pins::element_drives`), so the carrier's own pin, which its readers read, must be that net too
+            Some(CarrierRole::Signal) => {
+                (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c) || Self::has_element_drive(body, c)
+            }
             None => false,
         }
+    }
+
+    /// Whether an undelayed definition of one element of the array carrier `c` writes it through an element drive pin.
+    fn has_element_drive(body: Body<'_>, c: u32) -> bool {
+        body.drives().iter().any(|drive| drive.carrier == c && drive.element.is_some() && drive.after.is_none())
     }
 
     /// `origin` as a shape writes it.
