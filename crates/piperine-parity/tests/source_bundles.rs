@@ -153,3 +153,29 @@ fn nested_bundles_apply_flip_recursively() {
     let expected = vec![vec![("fwd_x".to_string(), 1), ("fwd_y".to_string(), 1), ("back_x".to_string(), 0), ("back_y".to_string(), 1)]];
     assert_eq!(fields[..1], expected, "the four fields at the first rising edge");
 }
+
+#[test]
+fn every_view_may_drive_a_resolved_field() {
+    // §7 rule 4, §5.2.2, D8: `sda` is of a resolved nature, so it has no direction and the producer, the consumer and the observer
+    // all drive it; it holds `strongest` of the drives (§22.3.2). Master: weak low, slave: pull high, spy: strong low. With the
+    // spy the net is low at the strong strength; without it the pull wins, high at the pull strength. (The spy drives
+    // nothing else: `scl`, a one-driver field, is the producer's alone.)
+    let model = Model::of("resolved.msl");
+    for (top, level, strength) in [("BusBench", 0.0, 3.0), ("QuietBench", 1.0, 2.0)] {
+        let built = model.built(top);
+        let seen = built.run(20e-9, 1e-9);
+        let streams = Streams::of(built.ir.clone());
+        let records: Vec<Vec<(String, f64)>> = seen
+            .all()
+            .iter()
+            .filter_map(|o| streams.decode(o))
+            .map(|r| r.unwrap_or_else(|f| panic!("{f}")))
+            .filter(|r| r.stream == "sda")
+            .map(|r| r.fields.into_iter().map(|(field, value)| match value {
+                Field::Real(value) => (field, value),
+                other => panic!("no real field `{field}`: {other:?}"),
+            }).collect())
+            .collect();
+        assert_eq!(records.first(), Some(&vec![("level".to_string(), level), ("strength".to_string(), strength)]), "{top}: the settled `sda` at the first rise");
+    }
+}

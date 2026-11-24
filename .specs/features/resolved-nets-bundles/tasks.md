@@ -439,8 +439,8 @@ T21
 
 **Done when**:
 
-- [ ] `every_view_may_drive_a_resolved_field` passes under `**Run sourcebundles**`
-- [ ] Gate check passes: Full
+- [x] `every_view_may_drive_a_resolved_field` passes under `**Run sourcebundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
