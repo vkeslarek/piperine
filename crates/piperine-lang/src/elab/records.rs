@@ -45,13 +45,28 @@ impl Elaboration<'_, '_> {
         !is_extern && (self.types.emits(function).is_some() || takes_text || self.takes_handle(function) || self.reads_session_parameter(function))
     }
 
-    /// Whether the body of `function` calls `simparam` itself.
+    /// Whether `function` reads a session parameter: its body calls `simparam`, or calls a function that does, however deep.
     fn reads_session_parameter(&self, function: DeclId) -> bool {
-        let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return false };
-        let Some(body) = &f.body else { return false };
-        self.body_exprs(body).into_iter().any(|expr| {
-            matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. }) && matches!(self.types.callee(expr), Some(Callee::Core(id)) if id.info().name == "simparam")
-        })
+        let mut pending = vec![function];
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(at) = pending.pop() {
+            if !seen.insert(at) {
+                continue;
+            }
+            let DeclKind::Fn(f) = &self.design.decl_data(at).kind else { continue };
+            let Some(body) = &f.body else { continue };
+            for expr in self.body_exprs(body) {
+                if !matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. }) {
+                    continue;
+                }
+                match self.types.callee(expr) {
+                    Some(Callee::Core(id)) if id.info().name == "simparam" => return true,
+                    Some(Callee::Function(callee)) => pending.push(callee),
+                    _ => {}
+                }
+            }
+        }
+        false
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.

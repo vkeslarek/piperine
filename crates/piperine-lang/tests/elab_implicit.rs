@@ -47,3 +47,16 @@ fn multiplicity_lowers_to_the_session_parameter() {
     let parameters: Vec<String> = ir.bodies().find(|b| b.name() == "Resistor").expect("the resistor body").session_parameters().iter().map(|p| p.name.to_string()).collect();
     assert_eq!(parameters, ["multiplicity"], "one session parameter, the run's");
 }
+
+#[test]
+fn a_function_that_reaches_the_session_parameter_at_any_depth_reads_it_in_the_body() {
+    // GN-24 AC 3 (§8.5.2): a helper over `multiplicity()`, and a helper over that helper, are inlined into the body that calls
+    // them, so each body keeps its one session parameter read and the IR is well formed (no P0004)
+    let helpers = "fn count() -> f64 { multiplicity().unwrap_or(DEFAULT_MULTIPLICITY) }\nfn twice() -> f64 { count() * 2.0 }\n";
+    for call in ["count()", "twice()"] {
+        let body = format!("i(p, n) +> {call} * v(p, n) / r;");
+        let ir = Elab::ir(&format!("{}\n{helpers}", Resistors::source(&body, "r: 1k")), "Top");
+        let parameters: Vec<String> = ir.bodies().find(|b| b.name() == "Resistor").expect("the resistor body").session_parameters().iter().map(|p| p.name.to_string()).collect();
+        assert_eq!(parameters, ["multiplicity"], "{call}");
+    }
+}
