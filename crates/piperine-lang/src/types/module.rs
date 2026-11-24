@@ -435,7 +435,8 @@ impl Checker<'_> {
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
-        let element = self.element_named_by(arg);
+        let named = self.element_named_by(arg);
+        let element = self.judged_element(arg, decl, named);
         self.book.handed.push((decl, element, span, file));
     }
 
@@ -507,7 +508,9 @@ impl Checker<'_> {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
-            let driven_here = self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl) || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            // an element only the elaborator folds is judged there against the whole-carrier drives too (`elab/drive_overlaps.rs`)
+            let whole_drive = element != super::element_target::Element::Unfolded && (self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl));
+            let driven_here = whole_drive || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
             if twice {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a one-driver carrier has one drive (§5.2.1)"), "a second drive");
             } else if driven_here {

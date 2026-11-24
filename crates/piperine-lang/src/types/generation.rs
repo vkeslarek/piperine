@@ -10,6 +10,19 @@ use super::check::{Checker, Context};
 use super::{ConstTerm, Length, Ty};
 
 impl Checker<'_> {
+    /// The items `items` of a body with the items written inside their generations in place of each generation, nested ones
+    /// included, in source order.
+    pub(super) fn generated_items(&self, items: &[DeclId]) -> Vec<DeclId> {
+        let mut found = Vec::new();
+        for item in items.iter().copied() {
+            match &self.design.decl_data(item).kind {
+                DeclKind::Generation(_) => found.extend(self.generated_items(&self.design.decl_data(item).children)),
+                _ => found.push(item),
+            }
+        }
+        found
+    }
+
     /// The generation `for`s around the declaration `decl`, outermost first.
     pub(super) fn generation_loops(&self, decl: DeclId) -> Vec<DeclId> {
         let mut loops = Vec::new();

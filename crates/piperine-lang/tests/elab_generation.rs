@@ -1,5 +1,6 @@
 //! Scope: generation in a module body elaborated (generics GN-17, GN-20, part III §8.2.7, §8.2.23, §8.2.24): a `for` over
-//! module items unrolls into one element of an array per iteration (placements named `name[k]`, nodes an array of nodes), an
+//! module items unrolls into one element of an array per iteration (placements named `name[k]`, nodes an array of nodes,
+//! carriers an array carrier, definitions one drive each, hoisted placements one frame each, a `let` read outside an array), an
 //! `if` keeps the arm its condition selects, an empty range makes an empty array, and a reference into an arm that was not
 //! elaborated or past a generated array is `E0342`. Each test states the rule it proves.
 
@@ -161,4 +162,103 @@ fn generated_reactions_are_one_per_iteration_in_source_order() {
     // an `if` in the block selects its arm by a param
     let arms = "module Top() {\n  signal lines: [Bit; 2] = [false; 2];\n  fast: bool = true;\n  signal a: Bit<u8> = 0;\n}\ndigital for Top {\n  if fast { on lines[0].rise() { a <- 1; } } else { on lines[1].rise() { a <- 2; } }\n}\n";
     assert_eq!(AdmittedDigital::reactions(&AdmittedDigital::ir(arms)), 1);
+}
+
+/// The body `Top` of an elaborated design.
+struct TopBody;
+
+impl TopBody {
+    /// The body `Top` of `ir`.
+    fn of(ir: &Ir) -> piperine_ir::Body<'_> {
+        ir.bodies().find(|b| b.name() == "Top" || b.name().starts_with("Top~")).expect("a body Top")
+    }
+
+    /// The carrier `name` of the body `Top`.
+    fn carrier<'a>(ir: &'a Ir, name: &str) -> &'a piperine_ir::Carrier {
+        Self::of(ir).carriers().iter().find(|c| c.name == name).unwrap_or_else(|| panic!("a carrier `{name}`"))
+    }
+
+    /// The elements of the carrier `name` the definitions of `Top` drive, in the order of the drives.
+    fn defined_elements(ir: &Ir, name: &str) -> Vec<Option<u64>> {
+        let body = Self::of(ir);
+        let index = body.carriers().iter().position(|c| c.name == name).unwrap_or_else(|| panic!("a carrier `{name}`")) as u32;
+        body.drives().iter().filter(|d| d.carrier == index).map(|d| d.element).collect()
+    }
+}
+
+#[test]
+fn a_carrier_declared_in_a_generation_for_is_an_array_of_one_element_per_iteration() {
+    // §8.2.23: `signal s` in `for k in 0..3` is the array `s` of 3 carriers; each starts at its own iteration's initial value,
+    // and the name inside the loop is the iteration's element (the definition of `s` there drives element `k`)
+    let src = "module Top(in clk: Bit) {\n  for k in 0..3 { signal s: Bit<u8> = (k as u8) + 1; }\n  signal z: Bit<u8>;\n  z = s[0] + s[2];\n}\n";
+    let ir = GenerationSources::ir(src);
+    let carrier = TopBody::carrier(&ir, "s");
+    assert_eq!(carrier.count, Some(3), "one carrier per iteration");
+    let Some(piperine_ir::Constant::Aggregate(init)) = carrier.init else { panic!("an array initial value: {:?}", carrier.init) };
+    let parts: Vec<String> = ir.aggregate(init).parts.iter().map(|p| format!("{p:?}")).collect();
+    assert_eq!(parts, ["Int(1)", "Int(2)", "Int(3)"], "element k starts at k + 1");
+    let defined = "module Top(in clk: Bit) {\n  for i in 0..2 { for j in 0..2 { signal s: Bit; s = clk; } }\n}\n";
+    let ir = GenerationSources::ir(defined);
+    assert_eq!(TopBody::carrier(&ir, "s").count, Some(4), "nested loops nest the array: 2 x 2 elements");
+    assert_eq!(TopBody::defined_elements(&ir, "s"), [Some(0), Some(1), Some(2), Some(3)], "each iteration defines its own element, row-major");
+}
+
+#[test]
+fn a_definition_in_generation_is_one_drive_per_iteration_its_arm_takes() {
+    // §8.2.23, §8.2.24: `y[k] = ..` in `for k in 0..3` drives elements 0, 1 and 2; an `if` inside the loop gives each
+    // iteration the arm its condition takes, and an `if` outside a loop elaborates the taken arm's definition only
+    let ir = GenerationSources::ir("module Top(in clk: Bit) { signal y: [Bit; 3]; for k in 0..3 { y[k] = clk; } }\n");
+    assert_eq!(TopBody::defined_elements(&ir, "y"), [Some(0), Some(1), Some(2)]);
+    let arms = "module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }\n";
+    assert_eq!(TopBody::defined_elements(&GenerationSources::ir(arms), "y"), [Some(0), Some(1)]);
+    let chosen = "module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }\n";
+    assert_eq!(TopBody::defined_elements(&GenerationSources::ir(chosen), "y"), [None], "one definition of the whole carrier");
+    // a definition inside the loop of a carrier declared there, and one by index outside it
+    let carriers = "module Top(in clk: Bit) { for k in 0..2 { signal s: Bit; s = !clk; } signal z: Bit; z = s[0] & s[1]; }\n";
+    assert_eq!(TopBody::defined_elements(&GenerationSources::ir(carriers), "s"), [Some(0), Some(1)]);
+}
+
+#[test]
+fn a_hoisted_placement_in_generation_is_one_frame_per_iteration_and_its_let_an_array() {
+    // §8.2.23: `let y = idt(1.0)` in `for k in 0..2` hoists `y[0]` and `y[1]`, each with its own state node; outside the loop
+    // `y[1]` reads the second
+    let src = "module Top(a: E, b: E) { for k in 0..2 { let y = idt(1.0); } }\nanalog for Top { i(a, b) +> y[0] + y[1]; }\n";
+    let ir = GenerationSources::ir(src);
+    let hoisted: Vec<String> = TopBody::of(&ir).hoisted().iter().map(|h| h.name.clone()).collect();
+    assert_eq!(hoisted, ["y[0]", "y[1]"]);
+    let (names, _) = GenerationSources::nodes(&ir);
+    assert!(names.iter().any(|n| n == "y[0].y") && names.iter().any(|n| n == "y[1].y"), "{names:?}");
+    // a module with a value input hoisted in a loop reads the iteration's element of a carrier declared there
+    let digital = "module Not(x: bool) -> bool { !x }\nmodule Top(in clk: Bit) { for k in 0..2 { signal s: Bit; s = clk; signal t: Bit; t = Not(s); } }\n";
+    let ir = GenerationSources::ir(digital);
+    assert_eq!(TopBody::defined_elements(&ir, "t"), [Some(0), Some(1)]);
+}
+
+#[test]
+fn a_let_in_generation_read_outside_its_loops_is_the_array_of_its_values() {
+    // §8.2.23: `c` of `for i in 0..2 { for j in 0..3 { let c = .. } }` is a 2 x 3 array outside the loops: `c[1][2]` is the
+    // value of iteration (1, 2), `1 * 3 + 2 + 1 = 6`, folded into a param
+    let src = "module Top(a: E) { for i in 0..2 { for j in 0..3 { let c = ((i * 3 + j) as f64) + 1.0; } } let r = Resistor(a, gnd) { r: c[1][2] * 1k }; }\n";
+    let ir = GenerationSources::ir(src);
+    let child = &TopBody::of(&ir).children()[0];
+    assert_eq!(child.name, "r");
+    let resistor = ir.instance_at("Top.r").expect("the resistor");
+    assert_eq!(resistor.params().first().map(|p| p.to_string().parse::<f64>().ok()), Some(Some(6e3)));
+    // §8.2.24: a `let` of an arm that was not elaborated, read, is E0342 naming it
+    let untaken = "module Top(a: E) { mode: usize = 0; if mode > 0 { let c = 2.0; } let r = Resistor(a, gnd) { r: c * 1k }; }\n";
+    let found = GenerationSources::refused(untaken);
+    assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("`c`")), "{found:?}");
+}
+
+#[test]
+fn an_item_only_some_iterations_elaborate_and_generation_in_a_hoisted_module_are_refused_by_name() {
+    // an `if` inside a `for` that only some iterations take would make an array with gaps (§8.2.23 with §8.2.24): refused by
+    // that name, the one diagnostic; generation in the body of a module hoisted into its caller is refused by its name
+    let gaps = "module Top(in clk: Bit) { for k in 0..2 { if k == 0 { signal s: Bit = false; } } }\n";
+    let found = GenerationSources::refused(gaps);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].0 == "P0001" && found[0].1.contains("a generated array with gaps"), "{found:?}");
+    let hoisted = "module H(x: f64) -> f64 { for k in 0..2 { signal s: Bit = false; } x }\nmodule Top(in clk: Bit) { let h = H(1.0); signal z: Bit<f64> = 0.0; }\n";
+    let found = GenerationSources::refused(hoisted);
+    assert!(found.iter().all(|(code, _)| code == "P0001") && found.iter().any(|(_, message)| message.contains("generation in its body")), "{found:?}");
 }

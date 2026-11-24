@@ -709,7 +709,7 @@ impl<'d> Checker<'d> {
     }
 
     /// Whether `decl`, or a declaration above it, is a generation `for`/`if` (a module body item generated per iteration).
-    fn inside_generation(&self, decl: DeclId) -> bool {
+    pub(super) fn inside_generation(&self, decl: DeclId) -> bool {
         let mut at = Some(decl);
         while let Some(current) = at {
             if matches!(self.design.decl_data(current).kind, DeclKind::Generation(_)) {
@@ -794,8 +794,11 @@ impl<'d> Checker<'d> {
                 self.infer(instance);
             }
         }
-        self.missing_initial_values(&data.children);
-        self.initial_values_under_element_definitions(&data.children);
+        // the carriers declared inside generation are the module's too, one array each (§8.2.23)
+        let carriers = self.generated_items(&data.children);
+        self.missing_initial_values(&carriers);
+        self.initial_values_under_element_definitions(&carriers);
+        self.defer_unfolded_overlaps();
         self.handed_drives();
     }
 }

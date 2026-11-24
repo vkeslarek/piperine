@@ -1,7 +1,9 @@
-//! The element coverage of an array of carriers whose length the checker could not fold (§3.3.4, §5.2.6, §8.2.20): a
-//! generic length (`[Bit; N]`) or a param length (`[Bit; n]`) is known once the instance is, so the elements no driver
-//! names are judged here, per instance, where lengths and generation indices are folded. The checker judged a fixed length
-//! itself and handed the rest over (`Types::defers_missing_initial_value`, `Types::defers_handed_initial_value`).
+//! The element coverage of a carrier the checker could not judge (§3.3.4, §5.2.6, §8.2.20): a generic length
+//! (`[Bit; N]`) or a param length (`[Bit; n]`) is known once the instance is, and a drive written inside generation exists
+//! in the iterations and arms elaboration takes only (§8.2.23, §8.2.24), so the elements no driver names are judged here,
+//! per instance, where lengths, generation indices and generation arms are folded; a scalar carrier is one element. The
+//! checker judged the rest itself and handed these over (`Types::defers_missing_initial_value`,
+//! `Types::defers_handed_initial_value`, `Types::defers_defined_initial_value`).
 
 use piperine_ir::{CarrierWindow, Drive};
 
@@ -19,7 +21,9 @@ impl Elaboration<'_, '_> {
         if !self.generated.refused.is_empty() {
             return;
         }
-        let children = self.design.decl_data(module).children.clone();
+        // the carriers declared inside generation are the body's too, one array each (§8.2.23)
+        let mut children = self.design.decl_data(module).children.clone();
+        children.extend(self.generated.elaborated());
         for decl in children {
             let missing = self.types.defers_missing_initial_value(decl);
             let handed = self.types.defers_handed_initial_value(decl);
@@ -27,7 +31,8 @@ impl Elaboration<'_, '_> {
             if !missing && !handed && !defined {
                 continue;
             }
-            let (Some(carrier), Some(array)) = (self.frames[0].carriers.get(&decl).copied(), self.consts.typed_carrier_array(decl)) else { continue };
+            // a scalar carrier is one element: a drive written inside generation is judged here as well
+            let (Some(carrier), Some(array)) = (self.frames[0].carriers.get(&decl).copied(), self.consts.typed_carrier(decl)) else { continue };
             let Some(shape) = self.shape_in(&array, 0) else { continue };
             let total = shape.count();
             if missing {

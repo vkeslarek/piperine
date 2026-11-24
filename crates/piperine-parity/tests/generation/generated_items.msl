@@ -1,0 +1,46 @@
+//! Generation of carriers, definitions and hoisted placements in a module body (generics GN-17, part III §8.2.23): an item
+//! declared in a generation `for` makes an array, one element per iteration, and inside the loop its name is the
+//! iteration's element. The expected values are computed by the test, from the rule it cites.
+
+// a module with a value input and a result: hoisted into the body that places it, once per iteration of a generation `for`
+module Double(x: u8) -> u8 { x * 2 }
+
+module Bench() {
+    signal tick: Bit = false;
+    for k in 0..3 {
+        // a carrier declared in the loop: the array `s`, element `k` starting at `k + 1`
+        signal s: Bit<u8> = (k as u8) + 1;
+        // a hoisted placement per iteration: `d[k]` doubles the iteration's element of `s`
+        let d = Double(s);
+        // a definition per iteration: the element `k` of `y`
+        y[k] = d + (k as u8);
+    }
+    signal y: [Bit<u8>; 3];
+}
+
+digital for Bench {
+    on tick.changed() { tick <- !tick after 1n; }
+    // elements of the generated carrier are committed by index from outside its loop
+    on tick.rise() { s[1] <- s[1] + 10; s[0] <- s[0] + 1; }
+}
+
+// a module with a value input and contributions: hoisted once per iteration, each a conductance of its own
+module Load(p: Electrical, n: Electrical, g: f64) { }
+analog for Load { i(p, n) +> v(p, n) * g; }
+
+module Vdc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vdc { v(p) +> dc; }
+
+module Feed(a: Electrical, b: Electrical) { r: f64 = 1k; }
+analog for Feed { i(a, b) +> v(a, b) / r; }
+
+// three loads of `k + 1` millisiemens in parallel from a 1k feed
+module LoadRig() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let src = Vdc(top);
+    let feed = Feed(top, mid);
+    for k in 0..3 {
+        let load = Load(mid, gnd, 1m * ((k + 1) as f64));
+    }
+}

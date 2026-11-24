@@ -22,14 +22,23 @@ pub(super) enum Element {
     Run(u64, u64),
     /// An element decided at run time: any of them.
     Any,
-    /// An element an index names that the checker cannot fold yet but that reads nothing over time: a generic length, a
-    /// param or a generation `for` index. The elaborator folds it per instance, so it reaches one element there.
+    /// An element an index names that the checker cannot fold yet but that reads nothing over time (a generic length, a
+    /// param or a generation `for` index), or any drive written inside generation or of a carrier declared there, which
+    /// exists only in the iterations and arms elaboration takes (§8.2.23, §8.2.24). The elaborator folds it per instance,
+    /// so it reaches the elements it names there, and judges its overlaps there (`elab/drive_overlaps.rs`).
     Unfolded,
 }
 
 impl Element {
-    /// Whether two drives may reach one element.
+    /// Whether two drives reach one element as the checker can tell: an element decided at run time may be any of them;
+    /// an element only the elaborator folds is judged there, per instance (§8.2.20, `elab/drive_overlaps.rs`).
     pub(super) fn overlaps(self, other: Element) -> bool {
+        if self == Element::Any || other == Element::Any {
+            return true;
+        }
+        if self == Element::Unfolded || other == Element::Unfolded {
+            return false;
+        }
         match (self.span(), other.span()) {
             (Some((first, end)), Some((other_first, other_end))) => first < other_end && other_first < end,
             _ => true,
@@ -83,7 +92,8 @@ impl Checker<'_> {
             DeclKind::Signal(s) => (s.ty, None),
             _ => return None,
         };
-        let declared = self.port_type(port_ty)?;
+        // a carrier declared inside generation is the array of its elements to a place outside its loops (§8.2.23)
+        let declared = self.port_type(port_ty).map(|declared| self.generated_read(root, decl, declared))?;
         if !matches!(declared.innermost(), Ty::Carrier { .. }) {
             self.coded(file, "E0222", span, format!("the target of a {what} is a node, not a discrete carrier (§8.2.10)"), "a node, not a carrier");
             return None;
@@ -150,7 +160,7 @@ impl Checker<'_> {
             DeclKind::Signal(s) => s.ty,
             _ => return Element::Whole,
         };
-        let Some(mut at) = self.port_type(port_ty) else { return Element::Whole };
+        let Some(mut at) = self.port_type(port_ty).map(|declared| self.generated_read(root, decl, declared)) else { return Element::Whole };
         let mut levels = Vec::new();
         while let Ty::Array(element, length) = at {
             levels.push(length);
@@ -169,6 +179,14 @@ impl Checker<'_> {
             (Element::At(prefix), Some(size)) if steps.len() < levels.len() => Element::Run(prefix * size, size),
             (found, _) => found,
         }
+    }
+
+    /// The element a drive written at `place` reaches of the carrier `carrier`, `written` as its place names it: a drive
+    /// written inside generation, or of a carrier declared there, is [`Element::Unfolded`], since which iterations and
+    /// arms elaborate it, and so which elements it reaches, is known per instance only (§8.2.23, §8.2.24).
+    pub(super) fn judged_element(&self, place: ExprId, carrier: DeclId, written: Element) -> Element {
+        let generated = self.inside_generation(self.design.expr_node(place).owner) || self.inside_generation(carrier);
+        if generated && written != Element::Any { Element::Unfolded } else { written }
     }
 
     /// The element the first `indexes` name in an array of `levels`: a constant when every index folds, else any.

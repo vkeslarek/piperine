@@ -59,6 +59,9 @@ pub(super) struct Structure {
     pub(super) reaches: Vec<Reach>,
     /// The `p.inflow()` ammeters of the body (`inflow.rs`).
     pub(super) inflows: Vec<piperine_ir::Inflow>,
+    /// Where each definition, commit and hand-over of a carrier of the body is written, for the overlaps judged per
+    /// instance (`drive_overlaps.rs`); no part of the IR.
+    pub(super) drive_sites: Vec<super::drive_overlaps::DriveSite>,
 }
 
 /// The module whose names an expression of the body reads, and what those names are in the body.
@@ -90,10 +93,10 @@ pub(super) struct Frame {
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
     /// `None` for a trailing `Option` input left out.
     pub(super) inputs: BTreeMap<DeclId, Option<ExprId>>,
-    /// The frames of the placements of modules with a result that `module` writes, by call.
-    pub(super) placements: BTreeMap<ExprId, usize>,
+    /// The frames of the placements of modules with a result that `module` writes, by call and generation iteration.
+    pub(super) placements: BTreeMap<super::hoist::PlacementKey, usize>,
     /// The placements whose hoisting failed, already reported.
-    pub(super) failed: BTreeSet<ExprId>,
+    pub(super) failed: BTreeSet<super::hoist::PlacementKey>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(super) derivatives: BTreeMap<ExprId, u32>,
     /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
@@ -105,6 +108,9 @@ pub(super) struct Frame {
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
     /// each a constant: what the caller's expressions of its inputs read (`unroll.rs`).
     pub(super) unrolled: Bindings,
+    /// The iteration of the generation `for`s the placement sat in when it was hoisted: what the caller's expressions of
+    /// its inputs read of the carriers and `let`s declared in those loops (§8.2.23).
+    pub(super) ordinals: Vec<(DeclId, u32)>,
     /// What the generic parameters the frame's code names are replaced by: the arguments of the instance of a generic module
     /// the frame is, else those of the body it sits in (`generic_bodies.rs`).
     pub(super) substitution: crate::types::Substitution,
@@ -113,7 +119,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new(), substitution: crate::types::Substitution::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 
@@ -121,7 +127,11 @@ impl Elaboration<'_, '_> {
     /// The discrete ports, then the discrete signals, of `module`, as carriers of the frame
     /// `frame`: each added to the structure and named in the frame.
     pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
-        let children = self.design.decl_data(module).children.clone();
+        let mut children = self.design.decl_data(module).children.clone();
+        // the carriers of the body's own module declared in generation are arrays, one element per iteration (`generation.rs`)
+        if frame == 0 {
+            children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
+        }
         let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
@@ -130,6 +140,9 @@ impl Elaboration<'_, '_> {
             if let Some(held) = self.frames[frame].carriers.get(&decl).copied() {
                 self.give_initial_value(frame, decl, held);
                 continue;
+            }
+            if frame == 0 {
+                self.generated_items_complete(decl);
             }
             if self.is_empty_array(frame, decl) {
                 self.frames[frame].empty_arrays.insert(decl);
@@ -193,7 +206,14 @@ impl Elaboration<'_, '_> {
             true => Some(self.carrier_array_shape(decl, frame)?.0),
             false => None,
         };
+        // a generated carrier refused for its gaps keeps no initial value: the refusal is the one diagnostic
+        let init = init.filter(|_| !self.generated.refused.contains(&decl));
         let init = match init {
+            // a carrier declared in generation: its initial value is one element's, folded for each iteration (§8.2.23)
+            Some(expr) if frame == 0 && self.generated.of(decl).is_some() => {
+                let shape = array.clone()?;
+                Some(self.generated_array_init(decl, expr, &shape, &ty)?)
+            }
             Some(expr) if array.is_some() => {
                 let shape = array.clone()?;
                 Some(self.array_init(decl, expr, &shape, &ty, frame)?)
@@ -227,6 +247,13 @@ impl Elaboration<'_, '_> {
     /// variant folds its own value (`structural.rs`). `None` is a diagnostic.
     pub(super) fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
+        self.carrier_init_over(expr, &bindings)
+    }
+
+    /// The initial value `expr` of a carrier folded over `bindings`: the params of its frame, and the loop variables of the
+    /// iteration of a carrier declared in generation. `None` is a diagnostic.
+    pub(super) fn carrier_init_over(&mut self, expr: ExprId, bindings: &Bindings) -> Option<Constant> {
+        let bindings = bindings.clone();
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
         let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
         match folded {

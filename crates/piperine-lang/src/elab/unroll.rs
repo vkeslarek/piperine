@@ -214,10 +214,8 @@ impl Elaboration<'_, '_> {
                 scope.unrolled.bind(variable, Constant::Int(value));
             }
             let frame = &mut self.frames[scope.frame];
-            for call in &placements {
-                frame.placements.remove(call);
-                frame.failed.remove(call);
-            }
+            frame.placements.retain(|key, _| !placements.contains(&key.call));
+            frame.failed.retain(|key| !placements.contains(&key.call));
             for expr in &inside {
                 frame.derivatives.remove(expr);
             }

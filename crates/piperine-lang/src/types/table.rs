@@ -388,8 +388,8 @@ impl<'d> Types<'d> {
         self.carriers.get(&decl)
     }
 
-    /// Whether the elements of the array carrier `decl` no initial value covers are judged per instance (`E0187`): its
-    /// length is not known yet and a constant element names some of them.
+    /// Whether the elements of the carrier `decl` no initial value covers are judged per instance (`E0187`): a length is
+    /// not known yet and a constant element names some of them, or a drive is written inside generation.
     pub fn defers_missing_initial_value(&self, decl: DeclId) -> bool {
         self.deferred_coverage.missing_initial.contains(&decl)
     }
@@ -404,6 +404,13 @@ impl<'d> Types<'d> {
     /// length not known yet: `E0338` is judged per instance, once every element is defined.
     pub fn defers_defined_initial_value(&self, decl: DeclId) -> bool {
         self.deferred_coverage.defined_initial.contains(&decl)
+    }
+
+    /// Whether a drive of the carrier `decl` reaches elements only the elaborator folds (a generic level, a generation
+    /// index, a drive written inside generation): two definitions sharing an element (`E0335`), a definition and a commit
+    /// sharing one (`E0221`) and a second drive of an element handed to an `out` port (`E0220`) are judged per instance.
+    pub fn defers_drive_overlaps(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.overlaps.contains(&decl)
     }
 
     /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an

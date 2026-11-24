@@ -109,7 +109,7 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "a field of something that is not a name bound to a placement");
             return None;
         };
-        if let Some(frame) = self.frames[scope.frame].placements.get(&call) {
+        if let Some(frame) = self.frames[scope.frame].placements.get(&self.placement_key(scope, call)) {
             return Some(*frame);
         }
         if let Some(frame) = self.reach_frames.get(&(scope.frame, call)) {

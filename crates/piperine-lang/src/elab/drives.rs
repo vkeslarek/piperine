@@ -5,7 +5,10 @@
 
 use piperine_ir::{Carrier, CarrierRole, Drive, ExprId as LoweredExpr, ValueType};
 
+use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
+use super::element_commits::PlaceTarget;
 use super::elaborator::Elaboration;
+use super::generation::Iteration;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
@@ -21,12 +24,22 @@ impl Elaboration<'_, '_> {
         sub
     }
 
-    /// The definitions of `module`, in source order, as drives of the body; read in `scope`.
+    /// The definitions of `module`, in source order, as drives of the body; read in `scope`. A definition written in
+    /// generation is one drive per iteration that elaborates it, its loop variables the iteration's constants (§8.2.23).
     pub(super) fn lower_definitions(&mut self, scope: &Scope, module: DeclId) {
-        let children = self.design.decl_data(module).children.clone();
-        for child in children {
+        let items: Vec<(DeclId, Iteration)> = match scope.frame {
+            0 => self.generated.unrolled().to_vec(),
+            _ => self.design.decl_data(module).children.iter().map(|child| (*child, Iteration::default())).collect(),
+        };
+        for (child, iteration) in items {
             let data = self.design.decl_data(child).clone();
             let DeclKind::Definition(definition) = &data.kind else { continue };
+            let mut iteration_scope = Self::sub_scope(scope);
+            for (variable, value) in &iteration.values {
+                iteration_scope.unrolled.bind(*variable, piperine_ir::Constant::Int(*value));
+            }
+            iteration_scope.ordinals = iteration.ordinals.clone();
+            let scope = &iteration_scope;
             let mut place_scope = Self::sub_scope(scope);
             let Some(target) = self.place_target(&mut place_scope, definition.place) else { continue };
             // a definition names a constant element: each element is its own drive (`element_commits.rs`)
@@ -39,10 +52,19 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             let origin = self.locator.decl(child);
+            self.record_drive_site(&target, DriveWay::Definition, scope.file, self.design.expr_node(definition.place).span);
             if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after, Some(&target.ty)) {
                 self.structure.drives.push(Drive { carrier: target.carrier, value, after, origin, element: target.constant, path: target.path });
             }
         }
+    }
+
+    /// Records where the definition or commit of `target` is written (`drive_overlaps.rs`): a part that indexes into the
+    /// element's value is left to the checker.
+    pub(super) fn record_drive_site(&mut self, target: &PlaceTarget, way: DriveWay, file: crate::pom::FileId, span: crate::msl::Span) {
+        let Some(fields) = DriveSite::fields_of(&target.path) else { return };
+        let reach = ElementReach::of_element(target.element.is_some(), target.constant);
+        self.structure.drive_sites.push(DriveSite { carrier: target.carrier, reach, fields, way, file, span });
     }
 
     /// The carrier of the body a definition or a commit writes. `None` after a diagnostic (the

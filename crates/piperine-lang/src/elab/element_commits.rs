@@ -57,8 +57,10 @@ impl Elaboration<'_, '_> {
             let Some(decl) = self.root_decl(root) else { return None };
             let shape = self.carrier_array_shape(decl, scope.frame)?.0;
             let span = self.design.expr_node(place).span;
+            // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
+            let generated = self.generated_carrier_levels(scope, root);
             let mut indexes = Vec::new();
-            for _ in 0..shape.dims.len() {
+            for _ in generated.len()..shape.dims.len() {
                 match steps.next() {
                     Some(Step::Index(index)) => indexes.push(index),
                     _ => {
@@ -68,7 +70,7 @@ impl Elaboration<'_, '_> {
                 }
             }
             debug_assert_eq!(shape.count(), count);
-            let found = self.flat_element(scope, carrier, &shape, &indexes, span)?;
+            let found = self.flat_element(scope, carrier, &shape, (&generated, &indexes), span)?;
             (element, constant) = (Some(found.index), found.constant);
         }
         let mut path = Vec::new();

@@ -157,6 +157,7 @@ impl Elaboration<'_, '_> {
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
         self.lower_digital(&mut scope, module);
         self.judge_element_coverage(module, &name);
+        self.judge_drive_overlaps(&name);
         let carriers = self.structure.carriers.clone();
         let reaches = self.structure.reaches.clone();
         let merged = scope.merged.clone();
@@ -251,14 +252,8 @@ impl Elaboration<'_, '_> {
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
             if self.types.node_array(decl).is_some() {
+                self.generated_items_complete(decl);
                 if let Some((shape, first)) = self.add_node_array(decl, role, "", 0) {
-                    // a generated array has one element for each iteration; an arm some iterations skip leaves a gap
-                    if let Some(iterations) = self.generated.of(decl)
-                        && iterations.len() as u64 != shape.count()
-                    {
-                        let data = self.design.decl_data(decl);
-                        self.unsupported(data.file, data.span, "a generated node in an arm that not every iteration elaborates");
-                    }
                     self.frames[0].nodes.insert(decl, first);
                     self.frames[0].node_shapes.insert(decl, shape);
                 }

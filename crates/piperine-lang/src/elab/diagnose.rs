@@ -59,6 +59,7 @@ impl Elaboration<'_, '_> {
             }
             ConstFault::Unsupported { what, .. } => self.unsupported(file, span, &format!("{what} in {position}")),
             ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
+            ConstFault::Ungenerated { message, .. } => self.report(file, Diagnostic::new("E0342", message.clone(), span, "no such generated item")),
             ConstFault::Leaves { .. } => self.unsupported(file, span, &format!("a `break`, `continue` or `return` outside the loop or function it leaves in {position}")),
             ConstFault::Panic { what, .. } => {
                 let message = format!("{position} panics while it is evaluated at elaboration: {what}");

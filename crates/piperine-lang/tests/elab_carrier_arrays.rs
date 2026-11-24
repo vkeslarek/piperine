@@ -422,8 +422,10 @@ fn a_generation_index_names_the_elements_it_reaches() {
     let top = |range: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in {range} {{ let c = Cell(clk, y[k]); }} }}");
     Refusals::assert_one(&top("0..2"), "E0187", &["`y[2..4]`"]);
     elaborates(&top("0..4"));
-    // a definition inside generation is refused (P0001) and that is the one diagnostic, no E0187 beside it
-    Refusals::assert_one("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..2 { y[k] = clk; } }", "P0001", &["definition"]);
+    // a definition inside generation drives the elements its iterations name: E0187 names the two it leaves (the refusal it
+    // was is gone, generics finding 14), and a loop over every element is clean
+    Refusals::assert_one("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..2 { y[k] = clk; } }", "E0187", &["`y[2..4]`", "`Top`"]);
+    elaborates("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..4 { y[k] = clk; } }");
     // and in a generic module, at its length
     let generic = "module M<const N: usize>(in clk: Bit) { signal y: [Bit; N]; for k in 0..2 { let c = Cell(clk, y[k]); } }\n";
     Refusals::assert_one(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<4>(clk); }}"), "E0187", &["`y[2..4]`", "`M::<4>`"]);
@@ -447,4 +449,48 @@ fn an_initial_value_beside_definitions_of_every_element_is_e0338_at_the_instance
     let src = |length: u32| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N] = [false; N]; b[0] = clk; b[1] = !clk; }}\nmodule Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
     Refusals::assert_one(&src(2), "E0338", &["`b`", "`M::<2>`"]);
     elaborates(&src(4));
+}
+
+#[test]
+fn a_nested_array_with_a_generic_inner_length_judges_shared_elements_per_instance() {
+    // §8.2.20: `g[1][0]` and `g[0][1]` of `[[Bit; N]; 2]` are different elements once `N` folds: every element defined once is
+    // clean at `M::<2>`; a second definition of `g[1][1]` is E0335 naming the element and the instance
+    let module = |extra: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; g[1][0] = clk; g[0][1] = clk; g[0][0] = clk; g[1][1] = clk; {extra} }}\n");
+    let top = "module Top(in clk: Bit) { let m = M::<2>(clk); }";
+    elaborates(&format!("{}{top}", module("")));
+    Refusals::assert_one(&format!("{}{top}", module("g[1][1] = !clk;")), "E0335", &["`g[1][1]`", "`M::<2>`"]);
+    // §5.2, §8.2.20: a definition and a commit of different elements compose; of one element they are E0221 at the instance
+    let committed = |element: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2] = [[false; N]; 2]; g[1][0] = clk; }}\ndigital<N> for M<N> {{ on clk.rise() {{ {element} <- true; }} }}\n{top}");
+    elaborates(&committed("g[0][1]"));
+    Refusals::assert_one(&committed("g[1][0]"), "E0221", &["`g[1][0]`", "`M::<2>`"]);
+    // §5.2.6: an element handed to an `out` port and defined here is E0220 at the instance; a different element is clean
+    let handed = |element: &str| format!("{CELL}module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; let c = Cell(clk, g[1][0]); g[0][0] = clk; g[0][1] = clk; g[1][1] = clk; {element} = !clk; }}\n{top}");
+    Refusals::assert_one(&handed("g[1][0]"), "E0220", &["`g[1][0]`", "`M::<2>`"]);
+}
+
+#[test]
+fn drives_written_in_generation_are_judged_where_generation_is_unrolled() {
+    // §8.2.20, §8.2.23: `for k in 0..2 { b[k] = a; }` defines `b[0]` and `b[1]`, so `b[2]` and `b[3]` defined beside it are
+    // clean, and `b[1]` defined again is E0335 naming it
+    let fixed = |extra: &str| format!("module Top(in clk: Bit) {{ signal b: [Bit; 4]; for k in 0..2 {{ b[k] = clk; }} b[3] = !clk; b[2] = clk; {extra} }}");
+    elaborates(&fixed(""));
+    Refusals::assert_one(&fixed("b[1] = !clk;"), "E0335", &["`b[1]`", "`Top`"]);
+    // §8.2.24: two definitions in exclusive arms of an `if` are one drive; one in every iteration of a loop is two
+    elaborates("module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }");
+    elaborates("module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }");
+    Refusals::assert_one("module Top(in clk: Bit) { signal y: Bit; for k in 0..2 { y = clk; } }", "E0335", &["`y`", "`Top`"]);
+    // §5.2.6: placements in a loop hand `y[0]` and `y[1]`; `y[2]` and `y[3]` defined here are clean, `y[1]` is E0220
+    let handed = |extra: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} y[3] = clk; y[2] = clk; {extra} }}");
+    elaborates(&handed(""));
+    Refusals::assert_one(&handed("y[1] = clk;"), "E0220", &["`y[1]`", "`Top`"]);
+    // §5.2: a definition in a loop and a commit of another element compose; of the same element they are E0221
+    let committed = |element: &str| format!("module Top(in clk: Bit) {{ signal y: [Bit; 2] = [false; 2]; for k in 0..1 {{ y[k] = clk; }} }}\ndigital for Top {{ on clk.rise() {{ {element} <- true; }} }}");
+    elaborates(&committed("y[1]"));
+    Refusals::assert_one(&committed("y[0]"), "E0221", &["`y[0]`", "`Top`"]);
+    // §8.2.21, §8.2.24: an initial value beside a definition in an arm not taken stays the carrier's value (clean); in the
+    // taken arm it is E0338 at the instance, and with no initial value an untaken definition leaves `y` undriven (E0187)
+    let arm = |mode: u32, init: &str| format!("module Top(in clk: Bit) {{ mode: usize = {mode}; signal y: Bit{init}; if mode > 1 {{ y = clk; }} }}");
+    elaborates(&arm(0, " = false"));
+    Refusals::assert_one(&arm(2, " = false"), "E0338", &["`y`", "`Top~mode=2`"]);
+    Refusals::assert_one(&arm(0, ""), "E0187", &["`y`", "`Top~mode=0`"]);
 }

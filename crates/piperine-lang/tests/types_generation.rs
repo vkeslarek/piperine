@@ -43,12 +43,13 @@ const PARTS: &str = "module Resistor(p: E, n: E) { r: f64 where r > 0.0; }\nanal
 
 #[test]
 fn generated_items_are_typed_as_arrays_by_ordinal() {
-    // §8.2.23: one array level per generation `for`, the element type inside; an `if` adds no level
+    // §8.2.23: one array level per generation `for`, the element type inside; an `if` adds no level. A generated carrier is
+    // judged like any (§3.3.4): `flag` has its initial value, so the source holds no other error
     let one = format!("{PARTS}module Top() {{\n  signal a: E;\n  signal b: E;\n  for k in 0..3 {{ let rk = Resistor(a, b) {{ r: 1k }}; }}\n}}\n");
     assert_eq!(GenerationSources::local(&one, "rk"), "[module `Resistor`; 3]");
     let nested = format!("{PARTS}module Top() {{\n  signal a: E;\n  signal b: E;\n  for i in 0..2 {{ for j in 0..3 {{ let rk = Resistor(a, b) {{ r: 1k }}; }} }}\n}}\n");
     assert_eq!(GenerationSources::local(&nested, "rk"), "[[module `Resistor`; 3]; 2]");
-    let values = format!("{PARTS}module Top() {{\n  signal a: E;\n  for k in 0..4 {{ let half = k * 2; signal mid: E; signal flag: Bit; let rk = Resistor(a, mid) {{ r: 1k }}; }}\n}}\n");
+    let values = format!("{PARTS}module Top() {{\n  signal a: E;\n  for k in 0..4 {{ let half = k * 2; signal mid: E; signal flag: Bit = false; let rk = Resistor(a, mid) {{ r: 1k }}; }}\n}}\n");
     assert_eq!(GenerationSources::local(&values, "half"), "[i32; 4]");
     assert_eq!(GenerationSources::carrier(&values, "mid"), "[node of nature E; 4]");
     assert_eq!(GenerationSources::carrier(&values, "flag"), "[Bit<bool>; 4]");

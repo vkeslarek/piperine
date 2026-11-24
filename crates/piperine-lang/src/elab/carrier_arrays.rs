@@ -188,6 +188,45 @@ impl Elaboration<'_, '_> {
         })
     }
 
+    /// The initial value of the array carrier `decl` declared inside generation (shape `shape`, element type `element`): the
+    /// value written is one generated element's, folded for each iteration with its loop variables bound, so every element
+    /// starts at its own (§8.2.23). An element that is itself an array takes `[x; K]` or `[a, b, c]` as an array declared
+    /// outside generation does. `None` after a diagnostic.
+    pub(super) fn generated_array_init(&mut self, decl: DeclId, init: ExprId, shape: &ArrayShape, element: &ValueType) -> Option<Constant> {
+        let iterations = self.generated.of(decl)?.clone();
+        let loops = self.generation_loops(decl).len();
+        let inner = ArrayShape { dims: shape.dims[loops.min(shape.dims.len())..].to_vec() };
+        let mut parts = Vec::with_capacity(shape.count() as usize);
+        for iteration in &iterations {
+            let bindings = self.iteration_bindings(Some(iteration));
+            parts.extend(self.element_init_parts(decl, init, &inner, element, &bindings)?);
+        }
+        Some(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ValueType::Array(Box::new(element.clone()), parts.len() as u64), variant: None, parts })))
+    }
+
+    /// The initial values of the `inner.count()` carriers one generated element of `decl` holds, `init` folded over
+    /// `bindings`: one value, or each element of an array element's own. `None` after a diagnostic.
+    fn element_init_parts(&mut self, decl: DeclId, init: ExprId, inner: &ArrayShape, element: &ValueType, bindings: &Bindings) -> Option<Vec<Constant>> {
+        let count = inner.count() as usize;
+        let mut repeated = init;
+        while let ExprKind::ArrayRepeat { elem, .. } = self.design.expr_node(repeated).kind.clone() {
+            repeated = elem;
+        }
+        if inner.dims.is_empty() || (repeated != init && !matches!(self.design.expr_node(repeated).kind, ExprKind::Array(_))) {
+            let value = self.carrier_init_over(repeated, bindings)?;
+            return Some(vec![self.ir_constant(value, element); count]);
+        }
+        if inner.dims.len() > 1 {
+            let span = self.design.expr_node(init).span;
+            self.unsupported(self.design.decl_data(decl).file, span, "an initial value of a nested array of carriers other than `[x; K]`");
+            return None;
+        }
+        match self.carrier_init_over(init, bindings)? {
+            Constant::Aggregate(id) => Some(self.ir.aggregate_at(id).parts.clone()),
+            other => Some(vec![self.ir_constant(other, element); count]),
+        }
+    }
+
     /// The nodes of the array `decl` of nodes in `role`, named `name[0]` to `name[K-1]` (row-major for a nested array):
     /// added to the body's nodes with the array's name, `K` consecutive terminals (the first is returned). `None` after
     /// a diagnostic.

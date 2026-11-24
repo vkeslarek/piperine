@@ -24,12 +24,41 @@ use piperine_ir::{Constant, Drive, ExprId as LoweredExpr, Hoisted, NodeRole, Stm
 use super::carriers::Frame;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::generation::Iteration;
 use super::lower::Scope;
 use crate::msl::Diagnostic;
 use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, PortArguments, Resolution, StructClass};
 use crate::types::Callee;
 
+/// A hoisted placement as the frame that writes it knows it: the call, and the ordinals of the iteration of the generation
+/// `for`s around it, outermost first (§8.2.23): each iteration of a placement written in generation is a frame of its own.
+/// Empty outside generation.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct PlacementKey {
+    /// The placement as written.
+    pub(super) call: ExprId,
+    /// The ordinals of its iteration.
+    pub(super) iteration: Vec<u64>,
+}
+
+impl PlacementKey {
+    /// The subscripts of the iteration, appended to the placement's name: `[1]`, `[0][2]`; empty outside generation.
+    fn subscripts(&self) -> String {
+        self.iteration.iter().map(|ordinal| format!("[{ordinal}]")).collect()
+    }
+}
+
 impl Elaboration<'_, '_> {
+    /// The key of the placement `call` read or hoisted in `scope`: the iteration of the generation `for`s around it that the
+    /// code being lowered sits in.
+    pub(super) fn placement_key(&self, scope: &Scope, call: ExprId) -> PlacementKey {
+        let iteration = match scope.frame {
+            0 => self.implicit_ordinals(self.design.expr_node(call).owner, &scope.ordinals),
+            _ => Vec::new(),
+        };
+        PlacementKey { call, iteration }
+    }
+
     /// The module with a result that `call` places, if it places one.
     pub(super) fn result_callee(&self, call: ExprId) -> Option<DeclId> {
         match self.types.callee(call) {
@@ -87,8 +116,22 @@ impl Elaboration<'_, '_> {
         // A placement in a loop is hoisted by the unrolling of the loop, once per iteration.
         let looped = self.looped_placements(module);
         for call in data.instances.clone() {
-            if self.hoisted_callee(call).is_some() && !looped.contains(&call) {
-                self.frame_of(scope, call);
+            if self.hoisted_callee(call).is_none() || looped.contains(&call) {
+                continue;
+            }
+            // a placement written in generation is hoisted once for each iteration that elaborates it (§8.2.23)
+            let owner = self.design.expr_node(call).owner;
+            let iterations = match (scope.frame, self.generated.of(owner)) {
+                (0, Some(iterations)) => iterations.clone(),
+                _ => vec![Iteration::default()],
+            };
+            for iteration in &iterations {
+                let mut inner = Self::sub_scope(scope);
+                for (variable, value) in &iteration.values {
+                    inner.unrolled.bind(*variable, Constant::Int(*value));
+                }
+                inner.ordinals = iteration.ordinals.clone();
+                self.frame_of(&inner, call);
             }
         }
     }
@@ -96,16 +139,17 @@ impl Elaboration<'_, '_> {
     /// The frame of the placement `call`, written in the frame `scope.frame`; hoisted the first
     /// time it is asked for. `None` after a diagnostic.
     pub(super) fn frame_of(&mut self, scope: &Scope, call: ExprId) -> Option<usize> {
-        if let Some(frame) = self.frames[scope.frame].placements.get(&call) {
+        let key = self.placement_key(scope, call);
+        if let Some(frame) = self.frames[scope.frame].placements.get(&key) {
             return Some(*frame);
         }
         // A placement that failed has said why once; its reads stay silent.
-        if self.frames[scope.frame].failed.contains(&call) {
+        if self.frames[scope.frame].failed.contains(&key) {
             return None;
         }
-        let frame = self.hoist(scope, call);
+        let frame = self.hoist(scope, &key);
         if frame.is_none() {
-            self.frames[scope.frame].failed.insert(call);
+            self.frames[scope.frame].failed.insert(key);
         }
         frame
     }
@@ -134,11 +178,14 @@ impl Elaboration<'_, '_> {
         let parent = self.frames[scope.frame].parent?;
         // the caller's expression reads the loop variables it was written under (`unroll.rs`)
         let seen = self.frames[scope.frame].unrolled.clone();
+        let iteration = self.frames[scope.frame].ordinals.clone();
         let entry = self.enter_frame(scope, parent);
         let outer_unrolled = std::mem::replace(&mut scope.unrolled, seen);
+        let outer_ordinals = std::mem::replace(&mut scope.ordinals, iteration);
         let lowered = lower(self, scope);
         self.leave_frame(scope, entry);
         scope.unrolled = outer_unrolled;
+        scope.ordinals = outer_ordinals;
         lowered
     }
 
@@ -191,7 +238,8 @@ impl Elaboration<'_, '_> {
     /// Open the frame of `call`, placed in the frame `scope.frame`, and hoist what the callee
     /// holds into the body: its carriers, the drives of its discrete inputs and its definitions,
     /// its own placements, its reactions. `None` after a diagnostic.
-    fn hoist(&mut self, scope: &Scope, call: ExprId) -> Option<usize> {
+    fn hoist(&mut self, scope: &Scope, key: &PlacementKey) -> Option<usize> {
+        let call = key.call;
         let module = self.hoisted_callee(call)?;
         let parent = scope.frame;
         let node = self.design.expr_node(call).clone();
@@ -220,7 +268,8 @@ impl Elaboration<'_, '_> {
         let bound = self.hoisted_params(module, &fields, file, node.span);
         self.consts.set_substitution(outer);
         let bound = bound?;
-        let name = self.hoisted_name(parent, call, module);
+        // a placement written in generation is named by its iteration too: `y[1]`, `idt$0[1]`
+        let name = format!("{}{}", self.hoisted_name(parent, call, module), key.subscripts());
         let prefix = format!("{}{name}.", self.frames[parent].prefix);
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         let mut frame = Frame::root(module);
@@ -229,6 +278,7 @@ impl Elaboration<'_, '_> {
         frame.prefix = prefix;
         frame.params = bound;
         frame.unrolled = scope.unrolled.clone();
+        frame.ordinals = scope.ordinals.clone();
         frame.substitution = substitution.clone();
         let mut node_ports = Vec::new();
         let mut out_ports = Vec::new();
@@ -258,7 +308,7 @@ impl Elaboration<'_, '_> {
         }
         self.frames.push(frame);
         let index = self.frames.len() - 1;
-        self.frames[parent].placements.insert(call, index);
+        self.frames[parent].placements.insert(key.clone(), index);
         let outer = self.consts.set_substitution(substitution);
         let hoisted = self.hoist_frame(scope, call, index, (module, &name), &ports, &bound);
         self.consts.set_substitution(outer);
@@ -364,6 +414,10 @@ impl Elaboration<'_, '_> {
         };
         if m.instances.iter().any(|c| matches!(self.types.callee(*c), Some(Callee::Module(_))) && self.hoisted_callee(*c).is_none()) {
             return refuse(self, "a placement of a module that is not hoisted");
+        }
+        // the generation of a body is unrolled for the body's own module only (`generation.rs`)
+        if data.children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Generation(_))) {
+            return refuse(self, "generation in its body");
         }
         true
     }

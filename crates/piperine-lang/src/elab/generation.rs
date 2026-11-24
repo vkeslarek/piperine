@@ -4,16 +4,19 @@
 //! `for` around it. A `for` over an empty range elaborates its items never (an empty array); an `if` elaborates the items of
 //! the arm its condition selects and none of the others (a reference to one is `E0342`).
 //!
-//! The items a generation holds that this elaboration lowers are placements, `let`s over constants and nodes (an array of
-//! nodes, one element per iteration); a carrier, a definition or a hoisted placement inside generation is refused loudly.
+//! Every item a generation holds is lowered: a placement is one child per iteration (`name[k]`), a node or a carrier an array
+//! of one element per iteration, a definition one drive per iteration, a hoisted placement one frame per iteration, and a
+//! `let` read outside its loops the array of its values. A name read inside its loops is the iteration's element. An item
+//! of an `if` that only some iterations of a `for` elaborate would make an array with gaps: refused by name (`P0001`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::Constant;
+use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use crate::pom::{DeclId, DeclKind, ExprKind, GenElseNode, GenerationData, PatKind};
+use super::lower::Scope;
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenElseNode, GenerationData, PatKind};
 
 /// The most iterations one generation `for` unrolls into.
 const TRIPS: i128 = 1 << 24;
@@ -40,7 +43,8 @@ impl Iteration {
 pub(super) struct GeneratedItems {
     /// The iterations of each item written in generation; none for an item of an arm that was not elaborated.
     iterations: BTreeMap<DeclId, Vec<Iteration>>,
-    /// The items already refused, so each is reported once.
+    /// The items refused for a gap in their array (`generated_items_complete`), so each is reported once and is the one
+    /// diagnostic of its carrier.
     pub(super) refused: BTreeSet<DeclId>,
     /// Every item met outside a generation or inside one, with its iteration, in the order the generation unrolls them: source
     /// order, a `for` iteration by iteration (§12.1.2).
@@ -53,9 +57,35 @@ impl GeneratedItems {
         self.iterations.get(&item)
     }
 
+    /// Every item of the body met in unrolling order, with the iteration it is elaborated in: an item outside generation
+    /// once, with no loop variable; an item inside generation once for each iteration that elaborates it.
+    pub(super) fn unrolled(&self) -> &[(DeclId, Iteration)] {
+        &self.sequence
+    }
+
     /// The items elaborated at least once, in declaration order.
     pub(super) fn elaborated(&self) -> impl Iterator<Item = DeclId> + '_ {
         self.iterations.iter().filter(|(_, iterations)| !iterations.is_empty()).map(|(item, _)| *item)
+    }
+}
+
+/// The ordinals an iteration has in the generation `for`s around one item, outermost first.
+struct GeneratedLevels(Vec<u32>);
+
+impl GeneratedLevels {
+    /// The ordinals of `iteration` in `loops`, outermost first.
+    fn new(loops: &[DeclId], iteration: &Iteration) -> GeneratedLevels {
+        GeneratedLevels(loops.iter().filter_map(|generation| iteration.ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| *ordinal)).collect())
+    }
+
+    /// Whether the outermost ordinals are `fixed`.
+    fn starts_with(&self, fixed: &[u32]) -> bool {
+        self.0.starts_with(fixed)
+    }
+
+    /// The ordinal at `level`.
+    fn at(&self, level: usize) -> Option<u32> {
+        self.0.get(level).copied()
     }
 }
 
@@ -76,7 +106,6 @@ impl Elaboration<'_, '_> {
                 _ => {
                     self.generated.sequence.push((*item, now.cloned().unwrap_or_default()));
                     if let Some(now) = now {
-                        self.admit_generated(*item);
                         self.generated.iterations.entry(*item).or_default().push(now.clone());
                     }
                 }
@@ -215,20 +244,23 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// Refuses, once, an item written in generation that this elaboration does not lower: it would be dropped silently.
-    fn admit_generated(&mut self, item: DeclId) {
-        let data = self.design.decl_data(item).clone();
-        let what = match &data.kind {
-            DeclKind::Signal(_) if self.types.carrier(item).is_some() && self.types.node_array(item).is_none() => Some("a carrier"),
-            DeclKind::Definition(_) => Some("a definition"),
-            DeclKind::Let(l) if self.types.callee(l.value).is_some() && self.hoisted_callee(l.value).is_some() => Some("a placement of a module with a value input or a result"),
-            _ => None,
-        };
-        if let Some(what) = what
-            && self.generated.refused.insert(item)
-        {
-            self.unsupported(data.file, data.span, &format!("{what} inside generation"));
+    /// Whether the item `decl` written in generation has an element for every iteration of the `for`s around it: an arm
+    /// some iterations skip would leave a gap in its array, which this elaboration refuses, once, by name (`P0001`). An item
+    /// outside generation, or in an `if` outside every `for`, has no gap.
+    pub(super) fn generated_items_complete(&mut self, decl: DeclId) -> bool {
+        let Some(elaborated) = self.generated.of(decl).map(Vec::len) else { return true };
+        let loops = self.generation_loops(decl).len();
+        let typed = self.consts.typed_carrier(decl).or_else(|| self.consts.typed_node_array(decl));
+        let Some(shape) = typed.and_then(|ty| self.shape_in(&ty, 0)) else { return true };
+        let trips: u64 = shape.dims.iter().take(loops).product();
+        if loops == 0 || elaborated as u64 == trips {
+            return true;
         }
+        if self.generated.refused.insert(decl) {
+            let data = self.design.decl_data(decl).clone();
+            self.unsupported(data.file, data.span, "an item declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps)");
+        }
+        false
     }
 
     /// The generation `for`s around `decl`, outermost first.
@@ -253,6 +285,56 @@ impl Elaboration<'_, '_> {
     /// inside (a prefix of them, outermost first).
     pub(super) fn implicit_ordinals(&self, decl: DeclId, ordinals: &[(DeclId, u32)]) -> Vec<u64> {
         self.generation_loops(decl).iter().map_while(|generation| ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| u64::from(*ordinal))).collect()
+    }
+
+    /// A read at `expr` of the `let` binding `binding` written in generation: inside the loops that declare it, the value of
+    /// the iteration being lowered; outside some of them, the array of the values of their iterations, nested once for each,
+    /// of the type `ty` the read has (§8.2.23). `E0342` for a `let` of an arm that was not elaborated. `None` after a
+    /// diagnostic.
+    pub(super) fn lower_generated_let(&mut self, scope: &mut Scope, expr: ExprId, binding: DeclId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let item = self.design.decl_data(binding).parent?;
+        let value = self.body_let_value(binding)?;
+        let iterations = self.generated.of(item)?.clone();
+        if iterations.is_empty() && self.generation_loops(item).is_empty() {
+            self.refer_outside_generation(scope.file, self.design.expr_node(expr).span, binding, None);
+            return None;
+        }
+        let loops = self.generation_loops(item);
+        let fixed: Vec<u32> = self.implicit_ordinals(item, &scope.ordinals).into_iter().map(|ordinal| ordinal as u32).collect();
+        let reached: Vec<Iteration> = iterations.into_iter().filter(|iteration| GeneratedLevels::new(&loops, iteration).starts_with(&fixed)).collect();
+        self.generated_let_level(scope, expr, value, (&loops, fixed.len()), &reached, ty, origin)
+    }
+
+    /// The values of the `let` `value` over the iterations `reached`, from the level `level` of the generation `for`s
+    /// `loops` on: one value at the innermost level, else the array of the values below each ordinal of this level.
+    #[allow(clippy::too_many_arguments)]
+    fn generated_let_level(&mut self, scope: &mut Scope, expr: ExprId, value: ExprId, (loops, level): (&[DeclId], usize), reached: &[Iteration], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        if level == loops.len() {
+            let iteration = reached.first()?;
+            let outer = (scope.unrolled.clone(), std::mem::replace(&mut scope.ordinals, iteration.ordinals.clone()));
+            for (variable, constant) in &iteration.values {
+                scope.unrolled.bind(*variable, Constant::Int(*constant));
+            }
+            let lowered = self.lower_body_let(scope, value);
+            (scope.unrolled, scope.ordinals) = outer;
+            return lowered;
+        }
+        let ValueType::Array(element, length) = &ty else {
+            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `let` written in generation read as no array");
+            return None;
+        };
+        let ordinals: BTreeSet<u32> = reached.iter().filter_map(|iteration| GeneratedLevels::new(loops, iteration).at(level)).collect();
+        // an arm some iterations skip leaves a gap: the array the type names has an element the generation never made
+        if ordinals.len() as u64 != *length || ordinals.iter().enumerate().any(|(position, ordinal)| position as u32 != *ordinal) {
+            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `let` declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps), read as an array");
+            return None;
+        }
+        let mut parts = Vec::with_capacity(ordinals.len());
+        for ordinal in ordinals {
+            let below: Vec<Iteration> = reached.iter().filter(|iteration| GeneratedLevels::new(loops, iteration).at(level) == Some(ordinal)).cloned().collect();
+            parts.push(self.generated_let_level(scope, expr, value, (loops, level + 1), &below, (**element).clone(), origin.clone())?);
+        }
+        Some(self.emit(Expr::Array(parts), ty, origin))
     }
 
     /// `E0342` for a reference to `decl`, an item written in generation: whose arm was not elaborated, or whose array has no

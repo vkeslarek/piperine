@@ -47,8 +47,10 @@ impl Elaboration<'_, '_> {
             indexes.push(index);
             at = self.peel_parens(inner);
         }
+        // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
+        let generated = self.generated_carrier_levels(scope, at);
         // a handle bound to an element is that element
-        if indexes.is_empty() {
+        if indexes.is_empty() && generated.is_empty() {
             let bound = match &self.design.expr_node(at).kind {
                 ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                     Some(Resolution::Decl(decl)) => scope.handles.get(&decl).copied(),
@@ -75,21 +77,37 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "an element of an array whose length is not a constant yet");
             return Lookup::Failed;
         };
-        if indexes.len() != shape.dims.len() {
+        if generated.len() + indexes.len() != shape.dims.len() {
             self.unsupported(scope.file, span, "a part of a nested array of carriers as a value: name an element");
             return Lookup::Failed;
         }
-        match self.flat_element(scope, carrier, &shape, &indexes, span) {
+        match self.flat_element(scope, carrier, &shape, (&generated, &indexes), span) {
             Some(found) => Lookup::Found(found),
             None => Lookup::Failed,
         }
     }
 
-    /// The flat element of the array carrier `carrier` named by `indexes`, one per level: the index expression and the
-    /// element when every index folds. `None` after a diagnostic (`E0104` for a constant past the end).
-    pub(super) fn flat_element(&mut self, scope: &mut Scope, carrier: u32, shape: &ArrayShape, indexes: &[ExprId], span: crate::msl::Span) -> Option<ElementRef> {
+    /// The levels of the carrier `root` names that the generation `for`s around the code being lowered fix: the ordinals of
+    /// the iterations of the loops that declare it and that `scope` is inside, outermost first (§8.2.23). Empty for a
+    /// carrier declared outside generation, or for code outside its loops.
+    pub(super) fn generated_carrier_levels(&self, scope: &Scope, root: ExprId) -> Vec<u64> {
+        let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return Vec::new() };
+        let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return Vec::new() };
+        if self.generated.of(decl).is_none() || scope.frame != 0 || !self.frames[0].carriers.contains_key(&decl) {
+            return Vec::new();
+        }
+        self.implicit_ordinals(decl, &scope.ordinals)
+    }
+
+    /// The flat element of the array carrier `carrier` named by `(fixed, indexes)`, one per level: the levels generation
+    /// fixes, then the written indexes. The index expression and the element when every index folds. `None` after a
+    /// diagnostic (`E0104` for a constant past the end).
+    pub(super) fn flat_element(&mut self, scope: &mut Scope, carrier: u32, shape: &ArrayShape, (fixed, indexes): (&[u64], &[ExprId]), span: crate::msl::Span) -> Option<ElementRef> {
         let origin = self.locator.origin(scope.file, span);
-        let mut lowered = Vec::with_capacity(indexes.len());
+        let mut lowered = Vec::with_capacity(fixed.len() + indexes.len());
+        for ordinal in fixed {
+            lowered.push(self.emit(Expr::Int(i128::from(*ordinal)), ValueType::UInt(64), origin.clone()));
+        }
         for index in indexes {
             lowered.push(self.lower_expr(scope, *index)?);
         }
@@ -297,19 +315,25 @@ impl Elaboration<'_, '_> {
         }
         let carrier = self.frame_carrier(scope.frame, decl)?;
         let shape = self.shape_in(&array, scope.frame)?;
-        if indexes.len() > shape.dims.len() {
+        // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
+        let generated = self.generated_carrier_levels(scope, at);
+        let levels = generated.len() + indexes.len();
+        if levels > shape.dims.len() {
             self.unsupported(scope.file, span, "an index of an array of carriers past its levels");
             return Some(None);
         }
-        let prefix = ArrayShape { dims: shape.dims[..indexes.len()].to_vec() };
+        if levels == 0 {
+            return Some(Some((carrier, None)));
+        }
+        let prefix = ArrayShape { dims: shape.dims[..levels].to_vec() };
         let mut inner_scope = Self::sub_scope(scope);
-        let Some(found) = self.flat_element(&mut inner_scope, carrier, &prefix, &indexes, span) else { return Some(None) };
+        let Some(found) = self.flat_element(&mut inner_scope, carrier, &prefix, (&generated, &indexes), span) else { return Some(None) };
         let Some(first) = found.constant else {
             self.not_folded(scope, span, "the element of a connection");
             return Some(None);
         };
-        let below: u64 = shape.dims[indexes.len()..].iter().product();
-        let window = match indexes.len() == shape.dims.len() {
+        let below: u64 = shape.dims[levels..].iter().product();
+        let window = match levels == shape.dims.len() {
             true => piperine_ir::CarrierWindow { first, length: None },
             false => piperine_ir::CarrierWindow { first: first * below, length: Some(below) },
         };

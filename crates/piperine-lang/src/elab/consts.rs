@@ -23,10 +23,12 @@
 //! The aggregates of phase B (tuples, arrays, structs, enum variants with fields, `Option`s, ranges
 //! and iterators, with their patterns, comparisons, field and element assignment and the rows of
 //! Appendix H) are `composite.rs`; the public `folded`, `value` and `constant` give a scalar only, a
-//! composite is given out as a [`ConstTree`] (`tree`, `constant_tree`).
+//! composite is given out as a [`ConstTree`] (`tree`, `constant_tree`). A module-body `let` written in generation folds
+//! per iteration, and to the array of its iterations' values outside its loops (`generated.rs`).
 
 mod composite;
 mod control;
+mod generated;
 mod imported;
 mod parsed;
 
@@ -144,6 +146,8 @@ pub enum ConstFault {
     /// The text `parse_table` or `parse_hex` reads does not fit the `const`'s type (`E0614`) or is not in the
     /// format (`E0706`, §22.6.4): `message` names the source and the row.
     Table { expr: ExprId, code: &'static str, message: String },
+    /// A read of a `let` written in a generation arm the evaluation does not take (§8.2.24, `E0342`): `message` names it.
+    Ungenerated { expr: ExprId, message: String },
     /// A `break`, `continue` or `return` on its way to the loop or function it leaves; the value it
     /// carries waits in the evaluator. Never reaches a caller of [`ConstEval::value`].
     Leaves { expr: ExprId, exit: Exit },
@@ -164,7 +168,7 @@ impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Ungenerated { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -563,7 +567,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
         self.open_lets.push(decl);
         let outer = std::mem::take(&mut self.locals);
-        let result = self.fold(value, bindings);
+        // a `let` written in generation: the iteration's value, or the array of them outside its loops (`generated.rs`)
+        let result = self.generated_let(expr, decl, value, bindings);
         self.locals = outer;
         self.open_lets.pop();
         result.map_err(|fault| match fault {

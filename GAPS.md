@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 0 silent, 2 broken, 16 loud (L1 to L75 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the ten `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, in six tables) plus
+**Counts.** 0 silent, 2 broken, 18 loud (L1 to L77 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the ten `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L75 (L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
+| §4 Loud | L1–L77 (L76 and L77 found by the `generics` phase C round 4 fix, owner `spec-closure`; L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -112,6 +112,8 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 | L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
 | L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
+| L76 | an item (a node, a carrier, a `let`) declared in a generation `if` that only some iterations of the `for` around it elaborate: the array it makes would have elements that do not exist, which neither the IR's arrays of nodes and carriers nor a value array holds. An item of an `if` every iteration takes, or of an `if` outside every `for`, runs; so do definitions and placements in such an arm (not named arrays). Owner `spec-closure` (found by the `generics` phase C round 4 fix; a decision on what a gap reads is the spec's first) | §8.2.23, §8.2.24 | `P0001`: "an item declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps)" | S |
+| L77 | generation in the body of a module hoisted into its caller (a module with a result or a value input): generation unrolls the body's own module, and a hoisted frame has none of its own. A hoisted module without generation, and generation in a module placed with a body of its own, run. Owner `spec-closure` (found by the `generics` phase C round 4 fix, where it was dropped silently before) | §8.2.7, §8.3.12 | `P0001`: "a hoisted module that holds generation in its body," | M |
 
 Works, by probe: `where` at elaboration and on a set (`E0317`, `E0802`), `E0312`, `E0314`,
 `E0316`, `E0320`, `E0330`, `E0335` to `E0339`, `E0343`, `E0457`, definitions with and without
@@ -283,7 +285,7 @@ does not count.
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
-| III §8–§8.2 modules, ports, params, the body | 90 % | generic modules and generation (the body and a `digital` block) run (phase C); arrays of carriers and nodes as ports and signals run |
+| III §8–§8.2 modules, ports, params, the body | 90 % | generic modules and generation (the body and a `digital` block) run (phase C): placements, nodes, carriers, definitions, hoisted placements and `let`s in generation; not an item only some iterations make (L76) nor generation inside a hoisted module (L77); arrays of carriers and nodes as ports and signals run |
 | III §8.3 instances in expressions | 80 % | the stdlib `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |

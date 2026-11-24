@@ -13,8 +13,9 @@ use super::element_target::Element;
 use super::ty::Length;
 use super::Ty;
 
-/// The array carriers whose element coverage the checker cannot judge because a length is generic or a param: each
-/// instance is judged by the elaborator, where lengths and generation indices are folded.
+/// The carriers whose element coverage or drive overlaps the checker cannot judge, because a length is generic or a
+/// param, or a drive is written inside generation: each instance is judged by the elaborator, where lengths, generation
+/// indices and generation arms are folded.
 #[derive(Debug, Clone, Default)]
 pub(super) struct DeferredCoverage {
     /// Carriers with no initial value whose type has no `Default` and that a constant element drive names in part (`E0187`).
@@ -23,6 +24,9 @@ pub(super) struct DeferredCoverage {
     pub(super) handed_initial: BTreeSet<DeclId>,
     /// Carriers with an initial value that undelayed element definitions name in part (`E0338` once every element is defined).
     pub(super) defined_initial: BTreeSet<DeclId>,
+    /// Carriers a drive of which reaches elements only the elaborator folds: their overlaps (`E0335`, `E0221`, `E0220`)
+    /// are judged per instance.
+    pub(super) overlaps: BTreeSet<DeclId>,
 }
 
 /// Which elements of one carrier a set of drives names, in row-major order for nested arrays.
@@ -127,6 +131,15 @@ impl ElementCoverage {
 }
 
 impl Checker<'_> {
+    /// The carriers of this module a drive or a hand-over of which reaches elements only the elaborator folds: their
+    /// overlaps are judged per instance (`Types::defers_drive_overlaps`).
+    pub(super) fn defer_unfolded_overlaps(&mut self) {
+        let drives = self.book.elements.iter().map(|(carrier, element, _, _)| (*carrier, *element));
+        let handed = self.book.handed.iter().map(|(carrier, element, _, _)| (*carrier, *element));
+        let unfolded: Vec<DeclId> = drives.chain(handed).filter(|(_, element)| *element == Element::Unfolded).map(|(carrier, _)| carrier).collect();
+        self.deferred_coverage.overlaps.extend(unfolded);
+    }
+
     /// The elements of `decl` (of type `held`) an undelayed definition names.
     pub(super) fn undelayed_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
         let mut coverage = ElementCoverage::of(held);

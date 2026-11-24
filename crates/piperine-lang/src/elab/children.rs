@@ -223,6 +223,9 @@ impl Elaboration<'_, '_> {
                     Some((carrier, window)) => {
                         if matches!(&self.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
                             self.structure.handed.push((carrier, window));
+                            let span = self.design.expr_node(arg.value).span;
+                            let reach = super::drive_overlaps::ElementReach::of_window(window);
+                            self.structure.drive_sites.push(super::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::drive_overlaps::DriveWay::Handed, file: scope.file, span });
                         }
                         carriers.push(Some(carrier));
                         windows.push(window);
@@ -296,14 +299,17 @@ impl Elaboration<'_, '_> {
     /// carrier of its anonymous definition (§8.2.9). `None` after a diagnostic.
     pub(super) fn lower_carrier_argument(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
         let node = self.design.expr_node(arg).clone();
-        if let ExprKind::Path(path) = &node.kind
+        // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
+        let generated = !self.generated_carrier_levels(scope, arg).is_empty();
+        if !generated
+            && let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
             && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl))
         {
             return Some((*index, None));
         }
         // an element `x[k]` or a sub-array `g[r]` of an array of carriers: the carrier and its window
-        if let ExprKind::Index { .. } = &node.kind
+        if (generated || matches!(node.kind, ExprKind::Index { .. }))
             && let Some(found) = self.carrier_window(scope, arg)
         {
             return found;

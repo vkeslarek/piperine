@@ -191,3 +191,38 @@ fn generation_in_a_digital_block_runs_from_every_entry() {
     assert!(ir.instance_at("Bench").is_some_and(|bench| bench.body().reactions().len() == 15), "five reactions for each of the three iterations");
     project.compile("Bench").unwrap_or_else(|r| panic!("{r}"));
 }
+
+/// The bench of `tests/generation/generated_items.msl`, run for 4 ns.
+struct GeneratedItems;
+
+impl GeneratedItems {
+    /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&GenerationModels::project("generated_items.msl"), "Bench");
+        let seen = built.run(4e-9, 0.5e-9);
+        support::transient(&seen, &format!("Bench.{name}"))
+    }
+}
+
+#[test]
+fn carriers_definitions_and_hoisted_placements_in_generation_run() {
+    // GN-17 AC 1 (§8.2.23): `signal s` in `for k in 0..3` is the array `s`, element `k` starting at `k + 1`; `let d = Double(s)`
+    // is one hoisted placement per iteration reading its element; `y[k] = d + k` one definition per iteration. So `y[k]` is
+    // `2 * s[k] + k`. `tick` rises at 1 ns and 3 ns; each rise commits `s[1] + 10` to `s[1]` and `s[0] + 1` to `s[0]`, from
+    // outside the loop, and `s[2]` is never committed
+    let s0 = |rises: u8| 1 + rises;
+    let s1 = |rises: u8| 2 + 10 * rises;
+    let y = |k: u8, s: u8| 2 * s + k;
+    assert_eq!(GeneratedItems::changes("y[0]"), vec![(Bank::NS, vec![y(0, s0(1))]), (3 * Bank::NS, vec![y(0, s0(2))])], "the element 0 follows its carrier");
+    assert_eq!(GeneratedItems::changes("y[1]"), vec![(Bank::NS, vec![y(1, s1(1))]), (3 * Bank::NS, vec![y(1, s1(2))])], "the element 1 follows its carrier");
+    assert!(GeneratedItems::changes("y[2]").is_empty(), "the element 2 keeps `2 * 3 + 2`, set at (0, 0)");
+    assert_eq!(GeneratedItems::changes("s[1]"), vec![(Bank::NS, vec![s1(1)]), (3 * Bank::NS, vec![s1(2)])], "the generated carrier holds its commits");
+}
+
+#[test]
+fn a_hoisted_placement_with_contributions_runs_once_per_iteration() {
+    // GN-17 AC 1 (§8.2.23): three loads of `k + 1` mS hoisted by a `for` are 6 mS in parallel under the 1k feed
+    let seen = GenerationModels::operating_point("generated_items.msl", "LoadRig", &["mid"]);
+    let expected = GenerationModels::divided(1.0 / 6e-3);
+    assert!((seen[0] - expected).abs() < 1e-9, "{seen:?} against {expected}");
+}

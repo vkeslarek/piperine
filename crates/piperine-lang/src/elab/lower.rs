@@ -832,6 +832,11 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
+            // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
+            DeclKind::Signal(_) if !self.generated_carrier_levels(scope, expr).is_empty() => match self.element_lookup(scope, expr) {
+                super::elements::Lookup::Found(element) => Some(self.carrier_element_read(element, origin)),
+                _ => None,
+            },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
@@ -858,6 +863,8 @@ impl Elaboration<'_, '_> {
                     let ty = scope.locals[*index as usize].ty.clone();
                     Some(self.emit(Expr::Local(*index), ty, origin))
                 }
+                // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
+                None if scope.frame == 0 && self.body_let_value(decl).is_some() && self.generated.of(self.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
                 // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
                 None if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;
