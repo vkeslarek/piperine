@@ -62,6 +62,10 @@ impl Checker<'_> {
         for implementation in super::nature::ResolveImpls::declarations(&self.impls, nature) {
             self.reach(implementation);
         }
+        if NatureRules::of(self.design, nature).resolved && !self.resolve_tables.contains_key(&nature) {
+            let table = super::nature::ResolveImpls::new(self).of(nature);
+            self.resolve_tables.insert(nature, table);
+        }
         Some(Ty::Carrier { nature, value: Box::new(value) })
     }
 

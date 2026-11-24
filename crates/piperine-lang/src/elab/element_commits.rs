@@ -50,7 +50,11 @@ impl Elaboration<'_, '_> {
         }
         let carrier = self.drive_target(scope, root)?;
         let carried = self.structure.carriers[carrier as usize].clone();
-        let mut ty = carried.ty.clone();
+        // a resolved carrier is written with the type of its drive, not the one it reads (§5.2.15)
+        let mut ty = match &carried.role {
+            piperine_ir::CarrierRole::Resolved { driven } => driven.clone(),
+            _ => carried.ty.clone(),
+        };
         let mut steps = steps.into_iter().peekable();
         let (mut element, mut constant) = (None, None);
         if let Some(count) = carried.count {

@@ -127,6 +127,10 @@ pub(super) struct Checker<'d> {
     pub(super) open_literals: BTreeMap<DeclId, ExprId>,
     /// The `impl Resolve` each value written to a resolved carrier picked (`nature.rs`): by the value expression.
     pub(super) drive_impls: BTreeMap<ExprId, DeclId>,
+    /// The `impl Resolve`s the drives of each carrier of a resolved nature picked, in source order (`nature.rs`).
+    pub(super) carrier_drive_impls: BTreeMap<DeclId, Vec<DeclId>>,
+    /// The typed `impl Resolve`s of each resolved nature a carrier of which was typed.
+    pub(super) resolve_tables: BTreeMap<DeclId, Vec<super::nature::ResolveImpl>>,
     /// The locals declared without a value (`let x;`, §1.7.5).
     pub(super) deferred: BTreeSet<DeclId>,
     /// The control state of the body being checked.
@@ -203,6 +207,8 @@ impl<'d> Checker<'d> {
             places: Places::default(),
             open_literals: BTreeMap::new(),
             drive_impls: BTreeMap::new(),
+            carrier_drive_impls: BTreeMap::new(),
+            resolve_tables: BTreeMap::new(),
             deferred: BTreeSet::new(),
             flow: Flow::default(),
             closures: BTreeMap::new(),
@@ -242,7 +248,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls, carrier_drive_impls: self.carrier_drive_impls, resolve_tables: self.resolve_tables })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in

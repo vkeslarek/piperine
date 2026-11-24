@@ -45,3 +45,28 @@ fn a_node_meeting_a_nature_with_flow_is_not_counted() {
     let two = format!("{BLOCKS}module Top() {{ signal s: VSignal; let l = Load(s); let a = Source(s); let b = Source(s); }}");
     Elab::ir(&two, "Top");
 }
+
+/// A project nature resolved by summing its drives, and a driver and a reader of it.
+const TOTAL: &str = "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() } }\n\
+                     module Driver(w: Total) { w = 2.0; }\nmodule Reader(w: Total) { }\n";
+
+#[test]
+fn a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive() {
+    // §5.2: a resolved port or signal is a carrier of role `Resolved { driven }`, of the nature's `value` type; the
+    // body's definition of it is its drive, of the driven type `X`.
+    let ir = Elab::run(&format!("{TOTAL}module Top() {{ signal n: Total; let d = Driver(n); let r = Reader(n); }}"), "Top").unwrap_or_else(|d| panic!("{d:?}"));
+    let text = ir.print_structural();
+    assert!(text.contains("carrier w: f64 resolved f64"), "{text}");
+    assert!(text.contains("carrier n: f64 resolved f64"), "{text}");
+    let driver = text.split("body Driver").nth(1).expect("the driver body");
+    assert!(driver.contains("drive w"), "{driver}");
+}
+
+#[test]
+fn others_lowers_to_the_bodys_others_read() {
+    // §5.2.7: `s.others()` is the read of what every other drive resolves to, of the value type.
+    let source = format!("{TOTAL}module Echo(w: Total, in clk: Bit) {{ signal seen: Bit<f64> = 0.0; }}\ndigital for Echo {{ on clk.rise() {{ seen <- w.others(); }} }}\nmodule Top() {{ signal n: Total; signal c: Bit = false; let e = Echo(n, c); }}");
+    let ir = Elab::run(&source, "Top").unwrap_or_else(|d| panic!("{d:?}"));
+    let text = ir.print_structural();
+    assert!(text.contains("others(w)") || text.contains("others("), "{text}");
+}

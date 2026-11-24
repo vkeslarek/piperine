@@ -106,11 +106,12 @@ impl Elaboration<'_, '_> {
             }
         }
         self.merge_instance_nodes(&plan, &nodes);
-        let nets = self.nets(&placing, &plan.carriers, declared_by);
+        let nets = self.nets(&placing, &plan.carriers, plan.port_carriers, declared_by);
         let instance = self.ir.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
         if !nets.is_empty() {
             self.ir.bind_nets(instance, nets.clone());
         }
+
         stack.push(placing.module);
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
@@ -161,12 +162,14 @@ impl Elaboration<'_, '_> {
     /// port the parent binds takes the parent's net; any other carrier (a signal, a port of the
     /// top) declares its own, named by its path, with the carrier's initial value as the net's
     /// (§5.2.3: the declaring module gives it).
-    fn nets(&mut self, placing: &Placing, carriers: &[piperine_ir::Carrier], declared_by: InstanceId) -> Vec<NetId> {
+    fn nets(&mut self, placing: &Placing, carriers: &[piperine_ir::Carrier], port_carriers: usize, declared_by: InstanceId) -> Vec<NetId> {
         let mut bound = placing.carrier_ports.iter().copied();
         let mut nets = Vec::new();
-        for carrier in carriers {
+        for (position, carrier) in carriers.iter().enumerate() {
             let given = match carrier.role {
                 CarrierRole::In | CarrierRole::Out => bound.next().flatten(),
+                // a resolved port is bound to the parent's net, a resolved signal makes its own
+                CarrierRole::Resolved { .. } if position < port_carriers => bound.next().flatten(),
                 CarrierRole::Signal | CarrierRole::Reached | CarrierRole::Resolved { .. } => None,
             };
             // A reached carrier has no net of its own: this one is a placeholder `bind_reaches`

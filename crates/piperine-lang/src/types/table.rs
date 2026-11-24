@@ -221,6 +221,10 @@ pub struct Types<'d> {
     pub(super) handles: std::collections::BTreeSet<DeclId>,
     /// The `impl Resolve` each value written to a resolved carrier picked: by the value expression (`nature.rs`).
     pub(super) drive_impls: BTreeMap<ExprId, DeclId>,
+    /// The `impl Resolve`s the drives of each carrier of a resolved nature picked, in source order.
+    pub(super) carrier_drive_impls: BTreeMap<DeclId, Vec<DeclId>>,
+    /// The typed `impl Resolve`s of each resolved nature a carrier of which was typed.
+    pub(super) resolve_tables: BTreeMap<DeclId, Vec<super::nature::ResolveImpl>>,
     /// The arguments of the trait bound each call through a bound names (`bounds.rs`).
     pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
@@ -429,6 +433,18 @@ impl<'d> Types<'d> {
     /// picked through the type of its value `value` (§5.2.15); `None` for any other expression.
     pub fn drive_impl(&self, value: ExprId) -> Option<DeclId> {
         self.drive_impls.get(&value).copied()
+    }
+
+    /// The `impl Resolve`s the definitions and commits of the carrier `carrier` (a port or a signal of a resolved
+    /// nature) of one module picked, in source order: what its drive is typed as (§5.2.15).
+    pub fn carrier_drive_impls(&self, carrier: DeclId) -> &[DeclId] {
+        self.carrier_drive_impls.get(&carrier).map_or(&[], Vec::as_slice)
+    }
+
+    /// The `impl Resolve`s of the resolved nature `nature`, in declaration order; empty for a nature no
+    /// carrier of which the check reached.
+    pub fn resolve_impls(&self, nature: DeclId) -> &[super::nature::ResolveImpl] {
+        self.resolve_tables.get(&nature).map_or(&[], Vec::as_slice)
     }
 
     /// Whether the function parameter `param` is a handle: it stands for the carrier the caller passes (§3.1.5).

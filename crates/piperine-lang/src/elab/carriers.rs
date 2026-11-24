@@ -32,6 +32,9 @@ pub(super) struct Structure {
     /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
     pub(super) hoisted: Vec<Hoisted>,
     pub(super) carriers: Vec<Carrier>,
+    /// How many of the leading `carriers` are ports of the body's own module (they come first): a resolved
+    /// port binds the parent's net like an `in` or `out` one, a resolved signal makes its own.
+    pub(super) port_carriers: usize,
     pub(super) drives: Vec<Drive>,
     pub(super) events: Vec<Event>,
     pub(super) reactions: Vec<Reaction>,
@@ -126,6 +129,9 @@ impl Elaboration<'_, '_> {
             } else if let Some(carrier) = self.lower_carrier(frame, decl) {
                 let index = self.add_carrier(carrier);
                 self.frames[frame].carriers.insert(decl, index);
+                if frame == 0 && matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) {
+                    self.structure.port_carriers += 1;
+                }
             }
         }
     }
@@ -166,14 +172,25 @@ impl Elaboration<'_, '_> {
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,
         };
-        // a resolved carrier is lowered from T18 on (resolved-nets): until then it is refused by name, never lowered as a one-driver carrier
-        if let Some(Ty::Carrier { nature, .. }) = self.types.carrier(decl).map(Ty::innermost)
-            && self.design.is_resolved_nature(*nature)
-        {
-            let nature_name = self.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            self.unsupported(data.file, data.span, &format!("resolved nature `{nature_name}`"));
-            return None;
-        }
+        let resolved = match self.types.carrier(decl) {
+            Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
+            Some(array) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { nature, .. } if self.design.is_resolved_nature(*nature)) => {
+                self.unsupported(data.file, data.span, "an array of resolved carriers");
+                return None;
+            }
+            _ => None,
+        };
+        let (role, init) = match resolved {
+            Some(nature) => {
+                // a resolved carrier reads the net's resolved value; its initial value is the drive's first commit (T20)
+                if init.is_some() {
+                    self.unsupported(data.file, data.span, "an initial value of a resolved carrier");
+                    return None;
+                }
+                (CarrierRole::Resolved { driven: self.driven_type(decl, nature)? }, None)
+            }
+            None => (role, init),
+        };
         let ty = self.carried_type(decl)?;
         let array = match self.types.carrier_array(decl).is_some() {
             true => Some(self.carrier_array_shape(decl, frame)?.0),
@@ -193,6 +210,7 @@ impl Elaboration<'_, '_> {
             },
             // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C
             // (GAPS L69). A type with no `Default` has none to start at: the carrier takes its value from what drives it
+            None if resolved.is_some() => None,
             None if self.hand_written_encode(decl).is_some() && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) => {
                 if self.default_initial_value(decl, &ty).is_some() {
                     self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
@@ -205,6 +223,25 @@ impl Elaboration<'_, '_> {
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
         Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl), count: array.map(|shape| shape.count()) })
+    }
+
+    /// The type `X` of the drive of the resolved carrier `decl` of this module: the `X` of the `impl Resolve`
+    /// its definitions and commits picked (§5.2.15); for a carrier this module does not drive, the nature's only
+    /// `impl`, else its `impl Resolve<V>`, else the first (the net's own `impl` is `resolvers.rs`'s, D21).
+    /// `None` after a diagnostic.
+    fn driven_type(&mut self, decl: DeclId, nature: DeclId) -> Option<ValueType> {
+        let impls = self.types.resolve_impls(nature).to_vec();
+        let picked = self.types.carrier_drive_impls(decl).first().copied();
+        let chosen = match picked {
+            Some(implementation) => impls.iter().find(|candidate| candidate.implementation == implementation),
+            None if impls.len() == 1 => impls.first(),
+            None => impls.iter().find(|candidate| candidate.driven == candidate.value).or(impls.first()),
+        }?;
+        self.stored_type(&chosen.driven).or_else(|| {
+            let data = self.design.decl_data(decl);
+            self.unsupported(data.file, data.span, "a resolved carrier whose drive type has no value in the IR");
+            None
+        })
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the

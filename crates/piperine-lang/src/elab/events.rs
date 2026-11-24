@@ -567,10 +567,11 @@ impl Elaboration<'_, '_> {
                 }
             },
             Builtin::Inflow => self.lower_inflow(scope, recv, origin),
-            // lowered from T18 on (resolved-nets): refused by name until then, never read as a one-driver carrier
+            // `s.others()`: the resolution of every drive but the body's own (§5.2.7)
             Builtin::Others => {
-                self.unsupported(scope.file, span, "`others()` of a resolved carrier");
-                None
+                let carrier = self.carrier_of(scope, recv)?;
+                let value = self.structure.carriers[carrier as usize].ty.clone();
+                Some(self.emit(Expr::Others(carrier), value, origin))
             }
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
             // edge that reaches this arm stands where no event read does.

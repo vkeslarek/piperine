@@ -569,8 +569,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive` and `others_lowers_to_the_bodys_others_read` pass under `**Run elabnatures**`
-- [ ] Gate check passes: Full
+- [x] `a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive` and `others_lowers_to_the_bodys_others_read` pass under `**Run elabnatures**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

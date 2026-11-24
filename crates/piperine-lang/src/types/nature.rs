@@ -15,7 +15,7 @@ const RESOLVE_TRAIT: &str = "Resolve";
 /// One `impl Resolve<X, V> for N` of a nature: the type of one drive and the type of the value
 /// the drives combine into.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ResolveImpl {
+pub struct ResolveImpl {
     /// The `impl` declaration.
     pub implementation: DeclId,
     /// The type `X` of one drive.
@@ -211,7 +211,9 @@ impl Checker<'_> {
         };
         match resolved {
             Some(nature) => {
-                ResolveImpls::new(self).pick(nature, value);
+                if let Some(picked) = ResolveImpls::new(self).pick(nature, value) {
+                    self.carrier_drive_impls.entry(target.carrier).or_default().push(picked.implementation);
+                }
             }
             None => self.check_as(value, &target.held, code),
         }
