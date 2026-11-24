@@ -6,7 +6,11 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_api::{Field, Streams};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use piperine_api::{Failure, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
+use piperine_transpile::Settings;
 use piperine_parity::project::Project;
 
 #[allow(dead_code)]
@@ -22,6 +26,13 @@ mod support;
 use mixed::{Built, Seen};
 use support::build;
 
+/// A sink that keeps nothing: a run is judged by what it returns.
+struct Ignore;
+
+impl RecordSink for Ignore {
+    fn record(&mut self, _: &Record) {}
+}
+
 /// One MSL file of `tests/resolved/`.
 struct Model {
     /// The project read from that file.
@@ -33,6 +44,17 @@ impl Model {
     fn of(file: &str) -> Model {
         let root: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/resolved").join(file);
         Model { project: Project::new(&root) }
+    }
+
+    /// The operating point of `top` in `file`, as the host runs it on the Rust backend.
+    fn operating_point(file: &str, top: &str) -> Result<piperine_api::Table, Failure> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/resolved").join(file);
+        let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some(top.into()), analysis: Some("op".into()), backend: Some("rust".into()), ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let cache = tempfile::tempdir().expect("a temp dir");
+        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+        Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore)))
     }
 
     /// `top` elaborated and compiled once.
@@ -165,4 +187,25 @@ fn a_released_ring_latches_nothing() {
     let seen = built.run(12e-9, 1e-9);
     let series = seen.series_of("ReleaseBench.n");
     assert_eq!(series, vec![(0, vec![1]), (5_000_000, vec![0]), (10_000_000, vec![1])], "high, low while held, high again once released");
+}
+
+#[test]
+fn a_loop_that_does_not_settle_stops_the_run_with_e0511_naming_its_drives() {
+    // §8.2.3 step 4: two drives that each drive the negation of the other never settle (0, 1, 0, 1, ...): the run stops
+    // with `E0511` naming both drives by their holders' instance paths, `OscillatorBench.a` before `OscillatorBench.b`
+    // (instance-path order, §4 rule 2) though `b` is written first, and no name of a drive net the author never wrote.
+    match Model::operating_point("unsettled.msl", "OscillatorBench") {
+        Err(Failure::Host { code, message }) => {
+            assert_eq!(code, "E0511");
+            assert!(message.contains("OscillatorBench.a, OscillatorBench.b"), "{message}");
+            assert!(!message.contains("$drive"), "{message}");
+        }
+        other => panic!("E0511, found {other:?}"),
+    }
+}
+
+#[test]
+fn a_loop_settling_on_its_first_pass_raises_nothing() {
+    // §8.2.3: a loop that settles is no fault: two pass elements drive true at once and the run returns.
+    Model::operating_point("unsettled.msl", "SettlingBench").unwrap_or_else(|f| panic!("{f}"));
 }

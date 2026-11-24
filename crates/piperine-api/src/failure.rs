@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use piperine_ir::Ir;
 use piperine_lang::msl::Diagnostic;
 use piperine_lang::pom::{Design, DesignDiagnostic};
 use piperine_project::PackageError;
@@ -86,13 +87,58 @@ impl PanicFault {
     }
 }
 
+/// The `E0511` fault of a loop that did not settle (spec §8.2.3 step 4), with the drives of the loop named as the
+/// author wrote them (resolved-nets D24): the engine names the drive nets `<net>$drive<k>`, which no author wrote, so
+/// each is replaced by the instance path of its holder (`host` for the host's drive), in drive order.
+struct LoopDrives<'ir> {
+    /// The design whose resolved nets say who holds each drive net.
+    ir: &'ir Ir,
+}
+
+impl<'ir> LoopDrives<'ir> {
+    /// The marker the engine writes before the loop's drives.
+    const MARKER: &'static str = "did not settle; its drives: ";
+
+    /// The loops of runs over `ir`.
+    fn of(ir: &'ir Ir) -> LoopDrives<'ir> {
+        LoopDrives { ir }
+    }
+
+    /// The host failure `text` stands for when it is an unsettled loop, `None` for any other fault.
+    fn failure(&self, text: &str) -> Option<Failure> {
+        let (before, after) = text.split_once(Self::MARKER)?;
+        let message_start = before.find("E0511: ")? + "E0511: ".len();
+        let named: Vec<&str> = after.lines().next().unwrap_or(after).split(", ").collect();
+        let mut holders: Vec<((String, usize), String)> = named.iter().enumerate().map(|(place, drive)| self.holder(drive, place)).collect();
+        holders.sort();
+        let names: Vec<String> = holders.into_iter().map(|(_, name)| name).collect();
+        Some(Failure::Host { code: "E0511", message: format!("{}{}{}", &before[message_start..], Self::MARKER, names.join(", ")) })
+    }
+
+    /// The sort key (the resolved net, the drive's place in its drives) and the name of the holder of the drive net
+    /// `drive`; a net that is no drive keeps its own name, in the order the engine gave.
+    fn holder(&self, drive: &str, place: usize) -> ((String, usize), String) {
+        for net in self.ir.nets() {
+            let Some(resolution) = net.resolution() else { continue };
+            let Some(index) = resolution.drives.iter().position(|id| self.ir.net(*id).path() == drive) else { continue };
+            let holder = resolution.holders[index].map_or_else(|| "host".to_string(), |instance| self.ir.instance(instance).path().to_string());
+            return ((net.path().to_string(), index), holder);
+        }
+        ((String::new(), place), drive.to_string())
+    }
+}
+
 impl Failure {
     /// The failure of `analysis`, which stopped with the solver's `error`. A device fault that is a
     /// model panic under known control is `E0105` naming the operation, the instance and the time;
     /// a panic whose message starts with a spec code keeps that code (design D19). `time` is the
     /// simulated time the run had reached, when the analysis has one; a digital fault gives its
-    /// own tick. Any other error is the solver's, as it was.
-    pub fn from_fault(analysis: &'static str, error: piperine_solver::prelude::Error, time: Option<f64>) -> Failure {
+    /// own tick. A loop that did not settle is `E0511` naming its drives by their holders (`ir` knows them). Any other
+    /// error is the solver's, as it was.
+    pub fn from_fault(analysis: &'static str, error: piperine_solver::prelude::Error, time: Option<f64>, ir: &Ir) -> Failure {
+        if let Some(unsettled) = LoopDrives::of(ir).failure(&error.to_string()) {
+            return unsettled;
+        }
         let Some(panic) = PanicFault::read(&error.to_string()) else { return Failure::Solver { analysis, error } };
         let (code, operation) = panic.leading_code().unwrap_or(("E0105", panic.operation.as_str()));
         let at = match (&panic.tick, time) {

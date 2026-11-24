@@ -689,6 +689,7 @@ impl Session {
 
     /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
     fn analysis(&mut self, circuit: CircuitInstance, mut delivery: Box<Delivery>) -> Result<Table, Failure> {
+        let design = self.ir.clone();
         let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
         let changes = Session::timed_changes(&self.params, derive, &circuit, &self.timed_sets)?;
         let held = self.held_params(&circuit, &changes);
@@ -700,7 +701,7 @@ impl Session {
                 let result = solver
                     .dc()
                     .and_then(|mut dc| dc.solve())
-                    .map_err(|error| Failure::from_fault("op", error, Some(0.0)))?;
+                    .map_err(|error| Failure::from_fault("op", error, Some(0.0), &design))?;
                 let circuit = solver.circuit();
                 let net = |path: &str| Session::discrete(circuit, path).or_else(|| Session::held_bytes(&held, path));
                 let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
@@ -739,7 +740,7 @@ impl Session {
                         }
                         tran.solve()
                     })
-                    .map_err(|error| Failure::from_fault("transient", error, recorder.borrow().reached()))?;
+                    .map_err(|error| Failure::from_fault("transient", error, recorder.borrow().reached(), &design))?;
                 self.statistics = Some(TransientStatistics::new(result.statistics().clone(), result.stats.clone()));
                 // CLI-05 AC 11: a run that stopped short has no table to give. How far it got is the
                 // last step the observer saw, which a design with no analog unknown reaches too (its
@@ -772,7 +773,7 @@ impl Session {
                         .dc(self.context.clone())
                         // the settle commits of a point land at the next one (§15 S6)
                         .and_then(|dc| dc.followed_by_another_point(k + 1 < count).solve())
-                        .map_err(|error| Failure::from_fault("dc", error, None))?;
+                        .map_err(|error| Failure::from_fault("dc", error, None, &design))?;
                     let held = self.held_params(&circuit, &[]);
                     let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));
                     let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
@@ -788,7 +789,7 @@ impl Session {
                     logarithmic: matches!(grid, Grid::PerDecade(_)),
                 };
                 let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
-                let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::from_fault("ac", error, None))?;
+                let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::from_fault("ac", error, None, &design))?;
                 Table::frequency(&self.probes, &result)
             }
             Analysis::Tf { .. } => {
@@ -802,7 +803,7 @@ impl Session {
                 let result = circuit
                     .transfer_function(options, self.context.clone())
                     .and_then(|mut tf| tf.solve())
-                    .map_err(|error| Failure::from_fault("tf", error, None))?;
+                    .map_err(|error| Failure::from_fault("tf", error, None, &design))?;
                 Ok(Table::transfer(&result))
             }
             Analysis::Pz { .. } => {
@@ -812,7 +813,7 @@ impl Session {
                 let roots = circuit
                     .pz(options, self.context.clone())
                     .and_then(|pz| Ok(PoleZeroResult { poles: pz.poles()?, zeros: pz.zeros()? }))
-                    .map_err(|error| Failure::from_fault("pz", error, None))?;
+                    .map_err(|error| Failure::from_fault("pz", error, None, &design))?;
                 Ok(Table::roots(&roots))
             }
             Analysis::Pss { period, tstab, max_step, print_step } => {
@@ -824,7 +825,7 @@ impl Session {
                 let orbit = circuit
                     .pss(options, self.context.clone())
                     .and_then(|pss| pss.solve())
-                    .map_err(|error| Failure::from_fault("pss", error, None))?;
+                    .map_err(|error| Failure::from_fault("pss", error, None, &design))?;
                 // the orbit starts at `tstab` and holds one period
                 let table = Table::transient_with(&self.probes, &orbit.trace, &held)?;
                 match print_step {
@@ -861,7 +862,7 @@ impl Session {
                 let result = circuit
                     .sens(SensAnalysisOptions::new(outputs.clone(), params), self.context.clone())
                     .and_then(|sens| sens.solve())
-                    .map_err(|error| Failure::from_fault("sens", error, None))?;
+                    .map_err(|error| Failure::from_fault("sens", error, None, &design))?;
                 Table::sensitivities(&self.probes, &outputs, &self.wrt, &result)
             }
         }

@@ -738,8 +738,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_loop_that_does_not_settle_stops_the_run_with_e0511_naming_its_drives` and `a_loop_settling_on_its_first_pass_raises_nothing` pass under `**Run sourceresolved**`
-- [ ] Gate check passes: Full
+- [x] `a_loop_that_does_not_settle_stops_the_run_with_e0511_naming_its_drives` and `a_loop_settling_on_its_first_pass_raises_nothing` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
