@@ -150,6 +150,7 @@ fn assert_rule(err: &Error, domain: SolverDomain, fragment: &str) {
     let (actual, text) = match err {
         Error::Run(run) => (run.domain, run.to_string()),
         Error::Simple { domain, detail } => (*domain, detail.clone()),
+        Error::Unsettled { domain, .. } => (*domain, err.to_string()),
         Error::WithCause { domain, detail, cause } => {
             (*domain, format!("{detail}: {cause}"))
         }

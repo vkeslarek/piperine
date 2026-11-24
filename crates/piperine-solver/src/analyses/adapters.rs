@@ -61,6 +61,9 @@ pub(crate) fn instant_error(e: DigitalError, microsteps: usize) -> Error {
 
 /// A digital failure as the owner reports it (the text keeps every typed field).
 pub(crate) fn digital_error(e: DigitalError) -> Error {
+    if let DigitalError::Unsettled { tick, drives, .. } = e {
+        return Error::Unsettled { domain: SolverDomain::Digital, tick, drives };
+    }
     Error::simple(SolverDomain::Digital, e.to_string())
 }
 

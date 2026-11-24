@@ -96,23 +96,19 @@ struct LoopDrives<'ir> {
 }
 
 impl<'ir> LoopDrives<'ir> {
-    /// The marker the engine writes before the loop's drives.
-    const MARKER: &'static str = "did not settle; its drives: ";
-
     /// The loops of runs over `ir`.
     fn of(ir: &'ir Ir) -> LoopDrives<'ir> {
         LoopDrives { ir }
     }
 
-    /// The host failure `text` stands for when it is an unsettled loop, `None` for any other fault.
-    fn failure(&self, text: &str) -> Option<Failure> {
-        let (before, after) = text.split_once(Self::MARKER)?;
-        let message_start = before.find("E0511: ")? + "E0511: ".len();
-        let named: Vec<&str> = after.lines().next().unwrap_or(after).split(", ").collect();
+    /// The host failure `error` stands for when it is an unsettled loop (the engine's fault carries the drive nets as
+    /// data), `None` for any other fault. The message is the engine's own, with the holders in place of the drive nets.
+    fn failure(&self, error: &piperine_solver::prelude::Error) -> Option<Failure> {
+        let (tick, named) = error.unsettled()?;
         let mut holders: Vec<((String, usize), String)> = named.iter().enumerate().map(|(place, drive)| self.holder(drive, place)).collect();
         holders.sort();
         let names: Vec<String> = holders.into_iter().map(|(_, name)| name).collect();
-        Some(Failure::Host { code: "E0511", message: format!("{}{}{}", &before[message_start..], Self::MARKER, names.join(", ")) })
+        Some(Failure::Host { code: "E0511", message: format!("the loop at tick {tick} did not settle; its drives: {}", names.join(", ")) })
     }
 
     /// The sort key (the resolved net, the drive's place in its drives) and the name of the holder of the drive net
@@ -136,7 +132,7 @@ impl Failure {
     /// own tick. A loop that did not settle is `E0511` naming its drives by their holders (`ir` knows them). Any other
     /// error is the solver's, as it was.
     pub fn from_fault(analysis: &'static str, error: piperine_solver::prelude::Error, time: Option<f64>, ir: &Ir) -> Failure {
-        if let Some(unsettled) = LoopDrives::of(ir).failure(&error.to_string()) {
+        if let Some(unsettled) = LoopDrives::of(ir).failure(&error) {
             return unsettled;
         }
         let Some(panic) = PanicFault::read(&error.to_string()) else { return Failure::Solver { analysis, error } };
