@@ -22,7 +22,10 @@ impl Checker<'_> {
                 Some(Resolution::Decl(local)) => self.template_locals.get(&local).copied(),
                 _ => None,
             },
-            ExprKind::Field { expr: receiver, res, .. } if !matches!(res, Resolution::Decl(_)) => (self.template_reads.contains(&expr) || self.placed_through_callable(receiver)).then_some(expr),
+            ExprKind::Field { expr: receiver, res, .. } if !matches!(res, Resolution::Decl(_)) => {
+                let read = self.template_reads.contains(&expr) || self.placed_through_callable(receiver);
+                read.then_some(expr)
+            }
             _ => None,
         }
     }
@@ -107,7 +110,9 @@ impl Checker<'_> {
 
     /// `E0181` at the read through a template at `span` of `file`, which no context gave a type.
     fn report_untyped_template_read(&mut self, file: FileId, span: Span) {
-        let message = "the type of an item of a child placed through a template cannot be inferred here: only elaboration names its module (§8.4.8); give it a type with a typed `let`".to_string();
+        let message = "the type of an item of a child placed through a template cannot be inferred here: only elaboration names its \
+                       module (§8.4.8); give it a type with a typed `let`"
+            .to_string();
         self.report(file, Diagnostic::new("E0181", message, span, "type not inferred"));
     }
 

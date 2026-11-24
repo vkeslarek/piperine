@@ -72,7 +72,7 @@ impl Checker<'_> {
             Resolution::Builtin(_) => (QuantityRole::Potential, None),
             // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
             // name is read as a potential probe until then
-            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.names_only_potentials(*callee) && args.first().is_some_and(|arg| self.reads_through_callable(arg.value)) => {
+            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.reads_a_template_potential(*callee, args) => {
                 self.access_roles.insert(*callee, QuantityRole::Potential);
                 (QuantityRole::Potential, None)
             }
@@ -346,7 +346,6 @@ enum OperandAccess {
 }
 
 impl Checker<'_> {
-    /// Whether every quantity the access name of `callee` stands for is a potential: the nature does not change the role.
     /// The quantity an access name `callee` (`v`) names in the nature of the node its first operand holds: a `let` bound to a node
     /// keeps the node's nature, so `v(y)` reads the potential of `y`'s nature.
     fn access_of_operand(&mut self, callee: ExprId, args: &[Arg]) -> OperandAccess {
@@ -382,21 +381,37 @@ impl Checker<'_> {
             _ => false,
         });
         if target && flow {
-            let message = format!("a flow contribution needs a nature with a `flow`: the nature of the first argument declares none, so `{name}` cannot be contributed to it (§11 rule 11)");
+            let message = format!(
+                "a flow contribution needs a nature with a `flow`: the nature of the first argument declares none, so `{name}` cannot be contributed to it (§11 rule 11)"
+            );
             self.coded(file, "E0413", span, message, "no flow on this nature");
         } else {
-            self.coded(file, "E0206", span, format!("the nature of the first argument declares no access `{name}`"), "not an access of that nature");
+            let message = format!("the nature of the first argument declares no access `{name}`");
+            self.coded(file, "E0206", span, message, "not an access of that nature");
         }
     }
 
     /// Whether the quantity `quantity` declares the access name `name` (`access: v`).
     fn is_accessed_as(&self, quantity: &crate::pom::QuantityData, name: &str) -> bool {
-        quantity.attrs.iter().filter(|attribute| attribute.name.text == "access").any(|attribute| match &self.design.expr_node(attribute.value).kind {
-            ExprKind::Path(path) => self.design.path_node(*path).segments.last().is_some_and(|segment| segment.name.text == name),
-            _ => false,
-        })
+        quantity.attrs.iter().filter(|attribute| attribute.name.text == "access").any(|attribute| self.names_as_path(attribute.value, name))
     }
 
+    /// Whether `expr` is a path whose last segment is `name`.
+    fn names_as_path(&self, expr: ExprId, name: &str) -> bool {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Path(path) => self.design.path_node(*path).segments.last().is_some_and(|segment| segment.name.text == name),
+            _ => false,
+        }
+    }
+
+    /// Whether the probe `callee(args)` reads a potential through a template (`v(c0.sn)`, or a `let` bound to it): an access name
+    /// that names only potentials, whatever nature elaboration finds the node to have.
+    fn reads_a_template_potential(&mut self, callee: ExprId, args: &[Arg]) -> bool {
+        let Some(first) = args.first() else { return false };
+        self.names_only_potentials(callee) && self.reads_through_callable(first.value)
+    }
+
+    /// Whether every quantity the access name of `callee` stands for is a potential: the nature does not change the role.
     fn names_only_potentials(&self, callee: ExprId) -> bool {
         let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
         let Some(segment) = self.design.path_node(*path).segments.last() else { return false };
@@ -404,8 +419,7 @@ impl Checker<'_> {
         for i in 0..self.design.decl_count() {
             let decl = DeclId(i as u32);
             let DeclKind::Quantity(quantity) = &self.design.decl_data(decl).kind else { continue };
-            let accessed = quantity.attrs.iter().any(|a| a.name.text == "access" && matches!(&self.design.expr_node(a.value).kind, ExprKind::Path(p) if self.design.path_node(*p).segments.last().is_some_and(|s| s.name.text == segment.name.text)));
-            if accessed {
+            if self.is_accessed_as(quantity, &segment.name.text) {
                 if quantity.role != QuantityRole::Potential {
                     return false;
                 }
