@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/resolved-nets-bundles/design.md`
-**Status**: In Progress - B1 (T1 to T4) done and on `main`; B2 onward (T5 to T21) amended 2026-11-22 for the explicit-unknowns model (MD-78) and waiting for the user's approval of this plan
+**Status**: In Progress - B1 (T1 to T4) done; B2 started 2026-11-24 on `feature/resolved-nets-bundles`; B2 onward (T5 to T21) amended 2026-11-22 for the explicit-unknowns model (MD-78) and waiting for the user's approval of this plan
 **Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (B1 as planned then; the amendment of B2 onward has no approval yet)
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run pombundles**: `cargo test -p piperine-lang --test pom_bundles`
@@ -236,10 +236,10 @@ T21
 
 **Done when**:
 
-- [ ] The merge is clean or its conflicts are resolved by hunk without changing behaviour; the `**Build**` line passes
-- [ ] `**Run pombundles**` passes with the fixtures given initial values (each named in the commit body)
-- [ ] The Handoff names every moved anchor
-- [ ] Gate check passes: Full
+- [x] The merge is clean or its conflicts are resolved by hunk without changing behaviour; the `**Build**` line passes
+- [x] `**Run pombundles**` passes with the fixtures given initial values (each named in the commit body)
+- [x] The Handoff names every moved anchor
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -693,6 +693,7 @@ Proof: run elabbundles | test a_bundle_port_lowers_to_one_carrier_per_leaf_field
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
+**Settled T5 (B2, 2026-11-24):** branch `feature/resolved-nets-bundles` at `dfa149812` (= `feature/resolved-nets`), `origin/main` merged (already up to date). Orchestrator instruction of 2026-11-24 ("Implement feature resolved-nets-bundles, B2 onward") stands as the go-ahead for B2 onward. Anchors as the code has them today: (1) `types/carrier.rs::port_type` (lower_type first, then `Ty::Node`/`Ty::Carrier`/arrays/value inputs) and `types/aggregate.rs::declare_struct` (the `P0001` "`struct` item used as a type" for a bundle, the pin T6 replaces); `TypeKind::Flip` is `P0001` in `types/check.rs::lower_type_node` via `Unsupported::ty`. (2) A field read of a port is `ExprKind::Field { res: Resolution::Decl(decl) }` read by `declared_port`; carriers are keyed by `DeclId` in the checker (`carriers`) and the elaborator (`Frame::carriers`/`nodes`), so one-leaf-one-declaration. (3) `NatureRules::{one_driver, resolved}` exist (`types/nature_rules.rs`); `pom/resolve/shape.rs` already asks `design.is_resolved_nature` (the capability), and `pom_bundles.rs` declares its own `Wire` with `impl Resolve` (resolved-nets T16 done) - nothing to move. (4) `E0187`/`Default` rules are on the branch; no fixture of this feature's POM target declares a signal, so none needed an initial value (the POM target runs no checker); the checker/elab fixtures T6/T9 write carry initial values. (5) `ports.zip(args)` in `elab/children.rs::lower_child` and `PortArguments::bind` bind by the module's `children`; a bundle port is one argument.
 **Settled B1:** B1 (T1-T4) done. Defaults taken (user AFK): `code_owners.tsv` is on the branch after the rebase onto origin/main, so each task deleted its row (E0260 to E0262, E0264) with the GAPS section 10 list and count, and added its row to docs/pom/resolution.md (the `pom_docs` guard). One-driver means a discrete nature without `resolve` (spec part II 5.2), so a signal-flow field takes no direction. A flipped generic or unresolved type, and a field of a generic nature, are not judged by the POM. `E0264` at the declaration covers a param type, a nature's type argument, a function result (not a module result) and an initial value of a bundle signal or port. Two fixtures that declared an invalid bundle were corrected (pom_classify `Port2`, types_buck `Bn`), named in the T1 and T2 bodies. `is_carrier_type` and `has_unresolved_bound` of classify.rs became `pub(super)` for shape.rs.
 **Settled re-plan (2026-11-22):** B2 onward amended for the explicit-unknowns model (MD-78; spec amendment A6, design "Amendment of 2026-11-22"): T5 merges `main` after `explicit-unknowns` phase A and gives the fixtures initial values; T6 states the direction rule on the capability; T15 declares `Sda` with `impl Resolve<Driven>`; T17 keeps `E0134` for `impl Trait for` a bundle; gates follow the user's policy (batch-end tasks T8, T16, T21). `resolved-nets` T16 moves `E0261`'s question and the `Wire` fixtures of `pom_bundles.rs`. No question is open.
 **Dispatched:** none
