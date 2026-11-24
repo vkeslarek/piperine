@@ -202,6 +202,15 @@ impl Checker<'_> {
                 };
                 self.port_type(ty).map(|t| (decl, t))
             }
+            // a field of a bundle port or signal: the carrier or node its leaf stands for (§7 rule 12)
+            ExprKind::Field { .. } if let Some(leaf) = self.design.bundle_field(expr) => {
+                let ty = match &self.design.decl_data(leaf).kind {
+                    DeclKind::Port(p) => p.ty,
+                    DeclKind::Signal(s) => s.ty,
+                    _ => return None,
+                };
+                self.port_type(ty).map(|t| (leaf, t))
+            }
             // `c.state`: a `pub` port or signal of a placed child (§8.2.8).
             ExprKind::Field { res: Resolution::Decl(decl), .. } => {
                 let ty = match &self.design.decl_data(*decl).kind {

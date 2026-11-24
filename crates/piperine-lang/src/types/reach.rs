@@ -17,6 +17,10 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
+        // a field of a bundle port or signal is the carrier or node its leaf stands for (§7 rule 12); the bundle is no value to read
+        if let Some(leaf) = self.design.bundle_field(expr) {
+            return self.item_type(leaf, file, node.span);
+        }
         match res {
             Resolution::Decl(item) if self.is_child_item(*item) => {
                 self.infer_receiver(*receiver)?;

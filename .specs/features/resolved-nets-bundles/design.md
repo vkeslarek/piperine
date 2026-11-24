@@ -23,6 +23,20 @@ Companion of `.specs/features/resolved-nets/design.md`; its D2 and D20 put both 
 
 ---
 
+## Amendment of 2026-11-24: how a field becomes a carrier (D11, taken at T6)
+
+The checker and the elaborator key every carrier and node by the `DeclId` of its port or signal, so `Ty::Bundle`
+and a per-field walk through both would touch every site that names a carrier. Taken instead (the same data path,
+one place): stage `pom/resolve/leaves.rs` gives every bundle port and signal one **leaf** declaration per field,
+named by its dotted path (`tx.valid`), typed as the field is, with the direction the view gives it
+(`pom/bundles.rs`: `BundleView`, `BundleLeaf`). A leaf is a `Port` or `Signal` of the arena that is **no child**:
+`children` stays as authored, `Design::decls()` and positional argument binding never see it, and a field access
+keeps resolving to the struct's own field (`pom_classify::bundle_field_resolves`). `Design::module_items` is the one
+ordering of "children, each bundle followed by its leaves" the checker and the elaborator walk; `Design::bundle_field(expr)`
+is the one question "which leaf is `tx.valid`". `C2` (`types/bundle.rs`, `Ty::Bundle`) is not written: the views
+live in the leaf's direction. Rationale: MD-25 (the POM mirrors the source) is kept at the reflection surface, the
+integrity check (`Design::check`) knows the table, and every rule of §5 applies to a field with no new code.
+
 ## What the code does today (`main` at `7df9e17c`)
 
 | Concern | Where | Today |

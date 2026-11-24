@@ -86,6 +86,10 @@ pub struct Design {
     pub(super) expr_parent: Vec<Option<ExprId>>,
     /// The statement that holds each expression directly, by `ExprId`; filled with `expr_parent`.
     pub(super) expr_stmt: Vec<Option<StmtId>>,
+    /// The declaration each field of a bundle port or signal becomes (`pom/bundles.rs`): a side table, the authored
+    /// `children` stay as written.
+    #[serde(default)]
+    pub(super) bundle_leaves: super::bundles::BundleLeaves,
     /// The by-name lookup tables, built on first use and never serialized.
     #[serde(skip)]
     names: NameTables,
@@ -504,6 +508,7 @@ impl DesignBuilder {
             index: Default::default(),
             expr_parent: Vec::new(),
             expr_stmt: Vec::new(),
+            bundle_leaves: Default::default(),
             names: NameTables::default(),
         };
         if !self.graph.crates().is_empty() {

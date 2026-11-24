@@ -30,7 +30,7 @@ struct Row {
 const ROWS: &[Row] = &[
     // `struct with an impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     Row { construct: "generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; }", names: "generic function" },
-    Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
+    // `bundle` left this table when resolved-nets-bundles T6 typed it (`types_bundles`).
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
     Row { construct: "placement through a template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; let r = t(a, b); }", names: "module template" },
     Row { construct: "value input of an unsupported type", source: "module Top(x: (f64, f64)) { }", names: "value input port" },

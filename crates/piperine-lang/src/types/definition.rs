@@ -61,8 +61,13 @@ impl Checker<'_> {
                 self.exprs[place.index()] = Some(target.held.clone());
                 Some(target)
             }
+            ExprKind::Field { .. } if self.design.bundle_field(place).is_some() => {
+                // a field of a bundle port or signal is the carrier its leaf stands for (§7 rule 12)
+                let leaf = self.design.bundle_field(place)?;
+                self.declared_target(place, leaf, what)
+            }
             ExprKind::Field { res: Resolution::Decl(item), .. } => {
-                // a member of a bundle (a field with a direction): the bundle type was refused where it is written, once
+                // a field of a bundle read through a handle: the handle is read-only (§7 rule 13), `generics` B's rule
                 if matches!(&self.design.decl_data(*item).kind, DeclKind::Field(field) if field.dir.is_some()) {
                     return None;
                 }
@@ -85,36 +90,44 @@ impl Checker<'_> {
                     }
                     return None;
                 };
-                let (port_ty, direction) = match &self.design.decl_data(decl).kind {
-                    DeclKind::Port(p) => (Some(p.ty), p.dir),
-                    DeclKind::Signal(s) => (Some(s.ty), None),
-                    DeclKind::Param(_) => return self.not_drivable(file, node.span, what, "a param"),
-                    DeclKind::Binding(_) => return self.not_drivable(file, node.span, what, "a `let` name"),
-                    _ => return self.not_drivable(file, node.span, what, "not a discrete carrier"),
-                };
-                // a carrier declared inside generation is the array of its elements to a place outside its loops (§8.2.23)
-                let ty = port_ty.and_then(|t| self.port_type(t)).map(|ty| self.generated_read(place, decl, ty))?;
-                match ty {
-                    Ty::Carrier { value, .. } => {
-                        if direction == Some(crate::msl::ast::Dir::In) {
-                            return self.not_drivable(file, node.span, what, "an `in` port: a module never writes its own input (§5.2.5)");
-                        }
-                        self.exprs[place.index()] = Some((*value).clone());
-                        Some(DriveTarget { carrier: decl, held: *value, element: Element::Whole, reached: false })
-                    }
-                    array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
-                        self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
-                        self.book.refused.insert(decl);
-                        None
-                    }
-                    _ => self.not_drivable(file, node.span, what, "a node, not a discrete carrier"),
-                }
+                self.declared_target(place, decl, what)
             }
             _ => {
                 self.coded(file, "E0222", node.span, format!("the target of a {what} is not a place (§8.2.10)"), "not a place");
                 self.infer(place);
                 None
             }
+        }
+    }
+
+    /// The target of a definition or a commit that names the port or signal `decl` (a path, or a field of a bundle:
+    /// the leaf stands for it, §7 rule 12): the carrier and its value type, or `E0222`.
+    fn declared_target(&mut self, place: ExprId, decl: DeclId, what: &str) -> Option<DriveTarget> {
+        let node = self.design.expr_node(place).clone();
+        let file = self.file_of_expr(place);
+        let (port_ty, direction) = match &self.design.decl_data(decl).kind {
+            DeclKind::Port(p) => (Some(p.ty), p.dir),
+            DeclKind::Signal(s) => (Some(s.ty), None),
+            DeclKind::Param(_) => return self.not_drivable(file, node.span, what, "a param"),
+            DeclKind::Binding(_) => return self.not_drivable(file, node.span, what, "a `let` name"),
+            _ => return self.not_drivable(file, node.span, what, "not a discrete carrier"),
+        };
+        // a carrier declared inside generation is the array of its elements to a place outside its loops (§8.2.23)
+        let ty = port_ty.and_then(|t| self.port_type(t)).map(|ty| self.generated_read(place, decl, ty))?;
+        match ty {
+            Ty::Carrier { value, .. } => {
+                if direction == Some(crate::msl::ast::Dir::In) {
+                    return self.not_drivable(file, node.span, what, "an `in` port: a module never writes its own input (§5.2.5)");
+                }
+                self.exprs[place.index()] = Some((*value).clone());
+                Some(DriveTarget { carrier: decl, held: *value, element: Element::Whole, reached: false })
+            }
+            array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
+                self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+                self.book.refused.insert(decl);
+                None
+            }
+            _ => self.not_drivable(file, node.span, what, "a node, not a discrete carrier"),
         }
     }
 

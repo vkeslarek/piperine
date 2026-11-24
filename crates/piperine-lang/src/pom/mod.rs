@@ -29,7 +29,7 @@
 //! [`guide`].
 
 pub mod guide;
-mod body;
+mod body; mod bundles;
 mod builtin;
 mod check; mod connections;
 mod crates;

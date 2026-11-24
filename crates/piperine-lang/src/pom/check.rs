@@ -528,7 +528,8 @@ impl Design {
             }
             match d.parent {
                 Some(p) if p.index() >= self.decls.len() => problems.push(format!("{id:?}: parent {p:?} does not exist")),
-                Some(p) if !self.decls[p.index()].children.contains(&id) => {
+                // a leaf of a bundle port or signal is no child: it is reached through its owner (`bundles.rs`)
+                Some(p) if !self.decls[p.index()].children.contains(&id) && self.leaf_owner(id).is_none() => {
                     problems.push(format!("{id:?}: not listed among the children of its parent {p:?}"))
                 }
                 _ => {}
@@ -643,7 +644,9 @@ impl Design {
             }
         }
         for i in 0..self.decls.len() {
-            if !seen.contains(&DeclId(i as u32)) {
+            // a leaf of a bundle is reached through its owner's table, and its owner is reachable
+            let reached_through_owner = self.leaf_owner(DeclId(i as u32)).is_some_and(|owner| seen.contains(&owner));
+            if !seen.contains(&DeclId(i as u32)) && !reached_through_owner {
                 problems.push(format!("decl {i} is not reachable from any root"));
             }
         }

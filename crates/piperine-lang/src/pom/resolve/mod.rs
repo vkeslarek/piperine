@@ -6,6 +6,7 @@
 mod behaviors;
 mod classify;
 mod imports;
+mod leaves;
 mod members;
 mod names;
 mod scopes;
@@ -121,6 +122,7 @@ pub(super) fn run(design: &mut Design) {
     for (file, diagnostic) in classified.diagnostics {
         design.push_diagnostic(file, diagnostic);
     }
+    leaves::run(design);
     // A fresh context over the resolved design: stage 7 asks it which traits are in scope.
     let members = {
         let ctx = Ctx::new(design);
