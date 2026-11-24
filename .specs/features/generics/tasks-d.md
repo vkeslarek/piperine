@@ -188,8 +188,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_placement_through_a_template_or_a_function_types_as_its_module` and `a_param_block_on_a_template_placement_is_e0361` pass under `**Run typestempl**`
-- [ ] Gate check passes: Quick
+- [x] `a_placement_through_a_template_or_a_function_types_as_its_module` and `a_param_block_on_a_template_placement_is_e0361` pass under `**Run typestempl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

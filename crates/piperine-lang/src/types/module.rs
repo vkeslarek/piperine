@@ -203,12 +203,13 @@ impl Checker<'_> {
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
-            // `cell(c)` through a param of module type (§8.4.4): the module's ports are connected;
-            // the param block belongs to the template, so one on the placement is `E0361`.
-            ExprKind::Path(_) if self.callee_is_param_of(*callee, module) => {
+            // `cell(c)`, `C1(c)` or `nch(l, w)(c)`: a call through a template value, a param, a `const` or a function's
+            // result of module type (§8.4.4); the module's ports are connected, the param block belongs to the template, so
+            // one on the placement is `E0361`
+            _ if self.callee_is_template_of(*callee, module) => {
                 if params.is_some() {
                     let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                    self.coded(file, "E0361", node.span, format!("a placement through a param of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
+                    self.coded(file, "E0361", node.span, format!("a placement through a template value of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
                 }
                 Vec::new()
             }
@@ -279,13 +280,17 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether `callee` names a param whose declared type is the module `module`.
-    fn callee_is_param_of(&self, callee: ExprId, module: DeclId) -> bool {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
-        match self.design.path_node(*path).segments.last().map(|s| s.res) {
-            Some(Resolution::Decl(d)) => matches!(&self.design.decl_data(d).kind, DeclKind::Param(p) if self.design.type_resolution(p.ty) == Resolution::Decl(module)),
-            _ => false,
+    /// Whether `callee` is a const expression whose value is a template of `module` (§8.4.4, §8.4.6): a param, a `const`, a
+    /// function's result, a template written in place. A callee that reads a port, a signal or a probe is `E0362`.
+    fn callee_is_template_of(&mut self, callee: ExprId, module: DeclId) -> bool {
+        if !matches!(self.infer(callee), Some(Ty::Module(found)) if found == module) {
+            return false;
         }
+        if let Some(read) = self.runtime_read(callee) {
+            let (file, span) = (self.file_of_expr(callee), self.design.expr_node(callee).span);
+            self.coded(file, "E0362", span, format!("a template is a const expression and this placement's head reads {read} (§8.4.6)"), "not a const expression");
+        }
+        true
     }
 
     fn callee_is(&self, callee: ExprId, module: DeclId) -> bool {

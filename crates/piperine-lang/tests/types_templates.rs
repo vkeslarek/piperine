@@ -5,7 +5,7 @@
 //! `C: Fn(P)` holds for a module whose ports match.
 
 use piperine_lang::pom::{Design, DesignDiagnostic, ExprId};
-use piperine_lang::types::{Ty, Types};
+use piperine_lang::types::{Callee, Ty, Types};
 
 /// The natures and the two modules every source of this file shares.
 const PRELUDE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n\
@@ -47,6 +47,12 @@ impl TemplateSource {
         Types::check(&self.design, "Top").err().and_then(|found| found.first().map(|d| d.diagnostic.message.clone())).unwrap_or_default()
     }
 
+    /// What the call whose text is `snippet` refers to.
+    fn callee_of(&self, snippet: &str) -> Option<Callee> {
+        let types = Types::check(&self.design, "Top").unwrap_or_else(|found| panic!("{:?}\n{}", Self::codes_of(&found), self.text));
+        (0..self.design.expr_count()).map(|index| ExprId(index as u32)).find(|id| &self.text[self.design.expr_node(*id).span.range()] == snippet).and_then(|id| types.callee(id))
+    }
+
     /// The type the checker gives the expression whose text is `snippet`.
     fn type_of(&self, snippet: &str) -> Option<Ty> {
         let types = Types::check(&self.design, "Top").unwrap_or_else(|found| panic!("{:?}\n{}", Self::codes_of(&found), self.text));
@@ -85,4 +91,26 @@ fn a_template_is_never_carried_e0112() {
     // §8.4.1 (GN-21 AC 4): a template has no `Repr`, so it is never carried
     let source = TemplateSource::new("module Top(x: E) { signal s: Bit<Cell>; }");
     assert_eq!(source.codes(), ["E0112"], "{}", source.message());
+}
+
+#[test]
+fn a_placement_through_a_template_or_a_function_types_as_its_module() {
+    // §8.4.4 (GN-22 AC 1): `C1(x)`, `cell(x)` and `pick(true)(x)` place the module of the template, their connections checked
+    // against its ports (`E0312` for the count, as for `Cell(x)`)
+    let head = "const C1: Cell = Cell { cs: 30.0 };\nfn pick(big: bool) -> Cell { if big { Cell { cs: 2.0 } } else { Cell { cs: 1.0 } } }\n";
+    let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ cell: Cell = C1; let a = C1(x); let b = cell(x); let c = pick(true)(x); }}"));
+    assert_eq!(source.codes(), Vec::<String>::new(), "{}", source.message());
+    for call in ["C1(x)", "cell(x)", "pick(true)(x)"] {
+        assert!(matches!(source.callee_of(call), Some(Callee::Module(_))), "{call} is a placement of Cell");
+    }
+    let wrong = TemplateSource::new(&format!("{head}module Top(x: E, y: E) {{ let a = C1(x, y); let c = pick(true)(x, y); }}"));
+    assert_eq!(wrong.codes(), ["E0312", "E0312"], "{}", wrong.message());
+}
+
+#[test]
+fn a_param_block_on_a_template_placement_is_e0361() {
+    // §8.4.4 (GN-22 AC 2): the params belong to the template, so `C1(x) { cs: 2.0 }` and `pick(true)(x) { cs: 2.0 }` are `E0361`
+    let head = "const C1: Cell = Cell { cs: 30.0 };\nfn pick(big: bool) -> Cell { Cell { cs: 2.0 } }\n";
+    let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ let a = C1(x) {{ cs: 2.0 }}; let c = pick(true)(x) {{ cs: 2.0 }}; }}"));
+    assert_eq!(source.codes(), ["E0361", "E0361"], "{}", source.message());
 }
