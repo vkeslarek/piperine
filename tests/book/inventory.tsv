@@ -370,6 +370,7 @@ claim	natures~cd4205d5	cd4205d55ed90e62	prose	-	-	Every carrier has a nature, an
 claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
 claim	natures~eb8db94c	eb8db94ced8b3207	holds	piperine/book_natures::an_out_port_gives_the_initial_value	-	That module also gives the initial value.
 claim	natures~8ebfe866	8ebfe866aadcea4e	holds	piperine/book_natures::a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
+claim	natures~1197ebef	1197ebefd74c762b	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints them:
 claim	natures~52790298	5279029848b66589	refused	natures#8	L25	Directions are written once, from the producer's side, and flip gives the consumer's view.
 claim	natures~5c7f5269	5c7f5269612c5fc2	holds	piperine/book_natures::behavior_crosses_freely_inside_one_module	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
 claim	natures~42ae741d	42ae741dc13997e4	holds	piperine/book_natures::e0220_a_bit_has_one_driver	-	E0220
