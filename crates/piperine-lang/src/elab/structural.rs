@@ -600,7 +600,8 @@ impl Elaboration<'_, '_> {
             if via == placed || self.is_module_param(*via) {
                 continue;
             }
-            self.collect_params(*callee, &mut found);
+            // through the `let`s that hold the template (`let t = if sel { .. } else { .. }; t(x)`)
+            self.collect_choice_params(*callee, &mut found, &mut Vec::new());
         }
         found
     }

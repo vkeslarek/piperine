@@ -228,7 +228,7 @@ impl Checker<'_> {
     /// already, each once. `None` for an expression over params, constants, generation indexes and
     /// `let`s of those; the elaborator folds it, and a call that reads the run inside a function is refused there with the same
     /// code.
-    fn run_read(&self, expr: ExprId, followed: &mut Vec<DeclId>) -> Option<String> {
+    pub(super) fn run_read(&self, expr: ExprId, followed: &mut Vec<DeclId>) -> Option<String> {
         if let Some(read) = self.runtime_read(expr) {
             return Some(read);
         }

@@ -113,6 +113,15 @@ fn a_placement_through_a_template_or_a_function_types_as_its_module() {
     let value = TemplateSource::new(&format!("{head}module Top(x: E) {{ let k = 2.0; let b = k(x); }}"));
     assert_eq!(value.codes(), ["E0180"], "{}", value.message());
     assert!(value.message().contains("its type `f64` is no function and no template"), "{}", value.message());
+    // a choice of templates of one module that folds at elaboration holds a template too (§8.4.6, finding 31); one the run makes
+    // is no const expression, `E0362`
+    let chosen = TemplateSource::new(&format!("{head}module Top(x: E) {{ sel: bool = true; n: u8 = 0; let t = if sel {{ Cell {{ cs: 2.0 }} }} else {{ C1 }}; let d = t(x); let m = match n {{ 0 => C1, _ => pick(false) }}; let e = m(x); let b = {{ C1 }}; let f = b(x); }}"));
+    assert_eq!(chosen.codes(), Vec::<String>::new(), "{}", chosen.message());
+    for call in ["t(x)", "m(x)", "b(x)"] {
+        assert!(matches!(chosen.callee_of(call), Some(Callee::Module(_))), "{call} is a placement of Cell");
+    }
+    let by_the_run = TemplateSource::new(&format!("{head}module Top(x: E) {{ let t = if v(x) > 0.5 {{ C1 }} else {{ Cell {{ cs: 2.0 }} }}; let d = t(x); }}"));
+    assert_eq!(by_the_run.codes(), ["E0362"], "{}", by_the_run.message());
 }
 
 #[test]

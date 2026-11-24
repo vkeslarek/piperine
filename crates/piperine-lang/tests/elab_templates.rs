@@ -62,7 +62,11 @@ fn a_template_placement_is_identical_to_the_written_placement() {
     // a body `let` bound to a template is a holder like the others (finding 29), written before or after its placement
     let through_let = format!("{CELL}module Top() {{ signal x: Electrical; let t = Cell {{ cs: 30.0 }}; let c1 = t(x); }}");
     let through_let_after = format!("{CELL}module Top() {{ signal x: Electrical; let c1 = t(x); let t = Cell {{ cs: 30.0 }}; }}");
-    for source in [through_const, through_function, through_param, through_let, through_let_after] {
+    // a `let` of a choice of templates that folds at elaboration (finding 31): an `if` over a param, a `match`, a block
+    let through_if = format!("{CELL}module Top() {{ sel: bool = true; signal x: Electrical; let t = if sel {{ Cell {{ cs: 30.0 }} }} else {{ Cell {{ cs: 1.0 }} }}; let c1 = t(x); }}");
+    let through_match = format!("{CELL}module Top() {{ n: u8 = 1; signal x: Electrical; let t = match n {{ 0 => Cell {{ cs: 1.0 }}, _ => Cell {{ cs: 30.0 }} }}; let c1 = t(x); }}");
+    let through_block = format!("{CELL}module Top() {{ signal x: Electrical; let t = {{ Cell {{ cs: 30.0 }} }}; let c1 = t(x); }}");
+    for source in [through_const, through_function, through_param, through_let, through_let_after, through_if, through_match, through_block] {
         let ir = Elab::ir(&source, "Top");
         assert_eq!(Placed::first_param(&ir, "Top.c1"), Placed::first_param(&direct, "Top.c1"), "{source}");
         assert_eq!(ir.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()), "{source}");

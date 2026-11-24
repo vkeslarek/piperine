@@ -109,12 +109,14 @@ fn a_memory_bank_places_its_cell_template() {
 fn a_template_a_body_let_holds_places_its_module() {
     // §8.4.1, §8.4.4 (finding 29): `let big = Dram { cs: 3.0 }; big(a)` and `copy(a)` with `let copy = big;` place the cell, whose
     // storage node follows the bit line (0.5) scaled by 3
-    let seen = RUN.operating_point("memory.msl", "RigLetTemplates", &["first", "second"]);
-    for value in &seen {
-        let wanted = RustOracle::storage(3.0, 0.5);
+    // `chosen` (finding 31) is the template `k > 0.5` picks: with `k` 1 the cell of `cs` 4
+    let seen = RUN.operating_point("memory.msl", "RigLetTemplates", &["first", "second", "third"]);
+    let k = 1.0;
+    let wanted = [RustOracle::storage(3.0, 0.5), RustOracle::storage(3.0, 0.5), RustOracle::storage(if k > 0.5 { 4.0 } else { 3.0 }, 0.5)];
+    assert_eq!(seen.len(), wanted.len());
+    for (value, wanted) in seen.iter().zip(wanted) {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
-    assert_eq!(seen.len(), 2);
 }
 
 #[test]

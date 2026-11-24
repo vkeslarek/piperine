@@ -567,7 +567,7 @@ Proof: run typestempl | test a_template_that_is_not_const_is_e0362 ... ok
 **C90** - A template is never carried: `E0112`. (GN-21, AC 4; T84)
 Proof: run typestempl | test a_template_is_never_carried_e0112 ... ok
 
-**C91** - A placement through a template value (a `const`, a param, a body `let` bound to a template, written before or after its placement) or a function result places an instance identical to the written placement. (GN-22, AC 1; T86, T87, T93; fix round 11, finding 29)
+**C91** - A placement through a template value (a `const`, a param, a body `let` bound to a template, written before or after its placement, or to a choice of templates that folds at elaboration) or a function result places an instance identical to the written placement; a choice of templates the run makes is `E0362`, calling an instance is `E0333` and calling a value that is neither a function nor a template is `E0180`. (GN-22, AC 1; T86, T87, T93; fix round 11, finding 29; fix round 12, findings 30 to 32)
 Proof: run typestempl | test a_placement_through_a_template_or_a_function_types_as_its_module ... ok
 Proof: run elabtempl | test a_template_placement_is_identical_to_the_written_placement ... ok
 Proof: run bookmodules | test a_function_that_returns_a_template_places_its_result ... ok

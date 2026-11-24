@@ -444,6 +444,25 @@ fn template_module(design: &Design, expr: ExprId, templates: &BTreeMap<ExprId, S
             },
             _ => None,
         },
+        // a choice of templates of one module (§8.4.6: folded at elaboration; the checker refuses one the run makes, `E0362`)
+        ExprKind::If { then, else_, .. } => {
+            let chosen = block_template(design, then, templates, depth + 1)?;
+            (template_module(design, (*else_)?, templates, depth + 1)? == chosen).then_some(chosen)
+        }
+        ExprKind::Match { arms, .. } => {
+            let mut modules = arms.iter().map(|arm| template_module(design, arm.body, templates, depth + 1));
+            let chosen = modules.next()??;
+            modules.all(|module| module == Some(chosen)).then_some(chosen)
+        }
+        ExprKind::Block(block) => block_template(design, block, templates, depth + 1),
+        _ => None,
+    }
+}
+
+/// The module of the template the block `block` results in: its last statement, an expression with no `;`.
+fn block_template(design: &Design, block: &super::super::body::BlockNode, templates: &BTreeMap<ExprId, StructClass>, depth: usize) -> Option<DeclId> {
+    match &design.stmt_node(*block.stmts.last()?).kind {
+        StmtKind::Expr { expr, semi: false } => template_module(design, *expr, templates, depth),
         _ => None,
     }
 }

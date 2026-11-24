@@ -338,7 +338,9 @@ impl Checker<'_> {
         if !matches!(self.infer(callee), Some(Ty::Module(found)) if found.decl == module) {
             return false;
         }
-        if let Some(read) = self.runtime_read(callee) {
+        // through the `let`s that hold it (`let t = if sel { .. } else { .. };`): a choice of templates the run makes is no
+        // const expression either
+        if let Some(read) = self.run_read(callee, &mut Vec::new()) {
             let (file, span) = (self.file_of_expr(callee), self.design.expr_node(callee).span);
             self.coded(file, "E0362", span, format!("a template is a const expression and this placement's head reads {read} (§8.4.6)"), "not a const expression");
         }

@@ -23,19 +23,24 @@ analog for Rig {
     potential(last) +> v(bank.cells[1][2].sn);
 }
 
-/// Cells placed through templates a body `let` holds (verification finding 29, §8.4.1): `big` written in place and `copy` bound to
-/// another `let`, placed before and after their `let`s.
+/// Cells placed through templates a body `let` holds (verification findings 29 and 31, §8.4.1, §8.4.6): `big` written in place,
+/// `copy` bound to another `let`, placed before and after their `let`s, and `chosen`, a choice over the param `k`.
 module RigLetTemplates() {
     signal a: Electrical;
     let early = copy(a);
     let big = Dram { cs: 3.0 };
     let one = big(a);
     let copy = big;
+    k: f64 = 1.0;
+    let chosen = if k > 0.5 { Dram { cs: 4.0 } } else { big };
+    let three = chosen(a);
     signal first: Electrical;
     signal second: Electrical;
+    signal third: Electrical;
 }
 analog for RigLetTemplates {
     potential(a) +> 0.5;
     potential(first) +> v(one.sn);
     potential(second) +> v(early.sn);
+    potential(third) +> v(three.sn);
 }
