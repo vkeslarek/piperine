@@ -446,9 +446,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `the_temperature_listings_run_with_the_ambient_fallback` passes under `**Run bookanalog**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
-- [ ] Gate check passes: Quick
+- [x] `the_temperature_listings_run_with_the_ambient_fallback` passes under `**Run bookanalog**`
+- [x] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

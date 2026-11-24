@@ -91,7 +91,7 @@ module Resistor(p: Electrical, n: Electrical) {
 }
 
 analog for Resistor {
-    i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - tnom)));
+    i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature().unwrap_or(AMBIENT_TEMPERATURE) - tnom)));
 }
 ```
 

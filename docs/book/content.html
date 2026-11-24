@@ -2617,7 +2617,7 @@ module Diode(a: Electrical, k: Electrical) {
     n: f64 = 1.0 where n > 0.0;
 }
 analog for Diode {
-    let nvt = n * vt();
+    let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     i(a, k) +> is * (limexp(v(a, k) / nvt) - 1.0);
 }
 
@@ -2635,7 +2635,7 @@ module Clipper() {
 <ol class="steps">
 <li><strong><code>now()</code></strong> is the simulation time, so the source is a plain function of time. In an operating-point solve <code>now()</code> is 0 and the source sits at 0&nbsp;V.</li>
 <li><strong><code>bound_step(dt);</code></strong> is a statement only <code>analog</code> has. It caps the next time step. The solver picks steps from the circuit's own dynamics, and a smooth source into a stiff clipper could be stepped over; this line guarantees the sine is sampled finely.</li>
-<li><strong><code>let nvt = n * vt();</code></strong> A <code>let</code> inside <code>analog</code> is a local of this iteration. <code>vt()</code> is the thermal voltage <em>kT/q</em> at the simulation temperature, about 25.9&nbsp;mV at the default 300.15&nbsp;K.</li>
+<li><strong><code>let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));</code></strong> A <code>let</code> inside <code>analog</code> is a local of this iteration. <code>vt(t)</code> is the thermal voltage <em>kT/q</em> at the temperature <code>t</code> you pass, about 25.9&nbsp;mV at the default 300.15&nbsp;K; the run's temperature is optional, so the model falls back to the ambient one.</li>
 <li><strong><code>limexp(x)</code></strong> equals <code>x.exp()</code> once the solver has converged, but while it iterates it lets the argument move only a little per iteration. An exponential explodes when Newton overshoots; <code>limexp</code> is the standard cure and costs you nothing in accuracy.</li>
 <li><strong><code>Diode(vout, gnd)</code></strong> binds no params, so both diodes take the defaults.</li>
 </ol>
@@ -2795,7 +2795,7 @@ wrote clipper.svg</pre>
 <p><code>emit!</code> is also allowed directly in an <code>analog</code> block, and there it behaves differently, on purpose. Add one line to the diode:</p>
 
 <pre data-lang="msl">analog for Diode {
-    let nvt = n * vt();
+    let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let id = is * (limexp(v(a, k) / nvt) - 1.0);
     i(a, k) +> id;
     emit!("newton", vd = v(a, k), id = id);
@@ -2879,7 +2879,7 @@ analog for Coupled {
 <tr><td><code>limit</code>, <code>limexp</code>, <code>pnjlim</code>, <code>fetlim</code></td><td>Newton step limiting</td><td>core / stdlib</td></tr>
 <tr><td><code>ddx(e, probe)</code>, <code>ac_stim(mag, phase)</code></td><td>partial derivative, small-signal stimulus</td><td>core <code>fn</code></td></tr>
 <tr><td><code>bound_step(dt)</code></td><td>caps the next time step</td><td>statement</td></tr>
-<tr><td><code>temperature()</code>, <code>now()</code>, <code>freq()</code>, <code>analysis(a)</code></td><td>the environment</td><td>core <code>fn</code></td></tr>
+<tr><td><code>temperature()</code>, <code>now()</code>, <code>freq()</code>, <code>analysis(a)</code></td><td>the environment: <code>temperature()</code> is an <code>Option&lt;f64&gt;</code>, <code>Some</code> kelvin when the run sets <code>temp</code>, else <code>None</code></td><td>core <code>fn</code></td></tr>
 </tbody></table></div>
 
 <h3>One block, every analysis</h3>
@@ -2900,7 +2900,7 @@ analog for Coupled {
 
 <p>A noise source is an instance of <code>noise</code>. Read one instance in two places and the two are fully correlated; two instances are independent:</p>
 
-<pre data-lang="msl">let n = noise(4.0 * K_B * temperature() / r, "thermal");
+<pre data-lang="msl">let n = noise(4.0 * K_B * temperature().unwrap_or(AMBIENT_TEMPERATURE) / r, "thermal");
 i(a, mid) +> n;
 i(mid, b) +> -n;          // fully correlated</pre>
 
@@ -6437,7 +6437,6 @@ utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pr
 <tbody>
 <tr><td><code>gnd</code></td><td>The reference node, the same net everywhere.</td></tr>
 <tr><td><code>Nature</code></td><td>The bound that makes a declaration a nature.</td></tr>
-<tr><td><code>m</code>, <code>dtemp</code></td><td>The multiplicity and the temperature offset every instance carries. They are in scope only inside a module.</td></tr>
 <tr><td><code>str</code></td><td>The type of text. It is how a model reads a name or a file at elaboration.</td></tr>
 </tbody></table></div>
 
@@ -6536,7 +6535,7 @@ digital for Latch { on clk.rise() { q &lt;- d; } }</pre>
 <div class="table-wrap"><table>
 <tbody>
 <tr><td><code>State</code></td><td>A unitless nature for internal states.</td></tr>
-<tr><td><code>vt</code></td><td>The thermal voltage at the current temperature.</td></tr>
+<tr><td><code>vt</code></td><td>The thermal voltage at the temperature you pass: <code>vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))</code> is the run's.</td></tr>
 <tr><td><code>multiplicity</code></td><td>The run's multiplicity, <code>simparam("multiplicity")</code>: <code>Some</code> when the run sets it, else <code>None</code>.</td></tr>
 <tr><td><code>white_noise</code>, <code>flicker_noise</code>, <code>noise_table</code></td><td>Noise sources with a flat, a 1/f and a tabulated spectrum.</td></tr>
 <tr><td><code>limexp</code></td><td>An exponential that is safe for Newton: it grows linearly past a limit.</td></tr>
@@ -6701,7 +6700,7 @@ digital for Watchdog {
 
 <p>A library item has no privilege. Declare an item with the same name in your own namespace and yours is the one the names in that scope find; the library's stays untouched. Only the core names of this chapter are off limits.</p>
 
-<pre data-lang="msl">pub fn vt() -> f64 { 0.0259 }          // this crate's vt, fixed at room temperature</pre>
+<pre data-lang="msl">pub fn vt(t: f64) -> f64 { 0.0259 }          // this crate's vt, fixed at room temperature</pre>
 
 <div class="callout mistake">
   <p class="callout-label">Common mistakes</p>
@@ -8892,7 +8891,7 @@ let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
 extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; }</pre></div>
 
 <div class="cheat-card"><h4>Where names come from</h4>
-<p><strong>Core</strong>, no import: <code>gnd</code> <code>Nature</code> <code>m</code> <code>dtemp</code> <code>str</code>, the probes, <code>ddt</code> <code>delay</code> <code>limit</code> <code>noise</code> <code>cross</code> <code>at</code>, <code>bound_step</code>, <code>emit!</code> <code>include_str!</code>.</p>
+<p><strong>Core</strong>, no import: <code>gnd</code> <code>Nature</code> <code>str</code>, the probes, <code>ddt</code> <code>delay</code> <code>limit</code> <code>noise</code> <code>cross</code> <code>at</code>, <code>bound_step</code>, <code>emit!</code> <code>include_str!</code>.</p>
 <p><strong>Library</strong>, implied by <code>std::prelude</code>: <code>std::constants</code> <code>std::carriers</code> <code>std::values</code> <code>std::logic</code> <code>std::analog</code> <code>std::nets</code> <code>std::convert</code> <code>std::monitor</code> <code>std::io</code>.</p>
 <p>Yours hides both, except a core name (E0457). Chapter 13.</p></div>
 
@@ -9252,7 +9251,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 <tr><td><code>q &lt;- d</code>, <code>after td</code></td><td>a <strong>commit</strong>, with its delay</td></tr>
 <tr><td>a param <code>r: f64</code>; its <code>where</code></td><td>a <code>PARAM</code> <strong>pin</strong>; a boolean pin that must hold for a write to be accepted</td></tr>
 <tr><td>a <code>signal</code>, an internal node</td><td>a private <strong>pin</strong> (discrete, continuous)</td></tr>
-<tr><td><code>temperature()</code>, <code>settle</code></td><td>a global <strong>pin</strong> the session binds</td></tr>
+<tr><td><code>temperature()</code>, <code>settle</code></td><td>a global <strong>pin</strong> the session binds (<code>temperature()</code> also reads whether the run set it)</td></tr>
 <tr><td><code>emit!</code></td><td>a commit to a pin flagged <code>RECORD</code></td></tr>
 </tbody></table></div>
 
@@ -9428,7 +9427,7 @@ analog for Capacitor { i(p, n) +&gt; ddt(c * v(p, n)); }
 /// A resistor with its thermal noise: a white current source of density 4 k T / r.
 module Resistor(p: Electrical, n: Electrical) { r: f64 where r &gt; 0.0; }
 analog for Resistor {
-    i(p, n) +&gt; v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+    i(p, n) +&gt; v(p, n) / r + white_noise(4.0 * K_B * temperature().unwrap_or(AMBIENT_TEMPERATURE) / r, "thermal");
 }
 
 /// A source that carries the small-signal stimulus, the input a noise run refers to.
@@ -9555,7 +9554,7 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 <tbody>
 <tr><td><code>nodeset</code></td><td>empty</td><td>a node path and a value each</td><td>The first guess of the named nodes, in volts, for every operating point the run takes: the one an <code>ac</code>, a <code>tf</code> or a <code>transient</code> starts from included. A circuit with one equilibrium ends at it whatever the guess; a circuit with several ends at the one the guess is nearest to. A path that names no node is E0801.</td></tr>
 <tr><td><code>maxrounds</code></td><td>20</td><td>≥ 1</td><td>How many times an operating point of a mixed design may alternate between the analog solve and the digital reactions before it fails with E0506.</td></tr>
-<tr><td><code>temp</code></td><td>27</td><td>&gt; −273.15</td><td>The temperature of the run, in degrees Celsius. Models read it in kelvin through <code>temperature()</code>, and <code>vt()</code> follows it.</td></tr>
+<tr><td><code>temp</code></td><td>27</td><td>&gt; −273.15</td><td>The temperature of the run, in degrees Celsius. Models read it in kelvin through <code>temperature()</code>, an <code>Option</code> that is <code>None</code> when you give no <code>temp</code>; a model that writes <code>temperature().unwrap_or(AMBIENT_TEMPERATURE)</code> reads 300.15&nbsp;K (27&nbsp;&deg;C, ngspice's default) then, and <code>vt(t)</code> follows the temperature it is given.</td></tr>
 </tbody></table></div>
 
 <p>An <strong>initial value</strong> is not an option of a run: it belongs to the design. <code>signal vout: Electrical = 0.0;</code> starts a transient with that node at 0&nbsp;V, as the transient above shows in its first row, and the operating point pays it no attention, as the first listing shows. Use an initial value to say where a transient begins, and <code>nodeset</code> to help an operating point that has more than one answer.</p>
@@ -9679,7 +9678,7 @@ module Divider() {
 <p>Its operating point puts <code>mid</code> at 7.5&nbsp;V, the same number ngspice prints for the same circuit. The diode it can be swapped for shows the analog features the path already carries: a limited junction voltage, the solver's <code>gmin</code>, and a charge term.</p>
 
 <pre data-lang="msl">analog for Diode {
-    let nvt   = n * vt();
+    let nvt   = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     let id    = is * ((vd / nvt).exp() - 1.0);
