@@ -453,3 +453,13 @@ module TwoBidirsBench() {
     let load_a = RcLoad(a);
     let load_b = RcLoad(b);
 }
+
+/// Three drives, a released low, a released X and a weak high: a `HighZ` drive of any level is left out, so the weak high is
+/// the net.
+module HighZAnyLevelBench() {
+    signal n: Line;
+    let low = Put(n) { level: 0, strength: 0 };
+    let unknown = Put(n) { level: 2, strength: 0 };
+    let high = Put(n) { level: 1, strength: 1 };
+    let look = Look(n);
+}

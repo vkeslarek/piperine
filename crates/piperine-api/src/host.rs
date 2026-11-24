@@ -211,6 +211,15 @@ impl Session {
                 let net = ir.net_at(&path).ok_or_else(|| Failure::Backend(format!("the top's port `{short}` has no net")))?;
                 Ok((path, net.ty().clone()))
             }
+            // the top's resolved port: the host holds the first drive of its net (§4 rule 2), a drive net of the driven type
+            Some(c) if matches!(c.role, CarrierRole::Resolved { .. }) => {
+                let path = format!("{top}.{short}");
+                let host = ir.net_at(&path).and_then(|net| net.resolution()).and_then(|resolution| {
+                    let first = resolution.holders.first().filter(|holder| holder.is_none())?;
+                    resolution.drives.first().filter(|_| first.is_none()).map(|drive| (ir.net(*drive).path().to_string(), resolution.driven.clone()))
+                });
+                host.ok_or_else(|| Failure::Host { code: "E0804", message: format!("`{port}` is a resolved port of the top that nothing resolves: the host holds no drive of it") })
+            }
             Some(c) => Err(Failure::Host { code: "E0804", message: format!("`{port}` is {} of the top, not an `in` port: the host holds no drive of it", if c.role == CarrierRole::Out { "an `out` port" } else { "a signal" }) }),
             None if [port.to_string(), format!("{top}.{port}")].iter().any(|p| ir.net_at(p).is_some() || ir.node_at(p).is_some()) => {
                 Err(Failure::Host { code: "E0804", message: format!("`{port}` is not a discrete `in` port of the top `{top}`: the host holds no drive of it") })

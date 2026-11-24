@@ -347,6 +347,78 @@ fn two_bidirs_alone_stop_the_run_with_e0511() {
     }
 }
 
+/// The numbers of every record of the stream `stream` of the run of `top` in `edges.msl`, first field only.
+fn edge_values(top: &str, stream: &str, field: &str) -> Vec<f64> {
+    let model = Model::of("edges.msl");
+    let built = model.built(top);
+    let seen = built.run(10e-9, 1e-9);
+    Levels::of(&built, &seen, stream, field)
+}
+
+#[test]
+fn one_drive_still_goes_through_resolve() {
+    // RN-03 AC 7: `resolve` of one drive is still `resolve`, here the sum plus 100
+    assert_eq!(edge_values("OneDriveBench", "offsets", "value").last(), Some(&105.0), "5 + 100");
+}
+
+#[test]
+fn a_high_impedance_drive_of_any_level_is_left_out() {
+    // §22.3.2 rule 2: a drive at `HighZ` is left out whatever its level, a low, an X or a high alike: the weak high beside
+    // them is the net
+    assert_eq!(Model::of("line.msl").settled("HighZAnyLevelBench"), Held { level: Held::HIGH, strength: Held::WEAK });
+}
+
+#[test]
+fn an_undriven_net_of_a_nature_with_two_impls_follows_its_rule() {
+    // D21 (spec Q4): a net nobody drives takes the nature's `impl Resolve<V>` when there are several, so `Rule` gives 10 and
+    // not the 20 of its `Resolve<u8, f64>`; with none of them `impl Resolve<V>` it is `E0181` naming the carrier
+    assert_eq!(edge_values("UndrivenRuleBench", "rules", "value").last(), Some(&10.0), "the impl of X = V");
+    match Model::of("edges.msl").project.elaborate("UndrivenNeitherBench") {
+        Err(rejection) => {
+            let text = rejection.to_string();
+            assert!(text.contains("E0181") && text.contains("orphan"), "{text}");
+        }
+        Ok(_) => panic!("E0181 expected"),
+    }
+}
+
+#[test]
+fn a_panic_in_resolve_is_a_run_fault_naming_nature_and_carrier() {
+    // D13: a `resolve` that divides by zero is a fault of the run that names the nature and the net it resolves
+    match Model::operating_point("edges.msl", "BombBench") {
+        Err(failure) => {
+            let text = failure.to_string();
+            assert!(text.contains("Bomb") && text.contains("fuse_net"), "{text}");
+        }
+        Ok(_) => panic!("a fault expected"),
+    }
+}
+
+#[test]
+fn the_hosts_drive_of_a_top_port_comes_first() {
+    // §4 rule 2, D8: the host holds the first drive of a top's resolved port, absent until it writes: three digits 1, 2 and 3
+    // give 123, and after the host drives 9 the net is 9123
+    let rows = |drive: Option<f64>| {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/nets/edges.msl");
+        let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some("HostFirstBench".into()), backend: Some("rust".into()), analysis: Some("op".into()), print: vec!["w".into()], ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let cache = tempfile::tempdir().expect("a temp dir");
+        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+        let mut session = Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}"));
+        if let Some(digit) = drive {
+            session.drive("w", piperine_solver::prelude::ParamValue::Real(digit), 0.0).unwrap_or_else(|f| panic!("{f}"));
+        }
+        let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+        match table.rows[0].last().expect("a cell") {
+            piperine_api::Cell::Real(value) => *value,
+            other => panic!("a real, found {other:?}"),
+        }
+    };
+    assert_eq!(rows(None), 123.0, "no host drive: the three digits");
+    assert_eq!(rows(Some(9.0)), 9123.0, "the host's drive first");
+}
+
 #[test]
 fn a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type() {
     // §4 rule 8, RN-02 AC 9: `Bus` has `impl Resolve<bool>` (high when every drive is) and `impl Resolve<u8, bool>` (high when

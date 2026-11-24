@@ -173,7 +173,8 @@ impl Elaboration<'_, '_> {
                     let data = self.design.decl_data(sample.plan.decl);
                     let (file, span) = (data.file, data.span);
                     let nature = self.design.decl_data(sample.plan.nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                    let message = format!("no drive of this net picks an `impl Resolve` of `{nature}`, which has several and none is `impl Resolve<V>` (§5.2.15)");
+                    let carrier = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                    let message = format!("no drive of the net `{carrier}` picks an `impl Resolve` of `{nature}`, which has several and none is `impl Resolve<V>` (§5.2.15)");
                     self.report(file, Diagnostic::new("E0181", message, span, "which `impl Resolve`?"));
                 }
                 found
