@@ -319,8 +319,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path` and `a_bundle_signal_declares_every_carrier_and_drives_none_it_does_not_write` pass under `**Run elabbundles**`
-- [ ] Gate check passes: Full
+- [x] `a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path` and `a_bundle_signal_declares_every_carrier_and_drives_none_it_does_not_write` pass under `**Run elabbundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -116,6 +116,8 @@ impl Elaboration<'_, '_> {
                     steps.push(Step::Index(index));
                     at = self.peel_parens(expr);
                 }
+                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`bundles.rs`)
+                ExprKind::Field { .. } if self.design.bundle_field(at).is_some() => break,
                 ExprKind::Field { expr, name, .. } => {
                     steps.push(Step::Field { inner: expr, name: name.text });
                     at = self.peel_parens(expr);
@@ -129,6 +131,9 @@ impl Elaboration<'_, '_> {
 
     /// The port or signal declaration a root expression names.
     fn root_decl(&self, root: ExprId) -> Option<crate::pom::DeclId> {
+        if let Some(leaf) = self.design.bundle_field(root) {
+            return Some(leaf);
+        }
         let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(crate::pom::Resolution::Decl(decl)) => Some(decl),
