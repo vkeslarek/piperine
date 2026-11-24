@@ -402,8 +402,10 @@ impl Checker<'_> {
     /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
     /// two operands of one type are typed.
     pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
-        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some() || this.bare_float_literal(e);
-        if bare(self, lhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
+        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
+        // a bare float literal takes the type of the other operand (`2.0 * b` with `b: f16`), unless that operand is a bare integer
+        // literal: `1 + 1.0` is typed from the float, so the integer literal is the one that does not convert
+        if bare(self, lhs) && !bare(self, rhs) || self.bare_float_literal(lhs) && !self.bare_float_literal(rhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
     }
 
     /// The right operand of `<<` or `>>`: any integer type (DIG-01 AC 6); a bare literal there

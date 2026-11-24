@@ -878,8 +878,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it` and `floats_of_every_width_and_wide_integers_run` pass under `**Run book**`, and `book_inventory` passes
-- [ ] Gate check passes: Task (`piperine`)
+- [x] `a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it` and `floats_of_every_width_and_wide_integers_run` pass under `**Run book**`, and `book_inventory` passes
+- [x] Gate check passes: Task (`piperine`)
 
 **Tests**: integration
 **Gate**: task
