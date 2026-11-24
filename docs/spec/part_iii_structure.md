@@ -705,7 +705,7 @@ multiplicity, and a model reads them. An **extern module** is implemented outsid
   (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`, §23), not a key of its own.
 - **§8.5.5** A model that wants its own multiplicity declares an ordinary param, `m: Option<f64>`, and combines it
   in a body `let`: `let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`. A param default is a const
-  context (§8.1), so `multiplicity()` there is `E0188`.
+  context (§8.1.16): `multiplicity()` there is `E0321`, an expression that is not over params and constants.
 
 > **Resolution.** User decision of 2026-11-23 (generics phase D): `m` and `dtemp` as implicit params, their
 > effective products and sums and the automatic scaling are withdrawn (G.54 is superseded). The run's

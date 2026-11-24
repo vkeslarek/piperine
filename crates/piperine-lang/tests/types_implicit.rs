@@ -86,7 +86,7 @@ impl StdSources {
 #[test]
 fn multiplicity_is_a_stdlib_function_over_simparam() {
     // GN-24 AC 1, AC 3 (§8.5.2, §22.2.2): `multiplicity()` is an ordinary `Option<f64>` function of `std`; a module
-    // combines its own `m` with it in a body `let` (the same read in a param default is `E0188` at elaboration, T100)
+    // combines its own `m` with it in a body `let` (the same read in a param default is `E0321` at elaboration, §8.1.16)
     let items = "module Top() { m: Option<f64>; let run = multiplicity(); let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY); }";
     assert_eq!(StdSources::local(items, "run"), Ty::Option(Box::new(Ty::F64)));
     assert_eq!(StdSources::local(items, "count"), Ty::F64);
