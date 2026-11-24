@@ -662,7 +662,11 @@ impl Checker<'_> {
                         if self.continuous_result_in_const(file, node.span, decl) {
                             return None;
                         }
-                        if let Some(Ty::Module(module)) = &local {
+                        // a `let` of a placement names an instance (§8.2.14); one of a template holds a value of the module's
+                        // type, read and placed as a `const` or a param template is (§8.4.1, §8.4.4)
+                        if let Some(Ty::Module(module)) = &local
+                            && self.binds_an_instance(decl)
+                        {
                             return self.instance_as_value(file, node.span, decl, module.decl);
                         }
                         if local.is_none() && !self.poisoned.contains(&decl) {

@@ -22,3 +22,20 @@ analog for Rig {
     potential(first) +> v(bank.cells[0][0].sn);
     potential(last) +> v(bank.cells[1][2].sn);
 }
+
+/// Cells placed through templates a body `let` holds (verification finding 29, §8.4.1): `big` written in place and `copy` bound to
+/// another `let`, placed before and after their `let`s.
+module RigLetTemplates() {
+    signal a: Electrical;
+    let early = copy(a);
+    let big = Dram { cs: 3.0 };
+    let one = big(a);
+    let copy = big;
+    signal first: Electrical;
+    signal second: Electrical;
+}
+analog for RigLetTemplates {
+    potential(a) +> 0.5;
+    potential(first) +> v(one.sn);
+    potential(second) +> v(early.sn);
+}

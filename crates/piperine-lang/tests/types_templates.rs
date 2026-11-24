@@ -95,16 +95,20 @@ fn a_template_is_never_carried_e0112() {
 
 #[test]
 fn a_placement_through_a_template_or_a_function_types_as_its_module() {
-    // §8.4.4 (GN-22 AC 1): `C1(x)`, `cell(x)` and `pick(true)(x)` place the module of the template, their connections checked
+    // §8.4.4 (GN-22 AC 1): `C1(x)`, `cell(x)`, `pick(true)(x)` and `t(x)` with `let t = Cell { .. }` place the module of the template, their connections checked
     // against its ports (`E0312` for the count, as for `Cell(x)`)
     let head = "const C1: Cell = Cell { cs: 30.0 };\nfn pick(big: bool) -> Cell { if big { Cell { cs: 2.0 } } else { Cell { cs: 1.0 } } }\n";
-    let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ cell: Cell = C1; let a = C1(x); let b = cell(x); let c = pick(true)(x); }}"));
+    let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ cell: Cell = C1; let a = C1(x); let b = cell(x); let c = pick(true)(x); let t = Cell {{ cs: 2.0 }}; let d = t(x); let u = (C1); let e = u(x); }}"));
     assert_eq!(source.codes(), Vec::<String>::new(), "{}", source.message());
-    for call in ["C1(x)", "cell(x)", "pick(true)(x)"] {
+    // a body `let` bound to a template (finding 29) is a holder like the `const` and the param
+    for call in ["C1(x)", "cell(x)", "pick(true)(x)", "t(x)", "u(x)"] {
         assert!(matches!(source.callee_of(call), Some(Callee::Module(_))), "{call} is a placement of Cell");
     }
-    let wrong = TemplateSource::new(&format!("{head}module Top(x: E, y: E) {{ let a = C1(x, y); let c = pick(true)(x, y); }}"));
-    assert_eq!(wrong.codes(), ["E0312", "E0312"], "{}", wrong.message());
+    let wrong = TemplateSource::new(&format!("{head}module Top(x: E, y: E) {{ let a = C1(x, y); let c = pick(true)(x, y); let t = Cell {{ cs: 2.0 }}; let d = t(x, y); }}"));
+    assert_eq!(wrong.codes(), ["E0312", "E0312", "E0312"], "{}", wrong.message());
+    // the instance a placement names is no template (§8.2.14): it is not placed again
+    let instance = TemplateSource::new(&format!("{head}module Top(x: E) {{ let a = C1(x); let b = a(x); }}"));
+    assert!(!instance.codes().is_empty(), "{}", instance.message());
 }
 
 #[test]

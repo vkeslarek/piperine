@@ -54,11 +54,15 @@ fn templates_fold_from_consts_functions_and_two_levels_of_params() {
 
 #[test]
 fn a_template_placement_is_identical_to_the_written_placement() {
-    // §8.4.9 (GN-22 AC 1): `C1(x)`, `cell(x)` and `pick(true)(x)` place the instance `Cell(x) { cs: 30.0 }` places
+    // §8.4.9 (GN-22 AC 1): `C1(x)`, `thirty()(x)`, `cell(x)` and `t(x)` (a body `let`) place the instance `Cell(x) { cs: 30.0 }` places
     let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let c1 = Cell(x) {{ cs: 30.0 }}; }}"), "Top");
     let through_const = format!("{CELL}const C1: Cell = Cell {{ cs: 30.0 }};\nmodule Top() {{ signal x: Electrical; let c1 = C1(x); }}");
     let through_function = format!("{CELL}fn thirty() -> Cell {{ Cell {{ cs: 30.0 }} }}\nmodule Top() {{ signal x: Electrical; let c1 = thirty()(x); }}");
-    for source in [through_const, through_function] {
+    let through_param = format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}");
+    // a body `let` bound to a template is a holder like the others (finding 29), written before or after its placement
+    let through_let = format!("{CELL}module Top() {{ signal x: Electrical; let t = Cell {{ cs: 30.0 }}; let c1 = t(x); }}");
+    let through_let_after = format!("{CELL}module Top() {{ signal x: Electrical; let c1 = t(x); let t = Cell {{ cs: 30.0 }}; }}");
+    for source in [through_const, through_function, through_param, through_let, through_let_after] {
         let ir = Elab::ir(&source, "Top");
         assert_eq!(Placed::first_param(&ir, "Top.c1"), Placed::first_param(&direct, "Top.c1"), "{source}");
         assert_eq!(ir.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()), "{source}");

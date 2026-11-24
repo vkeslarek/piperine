@@ -56,6 +56,18 @@ impl Checker<'_> {
         None
     }
 
+    /// Whether the `let` name `binding` names an instance: its `let`'s value (through parentheses) is a placement of a module
+    /// (§8.2.14), not a template (§8.4.1).
+    pub(super) fn binds_an_instance(&self, binding: DeclId) -> bool {
+        let Some(parent) = self.design.decl_data(binding).parent else { return false };
+        let DeclKind::Let(data) = &self.design.decl_data(parent).kind else { return false };
+        let mut value = data.value;
+        while let ExprKind::Paren(inner) = &self.design.expr_node(value).kind {
+            value = *inner;
+        }
+        matches!(self.callees.get(&value), Some(Callee::Module(_)))
+    }
+
     /// `E0354` (§8.3.10): the name `binding` of a continuous result (a `let`, or a placement's
     /// result) read in a const context (a param default, a `where`, a `const` initializer), where no
     /// probe may be written. Reports and returns true when it is one.

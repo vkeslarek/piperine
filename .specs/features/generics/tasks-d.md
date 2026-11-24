@@ -567,10 +567,11 @@ Proof: run typestempl | test a_template_that_is_not_const_is_e0362 ... ok
 **C90** - A template is never carried: `E0112`. (GN-21, AC 4; T84)
 Proof: run typestempl | test a_template_is_never_carried_e0112 ... ok
 
-**C91** - A placement through a template value or a function result places an instance identical to the written placement. (GN-22, AC 1; T86, T87, T93)
+**C91** - A placement through a template value (a `const`, a param, a body `let` bound to a template, written before or after its placement) or a function result places an instance identical to the written placement. (GN-22, AC 1; T86, T87, T93; fix round 11, finding 29)
 Proof: run typestempl | test a_placement_through_a_template_or_a_function_types_as_its_module ... ok
 Proof: run elabtempl | test a_template_placement_is_identical_to_the_written_placement ... ok
 Proof: run bookmodules | test a_function_that_returns_a_template_places_its_result ... ok
+Proof: run srctempl | test a_template_a_body_let_holds_places_its_module ... ok
 
 **C92** - A param block on a placement through a template value is `E0361`. (GN-22, AC 2; T86)
 Proof: run typestempl | test a_param_block_on_a_template_placement_is_e0361 ... ok
@@ -775,6 +776,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **Fix round 9, finding 26 (done):** the checker records every assignment (`Places::writes`) and `run_variable` names what makes a `let` depend on the run: its initializer, an assigned value, a condition around an assignment (an `if`, a `match`, a loop's condition or range, every condition inside a loop around it), or an assignment in a closure; the `E0133` message names that read (`the variable `s`, whose value depends on the run: it reads a probe`). The elaborator folds an assigned `let` where the choice reads it by running its block's statements from its `let` to the choice (`ConstEval::local_after` over `exec_block`, a statement that does not fold forgets what it assigns), and `collect_choice_params` makes the params of the assigned values and conditions structural. C121.
 **Fix round 10, finding 27 (done):** the checker's open-instance read (`types/reach.rs::open_head`/`open_instance`) walks any chain of children, generated iterations (`p.cells[1]`) included, and a read through a template-placed child of an open `let` (`p.c0.sn`) is a node read; one a context then wants as a value is `E0332` (`Checker::open_template_reads`, `template_items.rs`). Elaboration already merged the reached nodes two levels deep. Three levels deep (`p.mid.c0.sn`) was an unrecorded `P0001` in any order; it is now L82 in `GAPS.md` (owner `spec-closure`; counts 17 loud, `docs.rs` pins follow). C122.
 **Fix round 10, finding 28 (done):** the hang was `structural.rs::collect_choice_params` following a `let` that reads itself through its assignments 64 levels deep with a branching factor (exponential, not infinite). Every follow of a `let` in a choice is now once per `let`: `collect_choice_params` and `node_choice.rs::bind_read_lets` keep a set of followed `let`s instead of a depth, and the checker's `run_variable` judges each variable once. A choice's condition folds with locals of its own (`ConstEval::value_in_a_scope_of_its_own`), so what it assigns is read by the condition and gone after it. The const evaluator's loops stay bounded by 2^24 trips (`E0104`). C123.
+**Fix round 11, finding 29 (done):** a body `let` bound to a template is a template holder like a `const`, a param or a function result: the POM classifier names the template's module through any holder (`classify.rs::template_module`, one path for a template written in place, a `const`, a param or value input of module type, a `let` bound to one and a function's result), and the checker reads such a `let` as a value of the module's type, E0333 being kept for a `let` of a placement (`Checker::binds_an_instance`). C91 gains the `let` forms at each level.
 **Dispatched:** none yet.
 **Walked:** none yet.
 

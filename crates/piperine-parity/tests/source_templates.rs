@@ -106,6 +106,18 @@ fn a_memory_bank_places_its_cell_template() {
 }
 
 #[test]
+fn a_template_a_body_let_holds_places_its_module() {
+    // §8.4.1, §8.4.4 (finding 29): `let big = Dram { cs: 3.0 }; big(a)` and `copy(a)` with `let copy = big;` place the cell, whose
+    // storage node follows the bit line (0.5) scaled by 3
+    let seen = RUN.operating_point("memory.msl", "RigLetTemplates", &["first", "second"]);
+    for value in &seen {
+        let wanted = RustOracle::storage(3.0, 0.5);
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+    assert_eq!(seen.len(), 2);
+}
+
+#[test]
 fn binning_places_the_chosen_model() {
     // GN-22 AC 3 (§8.4.7): each length places the `Bsim` of its own bin, and the bin's `vth0` is the node its model drives
     let seen = RUN.operating_point("binning.msl", "Rig", &["short", "middle", "long"]);
