@@ -201,6 +201,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
             self.refuse(function_file, function_span, &format!("{head}: the const parameter of `resolve` is `usize` (§4 rule 8)"));
             return;
         }
+        self.check_purity(function, head);
         let Some((parameters, result)) = self.checker.declared_signature(function) else { return };
         let takes_drives = matches!(parameters.as_slice(), [Ty::Array(element, Length::Generic(ConstTerm::Param(counted)))] if **element == typed.driven && counted == length);
         if !takes_drives {
@@ -208,6 +209,21 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
         } else if result != typed.value {
             self.refuse(function_file, function_span, &format!("{head}: `resolve` returns `{}`, and `V` is `{}` (§4 rule 8)", result.name(design), typed.value.name(design)));
         }
+    }
+
+    /// `E0203` when `function`, or a function it reaches, reads the environment of the solve or
+    /// emits: `resolve` MUST be of class pure (§4 rule 8), since it runs wherever drives combine.
+    fn check_purity(&mut self, function: DeclId, head: &str) {
+        let design = self.checker.design;
+        let class = self.checker.function_class(function, &mut std::collections::BTreeSet::new());
+        let impure = if class.solve_reading {
+            "solve-reading"
+        } else if class.emitting {
+            "emitting"
+        } else {
+            return;
+        };
+        self.refuse(design.decl_data(function).file, design.decl_data(function).span, &format!("{head}: `resolve` is {impure}, and it MUST be pure (§4 rule 8)"));
     }
 
     /// One `E0203` at `span`.
