@@ -6,17 +6,24 @@
 //! The parameters bind as `expansion.rs` binds them (the checker's slot per parameter; a handle to the caller's carrier,
 //! a `str` to its text, an `Option` to its flag and payload, any other parameter to the argument lowered where the call
 //! stands) and are put back when the body is done, so two calls of one function never see each other's arguments. The
-//! body is its `let`s and its event; a recursion unrolls through the same expansion stack as the one of `analog`.
+//! body is run as the body of a `fn` called inside a `ddx` is (`symbolic.rs`): a `let` and an assignment set a name,
+//! a `for` over constant bounds unrolls, and an `if` or a `match` whose choice folds takes its branch. One that is
+//! decided at the instant chooses between events, so each branch runs on to the end of the body and its disjuncts are
+//! guarded by the choice, `(c && e₁) || (!c && e₂)` (§13 rule 1: a guard is evaluated in the microstep the event fires
+//! in). A recursion unrolls through the same expansion stack as the one of `analog`.
 
 use super::elaborator::Elaboration;
 use super::events::Disjunct;
 use super::expansion::Environment;
+use super::instances::ConcreteValue;
 use super::lower::Scope;
+use super::patterns::Subject;
+use super::symbolic::{ExpandedBody, Flow, Step};
 use super::unroll::Expansion;
 use crate::msl::Span;
-use super::instances::ConcreteValue;
+use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, StmtId, StmtKind};
 use crate::types::{Callee, Substitution, Ty};
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, StmtId, StmtKind};
+use piperine_ir::{Constant, Expr, ValueType};
 
 
 impl Elaboration<'_, '_> {
@@ -118,62 +125,198 @@ impl Elaboration<'_, '_> {
             argument.bind(scope);
         }
         scope.expanding.push(Expansion::begin(function, scope.decisions));
-        let disjuncts = crate::stack::Stack::deep(|| self.event_of_statements(scope, &body.stmts, data.span));
+        let disjuncts = crate::stack::Stack::deep(|| self.run_event_body(scope, &body.stmts, data.span));
         scope.expanding.pop();
         before.restore(scope);
         disjuncts
     }
 
-    /// The disjuncts of the event the statements `stmts` of a body yield: each `let` binds its name, the last statement
-    /// is the event (§13: the return value of a function). `None` after a diagnostic.
-    fn event_of_statements(&mut self, scope: &mut Scope, stmts: &[StmtId], at: Span) -> Option<Vec<Disjunct>> {
-        let Some((last, locals)) = stmts.split_last() else {
+    /// The disjuncts of the event the statements `stmts` of a body yield, run in order (see the module): the value of
+    /// the body is its event (§13: the return value of a function). `None` after a diagnostic.
+    fn run_event_body(&mut self, scope: &mut Scope, stmts: &[StmtId], at: Span) -> Option<Vec<Disjunct>> {
+        if stmts.is_empty() {
             self.unsupported(scope.file, at, "a function that returns an `Event` with an empty body");
             return None;
-        };
-        for stmt in locals {
-            let node = self.design.stmt_node(*stmt).clone();
-            match &node.kind {
-                StmtKind::Empty => {}
-                StmtKind::Let { pat, init: Some(init), else_: None, .. } => self.bind_expanded_let(scope, *pat, *init, node.span)?,
-                _ => {
-                    self.unsupported(scope.file, node.span, "a statement that is no `let` of a name before the event of a function that returns an `Event`");
-                    return None;
+        }
+        let mut steps = Vec::new();
+        self.push_block(&mut steps, stmts, true);
+        self.run_event_steps(scope, steps, at)
+    }
+
+    /// Runs `steps` to the event the body yields. `None` after a diagnostic.
+    fn run_event_steps(&mut self, scope: &mut Scope, mut steps: Vec<Step>, at: Span) -> Option<Vec<Disjunct>> {
+        while let Some(step) = steps.pop() {
+            let flow = match step {
+                Step::Iterate(variable, value) => {
+                    scope.unrolled.bind(variable, Constant::Int(value));
+                    Flow::Next
                 }
+                Step::Leave(variable) => {
+                    scope.unrolled.unbind(variable);
+                    Flow::Next
+                }
+                Step::Statement(stmt) => self.run_event_statement(scope, stmt)?,
+                Step::Expression { expr, value } => self.run_event_expression(scope, expr, value, &mut steps, at)?,
+            };
+            if let Flow::Done(disjuncts) = flow {
+                return Some(disjuncts);
             }
         }
-        let node = self.design.stmt_node(*last).clone();
+        self.unsupported(scope.file, at, "a function that returns an `Event` that does not end in its event");
+        None
+    }
+
+    /// A statement that is no expression: a `let` of a name, or a lone `;`.
+    fn run_event_statement(&mut self, scope: &mut Scope, stmt: StmtId) -> Option<Flow<Vec<Disjunct>>> {
+        let node = self.design.stmt_node(stmt).clone();
         match &node.kind {
-            StmtKind::Expr { expr, semi } if !*semi || self.is_return(*expr) => self.event_of_value(scope, *expr),
+            StmtKind::Empty => Some(Flow::Next),
+            StmtKind::Let { pat, init: Some(init), else_: None, .. } => {
+                self.bind_expanded_let(scope, *pat, *init, node.span, ExpandedBody::EventFunction)?;
+                Some(Flow::Next)
+            }
             _ => {
-                self.unsupported(scope.file, node.span, "a function that returns an `Event` that does not end in its event");
+                self.unsupported(scope.file, node.span, "a statement that is no `let` of a name before the event of a function that returns an `Event`");
                 None
             }
         }
     }
 
-    /// Whether `expr` is a `return` with a value.
-    fn is_return(&self, expr: ExprId) -> bool {
-        matches!(self.design.expr_node(expr).kind, ExprKind::Return(Some(_)))
-    }
-
-    /// The disjuncts of the event the value `expr` of a function body is: a `return`'s value, a block, an `if` whose
-    /// condition is decided at elaboration (the branch it takes), or an event expression. `None` after a diagnostic.
-    fn event_of_value(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Vec<Disjunct>> {
+    /// An expression statement of the body, or the value of the body when `value`.
+    fn run_event_expression(&mut self, scope: &mut Scope, expr: ExprId, value: bool, steps: &mut Vec<Step>, at: Span) -> Option<Flow<Vec<Disjunct>>> {
         let expr = self.peel_parens(expr);
         let node = self.design.expr_node(expr).clone();
         match &node.kind {
-            ExprKind::Return(Some(returned)) => self.event_of_value(scope, *returned),
-            ExprKind::Block(block) => self.event_of_statements(scope, &block.stmts, node.span),
-            ExprKind::If { cond, then, else_ } => match (self.folded_decision(scope, *cond), else_) {
-                (Some(true), _) => self.event_of_statements(scope, &then.stmts, node.span),
-                (Some(false), Some(otherwise)) => self.event_of_value(scope, *otherwise),
-                _ => {
-                    self.unsupported(scope.file, node.span, "an `if` of a function that returns an `Event` whose condition is not decided at elaboration or that has no `else`");
-                    None
-                }
-            },
-            _ => self.disjuncts(scope, expr),
+            ExprKind::Return(Some(returned)) => {
+                let event = vec![Step::Expression { expr: *returned, value: true }];
+                Some(Flow::Done(self.run_event_steps(scope, event, at)?))
+            }
+            ExprKind::Assign { .. } => {
+                self.run_assignment(scope, expr, ExpandedBody::EventFunction)?;
+                Some(Flow::Next)
+            }
+            ExprKind::Block(block) => {
+                self.push_block(steps, &block.stmts, value);
+                Some(Flow::Next)
+            }
+            ExprKind::For { pat, iter, body } => {
+                self.unroll_expanded(scope, *pat, *iter, body, steps, node.span, ExpandedBody::EventFunction)?;
+                Some(Flow::Next)
+            }
+            ExprKind::If { cond, then, else_ } => self.run_event_if(scope, *cond, then, *else_, value, steps, at),
+            ExprKind::Match { scrutinee, arms } if value => self.run_event_match(scope, *scrutinee, arms, steps, at),
+            ExprKind::While { .. } | ExprKind::Loop { .. } | ExprKind::Break(_) | ExprKind::Continue | ExprKind::Return(None) => {
+                self.unsupported(scope.file, node.span, "a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`");
+                None
+            }
+            _ if value => Some(Flow::Done(self.disjuncts(scope, expr)?)),
+            _ => {
+                self.unsupported(scope.file, node.span, "a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`");
+                None
+            }
         }
+    }
+
+    /// `if cond { then } else { else_ }` in the body. A condition that folds takes its branch. One decided at the
+    /// instant forks the run: each branch runs on to the end of the body and the event it yields is guarded by `cond`,
+    /// or by `!cond` for the `else`.
+    fn run_event_if(&mut self, scope: &mut Scope, cond: ExprId, then: &crate::pom::BlockNode, else_: Option<ExprId>, value: bool, steps: &mut Vec<Step>, at: Span) -> Option<Flow<Vec<Disjunct>>> {
+        let span = self.design.expr_node(cond).span;
+        if matches!(self.design.expr_node(cond).kind, ExprKind::Let { .. }) {
+            self.unsupported(scope.file, span, "an `if let` in a function that returns an `Event`");
+            return None;
+        }
+        if let Some(holds) = self.folded_decision(scope, cond) {
+            match (holds, else_) {
+                (true, _) => self.push_block(steps, &then.stmts, value),
+                (false, Some(otherwise)) => self.push_else(scope, otherwise, value, steps, ExpandedBody::EventFunction)?,
+                (false, None) => {}
+            }
+            return Some(Flow::Next);
+        }
+        let before = Environment::of(scope);
+        scope.decisions += 1;
+        let mut taken = steps.clone();
+        self.push_block(&mut taken, &then.stmts, value);
+        let first = self.run_event_steps(scope, taken, at);
+        before.clone().restore(scope);
+        let mut skipped = steps.clone();
+        let pushed = match else_ {
+            Some(otherwise) => self.push_else(scope, otherwise, value, &mut skipped, ExpandedBody::EventFunction),
+            None => Some(()),
+        };
+        let second = pushed.and_then(|()| self.run_event_steps(scope, skipped, at));
+        before.restore(scope);
+        scope.decisions -= 1;
+        let (mut first, mut second) = (first?, second?);
+        for disjunct in &mut first {
+            self.guard_by_condition(scope, cond, false, disjunct)?;
+        }
+        for disjunct in &mut second {
+            self.guard_by_condition(scope, cond, true, disjunct)?;
+        }
+        first.extend(second);
+        Some(Flow::Done(first))
+    }
+
+    /// The condition `cond`, or its negation, joins the guard of `disjunct`; each disjunct has its own lowering (an IR
+    /// expression has one place). `None` after a diagnostic.
+    fn guard_by_condition(&mut self, scope: &mut Scope, cond: ExprId, negated: bool, disjunct: &mut Disjunct) -> Option<()> {
+        let locals = scope.locals.len();
+        let mut lowered = self.lower_expr(scope, cond)?;
+        if negated {
+            let origin = self.expr_origin(cond);
+            lowered = self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Not, expr: lowered }, ValueType::Bool, origin);
+        }
+        let span = self.design.expr_node(cond).span;
+        self.add_conjunct(scope, lowered, locals, span, disjunct)
+    }
+
+    /// `match scrutinee { arms }` that yields the event. A scrutinee that folds takes its arm. One decided at the instant
+    /// forks the run per arm, the event of arm `k` guarded by the tests that select it: no earlier pattern matched
+    /// and this one did. An arm with a guard or a name in its pattern is refused. `None` after a diagnostic.
+    fn run_event_match(&mut self, scope: &mut Scope, scrutinee: ExprId, arms: &[Arm], steps: &mut Vec<Step>, at: Span) -> Option<Flow<Vec<Disjunct>>> {
+        if let Some(selected) = self.folded_selection(scope, scrutinee, arms) {
+            steps.push(Step::Expression { expr: arms[selected].body, value: true });
+            return Some(Flow::Next);
+        }
+        let subject = if matches!(self.typed(scrutinee), Some(Ty::Option(_))) { Subject::RereadPair(scrutinee) } else { Subject::Reread(scrutinee) };
+        for arm in arms {
+            let span = self.design.expr_node(arm.body).span;
+            if arm.guard.is_some() {
+                self.unsupported(scope.file, span, "a `match` arm with a guard in a function that returns an `Event`");
+                return None;
+            }
+            if !self.test_pattern(scope, &subject, arm.pat)?.bindings.is_empty() {
+                self.unsupported(scope.file, span, "a `match` arm whose pattern binds a name, in a function that returns an `Event`");
+                return None;
+            }
+        }
+        scope.decisions += 1;
+        let all = self.event_of_arms(scope, scrutinee, arms, at);
+        scope.decisions -= 1;
+        Some(Flow::Done(all?))
+    }
+
+    /// The disjuncts of every arm of a `match` on `scrutinee`, each guarded by the tests that select its arm.
+    fn event_of_arms(&mut self, scope: &mut Scope, scrutinee: ExprId, arms: &[Arm], at: Span) -> Option<Vec<Disjunct>> {
+        let before = Environment::of(scope);
+        let mut all = Vec::new();
+        for (position, arm) in arms.iter().enumerate() {
+            let body = vec![Step::Expression { expr: arm.body, value: true }];
+            let found = self.run_event_steps(scope, body, at);
+            before.clone().restore(scope);
+            let last = position + 1 == arms.len();
+            let earlier: Vec<_> = arms[..position].iter().map(|earlier| earlier.pat).collect();
+            for mut disjunct in found? {
+                let tests = self.standalone_arm_tests(scope, scrutinee, &earlier, (!last).then_some(arm.pat))?;
+                let span = self.design.expr_node(arm.body).span;
+                for test in tests {
+                    self.add_conjunct(scope, test, scope.locals.len(), span, &mut disjunct)?;
+                }
+                all.push(disjunct);
+            }
+        }
+        Some(all)
     }
 }

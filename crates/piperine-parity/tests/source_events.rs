@@ -497,3 +497,14 @@ fn an_event_function_binds_named_and_left_out_arguments() {
     assert!(run.instants(AnalysisKind::Transient, "positional").is_empty(), "`a` positional false");
     assert!(run.instants(AnalysisKind::Transient, "neither").is_empty(), "`b` left out is false");
 }
+
+#[test]
+fn an_event_function_chooses_between_events_by_a_value_read_at_the_instant() {
+    // §13 rules 1 and 7 (UE-04): `pick(clk, s)` is `clk.rise()` while `s` holds and `clk.fall()` while it does not. `s` is
+    // low until 25 ns, so the rise at 10 ns is not the event (the fall is) and the fall at 20 ns fires; the rise at 30 ns
+    // fires, `s` being high. A `match` over the flag and an `if` over a counter the body builds with a `for` choose alike.
+    let run = Scenario::of("choice.msl", "ChoiceBench").transient(50e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "pick"), [20 * NS, 30 * NS], "an `if` over a flag");
+    assert_eq!(run.instants(AnalysisKind::Transient, "chosen"), [20 * NS, 30 * NS], "a `match` over a flag");
+    assert_eq!(run.instants(AnalysisKind::Transient, "counted"), [20 * NS, 30 * NS], "an `if` over a `let` reassigned by a `for`");
+}

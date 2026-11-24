@@ -42,10 +42,30 @@ pub(super) enum Step {
     Leave(DeclId),
 }
 
+/// What a body is expanded for: it words the refusal of a form the expansion cannot run, so a diagnostic names the
+/// construct the author wrote.
+#[derive(Clone, Copy)]
+pub(super) enum ExpandedBody {
+    /// A `fn` called inside a differentiated value (§14.2.3).
+    Differentiated,
+    /// A `fn` whose result is an `Event` (§13 rule 7).
+    EventFunction,
+}
+
+impl ExpandedBody {
+    /// The body as a diagnostic names it.
+    fn describes(self) -> &'static str {
+        match self {
+            ExpandedBody::Differentiated => "a `fn` called inside a `ddx`",
+            ExpandedBody::EventFunction => "a `fn` that returns an `Event`",
+        }
+    }
+}
+
 /// Where a step leaves the run: the body is done with a value, or the next step runs.
-enum Flow {
+pub(super) enum Flow<T = LoweredExpr> {
     /// The body is done: the value of the call.
-    Done(LoweredExpr),
+    Done(T),
     /// The next step runs.
     Next,
 }
@@ -84,7 +104,7 @@ impl Elaboration<'_, '_> {
 
     /// Pushes the statements `stmts` of a block on `steps`, the first to run last; the last of them, written with
     /// no `;`, is the value when `value`.
-    fn push_block(&self, steps: &mut Vec<Step>, stmts: &[StmtId], value: bool) {
+    pub(super) fn push_block(&self, steps: &mut Vec<Step>, stmts: &[StmtId], value: bool) {
         for (index, stmt) in stmts.iter().enumerate().rev() {
             steps.push(match &self.design.stmt_node(*stmt).kind {
                 StmtKind::Expr { expr, semi } => Step::Expression { expr: *expr, value: value && !*semi && index + 1 == stmts.len() },
@@ -100,7 +120,7 @@ impl Elaboration<'_, '_> {
         match &node.kind {
             StmtKind::Empty => Some(Flow::Next),
             StmtKind::Let { pat, init: Some(init), else_: None, .. } => {
-                self.bind_expanded_let(scope, *pat, *init, node.span)?;
+                self.bind_expanded_let(scope, *pat, *init, node.span, ExpandedBody::Differentiated)?;
                 Some(Flow::Next)
             }
             _ => {
@@ -111,9 +131,9 @@ impl Elaboration<'_, '_> {
     }
 
     /// `let name = init;`: the name holds the lowered initializer (an `Option` its pair, a `str` its text).
-    pub(super) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span) -> Option<()> {
+    pub(super) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span, body: ExpandedBody) -> Option<()> {
         let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(pat).kind else {
-            self.unsupported(scope.file, span, "a `let` of a pattern that is no name in a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, span, &format!("a `let` of a pattern that is no name in {}", body.describes()));
             return None;
         };
         match self.typed_local(binding) {
@@ -152,7 +172,7 @@ impl Elaboration<'_, '_> {
         match &node.kind {
             ExprKind::Return(Some(returned)) => Some(Flow::Done(self.lower_expr(scope, *returned)?)),
             ExprKind::Assign { .. } => {
-                self.run_assignment(scope, expr)?;
+                self.run_assignment(scope, expr, ExpandedBody::Differentiated)?;
                 Some(Flow::Next)
             }
             ExprKind::If { cond, then, else_ } => self.run_if(scope, *cond, then, *else_, value, steps, at),
@@ -161,7 +181,7 @@ impl Elaboration<'_, '_> {
                 Some(Flow::Next)
             }
             ExprKind::For { pat, iter, body } => {
-                self.unroll_expanded(scope, *pat, *iter, body, steps, node.span)?;
+                self.unroll_expanded(scope, *pat, *iter, body, steps, node.span, ExpandedBody::Differentiated)?;
                 Some(Flow::Next)
             }
             ExprKind::While { .. } | ExprKind::Loop { .. } => {
@@ -181,7 +201,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `name = value;` and `name op= value;`: the name of a parameter or a `let` holds the new expression.
-    fn run_assignment(&mut self, scope: &mut Scope, assignment: ExprId) -> Option<()> {
+    pub(super) fn run_assignment(&mut self, scope: &mut Scope, assignment: ExprId, body: ExpandedBody) -> Option<()> {
         let node = self.design.expr_node(assignment).clone();
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return None };
         let target = self.peel_parens(lhs);
@@ -193,12 +213,12 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let Some(decl) = named else {
-            self.unsupported(scope.file, node.span, "an assignment to something that is no name of a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, node.span, &format!("an assignment to something that is no name of {}", body.describes()));
             return None;
         };
         let Some(op) = op else { return self.set_expanded_name(scope, decl, rhs) };
         if matches!(self.types.callee(assignment), Some(crate::types::Callee::Method(_))) {
-            self.unsupported(scope.file, node.span, "a compound assignment through an operator of a type, in a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, node.span, &format!("a compound assignment through an operator of a type, in {}", body.describes()));
             return None;
         }
         let old = scope.values[&decl];
@@ -221,7 +241,7 @@ impl Elaboration<'_, '_> {
         if let Some(holds) = self.folded_decision(scope, cond) {
             match (holds, else_) {
                 (true, _) => self.push_block(steps, &then.stmts, value),
-                (false, Some(otherwise)) => self.push_else(scope, otherwise, value, steps)?,
+                (false, Some(otherwise)) => self.push_else(scope, otherwise, value, steps, ExpandedBody::Differentiated)?,
                 (false, None) => {}
             }
             return Some(Flow::Next);
@@ -241,7 +261,7 @@ impl Elaboration<'_, '_> {
         before.clone().restore(scope);
         let mut skipped = steps.clone();
         let pushed = match else_ {
-            Some(otherwise) => self.push_else(scope, otherwise, value, &mut skipped),
+            Some(otherwise) => self.push_else(scope, otherwise, value, &mut skipped, ExpandedBody::Differentiated),
             None => Some(()),
         };
         let second = pushed.and_then(|()| self.run_steps(scope, skipped, at));
@@ -253,12 +273,12 @@ impl Elaboration<'_, '_> {
     }
 
     /// The `else` of an `if`: a block, or the `if` of an `else if`.
-    fn push_else(&mut self, scope: &Scope, otherwise: ExprId, value: bool, steps: &mut Vec<Step>) -> Option<()> {
+    pub(super) fn push_else(&mut self, scope: &Scope, otherwise: ExprId, value: bool, steps: &mut Vec<Step>, body: ExpandedBody) -> Option<()> {
         match &self.design.expr_node(otherwise).kind {
             ExprKind::Block(block) => self.push_block(steps, &block.stmts, value),
             ExprKind::If { .. } => steps.push(Step::Expression { expr: otherwise, value }),
             _ => {
-                self.unsupported(scope.file, self.design.expr_node(otherwise).span, "an `else` that is no block or `if` in a `fn` called inside a `ddx`");
+                self.unsupported(scope.file, self.design.expr_node(otherwise).span, &format!("an `else` that is no block or `if` in {}", body.describes()));
                 return None;
             }
         }
@@ -266,31 +286,31 @@ impl Elaboration<'_, '_> {
     }
 
     /// `for i in lo..hi { body }` over bounds that fold: the body once per value of `i`, pushed on `steps`.
-    fn unroll_expanded(&mut self, scope: &mut Scope, pat: crate::pom::PatId, iter: ExprId, body: &BlockNode, steps: &mut Vec<Step>, span: Span) -> Option<()> {
+    pub(super) fn unroll_expanded(&mut self, scope: &mut Scope, pat: crate::pom::PatId, iter: ExprId, body: &BlockNode, steps: &mut Vec<Step>, span: Span, context: ExpandedBody) -> Option<()> {
         let iter = self.peel_parens(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(iter).kind else {
-            self.unsupported(scope.file, span, "a `for` that is not over a range with both bounds, in a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, span, &format!("a `for` that is not over a range with both bounds, in {}", context.describes()));
             return None;
         };
         let variable = match self.design.pat_node(pat).kind {
             PatKind::Ident { binding, sub: None, .. } => Some(binding),
             PatKind::Wild => None,
             _ => {
-                self.unsupported(scope.file, span, "a `for` whose variable is no name, in a `fn` called inside a `ddx`");
+                self.unsupported(scope.file, span, &format!("a `for` whose variable is no name, in {}", context.describes()));
                 return None;
             }
         };
         let (Some(Constant::Int(first)), Some(Constant::Int(last))) = (self.fold_scalar(scope, lo), self.fold_scalar(scope, hi)) else {
-            self.unsupported(scope.file, span, "a `for` whose bounds do not fold to constants, in a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, span, &format!("a `for` whose bounds do not fold to constants, in {}", context.describes()));
             return None;
         };
         let end = if inclusive { last + 1 } else { last };
         if end - first > ITERATIONS {
-            self.unsupported(scope.file, span, "a `for` of more than 4096 iterations in a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, span, &format!("a `for` of more than 4096 iterations in {}", context.describes()));
             return None;
         }
         if self.body_exprs(body).iter().any(|e| matches!(self.design.expr_node(*e).kind, ExprKind::Break(_) | ExprKind::Continue | ExprKind::While { .. } | ExprKind::Loop { .. })) {
-            self.unsupported(scope.file, span, "a `break`, a `continue` or a nested `while` in a loop of a `fn` called inside a `ddx`");
+            self.unsupported(scope.file, span, &format!("a `break`, a `continue` or a nested `while` in a loop of {}", context.describes()));
             return None;
         }
         if let Some(variable) = variable {

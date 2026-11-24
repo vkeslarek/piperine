@@ -786,10 +786,27 @@ fn an_event_function_call_lowers_to_its_body_event() {
     assert_eq!(Read { ir: &read }.body("R").events().len(), 3, "a body that reads the call appends its event");
 }
 
-/// The elaborated IR of `module M` reacting on `head`, with `functions` written before it.
-fn reaction_on(functions: &str, head: &str) -> String {
-    let module = "module M(in clk: Bit, in en: Bit, out q: Bit = false) { }\n";
-    Elab::ir(&format!("{functions}{module}digital for M {{ on {head} {{ q <- true; }} }}"), "M").print_structural()
+/// The reaction of `module M(clk, en, q)` on a head, over functions written before it.
+struct Head;
+
+impl Head {
+    /// The module the reaction is of.
+    const MODULE: &'static str = "module M(in clk: Bit, in en: Bit, out q: Bit = false) { }\n";
+
+    /// The source of `module M` reacting on `head`, with `functions` written before it.
+    fn source(functions: &str, head: &str) -> String {
+        format!("{functions}{}digital for M {{ on {head} {{ q <- true; }} }}", Head::MODULE)
+    }
+
+    /// The elaborated IR of `module M` reacting on `head`, with `functions` written before it.
+    fn reaction(functions: &str, head: &str) -> String {
+        Elab::ir(&Head::source(functions, head), "M").print_structural()
+    }
+
+    /// The diagnostics the elaboration of `module M` reacting on `head` is refused with.
+    fn refusal(functions: &str, head: &str) -> Vec<piperine_lang::pom::DesignDiagnostic> {
+        Elab::run(&Head::source(functions, head), "M").expect_err("the event function is refused")
+    }
 }
 
 #[test]
@@ -803,20 +820,20 @@ fn an_event_function_binds_its_arguments_as_a_call_does() {
         Some(value) => format!("if true {{ {value} }} else {{ {default} }}"),
         None => format!("if false {{ false }} else {{ {default} }}"),
     };
-    let by_hand = |a: Option<bool>, b: Option<bool>| reaction_on("", &format!("clk.rise() && ({}) && ({})", unwrapped(a, true), unwrapped(b, false)));
-    assert_eq!(reaction_on(function, "edge(clk, b: Some(true))"), by_hand(None, Some(true)), "a named argument binds `b`, `a` is left out");
-    assert_eq!(reaction_on(function, "edge(clk)"), by_hand(None, None), "both left out");
-    assert_eq!(reaction_on(function, "edge(clk, Some(false))"), by_hand(Some(false), None), "a positional `Some`");
-    assert_eq!(reaction_on(function, "edge(clk, b: Some(true), a: Some(false))"), by_hand(Some(false), Some(true)), "named arguments after the positional one, in any order");
-    assert_ne!(reaction_on(function, "edge(clk, b: Some(true))"), reaction_on(function, "edge(clk, a: Some(true))"), "`a` and `b` are not interchanged");
+    let by_hand = |a: Option<bool>, b: Option<bool>| Head::reaction("", &format!("clk.rise() && ({}) && ({})", unwrapped(a, true), unwrapped(b, false)));
+    assert_eq!(Head::reaction(function, "edge(clk, b: Some(true))"), by_hand(None, Some(true)), "a named argument binds `b`, `a` is left out");
+    assert_eq!(Head::reaction(function, "edge(clk)"), by_hand(None, None), "both left out");
+    assert_eq!(Head::reaction(function, "edge(clk, Some(false))"), by_hand(Some(false), None), "a positional `Some`");
+    assert_eq!(Head::reaction(function, "edge(clk, b: Some(true), a: Some(false))"), by_hand(Some(false), Some(true)), "named arguments after the positional one, in any order");
+    assert_ne!(Head::reaction(function, "edge(clk, b: Some(true))"), Head::reaction(function, "edge(clk, a: Some(true))"), "`a` and `b` are not interchanged");
 }
 
 #[test]
 fn an_event_function_body_may_hold_lets_before_its_event() {
     // §3 rules 6 and 15 with §13: a `let` of the body names a value of the call's arguments and the event reads it
     let function = "fn armed(c: Bit, e: Bit) -> Event { let ready = e; c.rise() && ready }\n";
-    assert_eq!(reaction_on(function, "armed(clk, en)"), reaction_on("", "clk.rise() && en"));
-    assert_eq!(reaction_on(function, "armed(en, clk)"), reaction_on("", "en.rise() && clk"), "the let reads the argument of this call");
+    assert_eq!(Head::reaction(function, "armed(clk, en)"), Head::reaction("", "clk.rise() && en"));
+    assert_eq!(Head::reaction(function, "armed(en, clk)"), Head::reaction("", "en.rise() && clk"), "the let reads the argument of this call");
 }
 
 #[test]
@@ -824,7 +841,7 @@ fn an_event_function_may_recurse_while_its_decisions_fold() {
     // §3 rule 12: `any(clk, 2)` unrolls to three rise events of one reaction (`n` = 2, 1, 0), the decision `n <= 0` folding
     // in each call; the same recursion without its end is `E0126` naming the function
     let function = "fn any(c: Bit, n: i32) -> Event { if n <= 0 { c.rise() } else { c.rise() || any(c, n - 1) } }\n";
-    assert_eq!(reaction_on(function, "any(clk, 2)"), reaction_on("", "clk.rise() || clk.rise() || clk.rise()"));
+    assert_eq!(Head::reaction(function, "any(clk, 2)"), Head::reaction("", "clk.rise() || clk.rise() || clk.rise()"));
     let endless = format!("fn any(c: Bit) -> Event {{ c.rise() || any(c) }}\nmodule M(in clk: Bit, out q: Bit = false) {{ }}\ndigital for M {{ on any(clk) {{ q <- true; }} }}");
     let refused = Elab::run(&endless, "M").expect_err("a recursion that never ends");
     assert_eq!(Elab::codes(&refused), ["E0126"]);
@@ -836,10 +853,10 @@ fn an_event_method_runs_the_function_its_impl_gives() {
     // §3.7.8 with §13 rule 7: a trait function that ends in `;` and returns `Event` is the body its `impl` gives for the
     // receiver's type, called as a method, by a path and through a bound
     let functions = "trait Armed { fn fires(self, c: Bit) -> Event; }\nimpl Armed for bool { fn fires(self, c: Bit) -> Event { c.rise() && self } }\nfn through<T: Armed>(a: T, c: Bit) -> Event { a.fires(c) }\n";
-    let by_hand = reaction_on("", "clk.rise() && en");
-    assert_eq!(reaction_on(functions, "en.fires(clk)"), by_hand, "as a method");
-    assert_eq!(reaction_on(functions, "Armed::fires(en, clk)"), by_hand, "by a path");
-    assert_eq!(reaction_on(functions, "through(en, clk)"), by_hand, "through a bound");
+    let by_hand = Head::reaction("", "clk.rise() && en");
+    assert_eq!(Head::reaction(functions, "en.fires(clk)"), by_hand, "as a method");
+    assert_eq!(Head::reaction(functions, "Armed::fires(en, clk)"), by_hand, "by a path");
+    assert_eq!(Head::reaction(functions, "through(en, clk)"), by_hand, "through a bound");
 }
 
 #[test]
@@ -863,6 +880,59 @@ fn an_event_function_as_the_result_of_a_module_is_its_event_in_the_module_frame(
     // §13 (UE-04 AC 1): `module Ready(..) -> Event { handshake(c, e) }` placed in a head is the event of its body, over the
     // module's own ports (`Ready$0.c`, `Ready$0.e`)
     let functions = "fn handshake(c: Bit, e: Bit) -> Event { c.rise() && e }\nmodule Ready(in c: Bit, in e: Bit) -> Event { handshake(c, e) }\n";
-    let printed = reaction_on(functions, "Ready(clk, en)");
+    let printed = Head::reaction(functions, "Ready(clk, en)");
     assert!(printed.contains("event E0 changed Ready$0.c guard (((!Ready$0.c.prev()) && Ready$0.c) && Ready$0.e)"), "{printed}");
+}
+
+#[test]
+fn an_event_function_chooses_between_events_by_a_value_decided_at_the_instant() {
+    // §13 rules 1 and 7 with §3 rules 6 and 15: an `if` whose condition reads a carrier chooses between events, each
+    // branch's event guarded by the choice, `(c && e1) || (!c && e2)`; a `let` reassigned in a `for` over constant bounds
+    // is read by the choice; a `match` over the carrier is one arm per disjunct
+    let by_if = "fn pick(c: Bit, s: Bit) -> Event { if s { c.rise() } else { c.fall() } }\n";
+    assert_eq!(Head::reaction(by_if, "pick(clk, en)"), Head::reaction("", "(clk.rise() && en) || (clk.fall() && !en)"));
+    assert_eq!(Head::reaction(by_if, "pick(clk, en)"), Head::reaction(by_if, "pick(clk, en)"));
+    assert_ne!(Head::reaction(by_if, "pick(clk, en)"), Head::reaction(by_if, "pick(en, clk)"), "the choice reads the argument of the call");
+    let chain = "fn tier(c: Bit, a: Bit, b: Bit) -> Event { if a { c.rise() } else if b { c.fall() } else { c.changed() } }\n";
+    assert_eq!(Head::reaction(chain, "tier(clk, en, en)"), Head::reaction("", "(clk.rise() && en) || ((clk.fall() && en) && !en) || (clk.changed() && !en && !en)"), "an `else if` nests the choice");
+    let counted = "fn counted(c: Bit, s: Bit) -> Event { let n = 0; for i in 0..3 { n += 1; } if s && n == 3 { c.rise() } else { c.fall() } }\n";
+    let found = Elab::ir(&Head::source(counted, "counted(clk, en)"), "M");
+    assert_eq!(Read { ir: &found }.body("M").events().len(), 2, "a `let` built by a `for` and read by the choice: both branches are events");
+    let matched = "fn chosen(c: Bit, s: Bit) -> Event { match s { true => c.rise(), false => c.fall() } }\n";
+    let found = Elab::ir(&Head::source(matched, "chosen(clk, en)"), "M");
+    assert_eq!(Read { ir: &found }.body("M").events().len(), 2, "one event per arm of a `match` over a carrier");
+}
+
+#[test]
+fn an_event_function_with_an_arm_it_cannot_guard_is_refused_by_name() {
+    // an arm with a guard of its own, or a name bound by its pattern, has no disjunct of this form (GAPS §4 L76)
+    let guarded = "fn g(c: Bit, s: Bit) -> Event { match s { true if c => c.rise(), _ => c.fall() } }\n";
+    let refused = Head::refusal(guarded, "g(clk, en)");
+    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert!(refused[0].diagnostic.message.contains("a `match` arm with a guard in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
+    let binding = "fn b(c: Bit, s: Bit) -> Event { match s { x => c.rise() } }\n";
+    let refused = Head::refusal(binding, "b(clk, en)");
+    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert!(refused[0].diagnostic.message.contains("a `match` arm whose pattern binds a name, in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
+}
+
+#[test]
+fn an_event_function_that_emits_or_loops_without_end_is_refused_by_name() {
+    // §3 rule 5 with §19 rule 10: a `fn` that calls `emit!` is callable only in a reaction or `analog`, and an event
+    // function is called in an event position, so the checker refuses it with `E0122` before elaboration (the spec's table
+    // of where a `fn` is callable); a `while` has no finite reading at elaboration
+    let emitting = "fn noisy(c: Bit) -> Event { emit!(\"x\", a = 1); c.rise() }\n";
+    let refused = Head::refusal(emitting, "noisy(clk)");
+    assert_eq!(Elab::codes(&refused), ["E0122"], "{refused:?}");
+    let looping = "fn spin(c: Bit) -> Event { while false { } c.rise() }\n";
+    let refused = Head::refusal(looping, "spin(clk)");
+    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert!(refused[0].diagnostic.message.contains("a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
+    let option = "fn some(c: Bit, o: Option<bool>) -> Event { if let Some(x) = o { c.rise() } else { c.fall() } }\n";
+    let refused = Head::refusal(option, "some(clk)");
+    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert!(refused[0].diagnostic.message.contains("an `if let` in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
+    let pattern = "fn pair(c: Bit) -> Event { let (a, b) = (1, 2); c.rise() }\n";
+    let refused = Head::refusal(pattern, "pair(clk)");
+    assert!(refused[0].diagnostic.message.contains("a `let` of a pattern that is no name in a `fn` that returns an `Event`"), "{}", refused[0].diagnostic.message);
 }

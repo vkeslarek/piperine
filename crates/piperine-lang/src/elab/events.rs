@@ -323,18 +323,25 @@ impl Elaboration<'_, '_> {
             _ => {
                 let before = scope.locals.len();
                 let lowered = self.lower_expr(scope, expr)?;
-                if self.continuous(lowered) || self.reads_local(lowered) {
-                    d.continuous.push(lowered);
-                } else if scope.locals.len() > before {
-                    let span = self.design.expr_node(expr).span;
-                    self.unsupported(scope.file, span, "a `let` in the discrete part of a guard");
-                    return None;
-                } else {
-                    d.discrete.push(lowered);
-                }
-                Some(())
+                let span = self.design.expr_node(expr).span;
+                self.add_conjunct(scope, lowered, before, span, d)
             }
         }
+    }
+
+    /// The lowered `bool` `conjunct` joins the guard of `d`: the continuous part when it reads a probe or a local, the
+    /// discrete part otherwise. `locals` is how many locals the scope held before `conjunct` was lowered, and a `let`
+    /// it added to the discrete part is refused. `None` after a diagnostic.
+    pub(super) fn add_conjunct(&mut self, scope: &mut Scope, conjunct: LoweredExpr, locals: usize, span: crate::msl::Span, d: &mut Disjunct) -> Option<()> {
+        if self.continuous(conjunct) || self.reads_local(conjunct) {
+            d.continuous.push(conjunct);
+        } else if scope.locals.len() > locals {
+            self.unsupported(scope.file, span, "a `let` in the discrete part of a guard");
+            return None;
+        } else {
+            d.discrete.push(conjunct);
+        }
+        Some(())
     }
 
     /// Whether the lowered expression `expr` reads a local of the body being lowered: a conjunct that
