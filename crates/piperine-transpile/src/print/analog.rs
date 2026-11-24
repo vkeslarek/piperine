@@ -64,6 +64,8 @@ impl<'a> AnalogPrinter<'a> {
             session_parameters: (0..body.session_parameters().len() as u32).map(|k| Text::generated(&format!("simparam{k}"))).collect(),
             param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
+            others: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "others")).collect(),
+            driving: (0..body.carriers().len() as u32).map(|c| ValuePrinter::driving_name(body, c)).collect(),
         };
         let sums = ContributionSums::needed(body).then(|| ContributionSums::of(body));
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);

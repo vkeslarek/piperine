@@ -106,7 +106,7 @@ pub struct ValuePrinter<'a> {
     /// The owner's origin: where an error with no expression of its own points.
     pub(super) origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
-    analog: Option<Reads>,
+    pub(super) analog: Option<Reads>,
     /// The accumulators a contribution adds to, in the structured form of an `analog` block
     /// (`ContributionSums`); `None` where a contribution has no lowering.
     sums: Option<ContributionSums>,
@@ -156,6 +156,11 @@ pub struct Reads {
     pub param_previous: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
     pub previous: Vec<String>,
+    /// By body carrier: the variable its others pin was decoded into (`s.others()`, resolved-nets RN-03).
+    pub others: Vec<String>,
+    /// By body carrier: the variable holding whether the drive net its pin reads is present (the `driving` byte, read
+    /// by a `resolve` of the carriers it gathers).
+    pub driving: Vec<String>,
 }
 
 impl<'a> ValuePrinter<'a> {
@@ -418,6 +423,29 @@ impl<'a> ValuePrinter<'a> {
         Ok(t.finish())
     }
 
+    /// The call of `function` with the printed arguments `printed`: the environment reads and the depth argument it
+    /// takes follow them, and a generic function the arguments do not fix names its `Real` type.
+    pub(super) fn call_text(&self, function: FunctionId, mut printed: Vec<String>) -> String {
+        let function = &function;
+        let params = self.ir.function(*function).params();
+        printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
+        printed.extend(self.depth_argument(*function));
+        // a generic function called with no argument that fixes its `Real` type names it
+        let items = TypeItems::new(self.ir);
+        // `R` is fixed by what the call passes or returns; a function that holds a real only in
+        // a local (a struct field) leaves it open, so the call names it
+        let ret = self.ir.function(*function).ret();
+        let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
+        // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
+        // generic call leaves it open
+        // a scalar result alone, with arguments that hold no real (a method of an enum that returns an `f64`),
+        // leaves `R` open where the call is an argument of a generic function, so the call names it
+        let result_alone = !params.is_empty() && !params.iter().any(|p| items.holds_real(&p.ty));
+        let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !result_alone && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
+        let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
+        format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", "))
+    }
+
     /// Whether `function` is generic over `Real`: a real (or a type holding one) is among its params, its return, its
     /// locals, or it reads an environment real (every read but `analysis(..)`, a `bool`).
     pub fn is_generic(ir: &Ir, function: FunctionId) -> bool {
@@ -509,6 +537,7 @@ impl<'a> ValuePrinter<'a> {
                         exprs.extend(args);
                     }
                     Expr::FunctionRef(function) => functions.push(*function),
+                    Expr::Resolve { by_count, .. } => functions.extend(by_count.iter().copied()),
                     other => Self::children(ir, other, &mut exprs),
                 }
             }
@@ -725,8 +754,11 @@ impl<'a> ValuePrinter<'a> {
             Expr::CarrierElement { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Value),
             Expr::ElementPrevious { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Previous),
             Expr::ElementChanged { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Changed),
-            Expr::Others(_) => Err(self.unsupported(e, "others() of a resolved carrier")),
-            Expr::Resolve { .. } => Err(self.unsupported(e, "a resolve of drives")),
+            Expr::Others(c) => match self.analog.as_ref().and_then(|r| r.others.get(*c as usize)) {
+                Some(name) => Ok(self.carrier_value(e, self.read(name))),
+                None => Err(self.unsupported(e, "others() of a resolved carrier")),
+            },
+            Expr::Resolve { by_count, drives, except } => self.resolve_piece(e, by_count, drives, *except),
             Expr::Carrier(c) if self.facts.get(*c as usize).is_some_and(|f| f.count.is_some()) => self.whole_piece(e, *c),
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
                 Some(name) => Ok(self.carrier_value(e, self.read(name))),
@@ -746,24 +778,8 @@ impl<'a> ValuePrinter<'a> {
                 Ok(Piece::new(text, Prec::Low))
             }
             Expr::Call { function, args } => {
-                let params = self.ir.function(*function).params();
-                let mut printed = args.iter().map(|a| self.expr(*a)).collect::<Result<Vec<_>, Error>>()?;
-                printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
-                printed.extend(self.depth_argument(*function));
-                // a generic function called with no argument that fixes its `Real` type names it
-                let items = TypeItems::new(self.ir);
-                // `R` is fixed by what the call passes or returns; a function that holds a real only in
-                // a local (a struct field) leaves it open, so the call names it
-                let ret = self.ir.function(*function).ret();
-                let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
-                // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
-                // generic call leaves it open
-                // a scalar result alone, with arguments that hold no real (a method of an enum that returns an `f64`),
-                // leaves `R` open where the call is an argument of a generic function, so the call names it
-                let result_alone = !params.is_empty() && !params.iter().any(|p| items.holds_real(&p.ty));
-                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !result_alone && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
-                let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
-                atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
+                let printed = args.iter().map(|a| self.expr(*a)).collect::<Result<Vec<_>, Error>>()?;
+                Ok(Piece::new(self.call_text(*function, printed), Prec::Atom))
             }
             Expr::Math { f, args } => {
                 let [arg] = args.as_slice() else {

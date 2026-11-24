@@ -462,9 +462,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `resolve_calls_the_instance_of_the_present_count` and `a_drive_write_marks_the_drive_present` pass under `**Run transresolve**`
-- [ ] Transpile goldens byte-identical
-- [ ] Gate check passes: Full
+- [x] `resolve_calls_the_instance_of_the_present_count` and `a_drive_write_marks_the_drive_present` pass under `**Run transresolve**`
+- [x] Transpile goldens byte-identical
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
