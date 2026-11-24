@@ -39,6 +39,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookgenerics**: `cargo test -p piperine --test book_generics`
 **Run bookwelcome**: `cargo test -p piperine --test book_welcome`
 **Run clibook**: `cargo test -p piperine-cli --test book`
+**Run typescarrarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
+**Run paritycarrarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
@@ -974,10 +976,14 @@ Proof: run typesgen | test no_intrinsic_stands_for_cast_or_same ... ok
 Proof: run docs | test gaps_drops_the_cast_and_same_intrinsics ... ok
 
 
-**C120** - The Book listings that contradicted the spec are corrected, and each old form is refused as the spec says: a carrier port left out is `E0312` (§8.1.8), a `[Bit; N]` with no initial value is `E0187` (§3.3.4), `Slice` is bounded by `Default` as gallery E.6 is. (GN-31, AC 2; Book amendments BA1 to BA3; T116)
+**C120** - The Book listings that contradicted the spec are corrected, and each old form is refused as the spec says: a carrier port left out is `E0312` (§8.1.8), a `[Bit; N]` with no initial value is `E0187` (§3.3.4) and the rule holds per element of an array (one element defined, one handed to an `out` port: `E0187` names the rest; every element named: clean; an initial value beside some element definitions is the others' value, `E0338` once all are defined), a refused whole-array definition is the driver and raises no `E0187`, `Slice` is bounded by `Default` as gallery E.6 is. (GN-31, AC 2; Book amendments BA1 to BA3; T116)
 Proof: run bookcorestd | test a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was ... ok
 Proof: run bookcheatsheet | test an_array_of_bits_with_no_initial_value_is_e0187 ... ok
 Proof: run booknatures | test the_slice_listing_bounds_t_by_default_as_gallery_e6_does ... ok
+Proof: run typescarrarr | test an_array_of_carriers_without_a_default_is_judged_per_element ... ok
+Proof: run typescarrarr | test an_initial_value_is_the_value_of_the_elements_no_undelayed_definition_names ... ok
+Proof: run typescarrarr | test a_refused_whole_array_definition_is_the_driver_and_raises_no_e0187 ... ok
+Proof: run paritycarrarr | test an_element_given_to_an_out_port_is_driven_by_the_child ... ok
 
 **C121** - A trailing `Option` value input is passed by name after the positional connections; a name that is none is `E0140`. (§8.1.9, §8.3.7; GN-13, AC 1; T117)
 Proof: run typesmodules | test a_trailing_option_value_input_passed_by_name_binds_it ... ok
