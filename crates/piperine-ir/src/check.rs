@@ -387,6 +387,11 @@ impl<'a> Checker<'a> {
             }
         }
         for body in &ir.bodies {
+            if let Some(instance) = &body.instance
+                && !instance.names_body(&body.name)
+            {
+                self.report(format!("body {}", body.name), body.origin.clone(), format!("a body of the generic module instance `{}` is named `{}`", instance.name(), body.name));
+            }
             self.child_param_ids(body);
             self.child_carrier_ids(body);
         }

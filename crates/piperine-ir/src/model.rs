@@ -82,6 +82,9 @@ pub struct BodyData {
     pub(crate) locals: Vec<Local>,
     pub(crate) analog: Option<Vec<StmtId>>,
     pub(crate) children: Vec<Child>,
+    /// The instance of a generic module this body lowers (GN-15); `None` for a module as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) instance: Option<GenericInstance>,
     /// The discrete carriers (`in`/`out` ports of a `Bit` type, `signal`s): ports first.
     #[serde(default)]
     pub(crate) carriers: Vec<Carrier>,
@@ -565,6 +568,13 @@ impl GenericInstance {
     /// The name of the instance of a generic type, `item<a, b>` (design D8).
     pub fn type_name(&self) -> String {
         format!("{}<{}>", self.item, self.arguments.join(", "))
+    }
+
+    /// Whether `name` is the name of a body that lowers this instance of a generic module: the instance's name, then the
+    /// values of the module's key params when it has any (`Ladder::<3>~r=1k`).
+    pub fn names_body(&self, name: &str) -> bool {
+        let own = self.name();
+        name.strip_prefix(&own).is_some_and(|rest| rest.is_empty() || rest.starts_with('~'))
     }
 
     /// Whether `name` is this instance's name, or that name followed by the half of an `Option`

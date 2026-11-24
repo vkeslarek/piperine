@@ -14,10 +14,11 @@ impl GenericForms {
     /// the order the walk met them: ``a generic instantiation `swap::<f64>` ``.
     pub(crate) fn of(body: Body<'_>) -> Vec<String> {
         let ir = body.ir();
-        CompositeForms::reached_functions(body)
+        let module = body.instance().map(|instance| format!("a generic module instance `{}`", instance.name()));
+        let functions = CompositeForms::reached_functions(body)
             .into_iter()
-            .filter_map(|function| ir.function(function).instance().map(|instance| format!("a generic instantiation `{}`", instance.name())))
-            .collect()
+            .filter_map(|function| ir.function(function).instance().map(|instance| format!("a generic instantiation `{}`", instance.name())));
+        module.into_iter().chain(functions).collect()
     }
 }
 

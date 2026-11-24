@@ -178,6 +178,7 @@ impl IrBuilder {
             locals: spec.locals,
             analog: spec.analog,
             children: spec.children,
+            instance: None,
             carriers: Vec::new(),
             node_arrays: Vec::new(),
             empty_arrays: Vec::new(),
@@ -390,6 +391,13 @@ impl IrBuilder {
             instance: None,
         });
         FunctionId(self.functions.len() as u32 - 1)
+    }
+
+    /// Records that `body` lowers `instance` of a generic module (GN-15); the body's name must be the instance's, then
+    /// its key params' suffix (`Ir::check`). Set after `body` so that a module as written needs no extra field in its
+    /// `BodySpec`.
+    pub fn mark_body_instance(&mut self, body: BodyId, instance: GenericInstance) {
+        self.body_data(body).instance = Some(instance);
     }
 
     /// Records that `function` is `instance` of a generic item (GN-02); the function's name must

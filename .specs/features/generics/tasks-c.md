@@ -472,9 +472,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_body_instance_is_built_checked_and_printed` and `a_body_whose_name_disagrees_with_its_instance_is_refused` pass under `**Run irgen**`
-- [ ] `each_generics_form_is_refused_by_name` covers a body instance under `**Run interp**`
-- [ ] Gate check passes: Quick
+- [x] `a_body_instance_is_built_checked_and_printed` and `a_body_whose_name_disagrees_with_its_instance_is_refused` pass under `**Run irgen**`
+- [x] `each_generics_form_is_refused_by_name` covers a body instance under `**Run interp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -343,7 +343,8 @@ impl<'a> Printer<'a> {
 
     fn body(&mut self, body: &BodyData) {
         let at = self.at(&body.origin);
-        self.line(0, &format!("body {}{at}", Printer::name(&body.name)));
+        let instance = body.instance.as_ref().map(|instance| format!("  instance of {}", instance.item)).unwrap_or_default();
+        self.line(0, &format!("body {}{at}{instance}", Printer::name(&body.name)));
         let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams, session_parameters: &body.session_parameters };
         for param in &body.params {
             let mut text = format!("param {}: {}", Printer::name(&param.name), param.ty);

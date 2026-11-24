@@ -241,6 +241,11 @@ impl<'a> Body<'a> {
         &self.data().origin
     }
 
+    /// The instance of a generic module this body lowers, `None` for a module as written.
+    pub fn instance(&self) -> Option<&'a GenericInstance> {
+        self.data().instance.as_ref()
+    }
+
     pub fn params(&self) -> &'a [Param] {
         &self.data().params
     }

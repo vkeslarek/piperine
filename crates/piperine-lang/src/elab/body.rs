@@ -171,6 +171,9 @@ impl Elaboration<'_, '_> {
             children,
         });
         debug_assert_eq!(body, expected, "bodies are built in the order of their ids");
+        if let Some(instance) = &key.instance {
+            self.ir.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
+        }
         self.finish_structure(body);
         for (plus, minus) in &merged {
             self.ir.merge(body, Merge { plus: *plus, minus: *minus });

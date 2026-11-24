@@ -944,6 +944,15 @@ fn each_generics_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(plain, Vec::<String>::new());
+    // a body that lowers an instance of a generic module (GN-15, T66) is named with its instance
+    let module = {
+        let mut b = IrBuilder::new();
+        let ladder = b.body(Buck::spec("Ladder::<3>", "top.msl", 1));
+        b.mark_body_instance(ladder, GenericInstance { item: "Ladder".into(), arguments: vec!["3".into()] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: ladder, parent: None, nodes: vec![], params: vec![], origin: Origin { file: "top.msl".into(), line: 1, col: 1 } });
+        Structured::refused(b.finish(top))
+    };
+    assert_eq!(module, ["a generic module instance `Ladder::<3>`"]);
     // `impl Repr for OneHot`, written by the author (GN-05, T9): the type is named, never laid out wrongly
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let one_hot = b.type_data(TypeData {
