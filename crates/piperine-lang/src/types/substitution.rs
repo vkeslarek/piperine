@@ -77,7 +77,9 @@ impl Substitution {
                 ConstTerm::Value(n @ 1..=4_294_967_295) => Ty::UInt(n as u32),
                 replaced => Ty::GenericInteger { signed: *signed, width: replaced },
             },
-            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
+            // the node of a nature parameter an enclosing generic passed on (`Tran::<W>` inside `Tgate<W>`) follows the parameter
+            Ty::Node(nature) => Ty::Node(self.replaced_nature(*nature)),
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
         }
     }
 

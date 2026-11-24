@@ -206,6 +206,49 @@ fn a_keeper_drives_weak_x_until_it_sees_a_level_then_holds_it() {
 }
 
 #[test]
+fn tran_drives_each_side_with_the_others_of_the_other() {
+    // §22.3.7: with `en` high `Tran` drives each side with what the other side holds without it, so a strong level on one
+    // side is on the other, in either direction; with `en` low it drives `Driven::Z` and the far side is not driven
+    let line = Model::of("line.msl");
+    assert_eq!(line.settled("TranOnBench"), Held { level: Held::HIGH, strength: Held::STRONG }, "a to b");
+    assert_eq!(line.settled("TranBackwardBench"), Held { level: Held::LOW, strength: Held::STRONG }, "b to a");
+    assert_eq!(line.settled("TranOffBench"), Held { level: Held::Z, strength: Held::HIGH_Z }, "en low: b is not driven");
+}
+
+#[test]
+fn tgate_joins_while_s_high_or_sn_low() {
+    // §22.3.8: `Tgate` is two `Tran`s, one enabled by `s` and one by `!sn`: it conducts when `s` is high, when `sn` is low,
+    // and not when `s` is low and `sn` is high
+    let line = Model::of("line.msl");
+    let through = Held { level: Held::HIGH, strength: Held::STRONG };
+    assert_eq!(line.settled("TgateNBench"), through, "s high, sn high: the n side");
+    assert_eq!(line.settled("TgatePBench"), through, "s low, sn low: the p side");
+    assert_eq!(line.settled("TgateOffBench"), Held { level: Held::Z, strength: Held::HIGH_Z }, "s low, sn high: open");
+}
+
+#[test]
+fn two_parallel_trans_carry_a_strong_level_and_stay_two_carriers() {
+    // Appendix C.2.3, RN-05 AC 3: two `Tran(a, b, true)` between `a` and `b`, one module driving `a` strong high: `b` takes
+    // that level, `a` and `b` stay two nets (each reader hears its own net change), and a ring of `Tran`s settles on the level
+    let line = Model::of("line.msl");
+    let built = line.built("ParallelTranBench");
+    let seen = built.run(10e-9, 1e-9);
+    let tags = Levels::of(&built, &seen, "tagged", "tag");
+    let levels = Levels::of(&built, &seen, "tagged", "level");
+    let last_of = |tag: f64| tags.iter().zip(&levels).rev().find(|(candidate, _)| **candidate == tag).map(|(_, level)| *level);
+    assert_eq!(last_of(1.0), Some(Held::HIGH), "a holds the strong high");
+    assert_eq!(last_of(2.0), Some(Held::HIGH), "b takes the level through the two parallel trans");
+    let ring = line.built("RingBench");
+    let ring_seen = ring.run(10e-9, 1e-9);
+    let ring_tags = Levels::of(&ring, &ring_seen, "tagged", "tag");
+    let ring_levels = Levels::of(&ring, &ring_seen, "tagged", "level");
+    for tag in [1.0, 2.0, 3.0] {
+        let last = ring_tags.iter().zip(&ring_levels).rev().find(|(candidate, _)| **candidate == tag).map(|(_, level)| *level);
+        assert_eq!(last, Some(Held::HIGH), "net {tag} of the ring settles on the level");
+    }
+}
+
+#[test]
 fn a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type() {
     // §4 rule 8, RN-02 AC 9: `Bus` has `impl Resolve<bool>` (high when every drive is) and `impl Resolve<u8, bool>` (high when
     // every drive is non-zero); a carrier resolves by the type its drives have. Two flags, one low, are low; two flags high

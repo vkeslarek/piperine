@@ -891,8 +891,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `tran_drives_each_side_with_the_others_of_the_other`, `tgate_joins_while_s_high_or_sn_low` and `two_parallel_trans_carry_a_strong_level_and_stay_two_carriers` pass under `**Run sourcenets**`
-- [ ] Gate check passes: Quick
+- [x] `tran_drives_each_side_with_the_others_of_the_other`, `tgate_joins_while_s_high_or_sn_low` and `two_parallel_trans_carry_a_strong_level_and_stay_two_carriers` pass under `**Run sourcenets**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

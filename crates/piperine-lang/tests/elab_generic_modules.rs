@@ -91,3 +91,16 @@ fn a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_natu
     let names: Vec<String> = ir.bodies().map(|body| body.name().to_string()).collect();
     assert!(names.iter().any(|name| name == "Tribuf::<Line>") && names.iter().any(|name| name == "Pullup::<Line>"), "{names:?}");
 }
+
+#[test]
+fn a_generic_module_passing_its_resolved_nature_on_lowers_its_inner_instances_at_the_nature() {
+    // §22.3.8: `Tgate<W>` places `Tran(a, y, s)` on its own `W`; the instance `Tgate::<Line>` places `Tran::<Line>`, not a
+    // body of the parameter
+    let src = "nature Line { value: Driven }\n\
+               impl Resolve<Driven> for Line { fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) } }\n\
+               module Top() { signal a: Line; signal y: Line; let g = Tgate(a, y, true, false); }\n";
+    let ir = ModuleElab::run(src, "Top").unwrap_or_else(|found| panic!("{found:?}"));
+    assert!(ir.check().is_empty(), "{:?}", ir.check());
+    let names: Vec<String> = ir.bodies().map(|body| body.name().to_string()).collect();
+    assert!(names.iter().any(|name| name == "Tran::<Line>") && names.iter().all(|name| !name.contains("::<W>")), "{names:?}");
+}
