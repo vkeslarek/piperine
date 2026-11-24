@@ -601,10 +601,12 @@ pub nature State {
 #### 22.2.2 `vt` and `multiplicity`
 
 ```rust
+/// The thermal voltage at the temperature `t`, in kelvin: a model passes the temperature it chose.
 pub fn vt(t: f64) -> f64 {
     K_B * t / Q
 }
 
+/// The run's multiplicity: `Some(m)` when the run sets the session parameter `multiplicity`, `None` otherwise.
 pub fn multiplicity() -> Option<f64> {
     simparam("multiplicity")
 }
