@@ -234,12 +234,50 @@ fn a_constant_parameter_in_an_array_length_of_a_field_is_replaced_by_its_argumen
 }
 
 #[test]
-fn an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form() {
-    // §7 rule 11: the elements of an array of bundles are planned one by one at the declaration, so its length is an integer
-    // written in the source; `[Lane; N]` with `N` a parameter of the module is `P0001` naming that form
-    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\n";
-    let refused = Bundles::refused(&format!("{lane}module Bank<const N: usize>(tx: [Lane; N]) {{ for k in 0..N {{ let r = Raise(tx[k]); }} }}\nmodule Top() {{ signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); }}"));
-    assert_eq!(refused.first().map(|(code, _)| code.as_str()), Some("P0001"), "{refused:?}");
-    let message = Bundles::messages(&format!("{lane}module Bank<const N: usize>(tx: [Lane; N]) {{ }}\nmodule Top() {{ signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); }}"));
-    assert!(message.iter().any(|m| m.contains("an array of bundles whose length is not an integer written in the source")), "{message:?}");
+fn an_array_of_bundles_of_a_generic_length_is_typed_per_instance() {
+    // §7 rule 11: `[Lane; N]` is an array of bundles whose length is the parameter of the module, given by each placement, or
+    // taught by the connection; `[flip Stream<u8>; N]` takes the views of its element, and a length computed from the parameter
+    // (`N + 1`) is its value
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n";
+    let bank = "module Bank<const N: usize>(tx: [Lane; N]) { for k in 0..N { let r = Raise(tx[k]); } }\n";
+    Bundles::accepted(&format!("{lane}{bank}module Top() {{ signal lanes: [Lane; 2]; let b = Bank::<2>(lanes); for k in 0..2 {{ let e = Echo(lanes[k]); }} }}"));
+    Bundles::accepted(&format!("{lane}{bank}module Top() {{ signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); for k in 0..3 {{ let e = Echo(lanes[k]); }} }}"));
+    Bundles::accepted(&format!("{lane}{bank}module Top() {{ signal lanes: [Lane; 3]; let b = Bank(lanes); for k in 0..3 {{ let e = Echo(lanes[k]); }} }}"));
+    let stream = "struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }\n";
+    let sinks = "module Sinks<const N: usize>(rx: [flip Stream<u8>; N]) { for k in 0..N { rx[k].ready = rx[k].valid; } }\nmodule Offer(tx: Stream<u8>) { tx.valid = true; tx.data = 7; }\n";
+    Bundles::accepted(&format!("{stream}{sinks}module Top() {{ signal s: [Stream<u8>; 2]; let k = Sinks::<2>(s); let a = Offer(s[0]); let b = Offer(s[1]); }}"));
+    let wide = "module Wide<const N: usize>(tx: [Lane; N + 1]) { for k in 0..N + 1 { let r = Raise(tx[k]); } }\n";
+    Bundles::accepted(&format!("{lane}{wide}module Top() {{ signal lanes: [Lane; 3]; let w = Wide::<2>(lanes); for k in 0..3 {{ let e = Echo(lanes[k]); }} }}"));
+    // another length than the placement's argument does not connect (`E0251`)
+    let refused = Bundles::refused(&format!("{lane}{bank}module Top() {{ signal lanes: [Lane; 3]; let b = Bank::<2>(lanes); }}"));
+    assert!(refused.contains(&("E0251".to_string(), "lanes".to_string())), "{refused:?}");
 }
+
+#[test]
+fn two_producers_of_one_element_of_an_array_of_bundles_is_e0220_naming_it() {
+    // §7 rule 15: the one-driver rule is judged element by element: `lanes[0]` and `lanes[1]` have a producer each, a second
+    // producer of `lanes[1]` is `E0220` naming the field of that element
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n";
+    Bundles::accepted(&format!("{lane}module Top() {{ signal lanes: [Lane; 2]; let r = Raise(lanes[0]); let q = Raise(lanes[1]); let e = Echo(lanes[0]); let f = Echo(lanes[1]); }}"));
+    let src = format!("{lane}module Top() {{ signal lanes: [Lane; 2]; let r = Raise(lanes[0]); let q = Raise(lanes[1]); let t = Raise(lanes[1]); let e = Echo(lanes[0]); let f = Echo(lanes[1]); }}");
+    let refused = Bundles::refused(&src);
+    assert!(refused.iter().any(|(code, _)| code == "E0220"), "{refused:?}");
+    let messages = Bundles::messages(&src);
+    assert!(messages.iter().any(|m| m.contains("`lanes[1].a`")), "names the field of the element: {messages:?}");
+    assert!(!messages.iter().any(|m| m.contains("lanes[0]")), "the element 0 has one producer: {messages:?}");
+}
+
+#[test]
+fn an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it() {
+    // §3.3.4, §7 rule 15: each element's field has its own driver: with producers of `lanes[0]` and `lanes[2]` only, the field `a`
+    // of `lanes[1]` has no value (a `Bit` has no `Default`): `E0187` names that element and no other
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n";
+    let src = format!("{lane}module Top() {{ signal lanes: [Lane; 3]; let r = Raise(lanes[0]); let q = Raise(lanes[2]); for k in 0..3 {{ let e = Echo(lanes[k]); }} }}");
+    let refused = Bundles::refused(&src);
+    assert!(refused.iter().any(|(code, _)| code == "E0187"), "{refused:?}");
+    let messages = Bundles::messages(&src);
+    let missing: Vec<&String> = messages.iter().filter(|m| m.contains("no initial value")).collect();
+    assert_eq!(missing.len(), 1, "{messages:?}");
+    assert!(missing[0].starts_with("`lanes[1].a` has no initial value"), "{missing:?}");
+}
+

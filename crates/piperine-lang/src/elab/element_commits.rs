@@ -116,8 +116,12 @@ impl Elaboration<'_, '_> {
                     steps.push(Step::Index(index));
                     at = self.peel_parens(expr);
                 }
-                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`bundles.rs`)
-                ExprKind::Field { .. } if self.design.bundle_field(at).is_some() => break,
+                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`bundles.rs`), and
+                // the element of an array of bundles it is in names the first levels of that leaf (`tx[k].a`, struct of arrays)
+                ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(at).filter(|place| self.design.leaf_owner(place.decl).is_some()) => {
+                    steps.extend(place.elements.iter().rev().map(|index| Step::Index(*index)));
+                    break;
+                }
                 ExprKind::Field { expr, name, .. } => {
                     steps.push(Step::Field { inner: expr, name: name.text });
                     at = self.peel_parens(expr);
@@ -132,7 +136,7 @@ impl Elaboration<'_, '_> {
     /// The port or signal declaration a root expression names.
     fn root_decl(&mut self, scope: &Scope, root: ExprId) -> Option<crate::pom::DeclId> {
         if let Some(leaf) = self.bundle_leaf(scope, root) {
-            return Some(leaf);
+            return Some(leaf.decl);
         }
         let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|s| s.res) {

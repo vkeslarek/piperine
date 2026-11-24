@@ -256,3 +256,45 @@ fn a_constant_parameter_in_an_array_length_of_a_field_gives_its_argument_of_carr
     let words = Model::records(&built, &seen, "sized");
     assert_eq!(words.first(), Some(&vec![("zero".to_string(), 1), ("one".to_string(), 0), ("two".to_string(), 1)]), "{words:?}");
 }
+
+#[test]
+fn an_array_of_bundles_of_a_generic_length_runs_with_each_length() {
+    // §7 rule 11: `Bank<N>(ts: [Lane; N])` drives every lane but lane 1 high; placed with `N = 2` the probe records (1, 0), with
+    // `N = 3` it records (1, 0, 1): the length is the argument of each placement
+    let two = Model::of("array.msl").built("BankBench2");
+    let seen = two.run(20e-9, 1e-9);
+    let lanes = Model::records(&two, &seen, "lanes");
+    assert_eq!(lanes.first(), Some(&vec![("first".to_string(), 1), ("second".to_string(), 0)]), "N = 2: {lanes:?}");
+    let three = Model::of("array.msl").built("BankBench3");
+    let seen = three.run(20e-9, 1e-9);
+    let lanes = Model::records(&three, &seen, "loop");
+    assert_eq!(lanes.first(), Some(&vec![("first".to_string(), 1), ("second".to_string(), 0), ("third".to_string(), 1)]), "N = 3: {lanes:?}");
+}
+
+#[test]
+fn a_generation_loop_drives_each_element_of_an_array_of_bundles_by_its_index() {
+    // §7 rule 11, §8.2.23: `for k in 0..N { ts[k].a = k == N - 1; }` with `N = 3` drives only the last lane high: (0, 0, 1)
+    let built = Model::of("array.msl").built("DirectBench");
+    let seen = built.run(20e-9, 1e-9);
+    let lanes = Model::records(&built, &seen, "loop");
+    assert_eq!(lanes.first(), Some(&vec![("first".to_string(), 0), ("second".to_string(), 0), ("third".to_string(), 1)]), "{lanes:?}");
+}
+
+#[test]
+fn an_array_of_bundles_of_a_computed_length_runs() {
+    // §7 rule 11, §1.2: `[Lane; N + 1]` with `N = 2` is three lanes, of which only lane 0 is driven high: (1, 0, 0)
+    let built = Model::of("array.msl").built("WideBench");
+    let seen = built.run(20e-9, 1e-9);
+    let lanes = Model::records(&built, &seen, "loop");
+    assert_eq!(lanes.first(), Some(&vec![("first".to_string(), 1), ("second".to_string(), 0), ("third".to_string(), 0)]), "{lanes:?}");
+}
+
+#[test]
+fn an_array_of_flipped_streams_completes_a_handshake_per_lane() {
+    // §7 rules 5, 11: `[flip Stream<u8>; N]` makes the sink the consumer of each lane: it answers each `valid` with its own
+    // `ready`, so both handshakes hold and the data of each producer (11 and 22) arrives on its own lane
+    let built = Model::of("array.msl").built("StreamBench");
+    let seen = built.run(20e-9, 1e-9);
+    let streams = Model::records(&built, &seen, "streams");
+    assert_eq!(streams.first(), Some(&vec![("first".to_string(), 11), ("second".to_string(), 22), ("both".to_string(), 1)]), "{streams:?}");
+}

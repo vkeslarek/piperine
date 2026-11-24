@@ -10,16 +10,25 @@ use super::Ty;
 
 impl Checker<'_> {
     /// The type of the bundle a type written as `Stream<u8>` or `flip Stream` names: its `struct`, with the arguments it is
-    /// written with. `None` after a diagnostic.
+    /// written with; of an array of bundles the array of it. `None` after a diagnostic.
     pub(super) fn bundle_type(&mut self, ty: TypeId) -> Option<Ty> {
-        let mut at = ty;
-        while let TypeKind::Flip(inner) = &self.design.type_node(at).kind {
-            at = *inner;
+        let node = self.design.type_node(ty).clone();
+        match node.kind {
+            TypeKind::Flip(inner) => self.bundle_type(inner),
+            // an array of bundles (`[flip Stream<T>; N]`): the array of the element's bundle type, its length as any array's
+            TypeKind::Array { elem, len } => {
+                let element = self.bundle_type(elem)?;
+                let file = self.design.decl_data(node.owner).file;
+                let length = self.array_length(file, node.span, len)?;
+                Some(Ty::Array(Box::new(element), length))
+            }
+            _ => {
+                let outer = std::mem::replace(&mut self.naming_bundle, true);
+                let lowered = self.lower_type(ty);
+                self.naming_bundle = outer;
+                lowered
+            }
         }
-        let outer = std::mem::replace(&mut self.naming_bundle, true);
-        let lowered = self.lower_type(at);
-        self.naming_bundle = outer;
-        lowered
     }
 
     /// Whether `ty` is the type of a bundle handle: the `struct` of a bundle.
@@ -28,7 +37,7 @@ impl Checker<'_> {
     }
 
     /// The bundle a name stands for, as a receiver or the base of a field: a bundle port or signal of the module, a handle `self`,
-    /// a nested bundle field of either. `None` for any other expression.
+    /// a nested bundle field of either, an element of an array of bundles. `None` for any other expression.
     pub(super) fn bundle_named_type(&mut self, expr: ExprId) -> Option<Ty> {
         match self.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.bundle_named_type(inner),
@@ -39,13 +48,15 @@ impl Checker<'_> {
                 }
                 self.handle_type(decl).filter(|ty| self.is_bundle_type(ty))
             }
-            ExprKind::Field { .. } => match self.design.bundle_field(expr) {
-                Some(group) if self.design.is_bundle_group(group) => self.declared_bundle_type(group),
-                Some(_) => None,
-                None => match self.bundle_handle_field(expr) {
-                    Some((_, ty)) if self.is_bundle_type(&ty) => Some(ty),
-                    _ => None,
-                },
+            // a nested group, or an element of an array of bundles (`lanes[k]`): the bundle type of the element
+            ExprKind::Field { .. } | ExprKind::Index { .. } if let Some(place) = self.design.bundle_named(expr) => {
+                self.element_indexes(&place);
+                self.declared_bundle_type(place.decl)?.element_at(place.elements.len())
+            }
+            ExprKind::Field { .. } if self.design.bundle_field(expr).is_some() => None,
+            ExprKind::Field { .. } => match self.bundle_handle_field(expr) {
+                Some((_, ty)) if self.is_bundle_type(&ty) => Some(ty),
+                _ => None,
             },
             _ => None,
         }

@@ -136,23 +136,27 @@ fn an_observer_view_adds_no_drive() {
 
 #[test]
 fn a_loop_variable_index_folds_to_the_element_of_each_iteration() {
-    // §7 rule 11, §8.2.23: each iteration of `for k in 0..3` joins the element `k` of the array: the producer and the consumer of
-    // iteration `k` are the carriers `lanes[k].a` and `lanes[k].b`, in the order of the array
+    // §7 rule 11, §8.2.23: each iteration of `for k in 0..3` joins the element `k` of the array: the array of bundles is one array
+    // of carriers per field (struct of arrays, design D12), `lanes.a` and `lanes.b` of three elements each, and the producer and
+    // the consumer of iteration `k` are given the element `k` of both
     let src = "struct Lane { out a: Bit, in b: Bit }\n\
                module Raise(tx: Lane) { tx.a = true; }\n\
                module Echo(rx: flip Lane) { rx.b = rx.a; }\n\
                module Top() { signal lanes: [Lane; 3]; for k in 0..3 { let r = Raise(lanes[k]); let e = Echo(lanes[k]); } }";
     let ir = Elab::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
-    let names: Vec<&str> = top.carriers().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(names, ["lanes[0].a", "lanes[0].b", "lanes[1].a", "lanes[1].b", "lanes[2].a", "lanes[2].b"]);
+    let carriers: Vec<(&str, Option<u64>)> = top.carriers().iter().map(|c| (c.name.as_str(), c.count)).collect();
+    assert_eq!(carriers, [("lanes.a", Some(3)), ("lanes.b", Some(3))]);
     assert_eq!(top.children().len(), 6, "a producer and a consumer per iteration");
-    // the producers `raise[0..3]` come first, the consumers `echo[0..3]` after them
-    let children = |index: usize| top.child_carriers(index).to_vec();
-    assert_eq!(children(0), [Some(0), Some(1)], "producer 0 is element 0");
-    assert_eq!(children(1), [Some(2), Some(3)], "producer 1 is element 1");
-    assert_eq!(children(2), [Some(4), Some(5)], "producer 2 is element 2");
-    assert_eq!(children(4), [Some(2), Some(3)], "consumer 1 is element 1");
+    // the producers `raise[0..3]` come first, the consumers `echo[0..3]` after them; each joins both fields at one element
+    let element = |at: u64| Some(piperine_ir::CarrierWindow { first: at, length: None });
+    for child in 0..6 {
+        assert_eq!(top.child_carriers(child), [Some(0), Some(1)], "child {child} joins `lanes.a` and `lanes.b`");
+    }
+    assert_eq!(top.child_windows(0), [element(0), element(0)], "producer 0 is element 0");
+    assert_eq!(top.child_windows(1), [element(1), element(1)], "producer 1 is element 1");
+    assert_eq!(top.child_windows(2), [element(2), element(2)], "producer 2 is element 2");
+    assert_eq!(top.child_windows(4), [element(1), element(1)], "consumer 1 is element 1");
 }
 
 #[test]
@@ -199,4 +203,79 @@ fn a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_po
     assert_eq!(words("wide.bits", &format!("{fill}module Top() {{ signal wide: Word<5>; let f = Fill::<5>(wide); }}")), [Some(5)], "`Word<5>` has five");
     let written = "struct Word<const W: usize> { out bits: [Bit; W + 1] }\nmodule Fill(w: Word<2>) { w.bits[0] = true; w.bits[1] = false; w.bits[2] = true; }\nmodule Top() { signal word: Word<2>; let f = Fill(word); }";
     assert_eq!(words("word.bits", written), [Some(3)], "`[Bit; W + 1]` with `W = 2` has three");
+}
+
+#[test]
+fn an_array_of_bundles_of_a_generic_length_has_the_length_of_each_instance() {
+    // §7 rule 11: `[Lane; N]` placed with `N = 2` and with `N = 3` is one array of carriers per field of as many elements in each
+    // instance, and the generation loop over `k in 0..N` gives the element `k` to the iteration's producer
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
+                module Bank<const N: usize>(ts: [Lane; N]) { for k in 0..N { let r = Raise(ts[k]); } }\n";
+    for length in [2u64, 3] {
+        let src = format!("{lane}module Top() {{ signal lanes: [Lane; {length}]; let b = Bank::<{length}>(lanes); for k in 0..{length} {{ let e = Echo(lanes[k]); }} }}");
+        let ir = Elab::ir(&src, "Top");
+        let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+        let carriers: Vec<(&str, Option<u64>)> = top.carriers().iter().map(|c| (c.name.as_str(), c.count)).collect();
+        assert_eq!(carriers, [("lanes.a", Some(length)), ("lanes.b", Some(length))], "N = {length}");
+        let bank = ir.bodies().find(|b| b.carriers().iter().any(|c| c.name == "ts.a")).expect("the body of `Bank`");
+        let fields: Vec<(&str, Option<u64>)> = bank.carriers().iter().map(|c| (c.name.as_str(), c.count)).collect();
+        assert_eq!(fields, [("ts.a", Some(length)), ("ts.b", Some(length))], "the port of `Bank` with N = {length}");
+        assert_eq!(bank.children().len() as u64, length, "one producer per element");
+        for k in 0..length {
+            let element = Some(piperine_ir::CarrierWindow { first: k, length: None });
+            assert_eq!(bank.child_windows(k as usize), [element, element], "producer {k} is element {k} (N = {length})");
+        }
+    }
+}
+
+#[test]
+fn a_computed_length_of_an_array_of_bundles_is_folded_per_instance() {
+    // §7 rule 11, §1.2: `[Lane; N + 1]` with `N = 2` is three elements
+    let src = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
+               module Wide<const N: usize>(ws: [Lane; N + 1]) { for k in 0..N + 1 { let r = Raise(ws[k]); } }\n\
+               module Top() { signal lanes: [Lane; 3]; let w = Wide::<2>(lanes); for k in 0..3 { let e = Echo(lanes[k]); } }";
+    let ir = Elab::ir(src, "Top");
+    let wide = ir.bodies().find(|b| b.carriers().iter().any(|c| c.name == "ws.a")).expect("the body of `Wide`");
+    assert_eq!(wide.carriers().iter().map(|c| c.count).collect::<Vec<_>>(), [Some(3), Some(3)]);
+    assert_eq!(wide.children().len(), 3);
+}
+
+#[test]
+fn a_second_producer_of_one_element_in_a_generic_instance_is_e0220_naming_it() {
+    // §7 rule 15 judged per instance: the loop over `k in 0..N` already produces `tx[1]`, a second producer of it is `E0220`
+    // naming the field of that element, once the length is known
+    let src = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
+               module Bank<const N: usize>(tx: [Lane; N]) { for k in 0..N { let r = Raise(tx[k]); } let again = Raise(tx[1]); }\n\
+               module Top() { signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); for k in 0..3 { let e = Echo(lanes[k]); } }";
+    let found = Elab::run(src, "Top").expect_err("two producers of `tx[1].a`");
+    assert!(Elab::codes(&found).contains(&"E0220".to_string()), "{found:?}");
+    assert!(found.iter().any(|d| d.diagnostic.message.contains("`tx[1].a`")), "names the element: {found:?}");
+    assert!(!found.iter().any(|d| d.diagnostic.message.contains("tx[0]") || d.diagnostic.message.contains("tx[2]")), "only element 1 has two: {found:?}");
+}
+
+#[test]
+fn an_element_no_iteration_drives_in_a_generic_instance_is_e0187_naming_it() {
+    // §3.3.4 judged per instance: the loop over `k in 0..N - 1` produces every element but the last, whose field `a` has no
+    // value (a `Bit` has no `Default`): with `N = 3`, `E0187` names `tx[2].a` and no other element
+    let src = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
+               module Bank<const N: usize>(tx: [Lane; N]) { for k in 0..N - 1 { let r = Raise(tx[k]); } }\n\
+               module Top() { signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); for k in 0..3 { let e = Echo(lanes[k]); } }";
+    let found = Elab::run(src, "Top").expect_err("the last element has no producer");
+    let missing: Vec<&str> = found.iter().filter(|d| d.diagnostic.code == "E0187").map(|d| d.diagnostic.message.as_str()).collect();
+    assert_eq!(missing.len(), 1, "{found:?}");
+    assert!(missing[0].starts_with("`tx[2].a` in `"), "{missing:?}");
+}
+
+#[test]
+fn a_node_field_of_an_array_of_bundles_is_one_array_of_nodes() {
+    // §7 rule 12, struct of arrays (design D12): the field `p` of `d: [Diff; 2]` is the array of nodes `d.p`, and the element
+    // `d[1]` given to a port is the node `1` of each field (the host reads it as `d[1].p`, `piperine-api`)
+    let src = "struct Diff { p: Electrical, n: Electrical }\n\
+               module Load(d: Diff) { }\nanalog for Load { i(d.p, d.n) +> v(d.p, d.n) / 1000.0; }\n\
+               module Top() { signal d: [Diff; 2]; for k in 0..2 { let l = Load(d[k]); } }\nanalog for Top { v(d[0].p, d[0].n) +> 1.0; v(d[1].p, d[1].n) +> 2.0; }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    assert_eq!(read.nodes("Top"), ["d.p[0]", "d.p[1]", "d.n[0]", "d.n[1]"]);
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    assert_eq!(top.children()[1].nodes, [piperine_ir::Terminal::Node(1), piperine_ir::Terminal::Node(3)], "load 1 is `d[1].p` and `d[1].n`");
 }

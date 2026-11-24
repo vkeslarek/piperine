@@ -9,7 +9,7 @@ use super::nature_rules::NatureRules;
 use super::Ty;
 use crate::msl::ast::Dir;
 use crate::msl::Span;
-use crate::pom::{BundleLeaf, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
+use crate::pom::{BundleLeaf, BundlePlace, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
 
 impl Checker<'_> {
     /// The argument `arg` of a placement at the bundle port `port`: a bundle carrier of the port's `struct`, or a literal.
@@ -30,38 +30,42 @@ impl Checker<'_> {
             self.infer(arg);
             return;
         };
-        if self.bundle_struct_of(source) != self.bundle_struct_of(port) {
-            let message = format!("a bundle `{}` is connected to a port of `{}` (§7 rule 14)", self.struct_name(self.bundle_struct_of(source)), self.struct_name(self.bundle_struct_of(port)));
+        self.element_indexes(&source);
+        if self.bundle_struct_of(source.decl) != self.bundle_struct_of(port) {
+            let message = format!("a bundle `{}` is connected to a port of `{}` (§7 rule 14)", self.struct_name(self.bundle_struct_of(source.decl)), self.struct_name(self.bundle_struct_of(port)));
             self.coded(file, "E0251", span, message, "bundle of another type");
             return;
         }
-        // an array of bundles connects to an array of as many elements (§7 rule 11)
-        if self.design.is_bundle_owner(source) && self.design.bundle_leaves(source).len() != self.design.bundle_leaves(port).len() {
+        // an array of bundles connects to an array of as many levels (§7 rule 11); the lengths agree field by field
+        if self.design.element_levels(source.decl) - source.elements.len() != self.design.element_levels(port) {
             let message = "an array of bundles is connected to an array of another length, or to a single bundle (§7 rule 11)".to_string();
             self.coded(file, "E0251", span, message, "bundle of another shape");
             return;
         }
-        self.connect_fields(source, port, "", arg, file, span);
+        self.connect_fields(&source, port, "", arg, file, span);
     }
 
-    /// Every field of the bundle `port` at `prefix` joined to the field of the bundle `source` of the same name.
-    fn connect_fields(&mut self, source: DeclId, port: DeclId, prefix: &str, place: ExprId, file: FileId, span: Span) {
+    /// Every field of the bundle `port` at `prefix` joined to the field of the same name of the bundle (or element of an array of
+    /// bundles) `source`.
+    fn connect_fields(&mut self, source: &BundlePlace, port: DeclId, prefix: &str, place: ExprId, file: FileId, span: Span) {
         for leaf in self.design.bundle_leaves(port).to_vec() {
             if leaf.nested {
                 continue;
             }
             let Some(rest) = leaf.path.strip_prefix(prefix) else { continue };
-            let Some(from) = self.design.leaf_under(source, rest) else { continue };
-            self.connect_leaf(from, &leaf, place, file, span);
+            let Some(from) = self.design.leaf_under(source.decl, rest) else { continue };
+            let given = BundlePlace { decl: from, elements: source.elements.clone() };
+            self.connect_leaf(&given, &leaf, place, file, span);
         }
     }
 
-    /// One field: the leaf `target` of a port joined to the leaf `from` of a bundle carrier, `place` the expression that names the bundle.
-    fn connect_leaf(&mut self, from: DeclId, target: &BundleLeaf, place: ExprId, file: FileId, span: Span) {
-        let (Some(expected), Some(found)) = (self.placed_leaf_type(target.decl), self.leaf_type(from)) else { return };
-        let same = match (&expected, &found) {
-            (Ty::Node(wanted), Ty::Node(given)) => NatureRules::compatible(self.design, *wanted, *given),
-            _ => expected == found,
+    /// One field: the leaf `target` of a port joined to `given`, the leaf of a bundle carrier at the element of an array of
+    /// bundles it names; `place` the expression that names the bundle.
+    fn connect_leaf(&mut self, given: &BundlePlace, target: &BundleLeaf, place: ExprId, file: FileId, span: Span) {
+        let (Some(expected), Some(found)) = (self.placed_leaf_type(target.decl), self.leaf_type(given.decl).and_then(|ty| ty.element_at(given.elements.len()))) else { return };
+        let same = match (expected.innermost(), found.innermost()) {
+            (Ty::Node(wanted), Ty::Node(found_nature)) => NatureRules::compatible(self.design, *wanted, *found_nature) && Self::same_levels(&found, &expected),
+            _ => found.fits(&expected),
         };
         if !same {
             let message = format!("the field `{}` of a bundle is `{}` and the port takes `{}` (§7 rule 14)", target.path, found.name(self.design), expected.name(self.design));
@@ -69,7 +73,36 @@ impl Checker<'_> {
             return;
         }
         if matches!(&self.design.decl_data(target.decl).kind, DeclKind::Port(p) if p.dir == Some(Dir::Out)) && matches!(found.innermost(), Ty::Carrier { .. }) {
-            self.hand_over_whole(from, place, span, file);
+            let element = self.element_of_indexes(given.decl, &given.elements);
+            self.hand_over_element(given.decl, element, place, span, file);
+        }
+    }
+
+    /// Whether two types have the same array levels, each of a length that fits the other's (a node field compares its natures
+    /// apart).
+    fn same_levels(found: &Ty, expected: &Ty) -> bool {
+        match (found, expected) {
+            (Ty::Array(found, found_length), Ty::Array(wanted, wanted_length)) => found_length.fits(wanted_length) && Self::same_levels(found, wanted),
+            (Ty::Array(..), _) | (_, Ty::Array(..)) => false,
+            _ => true,
+        }
+    }
+
+    /// The leaf a field of a bundle port or signal stands for and the type of what the chain names of it: the leaf's own
+    /// carrier, node or array of them, or, at an element of an array of bundles (`rx[k].valid`), the element of the leaf's
+    /// array (struct of arrays, design D12). The element indexes are typed as integers.
+    pub(super) fn bundle_field_type(&mut self, place: &BundlePlace) -> Option<(DeclId, Ty)> {
+        let declared = self.leaf_type(place.decl)?;
+        self.element_indexes(place);
+        Some((place.decl, declared.element_at(place.elements.len())?))
+    }
+
+    /// Types each element index of `place` as an integer, once (§1.5.9).
+    pub(super) fn element_indexes(&mut self, place: &BundlePlace) {
+        for index in &place.elements {
+            if self.exprs[index.index()].is_none() {
+                self.integer_index(*index);
+            }
         }
     }
 
@@ -87,7 +120,8 @@ impl Checker<'_> {
                         self.literal_field_mismatch(file, field, &path, "a bundle of the field's type or a nested literal");
                         continue;
                     };
-                    self.connect_fields(source, port, &format!("{path}."), value, file, field.span);
+                    self.element_indexes(&source);
+                    self.connect_fields(&source, port, &format!("{path}."), value, file, field.span);
                 }
                 (_, false) => self.connect_literal_leaf(field, &leaf, file),
             }
@@ -138,8 +172,9 @@ impl Checker<'_> {
         }
     }
 
-    /// The bundle port, signal or nested group `expr` names (`s`, `o.inner`), through parentheses.
-    fn bundle_carrier(&self, expr: ExprId) -> Option<DeclId> {
+    /// The bundle port, signal, nested group or element of an array of bundles `expr` names (`s`, `o.inner`, `lanes[k]`), through
+    /// parentheses.
+    fn bundle_carrier(&self, expr: ExprId) -> Option<BundlePlace> {
         self.design.bundle_named(expr)
     }
 

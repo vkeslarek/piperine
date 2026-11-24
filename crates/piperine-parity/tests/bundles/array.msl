@@ -106,3 +106,73 @@ module SizedBench() {
     let even = Even::<3>(word);
     let tap = Tap::<3>(clk, word);
 }
+
+/// `N` producers, one per lane of an array of bundles whose length is the parameter: every lane but lane 1 is driven high.
+module Bank<const N: usize>(ts: [Lane; N]) { for k in 0..N { let raise = Raise(ts[k]) { level: k != 1 }; } }
+
+/// Two lanes given to a bank of `N = 2`, each echoed, the pair recorded.
+module BankBench2() {
+    signal clk: Bit;
+    signal lanes: [Lane; 2];
+    let clock = Clock(clk);
+    let bank = Bank::<2>(lanes);
+    for k in 0..2 { let echo = Echo(lanes[k]); }
+    let probe = Probe(clk, lanes);
+}
+
+/// Three lanes given to a bank of `N = 3`, each echoed, the three recorded.
+module BankBench3() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    let bank = Bank::<3>(lanes);
+    for k in 0..3 { let echo = Echo(lanes[k]); }
+    let probe = Probe3(clk, lanes);
+}
+
+/// Drives the field `a` of each of its `N` lanes by the element index, in a generation loop: only the last lane is high.
+module Direct<const N: usize>(ts: [Lane; N]) { for k in 0..N { ts[k].a = k == N - 1; } }
+
+/// Three lanes driven by their index, each echoed, the three recorded.
+module DirectBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    let direct = Direct::<3>(lanes);
+    for k in 0..3 { let echo = Echo(lanes[k]); }
+    let probe = Probe3(clk, lanes);
+}
+
+/// `N + 1` producers over an array of bundles of that computed length: only lane 0 is driven high.
+module Wide<const N: usize>(ts: [Lane; N + 1]) { for k in 0..N + 1 { let raise = Raise(ts[k]) { level: k == 0 }; } }
+
+/// Three lanes given to a wide bank of `N = 2`, each echoed, the three recorded.
+module WideBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    let wide = Wide::<2>(lanes);
+    for k in 0..3 { let echo = Echo(lanes[k]); }
+    let probe = Probe3(clk, lanes);
+}
+
+/// A stream of numbers: the producer offers `data` with `valid`, the consumer answers `ready`.
+struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }
+
+/// Offers `value` on its stream at all times.
+module Offer(tx: Stream<u8>) { value: u8 = 0; tx.valid = true; tx.data = value; }
+
+/// Consumes `N` streams: each lane's `ready` answers its own `valid` (one handshake per lane); at each rising edge it records the
+/// data of the first two lanes and whether both handshakes hold.
+module Sinks<const N: usize>(in clk: Bit, rx: [flip Stream<u8>; N]) { for k in 0..N { rx[k].ready = rx[k].valid; } }
+digital<N> for Sinks<N> { on clk.rise() { emit!("streams", first = rx[0].data, second = rx[1].data, both = rx[0].valid && rx[0].ready && rx[1].valid && rx[1].ready); } }
+
+/// Two streams offered 11 and 22 and consumed by one sink of `N = 2`.
+module StreamBench() {
+    signal clk: Bit;
+    signal streams: [Stream<u8>; 2];
+    let clock = Clock(clk);
+    let low = Offer(streams[0]) { value: 11 };
+    let high = Offer(streams[1]) { value: 22 };
+    let sinks = Sinks::<2>(clk, streams);
+}

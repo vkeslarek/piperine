@@ -31,13 +31,14 @@ impl Checker<'_> {
 
     /// The type of each port of `module` as it is declared, its generic parameters opaque; `None` when one is refused.
     fn module_port_types(&mut self, module: DeclId) -> Option<Vec<Ty>> {
-        let ports: Vec<TypeId> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
-            DeclKind::Port(port) => Some(port.ty),
+        let ports: Vec<(DeclId, TypeId)> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
+            DeclKind::Port(port) => Some((*child, port.ty)),
             _ => None,
         }).collect();
         let outer = std::mem::replace(&mut self.generic_item, Some(module));
-        // a bundle port is typed as its `struct` with the arguments it is written with (`Stream<T>`), so a connection can teach `T`
-        let types: Option<Vec<Ty>> = ports.iter().map(|ty| if self.design.bundle_struct_of_type(*ty).is_some() { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
+        // a bundle port is typed as its `struct` with the arguments it is written with (`Stream<T>`), an array of bundles as the
+        // array of it (`[Lane; N]`), so a connection can teach `T` and `N`
+        let types: Option<Vec<Ty>> = ports.iter().map(|(port, ty)| if self.design.is_bundle_owner(*port) { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
         self.generic_item = outer;
         types
     }

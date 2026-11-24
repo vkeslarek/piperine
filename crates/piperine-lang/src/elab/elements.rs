@@ -79,8 +79,10 @@ impl Elaboration<'_, '_> {
         }
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = self.generated_carrier_levels(scope, at);
+        // a field of an element of an array of bundles (`rx[k].valid`) is that element of its leaf (struct of arrays, `bundles.rs`)
+        let bundled = self.bundle_leaf(scope, at);
         // a handle bound to an element is that element
-        if indexes.is_empty() && generated.is_empty() {
+        if indexes.is_empty() && generated.is_empty() && bundled.as_ref().is_none_or(|place| place.elements.is_empty()) {
             let bound = match &self.design.expr_node(at).kind {
                 ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                     Some(Resolution::Decl(decl)) => scope.handles.get(&decl).copied(),
@@ -94,8 +96,17 @@ impl Elaboration<'_, '_> {
             };
         }
         indexes.reverse();
-        let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Lookup::No };
-        let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Lookup::No };
+        let decl = match bundled {
+            Some(place) => {
+                indexes.splice(0..0, place.elements);
+                place.decl
+            }
+            None => {
+                let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Lookup::No };
+                let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Lookup::No };
+                decl
+            }
+        };
         let Some(array) = self.consts.typed_carrier_array(decl) else { return Lookup::No };
         let span = self.design.expr_node(expr).span;
         if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
@@ -294,6 +305,36 @@ impl Elaboration<'_, '_> {
 }
 
 impl Elaboration<'_, '_> {
+    /// The run of flat elements the first `indexes.len()` levels of an array of `shape` name, `(first, length)`: each index
+    /// folded over the frame's constants and the loop variables of `scope` (§8.2.23). `None` after a diagnostic: an index
+    /// that does not fold is `E0188` naming it (QC4), one past the end `E0104` (§1 rule 11).
+    pub(super) fn element_run(&mut self, scope: &Scope, shape: &ArrayShape, indexes: &[ExprId]) -> Option<(u64, u64)> {
+        if indexes.len() > shape.dims.len() {
+            return None;
+        }
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let mut flat = 0u64;
+        for (index, length) in indexes.iter().zip(&shape.dims) {
+            let span = self.design.expr_node(*index).span;
+            let folded = match self.consts.value(*index, &bindings) {
+                Ok(piperine_ir::Constant::Int(at)) => u64::try_from(at).ok(),
+                _ => None,
+            };
+            let Some(at) = folded else {
+                self.not_folded(scope, span, "the element of a connection");
+                return None;
+            };
+            if at >= *length {
+                let message = format!("the element {at} is out of range for an array of {length} (§1 rule 11)");
+                self.report(scope.file, Diagnostic::new("E0104", message, span, "index out of range"));
+                return None;
+            }
+            flat = flat * length + at;
+        }
+        let below: u64 = shape.dims[indexes.len()..].iter().product();
+        Some((flat * below, below))
+    }
+
     /// The nodes the argument `arg` names in an array of nodes: the run of consecutive nodes `(first, length)` of the whole
     /// array, of a sub-array `g[r]` of a nested one, or of one element (`length` 1, `whole` false). `Some(None)` when `arg`
     /// names no array of nodes; `None` after a diagnostic: an index that does not fold after unrolling (QC4, `E0188`
@@ -306,11 +347,16 @@ impl Elaboration<'_, '_> {
             at = self.peel_parens(inner);
         }
         indexes.reverse();
-        // a name of this module, or a `pub` array of nodes of a placed child (`c.tap[k]`)
+        // a name of this module, a field of a bundle of it (at the element of an array of bundles it names, in front of the written
+        // indexes: `d[k].p` is the element `k` of the leaf `d.p`), or a `pub` array of nodes of a placed child (`c.tap[k]`)
         let (frame, decl) = match self.design.expr_node(at).kind.clone() {
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
                 (scope.frame, decl)
+            }
+            ExprKind::Field { .. } if let Some(place) = self.bundle_leaf(scope, at) => {
+                indexes.splice(0..0, place.elements);
+                (scope.frame, place.decl)
             }
             ExprKind::Field { .. } => {
                 let (frame, item) = self.reached_item(scope, at)?;
@@ -408,8 +454,18 @@ impl Elaboration<'_, '_> {
             at = self.peel_parens(inner);
         }
         indexes.reverse();
-        let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return None };
-        let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return None };
+        // a field of an element of an array of bundles (`rx[k].valid`) is that element of its leaf (struct of arrays, `bundles.rs`)
+        let decl = match self.bundle_leaf(scope, at) {
+            Some(place) => {
+                indexes.splice(0..0, place.elements);
+                place.decl
+            }
+            None => {
+                let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return None };
+                let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return None };
+                decl
+            }
+        };
         let array = self.consts.typed_carrier_array(decl)?;
         let span = self.design.expr_node(arg).span;
         if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {

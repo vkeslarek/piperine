@@ -4,11 +4,14 @@
 //! [`BundleLeaves`](super::super::bundles::BundleLeaves), never in a module's `children` (the POM mirrors
 //! the source). A bundle that is generic (`Stream<u8>`) has the leaves of its instance: each field's type is written
 //! again with the struct's parameters replaced by the arguments of the port (`TypeSubstitution`), so a leaf is typed like
-//! any port of its module and no later pass substitutes.
+//! any port of its module and no later pass substitutes. An array of bundles (`tx: [Lane; N]`) is a struct of arrays: each
+//! field is one leaf typed as the array of the field's type with the owner's lengths (`tx.a: [Bit; N]`), so an element
+//! `tx[k].a` is the element `k` of the leaf `tx.a` and every rule of arrays of carriers (generic lengths folded per instance,
+//! elements judged one by one, connections by window) applies to it unchanged.
 
 use std::collections::BTreeMap;
 
-use super::super::body::{ExprKind, ExprNode, GenericArgNode, GenericArgsNode, LitKind, PathNode, TypeKind, TypeNode};
+use super::super::body::{ExprKind, ExprNode, GenericArgNode, GenericArgsNode, PathNode, TypeKind, TypeNode};
 use super::super::bundles::{BundleLeaf, BundleView};
 use super::super::decl::{DeclData, DeclKind, GenericParamData, Name, PortData, SignalData};
 use super::super::design::Design;
@@ -26,6 +29,12 @@ struct PlannedLeaf {
     nested: bool,
 }
 
+/// The owner whose leaves are being planned, and the lengths of its element levels (none for a single bundle).
+struct LeafSite<'lengths> {
+    owner: DeclId,
+    lengths: &'lengths [ExprId],
+}
+
 /// The leaves to add to every bundle port and signal of a design.
 pub(super) struct LeafPlan<'design> {
     design: &'design mut Design,
@@ -37,8 +46,8 @@ impl<'design> LeafPlan<'design> {
         LeafPlan { design }
     }
 
-    /// The leaves of every owner, in the order of the arena.
-    fn plan(&mut self) -> Vec<(DeclId, Vec<PlannedLeaf>)> {
+    /// The leaves of every owner, in the order of the arena, each with the number of element levels of its owner.
+    fn plan(&mut self) -> Vec<(DeclId, Vec<PlannedLeaf>, usize)> {
         let mut out = Vec::new();
         for index in 0..self.design.decl_count() {
             let owner = DeclId(index as u32);
@@ -48,73 +57,54 @@ impl<'design> LeafPlan<'design> {
                 DeclKind::Signal(signal) => (signal.ty, BundleView::Producer),
                 _ => continue,
             };
-            // a bundle, or an array of them with a written length: one group of leaves per element (`rx[0].valid`)
-            let (element, count) = match self.element_count(ty) {
-                Some((element, count)) => (element, Some(count)),
-                None => (ty, None),
-            };
+            // a bundle, or an array of them (`[flip Stream<u8>; N]`): each field is one leaf, an array of the field's type when the
+            // owner is an array (struct of arrays, design D12), whatever its length is written as
+            let (element, lengths) = self.element_levels(ty);
             let Some(bundle) = self.bundle_of(element) else { continue };
             // a port of the module, not of a function or a generation arm already unrolled elsewhere
             if !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Module(_))) {
                 continue;
             }
-            let element_view = if matches!(self.design.type_node(element).kind, TypeKind::Flip(_)) && count.is_some() { view.flipped() } else { view };
+            let element_view = if matches!(self.design.type_node(element).kind, TypeKind::Flip(_)) && !lengths.is_empty() { view.flipped() } else { view };
             let arguments = self.arguments_of(element, bundle);
             let mut leaves = Vec::new();
-            match count {
-                None => self.expand(owner, bundle, view, "", &arguments, &mut leaves, 0),
-                Some(count) => {
-                    for index in 0..count {
-                        let path = format!("[{index}]");
-                        leaves.push(self.element_group(owner, element, &path));
-                        self.expand(owner, bundle, element_view, &path, &arguments, &mut leaves, 0);
-                    }
-                }
-            }
-            out.push((owner, leaves));
+            let site = LeafSite { owner, lengths: &lengths };
+            self.expand(&site, bundle, element_view, "", &arguments, &mut leaves, 0);
+            out.push((owner, leaves, lengths.len()));
         }
         out
     }
 
-    /// The element type and the length of `ty` written `[Stream; 4]` or `[flip Stream<u8>; 4]`, when its element is a bundle and its
-    /// length a plain integer literal (any other length has no leaves: the checker refuses the port).
-    fn element_count(&self, ty: TypeId) -> Option<(TypeId, usize)> {
-        let TypeKind::Array { elem, len } = &self.design.type_node(ty).kind else { return None };
-        self.design.bundle_struct_of_type(*elem)?;
-        let ExprKind::Lit(lit) = &self.design.expr_node(*len).kind else { return None };
-        let LitKind::Int(text) = &lit.kind else { return None };
-        let digits: String = text.chars().take_while(char::is_ascii_digit).collect();
-        digits.parse().ok().map(|count| (*elem, count))
+    /// The element type of `ty` and the lengths of the arrays around it, outermost first, when `ty` is an array of bundles
+    /// (`[Lane; N]`, `[[flip Stream<u8>; 2]; 3]`); `ty` itself and no length for any other type.
+    fn element_levels(&self, ty: TypeId) -> (TypeId, Vec<ExprId>) {
+        let mut lengths = Vec::new();
+        let mut at = ty;
+        while let TypeKind::Array { elem, len } = &self.design.type_node(at).kind {
+            lengths.push(*len);
+            at = *elem;
+        }
+        if self.bundle_of(at).is_some() { (at, lengths) } else { (ty, Vec::new()) }
     }
 
-    /// The group an element of an array of bundles stands for: no carrier and no node of its own, as a nested bundle field.
-    fn element_group(&self, owner: DeclId, element: TypeId, path: &str) -> PlannedLeaf {
-        let owner_data = self.design.decl_data(owner);
-        let owner_name = owner_data.name.as_ref().map_or("", |name| name.text.as_str());
-        let kind = match &owner_data.kind {
-            DeclKind::Port(_) => DeclKind::Port(PortData { dir: None, ty: element, default: None, kind: PortKind::Bundle }),
-            _ => DeclKind::Signal(SignalData { ty: element, init: None }),
-        };
-        let data = DeclData {
-            kind,
-            name: Some(Name { text: Self::leaf_name(owner_name, path), raw: false, span: owner_data.span }),
-            parent: owner_data.parent,
-            children: Vec::new(),
-            file: owner_data.file,
-            span: owner_data.span,
-            generics_span: None,
-            public: owner_data.public,
-            meta: Meta::default(),
-        };
-        PlannedLeaf { data, path: path.to_string(), nested: true }
+    /// The type of a leaf whose field is typed `field` under an owner of `lengths` element levels: the field's type, or the array
+    /// of it with those lengths, outermost first (`tx.a: [Bit; N]` of `tx: [Lane; N]`).
+    fn leaf_type(&mut self, field: TypeId, lengths: &[ExprId]) -> TypeId {
+        let mut ty = field;
+        for length in lengths.iter().rev() {
+            let span = self.design.type_node(field).span;
+            let owner = self.design.type_node(field).owner;
+            ty = self.design.push_type(TypeNode { kind: TypeKind::Array { elem: ty, len: *length }, span, owner });
+        }
+        ty
     }
 
-    /// The name of the leaf at `path` under the owner `owner_name`: `tx.valid`, `rx[0].valid`.
+    /// The name of the leaf at `path` under the owner `owner_name`: `tx.valid`, `tx.inner.x`.
     fn leaf_name(owner_name: &str, path: &str) -> String {
-        if path.starts_with('[') { format!("{owner_name}{path}") } else { format!("{owner_name}.{path}") }
+        format!("{owner_name}.{path}")
     }
 
-    /// The bundle struct `ty` names, through `flip` only (an array of bundles is `composite-values` C's).
+    /// The bundle struct `ty` names, through `flip` only (an array of bundles is taken apart by `element_levels`).
     fn bundle_of(&self, ty: TypeId) -> Option<DeclId> {
         self.design.bundle_struct_of_type(ty)
     }
@@ -148,23 +138,23 @@ impl<'design> LeafPlan<'design> {
         arguments
     }
 
-    /// Appends the leaves of `bundle` seen with `view` under the prefix `prefix` of `owner`'s name, its generic parameters given
+    /// Appends the leaves of `bundle` seen with `view` under the prefix `prefix` of the owner's name, its generic parameters given
     /// by `arguments`; a nested bundle is a leaf of its own followed by its fields (a bundle that contains itself stops at a
     /// fixed depth: the checker reports it).
-    #[allow(clippy::too_many_arguments)]
-    fn expand(&mut self, owner: DeclId, bundle: DeclId, view: BundleView, prefix: &str, arguments: &ParameterArguments, out: &mut Vec<PlannedLeaf>, depth: usize) {
+    fn expand(&mut self, site: &LeafSite, bundle: DeclId, view: BundleView, prefix: &str, arguments: &ParameterArguments, out: &mut Vec<PlannedLeaf>, depth: usize) {
         if depth > 8 {
             return;
         }
-        let owner_data = self.design.decl_data(owner).clone();
+        let owner_data = self.design.decl_data(site.owner).clone();
         let owner_name = owner_data.name.as_ref().map_or("", |name| name.text.as_str());
         for field in self.design.decl_data(bundle).children.clone() {
             let field_data = self.design.decl_data(field).clone();
             let DeclKind::Field(written) = &field_data.kind else { continue };
             let Some(name) = field_data.name.as_ref() else { continue };
             let path = if prefix.is_empty() { name.text.clone() } else { format!("{prefix}.{}", name.text) };
-            let ty = TypeSubstitution::new(self.design, arguments).of_type(written.ty);
-            let nested = self.bundle_of(ty);
+            let field_ty = TypeSubstitution::new(self.design, arguments).of_type(written.ty);
+            let nested = self.bundle_of(field_ty);
+            let ty = self.leaf_type(field_ty, site.lengths);
             let direction = if nested.is_some() { None } else { view.field_direction(written.dir) };
             let kind = match (&owner_data.kind, nested) {
                 (DeclKind::Port(_), nested) => DeclKind::Port(PortData { dir: direction, ty, default: None, kind: if nested.is_some() { PortKind::Bundle } else { PortKind::Carrier } }),
@@ -185,8 +175,8 @@ impl<'design> LeafPlan<'design> {
             out.push(PlannedLeaf { data, path: path.clone(), nested: nested.is_some() });
             if let Some(inner) = nested {
                 let inner_view = if matches!(self.design.type_node(written.ty).kind, TypeKind::Flip(_)) { view.flipped() } else { view };
-                let inner_arguments = self.arguments_of(ty, inner);
-                self.expand(owner, inner, inner_view, &path, &inner_arguments, out, depth + 1);
+                let inner_arguments = self.arguments_of(field_ty, inner);
+                self.expand(site, inner, inner_view, &path, &inner_arguments, out, depth + 1);
             }
         }
     }
@@ -331,12 +321,12 @@ impl<'design> TypeSubstitution<'design> {
 /// Adds the leaves of every bundle port and signal to the design.
 pub(super) fn run(design: &mut Design) {
     let plan = LeafPlan::new(design).plan();
-    for (owner, planned) in plan {
+    for (owner, planned, levels) in plan {
         let mut leaves = Vec::new();
         for leaf in planned {
             let decl = design.push_decl(leaf.data);
             leaves.push(BundleLeaf { decl, path: leaf.path, nested: leaf.nested });
         }
-        design.add_bundle_leaves(owner, leaves);
+        design.add_bundle_leaves(owner, leaves, levels);
     }
 }

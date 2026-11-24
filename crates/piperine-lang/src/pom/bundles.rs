@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::body::{ExprKind, LitKind, TypeKind};
+use super::body::{ExprKind, TypeKind};
 use super::decl::{DeclKind, Dir};
 use super::design::Design;
 use super::ids::{DeclId, ExprId, TypeId};
@@ -74,15 +74,56 @@ pub(crate) struct BundleLeaves {
     pub(super) of_owner: std::collections::BTreeMap<DeclId, Vec<BundleLeaf>>,
     /// The bundle port or signal each leaf belongs to.
     pub(super) owner_of: std::collections::BTreeMap<DeclId, DeclId>,
+    /// The number of element levels of each owner: 0 for a bundle, 1 for `[Lane; N]`, 2 for `[[Lane; 2]; 3]`. Each leaf of
+    /// such an owner is the array of its field with those levels outermost (struct of arrays).
+    pub(super) element_levels: std::collections::BTreeMap<DeclId, usize>,
+}
+
+/// What a chain of fields and indexes (`tx.valid`, `rx[k].valid`, `lanes[1]`) names of a bundle port or signal: a leaf, a
+/// nested group or the bundle itself, and the indexes of the element of an array of bundles it is in, outermost first (empty
+/// for a single bundle). `tx[k].a` is the leaf `tx.a` at the element `[k]`: the element `k` of that array of carriers.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BundlePlace {
+    /// The leaf, the group or the bundle port or signal itself.
+    pub(crate) decl: DeclId,
+    /// The element indexes, one per element level the chain names.
+    pub(crate) elements: Vec<ExprId>,
+}
+
+/// How a person reads the name of one element of a port or signal: the subscript goes between `before` and `after`. An array
+/// of carriers is `x` and the subscript (`x[2]`); a field of an array of bundles puts the element before the field
+/// (`lanes[1].a`), the name the source writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ElementNaming {
+    /// What comes before the subscript.
+    before: String,
+    /// What comes after it.
+    after: String,
+}
+
+impl ElementNaming {
+    /// The name of the element (or the run of elements) `subscript` names (`[1]`, `[0..2]`, `[1][0]`; empty for the whole).
+    pub(crate) fn name(&self, subscript: &str) -> String {
+        format!("{}{subscript}{}", self.before, self.after)
+    }
+}
+
+/// One step of a chain from its root name outward.
+enum ChainStep {
+    /// `.name`.
+    Field(String),
+    /// `[index]`.
+    Index(ExprId),
 }
 
 impl Design {
-    /// Records the leaves of the bundle port or signal `owner`.
-    pub(super) fn add_bundle_leaves(&mut self, owner: DeclId, leaves: Vec<BundleLeaf>) {
+    /// Records the leaves of the bundle port or signal `owner`, an array of bundles of `levels` element levels.
+    pub(super) fn add_bundle_leaves(&mut self, owner: DeclId, leaves: Vec<BundleLeaf>, levels: usize) {
         for leaf in &leaves {
             self.bundle_leaves.owner_of.insert(leaf.decl, owner);
         }
         self.bundle_leaves.of_owner.insert(owner, leaves);
+        self.bundle_leaves.element_levels.insert(owner, levels);
     }
 
     /// The leaves of the bundle port or signal `owner`; empty for any other declaration.
@@ -95,20 +136,43 @@ impl Design {
         self.bundle_leaves.owner_of.get(&leaf).copied()
     }
 
-    /// Whether `leaf` is a field of an element of an array of bundles (`rx[1].valid`): which iteration of a loop drives it is
-    /// folded by the elaborator only.
-    pub(crate) fn is_array_element_leaf(&self, leaf: DeclId) -> bool {
-        self.leaf_owner(leaf).is_some_and(|owner| self.bundle_leaves(owner).iter().any(|entry| entry.decl == leaf && entry.path.starts_with('[')))
+    /// The number of element levels of the bundle port or signal `decl` is, or is a leaf of: 0 for a single bundle and for any
+    /// declaration that is no bundle.
+    pub(crate) fn element_levels(&self, decl: DeclId) -> usize {
+        let owner = self.leaf_owner(decl).unwrap_or(decl);
+        self.bundle_leaves.element_levels.get(&owner).copied().unwrap_or(0)
     }
 
-    /// The leaves that are the same field of every element of the array of bundles `leaf` belongs to, `leaf` included
-    /// (`rx[0].valid`, `rx[1].valid`, ...): `leaf` alone when it is no field of an element.
-    pub(crate) fn leaves_of_each_element(&self, leaf: DeclId) -> Vec<DeclId> {
-        let Some(owner) = self.leaf_owner(leaf) else { return vec![leaf] };
-        let leaves = self.bundle_leaves(owner);
-        let field_of = |path: &str| path.split_once(']').map(|(_, field)| field.to_string());
-        let Some(field) = leaves.iter().find(|entry| entry.decl == leaf).and_then(|entry| field_of(&entry.path)) else { return vec![leaf] };
-        leaves.iter().filter(|entry| !entry.nested && field_of(&entry.path).as_deref() == Some(field.as_str())).map(|entry| entry.decl).collect()
+    /// How the elements of the port or signal `decl` are named: a leaf whose levels are all element levels of its array of
+    /// bundles (`lanes.a: [Bit; 3]`) puts the subscript after the owner (`lanes[1].a`); any other declaration after its name
+    /// (an array field of an array of bundles keeps its flat subscript: `tx.bits[5]`).
+    pub(crate) fn element_naming(&self, decl: DeclId) -> ElementNaming {
+        let name = self.decl_data(decl).name.as_ref().map_or("", |name| name.text.as_str()).to_string();
+        let plain = ElementNaming { before: name, after: String::new() };
+        let Some(owner) = self.leaf_owner(decl) else { return plain };
+        let levels = self.element_levels(owner);
+        if levels == 0 || self.array_levels_of(decl) != levels {
+            return plain;
+        }
+        let owner_name = self.decl_data(owner).name.as_ref().map_or("", |name| name.text.as_str()).to_string();
+        let path = self.bundle_leaves(owner).iter().find(|leaf| leaf.decl == decl).map_or(String::new(), |leaf| leaf.path.clone());
+        ElementNaming { before: owner_name, after: format!(".{path}") }
+    }
+
+    /// The number of array levels the type of the port or signal `decl` is written with.
+    fn array_levels_of(&self, decl: DeclId) -> usize {
+        let ty = match &self.decl_data(decl).kind {
+            DeclKind::Port(port) => port.ty,
+            DeclKind::Signal(signal) => signal.ty,
+            _ => return 0,
+        };
+        let mut levels = 0;
+        let mut at = ty;
+        while let TypeKind::Array { elem, .. } = &self.type_node(at).kind {
+            levels += 1;
+            at = *elem;
+        }
+        levels
     }
 
     /// The leaf of the bundle `owner` at `path` (`valid`, `inner.x`).
@@ -149,15 +213,18 @@ impl Design {
         self.leaf_owner(decl).is_some_and(|owner| self.bundle_leaves(owner).iter().any(|leaf| leaf.decl == decl && leaf.nested))
     }
 
-    /// The leaf the field access `expr` stands for (`tx.valid`, `tx.inner.x`): the declaration of the field of the bundle port
-    /// or signal its chain starts at. The expression's own resolution stays the struct's field, as written; `None` when
-    /// `expr` is no field of a bundle port or signal (a field of a handle, of a value, of an instance).
-    ///
-    /// This is the checker's reading, before any loop is unrolled: an index of an array of bundles that is not a written integer
-    /// (`rx[k]`) stands for the element `[0]`, since every element has the same type and the same view. The elaborator folds the
-    /// index of each iteration instead ([`Design::bundle_field_through`]).
+    /// The leaf the field access `expr` stands for (`tx.valid`, `tx.inner.x`, `rx[k].valid`): the declaration of the field of the
+    /// bundle port or signal its chain starts at. The expression's own resolution stays the struct's field, as written; `None`
+    /// when `expr` is no field of a bundle port or signal (a field of a handle, of a value, of an instance). The element of an
+    /// array of bundles the chain names is [`Design::bundle_place`]'s.
     pub(crate) fn bundle_field(&self, expr: ExprId) -> Option<DeclId> {
-        self.bundle_field_through(expr, &|root| Some(root), &|index| self.literal_index(index).or(Some(0)))
+        self.bundle_place(expr).map(|place| place.decl).filter(|decl| self.leaf_owner(*decl).is_some())
+    }
+
+    /// What the chain `expr` names of a bundle port or signal of the module: a leaf, a group or the bundle (an element of an
+    /// array of bundles, `lanes[1]`), with its element indexes.
+    pub(crate) fn bundle_place(&self, expr: ExprId) -> Option<BundlePlace> {
+        self.bundle_place_through(expr, &|root| Some(BundlePlace { decl: root, elements: Vec::new() }))
     }
 
     /// The name a chain of fields and indexes (`rx[k].valid`) starts at, through parentheses: `None` when it starts at
@@ -180,77 +247,58 @@ impl Design {
         }
     }
 
-    /// The indexes of a chain of fields and indexes (`rx[k].valid`), outermost last, whether or not they are written integers.
-    pub(crate) fn bundle_chain_indexes(&self, expr: ExprId) -> Vec<ExprId> {
-        let mut indexes = Vec::new();
+    /// [`Design::bundle_place`] where the root name of the chain is first mapped by `root_bundle`: a name that stands for a
+    /// bundle port, signal or group gives what it stands for (a handle `self` an inlined function was given is the place the
+    /// call named, `elab/bundles.rs`), any other name `None`. Each index of the chain before its first field names an element
+    /// of an array of bundles, one per element level; the fields then need every level named (`tx.a` of `tx: [Lane; N]`
+    /// names no field), and an index after a field is the field's own, which the caller reads (`None` here).
+    pub(crate) fn bundle_place_through(&self, expr: ExprId, root_bundle: &dyn Fn(DeclId) -> Option<BundlePlace>) -> Option<BundlePlace> {
+        let mut steps = Vec::new();
         let mut at = expr;
         loop {
             match &self.expr_node(at).kind {
-                ExprKind::Paren(inner) => at = *inner,
-                ExprKind::Field { expr: receiver, .. } => at = *receiver,
-                ExprKind::Index { expr: base, index } => {
-                    indexes.push(*index);
-                    at = *base;
-                }
-                _ => break,
-            }
-        }
-        indexes.reverse();
-        indexes
-    }
-
-    /// [`Design::bundle_field`] where the root name of the chain is first mapped by `root_bundle`: a name that stands for a
-    /// bundle port, signal or group (a handle `self` an inlined function was given, `pom/bundles.rs`) gives that declaration,
-    /// any other name `None`. The element an index of an array of bundles names is what `index_of` says of it (`None`: no leaf).
-    pub(crate) fn bundle_field_through(&self, expr: ExprId, root_bundle: &dyn Fn(DeclId) -> Option<DeclId>, index_of: &dyn Fn(ExprId) -> Option<usize>) -> Option<DeclId> {
-        let mut path = Vec::new();
-        let mut at = expr;
-        loop {
-            match &self.expr_node(at).kind {
-                ExprKind::Paren(inner) if !path.is_empty() => at = *inner,
+                ExprKind::Paren(inner) if !steps.is_empty() => at = *inner,
                 ExprKind::Field { expr: receiver, name, .. } => {
-                    path.push(name.text.clone());
+                    steps.push(ChainStep::Field(name.text.clone()));
                     at = *receiver;
-                    while let ExprKind::Paren(inner) = &self.expr_node(at).kind {
-                        at = *inner;
-                    }
                 }
-                // an element of an array of bundles at a literal index (`rx[1].valid`): the group `[1]`
                 ExprKind::Index { expr: base, index } => {
-                    path.push(format!("[{}]", index_of(*index)?));
+                    steps.push(ChainStep::Index(*index));
                     at = *base;
-                    while let ExprKind::Paren(inner) = &self.expr_node(at).kind {
-                        at = *inner;
-                    }
                 }
-                ExprKind::Path(root) if !path.is_empty() => {
+                ExprKind::Path(root) if !steps.is_empty() => {
                     let Some(Resolution::Decl(named)) = self.path_node(*root).segments.last().map(|segment| segment.res) else { return None };
-                    let owner = root_bundle(named)?;
-                    path.reverse();
-                    return self.leaf_under(owner, &Self::joined(&path));
+                    steps.reverse();
+                    return self.walk_chain(root_bundle(named)?, steps);
                 }
                 _ => return None,
             }
         }
     }
 
-    /// The integer a literal index `expr` writes.
-    pub(crate) fn literal_index(&self, expr: ExprId) -> Option<usize> {
-        let ExprKind::Lit(lit) = &self.expr_node(expr).kind else { return None };
-        let LitKind::Int(text) = &lit.kind else { return None };
-        text.chars().take_while(char::is_ascii_digit).collect::<String>().parse().ok()
-    }
-
-    /// The steps of a field chain, outermost last, as the path of a leaf: `inner.x`, `[1].valid`, `bus[0].x`.
-    fn joined(steps: &[String]) -> String {
-        let mut out = String::new();
-        for step in steps {
-            if !out.is_empty() && !step.starts_with('[') {
-                out.push('.');
-            }
-            out.push_str(step);
+    /// The place the steps of a chain reach from `start`, a bundle port, signal or group (`None` for any other start).
+    fn walk_chain(&self, start: BundlePlace, steps: Vec<ChainStep>) -> Option<BundlePlace> {
+        if !self.is_bundle_owner(start.decl) && !self.is_bundle_group(start.decl) {
+            return None;
         }
-        out
+        let levels = self.element_levels(start.decl);
+        let mut elements = start.elements;
+        let mut fields: Vec<String> = Vec::new();
+        for step in steps {
+            match step {
+                ChainStep::Index(index) if fields.is_empty() && elements.len() < levels => elements.push(index),
+                ChainStep::Index(_) => return None,
+                ChainStep::Field(name) => fields.push(name),
+            }
+        }
+        if fields.is_empty() {
+            return Some(BundlePlace { decl: start.decl, elements });
+        }
+        if elements.len() != levels {
+            return None;
+        }
+        let decl = self.leaf_under(start.decl, &fields.join("."))?;
+        Some(BundlePlace { decl, elements })
     }
 
     /// The `struct` a bundle type names, through `flip` (`Stream<u8>`, `flip Stream`): `None` for any other type.
@@ -278,18 +326,19 @@ impl Design {
         parent.is_some_and(|parent| matches!(&self.expr_node(parent).kind, ExprKind::MethodCall { recv, .. } if *recv == expr))
     }
 
-    /// The bundle port, signal or nested group `expr` names (`s`, `o.inner`), through parentheses: what a connection passes.
-    pub(crate) fn bundle_named(&self, expr: ExprId) -> Option<DeclId> {
+    /// The bundle port, signal, nested group or element of an array of bundles `expr` names (`s`, `o.inner`, `lanes[1]`), through
+    /// parentheses: what a connection passes.
+    pub(crate) fn bundle_named(&self, expr: ExprId) -> Option<BundlePlace> {
         let mut expr = expr;
         while let ExprKind::Paren(inner) = &self.expr_node(expr).kind {
             expr = *inner;
         }
         match &self.expr_node(expr).kind {
             ExprKind::Path(path) => match self.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if self.is_bundle_owner(decl) => Some(decl),
+                Some(Resolution::Decl(decl)) if self.is_bundle_owner(decl) => Some(BundlePlace { decl, elements: Vec::new() }),
                 _ => None,
             },
-            ExprKind::Field { .. } | ExprKind::Index { .. } => self.bundle_field(expr).filter(|leaf| self.is_bundle_group(*leaf)),
+            ExprKind::Field { .. } | ExprKind::Index { .. } => self.bundle_place(expr).filter(|place| self.is_bundle_owner(place.decl) || self.is_bundle_group(place.decl)),
             _ => None,
         }
     }

@@ -458,16 +458,17 @@ impl Checker<'_> {
         self.book.handed.push((decl, element, span, file));
     }
 
-    /// [`Checker::hand_over`] of a whole carrier no expression names by an element: the field of a bundle (`lanes[0].a`
-    /// is a carrier of its own, whichever element of an array of bundles it belongs to). `place` is the expression that names the
-    /// bundle: one written inside generation reaches the carrier in the iterations elaboration takes only.
-    pub(super) fn hand_over_whole(&mut self, decl: DeclId, place: ExprId, span: Span, file: FileId) {
+    /// [`Checker::hand_over`] of the elements `element` of a carrier no expression names: a field of a bundle given whole
+    /// (`s.valid`), or of an element of an array of bundles (`lanes[k]` hands the element `k` of the leaf `lanes.a`). `place` is
+    /// the expression that names the bundle: one written inside generation reaches the carrier in the iterations elaboration
+    /// takes only.
+    pub(super) fn hand_over_element(&mut self, decl: DeclId, element: super::element_target::Element, place: ExprId, span: Span, file: FileId) {
         if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
             let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
-        let element = self.judged_element(place, decl, super::element_target::Element::Whole);
+        let element = self.judged_element(place, decl, element);
         self.book.handed.push((decl, element, span, file));
     }
 
@@ -536,7 +537,8 @@ impl Checker<'_> {
         let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
         let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
-            let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            // the element as the source names it: `mem[2]`, `lanes[1].a` for a field of an array of bundles
+            let name = self.design.element_naming(decl).name(&element.subscript());
             // a resolved carrier has as many drives as modules hand it down or define it (§5.2.1): nothing here is a second one
             if matches!(self.carriers.get(&decl).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.design, *nature).resolved) {
                 continue;
@@ -621,12 +623,6 @@ impl Checker<'_> {
             if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
-            // a field of an element of an array of bundles is driven by the iteration of a loop that names its index: the
-            // elaborator folds the index and judges the element per instance (`elab/element_coverage.rs`)
-            if self.design.is_array_element_leaf(decl) {
-                self.deferred_coverage.missing_initial.insert(decl);
-                continue;
-            }
             // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
             let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let coverage = self.driven_coverage(decl, &held);
@@ -634,7 +630,7 @@ impl Checker<'_> {
                 self.deferred_coverage.missing_initial.insert(decl);
                 continue;
             }
-            let Some(unnamed) = coverage.unnamed(&name) else { continue };
+            let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { continue };
             let found = value.name(self.design);
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));

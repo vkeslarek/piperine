@@ -18,11 +18,13 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
         // a field of a bundle port or signal is the carrier or node its leaf stands for (§7 rule 12); the bundle is no value to read
-        if let Some(leaf) = self.design.bundle_field(expr) {
-            if self.design.is_bundle_group(leaf) {
+        if let Some(place) = self.design.bundle_place(expr).filter(|place| self.design.leaf_owner(place.decl).is_some()) {
+            if self.design.is_bundle_group(place.decl) {
                 return self.bundle_as_value(expr);
             }
-            return self.item_type(leaf, file, node.span);
+            // at an element of an array of bundles (`rx[k].valid`) the read is the element of the leaf's array (struct of arrays)
+            self.element_indexes(&place);
+            return self.item_type(place.decl, file, node.span).and_then(|read| read.element_at(place.elements.len()));
         }
         // a field of a bundle handle (`self.p`): read through the handle (`bundle_handles.rs`)
         if let Some((_, ty)) = self.bundle_handle_field(expr) {

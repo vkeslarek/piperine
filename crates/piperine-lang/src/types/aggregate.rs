@@ -135,11 +135,7 @@ impl Checker<'_> {
     /// param stays an expression the elaborator folds per body variant (§8.1.2, QC2).
     pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
-        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
-            let what = self.expression_name(len);
-            self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
-            return None;
-        };
+        let length = self.array_length(file, span, len)?;
         let element = element?;
         // an array of carriers or of nodes (CV-23): `Ty::Array` over a `Carrier` or a `Node` element, which no value is
         if element.is_carrier_element() {
@@ -150,6 +146,17 @@ impl Checker<'_> {
             return None;
         }
         Some(Ty::Array(Box::new(element), length))
+    }
+
+    /// The length `len` of an array type: a number the checker folds, a length over const parameters, or one that reads a
+    /// module param; else `E0188` naming it (§1.2.5).
+    pub(super) fn array_length(&mut self, file: FileId, span: Span, len: ExprId) -> Option<Length> {
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
+            let what = self.expression_name(len);
+            self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
+            return None;
+        };
+        Some(length)
     }
 
     /// The length that reads a module param (`[T; n]`, `[T; n + 1]`), left as the expression: the checker types it so the
@@ -441,7 +448,7 @@ impl Checker<'_> {
     }
 
     /// An index or a bound of a range: any integer type (§1.5.9).
-    fn integer_index(&mut self, index: ExprId) {
+    pub(super) fn integer_index(&mut self, index: ExprId) {
         match self.infer(index) {
             Some(ty) if ty.is_integer() => {}
             Some(other) => {

@@ -61,10 +61,15 @@ impl Checker<'_> {
                 self.exprs[place.index()] = Some(target.held.clone());
                 Some(target)
             }
-            ExprKind::Field { .. } if self.design.bundle_field(place).is_some() => {
-                // a field of a bundle port or signal is the carrier its leaf stands for (§7 rule 12)
-                let leaf = self.design.bundle_field(place)?;
-                self.declared_target(place, leaf, what)
+            ExprKind::Field { .. } if let Some(found) = self.design.bundle_place(place).filter(|found| self.design.leaf_owner(found.decl).is_some()) => {
+                // a field of a bundle port or signal is the carrier its leaf stands for (§7 rule 12); at an element of an array of
+                // bundles (`tx[k].a`) it is that element of the leaf, a place like `x[k]`
+                if found.elements.is_empty() {
+                    return self.declared_target(place, found.decl, what);
+                }
+                let target = self.projected_target(place, what)?;
+                self.exprs[place.index()] = Some(target.held.clone());
+                Some(target)
             }
             ExprKind::Field { res: Resolution::Decl(item), .. } => {
                 // a field of a bundle read through a handle: the handle is read-only (§7 rule 13), `generics` B's rule

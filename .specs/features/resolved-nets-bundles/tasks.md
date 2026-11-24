@@ -33,30 +33,7 @@ Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
 **Base and order.** Branch `feature/resolved-nets`, kept current by merging `main` into it (by hunk; never one side of a whole file; documents and tests keep both intents). B1 (T1–T4) is on `main`.
 
 | Batch | Tasks | Starts when | Delivers |
-| ----- | ----- | ----------- | -----### T22: B4 limits
-
-**What**: Closes the forms spec §7 allows that T19 and T20 left refused. (1) An array of bundles indexed by a generation loop variable (`for k in 0..N { Raise(lanes[k]) }`, `tx[k].a`) folds the index per iteration: the checker reads an index that is no written integer as an element of the array (every element has the type and the view of the first), the elaborator folds it over the iteration (`Elaboration::bundle_leaf`), and each element field is judged per instance (`E0187`, `E0220`). (2) The constant parameter of a generic struct named in an array length of a field (`struct Word<const W: usize> { out bits: [Bit; W] }`, `Word<3>`, `Word<W + 1>`) is replaced by the argument of each port (`TypeSubstitution::of_length`); an array of bundles whose length is not an integer written in the source (`[Lane; N]`) stays a `P0001` that names that form. (3) An array of carriers as a field of a bundle (`struct Word { out bits: [Bit; 2] }`): the element `w.bits[k]` is a place and a read, and the field is handed whole.
-**Where**: `crates/piperine-lang/src/pom/bundles.rs`, `src/elab/bundles.rs`, `src/types/`
-**Depends on**: T20
-**Reuses**: arrays of carriers (`Element::Unfolded`, `elab/drive_overlaps.rs`)
-**Requirement**: BN-06
-**Executor**: Opus
-
-**Done when**:
-
-- [x] `an_element_index_that_is_a_loop_variable_is_an_element_of_the_array` passes under `**Run typesbundles**`; `a_loop_variable_index_folds_to_the_element_of_each_iteration` and `a_loop_that_gives_one_element_twice_is_e0220_naming_it` under `**Run elabbundles**`; `an_element_index_that_is_a_loop_variable_folds_per_iteration` under `**Run sourcebundles**`
-- [x] `an_array_of_carriers_as_a_field_is_driven_and_read_by_index` passes under `**Run typesbundles**`, `an_array_field_of_carriers_binds_whole_and_is_written_by_element` under `**Run elabbundles**`, `an_array_of_carriers_as_a_field_is_driven_and_read_by_index` under `**Run sourcebundles**`
-- [x] `a_constant_parameter_in_an_array_length_of_a_field_is_replaced_by_its_argument` passes under `**Run typesbundles**`, `a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_port` under `**Run elabbundles**`, `a_constant_parameter_in_an_array_length_of_a_field_gives_its_argument_of_carriers` under `**Run sourcebundles**`; `an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form` passes under `**Run typesbundles**` (the one form left open, see the Handoff)
-- [x] Gate check passes: Quick
-
-**Tests**: integration
-**Gate**: quick
-
-**Commit**: `feat(elab): loop indexes and carrier array fields of bundles`
-
----
-
---- |
+| ----- | ----- | ----------- | -------- |
 | B2 | T5 to T8 (phases 2, 3) | `explicit-unknowns` phase A on `main` (`composite-values` A–B already is) | the contract; bundle types, views, literals, `E0211` |
 | B3 | T9 to T16 (phases 4, 5) | B2; T15 also needs `resolved-nets` T22 on the branch | bundles elaborate and run; host and POM names |
 | B4 | T17 to T21 (phases 6 to 8) | B3, `generics` B and `unknown-semantics-events` B5 (T17, T18), `generics` A and C and `composite-values` C (T19, T20), `generics` C (T21's `Slice<T>`) | functions on a bundle; generic and array bundles; the records |
@@ -573,6 +550,51 @@ T21
 **Commit**: `feat(elab): arrays of bundles`
 
 ---
+### T22: B4 limits
+
+**What**: Closes the forms spec §7 allows that T19 and T20 left refused. (1) An array of bundles indexed by a generation loop variable (`for k in 0..N { Raise(lanes[k]) }`, `tx[k].a`) folds the index per iteration: the checker reads an index that is no written integer as an element of the array (every element has the type and the view of the first), the elaborator folds it over the iteration (`Elaboration::bundle_leaf`), and each element field is judged per instance (`E0187`, `E0220`). (2) The constant parameter of a generic struct named in an array length of a field (`struct Word<const W: usize> { out bits: [Bit; W] }`, `Word<3>`, `Word<W + 1>`) is replaced by the argument of each port (`TypeSubstitution::of_length`); an array of bundles whose length is not an integer written in the source (`[Lane; N]`) stays a `P0001` that names that form. (3) An array of carriers as a field of a bundle (`struct Word { out bits: [Bit; 2] }`): the element `w.bits[k]` is a place and a read, and the field is handed whole.
+**Where**: `crates/piperine-lang/src/pom/bundles.rs`, `src/elab/bundles.rs`, `src/types/`
+**Depends on**: T20
+**Reuses**: arrays of carriers (`Element::Unfolded`, `elab/drive_overlaps.rs`)
+**Requirement**: BN-06
+**Executor**: Opus
+
+**Done when**:
+
+- [x] `an_element_index_that_is_a_loop_variable_is_an_element_of_the_array` passes under `**Run typesbundles**`; `a_loop_variable_index_folds_to_the_element_of_each_iteration` and `a_loop_that_gives_one_element_twice_is_e0220_naming_it` under `**Run elabbundles**`; `an_element_index_that_is_a_loop_variable_folds_per_iteration` under `**Run sourcebundles**`
+- [x] `an_array_of_carriers_as_a_field_is_driven_and_read_by_index` passes under `**Run typesbundles**`, `an_array_field_of_carriers_binds_whole_and_is_written_by_element` under `**Run elabbundles**`, `an_array_of_carriers_as_a_field_is_driven_and_read_by_index` under `**Run sourcebundles**`
+- [x] `a_constant_parameter_in_an_array_length_of_a_field_is_replaced_by_its_argument` passes under `**Run typesbundles**`, `a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_port` under `**Run elabbundles**`, `a_constant_parameter_in_an_array_length_of_a_field_gives_its_argument_of_carriers` under `**Run sourcebundles**`; `an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form` passed under `**Run typesbundles**` (the one form left open then; T23 replaced it with run tests, check C41)
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(elab): loop indexes and carrier array fields of bundles`
+
+---
+### T23: Arrays of bundles of any length (struct of arrays)
+
+**What**: The last B4 limit. An array of bundles whose length is no written integer (`[Lane; N]` with a const generic or a module param, `[flip Stream<T>; N]`, `N + 1`) runs. Design D12 (amendment of 2026-11-24, AFK default pending user review): every array of bundles, the written length included, is a struct of arrays: one leaf per field typed as the array of the field's type with the owner's lengths (`tx.a: [Bit; N]`), and `tx[k].a` is element `k` of `tx.a`, so substitution, per-instance folding, element-granular `E0187`/`E0220`, places, reads, events and connections by window are the arrays-of-carriers machinery. Host names stay `tx[1].valid` (`Probe::field_first` maps them to the leaf and element). The `P0001` and its test are removed.
+**Where**: `crates/piperine-lang/src/pom/resolve/leaves.rs`, `src/pom/bundles.rs`, `src/types/`, `src/elab/`, `crates/piperine-api/src/probe.rs`
+**Depends on**: T22
+**Reuses**: arrays of carriers (`element_lookup`, `carrier_window`, `node_run`, `element_target.rs`, `drive_overlaps.rs`, `element_coverage.rs`)
+**Requirement**: BN-06, BN-07
+**Executor**: Opus
+
+**Done when**:
+
+- [x] `an_array_of_bundles_of_a_generic_length_is_typed_per_instance`, `two_producers_of_one_element_of_an_array_of_bundles_is_e0220_naming_it` and `an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it` pass under `**Run typesbundles**`
+- [x] `an_array_of_bundles_of_a_generic_length_has_the_length_of_each_instance`, `a_computed_length_of_an_array_of_bundles_is_folded_per_instance`, `a_second_producer_of_one_element_in_a_generic_instance_is_e0220_naming_it`, `an_element_no_iteration_drives_in_a_generic_instance_is_e0187_naming_it`, `a_node_field_of_an_array_of_bundles_is_one_array_of_nodes` and the re-pinned `a_loop_variable_index_folds_to_the_element_of_each_iteration` pass under `**Run elabbundles**`
+- [x] `an_array_of_bundles_of_a_generic_length_runs_with_each_length`, `a_generation_loop_drives_each_element_of_an_array_of_bundles_by_its_index`, `an_array_of_bundles_of_a_computed_length_runs` and `an_array_of_flipped_streams_completes_a_handshake_per_lane` pass under `**Run sourcebundles**`
+- [x] `a_field_of_an_element_of_an_array_of_bundles_is_named_element_first` passes under `**Run apimetadata**`
+- [x] Gate check passes: the coordinator's B4 gate (the `**Build**` line, `cargo test -p piperine-lang`, parity source_bundles/source_nets/source_natures/source_aggregates/source_carrier_arrays, Book natures/modules/cheatsheet/inventory)
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(elab): arrays of bundles of any length as a struct of arrays`
+
+---
 ### T21: Records: Book, GAPS, code owners
 
 **What**: The Book's `natures#8` and `natures~52790298` run (with `Slice<T>` once `generics` C is on `main`; otherwise they keep only that refusal, owner `generics`; `Slice<T: Repr + Default>` since generics T116, harness at a type with a `Default`); **amended 2026-11-23 (generics C gap verdict G3):** modules#10 with modules#11 (`MemoryBank` of `Dram1T1C` cells over the bundle `Cell`) and cheatsheet#8 (the template card), which `generics` phase D T93 hands over refused only for the bundle `Cell` (L25), run too (waits for `generics` D T93 on `main`; otherwise they keep only the bundle's refusal); `GAPS.md` loses L25 and §9 gives Part II §7 its share; `tests/book/natures.rs`, `inventory.tsv`, `docs.rs` follow; every `code_owners.tsv` row still owed is deleted.
@@ -725,8 +747,25 @@ Proof: run typesbundles | test a_constant_parameter_in_an_array_length_of_a_fiel
 Proof: run elabbundles | test a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_port ... ok
 Proof: run sourcebundles | test a_constant_parameter_in_an_array_length_of_a_field_gives_its_argument_of_carriers ... ok
 
-**C41** - An array of bundles of a generic length is `P0001` naming that form (BN-06, AC 4)
-Proof: run typesbundles | test an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form ... ok
+**C41** - An array of bundles of a generic or computed length (`[Lane; N]`, `[flip Stream<u8>; N]`, `[Lane; N + 1]`) is typed, folded and run per instance as a struct of arrays (BN-06, AC 4; §7 rule 11; design D12)
+Proof: run typesbundles | test an_array_of_bundles_of_a_generic_length_is_typed_per_instance ... ok
+Proof: run elabbundles | test an_array_of_bundles_of_a_generic_length_has_the_length_of_each_instance ... ok
+Proof: run elabbundles | test a_computed_length_of_an_array_of_bundles_is_folded_per_instance ... ok
+Proof: run sourcebundles | test an_array_of_bundles_of_a_generic_length_runs_with_each_length ... ok
+Proof: run sourcebundles | test a_generation_loop_drives_each_element_of_an_array_of_bundles_by_its_index ... ok
+Proof: run sourcebundles | test an_array_of_bundles_of_a_computed_length_runs ... ok
+Proof: run sourcebundles | test an_array_of_flipped_streams_completes_a_handshake_per_lane ... ok
+
+**C42** - The one-driver rule and the initial-value rule are judged per element of an array of bundles, naming the field of the element (BN-02, AC 4; §7 rule 15; §3.3.4)
+Proof: run typesbundles | test two_producers_of_one_element_of_an_array_of_bundles_is_e0220_naming_it ... ok
+Proof: run typesbundles | test an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it ... ok
+Proof: run elabbundles | test a_second_producer_of_one_element_in_a_generic_instance_is_e0220_naming_it ... ok
+Proof: run elabbundles | test an_element_no_iteration_drives_in_a_generic_instance_is_e0187_naming_it ... ok
+
+**C43** - A field of an element of an array of bundles is named as the source writes it (`Top.lanes[1].a`, `Top.taps[1].p`) though it is an element of the field's array (BN-07, AC 1; design D12)
+Proof: run apimetadata | test a_field_of_an_element_of_an_array_of_bundles_is_named_element_first ... ok
+Proof: run elabbundles | test a_node_field_of_an_array_of_bundles_is_one_array_of_nodes ... ok
+Proof: run elabbundles | test a_loop_variable_index_folds_to_the_element_of_each_iteration ... ok
 
 ---
 
@@ -742,6 +781,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Settled B3 (2026-11-24):** T9 to T16 done on `feature/resolved-nets-bundles`. Host names need no change: a leaf carrier is named by its path, so `--print s.valid`, records and `Metadata::ports` (one entry per field of a top's bundle port, in declaration order) already name fields by dotted path (`metadata.rs::a_bundle_field_is_named_by_its_dotted_path`); `Port::bundle_view` (public `BundleView`) is the POM's reflection of the view (`pom_reflect::a_bundle_port_reflects_its_type_and_view`), documented in docs/pom. A leaf's span is its owner's (declaration order and diagnostics point at the port). Known limits left for B4: arrays as fields of a bundle (`an array field of a bundle`, T20), functions on a bundle (`a function on a bundle`, T17/T18, P0001 by name), generic bundles (T19). Gates run at B3 end: Build line clean, `piperine-lang` (all targets), `piperine-api` (all targets), Book natures/modules/cheatsheet/inventory, parity source_bundles/source_natures/source_nets/source_carrier_arrays/source_aggregates green; `book_claims::every_value_sentence_has_a_claim_row` (natures~1197ebef) fails before and after, not this feature's.
 **Settled B4 (T17 to T20, 2026-11-24):** done on `feature/resolved-nets-bundles`. T17: `impl` on a bundle types `self` as `Ty::Struct` of the bundle (`types/bundle_handles.rs`, `Checker::naming_bundle`), a field of the handle is read through `bundle_handle_field`, a write is `E0133` naming `self.field`; the elaborator resolves leaves through handles with `Elaboration::bundle_leaf`/`named_bundle` (`elab/bundles.rs`, `Design::bundle_field_through`). T18 needed no code. T19: leaves of a generic bundle are typed by `TypeSubstitution` in `pom/resolve/leaves.rs` (type arguments only; a const parameter named inside an array length is not substituted), generic modules type bundle ports as the struct so a connection teaches `T`; E.6 `Slice` checks clean and Book natures#8 / std_galleries are re-pinned (what remains of natures#8 is the harness's two E0187: `b.valid`, `d.ready`, for T21). T20: arrays of bundles need a written integer-literal length and a literal element index (`rx[1]`); an element index that is a loop variable is not folded (`bundle_named` gives nothing, so `E0264`); an array of nodes as a field of a bundle connects whole, an array of carriers as a field is untested. T21 waits for `generics` D T93 on main (modules#10, modules#11, cheatsheet#8). Gates: Build line clean, piperine-lang all targets, parity source_bundles/natures/nets/carrier_arrays/aggregates, Book natures/modules/cheatsheet/inventory green.
 **Settled T22 (B4 limits, 2026-11-24):** loop-variable indexes (`lanes[k]`, `tx[k].a`) fold per iteration (`Elaboration::bundle_leaf`, checker reads an unwritten index as element 0, element leaves are judged per instance: `E0187` in `elab/element_coverage.rs`, overlaps via `Design::leaves_of_each_element`); an array of carriers as a field is a place and a read by element (checker `place_steps` stops at a bundle field) and is handed whole; the constant parameter of a generic struct in a field's array length is substituted (`TypeSubstitution::of_length`). **Still open, refused by name:** an array of bundles whose length is not an integer written in the source (`[Lane; N]` in a generic module, or a length computed from a constant), `P0001` from `Checker::lower_type_node`. It needs the leaves of an element to exist per instance (today `pom/resolve/leaves.rs` plans them once, at the declaration, `[0]`..`[n-1]`): either a struct-of-arrays leaf per field (`tx.a: [Bit; N]`, every `tx[k].a` site then reads element `k` of it) or per-instance leaves in the elaborator's frame. T21's Book rows do not need it (`MemoryBank` has arrays of carriers and one bundle `Cell` per cell). T21: GAPS L25 keeps this one line.
+**Settled T23 (2026-11-24):** the limit is closed (design D12, struct of arrays, AFK default pending user review): every array of bundles is one leaf per field typed `[F; N]`, `tx[k].a` is element `k` of `tx.a`; generic, param and computed lengths fold per instance; `E0187`/`E0220` name `lanes[1].a` (`Design::element_naming`); the host reads `Top.lanes[1].a` (`Probe::field_first`). The IR keeps arrays (`lanes.a` count N, nodes `d.p[k]`): `elab_bundles::a_loop_variable_index_folds_to_the_element_of_each_iteration` re-pinned to that shape. The P0001 and `an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form` are gone; C41 now proves the run. T21: GAPS L25 has no line for this limit to keep.
 **Dispatched:** none
 **Walked:** none
 
@@ -758,7 +798,7 @@ Phase 3:  T6 → T7 → T8
 Phase 4:  T9 → T10 → T11
 Phase 5:  T12 → T13 → T14 → T15 → T16
 Phase 6:  T17 → T18
-Phase 7:  T19 → T20 → T22
+Phase 7:  T19 → T20 → T22 → T23
 Phase 8:  T21
 ```
 

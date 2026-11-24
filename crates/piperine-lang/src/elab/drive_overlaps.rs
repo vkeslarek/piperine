@@ -146,12 +146,13 @@ impl Elaboration<'_, '_> {
 
     /// The carrier `decl` as the element `reach` names when it is one element of an array (`g[1][1]`), else its name.
     pub(super) fn shared_element_name(&mut self, decl: DeclId, reach: ElementReach) -> String {
-        let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-        let ElementReach::Run(first, end) = reach else { return name };
+        // a field of an array of bundles names its element before the field (`lanes[1].a`, `pom/bundles.rs`)
+        let naming = self.design.element_naming(decl);
+        let ElementReach::Run(first, end) = reach else { return naming.name("") };
         let shape = self.consts.typed_carrier_array(decl).and_then(|array| self.shape_in(&array, 0));
         match shape {
-            Some(shape) if end == first + 1 => format!("{name}{}", shape.subscripts(first)),
-            _ => name,
+            Some(shape) if end == first + 1 => naming.name(&shape.subscripts(first)),
+            _ => naming.name(""),
         }
     }
 }

@@ -4,14 +4,13 @@
 //! carrier or terminal of the child, in the order of the port's leaves, the order `Design::module_items` gives the
 //! child's own body.
 
-use std::collections::BTreeMap;
-
-use piperine_ir::{CarrierWindow, Terminal};
+use piperine_ir::{CarrierWindow, ExprId as LoweredExpr, Origin, Terminal};
 
 use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
+use super::elements::Lookup;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{DeclId, DeclKind, Dir, ExprId, ExprKind, Resolution, StructClass};
+use crate::pom::{BundlePlace, DeclId, DeclKind, Dir, ExprId, ExprKind, Resolution, StructClass};
 
 /// What a placement binds at the ports of the child so far: the terminals of its node ports, the carriers of its carrier ports
 /// and the window of an array of them each is given, each in port order.
@@ -25,61 +24,65 @@ pub(super) struct PortBindings {
 }
 
 /// What one field of a bundle port is given.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum LeafSource {
     /// A carrier or node written at the field in a literal.
     Expression(ExprId),
-    /// The leaf of a bundle carrier of the parent that has the field's name.
-    Leaf(DeclId),
+    /// The leaf of a bundle carrier of the parent that has the field's name, at the element of an array of bundles the
+    /// argument names (`lanes[k]` gives the element `k` of the leaf `lanes.a`).
+    Leaf(BundlePlace),
 }
 
 impl Elaboration<'_, '_> {
-    /// The leaf the field access `expr` stands for in `scope`: `tx.valid` of a bundle port or signal of the frame, or `self.valid` of
-    /// a handle an inlined function was given (`handles.rs`), which is the leaf of the bundle the call named (§7 rule 13). An index
-    /// of an array of bundles (`rx[k].valid`) is folded over the loop variables of the iteration `scope` is in.
-    pub(super) fn bundle_leaf(&mut self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
+    /// What the chain `expr` names of a bundle in `scope` (`tx.valid`, `rx[k]`, `self.valid` of a handle an inlined function was
+    /// given, `handles.rs`, which is the place the call named, §7 rule 13): a leaf, a group or a bundle, with the element indexes
+    /// of the array of bundles it is in, left for the array machinery to fold over the iteration `scope` is in.
+    fn bundle_place_in(&mut self, scope: &Scope, expr: ExprId) -> Option<BundlePlace> {
         let root = self.design.bundle_chain_root(expr)?;
         let rooted = self.handled_bundle(scope, root);
-        let folded = self.folded_bundle_indexes(scope, expr);
-        self.design.bundle_field_through(expr, &|_| rooted, &|index| self.design.literal_index(index).or_else(|| folded.get(&index).copied()))
+        self.design.bundle_place_through(expr, &|_| rooted.clone())
     }
 
-    /// The value each index of the chain `expr` (`rx[k].valid`) that is not a written integer has in `scope`, where it folds.
-    fn folded_bundle_indexes(&mut self, scope: &Scope, expr: ExprId) -> BTreeMap<ExprId, usize> {
-        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
-        let mut folded = BTreeMap::new();
-        for index in self.design.bundle_chain_indexes(expr) {
-            if self.design.literal_index(index).is_some() {
-                continue;
-            }
-            if let Ok(piperine_ir::Constant::Int(at)) = self.consts.value(index, &bindings)
-                && let Ok(at) = usize::try_from(at)
-            {
-                folded.insert(index, at);
+    /// The leaf the field access `expr` stands for in `scope` (`tx.valid`, `self.valid`, `rx[k].valid` at its element): the place
+    /// of a carrier, a node or a group, never of a bundle port or signal itself.
+    pub(super) fn bundle_leaf(&mut self, scope: &Scope, expr: ExprId) -> Option<BundlePlace> {
+        self.bundle_place_in(scope, expr).filter(|place| self.design.leaf_owner(place.decl).is_some())
+    }
+
+    /// The read of a field of an element of an array of bundles (`ps[k].b`): the element `k` of the leaf `ps.b`. `None` after a
+    /// diagnostic.
+    pub(super) fn lower_bundle_element(&mut self, scope: &mut Scope, expr: ExprId, origin: Origin) -> Option<LoweredExpr> {
+        match self.element_lookup(scope, expr) {
+            Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
+            Lookup::Failed => None,
+            Lookup::No => {
+                self.unsupported(scope.file, self.design.expr_node(expr).span, "a field of an element of an array of bundles that is no carrier, read as a value");
+                None
             }
         }
-        folded
     }
 
     /// The bundle port, signal or group the name `root` stands for in `scope`: itself, or what the handle `root` is bound to.
-    fn handled_bundle(&mut self, scope: &Scope, root: DeclId) -> Option<DeclId> {
+    fn handled_bundle(&mut self, scope: &Scope, root: DeclId) -> Option<BundlePlace> {
         match scope.handles.get(&root) {
             Some(bound) => self.named_bundle(scope, *bound),
-            None => Some(root),
+            None => Some(BundlePlace { decl: root, elements: Vec::new() }),
         }
     }
 
-    /// The bundle port, signal or group the expression `expr` names in `scope` (`s`, `o.inner`, `rx[k]`, a handle bound to either).
-    pub(super) fn named_bundle(&mut self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
+    /// The bundle port, signal, group or element of an array of bundles the expression `expr` names in `scope` (`s`, `o.inner`,
+    /// `rx[k]`, a handle bound to either).
+    pub(super) fn named_bundle(&mut self, scope: &Scope, expr: ExprId) -> Option<BundlePlace> {
         let expr = self.peel_parens(expr);
-        match &self.design.expr_node(expr).kind {
+        let named = match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
-                Some(Resolution::Decl(decl)) => self.handled_bundle(scope, decl).filter(|named| self.design.is_bundle_owner(*named) || self.design.is_bundle_group(*named)),
+                Some(Resolution::Decl(decl)) => self.handled_bundle(scope, decl),
                 _ => None,
             },
-            ExprKind::Field { .. } | ExprKind::Index { .. } => self.bundle_leaf(scope, expr).filter(|leaf| self.design.is_bundle_group(*leaf)),
+            ExprKind::Field { .. } | ExprKind::Index { .. } => self.bundle_place_in(scope, expr),
             _ => None,
-        }
+        };
+        named.filter(|place| self.design.is_bundle_owner(place.decl) || self.design.is_bundle_group(place.decl))
     }
 
     /// The fields of the bundle port `port` given by `arg`, joined to what `arg` gives them. `false` after a diagnostic.
@@ -92,17 +95,32 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             // a field the argument leaves out was refused (`E0263`) before: nothing is bound for it
-            let Some(source) = sources.iter().find(|(path, _)| *path == leaf.path).map(|(_, source)| *source) else { continue };
+            let Some(source) = sources.iter().find(|(path, _)| *path == leaf.path).map(|(_, source)| source.clone()) else { continue };
             ok &= self.bind_leaf(scope, instance, leaf.decl, source, arg, bound);
         }
         ok
     }
 
-    /// The nodes of the array-of-nodes field `from` of a bundle of the frame, one terminal each, in order.
-    fn leaf_node_run(&mut self, scope: &Scope, from: DeclId) -> Option<Vec<Terminal>> {
-        let length: u64 = self.frames.get(scope.frame).and_then(|frame| frame.node_shapes.get(&from)).map(|shape| shape.dims.iter().product())?;
-        let Some(Terminal::Node(first)) = self.frame_node(scope.frame, from) else { return None };
-        Some((0..length as u32).map(|k| Terminal::Node(first + k)).collect())
+    /// The nodes the leaf `from` of a bundle of the frame gives at the element its place names: its node, every node of an
+    /// array-of-nodes field, or those of the element of an array of bundles (`lanes[k]` of `lanes.p: [Electrical; N]`), one
+    /// terminal each, in order. `None` after a diagnostic.
+    fn leaf_node_run(&mut self, scope: &Scope, from: &BundlePlace) -> Option<Vec<Terminal>> {
+        let terminal = self.frame_node(scope.frame, from.decl)?;
+        let Some(shape) = self.frames.get(scope.frame).and_then(|frame| frame.node_shapes.get(&from.decl)).cloned() else { return Some(vec![terminal]) };
+        let Terminal::Node(first) = terminal else { return None };
+        let (offset, length) = self.element_run(scope, &shape, &from.elements)?;
+        Some((0..length as u32).map(|k| Terminal::Node(first + offset as u32 + k)).collect())
+    }
+
+    /// The window of the array carrier of the leaf `from` its element indexes name: the whole leaf with none, one element when
+    /// they name every level, the run below them otherwise. `None` after a diagnostic.
+    fn leaf_window(&mut self, scope: &Scope, from: &BundlePlace) -> Option<Option<CarrierWindow>> {
+        if from.elements.is_empty() {
+            return Some(None);
+        }
+        let (shape, _) = self.carrier_array_shape(from.decl, scope.frame)?;
+        let (first, length) = self.element_run(scope, &shape, &from.elements)?;
+        Some(Some(CarrierWindow { first, length: (from.elements.len() < shape.dims.len()).then_some(length) }))
     }
 
     /// The source of every field under `prefix` of the bundle port `port` that `arg` gives, by path.
@@ -110,8 +128,8 @@ impl Elaboration<'_, '_> {
         if let Some(source) = self.named_bundle(scope, arg) {
             for leaf in self.design.bundle_leaves(port).iter().filter(|leaf| !leaf.nested) {
                 let Some(rest) = leaf.path.strip_prefix(prefix) else { continue };
-                if let Some(from) = self.design.leaf_under(source, rest) {
-                    out.push((leaf.path.clone(), LeafSource::Leaf(from)));
+                if let Some(from) = self.design.leaf_under(source.decl, rest) {
+                    out.push((leaf.path.clone(), LeafSource::Leaf(BundlePlace { decl: from, elements: source.elements.clone() })));
                 }
             }
             return;
@@ -133,8 +151,8 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(arg).span;
         // an array of nodes as a field: its nodes in order, from the carrier of the parent or the nodes a literal names
         if self.types.node_array(port).is_some() {
-            let nodes = match source {
-                LeafSource::Expression(expr) => self.node_array_terminals(scope, expr),
+            let nodes = match &source {
+                LeafSource::Expression(expr) => self.node_array_terminals(scope, *expr),
                 LeafSource::Leaf(from) => self.leaf_node_run(scope, from),
             };
             let Some(nodes) = nodes else { return false };
@@ -146,9 +164,10 @@ impl Elaboration<'_, '_> {
             return true;
         }
         if self.types.carrier(port).is_none() {
-            let terminal = match source {
-                LeafSource::Expression(expr) => self.lower_terminal(scope, expr),
-                LeafSource::Leaf(from) => self.frame_node(scope.frame, from),
+            let terminal = match &source {
+                LeafSource::Expression(expr) => self.lower_terminal(scope, *expr),
+                // a node field, or the node of the element of an array of bundles the argument names
+                LeafSource::Leaf(from) => self.leaf_node_run(scope, from).and_then(|nodes| nodes.first().copied()),
             };
             let Some(terminal) = terminal else {
                 self.unsupported(scope.file, span, "a field of a bundle that is no node of this module");
@@ -157,9 +176,13 @@ impl Elaboration<'_, '_> {
             bound.terminals.push(terminal);
             return true;
         }
-        let found = match source {
-            LeafSource::Expression(expr) => self.lower_carrier_argument(scope, instance, port, expr),
-            LeafSource::Leaf(from) => self.frames.get(scope.frame).and_then(|frame| frame.carriers.get(&from)).map(|index| (*index, None)),
+        let found = match &source {
+            LeafSource::Expression(expr) => self.lower_carrier_argument(scope, instance, port, *expr),
+            // the carrier of the leaf, or the window of it the element of an array of bundles names (struct of arrays)
+            LeafSource::Leaf(from) => match self.frames.get(scope.frame).and_then(|frame| frame.carriers.get(&from.decl)).copied() {
+                Some(index) => self.leaf_window(scope, from).map(|window| (index, window)),
+                None => None,
+            },
         };
         let Some((carrier, window)) = found else {
             self.unsupported(scope.file, span, "a field of a bundle that is no carrier of this module");

@@ -207,15 +207,9 @@ impl Checker<'_> {
             }
             // a field of a bundle handle: the carrier or node the `struct` field declares (`bundle_handles.rs`)
             ExprKind::Field { .. } if self.bundle_handle_root(expr).is_some() => self.bundle_handle_field(expr).filter(|(_, ty)| !self.is_bundle_type(ty)),
-            // a field of a bundle port or signal: the carrier or node its leaf stands for (§7 rule 12)
-            ExprKind::Field { .. } if let Some(leaf) = self.design.bundle_field(expr) => {
-                let ty = match &self.design.decl_data(leaf).kind {
-                    DeclKind::Port(p) => p.ty,
-                    DeclKind::Signal(s) => s.ty,
-                    _ => return None,
-                };
-                self.port_type(ty).map(|t| (leaf, t))
-            }
+            // a field of a bundle port or signal: the carrier or node its leaf stands for (§7 rule 12), at an element of an array of
+            // bundles the element of the leaf (`rx[k].valid`)
+            ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(expr).filter(|place| self.design.leaf_owner(place.decl).is_some()) => self.bundle_field_type(&place),
             // `c.state`: a `pub` port or signal of a placed child (§8.2.8).
             ExprKind::Field { res: Resolution::Decl(decl), .. } => {
                 let ty = match &self.design.decl_data(*decl).kind {

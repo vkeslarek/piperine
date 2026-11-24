@@ -186,3 +186,30 @@ fn a_bundle_field_is_named_by_its_dotted_path() {
         [("tx.valid", "out", "bool"), ("tx.ready", "in", "bool"), ("tx.data", "out", "u8")]
     );
 }
+
+/// A design with arrays of bundles: two lanes, lane 0 raised and lane 1 lowered, each echoed, and two taps of a node each,
+/// held at 1 V and 2 V.
+const LANES: &str = "struct Lane { out a: Bit, in b: Bit }\n\
+struct Tap { p: Electrical }\n\
+module Raise(tx: Lane) { level: bool = true; tx.a = level; }\n\
+module Echo(rx: flip Lane) { rx.b = rx.a; }\n\
+module Hold(t: Tap) { volts: f64 = 1.0; }\n\
+analog for Hold { v(t.p) +> volts; }\n\
+module Top() { signal lanes: [Lane; 2]; signal taps: [Tap; 2]; let r = Raise(lanes[0]) { level: true }; let q = Raise(lanes[1]) { level: false }; \
+for k in 0..2 { let e = Echo(lanes[k]); } let h = Hold(taps[0]) { volts: 1.0 }; let g = Hold(taps[1]) { volts: 2.0 }; }\n";
+
+#[test]
+fn a_field_of_an_element_of_an_array_of_bundles_is_named_element_first() {
+    // BN-07 AC 1, §7 rules 11 and 12: the field of an element is named as the source writes it, `lanes[1].a`, whether it is a
+    // carrier (the element `1` of the array net `lanes.a`, struct of arrays) or a node (`taps[1].p`), relative or in full
+    let entries = ["lanes[0].a", "Top.lanes[1].a", "lanes[1].b", "taps[1].p", "Top.taps[0].p"];
+    let table = run_text(LANES, op(&entries)).unwrap_or_else(|f| panic!("{f}"));
+    let names: Vec<&Cell> = table.rows.iter().map(|row| &row[0]).collect();
+    let written = ["Top.lanes[0].a", "Top.lanes[1].a", "Top.lanes[1].b", "Top.taps[1].p", "Top.taps[0].p"].map(|name| Cell::Text(name.into()));
+    assert_eq!(names, written.iter().collect::<Vec<_>>());
+    assert_eq!(table.rows[0][1], Cell::Bool(true), "lane 0 is raised");
+    assert_eq!(table.rows[1][1], Cell::Bool(false), "lane 1 is lowered");
+    assert_eq!(table.rows[2][1], Cell::Bool(false), "the echo of lane 1 follows its `a`");
+    assert!((real(&table.rows[3][1]) - 2.0).abs() < 1e-9, "tap 1 is held at 2 V: {:?}", table.rows[3][1]);
+    assert!((real(&table.rows[4][1]) - 1.0).abs() < 1e-9, "tap 0 is held at 1 V: {:?}", table.rows[4][1]);
+}

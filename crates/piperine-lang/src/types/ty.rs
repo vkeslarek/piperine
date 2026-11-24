@@ -315,6 +315,17 @@ impl Ty {
         }
     }
 
+    /// The type `levels` array levels inside this one (`levels` 0 is itself): the element of an array of carriers a field of
+    /// an element of an array of bundles is (`tx[k].a` of the leaf `tx.a: [Bit; N]`). `None` when it has fewer levels.
+    pub fn element_at(&self, levels: usize) -> Option<Ty> {
+        let mut at = self;
+        for _ in 0..levels {
+            let Ty::Array(element, _) = at else { return None };
+            at = element;
+        }
+        Some(at.clone())
+    }
+
     /// The value type a read of this carrier type gives: a carrier's value, an array of carriers' array of values, a node
     /// array's itself; any other type is its own read.
     pub fn read_value(&self) -> Ty {
