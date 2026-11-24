@@ -170,8 +170,9 @@ pub enum Source {
     /// when the host gave the parameter. Discrete, constant during an analysis (§14.4.1).
     SessionParameter(u32),
     /// An array carrier read whole, or at a run-time element, whatever the part (`x`, `x[i]`, `x[i].prev()`,
-    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read
-    /// only (abi.md §3: a function never takes a `WHOLE` read); the cell names the pin with `element` `WHOLE`.
+    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read, or
+    /// a discrete function's (a definition `q = mem[at]`, abi.md §3); the cell names the pin with `element` `WHOLE`. The
+    /// `analog` block reads constant elements only (the elaborator spells a run-time one out).
     Whole(u32),
     /// One constant element of an array carrier: `(carrier, element, part)`, a cell naming the
     /// element (`Function.elements`, `Reaction.elements`).
@@ -982,12 +983,6 @@ impl BodyPlan {
         let stims = body.stims().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
-        if let Some(Source::Whole(carrier)) = plan.reads.iter().find(|r| matches!(r, Source::Whole(..))) {
-            panic!(
-                "body {}: function {name} reads array carrier {carrier} whole or at a run-time element, which only a reaction can (abi.md §3); the elaborator refuses it",
-                body.name()
-            )
-        }
         let reads = plan.reads.iter().map(|r| Self::read(pins, limits, stims, *r)).collect();
         let elements = Self::elements(&plan.reads);
         let writes = plan

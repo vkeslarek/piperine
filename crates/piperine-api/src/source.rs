@@ -149,7 +149,7 @@ impl NodeSources {
         if body.nodes().iter().any(|node| node.role == NodeRole::Port && node.name == short) {
             return Ok(short.to_string());
         }
-        if body.carriers().iter().any(|carrier| carrier.name == short && carrier.role != CarrierRole::Reached) {
+        if body.carriers().iter().any(|carrier| carrier.name == short && !matches!(carrier.role, CarrierRole::Reached | CarrierRole::Internal)) {
             return Err(Failure::Host { code: "E0804", message: format!("`{port}` is a discrete carrier of the top: a host source drives a node port, use `drive` for a discrete `in` port") });
         }
         Err(Failure::Host { code: "E0801", message: format!("`{port}` names no node port of the top `{}`", top.path()) })

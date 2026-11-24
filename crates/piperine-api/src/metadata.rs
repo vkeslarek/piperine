@@ -96,7 +96,7 @@ impl Metadata {
         for node in body.nodes().iter().filter(|n| n.role == NodeRole::Port) {
             declared.push((&node.origin, PortInfo { name: node.name.clone(), direction: "inout", ty: ir.nature(node.nature).name().to_string() }));
         }
-        for carrier in body.carriers().iter().filter(|c| c.role != CarrierRole::Signal) {
+        for carrier in body.carriers().iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached)) {
             let direction = if carrier.role == CarrierRole::In { "in" } else { "out" };
             // a port of an array of carriers shows its length: `[bool; 4]`
             let ty = carrier.count.map_or_else(|| carrier.ty.to_string(), |count| format!("[{}; {count}]", carrier.ty));

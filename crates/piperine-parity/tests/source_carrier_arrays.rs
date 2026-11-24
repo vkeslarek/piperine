@@ -337,3 +337,18 @@ fn an_analog_block_reads_an_element_of_an_array_of_carriers() {
     let seeded = RUN.operating_point("element_readers.msl", "Seeded", &["level"]);
     assert!((seeded[0] - (4.0 + 10.0 * 3.0)).abs() < 1e-9, "{seeded:?}");
 }
+
+#[test]
+fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_element() {
+    // §5.1.8, §8.2.1: `q = mem[at]` over `[Bit<u8>; 65536]` reads one view of the array (it was one read per element, a
+    // build that did not finish): `tick` toggles every ns; a rise moves `at` by 1000 and writes 41 there in the same
+    // microstep, a fall writes 50 at `at`, so `q` is 41 after each rise and 50 after each fall; the build and the run take
+    // seconds, not minutes
+    let started = std::time::Instant::now();
+    let built = support::build(&RUN.project("ram.msl"), "Ram");
+    let seen = built.run(4e-9, 0.5e-9);
+    let q = support::transient(&seen, "Ram.q");
+    let expected: Vec<(i64, Vec<u8>)> = (1..=4).map(|edge: i64| (edge * ElementReaders::NS, vec![if edge % 2 == 1 { 41 } else { 50 }])).collect();
+    assert_eq!(q, expected);
+    assert!(started.elapsed() < std::time::Duration::from_secs(120), "built and ran in {:?}", started.elapsed());
+}

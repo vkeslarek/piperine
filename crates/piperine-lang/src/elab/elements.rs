@@ -206,15 +206,15 @@ impl Elaboration<'_, '_> {
         self.element_part(scope, element, ElementPart::Changed, origin)
     }
 
-    /// `part` of one element. In code that becomes a function (`Scope::function_code`), an element decided at run time is
-    /// that index into the array of every element's `part`: a function reads constant elements only (abi.md §3), and so
-    /// it is re-run when any element it may read changes.
+    /// `part` of one element. In the `analog` block (`Scope::in_analog_block`), an element decided at run time is that
+    /// index into the array of every element's `part`: the analog side reads constant elements only. Digital code (a
+    /// definition, a guard, a reaction) reads one at a run time element through the array's view (abi.md §3, `WHOLE`).
     fn element_part(&mut self, scope: &Scope, element: ElementRef, part: ElementPart, origin: Origin) -> LoweredExpr {
         let ty = part.value_type(&self.structure.carriers[element.carrier as usize].ty);
         if let Some(at) = element.constant {
             return self.constant_element_part(scope, element.carrier, at, part, origin);
         }
-        if scope.function_code {
+        if scope.in_analog_block {
             let array = self.elements_of_array(scope, element.carrier, part, origin.clone());
             return self.emit(Expr::Index { expr: array, index: element.index }, ty, origin);
         }
@@ -264,7 +264,7 @@ impl Elaboration<'_, '_> {
         }
         let held = self.structure.carriers[carrier as usize].clone();
         let name = format!("{}$analog[{at}]", held.name);
-        let mirror = self.add_carrier(piperine_ir::Carrier { name, ty: held.ty.clone(), role: piperine_ir::CarrierRole::Signal, init: None, origin: origin.clone(), count: None });
+        let mirror = self.add_carrier(piperine_ir::Carrier { name, ty: held.ty.clone(), role: piperine_ir::CarrierRole::Internal, init: None, origin: origin.clone(), count: None });
         let index = self.emit(Expr::Int(i128::from(at)), ValueType::UInt(64), origin.clone());
         let value = self.emit(Expr::CarrierElement { carrier, index }, held.ty, origin.clone());
         self.structure.drives.push(piperine_ir::Drive { carrier: mirror, value, after: None, origin, element: None, path: Vec::new() });

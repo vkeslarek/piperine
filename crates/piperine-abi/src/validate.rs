@@ -442,7 +442,8 @@ pub(crate) fn cell_bytes<'s>(
             let Some(pin) = shape.pins.get(c.index as usize) else { return out_of_range() };
             if element != 0 {
                 let array = pin.kind == kind::DISCRETE && pin.count > 0;
-                let in_range = element == WHOLE && access == Access::ReactionRead || element < pin.count;
+                // a reaction or a function reads an array whole through its view (R2); a function's write never names one
+                let in_range = element == WHOLE && matches!(access, Access::ReactionRead | Access::FunctionRead) || element < pin.count;
                 if !(array && in_range && read) {
                     return Err((
                         Rule::ElementOutOfRange,

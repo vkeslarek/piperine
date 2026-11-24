@@ -202,9 +202,14 @@ impl WholeReads {
     /// array pin is bound to, or the run of elements of it (R2: the store is the microstep's snapshot).
     fn windows<'s>(store: &'s Store, shape: &Shape, reaction: usize, pins: &[Binding]) -> Vec<WindowView<'s>> {
         let Some(reaction) = shape.reactions.get(reaction) else { return Vec::new() };
+        Self::windows_of(store, shape, &reaction.reads, &reaction.elements, pins)
+    }
+
+    /// The windows of the `WHOLE` reads among `reads` (`elements` one entry per read, or empty), in their order.
+    fn windows_of<'s>(store: &'s Store, shape: &Shape, reads: &piperine_abi::raw::List<'_, Cell>, elements: &piperine_abi::raw::List<'_, u64>, pins: &[Binding]) -> Vec<WindowView<'s>> {
         let mut windows = Vec::new();
-        for (i, c) in reaction.reads.iter().enumerate() {
-            if reaction.elements.get(i).copied() != Some(WHOLE) {
+        for (i, c) in reads.iter().enumerate() {
+            if elements.get(i).copied() != Some(WHOLE) {
                 continue;
             }
             let size = shape.pins.get(c.index as usize).map_or(0, |pin| pin.layout.size);
@@ -289,12 +294,24 @@ fn call_function(
     let func = shape.functions.get(node.k as usize).expect("bind took this function from the shape");
     let reads = shape.cell_lens_of(&func.reads, &func.elements, Access::FunctionRead).expect("bind validated the shape");
     let writes = shape.cell_lens_of(&func.writes, &piperine_abi::raw::List::empty(), Access::FunctionWrite).expect("bind validated the shape");
+    // a function reads an array at a run-time element through its view (R2), as a reaction does
+    let windows = WholeReads::windows_of(store, shape, &func.reads, &func.elements, &inst.pins);
+    let handles: Vec<ViewHandle<'_>> = windows.iter().map(|window| ViewHandle::new(window)).collect();
+    let mut whole = handles.iter();
     let inputs: Vec<Aligned> = func
         .reads
         .iter()
         .zip(&reads)
         .enumerate()
-        .map(|(i, (c, len))| cell_bytes(&inst.pins, c, func.elements.get(i).copied().unwrap_or(0), *len, store, ambient, &[]))
+        .map(|(i, (c, len))| match func.elements.get(i).copied().unwrap_or(0) {
+            WHOLE => {
+                let view = whole.next().expect("one view per WHOLE read").view();
+                let mut buffer = Aligned::zeroed(*len);
+                buffer.bytes_mut().copy_from_slice(&ArrayView::as_bytes(&view)[..*len]);
+                buffer
+            }
+            element => cell_bytes(&inst.pins, c, element, *len, store, ambient, &[]),
+        })
         .collect();
     let mut outputs: Vec<Aligned> = func
         .writes

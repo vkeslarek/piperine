@@ -284,6 +284,10 @@ pub enum CarrierRole {
     /// A carrier of a child the body reads (`inst.name`): read only, like an `in` port, bound to
     /// the child instance's net (`IrBuilder::bind_reached_net`).
     Reached,
+    /// A signal the elaborator makes for its own use, which the source never names (the mirror of an element of an
+    /// array of carriers the `analog` block reads): a signal to the solver, never listed to the user (no default probe,
+    /// no metadata, no host write).
+    Internal,
 }
 
 /// A definition of a carrier: `sample = count == 0;` or, delayed, `g = x after tpd;`.

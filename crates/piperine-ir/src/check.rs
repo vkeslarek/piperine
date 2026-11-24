@@ -548,7 +548,7 @@ impl<'a> Checker<'a> {
                 continue;
             };
             let Some(callee) = ir.bodies.get(child.body.index()) else { continue };
-            let ports: Vec<_> = callee.carriers.iter().filter(|c| c.role != CarrierRole::Signal).collect();
+            let ports: Vec<_> = callee.carriers.iter().filter(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out | CarrierRole::Reached)).collect();
             if bound.len() != ports.len() {
                 self.report(item.clone(), child.origin.clone(), format!("child {} binds {} carriers, body {} has {} carrier ports", child.name, bound.len(), callee.name, ports.len()));
             }

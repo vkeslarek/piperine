@@ -200,7 +200,8 @@ impl Probe {
         let Some(instance) = ir.instance_at(top) else { return Vec::new() };
         let body = instance.body();
         let mut declared: Vec<(&piperine_ir::Origin, &str)> = body.nodes().iter().map(|n| (&n.origin, n.name.as_str())).collect();
-        declared.extend(body.carriers().iter().map(|c| (&c.origin, c.name.as_str())));
+        // a carrier the elaborator made for its own use is no name of the source (`CarrierRole::Internal`)
+        declared.extend(body.carriers().iter().filter(|c| c.role != piperine_ir::CarrierRole::Internal).map(|c| (&c.origin, c.name.as_str())));
         declared.sort_by_key(|(o, _)| (o.file.clone(), o.line, o.col));
         declared.into_iter().filter_map(|(_, name)| Probe::resolve(ir, top, name).ok()).collect()
     }

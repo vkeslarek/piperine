@@ -377,6 +377,7 @@ impl<'a> Printer<'a> {
                 CarrierRole::Out => "out",
                 CarrierRole::Signal => "signal",
                 CarrierRole::Reached => "reached",
+                CarrierRole::Internal => "internal",
             };
             let init = carrier.init.map_or(String::new(), |c| format!(" init {c}"));
             let at = self.at(&carrier.origin);

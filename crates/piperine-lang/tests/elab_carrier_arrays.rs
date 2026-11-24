@@ -494,3 +494,17 @@ fn drives_written_in_generation_are_judged_where_generation_is_unrolled() {
     Refusals::assert_one(&arm(2, " = false"), "E0338", &["`y`", "`Top~mode=2`"]);
     Refusals::assert_one(&arm(0, ""), "E0187", &["`y`", "`Top~mode=0`"]);
 }
+
+#[test]
+fn a_run_time_element_read_in_a_definition_is_one_read_of_the_array() {
+    // §5.1.8, abi.md §3: `q = mem[at]` over 65 536 carriers is one read of `mem` at a run-time element (the array's view),
+    // not one constant read per element: the drive's value holds no array literal, and the elaboration takes well under a
+    // second for any length
+    let src = "module Top(in at: Bit<u16>) { signal mem: [Bit<u8>; 65536] = [7; 65536]; signal q: Bit<u8>; q = mem[at]; }";
+    let started = std::time::Instant::now();
+    let ir = Elab::ir(src, "Top");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "elaborated in {:?}", started.elapsed());
+    let printed = ir.print_structural();
+    let drive = printed.lines().find(|line| line.trim_start().starts_with("drive q")).expect("the drive of q");
+    assert_eq!(drive.trim(), "drive q = mem[at]", "one read at the run-time element");
+}

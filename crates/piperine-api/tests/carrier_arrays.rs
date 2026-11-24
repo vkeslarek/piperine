@@ -163,3 +163,37 @@ fn an_empty_array_of_a_hoisted_module_prints_under_the_placement() {
         assert_eq!(**array, CompositeCell::Array(Vec::new()), "no element");
     }
 }
+
+/// A design whose `analog` block reads elements of an array of carriers: the elaborator's mirror of each is internal.
+const MIRRORED: &str = "module Top() {\n    signal x: [Bit; 2] = [true, false];\n    signal a: Electrical;\n}\nanalog for Top { v(a) +> if x[0] && !x[1] { 2.0 } else { 0.0 }; }\n";
+
+/// The operating point of `MIRRORED` over the default probes.
+struct Mirrored;
+
+impl Mirrored {
+    /// The session of the operating point of `MIRRORED`, opened and not run.
+    fn session() -> Session {
+        let directory = tempfile::tempdir().expect("tmp");
+        let file = directory.path().join("mirror.msl");
+        std::fs::write(&file, MIRRORED).expect("write the model");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        Session::open(&project, &spec, &Settings { rustc: None, cache: directory.path().join("cache") }).unwrap_or_else(|f| panic!("{f}"))
+    }
+}
+
+#[test]
+fn an_analog_read_of_an_element_lists_no_internal_net() {
+    // §3.3.6, §21: the `analog` block reads `x[0]` and `x[1]` (2 V when `x` is `[true, false]`); the mirror the elaborator
+    // makes for each is no name of the source, so the default probes, the op table and the metadata list only `Top.x` and
+    // `Top.a`, and a host write cannot name it
+    let mut session = Mirrored::session();
+    let probes: Vec<String> = session.probes().iter().map(|probe| probe.label()).collect();
+    assert_eq!(probes, ["Top.x", "Top.a"]);
+    assert!(session.metadata().ports.is_empty(), "the top has no port");
+    let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    let signals: Vec<&Cell> = table.rows.iter().map(|row| &row[0]).collect();
+    assert_eq!(signals, [&Cell::Text("Top.x".into()), &Cell::Text("Top.a".into())], "the op table lists the source's names only");
+    assert!(matches!(table.rows[1][1], Cell::Real(v) if (v - 2.0).abs() < 1e-9), "{:?}", table.rows[1]);
+}

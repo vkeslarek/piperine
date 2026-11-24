@@ -111,11 +111,7 @@ impl Elaboration<'_, '_> {
         let DeclKind::Reaction(r) = &data.kind else { return };
         let origin = self.locator.decl(reaction);
         let mut head = Self::sub_scope(scope);
-        // an event's guard is a function of the device; the reaction's body is not
-        head.function_code = true;
-        let disjuncts = self.disjuncts(&mut head, r.event);
-        head.function_code = false;
-        let Some(disjuncts) = disjuncts else { return };
+        let Some(disjuncts) = self.disjuncts(&mut head, r.event) else { return };
         let split = disjuncts.len() > 1 && disjuncts.iter().any(|d| !d.continuous.is_empty());
         if !split {
             let mut on = Vec::new();

@@ -408,7 +408,7 @@ impl Digital {
             // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`), and
             // when a definition of one of its elements writes it: that drive's pin is bound to the element of the array
             // net (`Pins::element_drives`), so the carrier's own pin, which its readers read, must be that net too
-            Some(CarrierRole::Signal) => {
+            Some(CarrierRole::Signal | CarrierRole::Internal) => {
                 (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c) || Self::has_element_drive(body, c)
             }
             None => false,

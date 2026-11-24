@@ -164,7 +164,8 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
                                  on: List<u32>,                                         // event pins
                                  reads: List<Cell>, writes: List<Statement>,
                                  elements: List<u64> }                                  // empty, or one per read: its array element
-// `elements[i]` names the element of an array pin that `reads[i]` reads, or `WHOLE` (= u64::MAX, a reaction only):
+// `elements[i]` names the element of an array pin that `reads[i]` reads, or `WHOLE` (= u64::MAX, a reaction or a
+// discrete function: a definition at a run-time element, `q = mem[at]`; amended by `generics` round 5 finding 17):
 // the cell then holds an `ArrayView`. `Cell` itself is unchanged (a generated device spells `Cell { kind, index, part }`).
 #[repr(C)] pub struct Statement { pin: u32, offset: u32, len: u32, flags: u32,          // LATER | REPLACE
                                   min_after: f64 }                                      // LATER: every delay is at least this
