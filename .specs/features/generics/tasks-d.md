@@ -826,6 +826,15 @@ Remaining `P0001`s in the template/callee paths (grep of `unsupported(` in `type
 - L86 a function with an `Option` parameter or result used as a value. The probe meets "a name whose type is not a value type" and "an expression the type checker gave no value type", and `elab/closures.rs`'s own message sits behind them. Owner `closures`.
 - L87 `types/carrier.rs` "value input port of type `module ..`" (`module Top(cell: Cell)`): owner `params-and-io`.
 `GAPS.md` counts go from 15 to 20 loud, L1 to L87; `crates/piperine-cli/tests/docs.rs` is re-pinned to them. `tests/book/inventory_guard.rs` counts no loud rows, so it is unchanged.
+**Fix round 15, findings 36 to 38 and the `P0001` sweep (coordinator request after round 14):**
+- **Finding 37, done** (77161aa0e): a body `let` whose template value was refused (a choice of two modules, `E0180`) holds no template (`types/module.rs`: the `let` is poisoned when typing its value reported a diagnostic and its type is a module's). Its call adds nothing, and `local_call` never calls a value of a module's type "no function and no template". C127.
+- **Finding 36, done** (f6661fe60): a template value handed to a param of module type makes every param it reads structural, through the same read the head of a placement through a template uses (`elab/structural.rs::params_that_feed_key_params` -> `collect_choice_params`). It folds per instance, in the top module and in a placed one. C128 covers it at the checker, elaboration and source levels (`RigParamTemplates` in `callees.msl`: binning by the parent's length, with values computed in Rust).
+- **Finding 38, `GAPS.md` row L88**, owner `generics` phase E. Running an array of templates needs three things: the classifier must name the module through an element, the const evaluator must fold the array and its index, and generation must carry it. That is a feature, not a fix. `docs.rs` is re-pinned to 21 loud rows, L1 to L88.
+- **§8.4.1 amendment:** approved by the user ("ACeito os dois"), marker replaced. The §1.4.7 sentence carried no pending marker; its paragraph already holds the user's approval line.
+- **The sweep: NOT STARTED, handed off at this commit boundary** because the context is large. The inventory to classify is every `unsupported(` / `ConstFault::Unsupported` site in `crates/piperine-lang/src/{types,elab}`: 492 sites in 80 files (`grep -rn "unsupported(\|Unsupported {" crates/piperine-lang/src/types crates/piperine-lang/src/elab`).
+  - For each site, record three things: the message; whether source reaches it, probed with `piperine check <file>.msl` (binary at `$CARGO_TARGET_DIR/debug/piperine` after `cargo build -p piperine-cli --bin piperine`); and its disposition (fixed, a `GAPS.md` row, or an internal guard with the reason it cannot be reached).
+  - A reachable site inside phase D's scope (templates, module impls, run settings, callables, generics) is fixed; one outside it gets a row.
+  - The callee and template paths are already classified (fix round 14 above: L83 to L87 and the guards).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
