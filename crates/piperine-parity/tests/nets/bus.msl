@@ -156,3 +156,11 @@ module ContendedBusBench() {
     let b = Talk(bus) { byte: 7, enabled: true };
     let listen = Listen(bus);
 }
+
+/// Two modules that both release the bus: only `None`s, free.
+module ReleasedBusBench() {
+    signal bus: DataBus;
+    let a = Talk(bus) { byte: 42, enabled: false };
+    let b = Talk(bus) { byte: 7, enabled: false };
+    let listen = Listen(bus);
+}

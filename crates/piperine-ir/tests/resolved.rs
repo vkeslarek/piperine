@@ -4,7 +4,7 @@
 //! `Resolution` names its resolver, drives and holders, and `Ir::check` refuses each form that does not fit.
 
 use piperine_ir::{
-    BodyId, BodySpec, Broken, Carrier, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, Holder, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
+    BodyId, BodySpec, Broken, Carrier, Child, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, Holder, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
 };
 
 /// The bodies and designs this target checks, each beside the MSL it transcribes:
@@ -169,4 +169,43 @@ fn a_resolve_with_a_missing_count_or_another_type_is_refused() {
     b.drive(source, Drive { carrier: 1, value: signal_others, after: None, origin: Fixture::origin(6), element: None, path: vec![] });
     let broken = Fixture::design(b, source, resolver).check();
     assert!(broken.iter().any(|e| e.what.contains("`others()` of carrier 1, which is not a resolved carrier")), "others() of a signal: {broken:#?}");
+}
+
+/// A parent that binds the carriers of one child whose body has an `in` port `a` and a resolved carrier `w`, a `signal` (`port` false) or
+/// a port (`port` true).
+struct Placement;
+
+impl Placement {
+    /// The check of the design: `Parent` places `Holder` with `bound` carriers.
+    fn broken(port: bool, bound: Vec<Option<u32>>) -> Vec<Broken> {
+        let mut b = IrBuilder::new();
+        let holder = b.body(Fixture::spec("Holder"));
+        b.carrier(holder, Carrier { name: "a".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: Fixture::origin(2), count: None });
+        b.carrier(holder, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven: ValueType::Bool, port }, init: None, origin: Fixture::origin(3), count: None });
+        let parent = b.body(BodySpec { children: vec![Child { name: "h".into(), body: holder, nodes: vec![], params: vec![], origin: Fixture::origin(5) }], ..Fixture::spec("Parent") });
+        b.carrier(parent, Carrier { name: "x".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Bool(false)), origin: Fixture::origin(4), count: None });
+        b.carrier(parent, Carrier { name: "y".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: Fixture::origin(4), count: None });
+        b.bind_child_carriers(parent, 0, bound);
+        let top = b.next_instance_id();
+        let net = |b: &mut IrBuilder, path: &str, ty: ValueType, init: piperine_ir::Constant| b.net(NetSpec { path: path.into(), ty, declared_by: top, init: Some(init), origin: Fixture::origin(4) });
+        let x = net(&mut b, "Parent.x", ValueType::Bool, piperine_ir::Constant::Bool(false));
+        let y = net(&mut b, "Parent.y", ValueType::UInt(8), piperine_ir::Constant::Int(0));
+        let root = b.instance(InstanceSpec { path: "Parent".into(), name: "Parent".into(), body: parent, parent: None, nodes: vec![], params: vec![], origin: Fixture::origin(1) });
+        b.bind_nets(root, vec![x, y]);
+        let child = b.instance(InstanceSpec { path: "Parent.h".into(), name: "h".into(), body: holder, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(5) });
+        b.bind_nets(child, vec![x, y]);
+        b.finish(root).check()
+    }
+}
+
+#[test]
+fn a_resolved_signal_is_no_port_of_a_child_binding() {
+    // a resolved carrier that is a signal (`port: false`) is no port of its body: a parent that binds the carriers of the child
+    // gives one entry for the `in` port only, and two entries are one too many; a resolved port (`port: true`) takes the second
+    assert_eq!(Placement::broken(false, vec![Some(0)]), vec![], "one entry for the one port");
+    let too_many = Placement::broken(false, vec![Some(0), Some(1)]);
+    assert!(too_many.iter().any(|e| e.what.contains("binds 2 carriers, body Holder has 1 carrier ports")), "a resolved signal is counted as no port: {too_many:#?}");
+    assert_eq!(Placement::broken(true, vec![Some(0), Some(1)]), vec![], "a resolved port is counted");
+    let too_few = Placement::broken(true, vec![Some(0)]);
+    assert!(too_few.iter().any(|e| e.what.contains("binds 1 carriers, body Holder has 2 carrier ports")), "a resolved port is counted as a port: {too_few:#?}");
 }

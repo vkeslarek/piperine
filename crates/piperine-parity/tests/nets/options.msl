@@ -1,0 +1,80 @@
+//! Options in the places a resolved net puts them (digital#20's compiler fix, `elab/aggregate.rs` and `elab/iterators.rs`): a
+//! `match` over a tuple of `Option`s, and a `resolve` that walks its `Option` drives with a closure and with a `for` loop.
+
+/// A `match` over a pair of `Option`s: both, either, none.
+fn pick(a: Option<u8>, b: Option<u8>) -> u8 {
+    match (a, b) {
+        (Some(x), Some(y)) => x + y,
+        (Some(x), None) => x,
+        (None, Some(y)) => 100 + y,
+        (None, None) => 7,
+    }
+}
+
+/// The picks of the four cases, at 1 us.
+module PicksBench() { }
+digital for PicksBench {
+    on at(1u) {
+        emit!("picks", both = pick(Some(1), Some(2)) as f64, second = pick(None, Some(4)) as f64, first = pick(Some(3), None) as f64, none = pick(None, None) as f64);
+    }
+}
+
+/// A net that adds the bytes of the drives that hold one, walking them with a closure.
+nature Folded { value: u8 }
+impl Resolve<Option<u8>, u8> for Folded {
+    fn resolve<const N: usize>(drives: [Option<u8>; N]) -> u8 {
+        drives.iter().fold(0u8, |sum, drive| match drive {
+            Some(b) => sum + b,
+            None => sum,
+        })
+    }
+}
+
+/// A net that adds the bytes of the drives that hold one, walking them with a `for` loop.
+nature Looped { value: u8 }
+impl Resolve<Option<u8>, u8> for Looped {
+    fn resolve<const N: usize>(drives: [Option<u8>; N]) -> u8 {
+        let sum = 0u8;
+        for drive in drives {
+            sum = match drive {
+                Some(b) => sum + b,
+                None => sum,
+            };
+        }
+        sum
+    }
+}
+
+/// A drive of `v` on a `Folded` net.
+module PutFolded(w: Folded, in v: Bit<Option<u8>> = None) { w = v; }
+/// A drive of `v` on a `Looped` net.
+module PutLooped(w: Looped, in v: Bit<Option<u8>> = None) { w = v; }
+
+module FoldLook(w: Folded) { }
+digital for FoldLook { on w.changed() { emit!("sums", v = w as f64); } }
+module LoopLook(w: Looped) { }
+digital for LoopLook { on w.changed() { emit!("sums", v = w as f64); } }
+
+/// Three drives on a `Folded` net, one of them `None`: 5 + 7 = 12.
+module FoldBench() {
+    signal w: Folded;
+    signal a: Bit<Option<u8>> = Some(5);
+    signal b: Bit<Option<u8>> = Some(7);
+    signal c: Bit<Option<u8>> = None;
+    let p = PutFolded(w, a);
+    let q = PutFolded(w, b);
+    let r = PutFolded(w, c);
+    let look = FoldLook(w);
+}
+
+/// The same three drives on a `Looped` net.
+module LoopBench() {
+    signal w: Looped;
+    signal a: Bit<Option<u8>> = Some(5);
+    signal b: Bit<Option<u8>> = Some(7);
+    signal c: Bit<Option<u8>> = None;
+    let p = PutLooped(w, a);
+    let q = PutLooped(w, b);
+    let r = PutLooped(w, c);
+    let look = LoopLook(w);
+}

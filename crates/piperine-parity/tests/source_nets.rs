@@ -284,11 +284,16 @@ fn two_parallel_trans_carry_a_strong_level_and_stay_two_carriers() {
 }
 
 /// The rail of the pad benches and what the load takes of it (`rout` 100 ohms against 100 kohms).
-const RAIL: f64 = 1.8;
+struct Rail;
 
-/// The node of a pad whose load is `100 kohm` while it drives `level` of the rail through `rout` = 100 ohms.
-fn pad_node(level: f64) -> f64 {
-    level * RAIL * 100e3 / (100e3 + 100.0)
+impl Rail {
+    /// The rail's voltage.
+    const VOLTS: f64 = 1.8;
+
+    /// The node of a pad whose load is `100 kohm` while it drives `level` of the rail through `rout` = 100 ohms.
+    fn node(level: f64) -> f64 {
+        level * Self::VOLTS * 100e3 / (100e3 + 100.0)
+    }
 }
 
 #[test]
@@ -297,7 +302,7 @@ fn bidir_drives_the_node_while_the_wire_is_driven() {
     // does: the rail through `rout` into the load, a divider. The net stays the tribuf's strong high
     let (node, net) = Model::of("line.msl").pad("BidirDrivenBench", 10e-9);
     let (time, volts) = *node.last().expect("a transient");
-    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir driven", "v(a)", Coordinate::Time(time)), pad_node(1.0), volts);
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir driven", "v(a)", Coordinate::Time(time)), Rail::node(1.0), volts);
     assert_eq!(net, vec![Held { level: Held::HIGH, strength: Held::STRONG }], "the pad adds nothing to the net");
 }
 
@@ -318,7 +323,7 @@ fn bidir_acts_as_driven_on_a_contended_net() {
     // driven from `others().v`, and X reads as mid-rail
     let (node, net) = Model::of("line.msl").pad("BidirContendedBench", 10e-9);
     let (time, volts) = *node.last().expect("a transient");
-    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir contended", "v(a)", Coordinate::Time(time)), pad_node(0.5), volts);
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir contended", "v(a)", Coordinate::Time(time)), Rail::node(0.5), volts);
     assert_eq!(net.last(), Some(&Held { level: Held::X, strength: Held::STRONG }), "the contended net: {net:?}");
 }
 
@@ -331,7 +336,7 @@ fn a_change_of_driving_is_a_time_point_and_a_jump() {
     let before = node.iter().rev().find(|(time, _)| *time < 5e-9).expect("a point before").1;
     let after = node.iter().find(|(time, _)| *time >= 6e-9).expect("a point after").1;
     ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir toggle", "v(a) before 5 ns", Coordinate::Time(5e-9)), 0.0, before);
-    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir toggle", "v(a) after 6 ns", Coordinate::Time(6e-9)), pad_node(1.0), after);
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir toggle", "v(a) after 6 ns", Coordinate::Time(6e-9)), Rail::node(1.0), after);
 }
 
 #[test]
@@ -347,18 +352,20 @@ fn two_bidirs_alone_stop_the_run_with_e0511() {
     }
 }
 
-/// The numbers of every record of the stream `stream` of the run of `top` in `edges.msl`, first field only.
-fn edge_values(top: &str, stream: &str, field: &str) -> Vec<f64> {
-    let model = Model::of("edges.msl");
-    let built = model.built(top);
-    let seen = built.run(10e-9, 1e-9);
-    Levels::of(&built, &seen, stream, field)
+impl Levels {
+    /// The numbers of every record of the stream `stream` of the run of `top` in `edges.msl`, field `field` only.
+    fn edges(top: &str, stream: &str, field: &str) -> Vec<f64> {
+        let model = Model::of("edges.msl");
+        let built = model.built(top);
+        let seen = built.run(10e-9, 1e-9);
+        Levels::of(&built, &seen, stream, field)
+    }
 }
 
 #[test]
 fn one_drive_still_goes_through_resolve() {
     // RN-03 AC 7: `resolve` of one drive is still `resolve`, here the sum plus 100
-    assert_eq!(edge_values("OneDriveBench", "offsets", "value").last(), Some(&105.0), "5 + 100");
+    assert_eq!(Levels::edges("OneDriveBench", "offsets", "value").last(), Some(&105.0), "5 + 100");
 }
 
 #[test]
@@ -372,7 +379,7 @@ fn a_high_impedance_drive_of_any_level_is_left_out() {
 fn an_undriven_net_of_a_nature_with_two_impls_follows_its_rule() {
     // D21 (spec Q4): a net nobody drives takes the nature's `impl Resolve<V>` when there are several, so `Rule` gives 10 and
     // not the 20 of its `Resolve<u8, f64>`; with none of them `impl Resolve<V>` it is `E0181` naming the carrier
-    assert_eq!(edge_values("UndrivenRuleBench", "rules", "value").last(), Some(&10.0), "the impl of X = V");
+    assert_eq!(Levels::edges("UndrivenRuleBench", "rules", "value").last(), Some(&10.0), "the impl of X = V");
     match Model::of("edges.msl").project.elaborate("UndrivenNeitherBench") {
         Err(rejection) => {
             let text = rejection.to_string();
@@ -452,6 +459,7 @@ fn a_typed_bus_resolves_to_free_byte_or_contended() {
         Levels::of(&built, &seen, "data", "seen").last().copied().unwrap_or_else(|| panic!("{top}: the reader saw no value"))
     };
     assert_eq!(seen_by("FreeBusBench"), -2.0, "no drive is Free");
+    assert_eq!(seen_by("ReleasedBusBench"), -2.0, "two drives that are only `None`s are Free too");
     assert_eq!(seen_by("ByteBusBench"), 42.0, "one talker is its byte, the released one is left out");
     assert_eq!(seen_by("ContendedBusBench"), -1.0, "two talkers are Contended");
 }
@@ -459,15 +467,15 @@ fn a_typed_bus_resolves_to_free_byte_or_contended() {
 #[test]
 fn a_parent_drives_a_childs_pub_resolved_signal() {
     // §5.2.2, RN-03 edge case: the parent holds a drive of the child's `pub` resolved signal beside the child's own: 1 + 20 + 100
-    assert_eq!(edge_values("ParentDrivesBench", "offsets", "value").last(), Some(&121.0), "the child's drive and the parent's");
+    assert_eq!(Levels::edges("ParentDrivesBench", "offsets", "value").last(), Some(&121.0), "the child's drive and the parent's");
 }
 
 #[test]
 fn two_carriers_of_one_instance_on_one_net_hold_two_drives() {
     // §5.2: each written resolved carrier of an instance holds its own drive. `Twin(n, n)` writes 1 on `x` and 2 on `y`, both on
     // the net `n`: its two drives arrive in carrier order, 12; beside a drive of 3 from the instance `d`, whose path orders first, 312
-    assert_eq!(edge_values("TwinBench", "digits", "value").last(), Some(&12.0), "the twin's two drives");
-    assert_eq!(edge_values("TwinAndDigitBench", "digits", "value").last(), Some(&312.0), "d first, then the twin's x and y");
+    assert_eq!(Levels::edges("TwinBench", "digits", "value").last(), Some(&12.0), "the twin's two drives");
+    assert_eq!(Levels::edges("TwinAndDigitBench", "digits", "value").last(), Some(&312.0), "d first, then the twin's x and y");
 }
 
 #[test]
@@ -476,4 +484,23 @@ fn a_tran_with_both_sides_on_one_net_settles_on_the_level() {
     // strong high of `Put`, so the net holds that high
     let line = Model::of("line.msl");
     assert_eq!(line.settled("TranSelfBench"), Held { level: Held::HIGH, strength: Held::STRONG });
+}
+
+#[test]
+fn a_match_over_options_and_a_resolve_walking_option_drives_run() {
+    // digital#20's compiler fix: a tuple pattern whose fields are `Option`s tests each as flag and payload (`(Some(1), Some(2))` is
+    // 3, `(None, Some(4))` is 104, `(Some(3), None)` is 3, `(None, None)` is 7), and a closure or a `for` loop over `Option` drives
+    // binds the flag and the payload (5, 7 and a `None` add to 12)
+    let options = Model::of("options.msl");
+    let picks = |field: &str| {
+        let built = options.built("PicksBench");
+        let seen = built.run(2e-6, 1e-6);
+        Levels::of(&built, &seen, "picks", field).last().copied().unwrap_or_else(|| panic!("no pick `{field}`"))
+    };
+    assert_eq!([picks("both"), picks("second"), picks("first"), picks("none")], [3.0, 104.0, 3.0, 7.0]);
+    for top in ["FoldBench", "LoopBench"] {
+        let built = options.built(top);
+        let seen = built.run(10e-9, 1e-9);
+        assert_eq!(Levels::of(&built, &seen, "sums", "v").last(), Some(&12.0), "{top}: 5 + 7, the `None` adds nothing");
+    }
 }

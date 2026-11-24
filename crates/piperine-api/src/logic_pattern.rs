@@ -58,9 +58,14 @@ impl LogicPattern {
         let [(_, CellShape::Scalar(plane)), _] = fields.as_slice() else { return None };
         let bytes = match plane {
             number if NumberCell::is_number_width(number) => FloatFormat::of(number).map_or_else(|| 8 * WideCell::limb_count(Self::levels_of(number)), FloatFormat::bytes),
-            other => shape_width(other),
+            other => Self::plane_width(other),
         };
         Some((width, bytes))
+    }
+
+    /// The bytes of a plane that is no number width: an integer of up to 64 levels.
+    fn plane_width(ty: &ValueType) -> usize {
+        CellShape::Scalar(ty.clone()).width()
     }
 
     /// The levels of an integer plane type.
@@ -70,9 +75,4 @@ impl LogicPattern {
             _ => 1,
         }
     }
-}
-
-/// The bytes of a plane that is no number width: an integer of up to 64 levels.
-fn shape_width(ty: &ValueType) -> usize {
-    CellShape::Scalar(ty.clone()).width()
 }

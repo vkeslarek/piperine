@@ -60,6 +60,30 @@ module OrderBench() {
     let b = Digit(n) { amount: 2.0 };
 }
 
+/// A net that answers how many drives it got when they arrive in ascending order of their value, and 0 when any arrives out of it.
+nature Ascending { value: f64 }
+impl Resolve<f64> for Ascending {
+    fn resolve<const N: usize>(d: [f64; N]) -> f64 {
+        let state = d.iter().fold((0.0, 1.0), |held, x| (x, if x >= held.0 { held.1 } else { 0.0 }));
+        state.1 * (d.len() as f64)
+    }
+}
+
+/// A drive whose value is its own number.
+module Mark(w: Ascending) {
+    index: f64 = 0.0;
+    w = index;
+}
+
+/// Twelve generated drivers, `cell[0]` to `cell[11]`: by name `cell[10]` and `cell[11]` would come before `cell[2]`, by index they
+/// come last (§4 rule 2, array indices numerically), so the drives are ascending and the net answers 12.
+module IndexBench() {
+    signal n: Ascending;
+    for k in 0..12 {
+        let cell = Mark(n) { index: k as f64 };
+    }
+}
+
 /// No module drives the nets: `resolve` of no drive (0 for a sum, true for the wired AND).
 module UndrivenBench() {
     signal t: Total;

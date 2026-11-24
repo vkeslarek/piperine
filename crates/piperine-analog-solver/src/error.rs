@@ -129,8 +129,11 @@ pub enum Error {
     /// are data, so the host names them without reading the message.
     #[error("{domain}: E0511: the loop at tick {tick} did not settle; its drives: {}", .drives.join(", "))]
     Unsettled {
+        /// The domain whose relaxation did not settle.
         domain: SolverDomain,
+        /// The tick of the relaxation step that stopped moving nowhere.
         tick: i64,
+        /// The drive nets of the loop, by path, in the order the engine named them.
         drives: Vec<String>,
     },
 
