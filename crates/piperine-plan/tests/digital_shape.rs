@@ -1003,3 +1003,119 @@ fn an_event_function_reading_another_event_runs_after_it() {
     assert!(levelized.iter().position(|n| n == "event:1") < levelized.iter().position(|n| n == "event:0"), "the dependency order runs the read event first: {levelized:?}");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
+
+/// Bodies of resolved nets (resolved-nets RN-03), each beside the MSL it transcribes:
+///
+/// ```text
+/// module Source() { signal w: Count; w = true; signal seen: Bit<u8> = 0; seen = w.others(); }
+/// // Count: value u8, `impl Resolve<bool, u8>`; the resolver of two drives has the carriers `d0`, `d1` and `v`
+/// ```
+struct Resolved;
+
+impl Resolved {
+    const F: &'static str = "count.msl";
+
+    fn at(line: u32) -> Origin {
+        Alone::origin(Resolved::F, line, 5)
+    }
+
+    /// The holder: `w` is resolved (value `u8`, driven `bool`), driven with `true`; `seen` follows `w.others()`.
+    fn holder(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Source", Resolved::F, 1));
+        b.carrier(body, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool }, None, Resolved::F, 2, 5));
+        b.carrier(body, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5));
+        let mut x = Dx::new(b, Resolved::F, 2, 9);
+        let drive = x.boolean(true);
+        b.drive(body, piperine_ir::Drive { carrier: 0, value: drive, after: None, origin: Resolved::at(2), element: None, path: vec![] });
+        let others = b.expr(piperine_ir::Expr::Others(0), Ty::u(8), Resolved::at(3));
+        b.drive(body, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Resolved::at(3), element: None, path: vec![] });
+        body
+    }
+
+    /// The resolver of two `bool` drives into a `u8`: `v = resolve(d0, d1)` over one instance per count.
+    fn resolver(b: &mut IrBuilder) -> BodyId {
+        let zero = b.expr(piperine_ir::Expr::Int(0), Ty::u(8), Resolved::at(4));
+        let by_count: Vec<_> = (0..=2u64)
+            .map(|count| {
+                b.function(piperine_ir::FunctionSpec {
+                    name: format!("resolve~{count}"),
+                    origin: Resolved::at(4),
+                    params: vec![piperine_ir::Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueType::Bool), count), mutable: false }],
+                    ret: Ty::u(8),
+                    locals: vec![],
+                    body: zero,
+                })
+            })
+            .collect();
+        let body = b.body(Buck::spec("Count$resolve~2", Resolved::F, 4));
+        for name in ["d0", "d1"] {
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, CarrierRole::In, None, Resolved::F, 4, 5));
+        }
+        b.carrier(body, Buck::carrier("v", Ty::u(8), CarrierRole::Out, None, Resolved::F, 4, 5));
+        let resolve = b.expr(piperine_ir::Expr::Resolve { by_count, drives: vec![0, 1], except: None }, Ty::u(8), Resolved::at(4));
+        b.drive(body, piperine_ir::Drive { carrier: 2, value: resolve, after: None, origin: Resolved::at(4), element: None, path: vec![] });
+        body
+    }
+}
+
+#[test]
+fn a_resolved_carrier_has_value_drive_and_others_pins() {
+    // RN-03 (abi.md §9 D1): a resolved carrier is its value pin (`V`, read), one drive pin (`RELAX`, written) and,
+    // because the body calls `others()`, one others pin (`V`, read); a definition of the carrier writes the drive pin.
+    let (ir, body) = Alone::design(Resolved::holder);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (value, drive, others) = (Find::pin(shape, "w"), Find::pin(shape, "w.drive"), Find::pin(shape, "w.others"));
+    assert!(value < drive && drive < others, "the value pin is the carrier's own; the drive and others pins follow every body pin");
+    assert_eq!(shape.pins.iter().filter(|p| p.name.as_str() == "seen.drive" || p.name.as_str() == "seen.others").count(), 0, "a signal that is not resolved has neither");
+
+    let (value_pin, drive_pin, others_pin) = (PinView::of(shape.pins.get(value as usize).expect("the pin")), PinView::of(shape.pins.get(drive as usize).expect("the pin")), PinView::of(shape.pins.get(others as usize).expect("the pin")));
+    assert_eq!((value_pin.kind, value_pin.role, value_pin.flags), (kind::DISCRETE, role::PORT, 0), "the value pin is a port the net's reader binds");
+    assert_eq!((drive_pin.kind, drive_pin.role, drive_pin.flags), (kind::DISCRETE, role::PORT, pin_flag::RELAX), "the drive pin is a relaxing port");
+    assert_eq!((others_pin.kind, others_pin.role, others_pin.flags), (kind::DISCRETE, role::PORT, 0), "the others pin is a port");
+    assert_eq!(layout(&shape.pins.get(value as usize).expect("the pin").layout), integer(leaf::U8, 1), "the value pin holds `V`");
+    assert_eq!(layout(&shape.pins.get(others as usize).expect("the pin").layout), integer(leaf::U8, 1), "the others pin holds `V`");
+    assert_eq!(
+        layout(&shape.pins.get(drive as usize).expect("the pin").layout),
+        (2, 1, vec![("v".to_string(), leaf::BOOL, 0, 1), ("driving".to_string(), leaf::BOOL, 1, 1)]),
+        "the drive pin holds `X` and a plain `driving` byte"
+    );
+
+    let (_, writes, _) = Find::function(shape, "drive:w");
+    assert_eq!(writes, [pin(drive, part::VALUE)], "a definition of a resolved carrier writes its drive pin, not the value pin");
+    let k = Find::function_names(shape).iter().position(|n| n == "drive:w").expect("its index");
+    assert_eq!(plan.functions()[k].writes, [Target::ResolvedDrive(0)]);
+    let (reads, _, _) = Find::function(shape, "drive:seen");
+    assert_eq!(reads, [pin(others, part::VALUE)], "`w.others()` reads the others pin");
+    let k = Find::function_names(shape).iter().position(|n| n == "drive:seen").expect("its index");
+    assert_eq!(plan.functions()[k].reads, [Source::Others(0)]);
+}
+
+#[test]
+fn the_drive_layout_appends_a_plain_driving_byte() {
+    // abi.md §9 D1: the layout of a drive net is the driven type's fields followed by `driving: BOOL`; the resolver
+    // reads each drive through a pin of that layout, so the nets of a resolved carrier have equal layouts (P4).
+    let (ir, body) = Alone::design(Resolved::resolver);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    for name in ["d0", "d1"] {
+        let drive = shape.pins.get(Find::pin(shape, name) as usize).expect("the pin");
+        assert_eq!(
+            layout(&drive.layout),
+            (2, 1, vec![("v".to_string(), leaf::BOOL, 0, 1), ("driving".to_string(), leaf::BOOL, 1, 1)]),
+            "{name}: the drive input of a resolver is a drive layout"
+        );
+    }
+    assert_eq!(layout(&shape.pins.get(Find::pin(shape, "v") as usize).expect("the pin").layout), integer(leaf::U8, 1), "the value output is `V` alone");
+
+    // the layout is a function of the driven type: an `f64` aligns the byte to 8 and rounds the size to 16
+    let wide = piperine_plan::DriveLayout::of(&ir, &ValueType::F64).expect("an f64 is driven");
+    assert_eq!((wide.driving_at(), wide.size(), wide.align()), (8, 16, 8));
+    let fields = wide.fields();
+    assert_eq!(
+        fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset)).collect::<Vec<_>>(),
+        [("v".to_string(), leaf::F64, 0), ("driving".to_string(), leaf::BOOL, 8)]
+    );
+    let u16 = piperine_plan::DriveLayout::of(&ir, &Ty::u(16)).expect("a u16 is driven");
+    assert_eq!((u16.driving_at(), u16.size(), u16.align()), (2, 4, 2));
+}

@@ -100,7 +100,7 @@ impl<'a> DigitalPrinter<'a> {
         };
         Ok(Some(match s {
             // a previous value is in the carrier's own layout (abi.md §4.1)
-            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
+            Source::Carrier(c) | Source::Others(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => pin(&carrier.ty)?,
                 None => return Ok(None),
             },

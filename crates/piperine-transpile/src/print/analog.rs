@@ -104,6 +104,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Carrier(c) => {
                 self.body.carriers().get(c as usize).map_or_else(|| Text::generated(&format!("carrier{c}")), |x| Text::ident(&x.name))
             }
+            Source::Others(c) => Self::carrier_part(self.body, c, "others"),
             Source::ParamPrevious(p) => Self::param_part(self.body, p, "previous"),
             Source::ParamChanged(p) => Self::param_part(self.body, p, "changed"),
             Source::CarrierChanged(c) => Self::carrier_part(self.body, c, "changed"),
@@ -190,6 +191,7 @@ impl<'a> AnalogPrinter<'a> {
                 format!("check:{}", self.body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone()))
             }
             Target::Carrier(c) => self.body.carriers().get(c as usize).map_or_else(|| c.to_string(), |x| x.name.clone()),
+            Target::ResolvedDrive(c) => format!("{}.drive", self.body.carriers().get(c as usize).map_or_else(|| c.to_string(), |x| x.name.clone())),
             Target::EventPin(k) => format!("event:{k}"),
             Target::Delayed(k) | Target::DelayedEventPin(k) => {
                 let carrier = self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);

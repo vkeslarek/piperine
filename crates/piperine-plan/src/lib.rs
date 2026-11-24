@@ -11,6 +11,7 @@ mod digital;
 mod netlist;
 mod pin;
 mod plan;
+mod resolved;
 
 pub use array::ArrayPin;
 pub use composite::{CompositeLayout, CompositeLeaf};
@@ -18,4 +19,5 @@ pub use derive::{Binding, DerivePlan, ParamReads};
 pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, RecordLayout, StatementPlan};
 pub use netlist::{Modules, Netlist};
 pub use pin::PinLayout;
-pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, Source, Target, Term};
+pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ResolvedPins, Source, Target, Term};
+pub use resolved::DriveLayout;
