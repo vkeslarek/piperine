@@ -197,9 +197,10 @@ mod tests {
         // `::<` and `<` are `_g`, `, ` is `_c`, `>` is `_e`; nested argument lists differ
         assert_eq!(Text::spelled_cased("swap::<f64>"), "swap_gf64_e");
         assert_eq!(Text::spelled_cased("widen::<3, u8>"), "widen_g3_cu8_e");
-        // an instance at a tuple or an array is still one Rust identifier (T54)
+        // an instance at a tuple or an array is still one Rust identifier (T54): `( )` are `_t` `_z`, `; ` is `_l`, and the
+        // brackets are `_i` `_j`, the marks `main` gave them for element names (design D8, amended at the B10 merge)
         assert_eq!(Text::spelled_cased("word::<(u8, bool)>"), "word_g_tu8_cbool_z_e");
-        assert_eq!(Text::spelled_cased("word::<[u8; 2]>"), "word_g_au8_l2_y_e");
+        assert_eq!(Text::spelled_cased("word::<[u8; 2]>"), "word_g_iu8_l2_j_e");
         assert_ne!(Text::spelled_cased("Pair<Pair<f64>, u8>"), Text::spelled_cased("Pair<Pair<f64, u8>>"));
     }
 
