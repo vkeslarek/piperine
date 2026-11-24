@@ -43,6 +43,8 @@ impl Held {
     const Z: f64 = 3.0;
     /// `HighZ`.
     const HIGH_Z: f64 = 0.0;
+    /// `Weak`.
+    const WEAK: f64 = 1.0;
     /// `Pull`.
     const PULL: f64 = 2.0;
     /// `Strong`.
@@ -103,6 +105,16 @@ impl Model {
                 Held { level: real("level"), strength: real("strength") }
             })
             .collect()
+    }
+
+    /// What the net of `top` held over a run of 12 ns (one clock cycle past the release), each change once: the value at `(0, 0)` and then the value after
+    /// each change that moved it.
+    fn history(&self, top: &str) -> Vec<Held> {
+        let built = self.built(top);
+        let seen = built.run(12e-9, 1e-9);
+        let mut held = Model::held(&built, &seen);
+        held.dedup();
+        held
     }
 
     /// What the net of `top` holds at the end of a short run.
@@ -178,6 +190,19 @@ fn a_pull_wins_only_while_every_stronger_drive_is_released() {
     assert_eq!(line.settled("PulldownReleasedBench"), pull(Held::LOW), "a released tribuf is left out");
     assert_eq!(line.settled("PulldownOverriddenBench"), Held { level: Held::HIGH, strength: Held::STRONG }, "an enabled tribuf beats it");
     assert_eq!(line.settled("PullContendedBench"), pull(Held::X), "two pulls that disagree");
+}
+
+#[test]
+fn a_keeper_drives_weak_x_until_it_sees_a_level_then_holds_it() {
+    // §22.3.6: a keeper drives X at `Weak` until the others have driven a 0 or a 1, then that level at `Weak`; a contended X
+    // is not a level, so it is not recorded. A clock drives the tribufs from 5 ns to 10 ns.
+    let line = Model::of("line.msl");
+    let weak = |level: f64| Held { level, strength: Held::WEAK };
+    let strong = |level: f64| Held { level, strength: Held::STRONG };
+    assert_eq!(line.history("KeeperAloneBench"), vec![weak(Held::X)], "no level seen: weak X");
+    assert_eq!(line.history("KeeperHoldsHighBench"), vec![weak(Held::X), strong(Held::HIGH), weak(Held::HIGH)], "the high is held after the release");
+    assert_eq!(line.history("KeeperHoldsLowBench"), vec![weak(Held::X), strong(Held::LOW), weak(Held::LOW)], "the low is held after the release");
+    assert_eq!(line.history("KeeperContendedBench"), vec![weak(Held::X), strong(Held::X), weak(Held::X)], "a contended X is not recorded");
 }
 
 #[test]

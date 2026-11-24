@@ -233,3 +233,45 @@ module PullContendedBench() {
     let d = Pulldown(n);
     let look = Look(n);
 }
+
+/// A free-running clock of period 10 ns: it rises at 5 ns and falls at 10 ns, 15 ns and 20 ns on.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A `Keeper` alone: it has seen no level, so it drives weak X.
+module KeeperAloneBench() {
+    signal n: Line;
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// A high driven strongly from 5 ns to 10 ns, then released: the keeper holds it weakly.
+module KeeperHoldsHighBench() {
+    signal clk: Bit;
+    signal n: Line;
+    let clock = Clock(clk);
+    let t = Tribuf(n, true, clk);
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// A low driven strongly from 5 ns to 10 ns, then released: the keeper holds it weakly.
+module KeeperHoldsLowBench() {
+    signal clk: Bit;
+    signal n: Line;
+    let clock = Clock(clk);
+    let t = Tribuf(n, false, clk);
+    let k = Keeper(n);
+    let look = Look(n);
+}
+
+/// A strong high and a strong low from 5 ns to 10 ns: the net is X while contended, and the keeper does not record X.
+module KeeperContendedBench() {
+    signal clk: Bit;
+    signal n: Line;
+    let clock = Clock(clk);
+    let high = Tribuf(n, true, clk);
+    let low = Tribuf(n, false, clk);
+    let k = Keeper(n);
+    let look = Look(n);
+}

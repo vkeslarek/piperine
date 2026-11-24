@@ -869,9 +869,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_keeper_drives_weak_x_until_it_sees_a_level_then_holds_it` passes under `**Run sourcenets**`
-- [ ] `keeper_and_bidir_blocks_repeat_their_generic_names` passes under `**Run spectext**` for `Keeper`
-- [ ] Gate check passes: Full
+- [x] `a_keeper_drives_weak_x_until_it_sees_a_level_then_holds_it` passes under `**Run sourcenets**`
+- [x] `keeper_and_bidir_blocks_repeat_their_generic_names` passes under `**Run spectext**` for `Keeper`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
