@@ -113,8 +113,12 @@ impl Elaboration<'_, '_> {
                     let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                     nodes.push(NodeRef::Node(id));
                 }
-                // Bound to the child's node once the child is placed (`IrBuilder::bind_reached_node`).
-                NodeRole::Reached => nodes.push(NodeRef::Ground),
+                // The child's node as this body names it (`p.sn`): made before any child is placed, so a placement connects to
+                // it whatever the order of the two (§8.2), and made one node with the child's own once the child is placed.
+                NodeRole::Reached => {
+                    let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
+                    nodes.push(NodeRef::Node(id));
+                }
             }
         }
         self.merge_instance_nodes(&plan, &nodes);
@@ -124,48 +128,36 @@ impl Elaboration<'_, '_> {
             self.ir.bind_nets(instance, nets.clone());
         }
         stack.push(key);
-        self.place_children(&plan, instance, (&placing.path, placing.file), &bindings, (&mut nodes, &nets), stack);
+        self.place_children(&plan, instance, &placing.path, &bindings, (&nodes, &nets), stack);
         stack.pop();
         Some(Placed { instance, nodes, nets, host_ports })
     }
 
-    /// Places the children of `plan` under `instance`, in source order except that a child connected to a node of another child
-    /// (`Th(c0.sn)`, a reached node) waits until that child is placed and the node is bound. A node this body reaches is a node of
-    /// its own to the siblings placed after and to the parent that reads it in turn (`bank.c0.sn`), so `nodes` takes it at once.
-    /// Children that each wait for the other's node are refused by name (the checker refuses a name read before its `let` first,
-    /// so no source reaches it today).
-    fn place_children(&mut self, plan: &ModulePlan, instance: InstanceId, (path, file): (&str, FileId), bindings: &Bindings, (nodes, nets): (&mut Vec<NodeRef>, &[NetId]), stack: &mut Vec<BodyKey>) {
-        let reached: Vec<u32> = plan.nodes.iter().enumerate().filter(|(_, node)| node.role == NodeRole::Reached).map(|(slot, _)| slot as u32).collect();
-        let mut unbound: std::collections::BTreeSet<u32> = reached.into_iter().collect();
-        let mut waiting: Vec<usize> = (0..plan.children.len()).collect();
-        while !waiting.is_empty() {
-            let Some(at) = waiting.iter().position(|index| !plan.children[*index].terminals.iter().any(|t| matches!(t, Terminal::Node(slot) if unbound.contains(slot)))) else {
-                let child = &plan.children[waiting[0]];
-                let span = self.design.expr_node(child.call).span;
-                self.unsupported(file, span, "children each connected to a node of the other");
-                return;
-            };
-            let index = waiting.remove(at);
-            let parent = Parent { instance, path, nodes: nodes.as_slice(), nets, bindings };
-            if let Some(placed) = self.place_child(&plan.children[index], &parent, stack) {
-                for (slot, own) in self.bind_reaches(&plan.reaches, index as u32, instance, &placed) {
-                    nodes[slot as usize] = own;
-                    unbound.remove(&slot);
-                }
+    /// Places the children of `plan` under `instance`, in source order. A node connection is hardware, not a value (§8.2.14):
+    /// every node this body reaches into a child (`Th(c0.sn)`, `bank.c0.sn`) is a node already, made with the body's own, so a
+    /// child connects to it whether the child that owns it is placed before or after, or is the child itself (§8.3.5: a cycle of
+    /// node connections holds an unknown, the node).
+    fn place_children(&mut self, plan: &ModulePlan, instance: InstanceId, path: &str, bindings: &Bindings, (nodes, nets): (&[NodeRef], &[NetId]), stack: &mut Vec<BodyKey>) {
+        for (index, child) in plan.children.iter().enumerate() {
+            let parent = Parent { instance, path, nodes, nets, bindings };
+            if let Some(placed) = self.place_child(child, &parent, stack) {
+                self.bind_reaches(&plan.reaches, index as u32, instance, &placed, nodes);
             }
         }
     }
 
     /// Binds each node and carrier `instance` reads of its child number `child` (`inst.name`, a
-    /// `Reach` of the body) to the child instance's own, now that the child is placed; the nodes bound, by slot.
-    fn bind_reaches(&mut self, reaches: &[Reach], child: u32, instance: InstanceId, placed: &Placed) -> Vec<(u32, NodeRef)> {
-        let mut bound = Vec::new();
+    /// `Reach` of the body) to the child instance's own, now that the child is placed. The node `nodes` made for a reached slot
+    /// becomes one node with the child's (`IrBuilder::merge_nodes`), so a sibling placed before is connected to it too.
+    fn bind_reaches(&mut self, reaches: &[Reach], child: u32, instance: InstanceId, placed: &Placed, nodes: &[NodeRef]) {
         for reach in reaches.iter().filter(|r| r.child == child) {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
                     if let Some(own) = placed.nodes.get(child_node as usize) {
                         self.ir.bind_reached_node(instance, node, *own);
-                        bound.push((node, *own));
+                        if let Some(NodeRef::Node(standing)) = nodes.get(node as usize) {
+                            self.ir.merge_nodes(*own, *standing);
+                        }
                     }
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
@@ -175,7 +167,6 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
-        bound
     }
 
     /// Makes the two ends of each branch the body merges one node in the instance whose nodes are

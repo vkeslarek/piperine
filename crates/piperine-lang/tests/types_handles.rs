@@ -331,16 +331,36 @@ fn a_node_of_a_child_is_a_connection() {
 #[test]
 fn a_module_body_is_typed_in_any_order() {
     // §8.2 ("its items appear in any order; every name is visible in the whole body"): a `let` read before it is written is
-    // typed where it is read, a placement, a node of a child and a value alike; two `let`s that read each other through
-    // placements without a result read themselves, `E0332` (§8.2.16)
-    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\n";
+    // typed where it is read, a placement, a node of a child and a value alike; two `let`s that read each other's values at the
+    // value inputs of placements without a result read themselves, `E0332` (§8.2.16), and so do two value `let`s
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\nmodule Gain(a: Electrical, g: f64) { pub k: f64 = 1.0; }\nanalog for Gain { i(a, gnd) +> v(a, gnd) * g * k; }\n";
     for top in [
         "module Top() { signal x: Electrical; let th = Th(c0.sn); let c0 = Dram(x); }",
         "module Top() { let a = b * 2.0; let b = k + 1.0; k: f64 = 1.0; signal p: Electrical; }\nanalog for Top { i(p, gnd) +> v(p) * a; }",
     ] {
         assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
     }
-    let cycle = HandleSources::found(&format!("{modules}module Top() {{ let p = Dram(q.sn); let q = Dram(p.sn); }}"));
-    assert_eq!(cycle.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{cycle:?}");
-    assert!(cycle[0].1.contains("reads its own name through other `let`s"), "{cycle:?}");
+    let through_placements = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; let p = Gain(x, q.k); let q = Gain(x, p.k); }}"));
+    assert_eq!(through_placements.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{through_placements:?}");
+    assert!(through_placements[0].1.contains("reads its own name through other `let`s"), "{through_placements:?}");
+    let values = HandleSources::found(&format!("{modules}module Top() {{ let a = b + 1.0; let b = a * 2.0; signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * a; }}"));
+    assert_eq!(values.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{values:?}");
+}
+
+#[test]
+fn a_cycle_of_node_connections_is_hardware() {
+    // §8.2.14, §8.3.5 (coordinator ruling, finding 25): a node of an instance read at a connection is hardware, not a value, so
+    // a cycle of such connections holds an unknown (the node) and types: a cross-coupled pair, an instance wired to its own node,
+    // a ring of three, and the pair whose first placement reads the node of the second (finding 24)
+    let modules = "module D2(a: Electrical) { pub signal sn: Electrical; }\nanalog for D2 { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }\n";
+    for top in [
+        "module Top() { let p = D2(q.sn); let q = D2(p.sn); }",
+        "module Top() { let p = D2(p.sn); }",
+        "module Top() { let p = D2(r.sn); let q = D2(p.sn); let r = D2(q.sn); }",
+        "module Top() { signal x: Electrical; let q = D2(p.sn); let p = D2(x); }",
+        "module Top() { let p = D2((q.sn)); let q = D2((p.sn)); }",
+        "module Bank(a: Electrical) { pub let c0 = D2(a); }\nmodule Top() { let b = Bank(b.c0.sn); }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
 }

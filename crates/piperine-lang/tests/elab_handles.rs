@@ -167,7 +167,7 @@ fn a_node_chosen_through_lets_and_arm_statements_folds_to_the_node() {
 #[test]
 fn a_node_of_a_child_connects_to_another_placement() {
     // §8.2.8, §8.1.10: `Th(c0.sn)` binds `Th`'s port to the storage node of `c0`, placed by name or through a template, and so
-    // does `Th(if sel { c0.sn } else { t })` with `sel` true; the child that owns the node is placed first
+    // does `Th(if sel { c0.sn } else { t })` with `sel` true
     let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\n";
     for (top, path) in [
         ("module Top() { signal x: Electrical; let c0 = Dram(x); let th = Th(c0.sn); }", "Top"),
@@ -178,6 +178,57 @@ fn a_node_of_a_child_connects_to_another_placement() {
         let binding = |at: &str| ir.instance_at(at).map(|instance| format!("{:?}", instance.bindings())).unwrap_or_else(|| panic!("no instance {at}"));
         let storage = format!("{:?}", ir.instance_at(&format!("{path}.c0")).expect("c0").bindings()[1]);
         assert!(binding(&format!("{path}.th")).contains(&storage), "{top}: th is on c0.sn ({storage}): {}", binding(&format!("{path}.th")));
+    }
+}
+
+#[test]
+fn a_placement_binds_the_node_of_a_child_written_after_it() {
+    // §8.2, §8.2.14 (finding 24): `let q = D2(p.sn); let p = D2(x);` binds `q`'s port to `p`'s storage node as the forward order does
+    let modules = "module D2(a: Electrical) { pub signal sn: Electrical; }\nanalog for D2 { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }\n";
+    let forward = Elab::ir(&format!("{modules}module Top() {{ signal x: Electrical; let p = D2(x); let q = D2(p.sn); }}"), "Top");
+    let reverse = Elab::ir(&format!("{modules}module Top() {{ signal x: Electrical; let q = D2(p.sn); let p = D2(x); }}"), "Top");
+    for ir in [&forward, &reverse] {
+        assert_eq!(NodePaths::of(ir, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
+        assert_eq!(NodePaths::of(ir, "Top.p"), ["Top.x", "Top.p.sn"]);
+    }
+}
+
+#[test]
+fn a_cycle_of_node_connections_binds_each_port_to_the_node_it_names() {
+    // §8.2.14, §8.3.5 (finding 25): a connection is hardware, so a cross-coupled pair, an instance wired to its own node and a
+    // ring of three each bind every port to the storage node it names
+    let modules = "module D2(a: Electrical) { pub signal sn: Electrical; }\nanalog for D2 { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }\n";
+    let pair = Elab::ir(&format!("{modules}module Top() {{ let p = D2(q.sn); let q = D2(p.sn); }}"), "Top");
+    assert_eq!(NodePaths::of(&pair, "Top.p"), ["Top.q.sn", "Top.p.sn"]);
+    assert_eq!(NodePaths::of(&pair, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
+    let own = Elab::ir(&format!("{modules}module Top() {{ let p = D2(p.sn); }}"), "Top");
+    assert_eq!(NodePaths::of(&own, "Top.p"), ["Top.p.sn", "Top.p.sn"]);
+    let ring = Elab::ir(&format!("{modules}module Top() {{ let p = D2(r.sn); let q = D2(p.sn); let r = D2(q.sn); }}"), "Top");
+    assert_eq!(NodePaths::of(&ring, "Top.p"), ["Top.r.sn", "Top.p.sn"]);
+    assert_eq!(NodePaths::of(&ring, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
+    assert_eq!(NodePaths::of(&ring, "Top.r"), ["Top.q.sn", "Top.r.sn"]);
+    // through a child of a child (`b.c0.sn`), written before the bank and fed back into the bank itself
+    let banks = format!("{modules}module Bank(a: Electrical) {{ pub let c0 = D2(a); }}\n");
+    let later = Elab::ir(&format!("{banks}module Top() {{ signal x: Electrical; let q = D2(b.c0.sn); let b = Bank(x); }}"), "Top");
+    assert_eq!(NodePaths::of(&later, "Top.q"), ["Top.b.c0.sn", "Top.q.sn"]);
+    let fed_back = Elab::ir(&format!("{banks}module Top() {{ let b = Bank(b.c0.sn); }}"), "Top");
+    assert_eq!(NodePaths::of(&fed_back, "Top.b.c0"), ["Top.b.c0.sn", "Top.b.c0.sn"]);
+}
+
+/// The path of the node each port and signal of an instance is bound to, in the instance's node order.
+struct NodePaths;
+
+impl NodePaths {
+    fn of(ir: &piperine_ir::Ir, path: &str) -> Vec<String> {
+        let instance = ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}"));
+        instance
+            .bindings()
+            .iter()
+            .map(|bound| match bound {
+                piperine_ir::NodeRef::Node(id) => ir.node(*id).path().to_string(),
+                other => format!("{other:?}"),
+            })
+            .collect()
     }
 }
 

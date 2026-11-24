@@ -1,0 +1,48 @@
+//! Node connections between placements are hardware, not values (part III §8.2.14, §8.3.5; verification findings 24 and 25):
+//! a placement may connect to the node of a child written after it, to a child that connects back, or to its own node. The
+//! expected values are computed by Rust in `source_templates.rs`.
+
+/// A 1 S branch from `a` to the storage node and a 1 S leak from the storage node to ground.
+module D2(a: Electrical) { pub signal sn: Electrical; }
+analog for D2 { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }
+
+/// Feeds `amps` into its node.
+module Feed(a: Electrical) { amps: f64 = 1.0; }
+analog for Feed { i(a, gnd) +> -amps; }
+
+/// A chain `x -> p.sn -> q.sn`, fed 1 A at `x`.
+module RigChain() {
+    signal x: Electrical;
+    let p = D2(x);
+    let q = D2(p.sn);
+    let feed = Feed(x);
+}
+
+/// `RigChain` with `q` written before the `p` whose node it connects to.
+module RigChainReverse() {
+    let feed = Feed(x);
+    let q = D2(p.sn);
+    let p = D2(x);
+    signal x: Electrical;
+}
+
+/// Two cells, each wired to the other's storage node, fed 1 A at `p.sn`.
+module RigPair() {
+    let p = D2(q.sn);
+    let q = D2(p.sn);
+    let feed = Feed(p.sn);
+}
+
+/// Three cells in a ring, each wired to the storage node of the one before, fed 1 A at `p.sn`.
+module RigRing() {
+    let p = D2(r.sn);
+    let q = D2(p.sn);
+    let r = D2(q.sn);
+    let feed = Feed(p.sn);
+}
+
+/// A cell wired to its own storage node, fed 1 A there: the branch is shorted, the leak holds the node at 1 V.
+module RigOwn() {
+    let p = D2(p.sn);
+    let feed = Feed(p.sn);
+}

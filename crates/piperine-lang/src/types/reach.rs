@@ -17,6 +17,12 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
         match res {
+            // a node of an instance whose `let` is being typed (`let p = D2(q.sn); let q = D2(p.sn);`, `let p = D2(p.sn);`): a
+            // connection is hardware, not a value (§8.2.14), so the cycle it closes holds an unknown, the node (§8.3.5)
+            Resolution::Decl(item) if self.is_node_item(*item) && self.names_an_open_instance(*receiver) => {
+                self.open_instance(*receiver)?;
+                self.item_type(*item, file, node.span)
+            }
             Resolution::Decl(item) if self.is_child_item(*item) => {
                 self.infer_receiver(*receiver)?;
                 self.item_type(*item, file, node.span)
@@ -64,6 +70,59 @@ impl Checker<'_> {
         match self.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(Resolution::Decl(param)) => matches!(self.design.decl_data(param).kind, DeclKind::Param(_)) && self.module_param_callable(param).is_some(),
             _ => false,
+        }
+    }
+
+    /// Whether `item` is a node of a module: a port or a signal whose type is a nature.
+    fn is_node_item(&self, item: DeclId) -> bool {
+        let ty = match &self.design.decl_data(item).kind {
+            DeclKind::Port(p) => p.ty,
+            DeclKind::Signal(s) => s.ty,
+            _ => return false,
+        };
+        self.design.nature_of(ty).is_some()
+    }
+
+    /// Whether `receiver` names an instance whose `let` is being typed, directly (`p`) or as the head of a chain of children
+    /// (`b.c0`): its placement records the module before it types its arguments (`Checker::placement`).
+    fn names_an_open_instance(&self, receiver: ExprId) -> bool {
+        match &self.design.expr_node(receiver).kind {
+            ExprKind::Paren(inner) => self.names_an_open_instance(*inner),
+            ExprKind::Path(_) => self.open_placement(receiver).is_some(),
+            ExprKind::Field { expr: inner, res: Resolution::Decl(item), .. } => self.is_child_item(*item) && !self.is_node_item(*item) && self.names_an_open_instance(*inner),
+            _ => false,
+        }
+    }
+
+    /// The type of `receiver`, an instance [`Checker::names_an_open_instance`] accepts, recorded on each step of the chain: the
+    /// module its open `let` places, then each child's own type. `None` after a diagnostic.
+    fn open_instance(&mut self, receiver: ExprId) -> Option<Ty> {
+        let node = self.design.expr_node(receiver).clone();
+        let ty = match &node.kind {
+            ExprKind::Paren(inner) => self.open_instance(*inner)?,
+            ExprKind::Path(_) => Ty::module(self.open_placement(receiver)?),
+            ExprKind::Field { expr: inner, res: Resolution::Decl(item), .. } => {
+                self.open_instance(*inner)?;
+                let file = self.file_of_expr(receiver);
+                self.item_type(*item, file, node.span)?
+            }
+            _ => return None,
+        };
+        self.exprs[receiver.index()] = Some(ty.clone());
+        Some(ty)
+    }
+
+    /// The module placed by the `let` the path `receiver` names while that `let` is being typed. `None` for any other path.
+    fn open_placement(&self, receiver: ExprId) -> Option<DeclId> {
+        let ExprKind::Path(path) = &self.design.expr_node(receiver).kind else { return None };
+        let Some(Resolution::Decl(binding)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
+        let mut value = *self.lets_open.get(&binding)?;
+        while let ExprKind::Paren(inner) = &self.design.expr_node(value).kind {
+            value = *inner;
+        }
+        match self.callees.get(&value) {
+            Some(super::Callee::Module(module)) => Some(*module),
+            _ => None,
         }
     }
 
