@@ -1,7 +1,7 @@
 //! Scope: chapter 6 of the Book, "Natures and carriers" (feature `root-e2e`, RE-02 and RE-03): the
 //! natures the standard library gives, the signal declarations, a resistor that heats itself, the
-//! open-drain line and the bundle the Book builds (both refused today, asserted refused with their
-//! diagnostics), an `out` port that gives the initial value, and the mistakes of the chapter's table,
+//! open-drain alarm line (run, with its `Pulldown` variant) and the bundle the Book builds (refused
+//! today, asserted refused with its diagnostics), an `out` port that gives the initial value, and the mistakes of the chapter's table,
 //! each run through `piperine::`. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 
@@ -18,11 +18,12 @@ mod support {
     pub mod standard_library;
 }
 
-use piperine::{Field, Overrides};
+use piperine::{Field, Overrides, Record};
 use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::Model;
+use support::model::{Model, Ran};
+use support::records::Fields;
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
 
@@ -95,21 +96,66 @@ fn the_signal_list_elaborates_and_only_the_net_nature_is_missing() {
     Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "E0161", "cannot find `Sda` in this scope");
 }
 
-#[test]
-fn the_open_drain_line_is_refused_until_a_nature_can_implement_resolve() {
-    // natures#3 (refused, S8): the alarm.msl of the Book, whose nature `AlarmLine` implements
-    // `Resolve<Driven>`; natures~e99c1920 "Today the command refuses the file and runs nothing" (refused);
-    // natures~6a449552 "Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream" (refused: it
-    // needs the same nature). The names the file uses, `Driven`, `Resolve` and `Pullup`, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
-    let chapter = Chapter::read();
-    let model = chapter.marked("alarm.msl", "natures#3");
-    let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() };
-    let given = Refusal::of(model.run(overrides.clone()), "natures#3");
-    assert!(given.iter().all(|(code, _)| code == "E0161"), "every diagnostic is a name the library does not hold yet: {given:?}");
-    for name in ["Driven", "Resolve"] {
-        assert!(given.iter().any(|(_, message)| message == &format!("cannot find `{name}` in this scope")), "{name}: {given:?}");
+/// The records of the alarm line the monitor `Alarm.watch` writes: a time, a level and a strength, as the stream prints them.
+struct AlarmLine;
+
+impl AlarmLine {
+    /// The overrides of `piperine run alarm.msl --analysis transient --stop 4e-6 --stream line`.
+    fn overrides() -> Overrides {
+        Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() }
     }
-    Refusal::expect(model.run(overrides), "natures#3", "E0161", "cannot find `Driven` in this scope");
+
+    /// The text of the variant the field `name` of `record` holds.
+    fn variant(record: &Record, name: &str) -> String {
+        match Fields::of(record, name) {
+            Field::Variant(text) => text.to_string(),
+            other => panic!("field `{name}`: a variant, found {other:?}"),
+        }
+    }
+
+    /// Asserts that the records of the stream `line` of `ran` are `expected`: each a time as the Book prints it, a level and a
+    /// strength.
+    fn holds(ran: &Ran, expected: &[(&str, &str, &str)]) {
+        let records = ran.stream("line");
+        assert_eq!(records.len(), expected.len(), "{:?}", ran.records);
+        for (record, (time, level, strength)) in records.iter().zip(expected) {
+            Printed::holds(time, record.time, "the instant of a record");
+            assert_eq!((Self::variant(record, "level").as_str(), Self::variant(record, "strength").as_str()), (*level, *strength), "the record at {time}");
+        }
+    }
+}
+
+#[test]
+fn the_alarm_prints_three_records_of_the_line() {
+    // natures#3: the alarm.msl of the Book, whose nature `AlarmLine` implements `Resolve<Driven>`; natures~e99c1920 "The command
+    // prints them": the line is a pulled high at 0 and at 3 us and a strong low at 1 us, and the second sensor at 2 us changes
+    // nothing, so there are three records and none at 2 us
+    let ran = Chapter::read().marked("alarm.msl", "natures#3").run(AlarmLine::overrides()).unwrap_or_else(|failure| panic!("the alarm is refused: {failure}"));
+    AlarmLine::holds(&ran, &[("0.000000e0", "1", "Pull"), ("1.000000e-6", "0", "Strong"), ("3.000000e-6", "1", "Pull")]);
+}
+
+#[test]
+fn the_pulldown_alarm_prints_the_exercise_answer() {
+    // natures~91c3bffe: with `Pulldown(alarm_n)` in place of `Pullup(alarm_n)` there is "one record at time zero, level = 0,
+    // strength = Pull; then at 1 us the strength becomes Strong with the level still low, and at 3 us it returns to Pull"
+    let chapter = Chapter::read();
+    let text = chapter.text("natures#3");
+    assert!(text.contains("Pullup(alarm_n)"), "the listing places a Pullup");
+    let model = Model::written("alarm.msl", &text.replace("Pullup(alarm_n)", "Pulldown(alarm_n)"));
+    let ran = model.run(AlarmLine::overrides()).unwrap_or_else(|failure| panic!("the pulldown alarm is refused: {failure}"));
+    AlarmLine::holds(&ran, &[("0.000000e0", "0", "Pull"), ("1.000000e-6", "0", "Strong"), ("3.000000e-6", "0", "Pull")]);
+}
+
+#[test]
+fn the_book_no_longer_says_the_alarm_is_refused() {
+    // natures~e99c1920: the sentence that introduced the refusal now introduces the output, and the listing under it is the
+    // command's output (`crates/piperine-cli/tests/book.rs` holds it to the binary)
+    let book = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/book/content.html")).expect("the Book");
+    assert!(!book.contains("Today the command refuses the file"), "the sentence of the refusal is gone");
+    assert!(!book.contains("once a nature can implement <code>Resolve</code>"), "the alarm no longer waits for a nature");
+    let command = "data-cli-output=\"piperine run alarm.msl --analysis transient --stop 4e-6 --stream line\"";
+    let at = book.find(command).expect("the listing of the alarm's output");
+    assert!(!book[at..at + 200].contains("data-cli-stream"), "the listing is standard output, no refusal");
 }
 
 #[test]

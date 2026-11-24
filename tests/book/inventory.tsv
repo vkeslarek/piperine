@@ -92,10 +92,10 @@ block	values#21	1c36af9fee8a108e	run	piperine/book_values::analog_reads_a_digita
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
 block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::the_signal_list_elaborates_and_only_the_net_nature_is_missing	L21	-
-block	natures#3	bc658ea2dad63ed4	refused	piperine/book_natures::the_open_drain_line_is_refused_until_a_nature_can_implement_resolve	L21	-
+block	natures#3	bc658ea2dad63ed4	run	piperine/book_natures::the_alarm_prints_three_records_of_the_line	-	-
 block	natures#4	3544f7a10903596f	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-
-block	natures#6	acda13a1a5efeb66	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
+block	natures#6	7c840f716e6d0201	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
 block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
 block	natures#8	2873c252462bda40	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
 block	modules#1	b8d5395ceea2ea36	run	piperine/book_modules::the_ladder_runs_for_an_operating_point_and_a_sweep	-	-
@@ -370,7 +370,6 @@ claim	natures~cd4205d5	cd4205d55ed90e62	prose	-	-	Every carrier has a nature, an
 claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
 claim	natures~eb8db94c	eb8db94ced8b3207	holds	piperine/book_natures::an_out_port_gives_the_initial_value	-	That module also gives the initial value.
 claim	natures~8ebfe866	8ebfe866aadcea4e	holds	piperine/book_natures::a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
-claim	natures~e99c1920	e99c1920bfe79d2e	refused	natures#3	L21	Today the command refuses the file and runs nothing:
 claim	natures~52790298	5279029848b66589	refused	natures#8	L25	Directions are written once, from the producer's side, and flip gives the consumer's view.
 claim	natures~5c7f5269	5c7f5269612c5fc2	holds	piperine/book_natures::behavior_crosses_freely_inside_one_module	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
 claim	natures~42ae741d	42ae741dc13997e4	holds	piperine/book_natures::e0220_a_bit_has_one_driver	-	E0220
@@ -807,7 +806,7 @@ block	digital#18	daa3f16a70d5d389	refused	piperine/book_digital::the_irq_line_an
 block	digital#19	1cea38fcad18c9b2	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
 block	digital#20	bcac1d0094b1326d	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
 claim	welcome~4623a9b2	4623a9b2d4d858a7	prose	-	-	So the terminal shows a checks record only when it fails.
-claim	natures~91c3bffe	91c3bffedec5bb6f	refused	natures#3	L21	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = 0, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
+claim	natures~91c3bffe	91c3bffedec5bb6f	holds	piperine/book_natures::the_pulldown_alarm_prints_the_exercise_answer	-	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = 0, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
 claim	analog~39ba351d	39ba351dbc1213b3	holds	piperine/book_analog::e0180_a_logic_read_in_analog_is_a_mismatch	-	E0180
 claim	analog~f8d4880c	f8d4880c2eb68bd6	prose	-	-	Decide with a function that returns one: if flags.is_high() { … }
 claim	mixed~9d92e73f	9d92e73f5af1700c	prose	-	-	A converter for a Logic input makes the other choice in its own text, d.to_volts(1.0), which gives half the supply for x and z: the model says what "not determined" means electrically, and the language does not guess. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.

@@ -956,9 +956,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `the_alarm_prints_three_records_of_the_line`, `the_pulldown_alarm_prints_the_exercise_answer` and `the_book_no_longer_says_the_alarm_is_refused` pass under `**Run booknatures**`
-- [ ] `every_cli_listing_of_the_book_is_what_the_binary_prints` passes under `**Run clibook**`; `**Run bookinventory**` passes
-- [ ] Gate check passes: Full
+- [x] `the_alarm_prints_three_records_of_the_line`, `the_pulldown_alarm_prints_the_exercise_answer` and `the_book_no_longer_says_the_alarm_is_refused` pass under `**Run booknatures**`
+- [x] `every_cli_listing_of_the_book_is_what_the_binary_prints` passes under `**Run clibook**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
