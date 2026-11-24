@@ -111,7 +111,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `let name = init;`: the name holds the lowered initializer (an `Option` its pair, a `str` its text).
-    fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span) -> Option<()> {
+    pub(super) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span) -> Option<()> {
         let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(pat).kind else {
             self.unsupported(scope.file, span, "a `let` of a pattern that is no name in a `fn` called inside a `ddx`");
             return None;

@@ -765,7 +765,7 @@ T27 → T28 → T29 → T30 → T31
 **What**: A call of a `fn -> Event` is inlined through `HandleBinding` (D14), its result lowered by `elab/events.rs` into the caller's head, body `let`, guard or body read; a nested `Event` function nests the inlining.
 **Where**: `crates/piperine-lang/src/elab/event_functions.rs` (new, called from the `Call` arm of `disjuncts` in `elab/events.rs`; no `HandleBinding`, see Settled B5 (2b): the parameters bind in `Scope::handles`/`texts`/`values` under `Environment`)
 **Depends on**: T27
-**Reuses**: `HandleBinding`, `Scope::handles`
+**Reuses**: `Environment` and the expansion machinery of `expansion.rs` (`expanded_arguments`, `Argument`), `Scope::handles`
 **Requirement**: UE-04
 **Executor**: Sonnet
 

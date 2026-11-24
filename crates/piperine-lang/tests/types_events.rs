@@ -683,6 +683,29 @@ fn a_function_returning_event_is_accepted_in_every_event_position() {
 }
 
 #[test]
+fn a_function_returning_event_is_the_result_of_a_module() {
+    // UE-04 AC 1, §13: the call is the result of a module with an `Event` result, and a head places that module; no other
+    // placement of the call is in the source
+    let src = format!("{HANDSHAKE}module Ready(in req: Bit, in ack: Bit) -> Event {{ handshake(req, ack) }}\nmodule Top(in req: Bit, in ack: Bit) {{ }}\ndigital for Top {{ on Ready(req, ack) {{ }} }}");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let calls = exprs_reading(&design, &types, &src, "handshake(req, ack)");
+    assert!(!calls.is_empty() && calls.iter().all(|call| types.ty(*call) == Some(&Ty::Event)), "the module's result is an `Event`: {calls:?}");
+}
+
+#[test]
+fn a_generic_function_returning_event_is_an_event_at_each_nature() {
+    // UE-04 AC 1, §3.8: `crossed<N>` returns an `Event` whatever nature its argument has
+    let src = "fn crossed<N: Nature>(a: N) -> Event { cross(potential(a)) }\nmodule Top(a: Electrical, t: Thermal, out q: Bit = false) { }\ndigital for Top { on crossed(a) { q <- true; } on crossed(t) { q <- false; } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    for call in ["crossed(a)", "crossed(t)"] {
+        let reads = exprs_reading(&design, &types, src, call);
+        assert!(!reads.is_empty() && reads.iter().all(|read| types.ty(*read) == Some(&Ty::Event)), "{call} is an `Event`: {reads:?}");
+    }
+}
+
+#[test]
 fn a_function_returning_event_outside_an_event_position_is_e0441() {
     // UE-04 AC 4, §13 rule 8: outside an event position, a guard and a reaction body an `Event` function's call is `E0441`
     // like any `Event`; inside a guard and a reaction body it reads as a `bool` (UE-01)

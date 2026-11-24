@@ -461,6 +461,7 @@ fn an_event_function_in_every_event_position() {
     let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
     let wanted: Vec<i64> = HANDSHAKES.iter().map(|ns| ns * NS).collect();
     assert_eq!(run.instants(AnalysisKind::Transient, "named"), wanted, "a module-body let of the call");
+    assert_eq!(run.instants(AnalysisKind::Transient, "modular"), wanted, "the result of a module");
     assert_eq!(run.instants(AnalysisKind::Transient, "guarded"), [110 * NS], "a guard after `en.rise()`");
     let mut either: Vec<i64> = wanted.iter().copied().chain([50 * NS, 70 * NS]).collect();
     either.sort_unstable();
@@ -483,4 +484,16 @@ fn an_event_function_calling_another_fires_under_the_outer_guard() {
     // 130 ns, fire it
     let run = Scenario::of("handshake.msl", "HandshakeBench").transient(150e-9, 10e-9);
     assert_eq!(run.instants(AnalysisKind::Transient, "gated"), [110 * NS, 130 * NS]);
+}
+
+#[test]
+fn an_event_function_binds_named_and_left_out_arguments() {
+    // §3.2 with §13 rule 7 (UE-04 AC 1): `edge(clk, b: Some(true))` leaves `a` out (true), so it fires on both rises of
+    // `clk`, 10 and 30 ns; `edge(clk, Some(false), ..)` binds `a` to false and never fires; `edge(clk, a: Some(true), b:
+    // Some(true))` fires like the first; `edge(clk)` has `b` false and never fires
+    let run = Scenario::of("arguments.msl", "ArgumentsBench").transient(50e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "named"), [10 * NS, 30 * NS], "`b` named, `a` left out");
+    assert_eq!(run.instants(AnalysisKind::Transient, "both"), [10 * NS, 30 * NS], "both named");
+    assert!(run.instants(AnalysisKind::Transient, "positional").is_empty(), "`a` positional false");
+    assert!(run.instants(AnalysisKind::Transient, "neither").is_empty(), "`b` left out is false");
 }

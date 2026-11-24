@@ -56,7 +56,7 @@ impl Environment {
 }
 
 /// One parameter of an expanded `fn`, evaluated where the call stands, before any parameter is rebound.
-enum Argument {
+pub(super) enum Argument {
     /// A value, and the constant it folds to when it does.
     Value { param: DeclId, value: LoweredExpr, folded: Option<Constant> },
     /// An `Option`: its flag and its payload.
@@ -69,7 +69,7 @@ enum Argument {
 
 impl Argument {
     /// Binds the parameter in `scope`.
-    fn bind(self, scope: &mut Scope) {
+    pub(super) fn bind(self, scope: &mut Scope) {
         match self {
             Argument::Value { param, value, folded } => {
                 scope.values.insert(param, value);
@@ -167,7 +167,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether the call of `function` may be expanded one level deeper: a recursion is followed to 1 024 calls and
     /// while the decisions it hangs on fold (`E0126` naming the function otherwise, §3 rule 12).
-    fn may_expand(&mut self, scope: &Scope, function: DeclId, span: Span) -> bool {
+    pub(super) fn may_expand(&mut self, scope: &Scope, function: DeclId, span: Span) -> bool {
         if scope.expanding.len() >= DEPTH {
             self.unfoldable_recursion(scope, function, span, "it is deeper than 1 024 calls");
             return false;
@@ -180,7 +180,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Each parameter of `function` with its argument evaluated where the call stands. `None` after a diagnostic.
-    fn expanded_arguments(&mut self, scope: &mut Scope, call: ExprId, children: &[DeclId], slots: &[Option<ExprId>]) -> Option<Vec<Argument>> {
+    pub(super) fn expanded_arguments(&mut self, scope: &mut Scope, call: ExprId, children: &[DeclId], slots: &[Option<ExprId>]) -> Option<Vec<Argument>> {
         let span = self.design.expr_node(call).span;
         let params: Vec<DeclId> = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
         let mut arguments = Vec::new();

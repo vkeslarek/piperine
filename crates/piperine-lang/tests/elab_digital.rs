@@ -785,3 +785,84 @@ fn an_event_function_call_lowers_to_its_body_event() {
     // the head's two events and the one the body's read appends (the call's event, guarded by `ack`): `fired` of the third
     assert_eq!(Read { ir: &read }.body("R").events().len(), 3, "a body that reads the call appends its event");
 }
+
+/// The elaborated IR of `module M` reacting on `head`, with `functions` written before it.
+fn reaction_on(functions: &str, head: &str) -> String {
+    let module = "module M(in clk: Bit, in en: Bit, out q: Bit = false) { }\n";
+    Elab::ir(&format!("{functions}{module}digital for M {{ on {head} {{ q <- true; }} }}"), "M").print_structural()
+}
+
+#[test]
+fn an_event_function_binds_its_arguments_as_a_call_does() {
+    // §3.2.2 to §3.2.4 and §3.2.9 with §13 rule 7 (UE-04 AC 1): `a` and `b` are optional, so `edge(clk, b: Some(false))`
+    // leaves `a` out (`unwrap_or(true)`), binds `b`, and fires on every rise; a named argument takes its place whatever
+    // its position, and a value written for an `Option` parameter is the `Some` of it
+    let function = "fn edge(c: Bit, a: Option<bool>, b: Option<bool>) -> Event { c.rise() && a.unwrap_or(true) && b.unwrap_or(false) }\n";
+    // `unwrap_or(d)` of an `Option` is `if flag { payload } else { d }`, a left-out one the flag `false` and a zero payload
+    let unwrapped = |given: Option<bool>, default: bool| match given {
+        Some(value) => format!("if true {{ {value} }} else {{ {default} }}"),
+        None => format!("if false {{ false }} else {{ {default} }}"),
+    };
+    let by_hand = |a: Option<bool>, b: Option<bool>| reaction_on("", &format!("clk.rise() && ({}) && ({})", unwrapped(a, true), unwrapped(b, false)));
+    assert_eq!(reaction_on(function, "edge(clk, b: Some(true))"), by_hand(None, Some(true)), "a named argument binds `b`, `a` is left out");
+    assert_eq!(reaction_on(function, "edge(clk)"), by_hand(None, None), "both left out");
+    assert_eq!(reaction_on(function, "edge(clk, Some(false))"), by_hand(Some(false), None), "a positional `Some`");
+    assert_eq!(reaction_on(function, "edge(clk, b: Some(true), a: Some(false))"), by_hand(Some(false), Some(true)), "named arguments after the positional one, in any order");
+    assert_ne!(reaction_on(function, "edge(clk, b: Some(true))"), reaction_on(function, "edge(clk, a: Some(true))"), "`a` and `b` are not interchanged");
+}
+
+#[test]
+fn an_event_function_body_may_hold_lets_before_its_event() {
+    // §3 rules 6 and 15 with §13: a `let` of the body names a value of the call's arguments and the event reads it
+    let function = "fn armed(c: Bit, e: Bit) -> Event { let ready = e; c.rise() && ready }\n";
+    assert_eq!(reaction_on(function, "armed(clk, en)"), reaction_on("", "clk.rise() && en"));
+    assert_eq!(reaction_on(function, "armed(en, clk)"), reaction_on("", "en.rise() && clk"), "the let reads the argument of this call");
+}
+
+#[test]
+fn an_event_function_may_recurse_while_its_decisions_fold() {
+    // §3 rule 12: `any(clk, 2)` unrolls to three rise events of one reaction (`n` = 2, 1, 0), the decision `n <= 0` folding
+    // in each call; the same recursion without its end is `E0126` naming the function
+    let function = "fn any(c: Bit, n: i32) -> Event { if n <= 0 { c.rise() } else { c.rise() || any(c, n - 1) } }\n";
+    assert_eq!(reaction_on(function, "any(clk, 2)"), reaction_on("", "clk.rise() || clk.rise() || clk.rise()"));
+    let endless = format!("fn any(c: Bit) -> Event {{ c.rise() || any(c) }}\nmodule M(in clk: Bit, out q: Bit = false) {{ }}\ndigital for M {{ on any(clk) {{ q <- true; }} }}");
+    let refused = Elab::run(&endless, "M").expect_err("a recursion that never ends");
+    assert_eq!(Elab::codes(&refused), ["E0126"]);
+    assert!(refused[0].diagnostic.message.contains("`any`"), "{}", refused[0].diagnostic.message);
+}
+
+#[test]
+fn an_event_method_runs_the_function_its_impl_gives() {
+    // §3.7.8 with §13 rule 7: a trait function that ends in `;` and returns `Event` is the body its `impl` gives for the
+    // receiver's type, called as a method, by a path and through a bound
+    let functions = "trait Armed { fn fires(self, c: Bit) -> Event; }\nimpl Armed for bool { fn fires(self, c: Bit) -> Event { c.rise() && self } }\nfn through<T: Armed>(a: T, c: Bit) -> Event { a.fires(c) }\n";
+    let by_hand = reaction_on("", "clk.rise() && en");
+    assert_eq!(reaction_on(functions, "en.fires(clk)"), by_hand, "as a method");
+    assert_eq!(reaction_on(functions, "Armed::fires(en, clk)"), by_hand, "by a path");
+    assert_eq!(reaction_on(functions, "through(en, clk)"), by_hand, "through a bound");
+}
+
+#[test]
+fn a_generic_event_function_runs_for_the_nature_it_is_called_at() {
+    // §3.8 with §13 rule 7 (UE-04 AC 1): `crossed<N>` is the `cross` of the potential of its argument, whose nature each
+    // call instantiates: the same function is the electrical crossing for an `Electrical` node and the thermal one for a
+    // `Thermal` node
+    let function = "fn crossed<N: Nature>(a: N) -> Event { cross(potential(a)) }\n";
+    let design = |head: &str| {
+        let module = "module M(a: Electrical, t: Thermal, out q: Bit = false) { }\n";
+        let top = "module Top() { signal n: Electrical; signal h: Thermal; signal q: Bit; let m = M(n, h, q); }";
+        Elab::ir(&format!("{function}{module}digital for M {{ on {head} {{ q <- true; }} }}\n{top}"), "Top").print_structural()
+    };
+    assert_eq!(design("crossed(a)"), design("cross(v(a))"), "an electrical node");
+    assert_eq!(design("crossed(t)"), design("cross(temp(t))"), "a thermal node");
+    assert_ne!(design("crossed(a)"), design("crossed(t)"), "two instances of one function");
+}
+
+#[test]
+fn an_event_function_as_the_result_of_a_module_is_its_event_in_the_module_frame() {
+    // §13 (UE-04 AC 1): `module Ready(..) -> Event { handshake(c, e) }` placed in a head is the event of its body, over the
+    // module's own ports (`Ready$0.c`, `Ready$0.e`)
+    let functions = "fn handshake(c: Bit, e: Bit) -> Event { c.rise() && e }\nmodule Ready(in c: Bit, in e: Bit) -> Event { handshake(c, e) }\n";
+    let printed = reaction_on(functions, "Ready(clk, en)");
+    assert!(printed.contains("event E0 changed Ready$0.c guard (((!Ready$0.c.prev()) && Ready$0.c) && Ready$0.e)"), "{printed}");
+}

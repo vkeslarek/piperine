@@ -48,6 +48,13 @@ digital for InGuard {
     on ack.fall() || handshake(req, ack) { emit!("either", t = now()); }
 }
 
+/// The function as the result of a module placed in a head.
+module Ready(in req: Bit, in ack: Bit) -> Event { handshake(req, ack) }
+module InModule(in req: Bit, in ack: Bit) {}
+digital for InModule {
+    on Ready(req, ack) { emit!("modular", t = now()); }
+}
+
 /// The function read as a `bool` in the body of a reaction run on either edge.
 module Read(in req: Bit, in ack: Bit) {}
 digital for Read {
@@ -72,4 +79,5 @@ module HandshakeBench() {
     let guarded = InGuard(req, ack, en);
     let read = Read(req, ack);
     let nested = Nested(req, ack, en);
+    let modular = InModule(req, ack);
 }

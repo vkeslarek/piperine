@@ -18,17 +18,7 @@ impl Elaboration<'_, '_> {
     /// in order, a `Call` of the method's variant (for a function of a trait, the instance for the type
     /// of the receiver). `None` after a diagnostic.
     pub(super) fn lower_method_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, receiver: ExprId, arguments: &[ExprId], origin: piperine_ir::Origin) -> Option<LoweredExpr> {
-        // a method of a generic `impl` is instantiated with the arguments its `impl` takes from the receiver's type
-        let impl_arguments = if self.is_generic_impl_item(function) {
-            let receiver_type = self.typed(receiver)?;
-            let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a method of a generic impl whose parameters the receiver leaves open");
-                return None;
-            };
-            values.iter().map(|value| self.concrete_argument(value, scope.file, self.design.expr_node(expr).span)).collect::<Option<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+        let impl_arguments = if self.is_generic_impl_item(function) { self.method_impl_arguments(scope, expr, function, receiver)? } else { Vec::new() };
         // a method called in a value that is differentiated is expanded where it stands (`expansion.rs`)
         if scope.differentiated {
             let instance = if self.is_trait_function(function) { vec![ConcreteValue::Type(self.typed(receiver)?)] } else { impl_arguments };
@@ -50,6 +40,18 @@ impl Elaboration<'_, '_> {
         Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
     }
 
+    /// The arguments the generic `impl` of the method `function` takes from the type of `receiver`, concrete. `None`
+    /// after a diagnostic.
+    pub(super) fn method_impl_arguments(&mut self, scope: &Scope, expr: ExprId, function: DeclId, receiver: ExprId) -> Option<Vec<ConcreteValue>> {
+        let receiver_type = self.typed(receiver)?;
+        let span = self.design.expr_node(expr).span;
+        let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
+            self.unsupported(scope.file, span, "a method of a generic impl whose parameters the receiver leaves open");
+            return None;
+        };
+        values.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect()
+    }
+
     /// The call `receiver.f(arguments)` through a bound (`Callee::Bound { item }`, the trait's own function): the
     /// receiver's type is concrete in the instance being lowered, so the call is the `impl`'s item for that type, or
     /// the trait's default body with `Self` bound to it (static dispatch, GN-04). `None` after a diagnostic.
@@ -67,7 +69,7 @@ impl Elaboration<'_, '_> {
     /// of the `impl`s of the trait that apply to the type, the first written with the arguments the bound names
     /// (`C: Convert<f64>` picks `impl Convert<f64> for Cell`, not `impl Convert<u8> for Cell`); the trait's own body
     /// when that `impl` leaves the function out and the trait gives one.
-    fn bound_implementation(&mut self, expr: ExprId, item: DeclId, receiver: &Ty) -> Option<DeclId> {
+    pub(super) fn bound_implementation(&mut self, expr: ExprId, item: DeclId, receiver: &Ty) -> Option<DeclId> {
         let wanted: Vec<Ty> = self.types.bound_arguments(expr).iter().map(|ty| self.consts.substitution().apply(ty)).collect();
         let trait_decl = self.design.decl_data(item).parent?;
         let name = self.design.decl_data(item).name.as_ref()?.text.clone();
