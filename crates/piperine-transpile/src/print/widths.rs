@@ -30,9 +30,10 @@ impl NumberTypes {
 }
 
 impl NumberTypes {
-    /// Whether any type the design writes is a number width needing the embedded library: `f16`,
+    /// Whether any type the design writes is a number width needing the embedded library: `f32`
+    /// (its bytes on a pin, `Carried`, and its `as`, `Convert`, live in `rt/widths.rs`), `f16`,
     /// `f128` or an integer wider than 64 bits, anywhere in a param, local, carrier, stream field,
-    /// function or expression, through aggregates. (`f32` is Rust's own type and needs nothing.)
+    /// function or expression, through aggregates.
     pub fn used_by(ir: &Ir) -> bool {
         let mut seen = BTreeSet::new();
         let mut types: Vec<&ValueType> = ir.expression_types().collect();
@@ -50,7 +51,7 @@ impl NumberTypes {
     /// (each walked once through `seen`), a type that needs the embedded library.
     fn within(ir: &Ir, ty: &ValueType, seen: &mut BTreeSet<usize>) -> bool {
         match ty {
-            ValueType::F16 | ValueType::F128 => true,
+            ValueType::F32 | ValueType::F16 | ValueType::F128 => true,
             ValueType::UInt(width) | ValueType::Int(width) => *width > 64,
             ValueType::Tuple(parts) => parts.iter().any(|part| Self::within(ir, part, seen)),
             ValueType::Array(element, _) | ValueType::Option(element) => Self::within(ir, element, seen),
@@ -59,7 +60,7 @@ impl NumberTypes {
                 TypeKind::Struct { fields, .. } => fields.iter().any(|(_, field)| Self::within(ir, field, seen)),
                 TypeKind::Enum { variants, .. } => variants.iter().any(|variant| variant.fields.iter().any(|(_, field)| Self::within(ir, field, seen))),
             },
-            ValueType::Struct(_) | ValueType::Enum(_) | ValueType::F64 | ValueType::F32 | ValueType::Bool | ValueType::Unit => false,
+            ValueType::Struct(_) | ValueType::Enum(_) | ValueType::F64 | ValueType::Bool | ValueType::Unit => false,
         }
     }
 }

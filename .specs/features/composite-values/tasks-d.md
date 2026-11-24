@@ -750,9 +750,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f32_computes_what_rust_f32_computes` passes under `**Run srcw**`
-- [ ] `a_carried_f32_is_the_f32_leaf` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `f32_computes_what_rust_f32_computes` passes under `**Run srcw**`
+- [x] `a_carried_f32_is_the_f32_leaf` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task
@@ -772,8 +772,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `f16_is_ieee_binary16_bit_for_bit` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `f16_is_ieee_binary16_bit_for_bit` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task

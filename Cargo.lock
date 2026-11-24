@@ -1460,11 +1460,13 @@ dependencies = [
 name = "piperine-parity"
 version = "0.2.0"
 dependencies = [
+ "num-bigint",
  "piperine-abi",
  "piperine-api",
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
+ "piperine-numbers",
  "piperine-plan",
  "piperine-solver",
  "piperine-transpile",
