@@ -28,6 +28,7 @@
 
 mod composite;
 mod control;
+mod dispatch;
 mod floats;
 mod generated;
 mod imported;
@@ -212,6 +213,8 @@ pub struct ConstEval<'d, 't> {
     frame_params: Bindings,
     /// The templates the evaluation folded, interned by value: a template is a number, equal templates one (`templates.rs`).
     templates: super::templates::Templates,
+    /// The `impl`s of the design, for the calls through a bound (`dispatch.rs`).
+    impls: crate::types::ImplTable<'d>,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
@@ -317,7 +320,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), wides: Vec::new(), wides_taken: 0, substitution: crate::types::Substitution::new(), frame_params: Bindings::new(), templates: super::templates::Templates::default() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), wides: Vec::new(), wides_taken: 0, substitution: crate::types::Substitution::new(), frame_params: Bindings::new(), templates: super::templates::Templates::default(), impls: crate::types::ImplTable::new(design) }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -879,8 +882,14 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A method call: a row of the Appendix H catalogue applied to
     /// its receiver and arguments.
     fn method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
-        // a method of the project: the function's body over the receiver, then the arguments (generics T35)
-        if let Some(Callee::Method(function)) = self.types.callee(expr) {
+        // a method of the project, or the `impl` a bound picks for the concrete receiver: the function's body over the receiver,
+        // then the arguments (generics T35, `dispatch.rs`)
+        let called = match self.types.callee(expr) {
+            Some(Callee::Method(function)) => Some(function),
+            Some(Callee::Bound { item }) => self.typed(recv).and_then(|receiver| self.bound_implementation(expr, item, &receiver)),
+            _ => None,
+        };
+        if let Some(function) = called {
             let mut arguments = Vec::new();
             for operand in std::iter::once(&recv).chain(args) {
                 arguments.push(match self.fn_value_of(*operand) {

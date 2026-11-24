@@ -273,8 +273,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_module_impl_function_runs_on_a_template_at_elaboration` passes under `**Run elabtempl**`
-- [ ] Gate check passes: Quick
+- [x] `a_module_impl_function_runs_on_a_template_at_elaboration` passes under `**Run elabtempl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
