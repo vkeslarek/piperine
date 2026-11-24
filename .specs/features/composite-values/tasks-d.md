@@ -707,8 +707,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_widths_lower_to_their_ir_types_and_constants` passes under `**Run elabw**` (`0.1f32`, `0.1` as `f16` and as `f128` carry the bits Rust's `0.1f32` and the exact rational nearest give; a double-rounding literal is read right)
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `number_widths_lower_to_their_ir_types_and_constants` passes under `**Run elabw**` (`0.1f32`, `0.1` as `f16` and as `f128` carry the bits Rust's `0.1f32` and the exact rational nearest give; a double-rounding literal is read right)
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -728,9 +728,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `const_contexts_compute_every_width_as_the_run_does` passes under `**Run elabw**` (a `const`, a `const fn`, a param default and an array length over each width, compared with the same expression run by the generated code of T116 and with the oracles)
-- [ ] `a_const_panic_of_a_new_width_names_the_expression` passes under `**Run elabw**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `const_contexts_compute_every_width_as_the_run_does` passes under `**Run elabw**` (a `const`, a `const fn`, a param default and an array length over each width, compared with the same expression run by the generated code of T116 and with the oracles)
+- [x] `a_const_panic_of_a_new_width_names_the_expression` passes under `**Run elabw**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task

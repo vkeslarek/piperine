@@ -20,7 +20,7 @@ impl Checker<'_> {
     /// `f64`, `bool` and a module are the caller's.
     pub(super) fn is_param_type(&mut self, ty: &Ty) -> bool {
         match ty {
-            Ty::UInt(_) | Ty::Int(_) => true,
+            Ty::UInt(_) | Ty::Int(_) | Ty::F32 | Ty::F16 | Ty::F128 => true,
             Ty::Enum(_) => true,
             other => self.is_plain_composite(other, false),
         }

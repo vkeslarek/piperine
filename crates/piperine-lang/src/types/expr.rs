@@ -208,7 +208,7 @@ impl Checker<'_> {
                     return ty;
                 }
                 match self.infer(*operand) {
-                    Some(t) if t.is_integer() => Some(t),
+                    Some(t) if t.is_integer() || t.is_other_float() => Some(t),
                     Some(Ty::F64) | None => Some(Ty::F64),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
