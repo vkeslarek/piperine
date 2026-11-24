@@ -89,6 +89,17 @@ impl CellShape {
         fields.iter().map(|(name, ty)| Some((name.clone(), CellShape::of(ir, ty)?))).collect()
     }
 
+    /// `N` when this is the library's `Logic<N>` (two integer planes `binary` and `value`), else `None`.
+    pub fn logic_levels(&self) -> Option<u32> {
+        let CellShape::Struct { name, declaration, fields, .. } = self else { return None };
+        if declaration.split('<').next() != Some(LogicCell::DECLARATION) {
+            return None;
+        }
+        let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
+        let [(first, CellShape::Scalar(_)), (second, CellShape::Scalar(_))] = fields.as_slice() else { return None };
+        (first == "binary" && second == "value" && levels > 0).then_some(levels)
+    }
+
     /// Whether this is an enum no variant of which has a field: its value is its tag.
     pub fn is_unit_enum(&self) -> bool {
         matches!(self, CellShape::Enum { variants, .. } if variants.iter().all(|v| v.fields.is_empty()))

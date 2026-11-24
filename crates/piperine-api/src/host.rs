@@ -11,6 +11,8 @@ use piperine_solver::prelude::ParamValue;
 
 use piperine_solver::prelude::CircuitInstance;
 
+use crate::composite::CellShape;
+use crate::logic_pattern::LogicPattern;
 use crate::params::{Changed, Derive, Params};
 
 use crate::failure::Failure;
@@ -59,7 +61,7 @@ impl Session {
     /// for a negative `at` or one past the transient's stop; each leaves the session as it was.
     pub fn drive(&mut self, port: &str, value: ParamValue, at: f64) -> Result<(), Failure> {
         Session::not_before(at, &format!("the drive of `{port}`"))?;
-        let (net, ty) = self.top_input(port)?;
+        let (net, ty, _) = self.top_input(port)?;
         let fits = match (&ty, &value) {
             (ValueType::F64, ParamValue::Real(_)) | (ValueType::Bool, ParamValue::Bool(_)) => true,
             (ty, ParamValue::Int(n)) => ty.integer_range().is_some_and(|(low, high)| (low..=high).contains(&i128::from(*n))),
@@ -68,6 +70,29 @@ impl Session {
         if !fits {
             return Err(Failure::Host { code: "E0802", message: format!("`{port}` is a port of type {ty}: the value {value:?} is not of that type") });
         }
+        self.write_drive(port, net, value, at)
+    }
+
+    /// Drives the top port `port` of type `Logic<N>` with the four-state `pattern` at time `at`, as `drive` does (L71, §22.1.4):
+    /// `N` characters of `0`, `1`, `x`, `z`, highest level first. The port is a discrete `in` port, or a resolved port of the top
+    /// whose drive type is `Logic<N>`, where the host's drive is the first one of the net (§4 rule 2). `E0702` for a character
+    /// outside the four or a length other than `N`, `E0802` for a port that holds no `Logic`, and the refusals of `drive` otherwise.
+    pub fn drive_pattern(&mut self, port: &str, pattern: &str, at: f64) -> Result<(), Failure> {
+        Session::not_before(at, &format!("the drive of `{port}`"))?;
+        let (net, ty, resolved) = self.top_input(port)?;
+        let not_logic = || Failure::Host { code: "E0802", message: format!("`{port}` is a port of type {ty}: a four-state pattern is a value of `Logic<N>`") };
+        let shape = CellShape::of(self.ir(), &ty).ok_or_else(not_logic)?;
+        let (levels, plane) = LogicPattern::planes_of(&shape).ok_or_else(not_logic)?;
+        let mut bytes = LogicPattern::parse(pattern, levels, &format!("the port `{port}`"))?.bytes(plane);
+        // a drive of a resolved net is present: its `driving` byte follows the value (`abi.md` P3)
+        if resolved {
+            bytes.push(1);
+        }
+        self.write_drive(port, net, ParamValue::Bytes(bytes), at)
+    }
+
+    /// The write of a drive already checked: now before the run, else at `at`.
+    fn write_drive(&mut self, port: &str, net: String, value: ParamValue, at: f64) -> Result<(), Failure> {
         self.ready_for(at, &format!("the drive of `{port}`"))?;
         if at > 0.0 {
             self.actions.push(HostAction::Drive { net, value, at });
@@ -198,8 +223,9 @@ impl Session {
         }
     }
 
-    /// The plan's net and the type of the discrete `in` port of the top `port` names.
-    fn top_input(&self, port: &str) -> Result<(String, ValueType), Failure> {
+    /// The plan's net, the type held and whether the net is a resolved drive net (its layout ends in the `driving` byte) of the discrete
+    /// `in` port, or the resolved port, of the top `port` names.
+    fn top_input(&self, port: &str) -> Result<(String, ValueType, bool), Failure> {
         let ir = self.ir();
         let top = ir.top().path();
         let short = port.strip_prefix(&format!("{top}.")).unwrap_or(port);
@@ -209,14 +235,14 @@ impl Session {
             Some(c) if c.role == CarrierRole::In => {
                 let path = format!("{top}.{short}");
                 let net = ir.net_at(&path).ok_or_else(|| Failure::Backend(format!("the top's port `{short}` has no net")))?;
-                Ok((path, net.ty().clone()))
+                Ok((path, net.ty().clone(), false))
             }
             // the top's resolved port: the host holds the first drive of its net (§4 rule 2), a drive net of the driven type
             Some(c) if matches!(c.role, CarrierRole::Resolved { .. }) => {
                 let path = format!("{top}.{short}");
                 let host = ir.net_at(&path).and_then(|net| net.resolution()).and_then(|resolution| {
                     let first = resolution.holders.first().filter(|holder| holder.is_none())?;
-                    resolution.drives.first().filter(|_| first.is_none()).map(|drive| (ir.net(*drive).path().to_string(), resolution.driven.clone()))
+                    resolution.drives.first().filter(|_| first.is_none()).map(|drive| (ir.net(*drive).path().to_string(), resolution.driven.clone(), true))
                 });
                 host.ok_or_else(|| Failure::Host { code: "E0804", message: format!("`{port}` is a resolved port of the top that nothing resolves: the host holds no drive of it") })
             }

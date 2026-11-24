@@ -101,7 +101,7 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0702` | pattern of `logic` or `matches_bits`: a character outside `0 1 x z`, or a length other than `N` | elaboration |
+| `E0702` | pattern of `logic` or `matches_bits`, or of a host write of a `Logic<N>` (§23.1 rule 13): a character outside `0 1 x z`, or a length other than `N` | elaboration, host |
 | `E0703` | `table_model` control string not of the form in §22.2.15 | elaboration |
 | `E0704` | `table_model` table: abscissae not strictly increasing, or fewer points than the interpolation degree needs | elaboration |
 | `E0705` | `table_model` input outside the table under extrapolation `E`: a panic (§1 rule 11) with its own code | run |
