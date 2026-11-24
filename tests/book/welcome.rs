@@ -232,8 +232,8 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~560cb8c4: "Parts of the language beyond that are still refused by name with P0001: templates, bundles and resolved
-    // natures (a nature that implements Resolve)." Every item is `P0001`; `idt`, the generic modules and generation (a `for`
+    // welcome~84a34395: "Parts of the language beyond that are still refused by name with P0001: templates and bundles." Every
+    // item is `P0001`; `idt`, the generic modules and generation (a `for`
     // or an `if` around items, in a body and in a `digital` block), which the sentence no longer lists, run (generics T71,
     // T77, T80), as do the math methods such as
     // `sin`, the `settle` event, `noise` and `delay` (unknown-semantics-events T5 and T22; analog-operators T33 and T34)
@@ -243,7 +243,7 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~560cb8c4";
+    let row = "welcome~84a34395";
     p0001(row, "struct Pair { in a: Bit, b: Electrical }\nmodule Top() { signal x: Pair; }\n", "`struct` item used as a type: `Pair` has a carrier field, a bundle is not supported yet");
     // generation in a body and in a `digital` block run
     let generated = Model::written("generated.msl", "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, gnd); } }\ndigital for Top { for k in 0..2 { } }\n");
@@ -254,7 +254,14 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
     Printed::holds("1.000000e0", ran.signal("Top.q"), "the integral settles where its input is zero: q follows p");
     let generic = Model::written("generic.msl", "module G<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<f64> = 0.0; let g = G::<f64>(d); }\n");
     generic.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: a generic module is refused: {failure}"));
-    p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
+    // a resolved nature (a nature that implements `Resolve`) runs since resolved-nets, so the sentence no longer lists it: the two
+    // drives of a summing net resolve to their sum
+    let resolved = Model::written(
+        "resolved.msl",
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() } }\nmodule Drive(w: Total, in x: Bit<f64>) { w = x; }\nmodule Top() { signal w: Total; signal two: Bit<f64> = 2.0; signal three: Bit<f64> = 3.0; let a = Drive(w, two); let b = Drive(w, three); }\n",
+    );
+    let ran = resolved.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: a resolved nature is refused: {failure}"));
+    Printed::holds("5.000000e0", ran.signal("Top.w"), "the drives 2 and 3 of the summing net resolve to 5");
     // a param of an integer type is a param like any other since params-and-io T31 (L28): the sentence no longer lists it
     let counted = Model::written("counted.msl", "module Top() { signal p: Electrical; n: u8 = 3; }\nanalog for Top { v(p) +> n as f64; }\n");
     let ran = counted.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: an integer param is refused: {failure}"));
