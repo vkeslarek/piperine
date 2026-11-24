@@ -66,34 +66,45 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
     }
 }
 
+/// The nature `Sda` of the chapter's own example, the part of the listing digital#18 that declares it.
+struct Sda;
+
+impl Sda {
+    /// The nature and its `impl Resolve<Driven>`, as the Book's listing writes them.
+    fn declaration(chapter: &Chapter) -> String {
+        let listing = chapter.text("digital#18");
+        let (nature, _) = listing.split_once("module OpenDrainPin").expect("the listing declares the nature first");
+        assert!(nature.contains("impl Resolve<Driven> for Sda"), "{nature}");
+        nature.to_string()
+    }
+}
+
 #[test]
-fn the_signal_list_elaborates_and_only_the_net_nature_is_missing() {
-    // natures#2 (refused, the net `Sda`, L21; the array of carriers of L24 runs since composite-values phase C): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
-    // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
-    // `P0001` (L24) and `Sda` is the model's own nature, declared further on in the
-    // chapter's example, so here it is unknown (E0161); the discrete, node and initial-value lines are
-    // accepted. When the block runs this test fails and the row moves to `run`
+fn signals_of_every_family_run() {
+    // natures#2 (run; L21, L24 closed): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
+    // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...". `Sda` is the nature of the chapter's own
+    // example (digital#18), so the block elaborates with it declared. Its nodes `mid` and `vout` float, which the block does not
+    // hide, so the operating point of the block alone is singular (E0503): the row is judged by elaboration, and the test ties each
+    // node to ground with a resistor so the design runs and the table holds every carrier's first value
     let chapter = Chapter::read();
-    let alone = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
-    let unknown = Refusal::of(alone.run(OperatingPoint::of_top()), "natures#2");
-    assert!(unknown.contains(&("E0161".to_string(), "cannot find `Sda` in this scope".to_string())), "the nature `Sda` is not declared in the block: {unknown:?}");
-    // with a nature of that name in scope the type checker reaches the other lines; the stand-in's value type
-    // has a `Default`, so the line `signal sda: Sda;` stays valid once every carrier starts at its default (phase A)
-    let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
-    let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    // `Logic<4>` is the library's four-state value since `explicit-unknowns` phase B, `Option<u8>` a carried type since
-    // composite-values phase B, `[Bit; 8]` an array of carriers since phase C (CV-23) and the `logic("10xx")` literal a
-    // carrier's initial value since phase C's fix round (the constant evaluator reads `logic` of a literal pattern):
-    // with a nature of the name `Sda` in scope every line of the list elaborates and the design runs. What the stand-in
-    // run reports is the listing's own floating nodes (`mid` and `vout` are connected to nothing, so the operating point
-    // has no equation for `vout`: `E0503`, a singular Jacobian), not a language refusal; the one thing the block still
-    // lacks to run on its own is the nature `Sda`, the model's own nature of the chapter (E0161 below, resolved-nets)
-    assert_eq!(
-        given,
-        vec![("E0503".to_string(), "the op analysis failed: Newton: E0503: the Jacobian is singular (SymbolicSingular { index: 0 }): node of Top.vout".to_string())],
-        "every line of the list elaborates; the run stops at the floating node `vout`: {given:?}"
-    );
-    Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "E0161", "cannot find `Sda` in this scope");
+    let alone = chapter.wrapped("signals.msl", &format!("{}module Top() {{\n", Sda::declaration(&chapter)), "natures#2", "}\n");
+    let floating = Refusal::of(alone.run(OperatingPoint::of_top()), "natures#2");
+    assert!(floating.iter().all(|(code, _)| code == "E0503"), "the block alone elaborates and stops at its floating nodes: {floating:?}");
+    let before = format!("{}module R(p: Electrical, n: Electrical) {{ r: f64 = 1k; }}\nanalog for R {{ i(p, n) +> v(p, n) / r; }}\nmodule Top() {{\n", Sda::declaration(&chapter));
+    let tied = chapter.wrapped("signals.msl", &before, "natures#2", "let ra = R(mid, gnd);\nlet rb = R(vout, gnd);\n}\n");
+    let ran = tied.run(OperatingPoint::of_top()).unwrap_or_else(|failure| panic!("the block runs once its nodes are tied: {failure}"));
+    let first = |signal: &str| -> String {
+        let row = ran.table.rows.iter().find(|row| format!("{:?}", row[0]) == format!("Text({signal:?})")).unwrap_or_else(|| panic!("no signal `{signal}` in {:?}", ran.table.rows));
+        format!("{:?}", row[1])
+    };
+    assert_eq!(first("Top.en"), "Bool(false)", "`en`");
+    assert_eq!(first("Top.last"), "Composite(Option(None))", "`last` starts at None");
+    assert_eq!(first("Top.count"), "Int(0)", "`count`");
+    assert_eq!(first("Top.level"), "Real(0.0)", "`level`");
+    assert_eq!(first("Top.lines"), format!("Composite(Array([{}]))", ["Scalar(Bool(false))"; 8].join(", ")), "`lines`: eight false");
+    assert_eq!(first("Top.bus"), "Text(\"10xx\")", "`bus`");
+    let sda = first("Top.sda");
+    assert!(sda.contains("Text(\"z\")") && sda.contains("variant: \"HighZ\""), "`sda`: no drive, `Driven::Z`: {sda}");
 }
 
 /// The records of the alarm line the monitor `Alarm.watch` writes: a time, a level and a strength, as the stream prints them.

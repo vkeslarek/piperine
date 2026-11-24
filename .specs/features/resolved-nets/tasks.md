@@ -1000,8 +1000,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `signals_of_every_family_run` passes under `**Run booknatures**`; `**Run bookinventory**` passes
-- [ ] Gate check passes: Full
+- [x] `signals_of_every_family_run` passes under `**Run booknatures**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

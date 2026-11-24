@@ -363,7 +363,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` implements them (its GN-26 AC 3 flips this row) |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function are `P0001` and the `Fn` bound of `C` is `P0001` naming the template parameter (phase D); the struct `Cell` with carrier fields is `P0001` (bundle, L25); the generic module runs |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
-| natures#2 | L21 | `resolved-nets` | the lines of the list run (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>> = logic("10xx")`); `Sda`, declared further on in the chapter, is `E0161` when the block stands alone, and with a stand-in nature the listing's floating nodes `mid` and `vout` make the operating point singular (`E0503`): the closure of resolved-nets must either give the block a connected node or re-judge the row (made to run by resolved-nets, after explicit-unknowns phase B: `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like
