@@ -1,8 +1,69 @@
 # Unknown Semantics: Events verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at a14be504 (69 pass; C15 names a test renamed on main, see F13)
+**Verdict**: PASS
+**Proofs**: `proofs.md` at b06643f4 (70 pass); not re-run after this commit: the disk passed 90 % during the final suite
 **Verifier**: independent sub-agent (author != verifier)
+
+## B5 round 3 (fixes cd5d2173, 9deffe77) - HEAD b06643f4
+
+Range judged: `git diff e74ac6c6..b06643f4`. Targeted runs at HEAD (lane B env, the disk at 82 %) all passed:
+`piperine-lang` `elab_digital` 33 and `types_events` 31, `piperine-parity` `source_events` 28, `piperine-cli`
+`docs` 46, and `piperine-solver` `protocol_transient` 26 (the renamed C15 test among them).
+
+**The run-time choice holds the spec's event rules.** An `if` or a `match` in an event function that is decided at the
+instant forks the body. Each branch runs to the end of the body, and its disjuncts are guarded by the condition (or by
+its negation, or by the tests that select the arm). The guard is lowered in the environment of the `if`, after the
+branch's own bindings are put back. The IR test shows `pick(clk, en)` printing exactly as the hand-written
+`(clk.rise() && en) || (clk.fall() && !en)`, so the condition is a guard of §13 rule 1, "evaluated in that microstep,
+reading what the reaction would read". It is the current value, not `prev()`, and that is the only instant the spec
+gives a value next to an event. The reading follows the function's own rule (§3 rule 13: arguments, then the body), and
+a `bool` read in an `Event` expression has no other meaning in §13.
+
+Own example at HEAD (throwaway `zz_same.msl` and a probe appended to `source_events.rs`, both reverted): the condition
+changes in the same microstep as the event. `clk` and `s` rise together at 10 ns and fall together at 20 ns; `clk`
+rises alone at 30 ns; `s` rises at 40 ns and `clk` falls at 41 ns. `pick` fires at [10, 20] ns, exactly as the
+hand-written guard in the same run does. At 41 ns a fall with `s` high does not fire. Holds.
+
+**L75's refusals are spec-allowed forms with a real owner.** A guarded `match` arm, a binding pattern, `if let`,
+`while`/`loop`/`break`/`continue`, a `let` of a pattern and a bare expression statement are all forms §3 allows in a
+body. The rule for a refused allowed form is "runs, or a GAPS row with a real owner", and L75 is that row (owner
+`spec-closure`, P0001 messages quoted). The docs.rs counts follow at 20 loud, the header names L1 to L75, and §9 is
+checked in both spellings. `emit!` is correctly not a gap. §3's class table makes an emitting `fn` callable in
+reactions and `analog` only, an event `fn` in event positions only, and the restrictions add up, so `E0122` is the
+spec's own answer. The test pins the code.
+
+F10 to F13 are closed:
+
+- F10: `Head` holds the test helpers, and `ExpandedBody` words each refusal for its caller.
+- F11: a run-time `if` or `match`, `let`, assignment and `for` over constant bounds run, at IR and source level. What
+  remains is L75.
+- F12: the §9 row is fixed and its assertion catches both spellings.
+- F13: C15 is reworded to the amended S3, with its amendment recorded, and the proof names the renamed test. The
+  renamed test asserts `landing: true` on exactly the step to the next time point and one `Restart::Integrator`
+  delivery. That is the reworded claim.
+
+Notes, not findings (cosmetic, for the next touch of these files):
+
+- `elab_digital.rs:908`'s comment cites "GAPS §4 L76"; the row is L75.
+- Two P0001 refusal messages have no test of their own: the bare expression statement, and `loop`/`break`/`continue`
+  (these share `while`'s message, which is tested).
+- The `let`-pattern refusal test asserts the message but not the code.
+- Process: 9deffe77's subject does not pass `check_commit.py` (it is not force-pushed).
+
+### Round 3 final run
+
+This final run is incomplete. origin/main has not moved (3b2bb852 is the merge-base), so no merge was needed.
+`/var/tmp/piperine-tmp-b` was cleared (`commit.sh` kept) and every run had `PIPERINE_NGSPICE` unset.
+
+- `cargo build --workspace --exclude piperine-lang-server --all-targets`: 0 warnings.
+- Tests by package, 0 failed in each: abi 58, analog-solver 109, api 290, digital-solver 159, interp 70, ir 151,
+  plan 61, solver 401, transpile 161, project 53, lang 1321, cli 189 (`twins` among them), root `piperine` 414.
+- `cargo test -p piperine-parity -- --nocapture`: 482 passed, 0 failed.
+
+Not run: the seven buck targets of `piperine-parity` (`test = false`, run by name), the root `buck_scenarios`, and the
+separate named `twins` run (twins already passed inside the cli package run). The parity run took `/` from 87 % to
+93 %, past the 90 % stop line, so the run stopped there. The buck targets need disk freed, and then they are the only
+thing left of the final suite.
 
 ## B5 round 2 (fix 80756cf5) - HEAD a14be504
 
@@ -34,10 +95,10 @@ Own examples at HEAD (throwaway `crates/piperine-lang/tests/zz_probe.rs`, delete
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F10 (Minor, cleanliness): the fix adds a free test function, and a refusal message reached from an event function names `ddx` | `crates/piperine-lang/tests/elab_digital.rs`: `fn reaction_on(functions, head)` is a free function, which the user's rule refuses in tests too (round 1 F5 moved the same kind onto types). `symbolic.rs` `bind_expanded_let`, now `pub(super)` and called from `event_functions.rs`, still refuses "a `let` of a pattern that is no name in a `fn` called inside a `ddx`", so an event function's `let (a, b) = ..` reports a `ddx` that is not there | make `reaction_on` a method of a named test type (as `Read`/`Elab`); word the message for both callers | |
-| F11 (Major): the forms the inliner still refuses have no test and no GAPS row with an owner, yet L53 is closed | `event_functions.rs` `event_of_value`: an `if` whose condition is not decided at elaboration is `P0001` (probe: `pick(clk, en, en)`). A `match` falls to `disjuncts`, and `event_of_statements` refuses any statement before the event other than `let` of a name (`let mut` with an assignment, a `for`, an `emit!`). §13 counts the return value of a function as an event position, and §3 rules 6 and 15 allow locals, loops and assignment in a body; no rule forbids an `if` that chooses an event. `grep` finds no test of "not decided at elaboration", "does not end in its event" or "statement that is no `let`" | make them run, or open a GAPS §4 row naming these forms with owner `spec-closure`, pin each refusal by code and span in a test, and adjust the docs.rs counts. If the spec means to forbid a run-time `if` over events, an amendment must name the rule and the code | |
-| F12 (Minor, documents): GAPS §9 still lists functions that return `Event` as a hole of Part IV | `GAPS.md:301`: `IV §12–§13 digital, events` has "`Event` functions" first in "Biggest holes"; `gaps_no_longer_lists_l51_or_l53` checks only the phrase "functions that return `Event`", so it misses this spelling | drop it from the row (or name what F11 leaves) and make the docs.rs assertion catch both spellings | |
-| F13 (Minor, proof): C15's proof names a test that no longer exists, and its claim is false under the amended spec | `tasks.md:1671-1672` names `the_step_after_a_settle_commit_is_exempt_and_restarts`; 9ed8cf8b (main, `transient-performance`) renamed it `..._is_a_landing_and_restarts` and changed the semantics. `docs/spec/part_v_execution.md` S3 now says the step "is a landing and reads it ... first order and sized and tested by that rule" (§15.2 rule 6): it is not exempt. The renamed test asserts `landing: true` on the step to the next time point (false before and after) and one `Restart::Integrator` delivery. That proves UE-03 AC 3 with S3 as it now reads, but not C15's sentence "exempt from the truncation test". So the rename changed the claim, and it cannot be re-pointed as written | reword C15 to S3 ("the step after a settle commit is a landing and restarts the integrator") and point its proof at `the_step_after_a_settle_commit_is_a_landing_and_restarts` (the test of the jump rule belongs to `transient-performance`) | |
+| F10 (Minor, cleanliness): the fix adds a free test function, and a refusal message reached from an event function names `ddx` | `crates/piperine-lang/tests/elab_digital.rs`: `fn reaction_on(functions, head)` is a free function, which the user's rule refuses in tests too (round 1 F5 moved the same kind onto types). `symbolic.rs` `bind_expanded_let`, now `pub(super)` and called from `event_functions.rs`, still refuses "a `let` of a pattern that is no name in a `fn` called inside a `ddx`", so an event function's `let (a, b) = ..` reports a `ddx` that is not there | make `reaction_on` a method of a named test type (as `Read`/`Elab`); word the message for both callers | cd5d2173 (round 3 judged it) |
+| F11 (Major): the forms the inliner still refuses have no test and no GAPS row with an owner, yet L53 is closed | `event_functions.rs` `event_of_value`: an `if` whose condition is not decided at elaboration is `P0001` (probe: `pick(clk, en, en)`). A `match` falls to `disjuncts`, and `event_of_statements` refuses any statement before the event other than `let` of a name (`let mut` with an assignment, a `for`, an `emit!`). §13 counts the return value of a function as an event position, and §3 rules 6 and 15 allow locals, loops and assignment in a body; no rule forbids an `if` that chooses an event. `grep` finds no test of "not decided at elaboration", "does not end in its event" or "statement that is no `let`" | make them run, or open a GAPS §4 row naming these forms with owner `spec-closure`, pin each refusal by code and span in a test, and adjust the docs.rs counts. If the spec means to forbid a run-time `if` over events, an amendment must name the rule and the code | cd5d2173 (round 3 judged it) |
+| F12 (Minor, documents): GAPS §9 still lists functions that return `Event` as a hole of Part IV | `GAPS.md:301`: `IV §12–§13 digital, events` has "`Event` functions" first in "Biggest holes"; `gaps_no_longer_lists_l51_or_l53` checks only the phrase "functions that return `Event`", so it misses this spelling | drop it from the row (or name what F11 leaves) and make the docs.rs assertion catch both spellings | cd5d2173 (round 3 judged it) |
+| F13 (Minor, proof): C15's proof names a test that no longer exists, and its claim is false under the amended spec | `tasks.md:1671-1672` names `the_step_after_a_settle_commit_is_exempt_and_restarts`; 9ed8cf8b (main, `transient-performance`) renamed it `..._is_a_landing_and_restarts` and changed the semantics. `docs/spec/part_v_execution.md` S3 now says the step "is a landing and reads it ... first order and sized and tested by that rule" (§15.2 rule 6): it is not exempt. The renamed test asserts `landing: true` on the step to the next time point (false before and after) and one `Restart::Integrator` delivery. That proves UE-03 AC 3 with S3 as it now reads, but not C15's sentence "exempt from the truncation test". So the rename changed the claim, and it cannot be re-pointed as written | reword C15 to S3 ("the step after a settle commit is a landing and restarts the integrator") and point its proof at `the_step_after_a_settle_commit_is_a_landing_and_restarts` (the test of the jump rule belongs to `transient-performance`) | 9deffe77 (round 3 judged it) |
 
 ### Round 2 final run
 
