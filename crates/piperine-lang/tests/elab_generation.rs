@@ -102,3 +102,27 @@ fn an_empty_generation_range_makes_an_empty_array() {
     assert_eq!(Admitted::children(&ir), ["r"]);
     assert!(Admitted::nodes(&ir).1.is_empty(), "no node array");
 }
+
+#[test]
+fn a_recursion_by_generation_unrolls() {
+    // §8.2.7: a module that places itself under an `if` whose condition ends the recursion unrolls into nested instances;
+    // the generic form counts down its const generic, the plain form a param it hands to the next level
+    let generic = "module Chain<const N: usize>(a: E, b: E) where N >= 1 {\n  if N == 1 { let last = Resistor(a, b) { r: 1k }; } else {\n    signal mid: E;\n    let head = Resistor(a, mid) { r: 1k };\n    let rest = Chain::<{ N - 1 }>(mid, b);\n  }\n}\nmodule Top() { signal a: E; signal b: E; let c = Chain::<3>(a, b); }\n";
+    let ir = Admitted::ir(generic);
+    let names: Vec<String> = ir.bodies().map(|b| b.name().to_string()).collect();
+    assert!(names.iter().any(|n| n.starts_with("Chain::<3>")) && names.iter().any(|n| n.starts_with("Chain::<2>")) && names.iter().any(|n| n.starts_with("Chain::<1>")), "{names:?}");
+    let plain = "module Down(a: E, b: E) {\n  depth: usize = 2;\n  if depth == 0 { let last = Resistor(a, b) { r: 1k }; } else {\n    signal mid: E;\n    let head = Resistor(a, mid) { r: 1k };\n    let rest = Down(mid, b) { depth: depth - 1 };\n  }\n}\nmodule Top() { signal a: E; signal b: E; let c = Down(a, b); }\n";
+    let ir = Admitted::ir(plain);
+    assert!(ir.bodies().filter(|b| b.name().starts_with("Down")).count() >= 3, "one body for each depth");
+}
+
+#[test]
+fn a_generation_recursion_that_does_not_end_is_e0341() {
+    // §8.2.7: a recursion that does not end is an error naming the module, at the depth bound
+    let generic = "module Forever<const N: usize>(a: E) {\n  if N > 0 { let next = Forever::<{ N + 1 }>(a); }\n}\nmodule Top() { signal a: E; let c = Forever::<1>(a); }\n";
+    let found = Admitted::refused(generic);
+    assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Forever")), "{found:?}");
+    let plain = "module Loop(a: E) {\n  depth: usize = 1;\n  if depth > 0 { let again = Loop(a) { depth: depth + 1 }; }\n}\nmodule Top() { signal a: E; let c = Loop(a); }\n";
+    let found = Admitted::refused(plain);
+    assert!(found.iter().any(|(code, message)| code == "E0341" && message.contains("Loop")), "{found:?}");
+}

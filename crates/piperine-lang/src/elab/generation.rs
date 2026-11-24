@@ -85,6 +85,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(generation).clone();
         let DeclKind::Generation(kind) = &data.kind else { return };
         let scope_values = self.iteration_bindings(now);
+        let inherited = now.cloned().unwrap_or_default();
         match kind {
             GenerationData::For { pat, iter, body } => {
                 let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(*iter).kind else {
@@ -102,13 +103,13 @@ impl Elaboration<'_, '_> {
             }
             GenerationData::If { cond, then, else_ } => match self.fold_generation(*cond, &scope_values, "a generation condition") {
                 Some(Constant::Bool(true)) => {
-                    self.expand_items(then, now);
+                    self.expand_items(then, Some(&inherited));
                     self.mark_untaken_else(else_);
                 }
                 Some(Constant::Bool(false)) => {
                     self.mark_untaken(then);
                     match else_ {
-                        Some(GenElseNode::Block(items)) => self.expand_items(items, now),
+                        Some(GenElseNode::Block(items)) => self.expand_items(items, Some(&inherited)),
                         Some(GenElseNode::If(next)) => self.expand_generation_item(*next, now),
                         None => {}
                     }

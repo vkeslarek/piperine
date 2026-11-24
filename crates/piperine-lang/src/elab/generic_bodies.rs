@@ -80,7 +80,7 @@ impl Elaboration<'_, '_> {
         self.body_depths.insert(key.clone(), depth);
         if depth > MOST_NESTED_MODULE_INSTANCES {
             let data = self.design.decl_data(key.module);
-            let name = key.instance.as_ref().map_or_else(String::new, |instance| instance.item_name(self));
+            let name = key.instance.as_ref().map_or_else(|| data.name.as_ref().map_or_else(String::new, |n| n.text.clone()), |instance| instance.item_name(self));
             let message = format!("instantiating module `{name}` never ends: the chain of instantiations is deeper than {MOST_NESTED_MODULE_INSTANCES} (D7)");
             self.report(data.file, Diagnostic::new("E0341", message, data.span, "an instantiation chain that does not end"));
             return None;

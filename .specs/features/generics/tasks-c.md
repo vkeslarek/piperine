@@ -651,8 +651,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_recursion_by_generation_unrolls` and `a_generation_recursion_that_does_not_end_is_e0341` pass under `**Run elabgenr**`
-- [ ] Gate check passes: Quick
+- [x] `a_recursion_by_generation_unrolls` and `a_generation_recursion_that_does_not_end_is_e0341` pass under `**Run elabgenr**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

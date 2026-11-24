@@ -374,7 +374,7 @@ impl Elaboration<'_, '_> {
             // a handle is the node the caller passed (`handles.rs`)
             Resolution::Decl(decl) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_terminal(scope, bound),
             // a node declared in generation: the iteration's element, or the arm was not elaborated (`generation.rs`)
-            Resolution::Decl(decl) if self.generated.of(decl).is_some() && matches!(self.design.decl_data(decl).kind, DeclKind::Signal(_)) => {
+            Resolution::Decl(decl) if self.generated.of(decl).is_some_and(|iterations| iterations.is_empty() || self.types.node_array(decl).is_some()) && matches!(self.design.decl_data(decl).kind, DeclKind::Signal(_)) => {
                 if self.generated.of(decl).is_some_and(Vec::is_empty) {
                     self.refer_outside_generation(file, node.span, decl, None);
                     return None;

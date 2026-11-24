@@ -559,13 +559,10 @@ impl Elaboration<'_, '_> {
             return Some((BodyKey::unkeyed(module), self.body_ids.get(&module).copied()?));
         }
         let mut keyed = Bindings::new();
-        let mut texts = Vec::new();
         for key in &keys {
-            let value = values.get(*key)?;
-            self.bind_param(&mut keyed, *key, value);
-            texts.push(value.to_string());
+            self.bind_param(&mut keyed, *key, values.get(*key)?);
         }
-        let key = BodyKey { module, instance: instance.cloned(), values: texts };
+        let key = self.body_key(module, instance, values)?;
         if let Some(id) = self.body_variants.ids.get(&key) {
             return Some((key.clone(), *id));
         }
@@ -575,6 +572,12 @@ impl Elaboration<'_, '_> {
         self.body_variants.ids.insert(key.clone(), id);
         self.body_variants.pending.push_back((key.clone(), keyed));
         Some((key, id))
+    }
+
+    /// The key of the body `module` gets when its params hold `values`. `None` when a key param has no value in `values`.
+    pub(super) fn body_key(&self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<BodyKey> {
+        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| value.to_string())).collect::<Option<Vec<_>>>()?;
+        Some(BodyKey { module, instance: instance.cloned(), values: texts })
     }
 
     /// Lowers every variant requested and not yet lowered, in id order; a variant may request

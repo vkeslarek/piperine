@@ -13,6 +13,7 @@ use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::instances::Instance;
+use super::structural::BodyKey;
 use super::host_sources::{HostPort, HostSources};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
@@ -73,21 +74,24 @@ impl Elaboration<'_, '_> {
 
     /// Place `placing`, then its children. `stack` holds the modules being placed above it; a chain of generic module
     /// instances may be a thousand deep, so each level runs on a stack segment of its own when the stack runs low.
-    fn place(&mut self, placing: Placing, stack: &mut Vec<(DeclId, Option<Instance>)>) -> Option<Placed> {
+    fn place(&mut self, placing: Placing, stack: &mut Vec<BodyKey>) -> Option<Placed> {
         crate::stack::Stack::wide(|| self.place_instance(placing, stack))
     }
 
     /// [`Elaboration::place`] on the stack it runs on.
-    fn place_instance(&mut self, placing: Placing, stack: &mut Vec<(DeclId, Option<Instance>)>) -> Option<Placed> {
-        if stack.contains(&(placing.module, placing.instance.clone())) {
+    fn place_instance(&mut self, placing: Placing, stack: &mut Vec<BodyKey>) -> Option<Placed> {
+        let param_plans = self.plans_of(placing.module, placing.instance.as_ref())?.clone();
+        let (params, bindings) = self.bind_params(&placing, &param_plans)?;
+        let (params, bindings) = self.apply_overrides(placing.module, &placing.path, &param_plans, params, bindings, (placing.file, placing.span));
+        // a module that places itself with the params it was placed with never ends; with others it is a recursion by
+        // generation that the params bring to an end (§8.2.7), bounded by the depth of D7
+        let key = self.body_key(placing.module, placing.instance.as_ref(), &bindings)?;
+        if stack.contains(&key) {
             let module = self.design.decl_data(placing.module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let message = format!("module `{module}` places itself (through `{}`)", placing.path);
             self.report(placing.file, Diagnostic::new("E0341", message, placing.span, "recursive placement"));
             return None;
         }
-        let param_plans = self.plans_of(placing.module, placing.instance.as_ref())?.clone();
-        let (params, bindings) = self.bind_params(&placing, &param_plans)?;
-        let (params, bindings) = self.apply_overrides(placing.module, &placing.path, &param_plans, params, bindings, (placing.file, placing.span));
         let plan = self.body_plan(placing.module, placing.instance.as_ref(), &bindings)?;
         let declared_by = self.ir.next_instance_id();
         let mut ports = placing.ports.iter().copied();
@@ -120,7 +124,7 @@ impl Elaboration<'_, '_> {
         if !nets.is_empty() {
             self.ir.bind_nets(instance, nets.clone());
         }
-        stack.push((placing.module, placing.instance.clone()));
+        stack.push(key);
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
             if let Some(placed) = self.place_child(child, &parent, stack) {
@@ -193,7 +197,7 @@ impl Elaboration<'_, '_> {
     /// One child of the instance `parent`: its ports bound to the parent's nodes and nets, each
     /// param value that reads the parent's params evaluated over the parent's bound values
     /// `bindings` (DIG-09 AC 11).
-    fn place_child(&mut self, child: &super::children::ChildPlan, parent: &Parent, stack: &mut Vec<(DeclId, Option<Instance>)>) -> Option<Placed> {
+    fn place_child(&mut self, child: &super::children::ChildPlan, parent: &Parent, stack: &mut Vec<BodyKey>) -> Option<Placed> {
         let node = self.design.expr_node(child.call).clone();
         let file = self.design.decl_data(node.owner).file;
         let ports = child
