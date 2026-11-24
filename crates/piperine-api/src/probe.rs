@@ -83,10 +83,11 @@ impl Probe {
             if let Some(node) = ir.node_at(&path) {
                 return Ok(Probe::Node { id: NodeIdentifier::Anonymous(node.id().index()), path });
             }
-            if let Some(net) = ir.net_at(&path) {
+            // the net of a carrier the elaborator made for its own use is no name of the source (`CarrierRole::Internal`)
+            if let Some(net) = ir.net_at(&path).filter(|net| !Probe::is_internal(net)) {
                 return Ok(Probe::of_net(ir, &Probe::net_type(&net), path, None));
             }
-            if let Some((net, leaf)) = Probe::leaf_of(ir, &path) {
+            if let Some((net, leaf)) = Probe::leaf_of(ir, &path).filter(|(net, _)| !Probe::is_internal(net)) {
                 let ty = Probe::net_type(&net);
                 // an element past the end of the array, a field the value has not: no net, node or param has that path
                 if CellShape::of(ir, &ty).is_some_and(|shape| !shape.can_hold_leaf(&leaf)) {
@@ -128,6 +129,13 @@ impl Probe {
             }
         }
         Probe::resolve(ir, top, entry).map(|probe| vec![probe])
+    }
+
+    /// Whether `net` is the net of a carrier the elaborator made for its own use (`CarrierRole::Internal`): a host never
+    /// names it.
+    fn is_internal(net: &piperine_ir::Net<'_>) -> bool {
+        let declared = net.declared_by();
+        declared.body().carriers().iter().enumerate().any(|(c, carrier)| carrier.role == piperine_ir::CarrierRole::Internal && declared.net(c).is_some_and(|n| n.path() == net.path()))
     }
 
     /// The type a net holds as a host reads it: its carrier's type, and for the net of an array of carriers the array of

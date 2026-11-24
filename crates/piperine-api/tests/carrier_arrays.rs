@@ -197,3 +197,21 @@ fn an_analog_read_of_an_element_lists_no_internal_net() {
     assert_eq!(signals, [&Cell::Text("Top.x".into()), &Cell::Text("Top.a".into())], "the op table lists the source's names only");
     assert!(matches!(table.rows[1][1], Cell::Real(v) if (v - 2.0).abs() < 1e-9), "{:?}", table.rows[1]);
 }
+
+#[test]
+fn an_internal_net_is_no_name_a_probe_can_print() {
+    // §21, part VIII: the mirror of `x[0]` the elaborator makes for the `analog` block is no name of the source, so a print
+    // entry naming it (`x$analog[0]`, in full or relative to the top) names nothing: `E0801`, as for any other name
+    let directory = tempfile::tempdir().expect("tmp");
+    let file = directory.path().join("mirror.msl");
+    std::fs::write(&file, MIRRORED).expect("write the model");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    for entry in ["x$analog[0]", "Top.x$analog[0]"] {
+        let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), print: vec![entry.to_string()], ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        match Session::open(&project, &spec, &Settings { rustc: None, cache: directory.path().join("cache") }) {
+            Err(Failure::Host { code: "E0801", message }) => assert_eq!(message, format!("`{entry}` names nothing in the design: no node, net, param or `i(<instance>)` of that path")),
+            other => panic!("{entry}: E0801 expected, found {:?}", other.map(|_| "a session")),
+        }
+    }
+}
