@@ -315,4 +315,23 @@ impl Checker<'_> {
             }
         }
     }
+
+    /// `s.others()` on a resolved carrier (§5.2.7): the resolution of every drive but this module's
+    /// own, of the nature's `value` type. The one-driver carrier was `E0224` before this is asked.
+    pub(super) fn others_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        match self.declared_port(recv) {
+            Some((_, Ty::Carrier { nature, value })) if NatureRules::of(self.design, nature).resolved => {
+                self.apply(expr, &[], args)?;
+                self.builtins.insert(expr, Builtin::Others);
+                self.infer(recv);
+                Some(*value)
+            }
+            _ => {
+                self.unsupported(file, span, "method `others` on this receiver");
+                None
+            }
+        }
+    }
 }

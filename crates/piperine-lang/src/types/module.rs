@@ -451,13 +451,21 @@ impl Checker<'_> {
         let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
         for (decl, element, span, file) in handed {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            // a resolved carrier has as many drives as modules hand it down or define it (§5.2.1): nothing here is a second one
+            if matches!(self.carriers.get(&decl).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.design, *nature).resolved) {
+                continue;
+            }
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
             let driven_here = self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl) || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            let nature = match self.carriers.get(&decl).map(Ty::innermost) {
+                Some(Ty::Carrier { nature, .. }) => self.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+                _ => String::new(),
+            };
             if twice {
-                self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a one-driver carrier has one drive (§5.2.1)"), "a second drive");
+                self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a carrier of `{nature}` has one drive, since `{nature}` has no `impl Resolve` to combine two (§5.2.1)"), "a second drive");
             } else if driven_here {
-                self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too (§5.2.6)"), "a second drive");
+                self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too: a carrier of `{nature}` has one drive, since `{nature}` has no `impl Resolve` to combine two (§5.2.6)"), "a second drive");
             } else if self.has_initial(decl) {
                 self.coded(file, "E0223", span, format!("`{name}` has an initial value and is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
             }

@@ -567,6 +567,11 @@ impl Elaboration<'_, '_> {
                 }
             },
             Builtin::Inflow => self.lower_inflow(scope, recv, origin),
+            // lowered from T18 on (resolved-nets): refused by name until then, never read as a one-driver carrier
+            Builtin::Others => {
+                self.unsupported(scope.file, span, "`others()` of a resolved carrier");
+                None
+            }
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
             // edge that reaches this arm stands where no event read does.
             Builtin::Changed | Builtin::Rise | Builtin::Fall => {

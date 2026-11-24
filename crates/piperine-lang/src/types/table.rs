@@ -161,6 +161,8 @@ pub enum Builtin {
     Fall,
     /// `p.inflow() -> f64`: the flow entering the module at its port `p` (§6 rule 5).
     Inflow,
+    /// `c.others() -> V` on a resolved carrier: the resolution of every drive but the module's own (§5.2.7).
+    Others,
 }
 
 /// Whether an expression reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or

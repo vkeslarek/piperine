@@ -527,8 +527,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_definition_and_a_commit_of_one_resolved_carrier_is_e0221`, `a_module_local_loop_of_resolved_drives_is_accepted` and `a_second_drive_of_a_one_driver_carrier_names_the_nature_and_resolve` pass under `**Run typesnatures**`
-- [ ] Gate check passes: Quick
+- [x] `a_definition_and_a_commit_of_one_resolved_carrier_is_e0221`, `a_module_local_loop_of_resolved_drives_is_accepted` and `a_second_drive_of_a_one_driver_carrier_names_the_nature_and_resolve` pass under `**Run typesnatures**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

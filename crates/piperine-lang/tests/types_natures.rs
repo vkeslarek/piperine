@@ -210,3 +210,43 @@ fn a_direction_on_a_resolved_port_is_e0310() {
     let source = Source::new(&format!("{TOTAL}module Top(out a: Total) {{ }}"));
     assert_eq!(source.codes(), ["E0310"]);
 }
+
+#[test]
+fn others_of_a_resolved_carrier_has_the_value_type() {
+    // §5.2.7: `s.others()` reads the drives of a resolved carrier but the module's own; it has the
+    // nature's `value` type `V`, in a definition, in a reaction and in `analog`.
+    let text = format!("{TOTAL}module Top(a: Total, in clk: Bit) {{ signal t: Bit<f64>; t = a.others() + 1.0; }}\ndigital for Top {{ on clk.rise() {{ let x: f64 = a.others(); }} }}");
+    Source::new(&text).checked();
+    let wrong = format!("{TOTAL}module Top(a: Total, in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ let x: bool = a.others(); }} }}");
+    assert_eq!(Source::new(&wrong).codes(), ["E0180"]);
+    let analog = format!("{TOTAL}module Top(a: Total, p: Electrical) {{ }}\nanalog for Top {{ v(p) +> a.others(); }}");
+    Source::new(&analog).checked();
+}
+
+#[test]
+fn a_definition_and_a_commit_of_one_resolved_carrier_is_e0221() {
+    // §5.2.4: a module drives a carrier by definitions or by commits, never both, resolved or not.
+    let text = format!("{TOTAL}module Top(a: Total, in clk: Bit) {{ a = 1.0; }}\ndigital for Top {{ on clk.rise() {{ a <- 2.0; }} }}");
+    assert_eq!(Source::new(&text).codes(), ["E0221"]);
+    let commits = format!("{TOTAL}module Top(a: Total, in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ a <- 2.0; }} }}");
+    Source::new(&commits).checked();
+}
+
+#[test]
+fn a_module_local_loop_of_resolved_drives_is_accepted() {
+    // §8.2.3: a loop through a resolved carrier is not `E0339`: the drives combine, and relaxation settles it.
+    let text = format!("{TOTAL}module Top(a: Total, b: Total) {{ a = b.others() + 1.0; b = a.others() + 1.0; }}");
+    Source::new(&text).checked();
+    let one_driver = "module Top() { signal a: Bit; signal b: Bit; a = !b; b = !a; }";
+    assert_eq!(Source::new(one_driver).codes(), ["E0339"]);
+}
+
+#[test]
+fn a_second_drive_of_a_one_driver_carrier_names_the_nature_and_resolve() {
+    // §5.2.1: a second drive of a nature with no `impl Resolve` is `E0220`, and says what would make it legal.
+    let text = "module Source(out q: Bit = false) { }\nmodule Top() { signal s: Bit; let a = Source(s); let b = Source(s); }";
+    let diagnostics = Source::new(text).diagnostics();
+    assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0220"]);
+    let message = &diagnostics[0].diagnostic.message;
+    assert!(message.contains("`Bit`") && message.contains("Resolve"), "{message}");
+}

@@ -296,6 +296,7 @@ impl Checker<'_> {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
                 "inflow" => return self.inflow_read(expr, *recv, args),
+                "others" => return self.others_read(expr, *recv, args),
                 _ => {
                     self.unsupported(file, node.span, &format!("method `{name}`"));
                     return None;

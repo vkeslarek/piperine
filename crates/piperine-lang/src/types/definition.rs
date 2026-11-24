@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, DefinitionData, ExprId, ExprKind, Resolution};
 
+use super::nature_rules::NatureRules;
 use super::check::Checker;
 use super::element_target::{DriveKind, DriveTarget, Element};
 use super::Ty;
@@ -216,6 +217,11 @@ impl Checker<'_> {
         }
     }
 
+    /// Whether `carrier` is a carrier of a nature with no `impl Resolve`: one drive, no combination (§5.2.1).
+    fn is_one_driver_carrier(&self, carrier: DeclId) -> bool {
+        matches!(self.carriers.get(&carrier).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.design, *nature).one_driver)
+    }
+
     /// `E0339` once per loop of undelayed definitions: a drive that depends on itself with no
     /// reaction and no `after` in between (§8.2.3).
     pub(super) fn definition_loops(&mut self) {
@@ -243,6 +249,10 @@ impl Checker<'_> {
             }
             let cycle: Vec<DeclId> = targets.iter().copied().filter(|t| from.contains(t) && reach(*t).contains(target)).collect();
             reported.extend(cycle.iter().copied());
+            // a loop of resolved drives is left to relaxation (§8.2.3): only one through a one-driver carrier cannot settle
+            if !cycle.iter().any(|carrier| self.is_one_driver_carrier(*carrier)) {
+                continue;
+            }
             let names: Vec<String> = cycle.iter().map(|d| format!("`{}`", self.design.decl_data(*d).name.as_ref().map_or("", |n| n.text.as_str()))).collect();
             let file = self.design.decl_data(*target).file;
             let message = format!("undelayed definitions of {} depend on each other: a loop through one-driver carriers (§8.2.3)", names.join(", "));
