@@ -1321,12 +1321,11 @@ mod tests {
     #[test]
     fn a_function_prints_as_a_generic_fn() {
         let ir = library();
-        // std/analog.msl:10: `pub fn vt() -> f64 { K_B * temperature() / Q }`, the constants
-        // folded; `temperature()` becomes the trailing param `temperature_`
+        // std/analog.msl:10: `pub fn vt(t: f64) -> f64 { K_B * t / Q }`, the constants folded
         let vt = "\
 // fn vt @ analog.msl:10:1
-fn vt<R: Real>(temperature_: R) -> R {
-    R::constant(1.380649e-23) * temperature_ / R::constant(1.602176634e-19)
+fn vt<R: Real>(t: R) -> R {
+    R::constant(1.380649e-23) * t / R::constant(1.602176634e-19)
 }
 ";
         assert_eq!(function(&ir, "vt"), vt);

@@ -601,8 +601,8 @@ pub nature State {
 #### 22.2.2 `vt` and `multiplicity`
 
 ```rust
-pub fn vt() -> f64 {
-    K_B * temperature() / Q
+pub fn vt(t: f64) -> f64 {
+    K_B * t / Q
 }
 
 pub fn multiplicity() -> Option<f64> {

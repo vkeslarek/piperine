@@ -471,9 +471,9 @@ fn phase_d_and_e_forms_stay_p0001_by_name() {
 }
 
 #[test]
-fn m_and_dtemp_bound_in_a_param_block_stay_refused_until_phase_d() {
-    // GN-26 (phase D, with `params-and-io`): binding `m` or `dtemp` is `E0320` today, `no param`, the one refusal that
-    // names the form; it must not run as anything else until `m` and `dtemp` are implicit params
+fn m_and_dtemp_bound_in_a_param_block_are_e0320_like_any_unknown_param() {
+    // GN-25 AC 3 (phase D): `m` and `dtemp` are ordinary names, so binding one the module does not declare is `E0320`,
+    // `no param`, as for any unknown param
     let src = "module Resistor(a: Electrical, b: Electrical) { r: f64 = 1k; }\nmodule Top() { signal a: Electrical; let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 }; }\n";
     let found = LaterPhases::found(src);
     assert!(found.iter().any(|(code, message)| code == "E0320" && message == "no param `m` in `Resistor`"), "{found:?}");

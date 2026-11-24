@@ -699,7 +699,7 @@ multiplicity, and a model reads them. An **extern module** is implemented outsid
   otherwise. Neither is per instance: one value serves every instance of the run.
 - **§8.5.3** Nothing scales or offsets a model. The model decides whether to use the value as its temperature all
   along, as an initial temperature, or to ignore it. The recommended fallbacks are
-  `temperature().unwrap_or(AMBIENT_TEMPERATURE)` and `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)` (the constants of `std::constants`, §22).
+  `temperature().unwrap_or(AMBIENT_TEMPERATURE)` and `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)` (the constants of `std::constants`, §22). A run that sets no temperature reads the ambient one, so `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the run's temperature read directly.
 - **§8.5.4** The run sets the temperature and the `multiplicity` session parameter before it starts, and they hold
   for the whole run. Neither has a placement or a `set` spelling. The multiplicity is a `simparam` entry
   (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`, §23), not a key of its own.

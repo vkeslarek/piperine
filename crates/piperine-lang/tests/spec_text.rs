@@ -2586,6 +2586,7 @@ fn temperature_and_multiplicity_are_run_settings_in_the_spec() {
         "The multiplicity is a `simparam` entry (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`, §23), not a key of its own.",
         "`let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`",
         "so `multiplicity()` there is `E0188`",
+        "A run that sets no temperature reads the ambient one, so `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the run's temperature read directly.",
     ] {
         assert!(structure.contains(fact), "§8.5 lacks \"{fact}\"");
     }

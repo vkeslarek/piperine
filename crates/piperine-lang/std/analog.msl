@@ -7,8 +7,8 @@ pub nature State {
     flow: Rate { access: rate, abstol: 1n },
 }
 
-pub fn vt() -> f64 {
-    K_B * temperature() / Q
+pub fn vt(t: f64) -> f64 {
+    K_B * t / Q
 }
 
 pub fn multiplicity() -> Option<f64> {

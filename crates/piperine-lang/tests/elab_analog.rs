@@ -73,7 +73,7 @@ analog for M {
     let x = v(a);
     let y = v(a, k);
     let g = v(k, gnd);
-    let e = temperature() + gmin() * source_scale();
+    let e = temperature().unwrap_or(1.0) + gmin() * source_scale();
 }
 module Top() { signal s: Electrical; let m = M { }(s, gnd); }";
 
@@ -84,7 +84,7 @@ fn probes_and_environment_lower_to_their_nodes() {
     assert!(text.contains("let x = probe(a, gnd)"), "`v(a)` is a probe to ground: {text}");
     assert!(text.contains("let y = probe(a, k)"), "`v(a, k)` is between two body nodes: {text}");
     assert!(text.contains("let g = probe(k, gnd)"), "{text}");
-    assert!(text.contains("let e = (temperature() + (gmin() * source_scale()))"), "the environment reads: {text}");
+    assert!(text.contains("let e = (if temperature_given() { temperature() } else { 1.0 } + (gmin() * source_scale()))"), "the environment reads: {text}");
 
     // The terminals are the body's node indices (ports in order), not names.
     let body = ir.bodies().find(|b| b.name() == "M").expect("body M");

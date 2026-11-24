@@ -76,7 +76,7 @@ analog for Diode {
         Some(r) => { i(a, ai) +> v(a, ai) / r; }
         None    => { v(a, ai) +> 0.0; }          // no resistor: `ai` and `a` are one node
     }
-    let nvt   = n * vt();
+    let nvt   = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(ai, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     let id    = is * ((vd / nvt).exp() - 1.0);

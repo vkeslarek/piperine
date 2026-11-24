@@ -251,10 +251,10 @@ fn a_continuous_definition_is_e0336() {
         assert_eq!(snippet(&src, &d[0]), at, "{body}");
     }
     // The environment that is constant during an analysis is discrete: `temperature()` may be read.
-    let src = "module Top(out f: Bit<f64>, in x: Bit<f64>) { f = temperature() + x; }";
+    let src = "module Top(out f: Bit<f64>, in x: Bit<f64>) { f = temperature().unwrap_or(1.0) + x; }";
     let design = design_of(src);
     let types = checked(&design, src);
-    assert!(exprs_reading(&design, &types, src, "temperature() + x").iter().all(|e| types.continuity(*e) == Some(piperine_lang::types::Continuity::Discrete)));
+    assert!(exprs_reading(&design, &types, src, "temperature().unwrap_or(1.0) + x").iter().all(|e| types.continuity(*e) == Some(piperine_lang::types::Continuity::Discrete)));
     // `continuity` says which: the probe and what reads it are continuous, a literal is not.
     let src = "module Top(p: Electrical) { let k = v(p) * 2.0; let n = 3.0; }";
     let design = design_of(src);

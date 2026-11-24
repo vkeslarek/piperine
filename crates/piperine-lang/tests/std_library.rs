@@ -233,7 +233,7 @@ fn pure_bodies_name_no_primitive() {
         for expr in item.exprs() {
             if let Resolution::Builtin(id) = expr.resolution() {
                 let info = id.info();
-                let primitive = matches!(info.kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Method | BuiltinKind::Event | BuiltinKind::Statement | BuiltinKind::Node | BuiltinKind::ImplicitParam);
+                let primitive = matches!(info.kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Method | BuiltinKind::Event | BuiltinKind::Statement | BuiltinKind::Node);
                 if primitive && info.name != "level" {
                     named.push(format!("{name}: {}", info.name));
                 }

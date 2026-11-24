@@ -20,7 +20,7 @@ module DiodeLimexp(a: Electrical, k: Electrical) {
     n: f64 = 1.0 where n > 0.0;
 }
 analog for DiodeLimexp {
-    let nvt = n * vt();
+    let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vd  = v(a, k);
     i(a, k) +> is * (limexp(vd / nvt) - 1.0) + gmin() * vd;
 }

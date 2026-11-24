@@ -423,10 +423,10 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `temperature_is_an_option_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
-- [ ] `the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled` passes under `**Run elabimplicit**`
-- [ ] `every_twin_prints_the_bytes_it_printed_before_the_move` passes under `**Run twins**`
-- [ ] Gate check passes: Full
+- [x] `temperature_is_an_option_of_the_run` and `m_and_dtemp_are_ordinary_names` pass under `**Run typesimplicit**`
+- [x] `the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled` passes under `**Run elabimplicit**`
+- [x] `every_twin_prints_the_bytes_it_printed_before_the_move` passes under `**Run twins**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

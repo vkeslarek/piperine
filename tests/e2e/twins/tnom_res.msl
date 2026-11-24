@@ -11,7 +11,7 @@ pub module TcResistor(p: Electrical, n: Electrical) {
     tc1: f64 = 0.0;
     tnom: f64 = 300.15;
 }
-analog for TcResistor { i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - tnom))); }
+analog for TcResistor { i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature().unwrap_or(AMBIENT_TEMPERATURE) - tnom))); }
 
 module TnomRes() {
     signal vin: Electrical;

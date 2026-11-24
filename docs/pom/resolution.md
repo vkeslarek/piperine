@@ -153,7 +153,6 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Event` | `settle` (§14.9) |
 | `Statement` | `bound_step` (§14.10) |
 | `Node` | `gnd` (§6) |
-| `ImplicitParam` | `m` (§8.5), `dtemp` (§8.5): in scope only inside a module body and the blocks bound to a module; `builtin_implicit(name)` finds one |
 | `Member` | `Repr::WIDTH`, `Repr::encode`, `Repr::decode` (§2): reached through a generic bounded by `Repr` (`builtin_member("Repr", name)`), never as a name |
 | `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `inflow` (§14.1) |
 
@@ -161,7 +160,7 @@ The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, 
 `f64`, `f128`). The six constants of §1 (`Q`, `K_B`, `EPS0`, `PI`, `E`, `inf`) are not rows: they are items of `std::constants`, found through the prelude like any library item. Standard-library modules such as `idt`, `transition` and `above` are *not*
 built in: they are declared in the standard library's `std::prelude` (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. The `Trait` and `Type` rows are kept equal to the tables H.8 and H.9 of Appendix H (plus `Repr`, `Nature`, `Fn` and the §1 types). Methods of the catalogue get no row: a method on a value needs its receiver's type and stays `Deferred(ReceiverTypeUnknown)`. An associated name written through a generic (`A::WIDTH`) resolves through its bounds: an item of a user trait, a `Repr` member row, `E0161` when `Repr` is the only bound and has no such member, and `Deferred(BuiltinTraitMember)` (silently) through any other built-in trait. A namespace item named like a core
-primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
+primitive of §14, or `gnd`, `Nature` or `str`, is `E0457`.
 
 ```rust
 use piperine_lang::pom::{builtin, builtin_method, BuiltinKind, Design, Resolution};

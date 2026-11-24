@@ -201,7 +201,7 @@ fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
         assert_eq!(arrays.iter().find(|a| a.0 == "bl").map(|a| a.2), Some(length), "the node array `bl` of {body}");
         assert!(printed.contains(&format!("local w: [u8; {length}]")) && printed.contains(&format!("local ones: [u8; {length}]")), "the locals of {body} have length {length}:\n{printed}");
     }
-    let found = Elab::run(&src.replace("[1; n]", "[1; m]"), "Top").expect_err("a length that reads no param");
+    let found = Elab::run(&src.replace("[1; n]", "[1; q]"), "Top").expect_err("a length that reads no param");
     assert_eq!(Elab::codes(&found), ["E0180"], "a repeat count that reads nothing is refused by its code");
 }
 
