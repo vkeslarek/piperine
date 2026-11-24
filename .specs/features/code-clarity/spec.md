@@ -143,6 +143,21 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 2. WHEN a public item of `piperine-api` is renamed THEN the Book, examples and tests SHALL follow in the same commit (CC-09)
 
 **Independent Test**: full suite per commit; goldens unchanged.
+### P1: The tests are lean ⭐ MVP
+
+**User Story**: As the user, I want the test suite sanitised — probably bloated today — so it proves each rule once, runs fast and reads clearly (user, 2026-11-24: "coloca no code-clarity uma sanitização dos testes. Provavelmente nossos testes estão super bloated").
+
+**Acceptance Criteria** (CC-12):
+
+1. WHEN the inventory runs THEN it SHALL measure the test suite: targets per crate, tests per target, build and run time per target, duplicated or near-duplicated tests, tests that pin an obsolete or superseded behaviour, tests no `## Checks` row or criterion needs, and helpers duplicated across targets (CC-12)
+2. WHEN two or more tests prove the same rule THEN design SHALL keep one (the strongest) and remove the others; WHEN a test pins behaviour the spec no longer has THEN it SHALL be removed or rewritten to the current rule (CC-12)
+3. WHEN many small targets in one crate cover one concern THEN they SHALL be merged into fewer targets (fewer link steps), each still opening with its `//!` scope header (MD-28 placement rule kept) (CC-12)
+4. WHEN shared test helpers are duplicated THEN they SHALL live once, as methods of owner types in each crate's test support (no free functions, the user's rules) (CC-12)
+5. WHEN a test is removed or merged THEN every `## Checks` proof line, `inventory.tsv` row and Book claim that cites it SHALL be re-pointed in the same commit, and the parity oracles (ngspice twins, `ToleranceContract`, buck) SHALL NOT be reduced — no criterion of any feature may lose its proof (CC-09, CC-12)
+6. WHEN the feature closes THEN the suite's test count, target count and total build+run time SHALL be reported before and after (CC-12)
+
+**Independent Test**: the before/after report; `check_proofs.py` of every feature still green; `suite_hygiene` green.
+
 ### P1: The language has no special cases ⭐ MVP
 
 **User Story**: As a user of MSL, I want builtins to follow the same rules as the items I write, and every builtin to be declared in the language itself, so there are no exceptions to learn and no flow only the compiler may use.
@@ -180,6 +195,7 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 | CC-09 | P1: no behaviour change | Design | Pending |
 | CC-10 | P1: commented code | Design | Pending |
 | CC-11 | P1: no special cases | Design | Pending |
+| CC-12 | P1: lean tests | Design | Pending |
 
 **Coverage:** 11 total, 0 mapped to tasks, 11 unmapped (tasks come after the Fable inventory).
 
@@ -199,4 +215,5 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 
 - [ ] The seven rules hold over every crate, checked by the guards CC-01, CC-04, CC-05, CC-06 and by the inventory closed.
 - [ ] Every type and method is commented (CC-10).
-- [ ] Every test, golden and Book listing is byte-identical before and after.
+- [ ] Every test, golden and Book listing is byte-identical before and after (tests removed or merged under CC-12 keep every criterion proved).
+- [ ] The test suite is sanitised: duplicates and obsolete pins removed, small targets merged, helpers shared; before/after counts and times reported (CC-12).
