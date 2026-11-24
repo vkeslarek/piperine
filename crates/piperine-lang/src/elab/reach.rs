@@ -97,12 +97,28 @@ impl Elaboration<'_, '_> {
     /// diagnostic.
     pub(super) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
         let node = self.design.expr_node(expr).clone();
-        let ExprKind::Field { expr: receiver, res: Resolution::Decl(item), .. } = &node.kind else {
+        let ExprKind::Field { expr: receiver, name, res } = &node.kind else {
             self.unsupported(scope.file, node.span, "a field access that is not an item of a placed module");
             return None;
         };
-        let frame = self.child_frame(scope, *receiver)?;
-        Some((frame, *item))
+        match res {
+            Resolution::Decl(item) => Some((self.child_frame(scope, *receiver)?, *item)),
+            // a child placed through a callable param (`let c0 = cell(a)`, `cell: C`): the module is the folded template's (§8.4.8)
+            _ => self.template_item(scope, *receiver, &name.text, node.span),
+        }
+    }
+
+    /// The frame of the child `receiver` is, placed through a callable param, and the item `name` of the module its template names
+    /// (`E0343` for a missing or non-`pub` one). `None` after a diagnostic.
+    fn template_item(&mut self, scope: &Scope, receiver: ExprId, name: &str, span: crate::msl::Span) -> Option<(usize, DeclId)> {
+        let (binding, key) = self.receiver_placement(scope, receiver)?;
+        let Some(module) = self.placed_module(key.call, &scope.keys) else {
+            self.unsupported(scope.file, span, "an item of a child whose module is not known");
+            return None;
+        };
+        let item = self.visible_item_of(scope, module, name, span)?;
+        let frame = self.placement_frame(scope, binding, key, span)?;
+        Some((frame, item))
     }
 
     /// The frame that holds the names of the child `receiver` is: a name bound by a body `let` to
@@ -277,8 +293,8 @@ impl Elaboration<'_, '_> {
             return None;
         }
         if loops > 0 && self.iteration_position(owner, &key.iteration).is_none() {
-            let length = self.generated.of(owner).map_or(0, Vec::len) as u64;
-            self.refer_outside_generation(scope.file, span, binding, Some((key.iteration.last().copied().unwrap_or(0), length)));
+            let held: Vec<Vec<u64>> = self.generated.of(owner).map_or_else(Vec::new, |iterations| iterations.iter().map(|iteration| self.iteration_ordinals(owner, iteration)).collect());
+            self.refer_outside_generation(scope.file, span, binding, Some(Self::outermost_missing_ordinal(&held, &key.iteration)));
             return None;
         }
         Some((binding, key))

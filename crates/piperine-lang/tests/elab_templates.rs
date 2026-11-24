@@ -164,3 +164,56 @@ fn a_cell_of_a_generated_bank_is_read_through_its_indexes() {
     let reached = top.body().nodes().iter().position(|node| node.name == "bank.cells[1][2].sn").expect("`Top` reaches the cell");
     assert_eq!(top.node(reached).expect("a bound node").path(), "Top.bank.cells[1][2].sn");
 }
+
+/// A cell with a `pub` storage node and `pub` param `cs`, and a bank that places it through the callable param `cell` and reads
+/// the cell in its own analog block (`items` is the read).
+fn own_bank(visibility: &str, items: &str) -> String {
+    format!(
+        "module Dram(a: Electrical) {{ pub cs: f64 = 1.0; pub signal sn: Electrical; }}\n\
+         analog for Dram {{ i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd) - cs; }}\n\
+         module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; {visibility}let c0 = cell(a); }}\n\
+         analog<C> for Bank<C> {{ {items} }}\n\
+         module Top() {{ signal x: Electrical; {visibility}let bank = Bank::<_>(x) {{ cell: Dram {{ cs: 2.0 }} }}; }}"
+    )
+}
+
+#[test]
+fn inst_name_in_the_module_that_places_the_template_reads_the_concrete_module() {
+    // §8.4.8: `v(c0.sn)` in the bank's own analog block names the storage node of the `Dram` the template places
+    let ir = Elab::ir(&own_bank("", "i(a, gnd) +> v(c0.sn);"), "Top");
+    let bank = ir.instance_at("Top.bank").expect("the bank");
+    let reached = bank.body().nodes().iter().position(|node| node.name == "c0.sn").expect("the bank reaches `c0.sn`");
+    assert_eq!(bank.node(reached).expect("a bound node").path(), "Top.bank.c0.sn");
+}
+
+#[test]
+fn a_non_node_item_through_a_template_is_refused_by_name_never_as_a_type_error() {
+    // §8.4.8: `c0.cs` is a param of the concrete `Dram`, which only elaboration knows (GAPS §9, `non-node item through a
+    // template`): the refusal is `P0001` naming the construct, in the placing module and from its parent, never `E0180`/`E0417`
+    let from_parent = format!(
+        "{}\nmodule Outer() {{ signal y: Electrical; let top = Top(); signal probe: Electrical; }}\nanalog for Outer {{ i(probe, gnd) +> top.bank.c0.cs; }}",
+        own_bank("pub ", "")
+    );
+    for source in [own_bank("", "i(a, gnd) +> c0.cs;"), own_bank("", "i(a, gnd) +> c0.cs * 2.0;"), from_parent] {
+        let entry = if source.contains("module Outer") { "Outer" } else { "Top" };
+        let diagnostics = Elab::run(&source, entry).expect_err("a non-node item through a template is not typed");
+        assert_eq!(Elab::codes(&diagnostics), ["P0001"], "{source}");
+        assert!(diagnostics[0].diagnostic.message.contains("a non-node item of a child read through a template param"), "{diagnostics:?}");
+    }
+}
+
+#[test]
+fn an_out_of_range_generated_cell_names_its_element_and_the_length_of_its_own_loop() {
+    // §8.2.23, §8.4.8: on a 2x3 bank `[2][0]` is past the 2 rows and `[0][3]` past the 3 columns of row 0, whatever the flat count (6)
+    let bank = "module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; }\n\
+        analog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd) - cs; }\n\
+        module Bank<C: Fn(Electrical), const ROWS: usize, const COLS: usize>(a: Electrical) { cell: C; for r in 0..ROWS { for c in 0..COLS { pub let cells = cell(a); } } }\n\
+        module Top() { signal x: Electrical; let bank = Bank::<_, 2, 3>(x) { cell: Dram { cs: 2.0 } }; signal probe: Electrical; }\n";
+    for (read, element, length) in [("bank.cells[2][0].sn", 2, 2), ("bank.cells[0][3].sn", 3, 3)] {
+        let source = format!("{bank}analog for Top {{ i(probe, gnd) +> v(probe, gnd) - v({read}); }}");
+        let diagnostics = Elab::run(&source, "Top").expect_err("the cell is past the generation");
+        assert_eq!(Elab::codes(&diagnostics), ["E0342"], "{read}");
+        let expected = format!("the element {element} of the generated array `cells` does not exist: it has {length}");
+        assert!(diagnostics[0].diagnostic.message.contains(&expected), "{read}: {diagnostics:?}");
+    }
+}

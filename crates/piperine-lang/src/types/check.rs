@@ -116,6 +116,9 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
+    /// The reads of an item of a child only a folded template names (`reach.rs`), typed as a node: where one of them stands in a
+    /// type mismatch, the item is no node of a type the checker could give, which is a named refusal, not an ill-typed program.
+    pub(super) template_reads: Vec<(FileId, Span)>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
     /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
@@ -201,6 +204,7 @@ impl<'d> Checker<'d> {
             in_guard: false,
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
+            template_reads: Vec::new(),
             handles: BTreeSet::new(),
             bound_substitution: None,
             bound_arguments: BTreeMap::new(),
@@ -376,6 +380,10 @@ impl<'d> Checker<'d> {
 
     /// A mismatch under the code of the rule that was broken.
     pub(super) fn mismatch_coded(&mut self, file: FileId, span: Span, code: &'static str, expected: &str, found: &str) {
+        if self.is_template_read_mismatch(file, span, found) {
+            self.unsupported(file, span, "a non-node item of a child read through a template param (only the nodes of the folded template's module are typed, §8.4.8)");
+            return;
+        }
         self.report(file, Diagnostic::new(code, format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
     }
 

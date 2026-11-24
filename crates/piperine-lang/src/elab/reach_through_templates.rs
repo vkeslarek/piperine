@@ -42,6 +42,23 @@ pub(super) struct DemandEntry {
     pub(super) iteration: Option<Iteration>,
 }
 
+/// One read of a demanded item that [`Elaboration::add_nested_node`] answers with a reached node of the body: where the child is
+/// placed, which demand it is, the iteration the read names and the item it resolved to.
+struct NestedRead<'a> {
+    /// The frame of the child (`bank`) the body places.
+    frame: usize,
+    /// The module whose body holds the child the demand names (`bank`'s module).
+    module: DeclId,
+    /// The demanded item of the grandchild.
+    demand: &'a NestedDemand,
+    /// The iteration the read names, one ordinal per generation loop around the grandchild's placement.
+    ordinals: &'a [u64],
+    /// The item of the concrete module the read resolved to.
+    decl: DeclId,
+    /// Where the read is written.
+    span: crate::msl::Span,
+}
+
 /// The demands of the design, by the module whose body holds the child.
 #[derive(Debug, Default)]
 pub(super) struct NestedDemands {
@@ -177,6 +194,11 @@ impl Elaboration<'_, '_> {
     fn entry_ordinals(&self, entry: &DemandEntry) -> Vec<u64> {
         let owner = self.design.expr_node(entry.call).owner;
         let Some(iteration) = &entry.iteration else { return Vec::new() };
+        self.iteration_ordinals(owner, iteration)
+    }
+
+    /// The ordinals of `iteration` in the generation `for`s around the placement owned by `owner`, outermost first.
+    pub(super) fn iteration_ordinals(&self, owner: DeclId, iteration: &Iteration) -> Vec<u64> {
         self.generation_loops(owner).iter().filter_map(|generation| iteration.ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| u64::from(*ordinal))).collect()
     }
 
@@ -244,13 +266,13 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "an item of a child's child that is not one of its nodes");
             return None;
         }
-        let terminal = self.add_nested_node(scope, frame, module, &demand, &ordinals, decl, span)?;
+        let terminal = self.add_nested_node(scope, &NestedRead { frame, module, demand: &demand, ordinals: &ordinals, decl, span })?;
         self.nested_nodes.insert(cached, terminal);
         Some(terminal)
     }
 
     /// The item `item` of `concrete` as a parent may read it: `E0343` after the diagnostic of an item that is missing or not `pub`.
-    fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
+    pub(super) fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
         let module_name = self.design.decl_data(concrete).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(decl) = self.item_named(concrete, item) else {
             self.report(scope.file, Diagnostic::new("E0343", format!("no item `{item}` in module `{module_name}`"), span, "no such item"));
@@ -282,8 +304,8 @@ impl Elaboration<'_, '_> {
     /// The node of the body that stands for the demanded node of the child of `frame`: its slot in the child's body is the
     /// first slot after the child's own nodes, plus the entries of the module that precede it. The entries are those of the
     /// module's generation expanded under the child's own keys, which the module's lowering made in the same order.
-    #[allow(clippy::too_many_arguments)]
-    fn add_nested_node(&mut self, scope: &Scope, frame: usize, module: DeclId, demand: &NestedDemand, ordinals: &[u64], decl: DeclId, span: crate::msl::Span) -> Option<Terminal> {
+    fn add_nested_node(&mut self, scope: &Scope, read: &NestedRead) -> Option<Terminal> {
+        let NestedRead { frame, module, demand, ordinals, decl, span } = *read;
         let bank = self.frames[frame].child?;
         let own = self.own_node_total(frame)?;
         let entries = self.entries_under(frame, module);
@@ -295,8 +317,8 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let Some(position) = entries.iter().position(|e| e.demand == *demand && self.entry_ordinals(e) == ordinals) else {
-            let length = entries.iter().filter(|e| e.demand == *demand).count() as u64;
-            self.refer_outside_generation(scope.file, span, demand.child, Some((ordinals.last().copied().unwrap_or(0), length)));
+            let (index, length) = self.first_out_of_range_loop(&entries, demand, ordinals);
+            self.refer_outside_generation(scope.file, span, demand.child, Some((index, length)));
             return None;
         };
         let ty = match &self.design.decl_data(decl).kind {
@@ -314,6 +336,27 @@ impl Elaboration<'_, '_> {
         let node = self.structure.nodes.len() as u32 - 1;
         self.structure.reaches.push(Reach { child: bank, item: ReachedItem::Node { node, child_node: own + position as u32 } });
         Some(Terminal::Node(node))
+    }
+
+    /// The outermost loop of the placement `demand` names whose ordinal in `ordinals` its iterations do not reach, as that ordinal and
+    /// the number of ordinals the loop has under the loops outside it.
+    fn first_out_of_range_loop(&self, entries: &[DemandEntry], demand: &NestedDemand, ordinals: &[u64]) -> (u64, u64) {
+        let held: Vec<Vec<u64>> = entries.iter().filter(|e| e.demand == *demand).map(|e| self.entry_ordinals(e)).collect();
+        Self::outermost_missing_ordinal(&held, ordinals)
+    }
+
+    /// The outermost level of `ordinals` that no row of `held` (the ordinals the iterations of a generation make) reaches under the
+    /// levels outside it, as its ordinal and the number of ordinals that level does have there.
+    pub(super) fn outermost_missing_ordinal(held: &[Vec<u64>], ordinals: &[u64]) -> (u64, u64) {
+        for level in 0..ordinals.len() {
+            let mut reached: Vec<u64> = held.iter().filter(|each| each[..level] == ordinals[..level]).map(|each| each[level]).collect();
+            reached.sort_unstable();
+            reached.dedup();
+            if !reached.contains(&ordinals[level]) {
+                return (ordinals[level], reached.len() as u64);
+            }
+        }
+        (ordinals.last().copied().unwrap_or(0), held.len() as u64)
     }
 
     /// The entries the body of `module` lowers in the variant of `frame`: its generation expanded under the frame's keys and

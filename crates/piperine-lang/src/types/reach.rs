@@ -4,7 +4,8 @@
 //! definition of a child's carrier is `E0222` (`definition.rs`). A field of anything else keeps
 //! the `field access` refusal.
 
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
+use crate::msl::Span;
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
 
 use super::check::Checker;
 use super::Ty;
@@ -27,10 +28,17 @@ impl Checker<'_> {
             // template's, known at elaboration, which resolves the item (`E0343` for a missing or private one, §8.4.8)
             _ if self.placed_through_callable(*receiver) => {
                 self.infer_receiver(*receiver)?;
+                self.template_reads.push((file, node.span));
                 Some(Ty::AnyNode)
             }
             _ => self.field_of_value(expr, *receiver, name),
         }
+    }
+
+    /// Whether a mismatch that found `found` at `span` of `file` holds a read through a template: a node-typed read the context wants a
+    /// value of another type of.
+    pub(super) fn is_template_read_mismatch(&self, file: FileId, span: Span, found: &str) -> bool {
+        found == "node" && self.template_reads.iter().any(|(held, read)| *held == file && span.start <= read.start && read.end <= span.end)
     }
 
     /// Whether `receiver` (a name, possibly reached through a child: `c0`, `bank.c0`) is bound by a `let` to a call of a callable
