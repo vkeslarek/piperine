@@ -111,7 +111,11 @@ pub fn write_net(
 ) -> bool {
     let changed = store.write(net, offset, bytes);
     if changed {
-        obs.push(Observation::Change { net: plan.nets[net.0 as usize].name.clone(), at, bytes: store.value(net).to_vec() });
+        // the pin of a record stream delivers the record (`Observation::Record`), not a value of a net: it may share its path
+        // with a signal of the same size, and a host could not tell the two apart
+        if !plan.nets[net.0 as usize].record {
+            obs.push(Observation::Change { net: plan.nets[net.0 as usize].name.clone(), at, bytes: store.value(net).to_vec() });
+        }
         dirty.mark_net(plan, net);
     }
     changed

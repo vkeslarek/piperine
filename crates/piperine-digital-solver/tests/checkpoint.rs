@@ -123,7 +123,9 @@ fn every_change_commit_and_record_is_observed_in_order() {
     assert_eq!(commits, 8);
     assert_eq!(d.read(net(&d, "log")), [8], "transport leaves the last value in the pin");
     let changes: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Change { net, .. } if net == "log")).collect();
-    assert_eq!(changes.len(), 1, "one applied change of log");
+    // the write of a record pin is delivered as its records alone: a stream may share its path with a signal of the same size, and a
+    // change at that path would be read as the signal's (generics: `emit!` of an `Option` carrier's own name)
+    assert_eq!(changes.len(), 0, "the pin of a record stream reports no change of a net");
     assert_eq!(seen.first(), Some(&Observation::Fire { net: "go".into(), at: (Tick(3), 0) }));
 
     // the whole stream of a longer run never goes back in time
