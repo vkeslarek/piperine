@@ -307,6 +307,12 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(arg).clone();
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = !self.generated_carrier_levels(scope, arg).is_empty();
+        // a field of a bundle of this module (`column.wl`) is a carrier of its own (`pom/bundles.rs`)
+        if let Some(leaf) = self.bundle_leaf(scope, arg)
+            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&leaf))
+        {
+            return Some((*index, None));
+        }
         if !generated
             && let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)

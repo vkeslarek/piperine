@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::body::{ExprKind, TypeKind};
+use super::body::{ExprKind, LitKind, TypeKind};
 use super::decl::{DeclKind, Dir};
 use super::design::Design;
 use super::ids::{DeclId, ExprId, TypeId};
@@ -150,8 +150,16 @@ impl Design {
             match &self.expr_node(at).kind {
                 ExprKind::Paren(inner) if !path.is_empty() => at = *inner,
                 ExprKind::Field { expr: receiver, name, .. } => {
-                    path.push(name.text.as_str());
+                    path.push(name.text.clone());
                     at = *receiver;
+                    while let ExprKind::Paren(inner) = &self.expr_node(at).kind {
+                        at = *inner;
+                    }
+                }
+                // an element of an array of bundles at a literal index (`rx[1].valid`): the group `[1]`
+                ExprKind::Index { expr: base, index } => {
+                    path.push(format!("[{}]", self.literal_index(*index)?));
+                    at = *base;
                     while let ExprKind::Paren(inner) = &self.expr_node(at).kind {
                         at = *inner;
                     }
@@ -160,11 +168,30 @@ impl Design {
                     let Some(Resolution::Decl(named)) = self.path_node(*root).segments.last().map(|segment| segment.res) else { return None };
                     let owner = root_bundle(named)?;
                     path.reverse();
-                    return self.leaf_under(owner, &path.join("."));
+                    return self.leaf_under(owner, &Self::joined(&path));
                 }
                 _ => return None,
             }
         }
+    }
+
+    /// The integer a literal index `expr` writes.
+    fn literal_index(&self, expr: ExprId) -> Option<usize> {
+        let ExprKind::Lit(lit) = &self.expr_node(expr).kind else { return None };
+        let LitKind::Int(text) = &lit.kind else { return None };
+        text.chars().take_while(char::is_ascii_digit).collect::<String>().parse().ok()
+    }
+
+    /// The steps of a field chain, outermost last, as the path of a leaf: `inner.x`, `[1].valid`, `bus[0].x`.
+    fn joined(steps: &[String]) -> String {
+        let mut out = String::new();
+        for step in steps {
+            if !out.is_empty() && !step.starts_with('[') {
+                out.push('.');
+            }
+            out.push_str(step);
+        }
+        out
     }
 
     /// The `struct` a bundle type names, through `flip` (`Stream<u8>`, `flip Stream`): `None` for any other type.
@@ -203,7 +230,7 @@ impl Design {
                 Some(Resolution::Decl(decl)) if self.is_bundle_owner(decl) => Some(decl),
                 _ => None,
             },
-            ExprKind::Field { .. } => self.bundle_field(expr).filter(|leaf| self.is_bundle_group(*leaf)),
+            ExprKind::Field { .. } | ExprKind::Index { .. } => self.bundle_field(expr).filter(|leaf| self.is_bundle_group(*leaf)),
             _ => None,
         }
     }

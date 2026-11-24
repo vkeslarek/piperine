@@ -206,3 +206,23 @@ fn a_generic_bundle_is_instantiated_per_type_argument() {
     assert_eq!(Model::data(&built, &seen, "narrow").first(), Some(&200), "the 8-bit instance carries 200");
     assert_eq!(Model::data(&built, &seen, "wide").first(), Some(&3000), "the 16-bit instance carries 3000, which no 8-bit field holds");
 }
+
+#[test]
+fn an_array_of_bundles_connects_each_element_field_by_field() {
+    // §7 rule 11, rule 14: `lanes[0]` goes to a producer of `true` and `lanes[1]` to one of `false`, each with its own consumer
+    // (`b` follows `a`); the whole array goes to the probe, whose `ps[k].b` is the element `k` field by field: it records
+    // (first, second) = (1, 0) at each rising edge.
+    let built = Model::of("array.msl").built("ArrayBench");
+    let seen = built.run(20e-9, 1e-9);
+    let lanes = Model::records(&built, &seen, "lanes");
+    assert_eq!(lanes.first(), Some(&vec![("first".to_string(), 1), ("second".to_string(), 0)]), "element 0 is high and element 1 low: {lanes:?}");
+}
+
+#[test]
+fn an_array_field_of_a_bundle_connects_its_elements() {
+    // §7 rule 1, rule 14: the field `bl: [Electrical; 2]` of a column passed through two modules is the two nodes of the signal:
+    // the puller holds them at 0.25 V and 0.75 V, element by element.
+    let model = Model::of("array.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("array field", "v(column.bl[0])", Coordinate::OperatingPoint), 0.25, model.operating_point("ColumnBench", "column.bl[0]"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("array field", "v(column.bl[1])", Coordinate::OperatingPoint), 0.75, model.operating_point("ColumnBench", "column.bl[1]"));
+}

@@ -54,7 +54,7 @@ impl Elaboration<'_, '_> {
                 Some(Resolution::Decl(decl)) => self.handled_bundle(scope, decl).filter(|named| self.design.is_bundle_owner(*named) || self.design.is_bundle_group(*named)),
                 _ => None,
             },
-            ExprKind::Field { .. } => self.bundle_leaf(scope, expr).filter(|leaf| self.design.is_bundle_group(*leaf)),
+            ExprKind::Field { .. } | ExprKind::Index { .. } => self.bundle_leaf(scope, expr).filter(|leaf| self.design.is_bundle_group(*leaf)),
             _ => None,
         }
     }
@@ -73,6 +73,13 @@ impl Elaboration<'_, '_> {
             ok &= self.bind_leaf(scope, instance, leaf.decl, source, arg, bound);
         }
         ok
+    }
+
+    /// The nodes of the array-of-nodes field `from` of a bundle of the frame, one terminal each, in order.
+    fn leaf_node_run(&mut self, scope: &Scope, from: DeclId) -> Option<Vec<Terminal>> {
+        let length: u64 = self.frames.get(scope.frame).and_then(|frame| frame.node_shapes.get(&from)).map(|shape| shape.dims.iter().product())?;
+        let Some(Terminal::Node(first)) = self.frame_node(scope.frame, from) else { return None };
+        Some((0..length as u32).map(|k| Terminal::Node(first + k)).collect())
     }
 
     /// The source of every field under `prefix` of the bundle port `port` that `arg` gives, by path.
@@ -101,9 +108,19 @@ impl Elaboration<'_, '_> {
     /// One field of a bundle port: the carrier or terminal `source` gives the leaf `port`.
     fn bind_leaf(&mut self, scope: &Scope, instance: &str, port: DeclId, source: LeafSource, arg: ExprId, bound: &mut PortBindings) -> bool {
         let span = self.design.expr_node(arg).span;
-        if self.types.node_array(port).is_some() || self.types.carrier_array(port).is_some() {
-            self.unsupported(scope.file, span, "an array field of a bundle");
-            return false;
+        // an array of nodes as a field: its nodes in order, from the carrier of the parent or the nodes a literal names
+        if self.types.node_array(port).is_some() {
+            let nodes = match source {
+                LeafSource::Expression(expr) => self.node_array_terminals(scope, expr),
+                LeafSource::Leaf(from) => self.leaf_node_run(scope, from),
+            };
+            let Some(nodes) = nodes else { return false };
+            bound.terminals.extend(nodes);
+            return true;
+        }
+        // a field that is an array of length 0 has no carrier in the child, so it binds nothing (§1.2.3)
+        if self.types.carrier_array(port).is_some_and(crate::types::Ty::has_fixed_zero_length) {
+            return true;
         }
         if self.types.carrier(port).is_none() {
             let terminal = match source {

@@ -541,8 +541,8 @@ T21
 
 **Done when**:
 
-- [ ] `an_array_of_bundles_connects_each_element_field_by_field` passes under `**Run sourcebundles**`
-- [ ] Gate check passes: Full
+- [x] `an_array_of_bundles_connects_each_element_field_by_field` passes under `**Run sourcebundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

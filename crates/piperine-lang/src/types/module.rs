@@ -458,6 +458,17 @@ impl Checker<'_> {
         self.book.handed.push((decl, element, span, file));
     }
 
+    /// [`Checker::hand_over`] of a whole carrier no expression names by an element: the field of a bundle (`lanes[0].a`
+    /// is a carrier of its own, whichever element of an array of bundles it belongs to).
+    pub(super) fn hand_over_whole(&mut self, decl: DeclId, span: Span, file: FileId) {
+        if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
+            let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
+            self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
+            return;
+        }
+        self.book.handed.push((decl, super::element_target::Element::Whole, span, file));
+    }
+
     /// One argument at an array port (§8.1.10): an array of carriers (or of nodes) of the port's shape, or a part of
     /// a nested one that has it. Another length or shape is `E0313` naming both; another element type `E0251`.
     fn connect_array(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {

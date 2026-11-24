@@ -156,6 +156,10 @@ impl Checker<'_> {
     /// The elements the carrier argument `expr` (`x`, `x[k]`, `x[r]` of a nested array) hands to a port or reads: a
     /// constant element, a run for a sub-array, any element for an index that does not fold, else the whole carrier.
     pub(super) fn element_named_by(&mut self, expr: ExprId) -> Element {
+        // a field of a bundle is a carrier of its own (`pom/bundles.rs`): the whole of it
+        if self.design.bundle_field(expr).is_some() {
+            return Element::Whole;
+        }
         let (root, steps) = self.place_steps(expr);
         let Some(decl) = self.carrier_root(root).filter(|_| !steps.is_empty()) else { return Element::Whole };
         let port_ty = match &self.design.decl_data(decl).kind {

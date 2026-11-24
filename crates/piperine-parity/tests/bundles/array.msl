@@ -1,0 +1,50 @@
+//! An array of bundles (§7 rule 11, BN-06 AC 4): each element connects field by field, `lanes[k].a` is a carrier.
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// One lane: the producer drives `a`, the consumer drives `b`.
+struct Lane { out a: Bit, in b: Bit }
+
+/// A producer: drives `a` with `level`.
+module Raise(tx: Lane) { level: bool = true; tx.a = level; }
+
+/// A consumer: `b` follows `a`.
+module Echo(rx: flip Lane) { rx.b = rx.a; }
+
+/// Records the `b` of both lanes of a pair of lanes at each rising edge.
+module Probe(in clk: Bit, in ps: [Lane; 2]) { }
+digital for Probe { on clk.rise() { emit!("lanes", first = ps[0].b, second = ps[1].b); } }
+
+/// Two lanes in one array: each element is given to its own producer and consumer, and the whole array to the probe.
+module ArrayBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 2];
+    let clock = Clock(clk);
+    let high = Raise(lanes[0]) { level: true };
+    let low = Raise(lanes[1]) { level: false };
+    let echo_high = Echo(lanes[0]);
+    let echo_low = Echo(lanes[1]);
+    let probe = Probe(clk, lanes);
+}
+
+/// A bundle with an array field: a word line and two bit lines.
+struct Column { in wl: Bit, bl: [Electrical; 2] }
+
+/// Holds its bit lines at 0.25 V and 0.75 V.
+module Pull(c: Column) { }
+analog for Pull { v(c.bl[0]) +> 0.25; v(c.bl[1]) +> 0.75; }
+
+/// Gives a column on to a puller.
+module Pass(c: Column) { let p = Pull(c); }
+
+/// A word line driver that stays low.
+module Hold(out w: Bit = false) { }
+
+/// A column signal whose array field is passed through one level.
+module ColumnBench() {
+    signal column: Column;
+    let h = Hold(column.wl);
+    let pass = Pass(column);
+}

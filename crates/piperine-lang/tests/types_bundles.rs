@@ -174,3 +174,21 @@ fn a_trait_is_not_implemented_for_a_bundle() {
     let refused = Bundles::refused(source);
     assert_eq!(refused.first().map(|(code, _)| code.as_str()), Some("E0134"), "{refused:?}");
 }
+
+#[test]
+fn an_array_of_bundles_gives_each_element_its_fields() {
+    // §7 rule 11: an element of `[Lane; 2]` is a bundle of its own at a literal index, the array a bundle of as many
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\nmodule Both(tx: [Lane; 2]) { tx[0].a = true; tx[1].a = false; }\n";
+    Bundles::accepted(&format!("{lane}module Top() {{ signal lanes: [Lane; 2]; let r = Raise(lanes[0]); let q = Raise(lanes[1]); let e = Echo(lanes[0]); let f = Echo(lanes[1]); }}"));
+    Bundles::accepted(&format!("{lane}module Top() {{ signal lanes: [Lane; 2]; let t = Both(lanes); let e = Echo(lanes[0]); let f = Echo(lanes[1]); }}"));
+    // an array of another length does not connect (`E0251`)
+    let refused = Bundles::refused(&format!("{lane}module Top() {{ signal lanes: [Lane; 3]; let t = Both(lanes); }}"));
+    assert!(refused.contains(&("E0251".to_string(), "lanes".to_string())), "{refused:?}");
+}
+
+#[test]
+fn an_array_field_of_a_bundle_is_an_array_of_carriers() {
+    // §7 rule 1: a field may be an array of nodes; it connects whole and its elements are probed by index
+    let column = "struct Column { in wl: Bit, bl: [Electrical; 2] }\nmodule Pull(c: Column) { }\nanalog for Pull { v(c.bl[0]) +> 0.25; }\nmodule Hold(out w: Bit = false) { }\nmodule Pass(c: Column) { let p = Pull(c); }\n";
+    Bundles::accepted(&format!("{column}module Top() {{ signal column: Column; let h = Hold(column.wl); let q = Pass(column); }}"));
+}
