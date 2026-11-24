@@ -147,3 +147,22 @@ fn others_of_a_module_without_a_drive_is_the_value() {
     let seen = built.run(10e-9, 1e-9);
     assert_eq!(Model::reals(&built, &seen, "looks"), vec![vec![("rest".to_string(), 3.0), ("whole".to_string(), 3.0)]]);
 }
+
+#[test]
+fn a_loop_of_resolved_drives_is_accepted_and_settles() {
+    // §8.2.3: three pass elements, each driving what the other two drive, form a loop of resolved drives. It starts from
+    // nothing (`resolve` of no drive is true), every pass drives true, and it settles on true within the bound.
+    let built = Model::of("relax.msl").built("RingBench");
+    let seen = built.run(10e-9, 1e-9);
+    assert_eq!(seen.series_of("RingBench.n").last().map(|(_, bytes)| bytes.clone()), Some(vec![1]), "the ring settles on true");
+}
+
+#[test]
+fn a_released_ring_latches_nothing() {
+    // §8.2.3: each relaxation starts from nothing, so a loop cannot latch. The seed pulls the net low at the rise,
+    // 5 ns, and releases it at the fall, 10 ns: the ring follows both, true, false, true, and keeps no low level.
+    let built = Model::of("relax.msl").built("ReleaseBench");
+    let seen = built.run(12e-9, 1e-9);
+    let series = seen.series_of("ReleaseBench.n");
+    assert_eq!(series, vec![(0, vec![1]), (5_000_000, vec![0]), (10_000_000, vec![1])], "high, low while held, high again once released");
+}

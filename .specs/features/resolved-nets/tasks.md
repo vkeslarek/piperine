@@ -717,8 +717,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_loop_of_resolved_drives_is_accepted_and_settles` and `a_released_ring_latches_nothing` pass under `**Run sourceresolved**`
-- [ ] Gate check passes: Quick
+- [x] `a_loop_of_resolved_drives_is_accepted_and_settles` and `a_released_ring_latches_nothing` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
