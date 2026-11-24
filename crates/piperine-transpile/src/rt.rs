@@ -113,7 +113,7 @@ pub mod ziv;
 pub struct RuntimeForms {
     /// A digital form, a loop, a carried param, a table or a derive: the files of `rt` and not `real.rs` alone.
     pub digital: bool,
-    /// A number width (`f32` excepted: it is Rust's own): `rt/numbers/*.rs` and `rt/widths.rs` are added.
+    /// A number width (`f32`, `f16`, `f128` or an integer wider than 64 bits): `rt/numbers/*.rs` and `rt/widths.rs` are added.
     pub numbers: bool,
 }
 
