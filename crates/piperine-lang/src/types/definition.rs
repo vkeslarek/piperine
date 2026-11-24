@@ -34,6 +34,9 @@ pub(super) struct DriveBook {
     /// The elements of arrays of carriers an undelayed definition drives, with where: those elements have a value from
     /// `(0, 0)` on (`coverage.rs`).
     pub(super) undelayed_elements: Vec<(DeclId, Element, Span)>,
+    /// The carriers a drive of which was refused as unsupported (a whole array, a sub-array): the refusal is the one
+    /// diagnostic, so the carrier counts as driven and is not also reported as one nothing drives.
+    pub(super) refused: BTreeSet<DeclId>,
 }
 
 impl Checker<'_> {
@@ -89,6 +92,7 @@ impl Checker<'_> {
                     }
                     array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
                         self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+                        self.book.refused.insert(decl);
                         None
                     }
                     _ => self.not_drivable(file, node.span, what, "a node, not a discrete carrier"),

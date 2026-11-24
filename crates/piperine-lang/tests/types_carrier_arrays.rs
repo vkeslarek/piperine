@@ -254,3 +254,14 @@ fn an_initial_value_is_the_value_of_the_elements_no_undelayed_definition_names()
     // a whole undelayed definition is refused (P0001) and an initial value beside it was E0338 before it: unchanged
     Source::assert_one(&top("signal s: Bit = false;", "s = clk;"), "E0338", "initial value");
 }
+
+#[test]
+fn a_refused_whole_array_definition_is_the_driver_and_raises_no_e0187() {
+    // the P0001 of a definition of a whole array (or of a sub-array) is the one diagnostic: the array counts as driven
+    let found = Source::found("module Top(in x: Bit) { signal s: [Bit; 2]; s = x; }");
+    let codes: Vec<&str> = found.iter().map(|(code, _)| code.as_str()).collect();
+    assert_eq!(codes, ["P0001"], "{found:?}");
+    let found = Source::found("module Top(in x: Bit) { signal g: [[Bit; 2]; 2]; g[0] = x; }");
+    let codes: Vec<&str> = found.iter().map(|(code, _)| code.as_str()).collect();
+    assert_eq!(codes, ["P0001"], "{found:?}");
+}

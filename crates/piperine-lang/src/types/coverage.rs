@@ -105,9 +105,12 @@ impl Checker<'_> {
     }
 
     /// The elements of `decl` a driver specifies the value of: an undelayed definition, an `out` port of a child it is
-    /// handed to.
+    /// handed to, or a drive refused as unsupported (the refusal is the diagnostic, no second one for the carrier).
     pub(super) fn driven_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
         let mut coverage = self.undelayed_coverage(decl, held);
+        if self.book.refused.contains(&decl) {
+            coverage.cover(Element::Whole);
+        }
         for (carrier, element, _, _) in &self.book.handed {
             if *carrier == decl {
                 coverage.cover(*element);

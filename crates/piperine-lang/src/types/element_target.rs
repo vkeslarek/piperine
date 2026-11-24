@@ -97,6 +97,7 @@ impl Checker<'_> {
         }
         if steps.len() < levels.len() || steps[..levels.len()].iter().any(|step| !matches!(step, Step::Index(_))) {
             self.unsupported(file, span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+            self.book.refused.insert(decl);
             self.infer(place);
             return None;
         }
