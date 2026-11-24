@@ -418,7 +418,7 @@ impl<'d> Checker<'d> {
                         None
                     }
                 },
-                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values && NatureRules::of(self.design, d).one_driver => self.discrete_carrier_type(d, file, node.span, *path),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_nominal(*path, d, file, node.span),

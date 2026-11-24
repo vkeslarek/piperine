@@ -288,10 +288,6 @@ impl Refs {
                             self.meta(meta);
                             self.types.push(*ty);
                         }
-                        NatureFieldNode::Resolve { meta, expr, .. } => {
-                            self.meta(meta);
-                            self.exprs.push(*expr);
-                        }
                     }
                 }
             }

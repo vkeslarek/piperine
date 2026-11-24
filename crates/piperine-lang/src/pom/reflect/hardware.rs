@@ -30,7 +30,7 @@ fn deep_items<'d>(parent: Decl<'d>, out: &mut Vec<Decl<'d>>) {
 
 // ---- natures ---------------------------------------------------------------------------------
 
-/// `nature Name { potential: .., flow: .., value: .., resolve: .. }`
+/// `nature Name { potential: .., flow: .., value: .. }`
 #[derive(Clone, Copy)]
 pub struct Nature<'d> {
     decl: Decl<'d>,
@@ -79,14 +79,6 @@ impl<'d> Nature<'d> {
     pub fn value_type(self) -> Option<Type<'d>> {
         self.data().fields.iter().find_map(|f| match f {
             NatureFieldNode::Value { ty, .. } => Some(self.decl.design().ty(*ty)),
-            _ => None,
-        })
-    }
-
-    /// The expression of the first `resolve: f` field.
-    pub fn resolve_fn(self) -> Option<Expr<'d>> {
-        self.data().fields.iter().find_map(|f| match f {
-            NatureFieldNode::Resolve { expr, .. } => Some(self.decl.design().expr(*expr)),
             _ => None,
         })
     }

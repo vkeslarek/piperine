@@ -154,6 +154,15 @@ impl Design {
             })
             .collect()
     }
+
+    /// Whether `nature` is resolved: some `impl Resolve<X, V> for nature` exists (§4 rule 8), the
+    /// one fact that tells a one-driver discrete nature from a resolved one.
+    pub(crate) fn is_resolved_nature(&self, nature: DeclId) -> bool {
+        self.impls_of(nature).into_iter().any(|decl| match &self.decl_data(decl).kind {
+            DeclKind::Impl(data) => data.trait_.and_then(|path| self.path_node(path).segments.last().map(|segment| segment.res)).is_some_and(|res| matches!(res, Resolution::Builtin(id) if id.info().name == "Resolve")),
+            _ => false,
+        })
+    }
 }
 
 /// Classify a design whose names are resolved.

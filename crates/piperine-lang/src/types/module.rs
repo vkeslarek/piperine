@@ -28,8 +28,11 @@ impl Checker<'_> {
         // an array of carriers is directed as its element is (CV-23): the direction is the array's
         let kind = ty.as_ref().map(|t| t.innermost().clone());
         match (&kind, port.dir) {
-            (Some(Ty::Carrier { .. }), None) => {
+            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.design, *nature).one_driver => {
                 self.coded(file, "E0310", span, "a port of a discrete nature takes `in` or `out` (§8.1.5)".to_string(), "no direction");
+            }
+            (Some(Ty::Carrier { nature, .. }), Some(_)) if NatureRules::of(self.design, *nature).resolved => {
+                self.coded(file, "E0310", span, "a port of a resolved nature takes no direction: its drives are combined by `resolve` (§8.1.5)".to_string(), "unexpected direction");
             }
             (Some(Ty::Node(_)), Some(_)) => {
                 self.coded(file, "E0310", span, "a port of a continuous nature takes no direction (§8.1.5)".to_string(), "unexpected direction");

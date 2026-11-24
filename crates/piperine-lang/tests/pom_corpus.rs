@@ -86,7 +86,7 @@ impl<T> Tr<T> for S<T> { const K: u32 = 1; pub fn f(self) -> u32 { 1 } }
 impl S { }
 mod inline { fn f() { } mod deeper { } }
 nature Voltage { potential: Voltage { access: v, units: \"V\" }, flow: Current { access: i } }
-nature Level { value: Bit, resolve: pick }
+nature Level { value: Bit }
 extern \"osdi\" module Dev<N: Nature>(in p: Electrical, out q: Electrical = d) -> u32 where true { }
 module M<const W: u32>(a: Electrical, b: Electrical) {
     /// width
@@ -215,8 +215,6 @@ nature N {
 nature L {
     /// value
     value: bool,
-    /// resolve
-    resolve: pick,
 }
 module M() {
     /// def

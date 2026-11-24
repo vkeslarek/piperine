@@ -58,6 +58,10 @@ impl Checker<'_> {
             _ => value_type,
         };
         let value = self.carried_type(held)?;
+        // a resolved nature's `impl`s are judged wherever a carrier of it is (§4 rule 8)
+        for implementation in super::nature::ResolveImpls::declarations(&self.impls, nature) {
+            self.reach(implementation);
+        }
         Some(Ty::Carrier { nature, value: Box::new(value) })
     }
 
@@ -113,15 +117,11 @@ impl Checker<'_> {
         let file = self.design.decl_data(node.owner).file;
         match self.lower_type(ty)? {
             Ty::Node(nature) => {
-                let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                 let rules = NatureRules::of(self.design, nature);
                 if rules.flow || rules.signal_flow {
                     // A conservative node, or a signal-flow node (§6 rule 2): both are nodes of the
                     // analog solver.
                     Some(Ty::Node(nature))
-                } else if rules.resolved {
-                    self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
-                    None
                 } else {
                     None
                 }

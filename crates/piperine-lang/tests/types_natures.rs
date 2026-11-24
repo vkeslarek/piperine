@@ -142,3 +142,71 @@ fn a_flow_probe_of_a_signal_flow_node_is_e0206() {
     assert_eq!(source.codes(), ["E0206"]);
     assert_eq!(Source::design_codes("module Top(a: VSignal, o: VSignal) { }\nanalog for Top { v(o) +> i(a); }"), ["E0206"]);
 }
+
+/// A project nature resolved by summing its drives (`f64`).
+const TOTAL: &str = "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() } }\n";
+
+#[test]
+fn an_impl_resolve_makes_a_discrete_nature_resolved() {
+    // §4 rule 8: the `impl` is the whole declaration; a resolved port takes no direction (§8.1.5)
+    // and its carrier holds the nature's `value`.
+    let source = Source::new(&format!("{TOTAL}module Top(a: Total) {{ signal s: Total; }}"));
+    assert_eq!(source.carrier("a"), source.carrier("s"));
+    assert!(matches!(source.carrier("s"), Ty::Carrier { value, .. } if *value == Ty::F64));
+    // a one-argument `impl Resolve<V>` has `X = V`
+    let single = "nature Level { value: bool }\nimpl Resolve<bool> for Level { fn resolve<const N: usize>(d: [bool; N]) -> bool { false } }\n";
+    Source::new(&format!("{single}module Top(a: Level) {{ }}")).checked();
+}
+
+#[test]
+fn resolve_may_call_a_library_or_project_function() {
+    // §4 rule 8: the body of `resolve` is any pure function: a library function, a project one.
+    let library = "nature Strongest { value: Drive }\nimpl Resolve<Drive> for Strongest { fn resolve<const N: usize>(d: [Drive; N]) -> Drive { Drive::wired(d) } }\n";
+    Source::new(&format!("{library}module Top(a: Strongest) {{ }}")).checked();
+    let project = "fn add<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() }\nnature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { add(d) } }\n";
+    Source::new(&format!("{project}module Top(a: Total) {{ }}")).checked();
+}
+
+#[test]
+fn an_impl_resolve_of_another_shape_is_e0203() {
+    // §4 rule 8: `N` discrete, `V` its `value`, `resolve` with one `N: usize` and one `[X; N]` that
+    // gives `V`; every other shape is `E0203` naming the nature, at the `impl`, with no carrier of it.
+    let wrong = [
+        // `V` is not the nature's value
+        "nature Total { value: f64 }\nimpl Resolve<f64, bool> for Total { fn resolve<const N: usize>(d: [f64; N]) -> bool { false } }\nmodule Top() { }",
+        // a continuous nature
+        "impl Resolve<f64> for Electrical { fn resolve<const N: usize>(d: [f64; N]) -> f64 { 0.0 } }\nmodule Top() { }",
+        // the parameter is not `[X; N]`
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: f64) -> f64 { d } }\nmodule Top() { }",
+        // the result is not `V`
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> bool { true } }\nmodule Top() { }",
+        // no const parameter
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve(d: [f64; 2]) -> f64 { 0.0 } }\nmodule Top() { }",
+        // no `resolve`
+        "nature Total { value: f64 }\nimpl Resolve<f64> for Total { fn other<const N: usize>(d: [f64; N]) -> f64 { 0.0 } }\nmodule Top() { }",
+    ];
+    for text in wrong {
+        let source = Source::new(text);
+        let diagnostics = Types::check_model(&source.design).expect_err(text);
+        assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>().first().map(String::as_str), Some("E0203"), "{text}");
+    }
+    let source = Source::new("nature Total { value: f64 }\nimpl Resolve<f64, bool> for Total { fn resolve<const N: usize>(d: [f64; N]) -> bool { false } }\nmodule Top() { }");
+    let diagnostics = Types::check_model(&source.design).expect_err("E0203");
+    assert!(diagnostics[0].diagnostic.message.contains("Total"), "{}", diagnostics[0].diagnostic.message);
+}
+
+#[test]
+fn a_resolve_field_is_not_a_nature_field() {
+    // the `resolve:` field is gone: the parser reports any word that is not a nature field.
+    let codes = Source::design_codes("nature Total { value: f64, resolve: sum }\nmodule Top() { }");
+    assert!(!codes.is_empty(), "a `resolve:` field must not parse");
+}
+
+#[test]
+fn a_direction_on_a_resolved_port_is_e0310() {
+    // §8.1.5: a port of a resolved nature takes no direction; a one-driver nature still needs one.
+    let source = Source::new(&format!("{TOTAL}module Top(in a: Total) {{ }}"));
+    assert_eq!(source.codes(), ["E0310"]);
+    let source = Source::new(&format!("{TOTAL}module Top(out a: Total) {{ }}"));
+    assert_eq!(source.codes(), ["E0310"]);
+}

@@ -166,6 +166,14 @@ impl Elaboration<'_, '_> {
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,
         };
+        // a resolved carrier is lowered from T18 on (resolved-nets): until then it is refused by name, never lowered as a one-driver carrier
+        if let Some(Ty::Carrier { nature, .. }) = self.types.carrier(decl).map(Ty::innermost)
+            && self.design.is_resolved_nature(*nature)
+        {
+            let nature_name = self.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            self.unsupported(data.file, data.span, &format!("resolved nature `{nature_name}`"));
+            return None;
+        }
         let ty = self.carried_type(decl)?;
         let array = match self.types.carrier_array(decl).is_some() {
             true => Some(self.carrier_array_shape(decl, frame)?.0),

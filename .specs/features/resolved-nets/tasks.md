@@ -505,9 +505,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `an_impl_resolve_makes_a_discrete_nature_resolved`, `resolve_may_call_a_library_or_project_function`, `an_impl_resolve_of_another_shape_is_e0203`, `a_resolve_field_is_not_a_nature_field` and `a_direction_on_a_resolved_port_is_e0310` pass under `**Run typesnatures**`
-- [ ] `cargo test -p piperine-lang --test pom_bundles --test pom_docs` passes with the `Wire` fixtures replaced (both names in the commit body)
-- [ ] Gate check passes: Full
+- [x] `an_impl_resolve_makes_a_discrete_nature_resolved`, `resolve_may_call_a_library_or_project_function`, `an_impl_resolve_of_another_shape_is_e0203`, `a_resolve_field_is_not_a_nature_field` and `a_direction_on_a_resolved_port_is_e0310` pass under `**Run typesnatures**`
+- [x] `cargo test -p piperine-lang --test pom_bundles --test pom_docs` passes with the `Wire` fixtures replaced (both names in the commit body)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -1,7 +1,6 @@
 # code	owner feature	construct (requirement or GAPS id)
 E0123	foreign-models	FM-04 AC 1
 E0124	foreign-models	FM-04 AC 2, 3
-E0203	resolved-nets	L21
 E0225	explicit-unknowns	EU-11 AC 4 (two driven types on one resolved carrier)
 E0322	generics	L31 (generation)
 E0340	generics	L31

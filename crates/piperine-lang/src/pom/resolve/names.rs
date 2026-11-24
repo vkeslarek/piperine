@@ -152,7 +152,6 @@ impl Names<'_, '_> {
                 for field in &n.fields {
                     match field {
                         NatureFieldNode::Value { ty, .. } => self.ty(*ty),
-                        NatureFieldNode::Resolve { expr, .. } => self.expr(*expr),
                         NatureFieldNode::Quantity(_) => {}
                     }
                 }

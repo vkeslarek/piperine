@@ -204,8 +204,8 @@ fn the_chapter_has_a_part_per_namespace() {
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
 
-/// Prelude exports the Book no longer names because the explicit model removed them (`Wire`, `Tri`, `tri`, `SumNet`, and `Drive`, the earlier strength struct of `nets` that `Driven` replaces) while `std` still declares them; owned by explicit-unknowns T23.
-const STD_BEHIND_THE_BOOK: [&str; 5] = ["tri", "Tri", "SumNet", "Wire", "Drive"];
+/// Prelude exports the Book no longer names because the explicit model removed them (`Wire`, `SumNet`, and `Drive`, the earlier strength struct of `nets` that `Driven` replaces) while `std` still declares them; owned by explicit-unknowns T23.
+const STD_BEHIND_THE_BOOK: [&str; 3] = ["SumNet", "Wire", "Drive"];
 
 #[test]
 fn the_chapter_names_every_prelude_export() {

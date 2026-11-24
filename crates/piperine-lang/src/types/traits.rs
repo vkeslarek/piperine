@@ -15,8 +15,8 @@ use super::Ty;
 pub type BoundOracle<'a> = &'a mut dyn FnMut(&Ty, &Bound) -> bool;
 
 /// The built-in traits (no declaration) a project may write an `impl` of: `Repr` (§2), the operator traits
-/// (Appendix H.10), `From`, `PartialEq` and `Default` (H.8). Their `impl`s are indexed with the trait's name.
-const IMPLEMENTABLE_BUILTIN_TRAITS: [&str; 10] = ["Repr", "BitAnd", "BitOr", "BitXor", "Not", "Shl", "Shr", "PartialEq", "From", "Default"];
+/// (Appendix H.10), `From`, `PartialEq` and `Default` (H.8), and `Resolve` (§4 rule 8). Their `impl`s are indexed with the trait's name.
+const IMPLEMENTABLE_BUILTIN_TRAITS: [&str; 11] = ["Repr", "BitAnd", "BitOr", "BitXor", "Not", "Shl", "Shr", "PartialEq", "From", "Default", "Resolve"];
 
 /// What an `impl` is written for.
 #[derive(Debug, Clone, PartialEq, Eq)]

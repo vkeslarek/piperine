@@ -43,7 +43,7 @@ mod module;
 mod obligations; mod operators;
 mod patterns;
 mod plain;
-mod nature_rules;
+mod nature; mod nature_rules;
 mod reach;
 mod reaction;
 mod repr;

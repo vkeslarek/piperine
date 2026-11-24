@@ -45,7 +45,8 @@ fn nature_impls_lists_its_impl_blocks() {
     assert_eq!(design.nature("Electrical").unwrap().impls().len(), 2);
     // `std` writes two `impl Bit`: the edges of a `Bit` of `bool` and of a `Bit<Logic>` (§22.1.5)
     assert_eq!(design.nature("Bit").unwrap().impls().len(), 2);
-    assert!(design.nature("Wire").unwrap().impls().is_empty());
+    // the library's `Wire` is resolved by one `impl Resolve<Drive>` (until the generic nets of resolved-nets B6)
+    assert_eq!(design.nature("Wire").unwrap().impls().len(), 1);
 }
 
 const NAMES: &str = "\

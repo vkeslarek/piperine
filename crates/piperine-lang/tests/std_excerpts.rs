@@ -240,7 +240,7 @@ const AHEAD_OF_STD: [&str; 8] = [
 
 /// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or
 /// removed, which stay while something still reads them: the library
-/// nets and the modules over them (`Wire`, `Tri`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
+/// nets and the modules over them (`Wire`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
 /// `resolved-nets`), the `Drive` struct and its `impl`s. Nothing in these
 /// units reads a known flag. The list is empty when they are gone.
 const BEHIND_SPEC: [(&str, usize, &str); 16] = [
@@ -250,16 +250,16 @@ const BEHIND_SPEC: [(&str, usize, &str); 16] = [
     ("nets.msl", 19, "impl"),
     ("nets.msl", 35, "impl"),
     ("nets.msl", 53, "nature Wire"),
-    ("nets.msl", 58, "fn tri"),
-    ("nets.msl", 68, "nature Tri"),
-    ("nets.msl", 77, "nature SumNet"),
-    ("nets.msl", 82, "module Tribuf"),
-    ("nets.msl", 90, "module Pullup"),
-    ("nets.msl", 94, "module Pulldown"),
-    ("nets.msl", 98, "module Keeper"),
-    ("nets.msl", 109, "module Tran"),
-    ("nets.msl", 122, "module Tgate"),
-    ("nets.msl", 103, "Digital block"),
+    ("nets.msl", 57, "impl"),
+    ("nets.msl", 67, "nature SumNet"),
+    ("nets.msl", 71, "impl"),
+    ("nets.msl", 77, "module Tribuf"),
+    ("nets.msl", 85, "module Pullup"),
+    ("nets.msl", 89, "module Pulldown"),
+    ("nets.msl", 93, "module Keeper"),
+    ("nets.msl", 104, "module Tran"),
+    ("nets.msl", 117, "module Tgate"),
+    ("nets.msl", 98, "Digital block"),
 ];
 
 fn part_vii() -> String {

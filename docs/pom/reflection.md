@@ -632,18 +632,17 @@ assert!(kids[2].as_trait().is_none());
 
 ### `Nature`
 
-`nature Name { potential: .., flow: .., value: .., resolve: .. }`
+`nature Name { potential: .., flow: .., value: .. }`
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
-| `kind(self)` | `NatureKind` | `Conservative`, `SignalFlow`, `Discrete`, `Resolved` or `Invalid`, by the fields declared. |
+| `kind(self)` | `NatureKind` | `Conservative`, `SignalFlow`, `Discrete` or `Invalid`, by the fields declared. A discrete nature is resolved when an `impl Resolve<X, V>` is written for it (`impls`). |
 | `generics(self)` | `Vec<GenericParam<'d>>` | The generic parameters of the nature. |
 | `quantities(self)` | `Vec<Quantity<'d>>` | The quantities in source order, repeated ones included. |
 | `potential(self)` | `Option<Quantity<'d>>` | The first `potential` quantity. |
 | `flow(self)` | `Option<Quantity<'d>>` | The first `flow` quantity. |
 | `impls(self)` | `Vec<Impl<'d>>` | The `impl` blocks written for this nature, in source order. |
 | `value_type(self)` | `Option<Type<'d>>` | The type of the first `value: T` field. |
-| `resolve_fn(self)` | `Option<Expr<'d>>` | The expression of the first `resolve: f` field. |
 
 ```rust
 use piperine_lang::pom::{Design, NatureKind, QuantityRole, Reflect};
@@ -654,7 +653,8 @@ nature Electrical {
     flow:      Current { access: i, units: "A", abstol: 1p },
 }
 nature Bit { value: bool }
-nature Wire { value: bool, resolve: pick }
+nature Wire { value: bool }
+impl Resolve<bool> for Wire { fn resolve<const N: usize>(d: [bool; N]) -> bool { false } }
 nature Sig { potential: Level { access: lvl, units: "1", abstol: 1u } }
 "#;
 let design = Design::builder().source("top.msl", src).build();
@@ -670,8 +670,8 @@ assert_eq!(e.flow().unwrap().name(), Some("Current"));
 
 assert_eq!(design.nature("Bit").unwrap().kind(), NatureKind::Discrete);
 assert_eq!(design.nature("Bit").unwrap().value_type().unwrap().text(), "bool");
-assert_eq!(design.nature("Wire").unwrap().kind(), NatureKind::Resolved);
-assert_eq!(design.nature("Wire").unwrap().resolve_fn().unwrap().text(), "pick");
+assert_eq!(design.nature("Wire").unwrap().kind(), NatureKind::Discrete);
+assert_eq!(design.nature("Wire").unwrap().impls().len(), 1);
 assert_eq!(design.nature("Sig").unwrap().kind(), NatureKind::SignalFlow);
 ```
 
