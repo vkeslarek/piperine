@@ -5,9 +5,10 @@
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-/// A number analog code computes with: a plain `f64`, or a value with its tangent.
+/// A number analog code computes with: a plain `f64`, or a value with its tangent. It owns no
+/// borrow (`'static`), so a function value over it is an `Rc<dyn Fn(R) -> R>` a function can return.
 pub trait Real:
-    Copy + Default + PartialEq + PartialOrd + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Neg<Output = Self>
+    'static + Copy + Default + PartialEq + PartialOrd + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Neg<Output = Self>
 {
     /// A value with no dependence on any read.
     fn constant(v: f64) -> Self;

@@ -148,21 +148,70 @@ impl<'a> ValuePrinter<'a> {
 
     // ---- function values and recursion (CV-05 to CV-07) ---------------------------------------
 
-    /// The Rust type of a function value: `&dyn Fn(A, B) -> R`, a reference so that a local of
-    /// it is `Copy` as a function value is (§1.5.10). A function cannot return one: the reference
-    /// would outlive its closure.
+    /// The Rust type of a function value: `std::rc::Rc<dyn Fn(A, B) -> R>`, one owned
+    /// representation for every function value (a param, a local, a result, a capture), so that a
+    /// function can return one, a capturing closure included (§1.5.10, §1.5.14). A read clones it
+    /// (`ValuePrinter::local_value`), as a function value is copied.
     pub(super) fn function_type(&self, params: &[ValueType], ret: &ValueType, path: &str) -> Result<String, Error> {
         let mut printed = Vec::with_capacity(params.len());
         for p in params {
             printed.push(self.rust_type(p, path)?);
         }
-        let result = match ret {
-            ValueType::Fn(..) => {
-                return Err(Error::Unsupported { form: "a function value returning a function value".into(), path: path.to_string(), origin: self.origin.clone() });
+        Ok(format!("std::rc::Rc<dyn Fn({}) -> {}>", printed.join(", "), self.rust_type(ret, path)?))
+    }
+
+    /// The read of local `name` of type `ty` as a value: a function value is cloned (the `Rc` is
+    /// shared, the read leaves the local usable); any other local is its name.
+    pub(super) fn local_value(name: &str, ty: &ValueType) -> String {
+        if matches!(ty, ValueType::Fn(..)) { format!("{name}.clone()") } else { name.to_string() }
+    }
+
+    /// The closure `e` as a function value: `std::rc::Rc::new(move |..| ..)`. A `move` closure
+    /// takes each local it reads, so each function value it captures from outside is cloned
+    /// first (`{ let f = f.clone(); std::rc::Rc::new(move |..| f(..)) }`) and stays usable after.
+    pub(super) fn closure_value(&self, e: ExprId) -> Result<Piece, Error> {
+        let value = format!("std::rc::Rc::new({})", self.closure(e)?);
+        let mut lines = Vec::new();
+        for local in self.captured_function_values(e) {
+            let Some(name) = self.local(local) else {
+                return Err(self.unsupported(e, "a captured local out of range"));
+            };
+            lines.push(format!("let {name} = {name}.clone();"));
+        }
+        if lines.is_empty() {
+            return Ok(Piece::new(value, Prec::Atom));
+        }
+        lines.push(value);
+        Ok(Piece::new(format!("{{\n{}\n}}", Self::indent(&lines.join("\n"))), Prec::Low))
+    }
+
+    /// The function-valued locals closure `e` reads that are bound outside it, in index order:
+    /// every `Local` read in its body but its own params, the params of the closures inside it
+    /// and the `let` and `for` locals of the blocks and loops inside it.
+    fn captured_function_values(&self, e: ExprId) -> Vec<u32> {
+        let mut bound = std::collections::BTreeSet::new();
+        let mut read = std::collections::BTreeSet::new();
+        let mut exprs = vec![e];
+        while let Some(id) = exprs.pop() {
+            let kind = self.ir.expr(id);
+            match kind {
+                Expr::Closure { params, .. } => bound.extend(params.iter().copied()),
+                Expr::ForRange { local, .. } => {
+                    bound.insert(*local);
+                }
+                Expr::Local(i) if matches!(self.ir.expr_type(id), ValueType::Fn(..)) => {
+                    read.insert(*i);
+                }
+                _ => {}
             }
-            other => self.rust_type(other, path)?,
-        };
-        Ok(format!("&dyn Fn({}) -> {result}", printed.join(", ")))
+            for s in kind.statements() {
+                if let piperine_ir::Stmt::Let { local, .. } = self.ir.stmt(*s) {
+                    bound.insert(*local);
+                }
+            }
+            Self::children(self.ir, kind, &mut exprs);
+        }
+        read.difference(&bound).copied().collect()
     }
 
     /// Whether `function` is on a call cycle: it reaches itself through calls and function values.
@@ -206,8 +255,8 @@ impl<'a> ValuePrinter<'a> {
         Some(if same_cycle { format!("depth_.deeper({:?})", self.ir.function(callee).name()) } else { "rt::Depth::root()".to_string() })
     }
 
-    /// A function used as a value: its path as a reference, or a closure over the trailing
-    /// arguments it takes (the environment, the depth) so that its type is the `Fn` of its params.
+    /// A function used as a value: its path in an `Rc`, or a closure over the trailing arguments it
+    /// takes (the environment, the depth) so that its type is the `Fn` of its params.
     pub(super) fn function_value(&self, function: FunctionId) -> Result<Piece, Error> {
         let f = self.ir.function(function);
         let envs = Self::env_reads(self.ir, function);
@@ -215,21 +264,29 @@ impl<'a> ValuePrinter<'a> {
         let generic = if Self::is_generic(self.ir, function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
         let name = format!("{}{generic}", Text::ident(f.name()));
         if envs.is_empty() && depth.is_none() {
-            return Ok(Piece::new(format!("&{name}"), Prec::Unary));
+            return Ok(Piece::new(format!("std::rc::Rc::new({name})"), Prec::Atom));
         }
         let params: Vec<String> = (0..f.params().len()).map(|i| Text::generated(&format!("arg{i}"))).collect();
         let mut arguments = params.clone();
         arguments.extend(envs.into_iter().map(|env| self.read(Self::env_name(env))));
         arguments.extend(depth);
-        Ok(Piece::new(format!("&move |{}| {name}({})", params.join(", "), arguments.join(", ")), Prec::Unary))
+        Ok(Piece::new(format!("std::rc::Rc::new(move |{}| {name}({}))", params.join(", "), arguments.join(", ")), Prec::Atom))
     }
 
-    /// `callee(args)` where `callee` is a value of function type.
+    /// `callee(args)` where `callee` is a value of function type: a local is called by its name,
+    /// through the `Rc` it holds, not cloned.
     pub(super) fn call_value(&self, e: ExprId, callee: ExprId, args: &[ExprId]) -> Result<Piece, Error> {
         if !matches!(self.ir.expr_type(callee), ValueType::Fn(..)) {
             return Err(self.unsupported(e, "a call through a value that is not a function"));
         }
         let printed = args.iter().map(|a| self.expr(*a)).collect::<Result<Vec<_>, Error>>()?;
-        Ok(Piece::new(format!("{}({})", self.piece(callee)?.at(Prec::Atom), printed.join(", ")), Prec::Atom))
+        let called = match self.ir.expr(callee) {
+            Expr::Local(i) => match self.local(*i) {
+                Some(name) => name.to_string(),
+                None => return Err(self.unsupported(callee, "a local out of range")),
+            },
+            _ => self.piece(callee)?.at(Prec::Atom),
+        };
+        Ok(Piece::new(format!("{called}({})", printed.join(", ")), Prec::Atom))
     }
 }

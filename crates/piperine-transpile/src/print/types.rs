@@ -97,6 +97,7 @@ impl<'a> TypeItems<'a> {
             ValueType::F64 => true,
             ValueType::Tuple(parts) => parts.iter().any(|part| self.holds_real_visiting(part, visited)),
             ValueType::Array(element, _) | ValueType::Option(element) => self.holds_real_visiting(element, visited),
+            ValueType::Fn(params, ret) => params.iter().chain(std::iter::once(&**ret)).any(|part| self.holds_real_visiting(part, visited)),
             ValueType::Struct(id) | ValueType::Enum(id) => {
                 if !visited.insert(id.index()) {
                     return false;
@@ -106,7 +107,7 @@ impl<'a> TypeItems<'a> {
                     TypeKind::Enum { variants, .. } => variants.iter().any(|v| v.fields.iter().any(|(_, field)| self.holds_real_visiting(field, visited))),
                 }
             }
-            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Fn(..) => false,
+            ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) | ValueType::F32 | ValueType::F16 | ValueType::F128 => false,
         }
     }
 
