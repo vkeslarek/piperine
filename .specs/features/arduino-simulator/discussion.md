@@ -36,7 +36,10 @@ same firmware there, compare pin traces and cycle counts) — nothing linked.
 - **Facts are free: datasheet distillation.** Per core, a fact sheet (registers, bits, pinout,
   vectors, instruction cycles, peripheral behaviour) is distilled from the Microchip datasheets /
   instruction-set manual and simavr's documentation and observable behaviour. The core is
-  implemented from those fact sheets and avr8js — never from simavr's code. simavr is used only
+  implemented from those fact sheets and avr8js — never from simavr's code. The distillation
+  may read simavr's source, but it extracts only MCU data and MCU behaviour (register maps,
+  pinouts, vectors, timings, what a peripheral does) — never its code structure, names or
+  organisation (user, 2026-11-24). simavr is used only
   as a black-box test oracle (run the same firmware, compare pins and cycles); never linked,
   never committed.
 - **Proof of concept done (not committed, GPL):** blink on simavr co-simulated with a Piperine
