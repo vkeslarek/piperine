@@ -39,3 +39,18 @@ fn a_recursion_through_a_handle_function_is_e0126() {
     let found = Elab::run(&src, "Top").err().expect("refused");
     assert!(found.iter().any(|d| d.diagnostic.code == "E0126" && d.diagnostic.message.contains("`again`")), "{:?}", found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
 }
+
+#[test]
+fn a_let_bound_to_a_node_probes_the_node() {
+    // §6 rule 4, §8.2.8, §8.4.8: a `let` bound to a node holds no value, its name stands for the node: `v(y)` lowers to the probe of
+    // the node it was bound to, in a plain module, through a child placed by name and through a template
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for (src, probe) in [
+        ("module Top() { signal x: Electrical; signal p: Electrical; }\nanalog for Top { i(x, gnd) +> v(x, gnd); let y = x; i(p, gnd) +> v(y) - 1.0; }".to_string(), "(probe(x, gnd) - 1.0)"),
+        (format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; }}\nanalog for Top {{ let y = c0.sn; i(p, gnd) +> v(y); }}"), "direct probe(c0.sn, gnd)"),
+        (format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v(y); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"), "direct probe(c0.sn, gnd)"),
+    ] {
+        let printed = Elab::ir(&src, "Top").print_structural();
+        assert!(printed.contains(probe), "{src}: {printed}");
+    }
+}

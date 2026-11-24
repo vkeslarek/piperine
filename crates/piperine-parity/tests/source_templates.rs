@@ -148,3 +148,15 @@ fn a_const_template_leaves_an_option_param_out() {
     let expected = RustOracle::conductance_divider(1.0, 1.0, 3.0);
     assert!((mid[0] - expected).abs() < TOLERANCE, "{mid:?} against {expected}");
 }
+
+#[test]
+fn a_let_bound_to_a_node_probes_the_node() {
+    // §6 rule 4, §8.4.8: `let y = c0.sn; v(y)` through a template, `let y = near.sn;` through a child placed by name and `let z = a;`
+    // probe the nodes they are bound to: the store holds 2 * 0.5, `level` is that plus 1, `mirror` that plus the line
+    let line = 0.5;
+    let stored = 2.0 * line;
+    let seen = RUN.operating_point("items.msl", "RigAlias", &["level", "mirror"]);
+    for (value, wanted) in seen.iter().zip([stored + 1.0, stored + line]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}

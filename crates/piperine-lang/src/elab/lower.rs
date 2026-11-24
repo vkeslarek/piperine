@@ -58,7 +58,7 @@ pub(super) struct Scope {
     /// The `&str` params of the functions inlined at a call (`records.rs`), bound to their text.
     pub(super) texts: BTreeMap<DeclId, String>,
     /// The handle parameters of the functions inlined at a call (`handles.rs`), each bound to the caller's argument: the
-    /// name of a port or a signal of the frame, or `gnd`.
+    /// name of a port or a signal of the frame, or `gnd`; and the `let`s bound to a node, each to its initializer.
     pub(super) handles: BTreeMap<DeclId, ExprId>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
@@ -721,6 +721,11 @@ impl Elaboration<'_, '_> {
             // An iterator or a range holds no value: the name stands for the chain it was bound to (`iterators.rs`).
             PatKind::Ident { binding, sub: None, .. } if self.is_sequence_binding(binding) => {
                 scope.let_sources.insert(binding, init);
+                true
+            }
+            // A `let` bound to a node holds no value: the name stands for the node, as a handle does (`let y = x; v(y)`, §6 rule 4)
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Node(_) | Ty::AnyNode)) => {
+                scope.handles.insert(binding, init);
                 true
             }
             PatKind::Ident { binding, sub: None, .. } => {

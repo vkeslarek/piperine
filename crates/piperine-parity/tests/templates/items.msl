@@ -25,3 +25,25 @@ analog for RigItems {
     potential(own) +> bank.c0.cs;
     potential(row) +> bank.cells[1].cs * 10.0;
 }
+
+/// A cell whose storage node follows its line, read through a `let` bound to the node (§6 rule 4).
+module Store(a: Electrical) { pub signal sn: Electrical; }
+analog for Store { potential(sn) +> 2.0 * v(a); }
+
+/// The holder drives `level` from `c0.sn` through `let y = c0.sn;`, the cell placed through a template.
+module Holder<C: Fn(Electrical)>(a: Electrical, level: Electrical) { cell: C; let c0 = cell(a); }
+analog<C> for Holder<C> { let y = c0.sn; potential(level) +> v(y) + 1.0; }
+
+module RigAlias() {
+    signal a: Electrical;
+    signal level: Electrical;
+    signal mirror: Electrical;
+    let holder = Holder::<_>(a, level) { cell: Store { } };
+    let near = Store(a);
+}
+analog for RigAlias {
+    potential(a) +> 0.5;
+    let y = near.sn;
+    let z = a;
+    potential(mirror) +> v(y) + v(z);
+}

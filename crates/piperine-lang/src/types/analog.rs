@@ -73,10 +73,14 @@ impl Checker<'_> {
             // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
             // name is read as a potential probe until then
             Resolution::Deferred(DeferReason::AmbiguousAccess) if self.names_only_potentials(*callee) && args.first().is_some_and(|arg| self.reads_through_callable(arg.value)) => (QuantityRole::Potential, None),
-            Resolution::Deferred(DeferReason::AmbiguousAccess) => {
-                self.unsupported(file, node.span, "probe through an access that names several natures");
-                return None;
-            }
+            // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4)
+            Resolution::Deferred(DeferReason::AmbiguousAccess) => match self.access_of_operand(*callee, args) {
+                Some((role, nature)) => (role, Some(nature)),
+                None => {
+                    self.unsupported(file, node.span, "probe through an access that names several natures");
+                    return None;
+                }
+            },
             Resolution::Deferred(_) | Resolution::Unresolved => {
                 self.unsupported(file, node.span, "probe through an unresolved name");
                 return None;
@@ -312,6 +316,19 @@ impl Checker<'_> {
 
 impl Checker<'_> {
     /// Whether every quantity the access name of `callee` stands for is a potential: the nature does not change the role.
+    /// The quantity an access name `callee` (`v`) names in the nature of the node its first operand holds, as its role and the
+    /// nature: a `let` bound to a node keeps the node's nature, so `v(y)` reads the potential of `y`'s nature. `None` when the
+    /// operand is no node of a nature, or that nature has no quantity of that access.
+    fn access_of_operand(&mut self, callee: ExprId, args: &[Arg]) -> Option<(QuantityRole, DeclId)> {
+        let Some(Ty::Node(nature)) = self.infer(args.first()?.value) else { return None };
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
+        let name = self.design.path_node(*path).segments.last()?.name.text.clone();
+        self.design.decl_data(nature).children.iter().find_map(|child| match &self.design.decl_data(*child).kind {
+            DeclKind::Quantity(quantity) if quantity.attrs.iter().any(|a| a.name.text == "access" && matches!(&self.design.expr_node(a.value).kind, ExprKind::Path(p) if self.design.path_node(*p).segments.last().is_some_and(|s| s.name.text == name))) => Some((quantity.role, nature)),
+            _ => None,
+        })
+    }
+
     fn names_only_potentials(&self, callee: ExprId) -> bool {
         let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
         let Some(segment) = self.design.path_node(*path).segments.last() else { return false };
@@ -330,18 +347,14 @@ impl Checker<'_> {
         found
     }
 
-    /// Whether `operand` (through parentheses and indexes) is an item `inst.name` of an instance placed through a callable param.
+    /// Whether `operand` (through indexes) is an item `inst.name` of an instance placed through a callable param, or a `let` bound
+    /// to one.
     fn reads_through_callable(&mut self, operand: ExprId) -> bool {
         let mut at = operand;
-        loop {
-            match &self.design.expr_node(at).kind {
-                ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => at = *inner,
-                _ => break,
-            }
+        while let ExprKind::Index { expr: inner, .. } = &self.design.expr_node(at).kind {
+            at = *inner;
         }
-        match self.design.expr_node(at).kind.clone() {
-            ExprKind::Field { expr: receiver, .. } => self.placed_through_callable(receiver),
-            _ => false,
-        }
+        // the read itself, or a `let` bound to it (`let y = c0.sn; v(y)`, `template_items.rs`)
+        self.template_read_of(at).is_some()
     }
 }

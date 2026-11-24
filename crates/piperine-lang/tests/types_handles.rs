@@ -188,3 +188,17 @@ fn a_carrier_generic_over_its_value_type_is_a_handle() {
     let src = "fn earlier<T: Repr>(a: Bit<T>) -> T { a.prev() }\nmodule Top() { signal c: Bit<u8> = 0; signal d: Bit<u8> = 1; }\ndigital for Top { on c.changed() { d <- earlier(c); } }\n";
     assert_eq!(HandleSources::found(src), []);
 }
+
+#[test]
+fn a_let_bound_to_a_node_keeps_its_nature_for_a_probe() {
+    // §6 rule 4, §8.2.8, §8.4.8: `let y = x; v(y)` probes `x` by the access of its nature, as `v(x)` does, in a plain module, through a
+    // child placed by name and through a template; the flow access of the nature names its flow (`i(y, gnd)` as a target)
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for src in [
+        "module Top() { signal x: Electrical; signal p: Electrical; }\nanalog for Top { let y = x; i(p, gnd) +> v(y) - 1.0; i(y, gnd) +> v(y); }".to_string(),
+        format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; }}\nanalog for Top {{ let y = c0.sn; i(p, gnd) +> v(y); }}"),
+        format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v(y); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
+    ] {
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+    }
+}
