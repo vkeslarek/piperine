@@ -1,13 +1,20 @@
 //! A `logic` pattern of 70 characters infers a `Logic<70>`, which has two integer planes wider than 64 bits: it elaborates
-//! and runs as a written `Logic<70>` does, and `is_high` of 70 ones commits true.
+//! and runs as a written `Logic<70>` does, and `is_high` of 70 ones commits true at the first rising edge.
 
-module Bench() {
-    signal clk: Bit = false;
-    signal t: Bit = false;
-}
-digital for Bench {
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Rows(in clk: Bit, out t: Bit = false) {}
+digital for Rows {
     on clk.rise() {
         let a = logic("1111111111111111111111111111111111111111111111111111111111111111111111");
         t <- a.is_high();
     }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal t: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, t);
 }

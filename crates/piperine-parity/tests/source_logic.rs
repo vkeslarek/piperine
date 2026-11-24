@@ -328,9 +328,8 @@ fn a_logic_of_a_hundred_levels_runs() {
 #[test]
 fn an_inferred_logic_of_seventy_levels_runs() {
     // §22.1.4 (finding 60; supersedes the refusal naming `GAPS.md` L13): `logic("<70 ones>")` infers a `Logic<70>`, which
-    // elaborates like a written one, and `is_high` of 70 ones is true
-    let project = RUN.project("inferred_wide.msl");
-    project.elaborate("Bench").unwrap_or_else(|rejection| panic!("{rejection}"));
+    // elaborates like a written one, and `is_high` of 70 ones is true: `t` starts false, so the commit at the first rising edge is a change
+    RUN.assert_commits("inferred_wide.msl", &["t"], &[vec![1]]);
 }
 
 #[test]
