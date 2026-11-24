@@ -92,6 +92,15 @@ fn a_producer_consumer_and_observer_run_three_beats() {
 }
 
 #[test]
+fn beat_fires_on_rising_edges_with_valid_and_ready() {
+    // §7 rule 13: `on rx.beat(clk)` runs exactly where `clk.rise() && rx.valid && rx.ready` does: `ready` toggles at each rise, so
+    // the beats are the rises at 15, 35 and 55 ns, carrying 1, 2 and 3, and no beat follows the third (`valid` falls).
+    let built = Model::of("stream.msl").built("BeatBench");
+    let seen = built.run(120e-9, 1e-9);
+    assert_eq!(Model::data(&built, &seen, "beats"), [1, 2, 3], "one record per beat, none at the other rising edges");
+}
+
+#[test]
 fn field_commits_definitions_and_methods_follow_section_5() {
     // §7 rule 12, §5: `p.level` starts unknown, the `Default` of a `Logic` (§5.2.8), and `changed()` fires at (0, 0) for it;
     // the writer commits high at its second rise (15 ns, `rises == 1`) and low at its fifth (45 ns), and each change reads

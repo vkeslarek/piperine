@@ -44,3 +44,27 @@ module HandshakeBench() {
     let consumer = Sink(clk, s);
     let observer = Monitor(clk, s);
 }
+
+/// The edge of a beat as a function of the bundle: a rising edge of `clk` while `valid` and `ready` are both true (§7 rule 13).
+impl Stream {
+    fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid && self.ready }
+}
+
+/// A consumer written with the bundle's event function: records the data of each beat it takes.
+module BeatSink(in clk: Bit, rx: flip Stream) {
+    signal open: Bit = false;
+    rx.ready = open;
+}
+digital for BeatSink {
+    on clk.rise() { open <- !open; }
+    on rx.beat(clk) { emit!("beats", data = rx.data); }
+}
+
+/// A producer and a consumer that reacts through the bundle's event function.
+module BeatBench() {
+    signal clk: Bit;
+    signal s: Stream;
+    let clock = Clock(clk);
+    let producer = Source(clk, s);
+    let consumer = BeatSink(clk, s);
+}

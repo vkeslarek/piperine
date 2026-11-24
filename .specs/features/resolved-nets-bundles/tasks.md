@@ -501,8 +501,8 @@ T21
 
 **Done when**:
 
-- [ ] `beat_fires_on_rising_edges_with_valid_and_ready` passes under `**Run sourcebundles**`
-- [ ] Gate check passes: Quick
+- [x] `beat_fires_on_rising_edges_with_valid_and_ready` passes under `**Run sourcebundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
