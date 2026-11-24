@@ -419,12 +419,12 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-18 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-19 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-20 | P1: generic modules and generation (C) | - | Delivered (phase C) |
-| GN-21 | P1: templates and implicit params (D) | - | Pending |
-| GN-22 | P1: templates and implicit params (D) | - | Pending |
-| GN-23 | P1: templates and implicit params (D) | - | Pending |
-| GN-24 | P1: templates and implicit params (D) | - | Pending |
-| GN-25 | P1: templates and implicit params (D) | - | Pending |
-| GN-26 | P1: templates and implicit params (D) | - | Pending |
+| GN-21 | P1: templates and implicit params (D) | - | Delivered (phase D): templates of generic modules too (§8.4.3), except the type `Name<G>` carrying its arguments (L79) |
+| GN-22 | P1: templates and implicit params (D) | - | Delivered (phase D) |
+| GN-23 | P1: templates and implicit params (D) | - | Delivered (phase D): `inst.name` reads nodes through a template, in the placing module and from its parent; a non-node item is refused by name (L78) |
+| GN-24 | P1: templates and implicit params (D) | - | Delivered (phase D) |
+| GN-25 | P1: templates and implicit params (D) | - | Delivered (phase D) |
+| GN-26 | P1: templates and implicit params (D) | - | Delivered (phase D) |
 | GN-27 | P2: the stdlib built on generics (E) | - | Pending |
 | GN-28 | P2: the stdlib built on generics (E) | - | Pending |
 | GN-29 | P1: every phase keeps the rest intact | - | Pending |
