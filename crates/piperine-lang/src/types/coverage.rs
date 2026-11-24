@@ -137,7 +137,8 @@ impl Checker<'_> {
         let drives = self.book.elements.iter().map(|(carrier, element, _, _)| (*carrier, *element));
         let handed = self.book.handed.iter().map(|(carrier, element, _, _)| (*carrier, *element));
         let unfolded: Vec<DeclId> = drives.chain(handed).filter(|(_, element)| *element == Element::Unfolded).map(|(carrier, _)| carrier).collect();
-        self.deferred_coverage.overlaps.extend(unfolded);
+        // a drive that names an element of an array of bundles by a loop variable reaches that field of any element
+        self.deferred_coverage.overlaps.extend(unfolded.iter().flat_map(|carrier| self.design.leaves_of_each_element(*carrier)));
     }
 
     /// The elements of `decl` (of type `held`) an undelayed definition names.

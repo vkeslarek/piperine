@@ -33,7 +33,30 @@ Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
 **Base and order.** Branch `feature/resolved-nets`, kept current by merging `main` into it (by hunk; never one side of a whole file; documents and tests keep both intents). B1 (T1–T4) is on `main`.
 
 | Batch | Tasks | Starts when | Delivers |
-| ----- | ----- | ----------- | -------- |
+| ----- | ----- | ----------- | -----### T22: B4 limits
+
+**What**: Closes the forms spec §7 allows that T19 and T20 left refused. (1) An array of bundles indexed by a generation loop variable (`for k in 0..N { Raise(lanes[k]) }`, `tx[k].a`) folds the index per iteration: the checker reads an index that is no written integer as an element of the array (every element has the type and the view of the first), the elaborator folds it over the iteration (`Elaboration::bundle_leaf`), and each element field is judged per instance (`E0187`, `E0220`). (2) A constant generic length of bundles (`[Lane; N]`, `[flip Stream<T>; N]`) and the substitution of a generic struct's constant parameter in an array length of a field. (3) An array of carriers as a field of a bundle (`struct Word { out bits: [Bit; 2] }`): the element `w.bits[k]` is a place and a read, and the field is handed whole.
+**Where**: `crates/piperine-lang/src/pom/bundles.rs`, `src/elab/bundles.rs`, `src/types/`
+**Depends on**: T20
+**Reuses**: arrays of carriers (`Element::Unfolded`, `elab/drive_overlaps.rs`)
+**Requirement**: BN-06
+**Executor**: Opus
+
+**Done when**:
+
+- [x] `an_element_index_that_is_a_loop_variable_is_an_element_of_the_array` passes under `**Run typesbundles**`; `a_loop_variable_index_folds_to_the_element_of_each_iteration` and `a_loop_that_gives_one_element_twice_is_e0220_naming_it` under `**Run elabbundles**`; `an_element_index_that_is_a_loop_variable_folds_per_iteration` under `**Run sourcebundles**`
+- [x] `an_array_of_carriers_as_a_field_is_driven_and_read_by_index` passes under `**Run typesbundles**`, `an_array_field_of_carriers_binds_whole_and_is_written_by_element` under `**Run elabbundles**`, `an_array_of_carriers_as_a_field_is_driven_and_read_by_index` under `**Run sourcebundles**`
+- [ ] (2) as in the Handoff
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(elab): loop indexes and carrier array fields of bundles`
+
+---
+
+--- |
 | B2 | T5 to T8 (phases 2, 3) | `explicit-unknowns` phase A on `main` (`composite-values` A–B already is) | the contract; bundle types, views, literals, `E0211` |
 | B3 | T9 to T16 (phases 4, 5) | B2; T15 also needs `resolved-nets` T22 on the branch | bundles elaborate and run; host and POM names |
 | B4 | T17 to T21 (phases 6 to 8) | B3, `generics` B and `unknown-semantics-events` B5 (T17, T18), `generics` A and C and `composite-values` C (T19, T20), `generics` C (T21's `Slice<T>`) | functions on a bundle; generic and array bundles; the records |
@@ -686,6 +709,17 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 **C36** - A bundle port lowers to one carrier per leaf field named by path (BN-02, AC 6; §7 rule 14)
 Proof: run elabbundles | test a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path ... ok
 
+**C38** - An element index that is a generation loop variable is the element of the iteration (BN-06, AC 4; §7 rule 11)
+Proof: run typesbundles | test an_element_index_that_is_a_loop_variable_is_an_element_of_the_array ... ok
+Proof: run elabbundles | test a_loop_variable_index_folds_to_the_element_of_each_iteration ... ok
+Proof: run elabbundles | test a_loop_that_gives_one_element_twice_is_e0220_naming_it ... ok
+Proof: run sourcebundles | test an_element_index_that_is_a_loop_variable_folds_per_iteration ... ok
+
+**C39** - An array of carriers as a field of a bundle is driven and read by element (BN-06, AC 1; §7 rules 1, 12)
+Proof: run typesbundles | test an_array_of_carriers_as_a_field_is_driven_and_read_by_index ... ok
+Proof: run elabbundles | test an_array_field_of_carriers_binds_whole_and_is_written_by_element ... ok
+Proof: run sourcebundles | test an_array_of_carriers_as_a_field_is_driven_and_read_by_index ... ok
+
 ---
 
 ## Handoff
@@ -715,7 +749,7 @@ Phase 3:  T6 → T7 → T8
 Phase 4:  T9 → T10 → T11
 Phase 5:  T12 → T13 → T14 → T15 → T16
 Phase 6:  T17 → T18
-Phase 7:  T19 → T20
+Phase 7:  T19 → T20 → T22
 Phase 8:  T21
 ```
 

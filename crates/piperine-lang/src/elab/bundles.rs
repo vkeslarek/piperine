@@ -4,6 +4,8 @@
 //! carrier or terminal of the child, in the order of the port's leaves, the order `Design::module_items` gives the
 //! child's own body.
 
+use std::collections::BTreeMap;
+
 use piperine_ir::{CarrierWindow, Terminal};
 
 use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
@@ -33,21 +35,42 @@ enum LeafSource {
 
 impl Elaboration<'_, '_> {
     /// The leaf the field access `expr` stands for in `scope`: `tx.valid` of a bundle port or signal of the frame, or `self.valid` of
-    /// a handle an inlined function was given (`handles.rs`), which is the leaf of the bundle the call named (§7 rule 13).
-    pub(super) fn bundle_leaf(&self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
-        self.design.bundle_field_through(expr, &|root| self.handled_bundle(scope, root))
+    /// a handle an inlined function was given (`handles.rs`), which is the leaf of the bundle the call named (§7 rule 13). An index
+    /// of an array of bundles (`rx[k].valid`) is folded over the loop variables of the iteration `scope` is in.
+    pub(super) fn bundle_leaf(&mut self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
+        let root = self.design.bundle_chain_root(expr)?;
+        let rooted = self.handled_bundle(scope, root);
+        let folded = self.folded_bundle_indexes(scope, expr);
+        self.design.bundle_field_through(expr, &|_| rooted, &|index| self.design.literal_index(index).or_else(|| folded.get(&index).copied()))
+    }
+
+    /// The value each index of the chain `expr` (`rx[k].valid`) that is not a written integer has in `scope`, where it folds.
+    fn folded_bundle_indexes(&mut self, scope: &Scope, expr: ExprId) -> BTreeMap<ExprId, usize> {
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let mut folded = BTreeMap::new();
+        for index in self.design.bundle_chain_indexes(expr) {
+            if self.design.literal_index(index).is_some() {
+                continue;
+            }
+            if let Ok(piperine_ir::Constant::Int(at)) = self.consts.value(index, &bindings)
+                && let Ok(at) = usize::try_from(at)
+            {
+                folded.insert(index, at);
+            }
+        }
+        folded
     }
 
     /// The bundle port, signal or group the name `root` stands for in `scope`: itself, or what the handle `root` is bound to.
-    fn handled_bundle(&self, scope: &Scope, root: DeclId) -> Option<DeclId> {
+    fn handled_bundle(&mut self, scope: &Scope, root: DeclId) -> Option<DeclId> {
         match scope.handles.get(&root) {
             Some(bound) => self.named_bundle(scope, *bound),
             None => Some(root),
         }
     }
 
-    /// The bundle port, signal or group the expression `expr` names in `scope` (`s`, `o.inner`, a handle bound to either).
-    pub(super) fn named_bundle(&self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
+    /// The bundle port, signal or group the expression `expr` names in `scope` (`s`, `o.inner`, `rx[k]`, a handle bound to either).
+    pub(super) fn named_bundle(&mut self, scope: &Scope, expr: ExprId) -> Option<DeclId> {
         let expr = self.peel_parens(expr);
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
@@ -62,7 +85,7 @@ impl Elaboration<'_, '_> {
     /// The fields of the bundle port `port` given by `arg`, joined to what `arg` gives them. `false` after a diagnostic.
     pub(super) fn bind_bundle_port(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId, bound: &mut PortBindings) -> bool {
         let mut sources = Vec::new();
-        self.leaf_sources(arg, port, "", &mut sources);
+        self.leaf_sources(scope, arg, port, "", &mut sources);
         let mut ok = true;
         for leaf in self.design.bundle_leaves(port).to_vec() {
             if leaf.nested {
@@ -83,8 +106,8 @@ impl Elaboration<'_, '_> {
     }
 
     /// The source of every field under `prefix` of the bundle port `port` that `arg` gives, by path.
-    fn leaf_sources(&self, arg: ExprId, port: DeclId, prefix: &str, out: &mut Vec<(String, LeafSource)>) {
-        if let Some(source) = self.design.bundle_named(arg) {
+    fn leaf_sources(&mut self, scope: &Scope, arg: ExprId, port: DeclId, prefix: &str, out: &mut Vec<(String, LeafSource)>) {
+        if let Some(source) = self.named_bundle(scope, arg) {
             for leaf in self.design.bundle_leaves(port).iter().filter(|leaf| !leaf.nested) {
                 let Some(rest) = leaf.path.strip_prefix(prefix) else { continue };
                 if let Some(from) = self.design.leaf_under(source, rest) {
@@ -98,7 +121,7 @@ impl Elaboration<'_, '_> {
             let path = if prefix.is_empty() { field.name.text.clone() } else { format!("{prefix}{}", field.name.text) };
             let nested = self.design.bundle_leaves(port).iter().any(|leaf| leaf.nested && leaf.path == path);
             if nested {
-                self.leaf_sources(field.value, port, &format!("{path}."), out);
+                self.leaf_sources(scope, field.value, port, &format!("{path}."), out);
             } else {
                 out.push((path, LeafSource::Expression(field.value)));
             }

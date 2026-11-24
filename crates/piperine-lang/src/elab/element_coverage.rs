@@ -24,6 +24,8 @@ impl Elaboration<'_, '_> {
         // the carriers declared inside generation are the body's too, one array each (§8.2.23)
         let mut children = self.design.decl_data(module).children.clone();
         children.extend(self.generated.elaborated());
+        // each field of a bundle port or signal is a carrier of its own (`pom/bundles.rs`)
+        let children = self.design.module_items(&children);
         for decl in children {
             let missing = self.types.defers_missing_initial_value(decl);
             let handed = self.types.defers_handed_initial_value(decl);

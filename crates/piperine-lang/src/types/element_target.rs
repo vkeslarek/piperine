@@ -133,6 +133,8 @@ impl Checker<'_> {
                     steps.push(Step::Index(*index));
                     at = *expr;
                 }
+                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`pom/bundles.rs`)
+                ExprKind::Field { .. } if self.design.bundle_field(at).is_some() => break,
                 ExprKind::Field { expr, .. } => {
                     steps.push(Step::Field);
                     at = *expr;
@@ -144,8 +146,11 @@ impl Checker<'_> {
         (at, steps)
     }
 
-    /// The port or signal a place is rooted at.
+    /// The port or signal a place is rooted at: a name, or the leaf a field of a bundle stands for.
     fn carrier_root(&self, root: ExprId) -> Option<DeclId> {
+        if let Some(leaf) = self.design.bundle_field(root) {
+            return Some(leaf);
+        }
         let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => Some(decl),

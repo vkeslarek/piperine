@@ -95,6 +95,22 @@ impl Design {
         self.bundle_leaves.owner_of.get(&leaf).copied()
     }
 
+    /// Whether `leaf` is a field of an element of an array of bundles (`rx[1].valid`): which iteration of a loop drives it is
+    /// folded by the elaborator only.
+    pub(crate) fn is_array_element_leaf(&self, leaf: DeclId) -> bool {
+        self.leaf_owner(leaf).is_some_and(|owner| self.bundle_leaves(owner).iter().any(|entry| entry.decl == leaf && entry.path.starts_with('[')))
+    }
+
+    /// The leaves that are the same field of every element of the array of bundles `leaf` belongs to, `leaf` included
+    /// (`rx[0].valid`, `rx[1].valid`, ...): `leaf` alone when it is no field of an element.
+    pub(crate) fn leaves_of_each_element(&self, leaf: DeclId) -> Vec<DeclId> {
+        let Some(owner) = self.leaf_owner(leaf) else { return vec![leaf] };
+        let leaves = self.bundle_leaves(owner);
+        let field_of = |path: &str| path.split_once(']').map(|(_, field)| field.to_string());
+        let Some(field) = leaves.iter().find(|entry| entry.decl == leaf).and_then(|entry| field_of(&entry.path)) else { return vec![leaf] };
+        leaves.iter().filter(|entry| !entry.nested && field_of(&entry.path).as_deref() == Some(field.as_str())).map(|entry| entry.decl).collect()
+    }
+
     /// The leaf of the bundle `owner` at `path` (`valid`, `inner.x`).
     pub(crate) fn leaf_at(&self, owner: DeclId, path: &str) -> Option<DeclId> {
         self.bundle_leaves(owner).iter().find(|leaf| leaf.path == path).map(|leaf| leaf.decl)
@@ -136,14 +152,57 @@ impl Design {
     /// The leaf the field access `expr` stands for (`tx.valid`, `tx.inner.x`): the declaration of the field of the bundle port
     /// or signal its chain starts at. The expression's own resolution stays the struct's field, as written; `None` when
     /// `expr` is no field of a bundle port or signal (a field of a handle, of a value, of an instance).
+    ///
+    /// This is the checker's reading, before any loop is unrolled: an index of an array of bundles that is not a written integer
+    /// (`rx[k]`) stands for the element `[0]`, since every element has the same type and the same view. The elaborator folds the
+    /// index of each iteration instead ([`Design::bundle_field_through`]).
     pub(crate) fn bundle_field(&self, expr: ExprId) -> Option<DeclId> {
-        self.bundle_field_through(expr, &|root| Some(root))
+        self.bundle_field_through(expr, &|root| Some(root), &|index| self.literal_index(index).or(Some(0)))
+    }
+
+    /// The name a chain of fields and indexes (`rx[k].valid`) starts at, through parentheses: `None` when it starts at
+    /// anything else than a name.
+    pub(crate) fn bundle_chain_root(&self, expr: ExprId) -> Option<DeclId> {
+        let mut at = expr;
+        loop {
+            match &self.expr_node(at).kind {
+                ExprKind::Paren(inner) => at = *inner,
+                ExprKind::Field { expr: receiver, .. } => at = *receiver,
+                ExprKind::Index { expr: base, .. } => at = *base,
+                ExprKind::Path(root) => {
+                    return match self.path_node(*root).segments.last().map(|segment| segment.res) {
+                        Some(Resolution::Decl(named)) => Some(named),
+                        _ => None,
+                    };
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    /// The indexes of a chain of fields and indexes (`rx[k].valid`), outermost last, whether or not they are written integers.
+    pub(crate) fn bundle_chain_indexes(&self, expr: ExprId) -> Vec<ExprId> {
+        let mut indexes = Vec::new();
+        let mut at = expr;
+        loop {
+            match &self.expr_node(at).kind {
+                ExprKind::Paren(inner) => at = *inner,
+                ExprKind::Field { expr: receiver, .. } => at = *receiver,
+                ExprKind::Index { expr: base, index } => {
+                    indexes.push(*index);
+                    at = *base;
+                }
+                _ => break,
+            }
+        }
+        indexes.reverse();
+        indexes
     }
 
     /// [`Design::bundle_field`] where the root name of the chain is first mapped by `root_bundle`: a name that stands for a
     /// bundle port, signal or group (a handle `self` an inlined function was given, `pom/bundles.rs`) gives that declaration,
-    /// any other name `None`.
-    pub(crate) fn bundle_field_through(&self, expr: ExprId, root_bundle: &dyn Fn(DeclId) -> Option<DeclId>) -> Option<DeclId> {
+    /// any other name `None`. The element an index of an array of bundles names is what `index_of` says of it (`None`: no leaf).
+    pub(crate) fn bundle_field_through(&self, expr: ExprId, root_bundle: &dyn Fn(DeclId) -> Option<DeclId>, index_of: &dyn Fn(ExprId) -> Option<usize>) -> Option<DeclId> {
         let mut path = Vec::new();
         let mut at = expr;
         loop {
@@ -158,7 +217,7 @@ impl Design {
                 }
                 // an element of an array of bundles at a literal index (`rx[1].valid`): the group `[1]`
                 ExprKind::Index { expr: base, index } => {
-                    path.push(format!("[{}]", self.literal_index(*index)?));
+                    path.push(format!("[{}]", index_of(*index)?));
                     at = *base;
                     while let ExprKind::Paren(inner) = &self.expr_node(at).kind {
                         at = *inner;
@@ -176,7 +235,7 @@ impl Design {
     }
 
     /// The integer a literal index `expr` writes.
-    fn literal_index(&self, expr: ExprId) -> Option<usize> {
+    pub(crate) fn literal_index(&self, expr: ExprId) -> Option<usize> {
         let ExprKind::Lit(lit) = &self.expr_node(expr).kind else { return None };
         let LitKind::Int(text) = &lit.kind else { return None };
         text.chars().take_while(char::is_ascii_digit).collect::<String>().parse().ok()

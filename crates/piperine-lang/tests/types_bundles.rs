@@ -192,3 +192,26 @@ fn an_array_field_of_a_bundle_is_an_array_of_carriers() {
     let column = "struct Column { in wl: Bit, bl: [Electrical; 2] }\nmodule Pull(c: Column) { }\nanalog for Pull { v(c.bl[0]) +> 0.25; }\nmodule Hold(out w: Bit = false) { }\nmodule Pass(c: Column) { let p = Pull(c); }\n";
     Bundles::accepted(&format!("{column}module Top() {{ signal column: Column; let h = Hold(column.wl); let q = Pass(column); }}"));
 }
+
+#[test]
+fn an_element_index_that_is_a_loop_variable_is_an_element_of_the_array() {
+    // §7 rule 11, §8.2.23: in `for k in 0..3` the element `lanes[k]` is a bundle of its own, given to a producer and a consumer,
+    // and `tx[k].a` is a field of it, written in the loop
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\nmodule Both(tx: [Lane; 3]) { for k in 0..3 { tx[k].a = true; } }\n";
+    Bundles::accepted(&format!("{lane}module Top() {{ signal lanes: [Lane; 3]; for k in 0..3 {{ let r = Raise(lanes[k]); let e = Echo(lanes[k]); }} }}"));
+    Bundles::accepted(&format!("{lane}module Top() {{ signal lanes: [Lane; 3]; let t = Both(lanes); for k in 0..3 {{ let e = Echo(lanes[k]); }} }}"));
+    // an element of another type still does not connect (`E0251`), and an element that is no bundle is no field
+    let refused = Bundles::refused(&format!("{lane}struct Other {{ out a: Bit }}\nmodule Take(o: Other) {{ o.a = true; }}\nmodule Top() {{ signal lanes: [Lane; 3]; for k in 0..3 {{ let t = Take(lanes[k]); }} }}"));
+    assert!(refused.iter().any(|(code, _)| code == "E0251"), "{refused:?}");
+}
+
+#[test]
+fn an_array_of_carriers_as_a_field_is_driven_and_read_by_index() {
+    // §7 rule 1, rule 12: a field may be an array of carriers; `c.d[0]` is an element of it, driven by the module that sees the
+    // field as `out`, and the whole field is handed on with the bundle
+    let word = "struct Word { out d: [Bit; 2] }\nmodule Fill(w: Word) { w.d[0] = true; w.d[1] = false; }\nmodule Relay(w: Word) { let f = Fill(w); }\nmodule Look(in w: Word) { signal s: Bit = false; }\ndigital for Look { on w.d[1].changed() { s <- w.d[0]; } }\n";
+    Bundles::accepted(&format!("{word}module Top() {{ signal word: Word; let r = Relay(word); let l = Look(word); }}"));
+    // the element of the field is read through a consumer's view too, and driving it from the wrong view is `E0222`
+    let refused = Bundles::refused(&format!("{word}module Top(w: flip Word) {{ w.d[0] = true; }}"));
+    assert_eq!(refused.first().map(|(code, _)| code.as_str()), Some("E0222"), "{refused:?}");
+}

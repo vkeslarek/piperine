@@ -41,23 +41,23 @@ impl Checker<'_> {
             self.coded(file, "E0251", span, message, "bundle of another shape");
             return;
         }
-        self.connect_fields(source, port, "", file, span);
+        self.connect_fields(source, port, "", arg, file, span);
     }
 
     /// Every field of the bundle `port` at `prefix` joined to the field of the bundle `source` of the same name.
-    fn connect_fields(&mut self, source: DeclId, port: DeclId, prefix: &str, file: FileId, span: Span) {
+    fn connect_fields(&mut self, source: DeclId, port: DeclId, prefix: &str, place: ExprId, file: FileId, span: Span) {
         for leaf in self.design.bundle_leaves(port).to_vec() {
             if leaf.nested {
                 continue;
             }
             let Some(rest) = leaf.path.strip_prefix(prefix) else { continue };
             let Some(from) = self.design.leaf_under(source, rest) else { continue };
-            self.connect_leaf(from, &leaf, file, span);
+            self.connect_leaf(from, &leaf, place, file, span);
         }
     }
 
-    /// One field: the leaf `target` of a port joined to the leaf `from` of a bundle carrier.
-    fn connect_leaf(&mut self, from: DeclId, target: &BundleLeaf, file: FileId, span: Span) {
+    /// One field: the leaf `target` of a port joined to the leaf `from` of a bundle carrier, `place` the expression that names the bundle.
+    fn connect_leaf(&mut self, from: DeclId, target: &BundleLeaf, place: ExprId, file: FileId, span: Span) {
         let (Some(expected), Some(found)) = (self.placed_leaf_type(target.decl), self.leaf_type(from)) else { return };
         let same = match (&expected, &found) {
             (Ty::Node(wanted), Ty::Node(given)) => NatureRules::compatible(self.design, *wanted, *given),
@@ -68,8 +68,8 @@ impl Checker<'_> {
             self.coded(file, "E0251", span, message, "field of another type");
             return;
         }
-        if matches!(&self.design.decl_data(target.decl).kind, DeclKind::Port(p) if p.dir == Some(Dir::Out)) && matches!(found, Ty::Carrier { .. }) {
-            self.hand_over_whole(from, span, file);
+        if matches!(&self.design.decl_data(target.decl).kind, DeclKind::Port(p) if p.dir == Some(Dir::Out)) && matches!(found.innermost(), Ty::Carrier { .. }) {
+            self.hand_over_whole(from, place, span, file);
         }
     }
 
@@ -87,7 +87,7 @@ impl Checker<'_> {
                         self.literal_field_mismatch(file, field, &path, "a bundle of the field's type or a nested literal");
                         continue;
                     };
-                    self.connect_fields(source, port, &format!("{path}."), file, field.span);
+                    self.connect_fields(source, port, &format!("{path}."), value, file, field.span);
                 }
                 (_, false) => self.connect_literal_leaf(field, &leaf, file),
             }

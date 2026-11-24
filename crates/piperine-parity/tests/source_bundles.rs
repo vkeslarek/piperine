@@ -226,3 +226,23 @@ fn an_array_field_of_a_bundle_connects_its_elements() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("array field", "v(column.bl[0])", Coordinate::OperatingPoint), 0.25, model.operating_point("ColumnBench", "column.bl[0]"));
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("array field", "v(column.bl[1])", Coordinate::OperatingPoint), 0.75, model.operating_point("ColumnBench", "column.bl[1]"));
 }
+
+#[test]
+fn an_element_index_that_is_a_loop_variable_folds_per_iteration() {
+    // §7 rule 11, §8.2.23: in `for k in 0..3` the element `lanes[k]` is the element of the iteration, so each lane has its own producer
+    // and consumer and the probe records (1, 0, 1): the producer of lane 1 drives `false`.
+    let built = Model::of("array.msl").built("LoopBench");
+    let seen = built.run(20e-9, 1e-9);
+    let lanes = Model::records(&built, &seen, "loop");
+    assert_eq!(lanes.first(), Some(&vec![("first".to_string(), 1), ("second".to_string(), 0), ("third".to_string(), 1)]), "lane 1 is low: {lanes:?}");
+}
+
+#[test]
+fn an_array_of_carriers_as_a_field_is_driven_and_read_by_index() {
+    // §7 rule 1, rule 12: the field `bits: [Bit; 2]` of a word passed through two modules is two carriers: the filler drives bit 0
+    // high and bit 1 low, and the reader records (low, high) = (1, 0).
+    let built = Model::of("array.msl").built("WordBench");
+    let seen = built.run(20e-9, 1e-9);
+    let words = Model::records(&built, &seen, "word");
+    assert_eq!(words.first(), Some(&vec![("low".to_string(), 1), ("high".to_string(), 0)]), "{words:?}");
+}

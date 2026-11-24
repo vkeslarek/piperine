@@ -48,3 +48,42 @@ module ColumnBench() {
     let h = Hold(column.wl);
     let pass = Pass(column);
 }
+
+/// Records the `b` of three lanes at each rising edge.
+module Probe3(in clk: Bit, in ps: [Lane; 3]) { }
+digital for Probe3 { on clk.rise() { emit!("loop", first = ps[0].b, second = ps[1].b, third = ps[2].b); } }
+
+/// Three lanes in one array, each given to a producer and a consumer by a generation loop over the element index: the producer of
+/// the middle lane drives `false`, the others `true`.
+module LoopBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    for k in 0..3 {
+        let raise = Raise(lanes[k]) { level: k != 1 };
+        let echo = Echo(lanes[k]);
+    }
+    let probe = Probe3(clk, lanes);
+}
+
+/// A bundle with an array of carriers as a field: two bits one producer drives by index.
+struct Word { out bits: [Bit; 2] }
+
+/// Drives its two bits to 1 and 0.
+module Fill(w: Word) { w.bits[0] = true; w.bits[1] = false; }
+
+/// Passes a word on to a filler.
+module Relay(w: Word) { let fill = Fill(w); }
+
+/// Records the bits of a word at each rising edge.
+module Read(in clk: Bit, in w: Word) { }
+digital for Read { on clk.rise() { emit!("word", low = w.bits[0], high = w.bits[1]); } }
+
+/// A word signal passed through one level to its producer and read by index.
+module WordBench() {
+    signal clk: Bit;
+    signal word: Word;
+    let clock = Clock(clk);
+    let relay = Relay(word);
+    let read = Read(clk, word);
+}
