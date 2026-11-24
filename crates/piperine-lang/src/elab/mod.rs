@@ -33,7 +33,7 @@ mod host_sources; mod levels;
 mod inflow; mod instances;
 mod intrinsics;
 mod iterators;
-mod lower;
+mod loops; mod lower;
 mod methods;
 mod nature;
 mod origin;

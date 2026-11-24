@@ -146,3 +146,27 @@ fn a_resolved_drive_without_default_or_initial_value_is_e0187() {
     Elab::ir(&format!("{TOTAL}module Top() {{ signal n: Total; n = 1.0; }}"), "Top");
     Elab::ir(&format!("{TOTAL}module Top(in clk: Bit) {{ signal n: Total = 0.0; }}\ndigital for Top {{ on clk.rise() {{ n <- 1.0; }} }}"), "Top");
 }
+
+#[test]
+fn a_loop_through_a_one_driver_carrier_across_instances_is_e0339() {
+    // §8.2.3: undelayed definitions that depend on each other through a one-driver carrier are `E0339`, the
+    // loop closed by the placed tree: each inverter alone is fine, the ring of two is not. A delay breaks it.
+    let inverter = "module Not(in a: Bit, out y: Bit) { y = !a; }\n";
+    let ring = format!("{inverter}module Top() {{ signal p: Bit; signal q: Bit; let x = Not(p, q); let y = Not(q, p); }}");
+    let diagnostics = Elab::run(&ring, "Top").expect_err("a loop");
+    assert_eq!(Elab::codes(&diagnostics), ["E0339"], "{diagnostics:?}");
+    let message = &diagnostics[0].diagnostic.message;
+    assert!(message.contains("Top.x.y") && message.contains("Top.y.y"), "{message}");
+    let chain = format!("{inverter}module Top(in p: Bit) {{ signal q: Bit; signal r: Bit; let x = Not(p, q); let y = Not(q, r); }}");
+    Elab::ir(&chain, "Top");
+    let delayed = "module Not(in a: Bit, out y: Bit = false) { y = !a after 1n; }\nmodule Top() { signal p: Bit; signal q: Bit; let x = Not(p, q); let y = Not(q, p); }";
+    Elab::ir(delayed, "Top");
+}
+
+#[test]
+fn a_loop_of_resolved_drives_across_instances_is_accepted() {
+    // §8.2.3: a loop that passes through resolved nets only is left to relaxation: two passes over one net of
+    // `Total` that each drive what the other drives (through `others()`) elaborate.
+    let source = format!("{TOTAL}module Pass(w: Total) {{ w = w.others() + 1.0; }}\nmodule Top() {{ signal n: Total; let a = Pass(n); let b = Pass(n); }}");
+    Elab::ir(&source, "Top");
+}

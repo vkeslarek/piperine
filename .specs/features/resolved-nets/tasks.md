@@ -654,8 +654,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `a_loop_through_a_one_driver_carrier_across_instances_is_e0339` and `a_loop_of_resolved_drives_across_instances_is_accepted` pass under `**Run elabnatures**`
-- [ ] Gate check passes: Batch (end of B4), with the buck
+- [x] `a_loop_through_a_one_driver_carrier_across_instances_is_e0339` and `a_loop_of_resolved_drives_across_instances_is_accepted` pass under `**Run elabnatures**`
+- [x] Gate check passes: Batch (end of B4), with the buck
 
 **Tests**: integration
 **Gate**: batch
