@@ -847,9 +847,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `tribuf_drives_strong_or_high_impedance` and `a_pull_wins_only_while_every_stronger_drive_is_released` pass under `**Run sourcenets**`
-- [ ] `a_library_module_on_a_nature_without_resolve_driven_is_e0187` passes under `**Run typesnatures**`
-- [ ] Gate check passes: Full
+- [x] `tribuf_drives_strong_or_high_impedance` and `a_pull_wins_only_while_every_stronger_drive_is_released` pass under `**Run sourcenets**`
+- [x] `a_library_module_on_a_nature_without_resolve_driven_is_e0187` passes under `**Run typesnatures**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -284,3 +284,15 @@ fn a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181() {
     let text = format!("{wide}module Top(c: Wide) {{ c = 1u16; }}");
     Source::new(&text).checked();
 }
+
+#[test]
+fn a_library_module_on_a_nature_without_resolve_driven_is_e0187() {
+    // §22.3, §3.8.7: the library's net modules are generic over `W: Nature + Resolve<Driven>`; `AndWire` resolves `bool`,
+    // not `Driven`, so a `Tribuf` placed on it is `E0187` naming the nature and the bound
+    let text = format!("{TWO_IMPLS}module Top() {{ signal n: AndWire; let t = Tribuf(n, true, true); }}");
+    let diagnostics = Source::new(&text).diagnostics();
+    let found: Vec<&str> = diagnostics.iter().map(|d| d.diagnostic.code.as_str()).collect();
+    assert_eq!(found, ["E0187"], "{diagnostics:?}");
+    let message = &diagnostics[0].diagnostic.message;
+    assert!(message.contains("AndWire") && message.contains("Resolve<Driven>"), "{message}");
+}

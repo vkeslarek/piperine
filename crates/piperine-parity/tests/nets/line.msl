@@ -156,3 +156,80 @@ module TribufOffBench() {
     let t = Tribuf(n, true, false);
     let look = Look(n);
 }
+
+/// A library `Tribuf` on `Line` with its output enabled and its input low: a strong low.
+module TribufLowBench() {
+    signal n: Line;
+    let t = Tribuf(n, false, true);
+    let look = Look(n);
+}
+
+/// A released `Tribuf` beside a weak low: the released one is left out, so the weak low is the net.
+module TribufReleasedBench() {
+    signal n: Line;
+    let t = Tribuf(n, true, false);
+    let w = Put(n) { level: 0, strength: 1 };
+    let look = Look(n);
+}
+
+/// A `Pullup` alone: a high at `Pull`.
+module PullupAloneBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let look = Look(n);
+}
+
+/// A `Pullup` and a strong low: the stronger drive wins.
+module PullupOverriddenBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let s = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// A `Pullup` and a released low: the pull holds.
+module PullupReleasedBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let s = Put(n) { level: 0, strength: 0 };
+    let look = Look(n);
+}
+
+/// A `Pullup` and a weak low: a pull is stronger than a weak drive.
+module PullupOverWeakBench() {
+    signal n: Line;
+    let p = Pullup(n);
+    let s = Put(n) { level: 0, strength: 1 };
+    let look = Look(n);
+}
+
+/// A `Pulldown` alone: a low at `Pull`.
+module PulldownAloneBench() {
+    signal n: Line;
+    let p = Pulldown(n);
+    let look = Look(n);
+}
+
+/// A `Pulldown` and a released `Tribuf`: the pull holds.
+module PulldownReleasedBench() {
+    signal n: Line;
+    let p = Pulldown(n);
+    let t = Tribuf(n, true, false);
+    let look = Look(n);
+}
+
+/// A `Pulldown` and an enabled `Tribuf`: the strong high wins.
+module PulldownOverriddenBench() {
+    signal n: Line;
+    let p = Pulldown(n);
+    let t = Tribuf(n, true, true);
+    let look = Look(n);
+}
+
+/// A `Pullup` and a `Pulldown` on one net: equal strengths that disagree, X at `Pull`.
+module PullContendedBench() {
+    signal n: Line;
+    let u = Pullup(n);
+    let d = Pulldown(n);
+    let look = Look(n);
+}

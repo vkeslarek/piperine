@@ -154,6 +154,33 @@ fn a_tribuf_over_a_nature_parameter_runs_on_a_declared_nature() {
 }
 
 #[test]
+fn tribuf_drives_strong_or_high_impedance() {
+    // §22.3.5: `Tribuf` drives its input at `Strong` while `oe` is high and `Driven::Z` while it is low, so a released one
+    // leaves the net to the others
+    let line = Model::of("line.msl");
+    assert_eq!(line.settled("TribufOnBench"), Held { level: Held::HIGH, strength: Held::STRONG }, "oe high, d high");
+    assert_eq!(line.settled("TribufLowBench"), Held { level: Held::LOW, strength: Held::STRONG }, "oe high, d low");
+    assert_eq!(line.settled("TribufOffBench"), Held { level: Held::Z, strength: Held::HIGH_Z }, "oe low, alone: not driven");
+    assert_eq!(line.settled("TribufReleasedBench"), Held { level: Held::LOW, strength: 1.0 }, "oe low beside a weak low: the weak low");
+}
+
+#[test]
+fn a_pull_wins_only_while_every_stronger_drive_is_released() {
+    // §22.3.5: `Pullup` and `Pulldown` drive `Pull`; a `Strong` drive beats them, a `HighZ` one or a `Weak` one does not, and
+    // a pull up against a pull down is X at `Pull`
+    let line = Model::of("line.msl");
+    let pull = |level: f64| Held { level, strength: Held::PULL };
+    assert_eq!(line.settled("PullupAloneBench"), pull(Held::HIGH), "a pullup alone");
+    assert_eq!(line.settled("PullupOverriddenBench"), Held { level: Held::LOW, strength: Held::STRONG }, "a strong low beats it");
+    assert_eq!(line.settled("PullupReleasedBench"), pull(Held::HIGH), "a released low is left out");
+    assert_eq!(line.settled("PullupOverWeakBench"), pull(Held::HIGH), "a weak low is weaker than a pull");
+    assert_eq!(line.settled("PulldownAloneBench"), pull(Held::LOW), "a pulldown alone");
+    assert_eq!(line.settled("PulldownReleasedBench"), pull(Held::LOW), "a released tribuf is left out");
+    assert_eq!(line.settled("PulldownOverriddenBench"), Held { level: Held::HIGH, strength: Held::STRONG }, "an enabled tribuf beats it");
+    assert_eq!(line.settled("PullContendedBench"), pull(Held::X), "two pulls that disagree");
+}
+
+#[test]
 fn a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type() {
     // §4 rule 8, RN-02 AC 9: `Bus` has `impl Resolve<bool>` (high when every drive is) and `impl Resolve<u8, bool>` (high when
     // every drive is non-zero); a carrier resolves by the type its drives have. Two flags, one low, are low; two flags high
