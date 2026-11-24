@@ -354,6 +354,7 @@ checker, the elaborator, the IR and the generated Rust.
 | L22 | a discrete nature the project declares | RN-01 |
 | L23 | signal-flow natures (`VSignal`) | RN-08 |
 | L25 | bundles | `resolved-nets-bundles` |
+| L71 | a host write of a `Logic` param or of a four-state pattern (owed by `explicit-unknowns`, finding 55) | RN-03 (the host's drive of a resolved `Logic` port), RN-09 (the Book's `Logic` rows); round 1 fix F12 makes a `Logic<N>` param run |
 | L58, resolved-net group | `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir` | RN-06, RN-07 (`TribufDelayed`: `generics`, with `inertial`) |
 | §11, the net rows | natures#2, natures#3, natures~e99c1920, natures~91c3bffe, digital#16 to digital#20, core-std#6 | RN-09 |
 

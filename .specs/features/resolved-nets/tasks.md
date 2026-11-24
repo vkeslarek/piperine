@@ -34,6 +34,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
+**Run typesaggregates**: `cargo test -p piperine-lang --test types_aggregates`
+**Run sourcelogic**: `cargo test -p piperine-parity --test source_logic`
+**Run hostpatterns**: `cargo test -p piperine-api --test host_patterns`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
@@ -154,7 +157,7 @@ T22 → T23 → T24 → T25 → T26
 ### Phase 8: The library nets of §22.3 and `Bidir` (waits for `generics` C's generic modules, spec Q2)
 
 ```
-T27 → T28 → T29 → T30 → T31 → T32 → T33
+T27 → T28 → T29a → T29 → T30 → T31 → T32 → T33
 ```
 
 ### Phase 9: The Book and the records
@@ -1276,6 +1279,36 @@ Proof: run typesgenmod | test a_placement_on_a_nature_without_the_resolve_impl_i
 **C81** - `Tribuf` of the library runs on a declared resolved nature (RN-06, AC 1)
 Proof: run sourcenets | test a_tribuf_over_a_nature_parameter_runs_on_a_declared_nature ... ok
 
+**C82** - A `resolve` that is solve-reading or emitting, directly or through a called function, is `E0203` naming the nature and the class (RN-02, AC 3, round 1 fix F11)
+Proof: run typesnatures | test an_impure_resolve_is_e0203_naming_its_class ... ok
+
+**C83** - A param of the library's `Logic<N>` type checks, a default of another type is the plain mismatch (§8.1.15, round 1 fix F12)
+Proof: run typesaggregates | test a_param_of_the_librarys_logic_type_checks ... ok
+
+**C84** - A `Logic<4>` param with a pattern default runs, and a placement binds another pattern (§8.1.15, §22.1.4, round 1 fix F12)
+Proof: run sourcelogic | test a_logic_param_binds_a_pattern_and_a_reaction_reads_it ... ok
+
+**C85** - The host sets a `Logic<N>` param by its pattern as text, a bad pattern is `E0702` and changes nothing (Part VIII §23.1 rule 13, round 1 fix F12)
+Proof: run hostpatterns | test a_logic_param_is_set_by_its_pattern ... ok
+
+**C86** - `Session::drive_pattern` drives a top's four-state `in` port with the pattern of §22.1.4 (GAPS L71, RN-03)
+Proof: run hostpatterns | test the_host_drives_a_four_state_in_port ... ok
+
+**C87** - A pattern with a character outside `0 1 x z` or of another length is `E0702` (GAPS L71, RN-03)
+Proof: run hostpatterns | test a_bad_character_and_a_wrong_length_are_e0702 ... ok
+
+**C88** - An instance whose two resolved carriers sit on one net holds one drive per carrier, in carrier order (RN-03, AC 3, round 1 fix F13)
+Proof: run sourcenets | test two_carriers_of_one_instance_on_one_net_hold_two_drives ... ok
+
+**C89** - `Tran(w, w, en)`, both sides on one net, settles on the level the net is driven to (RN-06, AC 7, round 1 fix F13)
+Proof: run sourcenets | test a_tran_with_both_sides_on_one_net_settles_on_the_level ... ok
+
+**C90** - A tuple `match` over `Option`s and a closure or `for` loop over `Option` drives lower and run (digital#20, round 1 fix F17)
+Proof: run sourcenets | test a_match_over_options_and_a_resolve_walking_option_drives_run ... ok
+
+**C91** - A resolved carrier that is a signal is no port of a child binding in the IR check (round 1 fix F17)
+Proof: run irresolved | test a_resolved_signal_is_no_port_of_a_child_binding ... ok
+
 ---
 
 ## Handoff
@@ -1310,7 +1343,7 @@ Phase 4:  T11                                    (done)
 Phase 5:  T12 → T13 → T14 → T15                  (done)
 Phase 6:  T16 → T17 → T37 → T18 → T19 → T38 → T20 → T21
 Phase 7:  T22 → T23 → T24 → T25 → T26
-Phase 8:  T27 → T28 → T29 → T30 → T31 → T32 → T33
+Phase 8:  T27 → T28 → T29a → T29 → T30 → T31 → T32 → T33
 Phase 9:  T34 → T35 → T39 → T36
 ```
 
