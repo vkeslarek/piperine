@@ -130,6 +130,30 @@ time. Circuit → MCU forces lockstep only if the core cannot know when an input
 5. ABI fix needed: `HORIZON` must be the end of the tentative step (abi.md R5), not the current
    instant, when a `cross` reaches the device — the PoC's 4 µs polling came from that.
 
+### Pull-on-read synchronisation (user + coordinator, 2026-11-24: "Sim, perfeito")
+
+The chosen scheme for circuit → MCU:
+- The core runs instruction by instruction. Before an instruction that reads an input (`IN`/`LDS`
+  of `PINx`, the ADC result, the comparator status) it stops at that instruction's instant t; the
+  solver catches up to t and returns the value. Outputs never stop the core: they are commits at
+  their exact time.
+- Exact, no rollback. The ADC is the natural case: the conversion start is the sync point.
+- **Validity window:** with the value, the solver returns until when it surely cannot change (a
+  digital input changes only at a threshold crossing; the event prediction bounds the next one).
+  Reads inside the window use the cached value with no sync, so polling loops (`digitalRead` in
+  `loop()`) run nearly free while the circuit is quiet.
+- **Input-driven interrupts** (pin change, INT0, comparator, input capture): no read instruction to
+  stop at, so while one is armed the core runs at most to the end of that input's window; if the
+  prediction fails (the crossing comes earlier), roll back to a snapshot (cheap in our own core)
+  and replay.
+
+| Situation | What happens |
+| --- | --- |
+| an output changes | commit at the exact instant, no stop |
+| a read of a pin / ADC / comparator | stop, sync, get value + validity window |
+| a read inside the window | cached value, no sync |
+| an armed input interrupt | run at most to the window's end; roll back if the prediction fails |
+
 ## Questions for the user
 
 1. **Board / core scope.** Start with the Uno (ATmega328P, 16 MHz) only? Later: Mega (ATmega2560),
