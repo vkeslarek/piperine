@@ -22,22 +22,21 @@ struct Row {
 
 // `analysis` of another kind, `bound_step` and `freq` left this table when FIX-09 to FIX-11 typed
 // them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
+// generation (`for` and `if`, in a body and in a `digital` block) left this table when generics T77 and T80 typed it
+// (`types_generation`).
 // `settle` left this table when unknown-semantics-events T5 typed it (an `Event`: head positions in
 // `types_events::settle_is_an_event_in_every_event_position`, `E0441` elsewhere in
 // `types_events::settle_outside_an_event_position_is_e0441`).
 const ROWS: &[Row] = &[
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
-    Row { construct: "generation if", source: "module Top(a: E) { if true { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
     // `struct with an impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     Row { construct: "generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; }", names: "generic function" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
-    Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
     Row { construct: "placement through a template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; let r = t(a, b); }", names: "module template" },
     Row { construct: "value input of an unsupported type", source: "module Top(x: (f64, f64)) { }", names: "value input port" },
     Row { construct: "extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: E) { }\nmodule Top(a: E) { let x = X(a); }", names: "`extern` module" },
-    Row { construct: "generation", source: "module Top(a: E) { for i in 0..2 { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
     // `delay`, `noise` and `simparam` left this table when analog-operators T23 typed them (`types_analog_operators`); the elaborator refuses each with `P0001` until its lowering task.
     // `ddx` left this table when analog-operators T22 typed it (`types_analog_operators`); the elaborator refuses it with `P0001` until T32.
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },

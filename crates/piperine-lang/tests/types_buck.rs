@@ -25,6 +25,8 @@ const ROWS: &[Row] = &[
     // (`types_carrier_arrays::arrays_of_carriers_type_as_signals_and_ports`).
     // `a user trait and impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     // `a generic module` left this table when generics T71 typed it (`types_generic_modules`).
+    // `a generation for`, `a generation if` and `a generation in a digital block` left this table when generics T77 and T80 typed
+    // and lowered generation (`types_generation`).
     Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
@@ -33,9 +35,6 @@ const ROWS: &[Row] = &[
     // `delay`, `noise`, `ddx` and `simparam` left this table when analog-operators T22 and T23 typed them (`types_analog_operators`).
     // `bound_step`, `freq()` and `analysis(Dc | Transient | Ac | Noise)` left this table when
     // FIX-09 to FIX-11 typed them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
-    Row { construct: "a generation for", source: "module Top(in clk: Bit) { for k in 0..2 { let n = 1.0; } }", names: "generation" },
-    Row { construct: "a generation if", source: "module Top(in clk: Bit) { if true { let n = 1.0; } }", names: "generation" },
-    Row { construct: "a generation in a digital block", source: "module Top(in clk: Bit) { }\ndigital for Top { for k in 0..2 { on clk.rise() { } } }", names: "generation" },
     Row { construct: "a template", source: "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }", names: "module template" },
     Row { construct: "an extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: Electrical) { }\nmodule Top(a: Electrical) { let x = X(a); }", names: "`extern` module" },
 ];

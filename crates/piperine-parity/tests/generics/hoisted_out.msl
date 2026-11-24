@@ -21,7 +21,7 @@ module HoldBench() {
 digital for HoldBench { on clk.rise() { emit!("seen", value = q.unwrap_or(0u8), some = q.is_some(), ready = ready); } }
 
 // A bank writes every element of its `out` array at the first edge.
-module Bank<const ROWS: usize>(in clk: Bit, out word: [Bit; ROWS]) {}
+module Bank<const ROWS: usize>(in clk: Bit, out word: [Bit; ROWS] = [false; ROWS]) {}
 digital<ROWS> for Bank<ROWS> { on clk.rise() { for k in 0..ROWS { word[k] <- true; } } }
 
 module WindowBench() {

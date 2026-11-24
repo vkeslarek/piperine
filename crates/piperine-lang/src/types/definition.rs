@@ -31,6 +31,8 @@ pub(super) struct DriveBook {
     pub(super) elements: Vec<(DeclId, Element, DriveKind, Span)>,
     /// The carriers an undelayed definition drives: the definition gives the carrier its value from `(0, 0)`.
     pub(super) undelayed: BTreeSet<DeclId>,
+    /// The arrays of carriers an undelayed definition of one element drives: those elements have a value from `(0, 0)` on.
+    pub(super) undelayed_elements: BTreeSet<DeclId>,
 }
 
 impl Checker<'_> {
@@ -48,6 +50,10 @@ impl Checker<'_> {
                 Some(target)
             }
             ExprKind::Field { res: Resolution::Decl(item), .. } => {
+                // a member of a bundle (a field with a direction): the bundle type was refused where it is written, once
+                if matches!(&self.design.decl_data(*item).kind, DeclKind::Field(field) if field.dir.is_some()) {
+                    return None;
+                }
                 let text = match self.design.decl_data(*item).kind {
                     DeclKind::Port(_) | DeclKind::Signal(_) => "a carrier of an instance",
                     _ => "a member of an instance",
@@ -165,6 +171,9 @@ impl Checker<'_> {
         }
         if undelayed && self.has_initial(carrier) {
             self.coded(file, "E0338", span, format!("`{name}` has an initial value and an undelayed definition of an element: the definition would replace it in the microstep that commits it (§8.2.21)"), "initial value under an undelayed definition");
+        }
+        if undelayed {
+            self.book.undelayed_elements.insert(carrier);
         }
         self.book.elements.push((carrier, element, DriveKind::Definition, span));
     }

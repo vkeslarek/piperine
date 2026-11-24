@@ -416,7 +416,7 @@ pub fn cast<A: Repr, B: Repr>(a: A) -> Option<B> where A::WIDTH == B::WIDTH {
 3. A definition between carriers of equal width and different types is written with `cast` and the `Option` unwrapped where the types cannot fail (§8.2.6).
 
 ```rust,fragment
-signal sh: [Bit; 8];
+signal sh: [Bit; 8] = [false; 8];
 byte = cast(sh).unwrap();   // byte: Bit<u8>; sh[0] is the least significant level
 ```
 

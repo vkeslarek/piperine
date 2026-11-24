@@ -526,7 +526,18 @@ impl Checker<'_> {
                 DeclKind::Port(port) => port.dir == Some(crate::msl::ast::Dir::Out),
                 _ => false,
             };
-            let Some(Ty::Carrier { nature, value }) = self.carriers.get(&decl).cloned() else { continue };
+            let Some(held) = self.carriers.get(&decl).cloned() else { continue };
+            // an array of carriers has the rule of its elements: every element starts at the `Default` of the carried type
+            let Some(Ty::Carrier { nature, value }) = (match held.innermost() {
+                carrier @ Ty::Carrier { .. } => Some(carrier.clone()),
+                _ => None,
+            }) else {
+                continue;
+            };
+            // an array with no element holds nothing to start
+            if held.has_fixed_zero_length() {
+                continue;
+            }
             // a carrier with no initial value starts at its `Default`: a hand-written one is a function the elaborator folds
             if !self.has_initial(decl) {
                 self.reach_written_defaults(&value);
@@ -534,7 +545,7 @@ impl Checker<'_> {
             if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
-            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _, _)| *carrier == decl);
+            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.undelayed_elements.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _, _)| *carrier == decl);
             if specified_by_the_driver {
                 continue;
             }

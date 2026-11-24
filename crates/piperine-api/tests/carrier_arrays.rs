@@ -26,7 +26,7 @@ digital for Memory { on clk.rise() { n <- n + 1; if n < 4 { mem[n] <- 100 + n; }
 module Ladder() { signal bl: [Electrical; 3]; }\n\
 analog for Ladder { v(bl[0], gnd) +> 3.0; for k in 0..2 { i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0; } i(bl[2], gnd) +> v(bl[2], gnd) / 1000.0; }\n\
 module Bank(in lanes: [Bit; 4], out cells: [Bit<u8>; 2] = [0; 2]) { }\n\
-module Wide() { n: u32 = 4; signal lanes: [Bit; n]; }\n\
+module Wide() { n: u32 = 4; signal lanes: [Bit; n] = [false; n]; }\n\
 module Gap() { signal none: [Bit<u8>; 0]; signal bl: [Electrical; 0]; }\n\
 module Hoist() -> f64 { signal e: [Bit<u8>; 0]; 1.0 }\n\
 module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); let gap = Gap(); let p = Hoist(); }\n";

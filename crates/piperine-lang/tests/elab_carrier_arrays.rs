@@ -43,7 +43,7 @@ fn arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes() {
     let src = "module Top() {\n\
                signal mem: [Bit<u8>; 1048576] = [7; 1048576];\n\
                signal row: [Bit<u8>; 3] = [1, 2, 3];\n\
-               signal flags: [Bit; 4];\n\
+               signal flags: [Bit; 4] = [false; 4];\n\
                signal grid: [[Bit; 2]; 3] = [[true; 2]; 3];\n\
                signal bl: [Electrical; 4];\n}";
     let ir = Elab::ir(src, "Top");
@@ -134,7 +134,7 @@ fn element_reads_and_events_lower_per_element() {
     // `on x[k].rise()` an event on that element only, guarded by its edge
     let src = "module Top(in clk: Bit, in at: Bit<u2>, out q: Bit<u8> = 0) {\n\
                signal mem: [Bit<u8>; 4] = [0; 4];\n\
-               signal lines: [Bit; 4];\n\
+               signal lines: [Bit; 4] = [false; 4];\n\
                signal grid: [[Bit<u8>; 2]; 3] = [[0; 2]; 3];\n}\n\
                digital for Top {\n\
                on clk.rise() { let a = mem[1]; let b = mem[at]; let p = mem[2].prev(); let c = lines[at].changed(); let g = grid[2][1]; q <- a + b + p; }\n\
@@ -157,7 +157,7 @@ fn element_reads_and_events_lower_per_element() {
     // §1 rule 11: a constant element past the end is E0104 naming it; an event head that does not fold is E0188 naming it
     let past = Elab::run("module Top() { signal m: [Bit<u8>; 4] = [0; 4]; }\ndigital for Top { on m[0].changed() { let a = m[4]; } }", "Top").expect_err("past the end");
     assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", support::Elab::codes(&past));
-    let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
+    let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4] = [false; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
     assert!(folding.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`l[at]`")), "{:?}", support::Elab::codes(&folding));
 }
 
@@ -165,8 +165,8 @@ fn element_reads_and_events_lower_per_element() {
 fn an_array_length_read_from_a_param_makes_it_structural() {
     // CV-36 AC 1 (§8.1.2, QC2): `[Bit; n]` and `[Electrical; n]` read the param `n`, so each body variant folds the
     // length of its own `n`, and `n` is structural (a host `set` of it during a run is `E0803`)
-    let src = "module Wide(in d: [Bit; 2]) { n: u32 = 3; signal s: [Bit<u8>; n]; signal bl: [Electrical; n + 1]; }\n\
-               module Top() { signal d: [Bit; 2]; let w = Wide { n: 5 }(d); }";
+    let src = "module Wide(in d: [Bit; 2]) { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; signal bl: [Electrical; n + 1]; }\n\
+               module Top() { signal d: [Bit; 2] = [false; 2]; let w = Wide { n: 5 }(d); }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     let variant = ir.bodies().find(|b| b.name().starts_with("Wide~n=")).expect("a body of the variant");
@@ -175,7 +175,7 @@ fn an_array_length_read_from_a_param_makes_it_structural() {
     assert_eq!(carriers.iter().find(|c| c.0 == "s").expect("s").1, Some(5), "the array is as long as the param says");
     assert_eq!(variant.node_arrays().iter().map(|a| (a.name.as_str(), a.count)).collect::<Vec<_>>(), [("bl", 6)], "`n + 1` nodes");
     // the default is another variant: its own length
-    let ir = Elab::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n]; }\nmodule Top() { let w = Wide(); }", "Top");
+    let ir = Elab::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; }\nmodule Top() { let w = Wide(); }", "Top");
     let read = Read { ir: &ir };
     let name = ir.bodies().find(|b| b.name().starts_with("Wide")).expect("Wide").name().to_string();
     assert_eq!(read.carriers(&name).iter().find(|c| c.0 == "s").expect("s").1, Some(3));
@@ -189,7 +189,7 @@ fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
     let src = "module Wide(in d: [Bit<u8>; n], in clk: Bit, out q: Bit<u8> = 0) { n: u32 = 3; signal bl: [Electrical; n]; }\n\
                digital for Wide { on clk.rise() { let w = d; let ones: [u8; n] = [1; n]; q <- w[0] + ones[1]; } }\n\
                analog for Wide { let zeros: [f64; n] = [1.0; n]; let first = zeros[0]; }\n\
-               module Top() { signal d: [Bit<u8>; 5]; signal clk: Bit = false; signal q: Bit<u8>; signal d3: [Bit<u8>; 3]; signal q3: Bit<u8>; let w = Wide { n: 5 }(d, clk, q); let v = Wide(d3, clk, q3); }";
+               module Top() { signal d: [Bit<u8>; 5] = [0; 5]; signal clk: Bit = false; signal q: Bit<u8>; signal d3: [Bit<u8>; 3] = [0; 3]; signal q3: Bit<u8>; let w = Wide { n: 5 }(d, clk, q); let v = Wide(d3, clk, q3); }";
     let ir = Elab::ir(src, "Top");
     assert!(ir.bodies().any(|b| b.name().starts_with("Wide~n=")), "the variant of n = 5 is a body");
     assert_eq!(ir.bodies().filter(|b| b.name().starts_with("Wide")).count(), 2, "the default n = 3 is a body of its own");
@@ -210,7 +210,7 @@ fn an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration() {
     // CV-23 AC 3 (§8.1.10): `Child(in d: [Bit<u8>; n])` with n = 3 given 4 elements is E0313 naming both lengths when
     // the design elaborates, not an error of the bind; the same for an array of nodes; a matching length elaborates
     let child = "module Child(in d: [Bit<u8>; n], e: [Electrical; n + 1]) { n: u32 = 3; }\n";
-    let top = |given: u32, nodes: u32| format!("{child}module Top() {{ signal s: [Bit<u8>; {given}]; signal bl: [Electrical; {nodes}]; let c = Child(s, bl); }}");
+    let top = |given: u32, nodes: u32| format!("{child}module Top() {{ signal s: [Bit<u8>; {given}] = [0; {given}]; signal bl: [Electrical; {nodes}]; let c = Child(s, bl); }}");
     Elab::ir(&top(3, 4), "Top");
     for (given, nodes, found_length, wanted_length) in [(4, 4, "[4]", "[3]"), (3, 5, "[5]", "[4]")] {
         let found = Elab::run(&top(given, nodes), "Top").expect_err("a length that is not the port's");
@@ -218,14 +218,14 @@ fn an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration() {
         assert!(mismatch.diagnostic.message.contains(found_length) && mismatch.diagnostic.message.contains(wanted_length), "both lengths are named: {}", mismatch.diagnostic.message);
     }
     // the port's length follows the placement's own `n`
-    Elab::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
+    Elab::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5] = [0; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
 }
 
 #[test]
 fn a_negative_array_length_from_a_param_is_e0104_naming_it() {
     // §1.2.3 (a length is known and not negative): `n = -1` makes `[Bit; n]` a panic of the const expression, E0104
     // (§1 rule 11, §3.9.7), naming the length - not P0001, which would call it a missing feature
-    for (declared, what) in [("signal s: [Bit; n];", "carriers"), ("signal s: [Electrical; n];", "nodes")] {
+    for (declared, what) in [("signal s: [Bit; n] = [false; n];", "carriers"), ("signal s: [Electrical; n];", "nodes")] {
         let src = format!("module Top() {{ n: i32 = -1; {declared} }}");
         let found = Elab::run(&src, "Top").expect_err("a negative length");
         let negative = found.iter().find(|d| d.diagnostic.code == "E0104").unwrap_or_else(|| panic!("E0104 expected: {:?}", Elab::codes(&found)));
@@ -239,7 +239,7 @@ fn an_element_binds_a_handle_parameter() {
     // GN-11, QC3: `f(lines[k])` binds the handle to that one carrier, so `.prev()` and a read inside `f` are the
     // element's
     let src = "fn was(a: Bit) -> bool { a.prev() }\n\
-               module Top(in clk: Bit, out q: Bit = false) { signal lines: [Bit; 4]; }\n\
+               module Top(in clk: Bit, out q: Bit = false) { signal lines: [Bit; 4] = [false; 4]; }\n\
                digital for Top { on clk.rise() { q <- was(lines[2]); } }";
     let text = Read::structure_of(src);
     assert!(text.contains("lines") && text.contains(".prev"), "the handle reads the element's previous value:\n{text}");
@@ -300,7 +300,7 @@ fn element_and_field_commits_lower_to_their_targets() {
     // `word[2] <- true` an element of a value array, `mem[at].n <- 5` a field of an element
     let src = "#[derive(Repr)] struct S { n: u8, ok: bool }\n\
                module Top(in clk: Bit, in at: Bit<u2>) {\n\
-               signal bits: [Bit; 4];\n\
+               signal bits: [Bit; 4] = [false; 4];\n\
                signal word: Bit<[bool; 8]> = [false; 8];\n\
                signal st: Bit<S> = S { n: 0, ok: false };\n\
                signal mem: [Bit<S>; 4] = [S { n: 0, ok: false }; 4];\n}\n\
@@ -338,7 +338,7 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
                module Ladder(a: [Electrical; 4]) { }\n\
                module Top(in x: [Bit; 4]) {\n\
                signal y: [Bit; 4];\n\
-               signal g: [[Bit; 4]; 2];\n\
+               signal g: [[Bit; 4]; 2] = [[false; 4]; 2];\n\
                signal h: [[Bit; 4]; 2];\n\
                signal z: [Bit; 2];\n\
                signal bl: [Electrical; 4];\n\
