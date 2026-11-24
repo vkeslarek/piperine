@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Failure, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
+use piperine_api::{Cell, Failure, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_transpile::Settings;
 use piperine_parity::project::Project;
 
@@ -46,15 +46,31 @@ impl Model {
         Model { project: Project::new(&root) }
     }
 
-    /// The operating point of `top` in `file`, as the host runs it on the Rust backend.
-    fn operating_point(file: &str, top: &str) -> Result<piperine_api::Table, Failure> {
+    /// A session of `top` in `file` on the Rust backend with `overrides`.
+    fn session(file: &str, top: &str, overrides: Overrides) -> Session {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/resolved").join(file);
         let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = Overrides { top: Some(top.into()), analysis: Some("op".into()), backend: Some("rust".into()), ..Overrides::default() };
+        let overrides = Overrides { top: Some(top.into()), backend: Some("rust".into()), ..overrides };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
         let cache = tempfile::tempdir().expect("a temp dir");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-        Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore)))
+        Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}"))
+    }
+
+    /// The operating point of `top` in `file`, as the host runs it on the Rust backend.
+    fn operating_point(file: &str, top: &str) -> Result<piperine_api::Table, Failure> {
+        Model::session(file, top, Overrides { analysis: Some("op".into()), ..Overrides::default() }).run(Rc::new(RefCell::new(Ignore)))
+    }
+
+    /// The table of `top` in `file` under `overrides`, printing `names`: the numbers of each row.
+    fn rows(file: &str, top: &str, overrides: Overrides, names: &[&str]) -> Vec<Vec<f64>> {
+        let overrides = Overrides { print: names.iter().map(|name| name.to_string()).collect(), ..overrides };
+        let table = Model::session(file, top, overrides).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+        let real = |cell: &Cell| match cell {
+            Cell::Real(value) => *value,
+            other => panic!("a real, found {other:?}"),
+        };
+        table.rows.iter().map(|row| row.iter().map(real).collect()).collect()
     }
 
     /// `top` elaborated and compiled once.
@@ -208,4 +224,19 @@ fn a_loop_that_does_not_settle_stops_the_run_with_e0511_naming_its_drives() {
 fn a_loop_settling_on_its_first_pass_raises_nothing() {
     // §8.2.3: a loop that settles is no fault: two pass elements drive true at once and the run returns.
     Model::operating_point("unsettled.msl", "SettlingBench").unwrap_or_else(|f| panic!("{f}"));
+}
+
+#[test]
+fn resolved_nets_run_at_the_microsteps_of_each_sweep_point_and_hold_in_ac() {
+    // §16.2, second table: definitions, `resolve`, `others()` and reactions run at the microsteps of `(0, ·)` and of
+    // each `dc` sweep point, and never in a small-signal sweep. The fixed drive is 2 and the swept one 0, 1, 2: the net
+    // holds 2, 3, 4, and the reaction, which commits `others() + 10` of the reader (the value), holds 12, 13, 14.
+    let sweep = Overrides { analysis: Some("dc".into()), sweep: Some("source.level".into()), from: Some(0.0), to: Some(2.0), step: Some(1.0), ..Overrides::default() };
+    let rows = Model::rows("analyses.msl", "AnalysesBench", sweep, &["n", "echo.seen"]);
+    assert_eq!(rows, vec![vec![0.0, 2.0, 12.0], vec![1.0, 3.0, 13.0], vec![2.0, 4.0, 14.0]], "the swept value, the net and the reaction's commit at each point");
+    // in `ac` no reaction runs and the nets keep their operating-point values: the sweep solves the circuit beside
+    // them, whose one stimulus of 1 gives |v(a)| = 1 at every frequency (a discrete net has no phasor to print, E0801)
+    let ac = Overrides { analysis: Some("ac".into()), from: Some(1e3), to: Some(1e5), per_decade: Some(1), print: vec!["a".into()], ..Overrides::default() };
+    let table = Model::session("analyses.msl", "AnalysesBench", ac).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.rows.len(), 3, "one row per decade point, 1 kHz, 10 kHz, 100 kHz: {:?}", table.rows);
 }

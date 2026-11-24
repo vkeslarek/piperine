@@ -759,8 +759,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `resolved_nets_run_at_the_microsteps_of_each_sweep_point_and_hold_in_ac` passes under `**Run sourceresolved**`
-- [ ] Gate check passes: Batch (end of B5)
+- [x] `resolved_nets_run_at_the_microsteps_of_each_sweep_point_and_hold_in_ac` passes under `**Run sourceresolved**`
+- [x] Gate check passes: Batch (end of B5)
 
 **Tests**: integration
 **Gate**: batch
