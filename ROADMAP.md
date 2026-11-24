@@ -76,6 +76,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `digital-performance` | A digital-only run in bounded memory, no quadratic paths, an allocation-free call, work proportional to activity; last, the whole digital circuit of a compiled unit evaluated in topological order over a flat state until it converges (Verilator-style). Measured today: 175x (counter) to 560 000x (10 000 flops) behind Verilator; memory grows with run length | spec on `feature/digital-performance` (diagnosis + bench harness); **postponed until after spec-closure and the code-clarity refactor** (user, 2026-11-22: "precisamos primeiro de um bom refactor e de todas as features funcionando") |
 | `host-iii` | `force`, `release`, waits for an event, continued transients (H1, H6) | spec |
 | `host-analyses` | S-parameters, Fourier, distortion, operating-point variables (H2) | spec |
+| `live-param-defaults` | A param default recomputed on a host `set` of the param it reads (via `Params`/`Derive`, MD-69), so that param stays live — relaxes `E0803`; option 2 of the 2026-11-24 structural-param decision | spec (user, 2026-11-24) |
 | `sweeps-montecarlo-optimization` | Multi-axis sweeps, Monte Carlo, optimization (H2, H7) | spec |
 | `gradients` | Adjoint gradients (H8, `E0807`–`E0809`) | spec |
 | `cli-packages` | Packages from the command line (H10) | spec |

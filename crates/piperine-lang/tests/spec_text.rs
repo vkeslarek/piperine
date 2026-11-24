@@ -2612,7 +2612,7 @@ fn the_recommended_fallback_is_the_ambient_temperature_in_the_spec() {
 fn a_param_default_reads_earlier_params_in_the_spec() {
     let params = flat(&section(&spec("part_iii_structure.md"), "### 8.1 "));
     for fact in [
-        "an array length, a template (§8.4), the default of a later param (§8.1.16), or the trip count of a loop that places instances",
+        "an array length, a template (§8.4), the default of a later param (§8.1.16), the condition of a node chosen at elaboration (§1.4.7), or the trip count of a loop that places instances",
         "A default is a const expression over constants, const generics and earlier params. It is folded at elaboration for each instance, over the values its earlier params take there; reading the param itself or a later one is `E0321`.",
         "§8.1.2 adds the params a later default reads",
     ] {
@@ -2629,15 +2629,26 @@ fn a_template_item_takes_the_type_its_context_wants_in_the_spec() {
         "elaboration checks the concrete item has it (`E0180`, an error of the instantiation).",
         "context gives a type is `E0181`: a method's receiver, the operand of `as` (which types its result,",
         "never its operand, §1.4.5), a `let` with no type that nothing reads (generics phase D fix rounds 2",
+        "and 3, 2026-11-24). **Approved**: 2026-11-24 - user:",
     ] {
         assert!(templates.contains(fact), "§8.4 lacks \"{fact}\"");
     }
 }
 
-/// Generics phase D fix round 5: a node chosen by an expression is `E0133` (§1.4.7).
+/// Generics phase D (user decision of 2026-11-24): a node chosen at elaboration names the node it folds to; one chosen by what
+/// the run computes is `E0133` (§1.4.7); the params its condition reads are structural (§8.1.2), and both amendments are approved.
 #[test]
 fn a_node_chosen_by_an_expression_is_e0133_in_the_spec() {
     let values = flat(&spec("part_i_values.md"));
-    assert!(values.contains("A `let` bound to a node names that node; an `if`, a `match` or a block whose result is a node chooses one, which no value does, and is `E0133`"), "§1.4.7");
-    assert!(values.contains("| `E0133` | a handle returned, stored in a value, or written through; an `if`, `match` or block whose result is a node (§1.4.7) | elaboration |"), "the E0133 row");
+    for fact in [
+        "An `if`, a `match` or a block whose result is a node is chosen at elaboration when its condition, scrutinee and guards read only params, constants and generation indexes: it names the node it folds to wherever a node goes",
+        "One whose choice reads a probe, a port, a signal or a variable, or a block with statements before its result, would choose hardware at run time and is `E0133`",
+        "**Approved**: 2026-11-24 - user: \"Nó escolhido na elaboração é permitido senão perdemos a liberdade de mudar o hardware na elaboração o que deveria ser fácil. Restante ok\"",
+        "| `E0133` | a handle returned, stored in a value, or written through; an `if`, `match` or block whose result is a node chosen by what the run computes (§1.4.7) | elaboration |",
+    ] {
+        assert!(values.contains(fact), "§1.4.7 lacks \"{fact}\"");
+    }
+    let params = flat(&section(&spec("part_iii_structure.md"), "### 8.1 "));
+    assert!(params.contains("the condition of a node chosen at elaboration (§1.4.7)"), "§8.1.2 lists the node choice");
+    assert!(params.contains("**Approved**: 2026-11-24 - user: \"Vamos ficar com opção 1\""), "the structural-param amendment is approved");
 }

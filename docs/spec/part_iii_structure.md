@@ -166,7 +166,8 @@ argument, a generation range or condition, an array length, a param default and 
   bounds (§23.2).
 - **§8.1.2** A param is **structural** when one of the following reads it: generation (§8.2.7), a
   const generic argument, an array length, a template (§8.4), the default of a later param
-  (§8.1.16), or the trip count of a loop that places instances (§8.3.4). A param is also structural when it alone selects the kind of a branch
+  (§8.1.16), the condition of a node chosen at elaboration (§1.4.7), or the trip count of a loop
+  that places instances (§8.3.4). A param is also structural when it alone selects the kind of a branch
   (§11 rule 3). A structural param is fixed at elaboration.
 - **§8.1.3** Units, aliases, Monte Carlo distributions, nodesets and "exclude from gradients" are
   not model text. `///` documents a param (§21). The rest belongs to the host session (§23).
@@ -189,9 +190,9 @@ argument, a generation range or condition, an array length, a param default and 
 > params. Both change the elaborated netlist, as generation does.
 
 > **Resolution.** §8.1.2 adds the params a later default reads (generics phase D fix round 2,
-> 2026-11-24, AFK default pending user review): a default is folded at elaboration (§8.1.16), so a
-> host `set` of a param it reads would leave the defaulted value stale. Fixing that param keeps the
-> run exact, a `set` of it is refused (§8.1.24) and the host re-elaborates.
+> 2026-11-24): a default is folded at elaboration (§8.1.16), so a host `set` of a param it reads
+> would leave the defaulted value stale. Fixing that param keeps the run exact, a `set` of it is
+> refused (§8.1.24) and the host re-elaborates. **Approved**: 2026-11-24 - user: "Vamos ficar com opção 1"
 
 > **Resolution.** §8.1.16, §8.1.19 and §8.1.20 are implied by "a value fixed during a solve" and by
 > the host listing params from the body (§21). §8.1.21 follows from elaboration preceding analysis.
@@ -649,7 +650,7 @@ Its type is `Name`. Calling it with connections places an instance.
 > elaboration checks the concrete item has it (`E0180`, an error of the instantiation). A read no
 > context gives a type is `E0181`: a method's receiver, the operand of `as` (which types its result,
 > never its operand, §1.4.5), a `let` with no type that nothing reads (generics phase D fix rounds 2
-> and 3, 2026-11-24, AFK default pending user review).
+> and 3, 2026-11-24). **Approved**: 2026-11-24 - user: "Nó escolhido na elaboração é permitido senão perdemos a liberdade de mudar o hardware na elaboração o que deveria ser fácil. Restante ok"
 
 **Dynamic semantics**
 
