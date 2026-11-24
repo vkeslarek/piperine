@@ -204,8 +204,14 @@ impl Checker<'_> {
                 Some(Ty::Module(module)) if self.binds_an_instance(decl) => {
                     self.instance_as_value(file, span, decl, module.decl);
                 }
-                _ if !self.poisoned.contains(&decl) => self.unsupported(file, span, "a call of a value that is not a function"),
-                _ => {}
+                // the callee's position requires a function (or a template, which places): any other type is a mismatch (§1.5)
+                Some(found) => {
+                    let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    let message = format!("`{name}` is called, but its type `{}` is no function and no template (§1.5)", found.name(self.design));
+                    self.coded(file, "E0180", span, message, "a call of a value that is not a function");
+                }
+                None if !self.poisoned.contains(&decl) => self.unsupported(file, span, "a call of a value whose type is unknown"),
+                None => {}
             }
             for arg in args {
                 self.infer(arg.value);

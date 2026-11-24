@@ -109,6 +109,10 @@ fn a_placement_through_a_template_or_a_function_types_as_its_module() {
     // the instance a placement names is no template: calling it reads it as a value, `E0333` (§8.2.14, finding 30)
     let instance = TemplateSource::new(&format!("{head}module Top(x: E) {{ let a = C1(x); let b = a(x); }}"));
     assert_eq!(instance.codes(), ["E0333"], "{}", instance.message());
+    // a value that is neither a function nor a template in the callee's position is a type mismatch, `E0180` (§1.5, finding 32)
+    let value = TemplateSource::new(&format!("{head}module Top(x: E) {{ let k = 2.0; let b = k(x); }}"));
+    assert_eq!(value.codes(), ["E0180"], "{}", value.message());
+    assert!(value.message().contains("its type `f64` is no function and no template"), "{}", value.message());
 }
 
 #[test]
