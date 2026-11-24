@@ -2526,7 +2526,6 @@ module MemoryBank<C: Fn(Cell), const ROWS: u32, const COLS: u32>(in wl: [Bit; RO
 <h3>Multiplicity and extern models</h3>
 
 <ul>
-<li><strong><code>m</code> and <code>dtemp</code>.</strong> Every instance has these two implicit params, and you bind them like any other: <code>Resistor(a, b) { r: 1k, m: 4.0 }</code> behaves as four resistors in parallel. <code>m</code> multiplies down the hierarchy; <code>dtemp</code> offsets the temperature and adds up.</li>
 <li><strong>Extern modules.</strong> A model compiled to OSDI, or another simulator by cosimulation, is declared with its ports and params and placed like any module:</li>
 </ul>
 
@@ -2536,6 +2535,20 @@ extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Elect
     w: f64 = 1u;
     vth0: f64 = 0.4;
 }</pre>
+
+<p><strong>Multiplicity and temperature.</strong> No instance carries an implicit param: the run sets one temperature and one multiplicity, a model reads them, and nothing is scaled for you. <code>temperature()</code> is <code>Some</code> in kelvin when the run sets <code>temp</code> and <code>None</code> otherwise, so <code>temperature().unwrap_or(AMBIENT_TEMPERATURE)</code> falls back to 27&nbsp;&deg;C, ngspice's default. <code>multiplicity()</code> is the run's <code>--simparam multiplicity=&lt;v&gt;</code>, <code>Some</code> when it is set, so <code>multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)</code> is one. A model that wants a multiplicity of its own declares an ordinary param and combines the two in its body:</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) {
+    r: f64 = 1k;
+    m: Option<f64>;
+}
+
+analog for Resistor {
+    let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);
+    i(p, n) +> count * v(p, n) / r;
+}</pre>
+
+<p>Placed as <code>Resistor(a, b) { r: 1k, m: Some(4.0) }</code> this resistor behaves as four in parallel; placed with no <code>m</code> it follows the run, so <code>--simparam multiplicity=3</code> reaches every instance that leaves <code>m</code> unset. Read in a param default, <code>multiplicity()</code> is <code>E0321</code>: the default is fixed before the run.</p>
 
 <div class="callout mistake">
   <p class="callout-label">Common mistakes</p>

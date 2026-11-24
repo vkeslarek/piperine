@@ -112,6 +112,7 @@ block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
 block	modules#12	7d514f590b39e281	run	piperine/book_modules::a_function_that_returns_a_template_places_its_result	-	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
+block	modules#15	f5ddcb63aa594437	run	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
 block	analog#2	5bbb7c8746c8b33b	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
 block	analog#3	6395ae5e780ffca4	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
@@ -391,7 +392,8 @@ claim	modules~f355ab23	f355ab23250e139e	prose	-	-	The times are left for you; th
 claim	modules~85f8dd48	85f8dd48131db07e	holds	piperine/book_modules::a_ladder_written_out_runs_an_operating_point_and_a_dc_sweep	-	An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point.
 claim	modules~8b927a42	8b927a42685fb21f	holds	piperine/book_modules::the_lowpass_module_runs_over_the_generic_integrator	-	At each instance they stand for the expressions the caller wrote, here v(a) and 1u.
 claim	modules~ca384a57	ca384a570243c413	holds	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	idt(e) is the time integral of e, itself a library module that returns a value.
-claim	modules~1faf8c12	1faf8c12cb1fa180	refused	piperine/book_modules::binding_m_and_dtemp_is_refused_as_an_unknown_param	L29	Every instance has these two implicit params, and you bind them like any other: Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel. m multiplies down the hierarchy; dtemp offsets the temperature and adds up.
+claim	modules~93efd115	93efd1155317fe74	holds	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	Placed as Resistor(a, b) { r: 1k, m: Some(4.0) } this resistor behaves as four in parallel; placed with no m it follows the run, so --simparam multiplicity=3 reaches every instance that leaves m unset.
+claim	modules~007f1097	007f109759d32249	holds	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	Read in a param default, multiplicity() is E0321: the default is fixed before the run.
 claim	modules~4bd2871d	4bd2871dc689f513	holds	piperine/book_modules::e0320_a_block_names_a_param_the_module_does_not_have	-	E0320
 claim	modules~0d2be82e	0d2be82e6d92b89d	holds	piperine/book_modules::e0320_a_block_names_a_param_the_module_does_not_have	-	RcSection(a, b) { res: 1k }
 claim	modules~4bc8171d	4bc8171dc680e23e	holds	piperine/book_modules::e0312_a_port_is_left_unconnected	-	E0312

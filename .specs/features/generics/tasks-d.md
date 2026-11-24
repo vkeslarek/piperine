@@ -511,9 +511,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `the_multiplicity_listing_runs_as_four_in_parallel` passes under `**Run bookmodules**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
-- [ ] Gate check passes: Quick
+- [x] `the_multiplicity_listing_runs_as_four_in_parallel` passes under `**Run bookmodules**`
+- [x] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -257,15 +257,29 @@ fn the_extern_osdi_module_is_refused() {
 }
 
 #[test]
-fn binding_m_and_dtemp_is_refused_as_an_unknown_param() {
-    // modules~1faf8c12: "Every instance has these two implicit params, and you bind them like any other:
-    // Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel": the binding is `E0320`
-    // today, `no param m` (L29); the Book's meaning is four resistors in parallel. The row is `refused`,
-    // owned by `generics` phase D (GN-24, GN-25), which implements `m`
-    let faulty = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
+fn the_multiplicity_listing_runs_as_four_in_parallel() {
+    // modules~93efd115 (generics phase D, GN-26 AC 3; replaces the claim modules~1faf8c12 and its test
+    // `binding_m_and_dtemp_is_refused_as_an_unknown_param`): "Placed as Resistor(a, b) { r: 1k, m: Some(4.0) } this
+    // resistor behaves as four in parallel; placed with no m it follows the run, so --simparam multiplicity=3 reaches
+    // every instance that leaves m unset" (modules#15 is the listing), and modules~007f1097: "Read in a param default,
+    // multiplicity() is E0321". The
+    // resistor sits over a fixed kilo-ohm one under one volt: the node reads the divider of the effective multiplicity
+    let chapter = Chapter::read();
+    let after = |block: &str| format!("module Fixed(p: Electrical, n: Electrical) {{ r: f64 = 1k; }}\nanalog for Fixed {{ i(p, n) +> v(p, n) / r; }}\nmodule Source(p: Electrical) {{}}\nanalog for Source {{ v(p, gnd) +> 1.0; }}\nmodule Top() {{\n    signal vin: Electrical;\n    signal o: Electrical;\n    let s = Source(vin);\n    let top = {block}(vin, o);\n    let bottom = Fixed(o, gnd);\n}}\n");
+    let divider = |count: f64| 1000.0 / (1000.0 / count + 1000.0);
+    let run = |block: &str, overrides: Overrides| chapter.wrapped("multiplicity.msl", "", "modules#15", &after(block)).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    let four = run("Resistor { m: Some(4.0) }", Commands::of_top());
+    assert!((four.signal("Top.o") - divider(4.0)).abs() < 2e-3, "four in parallel: {}", four.signal("Top.o"));
+    let followed = run("Resistor", Overrides { simparam: vec![("multiplicity".to_string(), 3.0)], ..Commands::of_top() });
+    assert!((followed.signal("Top.o") - divider(3.0)).abs() < 2e-3, "the run's multiplicity 3 reaches an instance with no `m`: {}", followed.signal("Top.o"));
+    let alone = run("Resistor", Commands::of_top());
+    assert!((alone.signal("Top.o") - divider(1.0)).abs() < 2e-3, "nothing set: one resistor: {}", alone.signal("Top.o"));
+    // read in a param default, `multiplicity()` is `E0321`
+    let default = Model::written("default.msl", "module Top() { k: f64 = multiplicity().unwrap_or(1.0); signal o: Electrical; }\n").run(Commands::of_top());
+    assert!(Refusal::of(default, "modules~007f1097").iter().any(|(code, _)| code == "E0321"), "a param default that reads the run");
+    // there is no implicit param: binding `m` on a module that declares none is `E0320` like any unknown name
+    let faulty = Faulty::elaborating("modules~93efd115", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
     assert_eq!(faulty.first("E0320").message, "no param `m` in `Resistor`");
-    let dtemp = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, dtemp: 5.0 };\n"), "Top");
-    assert_eq!(dtemp.first("E0320").message, "no param `dtemp` in `Resistor`");
 }
 
 #[test]
