@@ -435,10 +435,12 @@ fn the_flip_flop_runs_for_a_type_with_a_default() {
     // `None` is 7, and at the first edge, where it is 42
     let chapter = Chapter::read();
     let after = "module Top() { signal clk: Bit; signal r: Bit = true; signal d: Bit<Option<u8>> = Some(42); signal q: Bit<Option<u8>>; let o = Osc(clk) { f: 1M }; let f = Dff(clk, r, d, q) { reset: None }; }\n\
-                 digital for Top { on q.changed() { emit!(\"q\", v = q.unwrap_or(7u8)); } }\n";
+                 digital for Top { on q.changed() { emit!(\"q\", v = q.unwrap_or(7u8), some = q.is_some()); } }\n";
     let model = chapter.wrapped("dff.msl", &Oscillator::text(&chapter), "digital#21", after);
     let ran = model.run(Commands::transient_of("Top", 2e-6)).unwrap_or_else(|failure| panic!("{:?}", Refusal::of(Err(failure), "digital#21")));
     let seen: Vec<Field> = ran.stream("q").iter().map(|record| Fields::of(record, "v").clone()).collect();
+    let flags: Vec<Field> = ran.stream("q").iter().map(|record| Fields::of(record, "some").clone()).collect();
+    assert_eq!(flags, [Field::Bool(false), Field::Bool(true)], "`q.is_some()` is false at the start and true once `d` is committed: a record as large as `q` is no change of `q`");
     let (first, then) = (None::<u8>, Some(42u8));
     assert_eq!(seen, [Field::Int(i128::from(first.unwrap_or(7))), Field::Int(i128::from(then.unwrap_or(7)))], "None at the start, then `d` committed at the first edge");
     Printed::holds("5.000000e-7", ran.stream("q")[1].time, "the first rising edge of the 1 MHz clock");
@@ -452,12 +454,9 @@ fn e0187_the_flip_flop_at_u8_has_no_default() {
     let after = "module Top() { signal clk: Bit; signal r: Bit = true; signal d: Bit<u8> = 0; signal q: Bit<u8>; let o = Osc(clk) { f: 1M }; let f = Dff::<u8>(clk, r, d, q) { reset: 0 }; }\n";
     let model = chapter.wrapped("dff.msl", &Oscillator::text(&chapter), "digital#21", after);
     let given = Refusal::of(model.run(Commands::transient_of("Top", 2e-6)), "digital#21");
-    // `q` is handed to the `out` port of a placement that did not type, so it is judged as a signal nothing drives
-    let wanted = [
-        "`q` has no initial value and its type `u8` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)",
-        "`u8` does not satisfy the bound `Default` of `T` in `Dff` (§3.8.7)",
-    ];
-    assert_eq!(given, wanted.map(|message| ("E0187".to_string(), message.to_string())), "the bound and what follows from it");
+    // the placement fails its bound and is reported once: `q`, handed to its `out` port, is not judged again as a carrier nothing drives
+    let wanted = ["`u8` does not satisfy the bound `Default` of `T` in `Dff` (§3.8.7)"];
+    assert_eq!(given, wanted.map(|message| ("E0187".to_string(), message.to_string())), "the bound, once");
 }
 
 /// The multiply-accumulate pipeline of the chapter, in a bench that holds its inputs.

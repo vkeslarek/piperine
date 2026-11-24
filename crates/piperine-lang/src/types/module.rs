@@ -217,6 +217,7 @@ impl Checker<'_> {
         let substitution = if self.design.decl_data(module).generics_span.is_some() {
             let Some(given) = self.generic_placement(expr, *callee, module, args) else {
                 self.placing.pop();
+                self.keep_handed_after_failure(module, args);
                 return None;
             };
             Some(given)
@@ -231,6 +232,30 @@ impl Checker<'_> {
         self.param_block(&fields, substitution.as_ref());
         let placed = self.placement_type(module)?;
         Some(substitution.map_or(placed.clone(), |substitution| substitution.apply(&placed)))
+    }
+
+    /// The placement of `module` failed its generic arguments and typed no connection: the carriers it was to take at an `out`
+    /// port stay handed over, so the failure is reported once, at the placement, and not again as a carrier nothing drives
+    /// (§5.2.6; the placement's own diagnostic is the cause).
+    fn keep_handed_after_failure(&mut self, module: DeclId, args: &[Arg]) {
+        let outs: Vec<Option<crate::msl::ast::Dir>> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+            DeclKind::Port(p) => Some(p.dir),
+            _ => None,
+        }).collect();
+        let bound = crate::pom::PortArguments::bind(self.design, module, args);
+        for (index, dir) in outs.into_iter().enumerate() {
+            let Some(arg) = bound.at(index) else { continue };
+            if dir != Some(crate::msl::ast::Dir::Out) {
+                continue;
+            }
+            if let Some((decl, Ty::Carrier { .. })) = self.declared_port(arg.value) {
+                let (file, span) = (self.file_of_expr(arg.value), self.design.expr_node(arg.value).span);
+                // a placement is typed once per path that reaches it: it hands the carrier over once
+                if !self.book.handed.iter().any(|(held, _, at, _)| *held == decl && *at == span) {
+                    self.book.handed.push((decl, super::element_target::Element::Whole, span, file));
+                }
+            }
+        }
     }
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
