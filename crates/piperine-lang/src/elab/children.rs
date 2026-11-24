@@ -164,15 +164,27 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The template a placement through a param of module type places (`cell(c)`, PI-04): the
-    /// value the param holds in the body being lowered (`scope.keys`), the default or the parent's
-    /// binding. `None` when `class` is no such placement.
-    fn template_through(&self, scope: &Scope, class: &CallClass) -> Option<TemplateValue> {
-        let CallClass::Instance { via: Some(param), .. } = class else { return None };
-        if !self.is_module_param(*param) {
-            return None;
+    /// The template a placement through a template value places (§8.4.4, §8.4.9): the value the param of module type holds in the
+    /// body being lowered (`cell(c)`, PI-04: the default or the parent's binding), or the value the head of the placement folds to
+    /// over the key params (`C1(c)`, `nch(l, w)(d, g, s, b)`). `Ok(None)` when `class` is a placement of a module by name or of a
+    /// template written in place; `Err` after the diagnostic of a head that does not fold.
+    fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
+        let CallClass::Instance { module: Some(placed), via: Some(via) } = class else { return Ok(None) };
+        if via == placed {
+            return Ok(None);
         }
-        self.consts.templates().get(scope.keys.get(*param)?).cloned()
+        if self.is_module_param(*via) {
+            return Ok(scope.keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned());
+        }
+        let ExprKind::Call { callee, .. } = &self.design.expr_node(call).kind else { return Ok(None) };
+        let folded = self.fold_param_value(*callee, &scope.keys.overlaid(&scope.unrolled));
+        match folded {
+            Ok(number) => Ok(self.consts.templates().get(number).cloned()),
+            Err(fault) => {
+                self.const_fault(&fault, "the head of a placement through a template");
+                Err(())
+            }
+        }
     }
 
     /// What a placement through a template gives its module: the constant of each param the block
@@ -197,7 +209,7 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, node.span, "a placement through a template value");
             return None;
         }
-        let through = self.template_through(scope, class);
+        let Ok(through) = self.template_through(scope, call, class) else { return None };
         let fields = if through.is_some() { Vec::new() } else { self.placement_fields(call, module) };
         let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);

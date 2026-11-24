@@ -411,6 +411,13 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
+        // A param read by the head of a placement through a template (`nch(l, w)(d, g, s, b)`, `C1(a, b)`) is structural too (§8.4.6, GN-20).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_template_heads(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -492,6 +499,22 @@ impl Elaboration<'_, '_> {
                     found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
                 }
             }
+        }
+        found
+    }
+
+    /// The params of `module` that the head of one of its placements through a template reads: `l` and `w` of
+    /// `nch(l, w)(d, g, s, b)`, whatever function the head calls (§8.4.6). A head that is a param of module type or a template
+    /// written in place is not one: the first is structural already, the second is read as a placement's block.
+    fn params_read_by_template_heads(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut found = Vec::new();
+        for call in &data.instances {
+            let ExprKind::Call { callee, class: crate::pom::CallClass::Instance { module: Some(placed), via: Some(via) }, .. } = &self.design.expr_node(*call).kind else { continue };
+            if via == placed || self.is_module_param(*via) {
+                continue;
+            }
+            self.collect_params(*callee, &mut found);
         }
         found
     }

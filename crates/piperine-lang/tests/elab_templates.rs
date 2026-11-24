@@ -51,3 +51,30 @@ fn templates_fold_from_consts_functions_and_two_levels_of_params() {
     assert_eq!(bodies("Top.a"), bodies("Top.b"));
     assert_eq!(Placed::real(&ir, "Top.a.c1"), Placed::real(&ir, "Top.b.c1"));
 }
+
+#[test]
+fn a_template_placement_is_identical_to_the_written_placement() {
+    // §8.4.9 (GN-22 AC 1): `C1(x)`, `cell(x)` and `pick(true)(x)` place the instance `Cell(x) { cs: 30.0 }` places
+    let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let c1 = Cell(x) {{ cs: 30.0 }}; }}"), "Top");
+    let through_const = format!("{CELL}const C1: Cell = Cell {{ cs: 30.0 }};\nmodule Top() {{ signal x: Electrical; let c1 = C1(x); }}");
+    let through_function = format!("{CELL}fn thirty() -> Cell {{ Cell {{ cs: 30.0 }} }}\nmodule Top() {{ signal x: Electrical; let c1 = thirty()(x); }}");
+    for source in [through_const, through_function] {
+        let ir = Elab::ir(&source, "Top");
+        assert_eq!(Placed::first_param(&ir, "Top.c1"), Placed::first_param(&direct, "Top.c1"), "{source}");
+        assert_eq!(ir.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()), "{source}");
+    }
+}
+
+#[test]
+fn a_binning_function_places_the_module_it_chooses() {
+    // §8.4.7 (GN-22 AC 3): the function reads the length param, so the param is structural and each length places its own
+    // bin; the length that is not bound again takes its default's bin
+    let source = format!(
+        "{CELL}fn bin(len: f64) -> Cell {{ if len < 1.0 {{ Cell {{ cs: 0.3 }} }} else {{ Cell {{ cs: 0.6 }} }} }}\n\
+         module Top() {{ len: f64 = 0.5; signal x: Electrical; let c1 = bin(len)(x); }}\n\
+         module Parent() {{ let short = Top(); let long = Top {{ len: 2.0 }}(); }}"
+    );
+    let ir = Elab::ir(&source, "Parent");
+    assert_eq!(Placed::first_param(&ir, "Parent.short.c1"), Constant::Real(Real::new(0.3)));
+    assert_eq!(Placed::first_param(&ir, "Parent.long.c1"), Constant::Real(Real::new(0.6)));
+}

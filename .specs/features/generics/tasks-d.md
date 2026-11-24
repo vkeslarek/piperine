@@ -209,8 +209,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_template_placement_is_identical_to_the_written_placement` and `a_binning_function_places_the_module_it_chooses` pass under `**Run elabtempl**`
-- [ ] Gate check passes: Quick
+- [x] `a_template_placement_is_identical_to_the_written_placement` and `a_binning_function_places_the_module_it_chooses` pass under `**Run elabtempl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
