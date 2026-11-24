@@ -339,8 +339,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_bundle_connection_binds_each_field_by_name` and `a_literal_binds_each_named_field_to_its_carrier` pass under `**Run elabbundles**`
-- [ ] Gate check passes: Full
+- [x] `a_bundle_connection_binds_each_field_by_name` and `a_literal_binds_each_named_field_to_its_carrier` pass under `**Run elabbundles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

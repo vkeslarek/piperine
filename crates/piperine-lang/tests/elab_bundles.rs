@@ -68,3 +68,36 @@ fn a_bundle_signal_declares_every_carrier_and_drives_none_it_does_not_write() {
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert!(body.drives().is_empty(), "the declaring module drives no field it does not write");
 }
+
+#[test]
+fn a_bundle_connection_binds_each_field_by_name() {
+    // §7 rule 14: passing a bundle to a port connects each field to the field of the same name; the producer's and the
+    // consumer's views of one `signal` join the same three carriers, and a continuous field joins the same nodes
+    let src = "struct Stream { out valid: Bit, in ready: Bit, out data: Bit<u8> }\n\
+               struct Diff { p: Electrical, n: Electrical }\n\
+               module Prod(tx: Stream) { signal go: Bit = false; tx.valid = go; tx.data = 1; signal r: Bit; r = tx.ready; }\n\
+               module Cons(rx: flip Stream) { rx.ready = true; signal v: Bit; v = rx.valid; }\n\
+               module Amp(d: Diff) { }\n\
+               module Top() { signal s: Stream; signal pair: Diff; let p = Prod(s); let c = Cons(s); let a = Amp(pair); }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    assert_eq!(read.carriers("Top").iter().map(|c| c.0.as_str()).collect::<Vec<_>>(), ["s.valid", "s.ready", "s.data"]);
+    assert_eq!(top.child_carriers(0), [Some(0), Some(1), Some(2)], "the producer's `tx.valid`, `tx.ready`, `tx.data` are the signal's");
+    assert_eq!(top.child_carriers(1), [Some(0), Some(1), Some(2)], "so are the consumer's, by name, whatever the direction");
+    assert_eq!(top.children()[2].nodes, [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Node(1)], "`d.p` and `d.n` are `pair.p` and `pair.n`");
+    assert_eq!(read.nodes("Top"), ["pair.p", "pair.n"]);
+}
+
+#[test]
+fn a_literal_binds_each_named_field_to_its_carrier() {
+    // §7 rule 8: a literal names each field once and gives it a carrier or a node, in any order
+    let src = "struct Cell { in wl: Bit, bl: Electrical, in sel: Bit }\n\
+               module Leaf(c: Cell) { }\n\
+               module Top(in w: Bit, in x: Bit, b: Electrical) { let l = Leaf(Cell { sel: x, bl: b, wl: w }); }";
+    let ir = Elab::ir(src, "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    let at = |name: &str| top.carriers().iter().position(|c| c.name == name).map(|i| i as u32);
+    assert_eq!(top.child_carriers(0), [at("w"), at("x")], "the child's `c.wl` and `c.sel` are the carriers the literal names, whatever its order");
+    assert_eq!(top.children()[0].nodes, [piperine_ir::Terminal::Node(0)], "`c.bl` is `b`");
+}

@@ -91,6 +91,17 @@ impl Design {
         self.bundle_leaves(owner).iter().find(|leaf| leaf.path == path).map(|leaf| leaf.decl)
     }
 
+    /// The leaf at `relative` under `bundle`, a bundle port or signal or a nested group of one (`inner.x` under `tx`, `x` under
+    /// the group `tx.inner`).
+    pub(crate) fn leaf_under(&self, bundle: DeclId, relative: &str) -> Option<DeclId> {
+        if self.is_bundle_owner(bundle) {
+            return self.leaf_at(bundle, relative);
+        }
+        let owner = self.leaf_owner(bundle)?;
+        let group = self.bundle_leaves(owner).iter().find(|leaf| leaf.decl == bundle)?;
+        self.leaf_at(owner, &format!("{}.{relative}", group.path))
+    }
+
     /// The ports and signals of `module` the checker and the elaborator type and place: its children, each bundle
     /// port or signal followed by the carriers and nodes it stands for (the groups of nested bundles are no carrier
     /// and no node, so they are left out).
@@ -143,5 +154,21 @@ impl Design {
     pub(crate) fn is_method_receiver(&self, expr: ExprId) -> bool {
         let parent = self.expr_parent.get(expr.index()).copied().flatten();
         parent.is_some_and(|parent| matches!(&self.expr_node(parent).kind, ExprKind::MethodCall { recv, .. } if *recv == expr))
+    }
+
+    /// The bundle port, signal or nested group `expr` names (`s`, `o.inner`), through parentheses: what a connection passes.
+    pub(crate) fn bundle_named(&self, expr: ExprId) -> Option<DeclId> {
+        let mut expr = expr;
+        while let ExprKind::Paren(inner) = &self.expr_node(expr).kind {
+            expr = *inner;
+        }
+        match &self.expr_node(expr).kind {
+            ExprKind::Path(path) => match self.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if self.is_bundle_owner(decl) => Some(decl),
+                _ => None,
+            },
+            ExprKind::Field { .. } => self.bundle_field(expr).filter(|leaf| self.is_bundle_group(*leaf)),
+            _ => None,
+        }
     }
 }

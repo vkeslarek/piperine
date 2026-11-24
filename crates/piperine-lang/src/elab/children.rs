@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 
 use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
+use super::bundles::PortBindings;
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
@@ -202,11 +203,15 @@ impl Elaboration<'_, '_> {
         let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);
         let mut ok = true;
-        let mut terminals = Vec::new();
-        let mut carriers = Vec::new();
-        let mut windows = Vec::new();
+        let mut bound = PortBindings { terminals: Vec::new(), carriers: Vec::new(), windows: Vec::new() };
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         for (port, arg) in ports.iter().zip(args) {
+            // a bundle port is given each field in turn (`bundles.rs`)
+            if self.design.is_bundle_owner(*port) {
+                ok &= self.bind_bundle_port(scope, &name, *port, arg.value, &mut bound);
+                continue;
+            }
+            let (terminals, carriers, windows) = (&mut bound.terminals, &mut bound.carriers, &mut bound.windows);
             if self.types.node_array(*port).is_some() {
                 match self.node_array_terminals(scope, arg.value) {
                     Some(nodes) => terminals.extend(nodes),
@@ -245,6 +250,7 @@ impl Elaboration<'_, '_> {
                 None => ok = false,
             }
         }
+        let PortBindings { terminals, carriers, windows } = bound;
         let templated = match &through {
             Some(template) => match self.template_values(template, file, node.span) {
                 Some(values) => Some(values),

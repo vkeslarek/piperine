@@ -336,6 +336,8 @@ impl Elaboration<'_, '_> {
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
             ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
+            // a field of a bundle port or signal is the carrier its leaf stands for (§7 rule 12)
+            ExprKind::Field { .. } if let Some(leaf) = self.design.bundle_field(expr) => self.lower_leaf_read(scope, expr, leaf, origin),
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
             ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),

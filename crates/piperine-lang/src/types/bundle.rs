@@ -41,10 +41,11 @@ impl Checker<'_> {
     /// Every field of the bundle `port` at `prefix` joined to the field of the bundle `source` of the same name.
     fn connect_fields(&mut self, arg: ExprId, source: DeclId, port: DeclId, prefix: &str, file: FileId, span: Span) {
         for leaf in self.design.bundle_leaves(port).to_vec() {
-            if leaf.nested || !leaf.path.starts_with(prefix) {
+            if leaf.nested {
                 continue;
             }
-            let Some(from) = self.design.leaf_at(source, &leaf.path) else { continue };
+            let Some(rest) = leaf.path.strip_prefix(prefix) else { continue };
+            let Some(from) = self.design.leaf_under(source, rest) else { continue };
             self.connect_leaf(arg, from, &leaf, file, span);
         }
     }
@@ -125,15 +126,7 @@ impl Checker<'_> {
 
     /// The bundle port, signal or nested group `expr` names (`s`, `o.inner`), through parentheses.
     fn bundle_carrier(&self, expr: ExprId) -> Option<DeclId> {
-        let expr = self.unparenthesized(expr);
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if self.design.is_bundle_owner(decl) => Some(decl),
-                _ => None,
-            },
-            ExprKind::Field { .. } => self.design.bundle_field(expr).filter(|leaf| self.design.is_bundle_group(*leaf)),
-            _ => None,
-        }
+        self.design.bundle_named(expr)
     }
 
     /// The `struct` a bundle port, signal or group is of.
