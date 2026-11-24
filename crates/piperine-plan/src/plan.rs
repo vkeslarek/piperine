@@ -559,7 +559,7 @@ impl BodyPlan {
             let composite_layout = composite.as_ref().map(|c| c.layout(&composite_fields));
             let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
-                ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
+                ty if ty.is_integer() || ty.is_other_float() => CarrierLayout::of(ty).unwrap_or(&F64),
                 // a unit enum is its tag (PI-02)
                 ty @ ValueType::Enum(_) => CarrierLayout::in_ir(ir, ty).unwrap_or(&F64),
                 _ => &F64,

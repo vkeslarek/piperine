@@ -15,6 +15,9 @@ impl Number {
             Cell::Real(v) => format!("{v:.6e}"),
             Cell::Bool(v) => v.to_string(),
             Cell::Int(v) => v.to_string(),
+            // exact: the shortest decimal that reads back in the type (floats), the exact decimal (integers)
+            Cell::Float(v) => v.text(),
+            Cell::Wide(v) => v.text(),
             Cell::Text(v) => v.clone(),
             Cell::Composite(value) => value.literal(&Number::text),
             Cell::Absent => String::new(),

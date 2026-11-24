@@ -49,8 +49,26 @@ impl Elaboration<'_, '_> {
                 "false" => Ok(Constant::Bool(false)),
                 _ => Err("a `bool` is `true` or `false`".to_string()),
             },
-            Ty::UInt(width) | Ty::Int(width) if *width > 64 => Err(format!("{} is wider than 64 bits: its param is set from its exact value, not from this text", ty.name(self.design))),
-            Ty::F32 | Ty::F16 | Ty::F128 => Err(format!("{} is not an `f64`: its param is set from its exact value, not from this text", ty.name(self.design))),
+            // A.8 rule 8: the nearest value of the type's own format, never through an `f64`; one past its range is refused
+            Ty::F32 | Ty::F16 | Ty::F128 => {
+                let format = match ty {
+                    Ty::F16 => piperine_numbers::format::BinaryFormat::HALF,
+                    Ty::F32 => piperine_numbers::format::BinaryFormat::SINGLE,
+                    _ => piperine_numbers::format::BinaryFormat::QUAD,
+                };
+                let bits = piperine_numbers::decimal::DecimalText::nearest(&text.replace('_', ""), format).ok_or_else(|| "it is not a number".to_string())?;
+                let spelled_infinite = matches!(text.trim_start_matches(['+', '-']).to_ascii_lowercase().as_str(), "inf" | "infinity");
+                if format.classify(bits) == piperine_numbers::format::FloatClass::Infinite && !spelled_infinite {
+                    return Err(format!("it is outside the range of {}", ty.name(self.design)));
+                }
+                Ok(Constant::FloatBits(bits))
+            }
+            // an integer wider than 64 bits: decimal, `0x`, `0o` or `0b`, exact (a handle the elaborator copies into the IR)
+            Ty::UInt(width) | Ty::Int(width) if *width > 64 => {
+                let signed = matches!(ty, Ty::Int(_));
+                let limbs = piperine_numbers::decimal::DecimalText::integer(text, *width, signed).ok_or_else(|| format!("it is not an integer literal of {} in its range", ty.name(self.design)))?;
+                Ok(self.consts.wide_constant(&super::consts::DynamicInteger::from_pattern(*width, signed, &limbs)))
+            }
             Ty::UInt(_) | Ty::Int(_) => {
                 let (low, high) = Self::integer_range(ty);
                 let value = LiteralText::integer(text).ok_or_else(|| format!("it is not an integer literal of {}, from {low} to {high}", ty.name(self.design)))?;

@@ -421,6 +421,8 @@ impl<'a> AnalogPrinter<'a> {
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
                     format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})")))
                 }
+                // an `f32`, `f16`, `f128` or an integer wider than 64 bits is its own bytes
+                Some(ty) if ValuePrinter::is_number_width(ty) => format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 // a composite param is the bytes of a composite pin, and a unit enum param its tag's
                 Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => {
                     let concrete = RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty);

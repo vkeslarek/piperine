@@ -836,8 +836,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `the_host_reads_each_width_as_one_exact_value` passes under `**Run apiw**` (a `UInt<200>` of value `2^199 + 1` reads as that integer, never as limbs, CV-32 AC 4; `0.1f32`, `f16`, `f128` read with their shortest text; a param set by text reads back)
-- [ ] Gate check passes: Task (`piperine-api`)
+- [x] `the_host_reads_each_width_as_one_exact_value` passes under `**Run apiw**` (a `UInt<200>` of value `2^199 + 1` reads as that integer, never as limbs, CV-32 AC 4; `0.1f32`, `f16`, `f128` read with their shortest text; a param set by text reads back)
+- [x] Gate check passes: Task (`piperine-api`)
 
 **Tests**: integration
 **Gate**: task
@@ -857,8 +857,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `number_widths_print_exactly_in_every_format` passes under `**Run clirun**`
-- [ ] Gate check passes: Task (`piperine-cli`)
+- [x] `number_widths_print_exactly_in_every_format` passes under `**Run clirun**`
+- [x] Gate check passes: Task (`piperine-cli`)
 
 **Tests**: integration
 **Gate**: task

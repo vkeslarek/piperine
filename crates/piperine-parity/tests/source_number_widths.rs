@@ -824,3 +824,17 @@ fn a_wide_literal_past_its_type_is_e0909() {
     let report = widths::WidthBench::project("wide_literal_past_its_type.msl").elaborate("Bench").expect_err("a literal past its type is refused");
     assert!(report.to_string().contains("E0909"), "{report}");
 }
+
+#[test]
+fn a_param_of_each_width_holds_its_exact_default() {
+    // CV-29 to CV-32, §3.2: a param of type `f32`, `f16`, `f128` or `UInt<200>` is a pin of that type's own bytes, so a
+    // reaction that copies it to a carrier commits the exact default: `1.5f32`, the nearest binary16 and binary128 to 0.1
+    // (A.8 rule 8, by the exact reader) and 12345 over four limbs
+    let quad = FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } };
+    let half = FloatTable { reference: &ExactReference { format: BinaryFormat::HALF, name: "f16" } };
+    let committed = widths::WidthBench::first_commits("params.msl", &["rp", "rh", "rw", "rq"]);
+    assert_eq!(committed[0], 1.5f32.to_le_bytes().to_vec());
+    assert_eq!(committed[1], ValueBytes::of_pattern(half.decimal("0.1"), 2));
+    assert_eq!(committed[2], ValueBytes::of_limbs(&[12345, 0, 0, 0]));
+    assert_eq!(committed[3], ValueBytes::of_pattern(quad.decimal("0.1"), 16));
+}

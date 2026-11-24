@@ -693,8 +693,8 @@ fn sum_below(n: u32) -> u32 {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Running today: <code>bool</code>, integers of up to 64 bits, <code>f64</code>, constants, functions, <code>let</code> and blocks, <code>if</code>, and <code>match</code> over literals. Everything the four files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Running today: <code>bool</code>, integers of any width, <code>f16</code>, <code>f32</code>, <code>f64</code> and <code>f128</code>, constants, functions, <code>let</code> and blocks, <code>if</code>, and <code>match</code> over literals. Everything the four files above use is in that list.</p>
+  <p>Parsed and checked, and not run yet: an item declared inside a block and <code>%</code> on floats. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
 </div>
 
 <div class="callout mistake">

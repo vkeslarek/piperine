@@ -53,6 +53,10 @@ pub enum Field {
     Real(f64),
     Bool(bool),
     Int(i128),
+    /// An `f16`, `f32` or `f128`, exact.
+    Float(crate::number_cell::FloatCell),
+    /// An integer wider than 64 bits, exact.
+    Wide(crate::number_cell::WideCell),
     /// A text literal of the site.
     Text(String),
     /// The name of the variant an enum with no payload holds (CV-22).
@@ -251,6 +255,8 @@ impl Field {
             Cell::Real(v) => Field::Real(v),
             Cell::Bool(v) => Field::Bool(v),
             Cell::Int(v) => Field::Int(v),
+            Cell::Float(v) => Field::Float(v),
+            Cell::Wide(v) => Field::Wide(v),
             Cell::Text(v) => Field::Variant(v),
             Cell::Composite(v) => Field::Composite(v),
             Cell::Absent => return Err(Failure::Backend("a record field decoded from its bytes is a value, never the absent cell".into())),

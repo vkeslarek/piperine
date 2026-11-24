@@ -33,6 +33,8 @@ mod integers;
 mod numbers;
 mod parsed;
 
+pub(in crate::elab) use integers::DynamicInteger;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

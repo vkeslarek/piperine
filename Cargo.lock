@@ -1371,6 +1371,7 @@ dependencies = [
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
+ "piperine-numbers",
  "piperine-parity",
  "piperine-plan",
  "piperine-project",
