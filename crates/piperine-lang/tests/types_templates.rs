@@ -106,9 +106,9 @@ fn a_placement_through_a_template_or_a_function_types_as_its_module() {
     }
     let wrong = TemplateSource::new(&format!("{head}module Top(x: E, y: E) {{ let a = C1(x, y); let c = pick(true)(x, y); let t = Cell {{ cs: 2.0 }}; let d = t(x, y); }}"));
     assert_eq!(wrong.codes(), ["E0312", "E0312", "E0312"], "{}", wrong.message());
-    // the instance a placement names is no template (§8.2.14): it is not placed again
+    // the instance a placement names is no template: calling it reads it as a value, `E0333` (§8.2.14, finding 30)
     let instance = TemplateSource::new(&format!("{head}module Top(x: E) {{ let a = C1(x); let b = a(x); }}"));
-    assert!(!instance.codes().is_empty(), "{}", instance.message());
+    assert_eq!(instance.codes(), ["E0333"], "{}", instance.message());
 }
 
 #[test]

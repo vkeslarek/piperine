@@ -199,8 +199,13 @@ impl Checker<'_> {
             other => other,
         };
         let Some(Ty::Fn(params, result)) = local else {
-            if !self.poisoned.contains(&decl) {
-                self.unsupported(file, span, "a call of a value that is not a function");
+            match local {
+                // the name of an instance without a result is only the head of `inst.name` (§8.2.14)
+                Some(Ty::Module(module)) if self.binds_an_instance(decl) => {
+                    self.instance_as_value(file, span, decl, module.decl);
+                }
+                _ if !self.poisoned.contains(&decl) => self.unsupported(file, span, "a call of a value that is not a function"),
+                _ => {}
             }
             for arg in args {
                 self.infer(arg.value);
