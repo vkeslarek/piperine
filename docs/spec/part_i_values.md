@@ -394,11 +394,12 @@ fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
   a carrier yields a value: a copy of what the carrier holds at that read
   ([§5.1](part_ii_carriers.md#51-declaring-and-reading)). A `let` bound to a node names that
   node. An `if`, a `match` or a block whose result is a node is chosen at elaboration when its
-  condition, scrutinee and guards read only params, constants and generation indexes: it names the
-  node it folds to wherever a node goes (a probe, a contribution target, a connection), and the
-  params it reads are structural ([§8.1.2](part_iii_structure.md#81-ports-and-params)). One whose
-  choice reads a probe, a port, a signal or a variable, or a block with statements before its
-  result, would choose hardware at run time and is `E0133` (generics phase D, 2026-11-24).
+  condition, scrutinee and guards read only params, constants, generation indexes and `let`s of
+  those, in any arm: it names the node it folds to wherever a node goes (a probe, a contribution
+  target, a connection), and the params it reads are structural
+  ([§8.1.2](part_iii_structure.md#81-ports-and-params)). One whose choice reads a probe, a port, a
+  signal, a primitive of the run or a variable whose value depends on the run would choose hardware
+  at run time and is `E0133` (generics phase D, 2026-11-24).
   **Approved**: 2026-11-24 - user: "Nó escolhido na elaboração é permitido senão perdemos a liberdade de mudar o hardware na elaboração o que deveria ser fácil. Restante ok"
 - **§1.4.8** A type is checked against a required type by equality. Two types are equal when
   they are the same scalar type, the same struct, enum, nature or module with equal generic

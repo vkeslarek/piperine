@@ -249,13 +249,15 @@ fn parentheses_around_a_node_argument_name_the_node() {
 
 #[test]
 fn a_node_chosen_by_the_run_is_e0133() {
-    // §1.4.7 (user decision of 2026-11-24): an `if`, a `match` or a block whose result is a node and whose choice reads a probe, a
-    // signal or a variable, or a block with statements before its result, chooses hardware at run time: `E0133` naming the form
+    // §1.4.7 (user decision of 2026-11-24): an `if` or a `match` whose result is a node and whose choice reads a probe, a primitive
+    // of the run or a variable whose value depends on the run chooses hardware at run time: `E0133` alone, naming the form and
+    // what it reads
     for (statement, form) in [
         ("let y = if v(x) > 0.5 { x } else { p };", "an `if`"),
-        ("let c = k * 2.0; let y = if c > 0.5 { x } else { p };", "an `if`"),
+        ("let c = v(x) > 0.0; let y = if c { x } else { p };", "an `if`"),
+        ("let c = 1.0; c = v(x); let y = if c > 0.5 { x } else { p };", "an `if`"),
+        ("let y = { let s = v(x) > 0.0; if s { x } else { p } };", "an `if`"),
         ("let y = match n { 0 if v(x) > 0.0 => x, _ => p };", "a `match`"),
-        ("let y = { let c = 1.0; x };", "a block"),
         ("let y = if now() > 1.0 { x } else { p };", "an `if`"),
     ] {
         let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(y); }}");
@@ -267,8 +269,9 @@ fn a_node_chosen_by_the_run_is_e0133() {
 
 #[test]
 fn a_node_chosen_at_elaboration_is_typed_as_the_node() {
-    // §1.4.7 (user decision of 2026-11-24): a choice over params, constants and generation indexes names the node it folds to:
-    // `if` over a param, `match` over a param, a block, `gnd` in an arm, at a probe, a target, a placement and an `Fn` bound
+    // §1.4.7 (user decision of 2026-11-24): a choice over params, constants, generation indexes and `let`s of those names the node
+    // it folds to, whatever statements its arms hold: `if` and `match` over a param, a block, `gnd` in an arm, a `let` of a param,
+    // at a probe, a target, a placement and an `Fn` bound
     let modules = "module R(a: Electrical, b: Electrical) { }\nanalog for R { i(a, b) +> v(a, b); }\n\
                    module H<C: Fn(Electrical, Electrical)>(a: Electrical) { cell: C; signal b: Electrical; k: f64 = 1.0; let c = cell(a, if k > 0.5 { b } else { gnd }); }\n";
     for (body, analog) in [
@@ -276,11 +279,16 @@ fn a_node_chosen_at_elaboration_is_typed_as_the_node() {
         ("", "let y = match n { 0 => x, _ => p }; i(p, gnd) +> v(y);"),
         ("", "let y = { x }; i(p, gnd) +> v(y);"),
         ("", "v(if k > 0.5 { x } else { p }) +> 1.0;"),
+        ("", "let y = if sel { let z = 1.0; x } else { p }; i(p, gnd) +> v(y);"),
+        ("", "let y = if sel { x } else { let z = 1.0; p }; i(p, gnd) +> v(y);"),
+        ("", "let y = match sel { true => { let z = 1.0; x }, false => p }; i(p, gnd) +> v(y);"),
+        ("", "let y = { let s = sel; if s { x } else { p } }; i(p, gnd) +> v(y);"),
+        ("", "let c = k * 2.0; let y = if c > 0.5 { x } else { p }; i(p, gnd) +> v(y);"),
         ("let r = R(x, if k > 0.5 { p } else { gnd });", ""),
         ("for j in 0..2 { let rr = R(x, if j == 0 { p } else { gnd }); }", ""),
         ("let h = H::<_>(x) { cell: R { } };", ""),
     ] {
-        let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; {body} }}\nanalog for Top {{ {analog} }}");
+        let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; sel: bool = false; {body} }}\nanalog for Top {{ {analog} }}");
         assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{body}{analog}");
     }
 }

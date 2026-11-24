@@ -474,12 +474,31 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             match &self.design.expr_node(expr).kind {
-                ExprKind::If { cond, .. } => self.collect_params(*cond, &mut found),
-                ExprKind::Match { scrutinee, .. } => self.collect_params(*scrutinee, &mut found),
+                ExprKind::If { cond, .. } => self.collect_choice_params(*cond, &mut found, 0),
+                ExprKind::Match { scrutinee, arms } => {
+                    self.collect_choice_params(*scrutinee, &mut found, 0);
+                    for guard in arms.iter().filter_map(|arm| arm.guard) {
+                        self.collect_choice_params(guard, &mut found, 0);
+                    }
+                }
                 _ => {}
             }
         }
         found
+    }
+
+    /// Adds every param a node choice's condition `expr` reads to `found`, through the initializers of the `let`s it reads
+    /// (`let s = sel; if s { .. }`).
+    fn collect_choice_params(&self, expr: ExprId, found: &mut Vec<DeclId>, depth: usize) {
+        self.collect_params(expr, found);
+        if depth > 64 {
+            return;
+        }
+        for local in self.read_bindings(expr) {
+            if let Some(init) = self.let_initializer(local) {
+                self.collect_choice_params(init, found, depth + 1);
+            }
+        }
     }
 
     /// The params of `module` that the default of a later param reads (`g: f64 = 1.0 / r`); a read of the param itself or of a

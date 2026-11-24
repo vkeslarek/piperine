@@ -128,6 +128,10 @@ pub(super) struct Checker<'d> {
     /// The `if`s, `match`es and blocks refused for choosing a node (`E0133`, `handles.rs`): an operand that is one is no second
     /// diagnostic.
     pub(super) chosen_nodes: BTreeSet<ExprId>,
+    /// The `if`s and `match`es whose result is a node, judged once the whole design is typed (`judge_node_choices`).
+    pub(super) node_choices: Vec<ExprId>,
+    /// The initializer of each `let` with a name, which says whether the name's value depends on the run.
+    pub(super) let_values: BTreeMap<DeclId, ExprId>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
     /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
@@ -218,6 +222,8 @@ impl<'d> Checker<'d> {
             template_items: BTreeMap::new(),
             access_roles: BTreeMap::new(),
             chosen_nodes: BTreeSet::new(),
+            node_choices: Vec::new(),
+            let_values: BTreeMap::new(),
             handles: BTreeSet::new(),
             bound_substitution: None,
             bound_arguments: BTreeMap::new(),
@@ -256,6 +262,7 @@ impl<'d> Checker<'d> {
         self.reach(top);
         self.drain();
         self.report_unread_template_locals();
+        self.judge_node_choices();
         if !self.diagnostics.is_empty() {
             return Err(self.sorted_diagnostics());
         }

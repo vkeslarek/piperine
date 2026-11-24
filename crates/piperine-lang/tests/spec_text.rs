@@ -2641,8 +2641,8 @@ fn a_template_item_takes_the_type_its_context_wants_in_the_spec() {
 fn a_node_chosen_by_an_expression_is_e0133_in_the_spec() {
     let values = flat(&spec("part_i_values.md"));
     for fact in [
-        "An `if`, a `match` or a block whose result is a node is chosen at elaboration when its condition, scrutinee and guards read only params, constants and generation indexes: it names the node it folds to wherever a node goes",
-        "One whose choice reads a probe, a port, a signal or a variable, or a block with statements before its result, would choose hardware at run time and is `E0133`",
+        "An `if`, a `match` or a block whose result is a node is chosen at elaboration when its condition, scrutinee and guards read only params, constants, generation indexes and `let`s of those, in any arm: it names the node it folds to wherever a node goes",
+        "One whose choice reads a probe, a port, a signal, a primitive of the run or a variable whose value depends on the run would choose hardware at run time and is `E0133`",
         "**Approved**: 2026-11-24 - user: \"Nó escolhido na elaboração é permitido senão perdemos a liberdade de mudar o hardware na elaboração o que deveria ser fácil. Restante ok\"",
         "| `E0133` | a handle returned, stored in a value, or written through; an `if`, `match` or block whose result is a node chosen by what the run computes (§1.4.7) | elaboration |",
     ] {

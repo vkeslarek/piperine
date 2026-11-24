@@ -192,38 +192,42 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether `expr`, of the type `ty`, is an `if`, a `match` or a block whose result is a node chosen by what the run computes:
-    /// a probe, a signal, a port or a variable (§1.4.7). `E0133` is reported for it, naming the form and what it reads. A choice
-    /// over params, constants and generation indexes is made at elaboration and names the node it folds to (user decision of
-    /// 2026-11-24): it is typed as that node.
-    pub(super) fn chooses_a_node(&mut self, expr: ExprId, ty: Option<&Ty>) -> bool {
-        if !matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) {
-            return false;
+    /// Records `expr`, of the type `ty`, when it is an `if` or a `match` whose result is a node: a choice of hardware, judged once
+    /// the whole design is typed (`judge_node_choices`), when every assignment is known. It is typed as the node meanwhile.
+    pub(super) fn record_node_choice(&mut self, expr: ExprId, ty: Option<&Ty>) {
+        if matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) && matches!(self.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. }) {
+            self.node_choices.push(expr);
         }
-        let (form, read) = match self.design.expr_node(expr).kind.clone() {
-            ExprKind::If { cond, then, .. } => ("an `if`", self.run_read(cond).or_else(|| self.block_statements(&then))),
-            ExprKind::Match { scrutinee, arms } => {
-                let guards = arms.iter().filter_map(|arm| arm.guard).find_map(|guard| self.run_read(guard));
-                ("a `match`", self.run_read(scrutinee).or(guards))
-            }
-            ExprKind::Block(block) => ("a block", self.block_statements(&block)),
-            _ => return false,
-        };
-        let Some(read) = read else { return false };
-        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
-        let message = format!(
-            "{form} whose result is a node chooses it by {read}, which only the run knows: a node is hardware, chosen at elaboration or named (§1.4.7)"
-        );
-        self.coded(file, "E0133", span, message, "a node chosen at run time");
-        self.chosen_nodes.insert(expr);
-        true
     }
 
-    /// What `expr` reads that only the run knows: a probe, a port or a signal (`runtime_read`), a core primitive of the run
-    /// (`now()`, `temperature()`, §14), or a variable (a `let` or a function parameter; a generation index is known at
-    /// elaboration). `None` for an expression over params and constants; the elaborator folds it, and a call that reads the
-    /// run inside a function is refused there with the same code.
-    fn run_read(&self, expr: ExprId) -> Option<String> {
+    /// `E0133` for every recorded choice of a node whose value depends on the run (§1.4.7, user decision of 2026-11-24): its
+    /// condition, scrutinee or a guard reads a probe, a port, a signal, a core primitive of the run, or a variable whose value
+    /// does. A choice over params, constants, generation indexes and `let`s of those is made at elaboration.
+    pub(super) fn judge_node_choices(&mut self) {
+        for expr in std::mem::take(&mut self.node_choices) {
+            let (form, read) = match self.design.expr_node(expr).kind.clone() {
+                ExprKind::If { cond, .. } => ("an `if`", self.run_read(cond, 0)),
+                ExprKind::Match { scrutinee, arms } => {
+                    let guards = arms.iter().filter_map(|arm| arm.guard).find_map(|guard| self.run_read(guard, 0));
+                    ("a `match`", self.run_read(scrutinee, 0).or(guards))
+                }
+                _ => continue,
+            };
+            let Some(read) = read else { continue };
+            let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+            let message = format!(
+                "{form} whose result is a node chooses it by {read}: a node is hardware, chosen at elaboration or named (§1.4.7)"
+            );
+            self.coded(file, "E0133", span, message, "a node chosen at run time");
+            self.chosen_nodes.insert(expr);
+        }
+    }
+
+    /// What `expr` reads whose value depends on the run: a probe, a port or a signal (`runtime_read`), a core primitive of the
+    /// run (`now()`, `temperature()`, §14), or a variable whose value does (`run_variable`), `depth` names deep. `None` for an
+    /// expression over params, constants, generation indexes and `let`s of those; the elaborator folds it, and a call that reads
+    /// the run inside a function is refused there with the same code.
+    fn run_read(&self, expr: ExprId, depth: usize) -> Option<String> {
         if let Some(read) = self.runtime_read(expr) {
             return Some(read);
         }
@@ -231,12 +235,12 @@ impl Checker<'_> {
         match &node.kind {
             ExprKind::Call { callee, .. } if let Some(primitive) = self.run_primitive(*callee) => Some(format!("`{primitive}()`")),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if self.is_run_variable(decl) => {
-                    Some(format!("the variable `{}`", self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str())))
+                Some(Resolution::Decl(decl)) if self.run_variable(decl, depth) => {
+                    Some(format!("the variable `{}`, whose value depends on the run", self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str())))
                 }
                 _ => None,
             },
-            kind => crate::pom::expr_children(kind, self.design).into_iter().find_map(|child| self.run_read(child)),
+            kind => crate::pom::expr_children(kind, self.design).into_iter().find_map(|child| self.run_read(child, depth)),
         }
     }
 
@@ -249,18 +253,31 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether `decl` is a variable of the run: a function parameter, or a binding that is not the index of a generation `for`.
-    fn is_run_variable(&self, decl: DeclId) -> bool {
+    /// Whether the value of the variable `decl` depends on the run: a function parameter, a binding some assignment writes, one
+    /// with no initializer known here (a pattern, a loop's variable), or one whose initializer reads the run. A generation index
+    /// and a `let` of params and constants do not; a chain of `let`s deeper than 64 is taken as the run's.
+    fn run_variable(&self, decl: DeclId, depth: usize) -> bool {
         match &self.design.decl_data(decl).kind {
             DeclKind::FnParam(_) => true,
-            DeclKind::Binding(_) => !self.design.decl_data(decl).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Generation(_))),
+            DeclKind::Binding(_) => {
+                let parent = self.design.decl_data(decl).parent;
+                if parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Generation(_))) {
+                    return false;
+                }
+                if self.places.is_assigned(decl) || depth >= 64 {
+                    return true;
+                }
+                let body_value = parent.and_then(|parent| match &self.design.decl_data(parent).kind {
+                    DeclKind::Let(data) => Some(data.value),
+                    _ => None,
+                });
+                match self.let_values.get(&decl).copied().or(body_value) {
+                    Some(init) => self.run_read(init, depth + 1).is_some(),
+                    None => true,
+                }
+            }
             _ => false,
         }
-    }
-
-    /// `Some` when `block` holds statements before its result: what they compute is the run's.
-    fn block_statements(&self, block: &crate::pom::BlockNode) -> Option<String> {
-        (block.stmts.len() > 1).then(|| "the statements of a block".to_string())
     }
 
     /// Whether the node operand `operand` was refused already: a node chosen by an expression (through parentheses), or a `let`

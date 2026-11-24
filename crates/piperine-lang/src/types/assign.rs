@@ -51,6 +51,11 @@ impl Places {
     }
 
     /// The locals the checked bodies assign.
+    /// Whether some assignment of the design writes `local`.
+    pub(super) fn is_assigned(&self, local: DeclId) -> bool {
+        self.assigned.contains(&local)
+    }
+
     pub(super) fn into_assigned(self) -> BTreeSet<DeclId> {
         self.assigned
     }

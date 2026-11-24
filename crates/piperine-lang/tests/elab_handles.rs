@@ -146,3 +146,20 @@ fn a_node_chosen_through_a_function_that_reads_the_run_is_e0133() {
     assert_eq!(Elab::codes(&diagnostics), ["E0133"], "{:?}", diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
     assert_eq!(&src[diagnostics[0].diagnostic.span().range()], "if late() { x } else { p }");
 }
+
+#[test]
+fn a_node_chosen_through_lets_and_arm_statements_folds_to_the_node() {
+    // §1.4.7: statements in either arm and the `let`s a choice reads fold at elaboration: with `sel` false each form names `p`,
+    // and with `let c = k * 2.0` (`k` 1) the `if c > 0.5` names `x`
+    for (analog, node) in [
+        ("let y = if sel { let z = 1.0; x } else { p }; i(q, gnd) +> v(y);", "p"),
+        ("let y = if sel { x } else { let z = 1.0; p }; i(q, gnd) +> v(y);", "p"),
+        ("let y = match sel { true => { let z = 1.0; x }, false => p }; i(q, gnd) +> v(y);", "p"),
+        ("let y = { let s = sel; if s { x } else { p } }; i(q, gnd) +> v(y);", "p"),
+        ("let c = k * 2.0; let y = if c > 0.5 { x } else { p }; i(q, gnd) +> v(y);", "x"),
+    ] {
+        let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; signal q: Electrical; sel: bool = false; k: f64 = 1.0; }}\nanalog for Top {{ i(x, gnd) +> v(x); i(p, gnd) +> v(p); {analog} }}");
+        let printed = Elab::ir(&src, "Top").print_structural();
+        assert!(printed.contains(&format!("b2.flow +> direct probe({node}, gnd)")), "{analog}: {printed}");
+    }
+}

@@ -191,9 +191,7 @@ impl Checker<'_> {
             if ty == Some(Ty::Event) && !in_event_position {
                 ty = Some(self.event_out_of_place(expr));
             }
-            if self.chooses_a_node(expr, ty.as_ref()) {
-                ty = None;
-            }
+            self.record_node_choice(expr, ty.as_ref());
             self.exprs[expr.index()] = ty.clone();
             ty
         })
@@ -811,6 +809,9 @@ impl Checker<'_> {
         };
         if let Some(closure) = init.and_then(|i| self.closure_expr(i)) {
             self.closure_locals.insert(*binding, closure);
+        }
+        if let Some(init) = init {
+            self.let_values.insert(*binding, init);
         }
         match bound {
             Some(t) => {
