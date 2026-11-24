@@ -451,8 +451,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `one_body_per_distinct_module_instance_and_the_pom_as_written`, `a_false_module_where_is_e0304_naming_the_instance` and `a_chain_of_growing_module_arguments_is_e0341` pass under `**Run elabmods**`
-- [ ] Gate check passes: Quick
+- [x] `one_body_per_distinct_module_instance_and_the_pom_as_written`, `a_false_module_where_is_e0304_naming_the_instance` and `a_chain_of_growing_module_arguments_is_e0341` pass under `**Run elabmods**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -47,6 +47,11 @@ impl Instance {
         format!("{item}::<{}>", self.argument_names(elaboration).join(", "))
     }
 
+    /// The name of the generic item without its arguments, `clamp`.
+    pub(super) fn item_name(&self, elaboration: &Elaboration<'_, '_>) -> String {
+        elaboration.impl_qualified_name(self.item)
+    }
+
     /// Each argument as the source spells it: a type as written, a number, a function's name, `closure$k`.
     pub(super) fn argument_names(&self, elaboration: &Elaboration<'_, '_>) -> Vec<String> {
         let design = elaboration.design;
@@ -153,6 +158,8 @@ impl Elaboration<'_, '_> {
         match self.consts.substitution().apply_term(term) {
             ConstTerm::Value(value) => Some(ConcreteValue::Const(value)),
             ConstTerm::Bool(value) => Some(ConcreteValue::Bool(value)),
+            // an expression over const parameters folds the way the checker folds a length: syntactically, over their values
+            ConstTerm::Expr(expr) if let Some(value) = self.types.fold_with(expr, self.enclosing_values()).and_then(|value| i128::try_from(value).ok()) => Some(ConcreteValue::Const(value)),
             ConstTerm::Expr(expr) => {
                 let bindings = self.enclosing_bindings();
                 match self.consts.value(expr, &bindings) {
@@ -173,6 +180,14 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
+    }
+
+    /// The integer const arguments of the instance being lowered by parameter: what a syntactic fold of an expression reads.
+    fn enclosing_values(&self) -> BTreeMap<DeclId, u128> {
+        self.consts.substitution().entries().filter_map(|(parameter, value)| match value {
+            GenericValue::Const(ConstTerm::Value(number)) => u128::try_from(*number).ok().map(|number| (parameter, number)),
+            _ => None,
+        }).collect()
     }
 
     /// The const parameters of the instance being lowered bound to their values.
@@ -206,7 +221,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The const parameters of `instance`'s function bound to its const arguments.
-    fn instance_bindings(&self, instance: &Instance) -> Bindings {
+    pub(super) fn instance_bindings(&self, instance: &Instance) -> Bindings {
         let mut bindings = Bindings::new();
         let signature = GenericSignature::of(self.design, instance.item);
         for (parameter, argument) in signature.parameters().iter().zip(&instance.arguments) {

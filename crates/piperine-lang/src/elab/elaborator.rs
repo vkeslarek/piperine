@@ -81,6 +81,12 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) plans: BTreeMap<BodyKey, ModulePlan>,
     /// The params of each reached module with a body, planned before any body is lowered.
     pub(super) param_plans: BTreeMap<DeclId, Vec<ParamPlan>>,
+    /// The params of each instance of a generic module requested so far, planned under its arguments (`generic_bodies.rs`).
+    pub(super) instance_param_plans: BTreeMap<super::instances::Instance, Vec<ParamPlan>>,
+    /// How deep each body requested so far sits in the chain of module instances that asked for it (`generic_bodies.rs`).
+    pub(super) body_depths: BTreeMap<BodyKey, usize>,
+    /// The body being lowered.
+    pub(super) lowering: Option<BodyKey>,
     /// The key params of each reached module with a body (`structural.rs`).
     pub(super) keys: KeyParams,
     /// The variants of keyed bodies requested so far.
@@ -134,6 +140,9 @@ impl<'d, 't> Elaboration<'d, 't> {
             expr_origins: Vec::new(),
             plans: BTreeMap::new(),
             param_plans: BTreeMap::new(),
+            instance_param_plans: BTreeMap::new(),
+            body_depths: BTreeMap::new(),
+            lowering: None,
             keys: KeyParams::default(),
             overrides,
             body_variants: BodyVariants::default(),
@@ -162,6 +171,8 @@ impl<'d, 't> Elaboration<'d, 't> {
         // places it. Its natures are still the IR's before any body.
         let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
+        // a generic module has no body of its own: each instance a placement makes is one (`generic_bodies.rs`)
+        let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.is_generic_module(*m)).collect();
         self.read_included_files();
         self.build_type_arena();
         self.plan_params(&modules);

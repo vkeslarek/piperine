@@ -12,6 +12,7 @@ use piperine_ir::{CarrierRole, Constant, InstanceId, Reach, ReachedItem, Instanc
 use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::instances::Instance;
 use super::host_sources::{HostPort, HostSources};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
@@ -20,6 +21,8 @@ use piperine_ir::NodeRole;
 /// One placement about to become an instance.
 struct Placing {
     module: DeclId,
+    /// The arguments of the instance of a generic module this placement makes.
+    instance: Option<Instance>,
     /// `Top.r1`: the path of the instance.
     path: String,
     name: String,
@@ -61,25 +64,31 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(top).clone();
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let span = data.name.as_ref().map_or(data.span, |n| n.span);
-        let placing = Placing { module: top, path: name.clone(), name, parent: None, ports: Vec::new(), carrier_ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.locator.decl(top) };
+        let placing = Placing { module: top, instance: None, path: name.clone(), name, parent: None, ports: Vec::new(), carrier_ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.locator.decl(top) };
         let path = placing.path.clone();
         let placed = self.place(placing, &mut Vec::new())?;
         HostSources::new(&mut self.ir).place(placed.instance, &path, &placed.host_ports);
         Some(placed.instance)
     }
 
-    /// Place `placing`, then its children. `stack` holds the modules being placed above it.
-    fn place(&mut self, placing: Placing, stack: &mut Vec<DeclId>) -> Option<Placed> {
-        if stack.contains(&placing.module) {
+    /// Place `placing`, then its children. `stack` holds the modules being placed above it; a chain of generic module
+    /// instances may be a thousand deep, so each level runs on a stack segment of its own when the stack runs low.
+    fn place(&mut self, placing: Placing, stack: &mut Vec<(DeclId, Option<Instance>)>) -> Option<Placed> {
+        crate::stack::Stack::wide(|| self.place_instance(placing, stack))
+    }
+
+    /// [`Elaboration::place`] on the stack it runs on.
+    fn place_instance(&mut self, placing: Placing, stack: &mut Vec<(DeclId, Option<Instance>)>) -> Option<Placed> {
+        if stack.contains(&(placing.module, placing.instance.clone())) {
             let module = self.design.decl_data(placing.module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let message = format!("module `{module}` places itself (through `{}`)", placing.path);
             self.report(placing.file, Diagnostic::new("E0341", message, placing.span, "recursive placement"));
             return None;
         }
-        let param_plans = self.param_plans.get(&placing.module)?.clone();
+        let param_plans = self.plans_of(placing.module, placing.instance.as_ref())?.clone();
         let (params, bindings) = self.bind_params(&placing, &param_plans)?;
         let (params, bindings) = self.apply_overrides(placing.module, &placing.path, &param_plans, params, bindings, (placing.file, placing.span));
-        let plan = self.body_plan(placing.module, &bindings)?;
+        let plan = self.body_plan(placing.module, placing.instance.as_ref(), &bindings)?;
         let declared_by = self.ir.next_instance_id();
         let mut ports = placing.ports.iter().copied();
         let mut nodes = Vec::new();
@@ -111,7 +120,7 @@ impl Elaboration<'_, '_> {
         if !nets.is_empty() {
             self.ir.bind_nets(instance, nets.clone());
         }
-        stack.push(placing.module);
+        stack.push((placing.module, placing.instance.clone()));
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
             if let Some(placed) = self.place_child(child, &parent, stack) {
@@ -184,7 +193,7 @@ impl Elaboration<'_, '_> {
     /// One child of the instance `parent`: its ports bound to the parent's nodes and nets, each
     /// param value that reads the parent's params evaluated over the parent's bound values
     /// `bindings` (DIG-09 AC 11).
-    fn place_child(&mut self, child: &super::children::ChildPlan, parent: &Parent, stack: &mut Vec<DeclId>) -> Option<Placed> {
+    fn place_child(&mut self, child: &super::children::ChildPlan, parent: &Parent, stack: &mut Vec<(DeclId, Option<Instance>)>) -> Option<Placed> {
         let node = self.design.expr_node(child.call).clone();
         let file = self.design.decl_data(node.owner).file;
         let ports = child
@@ -213,6 +222,7 @@ impl Elaboration<'_, '_> {
         }
         let placing = Placing {
             module: child.module,
+            instance: child.instance.clone(),
             path: format!("{}.{}", parent.path, child.name),
             name: child.name.clone(),
             parent: Some(parent.instance),
@@ -270,7 +280,9 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
-        if let DeclKind::Module(m) = &self.design.decl_data(placing.module).kind
+        // the `where` of an instance of a generic module is discharged when its body is asked for (`generic_bodies.rs`)
+        if placing.instance.is_none()
+            && let DeclKind::Module(m) = &self.design.decl_data(placing.module).kind
             && let Some(cond) = m.where_
         {
             match self.consts.value(cond, &bindings) {

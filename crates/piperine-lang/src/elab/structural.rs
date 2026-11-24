@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use piperine_ir::{BodyId, Constant};
 
 use super::consts::Bindings;
+use super::instances::Instance;
 use super::body::ModulePlan;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
@@ -33,13 +34,15 @@ use crate::types::Types;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct BodyKey {
     pub(super) module: DeclId,
+    /// The generic arguments of the instance of a generic module the body lowers; `None` for a module as written.
+    pub(super) instance: Option<Instance>,
     pub(super) values: Vec<String>,
 }
 
 impl BodyKey {
     /// The key of the one body of a module with no key param.
     pub(super) fn unkeyed(module: DeclId) -> BodyKey {
-        BodyKey { module, values: Vec::new() }
+        BodyKey { module, instance: None, values: Vec::new() }
     }
 }
 
@@ -469,9 +472,9 @@ impl Elaboration<'_, '_> {
     /// a module with no key param has its one body; a variant takes the next id the first time its
     /// values are asked for and is lowered by `lower_pending_bodies`. `None` when a key param has
     /// no value in `values`.
-    pub(super) fn request_body(&mut self, module: DeclId, values: &Bindings) -> Option<(BodyKey, BodyId)> {
+    pub(super) fn request_body(&mut self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<(BodyKey, BodyId)> {
         let keys = self.keys.of(module).to_vec();
-        if keys.is_empty() {
+        if keys.is_empty() && instance.is_none() {
             return Some((BodyKey::unkeyed(module), self.body_ids.get(&module).copied()?));
         }
         let mut keyed = Bindings::new();
@@ -481,10 +484,11 @@ impl Elaboration<'_, '_> {
             self.bind_param(&mut keyed, *key, value);
             texts.push(value.to_string());
         }
-        let key = BodyKey { module, values: texts };
+        let key = BodyKey { module, instance: instance.cloned(), values: texts };
         if let Some(id) = self.body_variants.ids.get(&key) {
             return Some((key.clone(), *id));
         }
+        self.admit_instance_depth(&key)?;
         let id = BodyId(self.body_variants.next);
         self.body_variants.next += 1;
         self.body_variants.ids.insert(key.clone(), id);
@@ -502,15 +506,18 @@ impl Elaboration<'_, '_> {
 
     /// The plan of the body that `module` gets when its params hold `values`, lowering the
     /// variant if nothing asked for it before (the top, or a binding of the host).
-    pub(super) fn body_plan(&mut self, module: DeclId, values: &Bindings) -> Option<ModulePlan> {
-        let (key, _) = self.request_body(module, values)?;
+    pub(super) fn body_plan(&mut self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<ModulePlan> {
+        let (key, _) = self.request_body(module, instance, values)?;
         self.lower_pending_bodies();
         self.plans.get(&key).cloned()
     }
 
     /// The name of the body of `key`: the module's, then `~param=value` for each key param.
     pub(super) fn body_name(&self, key: &BodyKey) -> String {
-        let name = self.design.decl_data(key.module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = match &key.instance {
+            Some(instance) => instance.name(self),
+            None => self.design.decl_data(key.module).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+        };
         if key.values.is_empty() {
             return name;
         }

@@ -27,7 +27,7 @@ mod events; mod expansion; mod symbolic;
 mod exits;
 mod files; mod override_text; mod table_model; mod tables;
 mod elaborator; mod analog; mod element_commits; mod elements;
-mod functions;
+mod functions; mod generic_bodies;
 mod handles; mod hoist;
 mod host_sources; mod levels;
 mod inflow; mod instances;

@@ -10,6 +10,7 @@ use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
+use super::instances::Instance;
 use super::lower::Scope;
 use super::templates::TemplateValue;
 use super::unlowered::Unlowered;
@@ -22,6 +23,8 @@ use crate::types::{Callee, Ty};
 pub(super) struct ChildPlan {
     pub(super) name: String,
     pub(super) module: DeclId,
+    /// The arguments of the instance of a generic module the child places.
+    pub(super) instance: Option<Instance>,
     /// The body the child places: the variant of the module its key params select.
     pub(super) body: piperine_ir::BodyId,
     pub(super) terminals: Vec<Terminal>,
@@ -247,7 +250,8 @@ impl Elaboration<'_, '_> {
         if !shapes_agree {
             return None;
         }
-        let (_, body) = self.request_body(module, &key_values)?;
+        let instance = if self.is_generic_module(module) { Some(self.module_instance(call, module)?) } else { None };
+        let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
         // The slots of the child's own nodes are added once every body is built (`pad_child_nodes`).
@@ -260,7 +264,7 @@ impl Elaboration<'_, '_> {
         if windows.iter().any(Option::is_some) {
             self.structure.child_windows.push((index, windows));
         }
-        Some((child, ChildPlan { name, module, body, terminals, carriers, given, call }))
+        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call }))
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement

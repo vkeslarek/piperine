@@ -8,6 +8,7 @@ use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::instances::Instance;
 use super::structural::BodyKey;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId};
@@ -53,24 +54,39 @@ impl Elaboration<'_, '_> {
     /// `where`, which placement reads. A default that does not fold is reported once, here.
     pub(super) fn plan_params(&mut self, modules: &[DeclId]) {
         for module in modules {
-            let mut plans = Vec::new();
-            for param in self.design.decl_data(*module).children.clone() {
-                let data = self.design.decl_data(param).clone();
-                let DeclKind::Param(p) = &data.kind else { continue };
-                let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                let default = match p.default {
-                    Some(expr) => match self.fold_param_value(expr, &Bindings::new()) {
-                        Ok(value) => Some(value),
-                        Err(fault) => {
-                            self.const_fault(&fault, "a param default");
-                            continue;
-                        }
-                    },
-                    None => self.absent_option(p.ty),
-                };
-                plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
-            }
+            let plans = self.plan_module_params(*module);
             self.param_plans.insert(*module, plans);
+        }
+    }
+
+    /// The plan of every param of `module`, its defaults folded under the substitution set now (an instance of a generic
+    /// module sets its own, `generic_bodies.rs`).
+    pub(super) fn plan_module_params(&mut self, module: DeclId) -> Vec<ParamPlan> {
+        let mut plans = Vec::new();
+        for param in self.design.decl_data(module).children.clone() {
+            let data = self.design.decl_data(param).clone();
+            let DeclKind::Param(p) = &data.kind else { continue };
+            let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            let default = match p.default {
+                Some(expr) => match self.fold_param_value(expr, &Bindings::new()) {
+                    Ok(value) => Some(value),
+                    Err(fault) => {
+                        self.const_fault(&fault, "a param default");
+                        continue;
+                    }
+                },
+                None => self.absent_option(p.ty),
+            };
+            plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
+        }
+        plans
+    }
+
+    /// The param plans of `module` as a placement of it sees them: those of its instance when it is generic.
+    pub(super) fn plans_of(&self, module: DeclId, instance: Option<&Instance>) -> Option<&Vec<ParamPlan>> {
+        match instance {
+            Some(instance) => self.instance_param_plans.get(instance),
+            None => self.param_plans.get(&module),
         }
     }
 
@@ -89,6 +105,18 @@ impl Elaboration<'_, '_> {
     /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
     /// its plan. `expected` is the id the body was promised (`body_ids`, `BodyVariants`).
     pub(super) fn lower_body(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
+        // an instance of a generic module is lowered under its own arguments (`generic_bodies.rs`)
+        let outer = key.instance.as_ref().map(|instance| self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let enclosing = std::mem::replace(&mut self.lowering, Some(key.clone()));
+        self.lower_body_under_substitution(module, keys, key, expected);
+        self.lowering = enclosing;
+        if let Some(outer) = outer {
+            self.consts.set_substitution(outer);
+        }
+    }
+
+    /// [`Elaboration::lower_body`] with the substitution of the body's instance set.
+    fn lower_body_under_substitution(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
         let data = self.design.decl_data(module).clone();
         let name = self.body_name(&key);
         let mut scope = Scope::new(data.file);
@@ -155,7 +183,7 @@ impl Elaboration<'_, '_> {
     fn lower_param(&mut self, scope: &mut Scope, module: DeclId, param: DeclId) -> Option<Param> {
         let data = self.design.decl_data(param).clone();
         let DeclKind::Param(p) = &data.kind else { return None };
-        let plan = self.param_plans.get(&module)?.iter().find(|plan| plan.decl == param)?.clone();
+        let plan = self.plans_of(module, self.lowering.as_ref().and_then(|key| key.instance.as_ref()))?.iter().find(|plan| plan.decl == param)?.clone();
         // A param of module type holds its template's number (`templates.rs`).
         let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_param_type(data.file, p.ty)? };
         let check = match p.where_ {
