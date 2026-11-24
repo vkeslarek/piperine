@@ -18,7 +18,7 @@ use piperine_lang::types::Types;
 use piperine_plan::{Netlist, ParamReads};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, NoiseAnalysisOptions, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
+    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, NoiseAnalysisOptions, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
     TransientAnalysisOptions,
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
@@ -29,9 +29,10 @@ use crate::noise::{NoiseOutput, NoiseProbe, NoiseReport};
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
+use crate::leaf_input::LeafInput;
 use crate::param_text::{ParamText, Scalar as ParamScalar};
 use crate::pins::{Pins, Unbound};
-use crate::params::{Changed, Derive, Evaluated, LeafChange, Params};
+use crate::params::{Changed, Derive, Evaluated, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
@@ -228,11 +229,11 @@ impl ParamTarget {
 }
 
 impl Session {
-    /// Writes `value` to `leaf` of the composite param `path` names: the whole value after the write
-    /// is checked against the param's `where` (`E0317`) before anything is changed, then written.
-    pub(crate) fn set_leaf(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
-        let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
-        Session::write_leaf_change(table, derive, circuit, path, &change, &value.to_string())
+    /// Writes `input` to `leaf` of the composite param `path` names, exactly at any width: the whole value after the write is
+    /// checked against the param's `where` (`E0317`) before anything is changed, then written.
+    pub(crate) fn set_leaf(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, leaf: &str, input: &LeafInput) -> Result<(), Failure> {
+        let change = table.leaf_change(&path.instance, &path.param, leaf, input)?;
+        Session::write_composite(table, derive, circuit, path, &change.label(), change.bytes, &input.shown())
     }
 
     /// Writes `text` to the param `path` names as its type reads it (PI-01 to PI-03, D24): an integer
@@ -257,28 +258,24 @@ impl Session {
     /// [`Session::set_text_param`] before its refusals are renamed.
     fn write_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
         let read = ParamText::read(ir, path, text)?;
-        if let ParamText::Exact { bytes } = &read {
-            return Session::write_exact(table, derive, circuit, path, bytes.clone(), text);
-        }
-        match read.leaves(&path.label())? {
-            None => match read {
-                ParamText::Whole(scalar) => match scalar.exact_real() {
-                    Some(value) => Session::set_param(table, derive, circuit, path, value),
-                    None => Session::set_exact_integer(table, derive, circuit, path, scalar),
-                },
-                ParamText::Option { .. } | ParamText::Planes { .. } | ParamText::Exact { .. } => Ok(()),
+        match read {
+            ParamText::Exact { bytes } => Session::write_exact(table, derive, circuit, path, bytes, text),
+            ParamText::Pattern { bytes } => Session::write_composite(table, derive, circuit, path, &path.label(), bytes, text),
+            ParamText::Whole(scalar) => match scalar.exact_real() {
+                Some(value) => Session::set_param(table, derive, circuit, path, value),
+                None => Session::set_exact_integer(table, derive, circuit, path, scalar),
             },
-            Some(leaves) => {
+            ParamText::Option { .. } => {
+                let leaves = read.leaves().ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{}` has no leaf to write", path.label()) })?;
                 // both leaves are written on a copy of the table, so the param changes once, whole
                 let mut working = table.clone();
-                let mut first: Option<LeafChange> = None;
-                for (leaf, value) in leaves {
-                    let change = working.leaf_change(&path.instance, &path.param, leaf, value)?;
+                let mut bytes = Vec::new();
+                for (leaf, input) in &leaves {
+                    let change = working.leaf_change(&path.instance, &path.param, leaf, input)?;
                     working.apply_leaf(&change);
-                    first = Some(LeafChange { old: first.map_or_else(|| change.old.clone(), |earlier| earlier.old), ..change });
+                    bytes = change.bytes;
                 }
-                let whole = first.ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{}` has no leaf to write", path.label()) })?;
-                Session::write_leaf_change(table, derive, circuit, path, &whole, text)
+                Session::write_composite(table, derive, circuit, path, &path.label(), bytes, text)
             }
         }
     }
@@ -316,23 +313,23 @@ impl Session {
     pub(crate) fn set_target_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, ir: &Ir, target: &ParamTarget, text: &str) -> Result<(), Failure> {
         match &target.leaf {
             Some(leaf) => {
-                let number = table.leaf_number(&target.param.instance, &target.param.param, leaf, text)?;
-                Session::set_leaf(table, derive, circuit, &target.param, leaf, number)
+                Session::set_leaf(table, derive, circuit, &target.param, leaf, &LeafInput::Text(text.to_string()))
             }
             None if target.param.is_structural(ir) => ParamText::read(ir, &target.param, text).map(|_| ()),
             None => Session::set_text_param(table, derive, circuit, ir, &target.param, text),
         }
     }
 
-    /// Checks `change` against the param's `where` (`E0317`), writes it to `circuit` and takes it into `table`;
-    /// `shown` is the value as the host gave it, for the refusals.
-    fn write_leaf_change(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
-        let label = change.label();
-        let changes = table.changes_composite(&path.instance, &path.param, change.bytes.clone(), shown, derive)?;
+    /// Checks the composite param `path` holding `bytes` against its `where` (`E0317`), writes it to `circuit` and takes it into
+    /// `table`; `label` is what was written (the param, or one leaf of it) and `shown` the value as the host gave it, for the
+    /// refusals.
+    fn write_composite(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut dyn Pins, path: &ParamPath, label: &str, bytes: Vec<u8>, shown: &str) -> Result<(), Failure> {
+        let value = ParamValue::Bytes(bytes.clone());
+        let changes = table.changes_composite(&path.instance, &path.param, bytes, shown, derive)?;
         let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
         // the `where` of the param is checked where a device pin holds it; a param no pin holds is not written when others derive from it
         if circuit.holds(&path.instance, &path.param) {
-            circuit.check(&path.instance, &path.param, &change.param_value()).map_err(|text| {
+            circuit.check(&path.instance, &path.param, &value).map_err(|text| {
                 if text.contains("is refused, check") {
                     Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {shown} written at `{label}`", path.instance, path.param) }
                 } else {
@@ -428,7 +425,7 @@ impl Session {
         let mut table = Params::of(&ir);
         for (path, _, value) in &params {
             match &path.leaf {
-                Some(leaf) => Session::set_leaf(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, leaf, *value)?,
+                Some(leaf) => Session::set_leaf(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, leaf, &LeafInput::Number(*value))?,
                 None => {
                     table.refuse_unfit(&path.param.instance, &path.param.param, *value)?;
                     Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?
@@ -984,7 +981,7 @@ impl Session {
         for (entry, value) in &spec.params {
             let target = ParamTarget::resolve(&ir, ir.top().path(), entry)?;
             match &target.leaf {
-                Some(leaf) => Session::set_leaf(&mut table, Some(derive), &mut unbound, &target.param, leaf, *value)?,
+                Some(leaf) => Session::set_leaf(&mut table, Some(derive), &mut unbound, &target.param, leaf, &LeafInput::Number(*value))?,
                 None => Session::set_param(&mut table, Some(derive), &mut unbound, &target.param, *value)?,
             }
         }

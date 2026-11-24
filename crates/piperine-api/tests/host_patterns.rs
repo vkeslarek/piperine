@@ -2,7 +2,8 @@
 //! a top's `in` port of type `Logic<N>` and the host's drive of a top's resolved port whose drive type is `Logic<N>`, with the
 //! text the host prints a cell as (`10xz`, highest level first). A character outside `0 1 x z` and a length other than `N` are
 //! `E0702`; a port that holds no `Logic` is `E0802`. A `Logic<N>` param (§8.1.15) is set the same way, by the pattern as text
-//! (`Session::set_text`, `--param Top.pat=01zx`), since its two planes are leaves a user would not write.
+//! (`Session::set_text`, `--param Top.pat=01zx`) or by its plane leaves (`Top.pat.binary`), exactly at any `N` (60 and 100 levels
+//! included: no plane goes through an `f64`).
 #![cfg(unix)]
 
 use std::cell::RefCell;
@@ -41,6 +42,19 @@ impl Bench {
     }
     ";
 
+    /// A top with two wide `Logic` params, of 60 and of 100 levels (planes no `f64` holds exactly, the second wider than 64
+    /// bits), each read by a signal.
+    const WIDE: &str = "\
+    module Top() {
+        narrow: Logic<60> = Logic { binary: 0, value: 0 };
+        wide: Logic<100> = Logic { binary: 0, value: 0 };
+        signal held_narrow: Bit<Logic<60>>;
+        signal held_wide: Bit<Logic<100>>;
+        held_narrow = narrow;
+        held_wide = wide;
+    }
+    ";
+
     /// The settings of every run of this target: one build cache.
     fn settings() -> Settings {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
@@ -50,9 +64,14 @@ impl Bench {
 
     /// A session of `Bench::DESIGN` for `analysis`.
     pub fn session(analysis: &str, extra: Overrides) -> Session {
+        Bench::session_of(Bench::DESIGN, analysis, extra)
+    }
+
+    /// A session of `design` for `analysis`.
+    pub fn session_of(design: &str, analysis: &str, extra: Overrides) -> Session {
         let dir = tempfile::tempdir().expect("tmp");
         let file = dir.path().join("bench.msl");
-        std::fs::write(&file, Bench::DESIGN).expect("write");
+        std::fs::write(&file, design).expect("write");
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { backend: Some("rust".into()), top: Some("Top".into()), analysis: Some(analysis.into()), ..extra };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
@@ -67,6 +86,13 @@ impl Bench {
     /// The cell of the signal `name` of an operating point table.
     pub fn cell<'a>(table: &'a Table, name: &str) -> &'a Cell {
         &table.rows.iter().find(|row| row[0] == Cell::Text(name.to_string())).unwrap_or_else(|| panic!("no signal {name} in {table:?}")).get(1).expect("a value")
+    }
+
+    /// A pattern of `levels` levels using all four states, no `f64` able to hold either of its planes once `levels` passes 53:
+    /// `1`, `z`, `x`, then `0` and `1` alternating, and `1` as the lowest level.
+    pub fn wide_pattern(levels: usize) -> String {
+        let middle: String = (0..levels - 4).map(|k| if k % 2 == 0 { '0' } else { '1' }).collect();
+        format!("1zx{middle}1")
     }
 
     /// The text of the failure's code and message.
@@ -159,4 +185,50 @@ fn a_logic_param_is_set_by_its_pattern() {
     assert_eq!(Bench::refusal(untouched.set_text("Top.pat", "01zq").expect_err("a bad character")).0, "E0702");
     assert_eq!(Bench::refusal(untouched.set_text("Top.pat", "01z").expect_err("a wrong length")).0, "E0702");
     assert_eq!(Bench::cell(&Bench::op(&mut untouched), "Top.held"), &Cell::Text("10xz".to_string()));
+}
+
+#[test]
+fn a_logic_param_of_any_width_is_set_exactly_by_its_pattern() {
+    // §23.1 rule 13: a `Logic<N>` param is written as its pattern for every `N`, its planes written whole, never through an `f64`:
+    // `Logic<60>` (planes of one 64-bit word, above 2^53) and `Logic<100>` (planes of two words) read back the very pattern, by
+    // `Session::set_text` and by `--param`
+    let (narrow, wide) = (Bench::wide_pattern(60), Bench::wide_pattern(100));
+    let mut by_session = Bench::session_of(Bench::WIDE, "op", Overrides::default());
+    by_session.set_text("Top.narrow", &narrow).unwrap_or_else(|f| panic!("{f}"));
+    by_session.set_text("Top.wide", &wide).unwrap_or_else(|f| panic!("{f}"));
+    let table = Bench::op(&mut by_session);
+    assert_eq!(Bench::cell(&table, "Top.held_narrow"), &Cell::Text(narrow.clone()));
+    assert_eq!(Bench::cell(&table, "Top.held_wide"), &Cell::Text(wide.clone()));
+    let texts = vec![("Top.narrow".to_string(), narrow.clone()), ("Top.wide".to_string(), wide.clone())];
+    let mut by_flag = Bench::session_of(Bench::WIDE, "op", Overrides { param_texts: texts, ..Overrides::default() });
+    let table = Bench::op(&mut by_flag);
+    assert_eq!(Bench::cell(&table, "Top.held_narrow"), &Cell::Text(narrow));
+    assert_eq!(Bench::cell(&table, "Top.held_wide"), &Cell::Text(wide));
+}
+
+#[test]
+fn a_logic_param_of_any_width_is_set_exactly_by_its_leaves() {
+    // §23.1 rule 13: a plane leaf is an integer written exactly (no `f64` round trip), at 60 and at 100 levels. `binary` all ones
+    // and `value` with only its highest, its 54th and its lowest level set: the pattern is `1`, then `0`s with a `1` at level 53
+    let narrow_value = (1u128 << 59) | (1 << 53) | 1;
+    let wide_value = (1u128 << 99) | (1 << 53) | 1;
+    let texts = vec![
+        ("Top.narrow.binary".to_string(), ((1u128 << 60) - 1).to_string()),
+        ("Top.narrow.value".to_string(), narrow_value.to_string()),
+        ("Top.wide.binary".to_string(), format!("0x{:x}", (1u128 << 100) - 1)),
+        ("Top.wide.value".to_string(), wide_value.to_string()),
+    ];
+    let pattern = |levels: usize| (0..levels).rev().map(|level| if [levels - 1, 53, 0].contains(&level) { '1' } else { '0' }).collect::<String>();
+    let mut s = Bench::session_of(Bench::WIDE, "op", Overrides { param_texts: texts, ..Overrides::default() });
+    let table = Bench::op(&mut s);
+    assert_eq!(Bench::cell(&table, "Top.held_narrow"), &Cell::Text(pattern(60)));
+    assert_eq!(Bench::cell(&table, "Top.held_wide"), &Cell::Text(pattern(100)));
+    // a number given for a leaf of the second word lands in it, and one outside the plane's levels is refused
+    let mut by_number = Bench::session_of(Bench::WIDE, "op", Overrides::default());
+    by_number.set_at("Top.wide.binary", 2f64.powi(99), 0.0).unwrap_or_else(|f| panic!("{f}"));
+    by_number.set_at("Top.wide.value", 2f64.powi(99), 0.0).unwrap_or_else(|f| panic!("{f}"));
+    let highest = format!("1{}", "x".repeat(99));
+    assert_eq!(Bench::cell(&Bench::op(&mut by_number), "Top.held_wide"), &Cell::Text(highest));
+    let mut refused = Bench::session_of(Bench::WIDE, "op", Overrides::default());
+    assert_eq!(Bench::refusal(refused.set_at("Top.narrow.value", 2f64.powi(60), 0.0).expect_err("2^60 is no 60-level plane")).0, "E0802");
 }

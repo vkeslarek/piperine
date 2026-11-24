@@ -95,7 +95,7 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
     character outside the four, or a length other than `N`, is `E0702` (Part VII's code); a port that holds no
     `Logic<N>` is refused with `E0802`. A `Logic<N>` param (§8.1.15) is written as the same
     pattern, whole (`--param Top.pat=01zx`, `Session::set_text`), or by the path of one plane leaf
-    (`Top.pat.binary`); a pattern of more than 53 levels is set by its leaves.
+    (`Top.pat.binary`), at any `N`: the planes are written exactly, never through an `f64`.
 
 > **Resolution.** A host action taken in response to an event the host observed at `(t, n)`,
 > with no wait, is due at `(t, n + 1)`, like a commit with no delay (§15 T3). A host action

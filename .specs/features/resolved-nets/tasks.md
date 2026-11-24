@@ -1309,6 +1309,12 @@ Proof: run sourcenets | test a_match_over_options_and_a_resolve_walking_option_d
 **C91** - A resolved carrier that is a signal is no port of a child binding in the IR check (round 1 fix F17)
 Proof: run irresolved | test a_resolved_signal_is_no_port_of_a_child_binding ... ok
 
+**C92** - A `Logic<N>` param of any width (60 and 100 levels) is set by its pattern, through `Session::set_text` and `--param`, and reads back the exact pattern (Part VIII §23.1 rule 13, round 3 fix F19)
+Proof: run hostpatterns | test a_logic_param_of_any_width_is_set_exactly_by_its_pattern ... ok
+
+**C93** - A plane leaf of a `Logic<N>` param of any width is written exactly, as integer text or a whole number, and a value outside the plane's levels is `E0802` (Part VIII §23.1 rule 13, round 3 fix F19)
+Proof: run hostpatterns | test a_logic_param_of_any_width_is_set_exactly_by_its_leaves ... ok
+
 ---
 
 ## Handoff
