@@ -814,9 +814,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `wide_integers_wrap_modulo_two_to_the_n_in_every_operation` passes under `**Run srcw**`
-- [ ] `a_wide_literal_past_its_type_is_e0909` passes under `**Run srcw**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `wide_integers_wrap_modulo_two_to_the_n_in_every_operation` passes under `**Run srcw**`
+- [x] `a_wide_literal_past_its_type_is_e0909` passes under `**Run srcw**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task

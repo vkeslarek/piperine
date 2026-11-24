@@ -141,10 +141,8 @@ impl ValuePrinter<'_> {
         if !Self::is_number_width(from) && !Self::is_number_width(to) {
             return Ok(None);
         }
-        let mut operand = self.piece(expr)?.at(Prec::Atom);
-        if *from == ValueType::F64 && !self.plain {
-            operand = format!("{operand}.value()");
-        }
+        // an argument of a call needs no parentheses; a method receiver does
+        let operand = if *from == ValueType::F64 && !self.plain { format!("{}.value()", self.piece(expr)?.at(Prec::Atom)) } else { self.piece(expr)?.at(Prec::Low) };
         let converted = match (NumberClass::of(from), NumberClass::of(to)) {
             (Some(NumberClass::Float), Some(NumberClass::Float)) => format!("rt::Convert::float_to_float::<{}, {}>({operand})", self.convert_type(from, e)?, self.convert_type(to, e)?),
             (Some(NumberClass::Integer), Some(NumberClass::Float)) => format!("rt::Convert::integer_to_float::<{}, {}>({operand})", self.convert_type(from, e)?, self.convert_type(to, e)?),
@@ -157,8 +155,8 @@ impl ValuePrinter<'_> {
                 match (from, signed) {
                     (ValueType::Bool, false) => format!("{path}::from_u64(u64::from({operand}))"),
                     (ValueType::Bool, true) => format!("{path}::from_i64(i64::from({operand}))"),
-                    (ValueType::Enum(_), false) => format!("{path}::from_u64(({operand} as i64) as u64)"),
-                    (ValueType::Enum(_), true) => format!("{path}::from_i64({operand} as i64)"),
+                    (ValueType::Enum(_), false) => format!("{path}::from_u64((({operand}) as i64) as u64)"),
+                    (ValueType::Enum(_), true) => format!("{path}::from_i64(({operand}) as i64)"),
                     (other, _) => return Err(self.unsupported(e, &format!("a cast from {other} to {to}"))),
                 }
             }

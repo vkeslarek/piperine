@@ -52,7 +52,7 @@ use num_bigint::BigInt;
 use oracle::ExactOracle;
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
-use piperine_plan::CarrierLayout;
+use piperine_plan::{CarrierLayout, NumberLayout};
 use piperine_numbers::convert::NumberConversion;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::quad::Float128;
@@ -606,8 +606,14 @@ impl PinReading {
         let ir = widths::WidthBench::project(file).elaborate("Bench").unwrap_or_else(|r| panic!("{r}"));
         let bench = ir.bodies().find(|body| body.name() == "Bench").expect("Bench");
         let carrier = bench.carriers().iter().find(|carrier| carrier.name == name).unwrap_or_else(|| panic!("no carrier {name}"));
-        let layout = CarrierLayout::of(&carrier.ty).expect("a one-leaf pin");
-        (carrier.ty.clone(), layout.fields.iter().map(|field| (field.leaf, field.count)).collect())
+        match NumberLayout::field_of(&carrier.ty) {
+            // an integer wider than 64 bits is one `U64` field of `ceil(N/64)` limbs
+            Some((leaf, count, _)) => (carrier.ty.clone(), vec![(leaf, count)]),
+            None => {
+                let layout = CarrierLayout::of(&carrier.ty).expect("a one-leaf pin");
+                (carrier.ty.clone(), layout.fields.iter().map(|field| (field.leaf, field.count)).collect())
+            }
+        }
     }
 }
 
@@ -628,4 +634,193 @@ fn a_carried_f128_is_a_u64_field_of_count_two() {
     let committed = widths::WidthBench::first_commits("f128.msl", &["add"]);
     let wanted = ExactOracle::new(BinaryFormat::QUAD).add(FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.decimal("2.5"), FloatTable { reference: &ExactReference { format: BinaryFormat::QUAD, name: "f128" } }.decimal("0.1"));
     assert_eq!(committed, vec![wanted.to_le_bytes().to_vec()]);
+}
+
+/// An integer type of `bits` bits by exact `num-bigint` arithmetic reduced modulo `2^bits`.
+struct IntegerReference {
+    bits: u32,
+    signed: bool,
+}
+
+impl IntegerReference {
+    /// The MSL name: `UInt<200>`, `Int<100>`.
+    fn msl(&self) -> String {
+        format!("{}Int<{}>", if self.signed { "" } else { "U" }, self.bits)
+    }
+
+    /// The prefix of the carriers of the type in the model: `u200`, `i100`.
+    fn prefix(&self) -> String {
+        format!("{}{}", if self.signed { "i" } else { "u" }, self.bits)
+    }
+
+    /// `value` wrapped to the type (§1 rule 6).
+    fn wrap(&self, value: &BigInt) -> BigInt {
+        let modulus = BigInt::from(1) << self.bits;
+        let low = ((value % &modulus) + &modulus) % &modulus;
+        if self.signed && low >= (BigInt::from(1) << (self.bits - 1)) { low - modulus } else { low }
+    }
+
+    /// The least and the greatest value.
+    fn range(&self) -> (BigInt, BigInt) {
+        Conversions::range(self.bits, self.signed)
+    }
+
+    /// `value` held in the range of the type.
+    fn saturate(&self, value: &BigInt) -> BigInt {
+        let (low, high) = self.range();
+        value.clone().max(low).min(high)
+    }
+
+    /// The bytes of a carrier holding `value`.
+    fn bytes(&self, value: &BigInt) -> Vec<u8> {
+        Conversions::integer_bytes(value, self.bits)
+    }
+
+    /// One case of this type's value.
+    fn case(&self, name: &str, expression: &str, value: &BigInt) -> WidthCase {
+        WidthCase { name: format!("{}_{name}", self.prefix()), ty: self.msl(), zero: "0".into(), expression: expression.into(), expected: self.bytes(value) }
+    }
+
+    /// One `bool` case.
+    fn boolean(&self, name: &str, expression: &str, value: bool) -> WidthCase {
+        WidthCase { name: format!("{}_{name}", self.prefix()), ty: "bool".into(), zero: "false".into(), expression: expression.into(), expected: ValueBytes::of_bool(value) }
+    }
+
+    /// Every operator, shift, comparison, H.1 method and `as` of the type over the inputs `{p}a`, `{p}b`, `{p}c`.
+    fn cases(&self) -> Vec<WidthCase> {
+        let p = self.prefix();
+        let (a, b, c) = (self.magnitude(), BigInt::from(7), BigInt::from(if self.signed { -3 } else { 3 }));
+        let (xa, xb, xc) = (format!("{p}a"), format!("{p}b"), format!("{p}c"));
+        let mut cases = Vec::new();
+        for (name, symbol, value) in [("add", "+", &a + &b), ("sub", "-", &a - &b), ("mul", "*", &a * &b), ("div", "/", &a / &b), ("rem", "%", &a % &b), ("and", "&", &a & &b), ("or", "|", &a | &b), ("xor", "^", &a ^ &b)] {
+            cases.push(self.case(name, &format!("{xa} {symbol} {xb}"), &self.wrap(&value)));
+        }
+        // a signed negative operand: the sign of the quotient, of the remainder, and the shift of a negative value
+        if self.signed {
+            for (name, symbol, value) in [("div_neg", "/", &c / &b), ("rem_neg", "%", &c % &b)] {
+                cases.push(self.case(name, &format!("{xc} {symbol} {xb}"), &self.wrap(&value)));
+            }
+        }
+        for (name, symbol, holds) in [("lt", "<", a < b), ("le", "<=", a <= b), ("gt", ">", a > b), ("ge", ">=", a >= b), ("eq", "==", a == b), ("ne", "!=", a != b)] {
+            cases.push(self.boolean(name, &format!("{xa} {symbol} {xb}"), holds));
+        }
+        cases.push(self.case("neg", &format!("-{xa}"), &self.wrap(&-&a)));
+        cases.push(self.case("not", &format!("!{xa}"), &self.wrap(&!&a)));
+        for (name, amount) in [("shl", 70u32), ("shl_edge", self.bits), ("shr", 3), ("shr_edge", self.bits)] {
+            let (symbol, value) = if name.starts_with("shl") { ("<<", self.wrap(&(&a << amount))) } else { (">>", self.wrap(&(&a >> amount))) };
+            cases.push(self.case(name, &format!("{xa} {symbol} {amount}u32"), &value));
+        }
+        cases.push(self.case("shr_neg", &format!("{xc} >> 1u8"), &self.wrap(&(&c >> 1u32))));
+        cases.push(self.case("min", &format!("{xa}.min({xb})"), &a.clone().min(b.clone())));
+        cases.push(self.case("max", &format!("{xa}.max({xb})"), &a.clone().max(b.clone())));
+        cases.push(self.case("clamp", &format!("{xa}.clamp({xc}, {xb})"), &a.clone().max(c.clone()).min(b.clone())));
+        cases.push(self.case("pow", &format!("{xb}.pow(40)"), &self.wrap(&b.pow(40))));
+        cases.push(self.case("rem_euclid", &format!("{xc}.rem_euclid({xb})"), &self.wrap(&Self::euclid(&c, &b))));
+        cases.push(self.case("saturating_add", &format!("{xa}.saturating_add({xa})"), &self.saturate(&(&a + &a))));
+        cases.push(self.case("saturating_sub", &format!("{xb}.saturating_sub({xa})"), &self.saturate(&(&b - &a))));
+        cases.push(self.case("saturating_mul", &format!("{xa}.saturating_mul({xa})"), &self.saturate(&(&a * &a))));
+        if self.signed {
+            cases.push(self.case("abs", &format!("{xc}.abs()"), &self.wrap(&-&c)));
+            cases.push(self.case("signum", &format!("{xc}.signum()"), &BigInt::from(-1)));
+        }
+        self.casts(&mut cases, &a);
+        cases
+    }
+
+    /// The Euclidean remainder: `0 <= r < |d|`.
+    fn euclid(value: &BigInt, divisor: &BigInt) -> BigInt {
+        let magnitude = BigInt::from(divisor.magnitude().clone());
+        ((value % &magnitude) + &magnitude) % &magnitude
+    }
+
+    /// Every `as` of the type: to narrow, wide and float types, and from bool, narrow integers and floats.
+    fn casts(&self, cases: &mut Vec<WidthCase>, a: &BigInt) {
+        let xa = format!("{}a", self.prefix());
+        let narrow = IntegerReference { bits: 8, signed: false };
+        cases.push(WidthCase { name: format!("{}_to_u8", self.prefix()), ty: "u8".into(), zero: "0".into(), expression: format!("{xa} as u8"), expected: narrow.bytes(&narrow.wrap(a)) });
+        for target in [IntegerReference { bits: 130, signed: true }, IntegerReference { bits: 70, signed: false }] {
+            let name = format!("{}_to_{}", self.prefix(), target.prefix());
+            cases.push(WidthCase { name, ty: target.msl(), zero: "0".into(), expression: format!("{xa} as {}", target.msl()), expected: target.bytes(&target.wrap(a)) });
+        }
+        for (name, format, bytes) in [("f32", BinaryFormat::SINGLE, 4usize), ("f64", BinaryFormat::DOUBLE, 8), ("f128", BinaryFormat::QUAD, 16)] {
+            let pattern = Conversions::integer_to_float(a, format);
+            cases.push(WidthCase { name: format!("{}_to_{name}", self.prefix()), ty: name.into(), zero: "0.0".into(), expression: format!("{xa} as {name}"), expected: ValueBytes::of_pattern(pattern, bytes) });
+        }
+        let big = self.wrap(&(a << (self.bits.saturating_sub(10))));
+        let pattern = Conversions::integer_to_float(&big, BinaryFormat::SINGLE);
+        cases.push(WidthCase { name: format!("{}_big_to_f32", self.prefix()), ty: "f32".into(), zero: "0.0".into(), expression: format!("({xa} << {}u32) as f32", self.bits.saturating_sub(10)), expected: ValueBytes::of_pattern(pattern, 4) });
+        let from_bool = BigInt::from(1);
+        cases.push(self.case("from_bool", &format!("{}t as {}", self.prefix(), self.msl()), &from_bool));
+        let from_narrow = self.wrap(&BigInt::from(-5));
+        cases.push(self.case("from_i8", &format!("{}n as {}", self.prefix(), self.msl()), &from_narrow));
+        for (name, value) in [("from_f64", 1.5e30f64), ("from_f64_negative", -2.5e20f64)] {
+            let input = if value < 0.0 { format!("{}g", self.prefix()) } else { format!("{}f", self.prefix()) };
+            let converted = Conversions::float_to_integer(BinaryFormat::DOUBLE, u128::from(value.to_bits()), self.bits, self.signed);
+            cases.push(self.case(name, &format!("{input} as {}", self.msl()), &converted));
+        }
+    }
+
+    /// The value of the input `a`: the 128-bit magnitude cut below the sign bit, so a literal of the type holds it.
+    fn magnitude(&self) -> BigInt {
+        BigInt::from(A_MAGNITUDE) % (BigInt::from(1) << (self.bits - 1))
+    }
+
+    /// The inputs of the type: `a` the 128-bit magnitude, `b` 7, `c` -3 (a signed type only), and the bool, `i8`, `f64` sources.
+    fn inputs(&self) -> Vec<(String, String, String)> {
+        let p = self.prefix();
+        let mut inputs = vec![(format!("{p}a"), self.msl(), self.magnitude().to_string()), (format!("{p}b"), self.msl(), "7".into())];
+        inputs.push((format!("{p}c"), self.msl(), if self.signed { "-3".into() } else { "3".into() }));
+        inputs.push((format!("{p}t"), "bool".into(), "true".into()));
+        inputs.push((format!("{p}n"), "i8".into(), "-5".into()));
+        inputs.push((format!("{p}f"), "f64".into(), "1.5e30".into()));
+        inputs.push((format!("{p}g"), "f64".into(), "-2.5e20".into()));
+        inputs
+    }
+}
+
+/// The 128-bit magnitude every wide table starts from: above `2^127`, so a signed type of 128 bits wraps it to a negative value.
+const A_MAGNITUDE: u128 = 0xfedc_ba98_7654_3210_0123_4567_89ab_cdef;
+
+/// The bench of the wide integers: every width at once.
+struct WideTable;
+
+impl WideTable {
+    /// The widths of CV-32 AC 1, each as `UInt` and `Int`.
+    const WIDTHS: [u32; 5] = [65, 100, 128, 200, 1000];
+
+    /// The table.
+    fn bench() -> WidthBench {
+        let types: Vec<IntegerReference> = Self::WIDTHS.iter().flat_map(|bits| [IntegerReference { bits: *bits, signed: false }, IntegerReference { bits: *bits, signed: true }]).collect();
+        WidthBench {
+            file: "wide.msl",
+            about: "Integers wider than 64 bits from source (composite-values CV-32, part I §1 rules 5 and 6, Appendix H.1): every operator, shift, comparison, method and `as` at 65, 100, 128, 200 and 1000 bits.".into(),
+            constants: Vec::new(),
+            inputs: types.iter().flat_map(IntegerReference::inputs).collect(),
+            cases: types.iter().flat_map(IntegerReference::cases).collect(),
+        }
+    }
+}
+
+#[test]
+fn wide_integers_wrap_modulo_two_to_the_n_in_every_operation() {
+    // CV-32 AC 1, §1 rule 6: at 65, 100, 128, 200 and 1000 bits every operator wraps modulo 2^N, a shift of the width or
+    // more gives 0 (or the sign), `/` truncates and `%` takes the dividend's sign, every H.1 method and `as` gives the
+    // value `num-bigint` gives reduced to the type, and a `Bit<UInt<200>>` pin is one `U64` field of count 4
+    WideTable::bench().assert_first_edge();
+    assert_eq!(PinReading::fields("wide.msl", "u200_add"), (ValueType::UInt(200), vec![(leaf::U64, 4)]));
+    assert_eq!(PinReading::fields("wide.msl", "i100_add"), (ValueType::Int(100), vec![(leaf::U64, 2)]));
+}
+
+#[test]
+fn a_wide_integer_division_by_zero_fails_the_analysis_naming_it() {
+    // §1 rule 11: `/` and `%` of a wide integer by zero panic naming the operation and the type
+    let fault = widths::WidthBench::fault("wide_division_by_zero.msl", "Bench");
+    assert!(fault.contains("integer division by zero") && fault.contains("UInt<200>"), "{fault}");
+}
+
+#[test]
+fn a_wide_literal_past_its_type_is_e0909() {
+    // CV-32 AC 3, A.2 rule 8: `UInt<70>` holds up to 2^70 - 1, so a literal of 2^70 is `E0909` at elaboration
+    let report = widths::WidthBench::project("wide_literal_past_its_type.msl").elaborate("Bench").expect_err("a literal past its type is refused");
+    assert!(report.to_string().contains("E0909"), "{report}");
 }

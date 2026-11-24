@@ -84,6 +84,11 @@ impl WidthBench {
         Self::RUN.first_commits(file, names)
     }
 
+    /// The message of the fault the transient of `top` of `file` runs into.
+    pub fn fault(file: &str, top: &str) -> String {
+        Self::RUN.the_fault(file, top)
+    }
+
     /// Runs the model to its first edge and compares every case's committed bytes with its expectation;
     /// the failure names the case and its expression.
     pub fn assert_first_edge(&self) {
