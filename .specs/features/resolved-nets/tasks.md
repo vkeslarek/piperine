@@ -611,9 +611,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `two_driven_types_on_one_net_are_e0225` passes under `**Run elabnatures**`
-- [ ] `no_owned_code_is_raised` passes under `**Run speccodes**`
-- [ ] Gate check passes: Quick
+- [x] `two_driven_types_on_one_net_are_e0225` passes under `**Run elabnatures**`
+- [x] `no_owned_code_is_raised` passes under `**Run speccodes**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

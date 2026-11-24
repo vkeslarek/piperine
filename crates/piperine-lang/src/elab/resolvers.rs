@@ -118,13 +118,11 @@ impl Elaboration<'_, '_> {
         holders.sort_by_key(|used| DriveOrder::key(&used.path));
         let host = group.iter().any(|used| used.host_port);
         let sample = &group[0];
-        let Some(implementation) = self.net_implementation(&holders, sample) else { return };
-        let Some(driven) = self.stored_type(&implementation.driven) else { return };
-        if let Some(clash) = holders.iter().find(|used| used.driven != driven) {
-            let (file, span) = (self.design.decl_data(clash.plan.decl).file, self.design.decl_data(clash.plan.decl).span);
-            self.unsupported(file, span, &format!("two driven types on the net `{}`", declared.path));
+        if self.one_driven_type(&holders, &declared) {
             return;
         }
+        let Some(implementation) = self.net_implementation(&holders, sample) else { return };
+        let Some(driven) = self.stored_type(&implementation.driven) else { return };
         let value = sample.value.clone();
         let mut drive_nets = Vec::new();
         let mut owners: Vec<Option<InstanceId>> = Vec::new();
@@ -146,6 +144,18 @@ impl Elaboration<'_, '_> {
         let bound: Vec<NetId> = drive_nets.iter().copied().chain([net]).chain(readers.iter().map(|(_, others)| *others)).collect();
         self.ir.bind_nets(resolver, bound);
         self.ir.resolve_net(net, Resolution { resolver, driven, drives: drive_nets, holders: owners, others: readers });
+    }
+
+    /// `E0225` when two drives of one net hold different driven types (§5.2.15), naming both holders' instance paths
+    /// and both types; whether it was reported.
+    fn one_driven_type(&mut self, holders: &[&ResolvedUse], declared: &DeclaredNet) -> bool {
+        let Some((first, rest)) = holders.split_first() else { return false };
+        let Some(clash) = rest.iter().find(|used| used.driven != first.driven) else { return false };
+        let data = self.design.decl_data(clash.plan.decl);
+        let (file, span) = (data.file, data.span);
+        let message = format!("the net `{}` is driven with `{}` by `{}` and with `{}` by `{}`: every drive of a net holds one type (§5.2.15)", declared.path, first.driven, first.path, clash.driven, clash.path);
+        self.report(file, Diagnostic::new("E0225", message, span, "a drive of another type"));
+        true
     }
 
     /// The `impl Resolve` of a net: the one its holders' drives picked, else the net's own choice when nobody drives

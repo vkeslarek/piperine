@@ -103,3 +103,18 @@ fn others_depends_on_the_other_drives_only() {
     assert!(text.contains("others (1: Top.n$others1)"), "only the reader (drive 1, `Top.e`) has an others net:\n{text}");
     assert!(text.contains("except"), "the resolver body resolves all but the reader's drive:\n{text}");
 }
+
+#[test]
+fn two_driven_types_on_one_net_are_e0225() {
+    // §5.2.15: every drive of a net holds one type; a `bool` from one module and a `u8` from another into the
+    // same net is `E0225` naming both holders and both types.
+    let natures = "nature Counted { value: u8 }\nimpl Resolve<bool, u8> for Counted { fn resolve<const N: usize>(d: [bool; N]) -> u8 { 0 } }\nimpl Resolve<u8> for Counted { fn resolve<const N: usize>(d: [u8; N]) -> u8 { 0 } }\n\
+                    module Flag(c: Counted) { c = true; }\nmodule Byte(c: Counted) { c = 7u8; }\n";
+    let source = format!("{natures}module Top() {{ signal n: Counted; let a = Flag(n); let b = Byte(n); }}");
+    let diagnostics = Elab::run(&source, "Top").expect_err("two driven types");
+    assert_eq!(Elab::codes(&diagnostics), ["E0225"]);
+    let message = &diagnostics[0].diagnostic.message;
+    assert!(message.contains("Top.a") && message.contains("Top.b") && message.contains("bool") && message.contains("u8"), "{message}");
+    let agreeing = format!("{natures}module Top() {{ signal n: Counted; let a = Flag(n); let b = Flag(n); }}");
+    Elab::ir(&agreeing, "Top");
+}
