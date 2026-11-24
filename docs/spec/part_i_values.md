@@ -94,6 +94,8 @@ pub const EPS0: f64 = 8.8541878128e-12;
 pub const PI: f64 = 3.141592653589793;
 pub const E: f64 = 2.718281828459045;
 pub const inf: f64 = 1.0 / 0.0;
+pub const AMBIENT_TEMPERATURE: f64 = 300.15;
+pub const DEFAULT_MULTIPLICITY: f64 = 1.0;
 ```
 
 > **Resolution.** The design names the constants and not their values. `Q` and `K_B` are the

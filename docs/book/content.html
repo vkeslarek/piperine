@@ -6469,7 +6469,7 @@ digital for Tour { on clk.rise() { emit!("seen", t = now()); } }</pre>
 
 <h3><code>std::constants</code>: physical constants</h3>
 
-<p>Six <code>f64</code> constants, in SI units.</p>
+<p>Eight <code>f64</code> constants: six in SI units, and the two fallbacks of the run settings.</p>
 
 <div class="table-wrap"><table>
 <tbody>
@@ -6479,6 +6479,8 @@ digital for Tour { on clk.rise() { emit!("seen", t = now()); } }</pre>
 <tr><td><code>PI</code></td><td>The circle constant.</td></tr>
 <tr><td><code>E</code></td><td>Euler's number.</td></tr>
 <tr><td><code>inf</code></td><td>Positive infinity.</td></tr>
+<tr><td><code>AMBIENT_TEMPERATURE</code></td><td>27 &deg;C in kelvin (300.15), ngspice's default: the fallback of <code>temperature()</code>.</td></tr>
+<tr><td><code>DEFAULT_MULTIPLICITY</code></td><td>1.0, ngspice's default <code>m</code>: the fallback of <code>multiplicity()</code>.</td></tr>
 </tbody></table></div>
 
 <pre data-lang="msl">const VT_300K: f64 = K_B * 300.0 / Q;     // the thermal voltage at 300 K</pre>
@@ -6535,6 +6537,7 @@ digital for Latch { on clk.rise() { q &lt;- d; } }</pre>
 <tbody>
 <tr><td><code>State</code></td><td>A unitless nature for internal states.</td></tr>
 <tr><td><code>vt</code></td><td>The thermal voltage at the current temperature.</td></tr>
+<tr><td><code>multiplicity</code></td><td>The run's multiplicity, <code>simparam("multiplicity")</code>: <code>Some</code> when the run sets it, else <code>None</code>.</td></tr>
 <tr><td><code>white_noise</code>, <code>flicker_noise</code>, <code>noise_table</code></td><td>Noise sources with a flat, a 1/f and a tabulated spectrum.</td></tr>
 <tr><td><code>limexp</code></td><td>An exponential that is safe for Newton: it grows linearly past a limit.</td></tr>
 <tr><td><code>pnjlim</code>, <code>fetlim</code>, <code>limvds</code>, <code>deltalim</code></td><td>The step limiters that keep a junction, a gate voltage and a drain voltage from jumping too far between iterations.</td></tr>

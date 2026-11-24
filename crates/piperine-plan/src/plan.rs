@@ -553,6 +553,7 @@ impl BodyPlan {
             + body.derivatives().len()
             + body.delays().len()
             + usize::from(Self::reads_temperature(body))
+            + usize::from(Self::reads_temperature_given(body))
             + Self::reads_analysis(body).len();
         let mut next_check = pin_count as u32;
         let mut check_pins = Vec::with_capacity(body.params().len());
@@ -633,6 +634,11 @@ impl BodyPlan {
                 ..PinSpec::discrete("temperature", role::GLOBAL, &F64)
             })
         });
+        // The `GLOBAL` `BIT` pin of whether the run set its temperature (`temperature()`'s given half).
+        let temperature_given = Self::reads_temperature_given(body).then(|| {
+            let at = origin(body.origin());
+            s.pin(PinSpec { origin: &at, global: global::TEMPERATURE_GIVEN, ..PinSpec::discrete("temperature_given", role::GLOBAL, &BIT) })
+        });
         // One `GLOBAL` `BIT` pin per analysis kind the body reads (`analysis(kind)`).
         let analysis: Vec<(AnalysisKind, u32)> = Self::reads_analysis(body)
             .into_iter()
@@ -675,7 +681,7 @@ impl BodyPlan {
             derivatives,
             delays,
             temperature,
-            temperature_given: None,
+            temperature_given,
             analysis,
             checks,
             carriers,
@@ -1133,6 +1139,11 @@ impl BodyPlan {
     /// Whether any target of the body reads `temperature()`.
     fn reads_temperature(body: Body<'_>) -> bool {
         Self::queries(body).iter().any(|q| body.dependencies(*q).env.contains(&Env::Temperature))
+    }
+
+    /// Whether any target of the body reads whether the run set its temperature.
+    fn reads_temperature_given(body: Body<'_>) -> bool {
+        Self::queries(body).iter().any(|q| body.dependencies(*q).env.contains(&Env::TemperatureGiven))
     }
 
     /// The analysis kinds some target of the body reads, in `AnalysisKind` order.

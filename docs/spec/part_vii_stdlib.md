@@ -604,6 +604,10 @@ pub nature State {
 pub fn vt() -> f64 {
     K_B * temperature() / Q
 }
+
+pub fn multiplicity() -> Option<f64> {
+    simparam("multiplicity")
+}
 ```
 
 1. `vt(t)` is the thermal voltage at the temperature `t`, in kelvin. A model passes the temperature it chose, `vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))` (§8.5.3).

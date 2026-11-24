@@ -35,6 +35,8 @@ pub struct Tolerances {
     /// Charge tolerance in Coulombs for truncation error (default: 1e-14)
     pub chgtol: f64,
     pub temperature: f64,
+    /// Whether the run set its temperature (`temp`): `temperature()` is `Some(temperature)` when it did, `None` otherwise.
+    pub temperature_given: bool,
     /// Circuit-wide diagonal conductance to ground on every node (default 0).
     /// Helps convergence on floating/poorly-damped topologies (ngspice gshunt).
     pub gshunt: f64,
@@ -72,6 +74,7 @@ impl Default for Tolerances {
             trtol: 7.0,
             chgtol: 1e-14,
             temperature: 300.15,
+            temperature_given: false,
             gshunt: 0.0,
             node_vntol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
             branch_abstol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
@@ -80,6 +83,12 @@ impl Default for Tolerances {
 }
 
 impl Tolerances {
+    /// The run's temperature in kelvin, set by the run: `temperature()` reads `Some(kelvin)`.
+    pub fn set_temperature(&mut self, kelvin: f64) {
+        self.temperature = kelvin;
+        self.temperature_given = true;
+    }
+
     /// The absolute tolerance of a node: the smaller of the session's `vntol` and its nature's
     /// potential `abstol` (in `node_vntol_overrides`, §6.5.8); a nature can only tighten the
     /// session value (§17.1), and `self.vntol` stands for a node absent from the overrides.

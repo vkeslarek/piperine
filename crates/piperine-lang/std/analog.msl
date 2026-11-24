@@ -11,6 +11,10 @@ pub fn vt() -> f64 {
     K_B * temperature() / Q
 }
 
+pub fn multiplicity() -> Option<f64> {
+    simparam("multiplicity")
+}
+
 pub module white_noise(psd: f64, name: Option<str>) -> f64 {
     noise(psd, name)
 }

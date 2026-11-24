@@ -402,8 +402,8 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_device_reads_whether_the_run_set_its_temperature` passes under `**Run tgen**`
-- [ ] Gate check passes: Full
+- [x] `a_device_reads_whether_the_run_set_its_temperature` passes under `**Run tgen**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
