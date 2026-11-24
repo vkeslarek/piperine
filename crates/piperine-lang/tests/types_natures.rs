@@ -161,7 +161,7 @@ fn an_impl_resolve_makes_a_discrete_nature_resolved() {
 #[test]
 fn resolve_may_call_a_library_or_project_function() {
     // §4 rule 8: the body of `resolve` is any pure function: a library function, a project one.
-    let library = "nature Strongest { value: Drive }\nimpl Resolve<Drive> for Strongest { fn resolve<const N: usize>(d: [Drive; N]) -> Drive { Drive::wired(d) } }\n";
+    let library = "nature Strongest { value: Driven }\nimpl Resolve<Driven> for Strongest { fn resolve<const N: usize>(d: [Driven; N]) -> Driven { Driven::strongest(d) } }\n";
     Source::new(&format!("{library}module Top(a: Strongest) {{ }}")).checked();
     let project = "fn add<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() }\nnature Total { value: f64 }\nimpl Resolve<f64> for Total { fn resolve<const N: usize>(d: [f64; N]) -> f64 { add(d) } }\n";
     Source::new(&format!("{project}module Top(a: Total) {{ }}")).checked();

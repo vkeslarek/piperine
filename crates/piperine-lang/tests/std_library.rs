@@ -472,18 +472,18 @@ fn tgate_places_two_tran() {
 
 #[test]
 fn a_std_path_names_the_same_declaration() {
-    let design = Design::builder().source("top.msl", "module M(a: std::nets::Wire, b: Wire) { }\n").build();
+    let design = Design::builder().source("top.msl", "fn f(a: std::nets::Strength, b: Strength) { }\n").build();
     assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let wire = design.std_crate().find("nets::Wire").expect("std declares Wire in nets");
+    let wire = design.std_crate().find("nets::Strength").expect("std declares Strength in nets");
     let uses: Vec<String> = wire.references().iter().filter_map(|r| if let Reference::Path(p) = r { Some(p.text().to_string()) } else { None }).collect();
-    assert!(uses.iter().any(|t| t == "std::nets::Wire"), "the long path resolves to Wire: {uses:?}");
-    assert!(uses.iter().any(|t| t == "Wire"), "the single name resolves to Wire: {uses:?}");
+    assert!(uses.iter().any(|t| t == "std::nets::Strength"), "the long path resolves to Strength: {uses:?}");
+    assert!(uses.iter().any(|t| t == "Strength"), "the single name resolves to Strength: {uses:?}");
 }
 
 #[test]
 fn transient_is_the_kind_and_tran_the_module() {
     let design = Design::builder()
-        .source("top.msl", "module M(a: Wire, b: Wire, in en: Bit) { let k = analysis(Transient); let g = Tran(a, b, en); }\n")
+        .source("top.msl", "nature Line { value: Driven }\nimpl Resolve<Driven> for Line { fn resolve<const N: usize>(d: [Driven; N]) -> Driven { Driven::strongest(d) } }\nmodule M(a: Line, b: Line, in en: Bit) { let k = analysis(Transient); let g = Tran(a, b, en); }\n")
         .build();
     assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
     let tran = resolved_decl(&design, "Tran").expect("Tran resolves to a declaration");
@@ -591,16 +591,15 @@ fn engine_table() -> BTreeSet<String> {
     table_rows(table).into_iter().map(|row| row[0].trim_matches('`').to_string()).take_while(|n| !n.is_empty()).collect()
 }
 
-/// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
-/// from the files and empties the list).
-const STD_BEHIND_THE_INDEX: [(&str, &str); 3] = [("nets", "Drive"), ("nets", "Wire"), ("nets", "SumNet")];
+/// Pub items of `std` that the Index no longer lists: none since `resolved-nets` T27 removed `Drive`, `Wire` and `SumNet`.
+const STD_BEHIND_THE_INDEX: [(&str, &str); 0] = [];
 
-/// Index items of §22 that `std` does not declare yet: the specification states the explicit model
-/// (explicit-unknowns, MD-78) before the files hold it. `Logic` and `LogicState` left with T44; the earlier strength struct of `nets` is `Drive` until `resolved-nets` brings `Driven`; a stale entry fails `the_index_lists_stay_honest`.
-const INDEX_AHEAD_OF_STD: [(&str, &str); 1] = [("nets", "Driven")];
+/// Index items of §22 that `std` does not declare yet: none since `resolved-nets` T27 gave `nets` `Driven`; a stale entry
+/// fails `the_index_lists_stay_honest`.
+const INDEX_AHEAD_OF_STD: [(&str, &str); 0] = [];
 
-/// Members the Index lists under the items above (`Logic::..`, `Driven::strongest`).
-const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 1] = [("nets", "strongest")];
+/// Members the Index lists under the items above: none since `Driven::strongest` is declared.
+const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 0] = [];
 
 /// The names of the `pub` items of a namespace.
 fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
@@ -848,7 +847,7 @@ fn std_holds_no_removed_form() {
         }
     }
     let nets = std::fs::read_to_string(std_dir().join("nets.msl")).expect("nets.msl");
-    for item in ["pub fn wired<const N: usize>(d: [Drive; N]) -> Drive", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
+    for item in ["pub fn strongest<const N: usize>(d: [Driven; N]) -> Driven", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
         assert!(nets.contains(item), "nets.msl holds `{item}`");
     }
 }

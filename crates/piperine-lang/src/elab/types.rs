@@ -101,12 +101,46 @@ impl Elaboration<'_, '_> {
         // a generic declaration has no entry of its own: its fields mention parameters; each instance has one
         let decls: Vec<DeclId> = self.types.aggregate_types().into_iter().filter(|decl| self.design.decl_data(*decl).generics_span.is_none()).collect();
         self.type_arena = TypeArena::over(&decls);
+        // every instance has its number before any entry is built, so a field of a struct (or of another instance) that
+        // holds one, `struct Cell { v: Logic<2> }`, finds the entry of its type
+        let instances = self.reached_instances(&decls);
+        for (position, nominal) in instances.iter().enumerate() {
+            self.type_arena.instances.insert(nominal.clone(), TypeId((decls.len() + position) as u32));
+        }
         for decl in decls {
             let data = self.type_data(decl, &crate::types::Substitution::new());
             self.add_type_entry(data);
         }
-        for nominal in self.types.generic_instances() {
-            self.register_instance(&nominal);
+        for nominal in &instances {
+            let data = self.instance_data(nominal);
+            self.add_type_entry(data);
+        }
+    }
+
+    /// Every instance of a generic struct or enum the check reached: the ones a type of the check holds, the ones the
+    /// fields of `decls` hold, and the ones the fields of an instance hold, each once.
+    fn reached_instances(&self, decls: &[DeclId]) -> Vec<Nominal> {
+        let mut found = self.types.generic_instances();
+        for decl in decls {
+            for owner in self.field_owners(*decl) {
+                self.types.fields(owner).unwrap_or(&[]).iter().for_each(|field| field.ty.generic_instances(&mut found));
+            }
+        }
+        let mut next = 0;
+        while let Some(nominal) = found.get(next).cloned() {
+            for owner in self.field_owners(nominal.decl) {
+                self.types.instance_fields(owner, &nominal).iter().for_each(|field| field.ty.generic_instances(&mut found));
+            }
+            next += 1;
+        }
+        found
+    }
+
+    /// The declarations whose fields make the type `decl`: the struct itself, or each variant of an enum.
+    fn field_owners(&self, decl: DeclId) -> Vec<DeclId> {
+        match self.design.decl_data(decl).kind {
+            DeclKind::Struct(_) => vec![decl],
+            _ => self.design.decl_data(decl).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Variant(_))).collect(),
         }
     }
 
@@ -130,20 +164,26 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The arena entry of the instance `nominal`, named `Pair<f64>` and recording `instance`, its fields the
-    /// declaration's with the arguments put in the place of the parameters; nothing when it is registered.
+    /// The arena entry of the instance `nominal` (nothing when it is registered), added after the ones before it.
     fn register_instance(&mut self, nominal: &Nominal) {
         if self.type_arena.instance_id(nominal).is_some() {
             return;
         }
+        let data = self.instance_data(nominal);
+        let id = self.add_type_entry(data);
+        self.type_arena.instances.insert(nominal.clone(), id);
+    }
+
+    /// The entry of the instance `nominal`, named `Pair<f64>` and recording `instance`, its fields the declaration's with
+    /// the arguments put in the place of the parameters.
+    fn instance_data(&self, nominal: &Nominal) -> TypeData {
         let substitution = crate::types::Substitution::of(&crate::types::GenericSignature::of(self.design, nominal.decl), &nominal.arguments);
         let mut data = self.type_data(nominal.decl, &substitution);
         let ty = if matches!(self.design.decl_data(nominal.decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal.clone()) } else { Ty::Struct(nominal.clone()) };
         data.name = ty.source_name(self.design);
         data.path = format!("{}{}", data.path, nominal.arguments_name(self.design));
         data.instance = Some(piperine_ir::GenericInstance { item: self.design.decl_data(nominal.decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()), arguments: nominal.arguments.iter().map(|argument| argument.name(self.design)).collect() });
-        let id = self.add_type_entry(data);
-        self.type_arena.instances.insert(nominal.clone(), id);
+        data
     }
 
     /// The path of the declaration `decl` as the arena names it: its qualified name, prefixed with `std::` when the standard

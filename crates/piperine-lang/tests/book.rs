@@ -204,13 +204,13 @@ fn the_chapter_has_a_part_per_namespace() {
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
 
-/// Prelude exports the Book no longer names because the explicit model removed them (`Wire`, `SumNet`, and `Drive`, the earlier strength struct of `nets` that `Driven` replaces) while `std` still declares them; owned by explicit-unknowns T23.
-const STD_BEHIND_THE_BOOK: [&str; 3] = ["SumNet", "Wire", "Drive"];
+/// Prelude exports the Book does not name: none since `resolved-nets` T27 removed `Wire`, `SumNet` and `Drive` from `std`.
+const STD_BEHIND_THE_BOOK: [&str; 0] = [];
 
 #[test]
 fn the_chapter_names_every_prelude_export() {
     let exports = prelude_exports(&embedded());
-    assert!(exports.len() >= 80, "the prelude exports {} names", exports.len());
+    assert!(exports.len() >= 78, "the prelude exports {} names", exports.len());
     let html = chapter(&content(), "core-std");
     let absent: Vec<String> = missing(&html, &exports).into_iter().filter(|name| !STD_BEHIND_THE_BOOK.contains(&name.as_str())).collect();
     assert!(absent.is_empty(), "the chapter does not name these prelude exports: {absent:?}");
@@ -240,9 +240,9 @@ fn the_chapter_explains_the_prelude_and_the_engine_items() {
     assert!(code_spans(part.split("<h3>").next().unwrap()).iter().any(|s| s == "std::prelude"), "the part on the engine names `std::prelude`");
 }
 
-/// Markers of chapter blocks that use library names the standard library does not hold yet (core-std#6, owned by
-/// `resolved-nets` B3 and later, tasks T27 to T32 of the roadmap).
-const BLOCKS_AHEAD_OF_STD: [&str; 1] = ["pub nature IrqLine"];
+/// Markers of chapter blocks that use library names the standard library does not hold yet: none since `resolved-nets`
+/// T27 gave `std` `Driven` and the modules over `Resolve<Driven>`.
+const BLOCKS_AHEAD_OF_STD: [&str; 0] = [];
 
 #[test]
 fn chapter_blocks_build_against_std() {

@@ -1,0 +1,148 @@
+//! A nature with two `impl`s and a typed bus (§4 rule 8, Appendix F.4.4): each carrier resolves by the type its drives
+//! have, and the value a reader sees is the nature's, not the drives'.
+
+/// A flag net: one nature, two ways to drive it. A `bool` drive and a `u8` drive each have an `impl`.
+nature Bus { value: bool }
+
+/// High when every drive is high.
+impl Resolve<bool> for Bus {
+    fn resolve<const N: usize>(drives: [bool; N]) -> bool {
+        drives.iter().fold(true, |all, drive| all && drive)
+    }
+}
+
+/// High when every drive is non-zero.
+impl Resolve<u8, bool> for Bus {
+    fn resolve<const N: usize>(drives: [u8; N]) -> bool {
+        drives.iter().fold(true, |all, drive| all && drive != 0)
+    }
+}
+
+/// Drives a flag.
+module Flag(w: Bus) {
+    on: bool = true;
+    w = on;
+}
+
+/// Drives a count.
+module Count(w: Bus) {
+    count: u8 = 1;
+    w = count;
+}
+
+/// Writes the value of the net at each change, 1 or 0.
+module Watch(w: Bus) { }
+digital for Watch {
+    on w.changed() {
+        emit!("bus", level = if w { 1.0 } else { 0.0 });
+    }
+}
+
+/// Two flags, one low: a flag drive resolves by `Resolve<bool>`, the AND of the flags, low.
+module OneLowFlagBench() {
+    signal n: Bus;
+    let a = Flag(n) { on: true };
+    let b = Flag(n) { on: false };
+    let look = Watch(n);
+}
+
+/// Two flags, both high: high.
+module HighFlagsBench() {
+    signal n: Bus;
+    let a = Flag(n) { on: true };
+    let b = Flag(n) { on: true };
+    let look = Watch(n);
+}
+
+/// Two counts, one zero: a `u8` drive resolves by `Resolve<u8, bool>`, high when every drive is non-zero, here low.
+module ZeroCountBench() {
+    signal n: Bus;
+    let a = Count(n) { count: 3 };
+    let b = Count(n) { count: 0 };
+    let look = Watch(n);
+}
+
+/// Two counts, both non-zero: high. Under the `bool` impl the counts would not be drives of this net at all.
+module NonZeroCountsBench() {
+    signal n: Bus;
+    let a = Count(n) { count: 3 };
+    let b = Count(n) { count: 2 };
+    let look = Watch(n);
+}
+
+/// Both kinds of net at once, in one design: the flags' net and the counts' net each follow their own `impl`.
+module TwoNetsBench() {
+    signal flags: Bus;
+    signal counts: Bus;
+    let f0 = Flag(flags) { on: true };
+    let f1 = Flag(flags) { on: true };
+    let c0 = Count(counts) { count: 2 };
+    let c1 = Count(counts) { count: 0 };
+    let look_flags = Watch(flags);
+    let look_counts = Watch(counts);
+}
+
+/// What a data bus holds when no module, one module or several drive it (Appendix F.4.4).
+#[derive(Repr, PartialEq)]
+pub enum Data {
+    Free,
+    Byte(u8),
+    Contended,
+}
+
+/// A bus that allows one driver at a time: the driven type is `Option<u8>`, the value `Data`.
+pub nature DataBus { value: Data }
+
+impl Resolve<Option<u8>, Data> for DataBus {
+    fn resolve<const N: usize>(drives: [Option<u8>; N]) -> Data {
+        drives.iter().fold(Data::Free, |a, x| match (a, x) {
+            (y, None) => y,
+            (Data::Free, Some(b)) => Data::Byte(b),
+            _ => Data::Contended,
+        })
+    }
+}
+
+/// Puts a byte on the bus while enabled, and releases it otherwise.
+module Talk(w: DataBus) {
+    byte: u8 = 1;
+    enabled: bool = true;
+    w = if enabled { Some(byte) } else { None };
+}
+
+/// Writes the bus at each change: -1 for contended, -2 for free, the byte otherwise.
+module Listen(w: DataBus) { }
+digital for Listen {
+    on w.changed() {
+        emit!(
+            "data",
+            seen = match w {
+                Data::Free => -2.0,
+                Data::Byte(b) => b as f64,
+                Data::Contended => -1.0,
+            }
+        );
+    }
+}
+
+/// Nobody drives: free.
+module FreeBusBench() {
+    signal bus: DataBus;
+    let listen = Listen(bus);
+}
+
+/// One talker among two modules that release the bus: the byte.
+module ByteBusBench() {
+    signal bus: DataBus;
+    let a = Talk(bus) { byte: 42, enabled: true };
+    let b = Talk(bus) { byte: 7, enabled: false };
+    let listen = Listen(bus);
+}
+
+/// Two talkers: contended.
+module ContendedBusBench() {
+    signal bus: DataBus;
+    let a = Talk(bus) { byte: 42, enabled: true };
+    let b = Talk(bus) { byte: 7, enabled: true };
+    let listen = Listen(bus);
+}

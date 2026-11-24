@@ -1,8 +1,8 @@
 //! Declaration rules of a bundle (feature `resolved-nets-bundles`, BN-01; spec part II §7): a
 //! `struct` of carriers is a bundle (rule 1), and what the POM refuses at the declaration, with
 //! no types and no const evaluation, is `E0260`, `E0261`, `E0262` and `E0264`, each at the field
-//! or the position it names. The source uses the real standard library for `Bit`, `Wire` and
-//! `Electrical`.
+//! or the position it names. The source uses the real standard library for `Bit` and
+//! `Electrical`, and declares its own resolved nature `Wire` (the library declares no net nature, §22.3).
 
 use piperine_lang::pom::{Design, DesignDiagnostic};
 
@@ -10,6 +10,9 @@ use piperine_lang::pom::{Design, DesignDiagnostic};
 struct Bundles;
 
 impl Bundles {
+    /// A resolved nature the sources declare: the library holds none.
+    const WIRE: &'static str = "#[derive(Repr, Default)] struct Level { v: bool }\nnature Wire { value: Level }\nimpl Resolve<Level> for Wire { fn resolve<const N: usize>(d: [Level; N]) -> Level { Level { v: true } } }\n";
+
     /// A design of `src` over the embedded standard library.
     fn design(src: &str) -> Design {
         Design::builder().source("top.msl", src).build()
@@ -77,7 +80,7 @@ fn a_struct_mixing_carrier_and_value_fields_is_e0260() {
 fn one_driver_fields_carry_a_direction_and_no_other_field_does() {
     // §7 rule 2: `Bit` is a one-driver nature and takes `in` or `out`; `Wire` (resolved) and
     // `Electrical` (conservative) take none
-    let design = Bundles::design("struct Stream { out valid: Bit, in ready: Bit, bus: Wire, node: Electrical }\nmodule Top() { }\n");
+    let design = Bundles::design(&format!("{}struct Stream {{ out valid: Bit, in ready: Bit, bus: Wire, node: Electrical }}\nmodule Top() {{ }}\n", Bundles::WIRE));
     assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
 }
 
@@ -85,7 +88,7 @@ fn one_driver_fields_carry_a_direction_and_no_other_field_does() {
 fn a_misplaced_or_missing_field_direction_is_e0261() {
     // §7 rule 2: a one-driver field with no direction, and a field of any other nature with one,
     // is an error at the field's name
-    let design = Bundles::design("struct Stream { valid: Bit, out bus: Wire, in node: Electrical, ok: Wire, out good: Bit }\nmodule Top() { }\n");
+    let design = Bundles::design(&format!("{}struct Stream {{ valid: Bit, out bus: Wire, in node: Electrical, ok: Wire, out good: Bit }}\nmodule Top() {{ }}\n", Bundles::WIRE));
     assert_eq!(Bundles::spans(&design, "E0261"), ["valid", "bus", "node"], "{:?}", design.diagnostics());
 }
 

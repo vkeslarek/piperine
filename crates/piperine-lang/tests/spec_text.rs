@@ -2538,3 +2538,17 @@ fn a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules() {
         assert!(rule.contains(fact), "§3.1.6 lacks \"{fact}\": {rule}");
     }
 }
+
+#[test]
+fn keeper_and_bidir_blocks_repeat_their_generic_names() {
+    // resolved-nets D26, §10 rule 6: a behavior block of a generic module names the module's generics, so Part VII writes
+    // `digital<W> for Keeper<W>`, `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>`, and says so
+    let text = spec("part_vii_stdlib.md");
+    for header in ["digital<W> for Keeper<W> {", "analog<W> for Bidir<W> {", "digital<W> for Bidir<W> {"] {
+        assert!(text.contains(header), "§22 lacks the block header {header}");
+    }
+    let flat_text = flat(&text);
+    for fact in ["The `digital` block repeats the module's generic names, `digital<W> for Keeper<W>` (§10 rule 6)", "The `analog` and `digital` blocks repeat the module's generic names, `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>` (§10 rule 6)"] {
+        assert!(flat_text.contains(fact), "§22 lacks \"{fact}\"");
+    }
+}

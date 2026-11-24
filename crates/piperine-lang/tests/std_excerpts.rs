@@ -221,46 +221,16 @@ fn live_sources(part_vii: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The first unmatched line of each fence of Part VII that is ahead of `std`: the specification
-/// states `Logic<N>`, `Driven` and the net modules over `Resolve<Driven>` (explicit-unknowns, MD-78) before
-/// the files can hold them, because `Logic<N>` is a generic struct with operator traits (T44, T45, phase B) and
-/// `Resolve` is a capability of a nature (`resolved-nets`, after `generics`). The binary part of Part VII is `std`'s
-/// text since T23. A fence leaves this list in the task that makes its text a text of its file;
-/// `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
-const AHEAD_OF_STD: [&str; 8] = [
-    "/// What a module drives into a net that resolves by strength: a level and how hard it is held.",
-    "impl Driven {",
-    "pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {",
-    "pub module Keeper<W: Nature + Resolve<Driven>>(w: W) {",
-    "pub module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {",
-    "pub module Tgate<W: Nature + Resolve<Driven>>(a: W, y: W, in s: Bit, in sn: Bit) {",
-    "pub module Bidir<W: Nature + Resolve<Driven>>(d: W, a: Electrical, vdd: Electrical) {",
-    "pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {",
-];
+/// The first unmatched line of each fence of Part VII that is ahead of `std`: none since the net library
+/// (`Driven`, the modules over `Resolve<Driven>`, `Bidir`, `TribufDelayed`) landed with `resolved-nets` T27. A fence
+/// enters this list when the specification states a form before the file can hold it, and leaves in the task that makes
+/// its text a text of its file; `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
+const AHEAD_OF_STD: [&str; 0] = [];
 
-/// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or
-/// removed, which stay while something still reads them: the library
-/// nets and the modules over them (`Wire`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
-/// `resolved-nets`), the `Drive` struct and its `impl`s. Nothing in these
-/// units reads a known flag. The list is empty when they are gone.
-const BEHIND_SPEC: [(&str, usize, &str); 16] = [
-    ("convert.msl", 36, "module Bidir"),
-    ("monitor.msl", 87, "module TribufDelayed"),
-    ("nets.msl", 13, "struct Drive"),
-    ("nets.msl", 19, "impl"),
-    ("nets.msl", 35, "impl"),
-    ("nets.msl", 53, "nature Wire"),
-    ("nets.msl", 57, "impl"),
-    ("nets.msl", 67, "nature SumNet"),
-    ("nets.msl", 71, "impl"),
-    ("nets.msl", 77, "module Tribuf"),
-    ("nets.msl", 85, "module Pullup"),
-    ("nets.msl", 89, "module Pulldown"),
-    ("nets.msl", 93, "module Keeper"),
-    ("nets.msl", 104, "module Tran"),
-    ("nets.msl", 117, "module Tgate"),
-    ("nets.msl", 98, "Digital block"),
-];
+/// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or removed,
+/// which stay while something still reads them. The list is empty: the earlier net library (`Drive`, `Wire`, `SumNet`
+/// and the modules over them) is gone.
+const BEHIND_SPEC: [(&str, usize, &str); 0] = [];
 
 fn part_vii() -> String {
     std::fs::read_to_string(root().join("docs/spec/part_vii_stdlib.md")).expect("part VII exists")

@@ -780,8 +780,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `strongest_gives_the_table_of_22_3_2` and `strongest_of_equal_drives_is_that_drive_in_any_order` pass under `**Run sourcenets**`
-- [ ] Gate check passes: Full
+- [x] `strongest_gives_the_table_of_22_3_2` and `strongest_of_equal_drives_is_that_drive_in_any_order` pass under `**Run sourcenets**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

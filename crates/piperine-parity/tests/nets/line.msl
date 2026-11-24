@@ -1,7 +1,8 @@
 //! Resolution by strength from source (§22.3.1, §22.3.2): a net nature the model declares, `Line`, with the library's
-//! `Driven` and `Driven::strongest`, and drivers that put one level at one strength.
+//! `Driven` and `Driven::strongest`, drivers that put one level at one strength, and a reader that writes what the
+//! net holds as two numbers.
 
-/// A net whose drives resolve by strength: the library declares no nature, the model does (§22.3).
+/// A net whose drives resolve by strength. The library declares no nature, the model does (§22.3).
 nature Line { value: Driven }
 impl Resolve<Driven> for Line {
     fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
@@ -9,8 +10,8 @@ impl Resolve<Driven> for Line {
     }
 }
 
-/// Puts one level at one strength on the net, from the start: `level` 0 is low, 1 high, 2 X, 3 Z; `strength` 0 is
-/// `HighZ` up to 4 `Supply`.
+/// Puts one level at one strength on the net, from the start. `level` 0 is low, 1 high, 2 X and 3 Z; `strength` 0 is
+/// `HighZ`, 1 `Weak`, 2 `Pull`, 3 `Strong` and 4 `Supply`.
 module Put(w: Line) {
     level: u8 = 1;
     strength: u8 = 3;
@@ -38,10 +39,106 @@ module Put(w: Line) {
     };
 }
 
-/// Writes the level and the strength of the net at each change, as numbers.
+/// Writes the level and the strength of the net at each of its changes, in the numbers `Put` takes.
 module Look(w: Line) { }
 digital for Look {
     on w.changed() {
-        emit!("line", level = if w.v.is_x() { 2.0 } else if w.v.is_z() { 3.0 } else if w.v.is_high() { 1.0 } else { 0.0 }, strength = if w.s == Strength::HighZ { 0.0 } else if w.s == Strength::Weak { 1.0 } else if w.s == Strength::Pull { 2.0 } else if w.s == Strength::Strong { 3.0 } else { 4.0 });
+        emit!(
+            "line",
+            level = if w.v.is_x() {
+                2.0
+            } else if w.v.is_z() {
+                3.0
+            } else if w.v.is_high() {
+                1.0
+            } else {
+                0.0
+            },
+            strength = if w.s == Strength::HighZ {
+                0.0
+            } else if w.s == Strength::Weak {
+                1.0
+            } else if w.s == Strength::Pull {
+                2.0
+            } else if w.s == Strength::Strong {
+                3.0
+            } else {
+                4.0
+            }
+        );
     }
+}
+
+/// No drive at all: the table's first row.
+module NoneBench() {
+    signal n: Line;
+    let look = Look(n);
+}
+
+/// Two drives, both `HighZ`, a high and a low: they are left out, so the net is `Driven::Z`.
+module AllHighZBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 0 };
+    let b = Put(n) { level: 0, strength: 0 };
+    let look = Look(n);
+}
+
+/// A weak high and a strong low: the one strongest drive is the net.
+module OneStrongestBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 1 };
+    let b = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// Two pull highs and a weak low: several of the greatest strength agree on the level.
+module SameLevelBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 2 };
+    let b = Put(n) { level: 1, strength: 2 };
+    let c = Put(n) { level: 0, strength: 1 };
+    let look = Look(n);
+}
+
+/// A strong high and a strong low: the levels differ, so X at `Strong`.
+module ConflictBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 3 };
+    let b = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// The same three drives, a strong high, a strong low and a pull high, with a different one first by instance path.
+module FirstOrderBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 3 };
+    let b = Put(n) { level: 0, strength: 3 };
+    let c = Put(n) { level: 1, strength: 2 };
+    let look = Look(n);
+}
+
+/// See `FirstOrderBench`: the strong low first.
+module SecondOrderBench() {
+    signal n: Line;
+    let a = Put(n) { level: 0, strength: 3 };
+    let b = Put(n) { level: 1, strength: 2 };
+    let c = Put(n) { level: 1, strength: 3 };
+    let look = Look(n);
+}
+
+/// See `FirstOrderBench`: the pull high first.
+module ThirdOrderBench() {
+    signal n: Line;
+    let a = Put(n) { level: 1, strength: 2 };
+    let b = Put(n) { level: 1, strength: 3 };
+    let c = Put(n) { level: 0, strength: 3 };
+    let look = Look(n);
+}
+
+/// Two identical drives: `strongest([x, x])` is `x`, a low at `Pull`.
+module EqualDrivesBench() {
+    signal n: Line;
+    let a = Put(n) { level: 0, strength: 2 };
+    let b = Put(n) { level: 0, strength: 2 };
+    let look = Look(n);
 }

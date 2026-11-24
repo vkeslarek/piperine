@@ -623,7 +623,7 @@ fn embedded_std_builds_clean() {
     assert!(design.check().is_empty());
     // It declares what the spec says the prelude does.
     let std = design.std_crate();
-    for name in ["carriers::Bit", "nets::Wire", "carriers::Electrical", "carriers::Thermal", "carriers::VSignal"] {
+    for name in ["carriers::Bit", "carriers::Electrical", "carriers::Thermal", "carriers::VSignal"] {
         assert!(std.find(name).and_then(|d| d.as_nature()).is_some(), "nature `{name}`");
     }
     for name in ["analog::idt", "analog::above", "analog::transition"] {

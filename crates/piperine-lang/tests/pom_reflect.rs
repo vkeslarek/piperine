@@ -40,13 +40,13 @@ module M(a: Electrical, b: [Bit; 4], c: flip Electrical, d: [flip Bit; 2], e: f6
 
 #[test]
 fn nature_impls_lists_its_impl_blocks() {
-    let src = "impl Electrical { pub fn one(self) -> f64 { 1.0 } }\nimpl Electrical { pub fn two(self) -> f64 { 2.0 } }\n";
+    let src = "impl Electrical { pub fn one(self) -> f64 { 1.0 } }\nimpl Electrical { pub fn two(self) -> f64 { 2.0 } }\nnature Line { value: Driven }\nimpl Resolve<Driven> for Line { fn resolve<const N: usize>(d: [Driven; N]) -> Driven { Driven::strongest(d) } }\n";
     let design = with_prelude(src);
     assert_eq!(design.nature("Electrical").unwrap().impls().len(), 2);
     // `std` writes two `impl Bit`: the edges of a `Bit` of `bool` and of a `Bit<Logic>` (§22.1.5)
     assert_eq!(design.nature("Bit").unwrap().impls().len(), 2);
-    // the library's `Wire` is resolved by one `impl Resolve<Drive>` (until the generic nets of resolved-nets B6)
-    assert_eq!(design.nature("Wire").unwrap().impls().len(), 1);
+    // a model's own net nature is resolved by one `impl Resolve<Driven>` (the library declares no nature, §22.3)
+    assert_eq!(design.nature("Line").unwrap().impls().len(), 1);
 }
 
 const NAMES: &str = "\
