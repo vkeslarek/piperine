@@ -647,8 +647,9 @@ Its type is `Name`. Calling it with connections places an instance.
 > **Resolution.** §8.4.8 in a body checked once (§3 rule 9): an item read through a template param
 > that is not a node takes the type its context wants, as an open literal does (§1.4.4), and
 > elaboration checks the concrete item has it (`E0180`, an error of the instantiation). A read no
-> context gives a type, such as a method's receiver, is `E0181` (generics phase D fix round 2,
-> 2026-11-24, AFK default pending user review).
+> context gives a type is `E0181`: a method's receiver, the operand of `as` (which types its result,
+> never its operand, §1.4.5) (generics phase D fix rounds 2 and 3, 2026-11-24, AFK default pending
+> user review).
 
 **Dynamic semantics**
 

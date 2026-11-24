@@ -385,3 +385,16 @@ fn a_template_that_leaves_an_option_param_out_places_none() {
     let params = |ir: &Ir| ir.instance_at("Top.d").map(|instance| instance.params().to_vec()).expect("the instance");
     assert_eq!(params(&through), params(&direct));
 }
+
+#[test]
+fn a_cast_of_a_template_item_is_e0181_not_a_node_conversion() {
+    // §1.4.5, §8.4.8: `c0.n as f64` gives the read no type (a cast types its result), so the design is refused with `E0181` at
+    // the read, never `E0182` "no `as` conversion from `node`"
+    let source = "module Dram(a: Electrical) { pub n: u8 = 3; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n\
+                  module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); signal p: Electrical; }\n\
+                  analog<C> for Bank<C> { i(p, gnd) +> v(p, gnd) * (c0.n as f64); }\n\
+                  module Top() { signal x: Electrical; let bank = Bank::<_>(x) { cell: Dram { } }; }";
+    let diagnostics = Elab::run(source, "Top").expect_err("the cast gives the read no type");
+    assert_eq!(Elab::codes(&diagnostics), ["E0181"]);
+    assert_eq!(&source[diagnostics[0].diagnostic.span().range()], "c0.n", "at the read");
+}

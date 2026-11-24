@@ -447,6 +447,11 @@ impl Checker<'_> {
     /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
         let target = self.lower_type(ty);
+        // `c0.n as f64`: `as` gives its result a type, never its operand (§1.4.5), so an item read through a template there has
+        // no type the checker can give (§8.4.8, `E0181`)
+        if self.untyped_template_operand(operand) {
+            return target;
+        }
         let source = self.infer(operand);
         let target = target?;
         let numeric = |t: &Ty| t.is_numeric();

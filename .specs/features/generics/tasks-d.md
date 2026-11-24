@@ -585,7 +585,7 @@ Proof: run typestempl | test a_fn_bounded_parameter_is_inferred_from_its_templat
 **C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok
 
-**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; an item of any kind (a `pub` param, a `pub let`, a carrier) is read as a value with the type its context wants, checked against the concrete item at elaboration (`E0180` naming both; `E0181` where no context gives one), also from the parent (`bank.c0.cs`) and at a generated iteration (`bank.cells[1].cs`); an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix rounds 1 and 2, L78)
+**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; an item of any kind (a `pub` param, a `pub let`, a carrier) is read as a value with the type its context wants, checked against the concrete item at elaboration (`E0180` naming both; `E0181` where no context gives one: a method's receiver, the operand of `as`, fix round 3 finding 14), also from the parent (`bank.c0.cs`) and at a generated iteration (`bank.cells[1].cs`); an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix rounds 1 and 2, L78)
 Proof: run elabtempl | test inst_name_through_a_template_param_reads_the_concrete_module ... ok
 Proof: run elabtempl | test a_missing_item_through_a_template_param_is_e0343 ... ok
 Proof: run elabtempl | test inst_name_in_the_module_that_places_the_template_reads_the_concrete_module ... ok
@@ -593,6 +593,8 @@ Proof: run elabtempl | test a_non_node_item_through_a_template_reads_the_concret
 Proof: run elabtempl | test a_non_node_item_through_a_template_of_another_type_is_e0180_at_elaboration ... ok
 Proof: run elabtempl | test a_generated_cells_param_reads_the_iteration_its_indexes_name ... ok
 Proof: run typestempl | test a_non_node_item_through_a_template_takes_the_type_its_context_wants ... ok
+Proof: run typestempl | test a_cast_of_a_template_item_is_e0181 ... ok
+Proof: run elabtempl | test a_cast_of_a_template_item_is_e0181_not_a_node_conversion ... ok
 Proof: run srctempl | test the_items_of_a_template_placed_child_read_as_values ... ok
 Proof: run spectext | test a_template_item_takes_the_type_its_context_wants_in_the_spec ... ok
 Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok

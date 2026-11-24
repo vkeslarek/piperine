@@ -67,15 +67,22 @@ impl Checker<'_> {
     /// Whether the receiver `recv` of a method call is a read through a template, which nothing gives a type: `E0181` at the read,
     /// the arguments typed for their own diagnostics.
     pub(super) fn untyped_template_receiver(&mut self, recv: ExprId, args: &[crate::pom::Arg]) -> bool {
-        if self.template_read_of(recv).is_none() {
+        if !self.untyped_template_operand(recv) {
             return false;
         }
-        self.infer(recv);
-        let (file, span) = (self.file_of_expr(recv), self.design.expr_node(recv).span);
-        self.report_untyped_template_read(file, span);
         for arg in args {
             self.infer(arg.value);
         }
+        true
+    }
+
+    /// Whether `operand` of a form that gives it no type (a method's receiver, the operand of `as`) is a read through a template:
+    /// `E0181` at the read when it is.
+    pub(super) fn untyped_template_operand(&mut self, operand: ExprId) -> bool {
+        let Some(read) = self.template_read_of(operand) else { return false };
+        self.infer(operand);
+        let (file, span) = (self.file_of_expr(read), self.design.expr_node(read).span);
+        self.report_untyped_template_read(file, span);
         true
     }
 

@@ -253,3 +253,19 @@ fn a_template_leaves_an_option_param_out_as_a_placement_does() {
     assert_eq!(required.codes(), ["E0319"], "{}", required.message());
     assert!(required.message().contains("the required param `r`"), "{}", required.message());
 }
+
+#[test]
+fn a_cast_of_a_template_item_is_e0181() {
+    // §1.4.5, §8.4.8: `as` gives its result a type, never its operand, so `c0.cs as f32` through a template has no type to give
+    // the read: `E0181` at the read, never `E0182` from a node; a typed `let` first casts as usual
+    let bank = |items: &str| {
+        TemplateSource::new(&format!(
+            "module Bank<C: Fn(E)>(a: E) {{ cell: C; let c0 = cell(a); signal p: E; }}\nanalog<C> for Bank<C> {{ {items} }}\n\
+             module Top(x: E) {{ let bank = Bank::<_>(x) {{ cell: Cell {{ cs: 2.0 }} }}; }}"
+        ))
+    };
+    let cast = bank("i(p, gnd) +> v(p, gnd) * (c0.cs as f64);");
+    assert_eq!(cast.codes(), ["E0181"], "{}", cast.message());
+    let typed = bank("let cs: f64 = c0.cs; i(p, gnd) +> v(p, gnd) * (cs as f64);");
+    assert_eq!(typed.codes(), Vec::<String>::new(), "{}", typed.message());
+}

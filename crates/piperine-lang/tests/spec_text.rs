@@ -2627,7 +2627,8 @@ fn a_template_item_takes_the_type_its_context_wants_in_the_spec() {
     for fact in [
         "that is not a node takes the type its context wants, as an open literal does (§1.4.4), and",
         "elaboration checks the concrete item has it (`E0180`, an error of the instantiation).",
-        "context gives a type, such as a method's receiver, is `E0181`",
+        "context gives a type is `E0181`: a method's receiver, the operand of `as` (which types its result,",
+        "never its operand, §1.4.5) (generics phase D fix rounds 2 and 3",
     ] {
         assert!(templates.contains(fact), "§8.4 lacks \"{fact}\"");
     }
