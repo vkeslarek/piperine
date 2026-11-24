@@ -150,3 +150,17 @@ fn a_node_of_a_child_of_a_child_is_reached_without_a_template() {
     let reached = top.body().nodes().iter().position(|node| node.name == "bank.c0.sn").expect("`Top` reaches `bank.c0.sn`");
     assert_eq!(top.node(reached).expect("a bound node").path(), "Top.bank.c0.sn");
 }
+
+#[test]
+fn a_cell_of_a_generated_bank_is_read_through_its_indexes() {
+    // §8.2.23, §8.4.8: `bank.cells[r][c].sn` names the storage node of the cell the iteration `(r, c)` places
+    let source = "module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; }\n\
+        analog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd) - cs; }\n\
+        module Bank<C: Fn(Electrical), const ROWS: usize, const COLS: usize>(a: Electrical) { cell: C; for r in 0..ROWS { for c in 0..COLS { pub let cells = cell(a); } } }\n\
+        module Top() { signal x: Electrical; let bank = Bank::<_, 2, 3>(x) { cell: Dram { cs: 2.0 } }; signal probe: Electrical; }\n\
+        analog for Top { i(probe, gnd) +> v(probe, gnd) - v(bank.cells[1][2].sn); }";
+    let ir = Elab::ir(source, "Top");
+    let top = ir.instance_at("Top").expect("the top");
+    let reached = top.body().nodes().iter().position(|node| node.name == "bank.cells[1][2].sn").expect("`Top` reaches the cell");
+    assert_eq!(top.node(reached).expect("a bound node").path(), "Top.bank.cells[1][2].sn");
+}

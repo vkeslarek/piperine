@@ -5,16 +5,19 @@
 //!
 //! * A **demand** is one `child.item` read through a child (`bank.c0.sn` demands `c0.sn` of the module of `bank`): they are
 //!   found once for the design, in source order, and each body of the module that is the child lowers a reached node for every
-//!   demand its variant can meet, right after its own nodes (`lower_nested_demands`), so the node's index is known to the reader.
+//!   demand its variant can meet (one per iteration of a child placed in generation), right after its own nodes
+//!   (`lower_nested_demands`), so the node's index is known to the reader (`DemandEntry`).
 //! * The reader resolves the item against the concrete module (`E0343` for a missing or non-`pub` one), makes its own reached node
 //!   of the child's node, and binds it to the child's (`nested_terminal`).
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BodyNode, NodeRole, Reach, ReachedItem, Terminal};
+use piperine_ir::{BodyNode, Constant, NodeRole, Reach, ReachedItem, Terminal};
 
 use super::body::NodePlan;
+use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::generation::Iteration;
 use super::lower::Scope;
 use crate::msl::Diagnostic;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
@@ -28,20 +31,37 @@ pub(super) struct NestedDemand {
     pub(super) item: String,
 }
 
+/// One reached node a body lowers for a demand: the placement it is made for and the iteration of that placement.
+#[derive(Debug, Clone)]
+pub(super) struct DemandEntry {
+    /// The demand the node answers.
+    pub(super) demand: NestedDemand,
+    /// The placement call of the child.
+    pub(super) call: ExprId,
+    /// The iteration of the generation the placement is written in, `None` outside generation.
+    pub(super) iteration: Option<Iteration>,
+}
+
 /// The demands of the design, by the module whose body holds the child.
 #[derive(Debug, Default)]
 pub(super) struct NestedDemands {
     found: Option<BTreeMap<DeclId, Vec<NestedDemand>>>,
 }
 
+impl NestedDemands {
+    /// The demands the design makes of `module`, in source order.
+    fn of(&self, module: DeclId) -> &[NestedDemand] {
+        self.found.as_ref().and_then(|all| all.get(&module)).map_or(&[], Vec::as_slice)
+    }
+}
+
 impl Elaboration<'_, '_> {
-    /// The demands the design makes of `module`, in source order: found the first time any module asks.
-    fn demands_of(&mut self, module: DeclId) -> Vec<NestedDemand> {
+    /// Finds the demands of the design the first time a body is lowered.
+    pub(super) fn find_demands_once(&mut self) {
         if self.nested_demands.found.is_none() {
             let found = self.find_nested_demands();
             self.nested_demands.found = Some(found);
         }
-        self.nested_demands.found.as_ref().and_then(|all| all.get(&module)).cloned().unwrap_or_default()
     }
 
     /// Every read `a.b.x` of the design where `b` is a `let` of the module `a` names: a demand of that module.
@@ -118,64 +138,119 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The node item of the concrete module of `demand`'s child that the body of `frame` reads: the child's placement
-    /// resolved under the key params of the frame, its module's item of that name when it is a visible port or signal that is
-    /// a node. `None` for a demand this variant cannot meet.
-    fn met_demand(&self, frame: usize, demand: &NestedDemand) -> Option<DeclId> {
-        let value = self.body_let_value(demand.child)?;
-        let module = self.placed_module(self.peel_parens(value), &self.frame_bindings(frame))?;
+    /// The node item of the concrete module of `demand`'s child under the key params `keys`: the child's placement resolved, its
+    /// module's item of that name when it is a visible port or signal that is a node. `None` for a demand this variant cannot meet.
+    fn met_demand(&self, keys: &Bindings, demand: &NestedDemand) -> Option<DeclId> {
+        let module = self.concrete_module_of(keys, demand)?;
         let item = self.item_named(module, &demand.item)?;
         let is_node = matches!(self.design.decl_data(item).kind, DeclKind::Port(_) | DeclKind::Signal(_)) && self.types.carrier(item).is_none();
         (is_node && self.is_visible_item(item)).then_some(item)
     }
 
-    /// Gives the body of `module`, being lowered, the reached node of every demand its variant meets, right after its own nodes.
-    pub(super) fn lower_nested_demands(&mut self, scope: &Scope, module: DeclId) {
-        let demands = self.demands_of(module);
-        let mut slot = self.structure.nodes.len() as u32;
-        for demand in demands {
-            let Some(item) = self.met_demand(0, &demand) else { continue };
+    /// The module the placement bound to `demand.child` places under the key params `keys`.
+    fn concrete_module_of(&self, keys: &Bindings, demand: &NestedDemand) -> Option<DeclId> {
+        let value = self.body_let_value(demand.child)?;
+        self.placed_module(self.peel_parens(value), keys)
+    }
+
+    /// The reached nodes the body of `module` lowers, in order, under the key params `keys` and the generation expanded now
+    /// (`self.generated`): every demand it meets, once for each iteration of the placement it names.
+    fn demand_entries(&self, module: DeclId, keys: &Bindings) -> Vec<DemandEntry> {
+        let mut entries = Vec::new();
+        for demand in self.nested_demands.of(module) {
+            if self.met_demand(keys, demand).is_none() {
+                continue;
+            }
             let Some(value) = self.body_let_value(demand.child) else { continue };
             let call = self.peel_parens(value);
-            let key = self.placement_key(scope, call);
-            let Some(frame) = self.placement_frame(scope, demand.child, key, self.design.expr_node(call).span) else { continue };
-            let made = self.frame_node(frame, item);
+            let owner = self.design.expr_node(call).owner;
+            let iterations: Vec<Option<Iteration>> = match self.generated.of(owner) {
+                Some(iterations) => iterations.iter().cloned().map(Some).collect(),
+                None => vec![None],
+            };
+            entries.extend(iterations.into_iter().map(|iteration| DemandEntry { demand: demand.clone(), call, iteration }));
+        }
+        entries
+    }
+
+    /// The ordinals of `iteration` in the generation `for`s around the placement `call`, outermost first.
+    fn entry_ordinals(&self, entry: &DemandEntry) -> Vec<u64> {
+        let owner = self.design.expr_node(entry.call).owner;
+        let Some(iteration) = &entry.iteration else { return Vec::new() };
+        self.generation_loops(owner).iter().filter_map(|generation| iteration.ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| u64::from(*ordinal))).collect()
+    }
+
+    /// Gives the body of `module`, being lowered, the reached node of every demand its variant meets, right after its own nodes.
+    pub(super) fn lower_nested_demands(&mut self, scope: &mut Scope, module: DeclId) {
+        let keys = self.body_keys.clone();
+        let mut slot = self.structure.nodes.len() as u32;
+        for entry in self.demand_entries(module, &keys) {
+            let Some(item) = self.met_demand(&keys, &entry.demand) else { continue };
+            let span = self.design.expr_node(entry.call).span;
+            let iteration = entry.iteration.clone().unwrap_or_default();
+            for (variable, value) in &iteration.values {
+                scope.unrolled.bind(*variable, Constant::Int(*value));
+            }
+            scope.ordinals = iteration.ordinals.clone();
+            let key = self.placement_key(scope, entry.call);
+            let made = self.placement_frame(scope, entry.demand.child, key, span).and_then(|frame| self.frame_node(frame, item));
+            scope.ordinals.clear();
+            for (variable, _) in &iteration.values {
+                scope.unrolled.unbind(*variable);
+            }
             if made != Some(Terminal::Node(slot)) {
-                self.unsupported(scope.file, self.design.expr_node(call).span, "a node of a child read by its parent, in a child that places it more than once");
+                self.unsupported(scope.file, span, "a node of a child read by its parent that the child's body could not place where the parent expects it");
             }
             slot += 1;
         }
     }
 
-    /// The node `bank.c0.sn` names, as a reached node of the body: the node `bank`'s body reaches into its child `c0`, itself
-    /// reached from `bank`. `None` when `expr` is not a read of an item of a child of a child; `Some(None)` after a diagnostic.
+    /// The node `bank.c0.sn` or `bank.cells[r][c].sn` names, as a reached node of the body: the node `bank`'s body reaches into
+    /// its child, itself reached from `bank`. `None` when `expr` is not a read of an item of a child of a child; `Some(None)`
+    /// after a diagnostic.
     pub(super) fn nested_terminal(&mut self, scope: &Scope, expr: ExprId) -> Option<Option<Terminal>> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Field { expr: receiver, name, .. } = &node.kind else { return None };
         let (module, child) = self.child_of_module(*receiver)?;
-        let mut owner = *receiver;
-        loop {
-            match &self.design.expr_node(owner).kind {
-                ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => owner = *inner,
-                _ => break,
-            }
+        let mut owner = self.peel_parens(*receiver);
+        let mut indexes = Vec::new();
+        while let ExprKind::Index { expr: inner, index } = self.design.expr_node(owner).kind.clone() {
+            indexes.push(index);
+            owner = self.peel_parens(inner);
         }
+        indexes.reverse();
         let ExprKind::Field { expr: bank, .. } = self.design.expr_node(owner).kind.clone() else { return None };
-        Some(self.reach_grandchild(scope, bank, module, child, &name.text, node.span))
+        Some(self.reach_grandchild(scope, bank, (module, child), &name.text, &indexes, node.span))
     }
 
-    /// The reached node of the body for `item` of the child `child` of the module `module`, which the child `bank` of the body places.
-    fn reach_grandchild(&mut self, scope: &Scope, bank: ExprId, module: DeclId, child: DeclId, item: &str, span: crate::msl::Span) -> Option<Terminal> {
+    /// The reached node of the body for `item` of the child `child` of the module `module` (the pair), which the child `bank`
+    /// of the body places; `indexes` pick the iteration of a child placed in generation.
+    fn reach_grandchild(&mut self, scope: &Scope, bank: ExprId, (module, child): (DeclId, DeclId), item: &str, indexes: &[ExprId], span: crate::msl::Span) -> Option<Terminal> {
         let (binding, key) = self.receiver_placement(scope, bank)?;
         let frame = self.placement_frame(scope, binding, key, span)?;
-        if let Some(terminal) = self.nested_nodes.get(&(frame, child, item.to_string())) {
+        let ordinals = self.fold_ordinals(scope, indexes)?;
+        let cached = (frame, child, item.to_string(), ordinals.clone());
+        if let Some(terminal) = self.nested_nodes.get(&cached) {
             return Some(*terminal);
         }
+        let keys = self.frame_bindings(frame);
         let demand = NestedDemand { child, item: item.to_string() };
-        let Some(concrete) = self.concrete_module_of(frame, &demand) else {
+        let Some(concrete) = self.concrete_module_of(&keys, &demand) else {
             self.unsupported(scope.file, span, "an item of a child whose module is not known");
             return None;
         };
+        let decl = self.visible_item_of(scope, concrete, item, span)?;
+        if self.met_demand(&keys, &demand) != Some(decl) {
+            self.unsupported(scope.file, span, "an item of a child's child that is not one of its nodes");
+            return None;
+        }
+        let terminal = self.add_nested_node(scope, frame, module, &demand, &ordinals, decl, span)?;
+        self.nested_nodes.insert(cached, terminal);
+        Some(terminal)
+    }
+
+    /// The item `item` of `concrete` as a parent may read it: `E0343` after the diagnostic of an item that is missing or not `pub`.
+    fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
         let module_name = self.design.decl_data(concrete).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(decl) = self.item_named(concrete, item) else {
             self.report(scope.file, Diagnostic::new("E0343", format!("no item `{item}` in module `{module_name}`"), span, "no such item"));
@@ -185,42 +260,76 @@ impl Elaboration<'_, '_> {
             self.report(scope.file, Diagnostic::new("E0343", format!("`{item}` is not `pub` in module `{module_name}`"), span, "not `pub`"));
             return None;
         }
-        if self.met_demand(frame, &demand) != Some(decl) {
-            self.unsupported(scope.file, span, "an item of a child's child that is not one of its nodes");
-            return None;
-        }
-        let terminal = self.add_nested_node(frame, module, child, decl, item)?;
-        self.nested_nodes.insert((frame, child, item.to_string()), terminal);
-        Some(terminal)
+        Some(decl)
     }
 
-    /// The module the placement bound to `demand.child` places in the variant of `frame`.
-    fn concrete_module_of(&self, frame: usize, demand: &NestedDemand) -> Option<DeclId> {
-        let value = self.body_let_value(demand.child)?;
-        self.placed_module(self.peel_parens(value), &self.frame_bindings(frame))
+    /// The ordinals the index expressions `indexes` fold to in the scope: `None` after a diagnostic.
+    fn fold_ordinals(&mut self, scope: &Scope, indexes: &[ExprId]) -> Option<Vec<u64>> {
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let mut ordinals = Vec::new();
+        for index in indexes {
+            match self.consts.value(*index, &bindings) {
+                Ok(Constant::Int(ordinal)) if ordinal >= 0 => ordinals.push(ordinal as u64),
+                _ => {
+                    self.not_folded(scope, self.design.expr_node(*index).span, "the index of a generated instance");
+                    return None;
+                }
+            }
+        }
+        Some(ordinals)
     }
 
     /// The node of the body that stands for the demanded node of the child of `frame`: its slot in the child's body is the
-    /// first slot after the child's own nodes, plus the demands of the module that its variant meets before this one.
-    fn add_nested_node(&mut self, frame: usize, module: DeclId, child: DeclId, decl: DeclId, item: &str) -> Option<Terminal> {
+    /// first slot after the child's own nodes, plus the entries of the module that precede it. The entries are those of the
+    /// module's generation expanded under the child's own keys, which the module's lowering made in the same order.
+    #[allow(clippy::too_many_arguments)]
+    fn add_nested_node(&mut self, scope: &Scope, frame: usize, module: DeclId, demand: &NestedDemand, ordinals: &[u64], decl: DeclId, span: crate::msl::Span) -> Option<Terminal> {
         let bank = self.frames[frame].child?;
         let own = self.own_node_total(frame)?;
-        let demands = self.demands_of(module);
-        let position = demands.iter().position(|d| d.child == child && d.item == item)?;
-        let before = demands[..position].iter().filter(|d| self.met_demand(frame, d).is_some()).count() as u32;
+        let entries = self.entries_under(frame, module);
+        let call = entries.iter().find(|e| e.demand == *demand).map(|e| e.call).or_else(|| self.body_let_value(demand.child).map(|v| self.peel_parens(v)))?;
+        let owner = self.design.expr_node(call).owner;
+        let loops = self.generation_loops(owner).len();
+        if ordinals.len() != loops {
+            self.unsupported(scope.file, span, "an item of a child placed in generation, read without naming its iteration: index every loop");
+            return None;
+        }
+        let Some(position) = entries.iter().position(|e| e.demand == *demand && self.entry_ordinals(e) == ordinals) else {
+            let length = entries.iter().filter(|e| e.demand == *demand).count() as u64;
+            self.refer_outside_generation(scope.file, span, demand.child, Some((ordinals.last().copied().unwrap_or(0), length)));
+            return None;
+        };
         let ty = match &self.design.decl_data(decl).kind {
             DeclKind::Port(p) => p.ty,
             DeclKind::Signal(s) => s.ty,
             _ => return None,
         };
         let nature = self.nature_decl_of(ty).and_then(|n| self.nature(n))?;
-        let name = format!("{}{}.{item}", self.frames[frame].prefix, self.design.decl_data(child).name.as_ref().map_or("", |n| n.text.as_str()));
+        let subscripts: String = ordinals.iter().map(|ordinal| format!("[{ordinal}]")).collect();
+        let name = format!("{}{}{subscripts}.{}", self.frames[frame].prefix, self.design.decl_data(demand.child).name.as_ref().map_or("", |n| n.text.as_str()), demand.item);
         let origin = self.locator.decl(decl);
         let spec = BodyNode { name: name.clone(), nature, role: NodeRole::Reached, init: None, origin: origin.clone() };
         let plan = NodePlan { name, role: NodeRole::Reached, nature, init: None, origin };
         self.structure.nodes.push((spec, plan));
         let node = self.structure.nodes.len() as u32 - 1;
-        self.structure.reaches.push(Reach { child: bank, item: ReachedItem::Node { node, child_node: own + before } });
+        self.structure.reaches.push(Reach { child: bank, item: ReachedItem::Node { node, child_node: own + position as u32 } });
         Some(Terminal::Node(node))
+    }
+
+    /// The entries the body of `module` lowers in the variant of `frame`: its generation expanded under the frame's keys and
+    /// generic arguments, the state of the body being lowered put back after.
+    fn entries_under(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
+        let keys = self.frame_bindings(frame);
+        let outer_generated = std::mem::take(&mut self.generated);
+        let outer_keys = std::mem::replace(&mut self.body_keys, keys.clone());
+        let outer_params = self.consts.set_frame_params(keys.clone());
+        let outer_substitution = self.consts.set_substitution(self.frames[frame].substitution.clone());
+        self.expand_generation(module);
+        let entries = self.demand_entries(module, &keys);
+        self.consts.set_substitution(outer_substitution);
+        self.consts.set_frame_params(outer_params);
+        self.body_keys = outer_keys;
+        self.generated = outer_generated;
+        entries
     }
 }

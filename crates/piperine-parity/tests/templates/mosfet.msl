@@ -1,0 +1,41 @@
+//! The swappable MOSFET (generics GN-23, part III §8.4): `DiffPair` is generic over any module that implements `Mosfet` and has the
+//! ports `(g, d)`; each model keeps its own response. The expected values are computed by Rust in `source_templates.rs`.
+
+trait Mosfet { fn gain(self) -> f64; }
+
+module Square(g: Electrical, d: Electrical) { k: f64 = 1.0; }
+analog for Square { potential(d) +> k * v(g) * v(g); }
+impl Mosfet for Square { fn gain(self) -> f64 { self.k * 2.0 } }
+
+module Linear(g: Electrical, d: Electrical) { k: f64 = 1.0; }
+analog for Linear { potential(d) +> k * v(g); }
+impl Mosfet for Linear { fn gain(self) -> f64 { self.k * 0.5 } }
+
+module DiffPair<N: Mosfet + Fn(Electrical, Electrical)>(g: Electrical, d1: Electrical, d2: Electrical) {
+    fet: N;
+    let left = fet(g, d1);
+    let right = fet(g, d2);
+}
+
+const SQUARE: Square = Square { k: 3.0 };
+const LINEAR: Linear = Linear { k: 3.0 };
+
+module RigSquare() {
+    level: f64 = SQUARE.gain();
+    signal g: Electrical;
+    signal d1: Electrical;
+    signal d2: Electrical;
+    signal s: Electrical;
+    let pair = DiffPair::<_>(g, d1, d2) { fet: SQUARE };
+}
+analog for RigSquare { potential(g) +> 0.5; potential(s) +> level; }
+
+module RigLinear() {
+    level: f64 = LINEAR.gain();
+    signal g: Electrical;
+    signal d1: Electrical;
+    signal d2: Electrical;
+    signal s: Electrical;
+    let pair = DiffPair::<_>(g, d1, d2) { fet: LINEAR };
+}
+analog for RigLinear { potential(g) +> 0.5; potential(s) +> level; }

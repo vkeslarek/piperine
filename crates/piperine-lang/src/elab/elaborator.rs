@@ -101,7 +101,7 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
     /// The items of a child's child the body being lowered reaches, by the child's frame, the grandchild's `let` and the item
     /// (`reach_through_templates.rs`).
-    pub(super) nested_nodes: BTreeMap<(usize, DeclId, String), piperine_ir::Terminal>,
+    pub(super) nested_nodes: BTreeMap<(usize, DeclId, String, Vec<u64>), piperine_ir::Terminal>,
     /// What the design reads through a child of a child, by module (`reach_through_templates.rs`).
     pub(super) nested_demands: super::reach_through_templates::NestedDemands,
     /// The diverging expressions lowered so far (`exits.rs`).

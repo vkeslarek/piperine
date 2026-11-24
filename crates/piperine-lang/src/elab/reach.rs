@@ -32,6 +32,7 @@ impl Elaboration<'_, '_> {
         self.child_indices.clear();
         self.reach_frames.clear();
         self.nested_nodes.clear();
+        self.find_demands_once();
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
         let mut next = 0;
         for call in data.instances.clone() {
