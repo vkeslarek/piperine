@@ -299,8 +299,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_carrier_method_on_a_whole_bundle_is_e0211` passes under `**Run pombundles**`
-- [ ] Gate check passes: Batch (end of B2)
+- [x] `a_carrier_method_on_a_whole_bundle_is_e0211` passes under `**Run pombundles**`
+- [x] Gate check passes: Batch (end of B2)
 
 **Tests**: integration
 **Gate**: batch

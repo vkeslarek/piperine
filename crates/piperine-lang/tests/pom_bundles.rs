@@ -123,3 +123,15 @@ fn a_bundle_declared_as_a_value_is_e0264() {
     let plain = Bundles::design("struct Stream { out valid: Bit }\nmodule Top(p: Stream, in q: Stream) { signal t: Stream; }\n");
     assert_eq!(Bundles::codes(&plain), Vec::<String>::new(), "a bundle port and signal without a value are accepted: {:?}", plain.diagnostics());
 }
+
+#[test]
+fn a_carrier_method_on_a_whole_bundle_is_e0211() {
+    // §7 rule 12, §5.1: carrier methods apply to a field, not to the bundle; the message names the bundle and the method
+    let design = Bundles::design("struct Stream { out valid: Bit, in ready: Bit }\nmodule Top(tx: Stream, in clk: Bit) { let a = tx.valid.changed(); let b = tx.changed(); }\n");
+    assert_eq!(Bundles::spans(&design, "E0211"), ["changed"], "only the whole bundle: {:?}", design.diagnostics());
+    let message = &design.diagnostics().iter().find(|d| d.diagnostic.code == "E0211").expect("E0211").diagnostic.message;
+    assert!(message.contains("`changed`") && message.contains("`Stream`"), "names the method and the bundle: {message}");
+    // an `impl` of the bundle that declares the method is that method, not the carrier's
+    let design = Bundles::design("struct Stream { out valid: Bit, in ready: Bit }\nimpl Stream { fn changed(self) -> bool { true } }\nmodule Top(tx: Stream) { let b = tx.changed(); }\n");
+    assert!(Bundles::spans(&design, "E0211").is_empty(), "{:?}", design.diagnostics());
+}

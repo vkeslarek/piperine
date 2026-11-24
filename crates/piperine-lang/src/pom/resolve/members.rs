@@ -26,6 +26,17 @@ pub(super) struct Members {
     pub diagnostics: Vec<(FileId, Diagnostic)>,
 }
 
+/// Where a carrier method was applied that is no carrier (`E0211`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Misapplied {
+    /// The method is applied to a carrier, or to nothing a carrier method is refused on.
+    Nowhere,
+    /// The method is applied to an array of carriers.
+    OnArray,
+    /// The method is applied to this whole bundle.
+    OnBundle(DeclId),
+}
+
 /// What the type of a receiver is, as far as declarations say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Recv {
@@ -67,12 +78,21 @@ pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
             out.segments.push(segment);
         }
         if let ExprKind::MethodCall { recv, method, .. } = &design.expr_node(expr).kind {
-            let (res, on_array) = reader.method(*recv, &method.text, design.expr_node(expr).owner);
+            let (res, misapplied) = reader.method(*recv, &method.text, design.expr_node(expr).owner);
             out.res.push((expr, res));
-            if on_array {
-                let message = format!("the carrier method `{}` is applied to an array of carriers", method.text);
-                let owner = design.expr_node(expr).owner;
-                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "index the array first")));
+            let owner = design.expr_node(expr).owner;
+            match misapplied {
+                Misapplied::Nowhere => {}
+                Misapplied::OnArray => {
+                    let message = format!("the carrier method `{}` is applied to an array of carriers", method.text);
+                    out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "index the array first")));
+                }
+                // §7 rule 12: carrier methods apply to a field, not to the bundle
+                Misapplied::OnBundle(bundle) => {
+                    let name = design.decl_data(bundle).name.as_ref().map_or("", |n| n.text.as_str());
+                    let message = format!("the carrier method `{}` is applied to the bundle `{name}`: it applies to a field of it (§7 rule 12, §5.1)", method.text);
+                    out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "call it on a field")));
+                }
             }
         }
         if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
@@ -182,8 +202,8 @@ impl Reader<'_> {
 
     /// The method `name` of the receiver: the carrier built-ins, then the
     /// `impl`s of its nature or bundle, then those of the value it reads. The
-    /// flag is set for a carrier method applied to an array of carriers (`E0211`).
-    fn method(&self, recv: ExprId, name: &str, owner: DeclId) -> (Resolution, bool) {
+    /// second answer says whether a carrier method was applied to an array of carriers or to a whole bundle (`E0211`).
+    fn method(&self, recv: ExprId, name: &str, owner: DeclId) -> (Resolution, Misapplied) {
         let design = self.design;
         let in_impls = |target: DeclId| design.impls_of(target).into_iter().find_map(|i| child_fn(design, i, name)).map(Resolution::Decl);
         let carrier_method = |nature: Option<DeclId>| -> Option<Resolution> {
@@ -208,15 +228,22 @@ impl Reader<'_> {
             Recv::Carrier(nature) => carrier_method(nature),
             Recv::CarrierArray(nature, _) => {
                 return match carrier_method(nature) {
-                    Some(_) => (Resolution::Unresolved, true),
-                    None => (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
+                    Some(_) => (Resolution::Unresolved, Misapplied::OnArray),
+                    None => (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), Misapplied::Nowhere),
                 };
             }
-            Recv::Struct(s) => in_impls(s),
+            Recv::Struct(s) => match in_impls(s) {
+                Some(found) => Some(found),
+                // a carrier method of the built-in catalogue on a whole bundle (§7 rule 12)
+                None if matches!(&design.decl_data(s).kind, DeclKind::Struct(data) if data.bundle == Some(true)) && builtin_method(name).is_some() => {
+                    return (Resolution::Unresolved, Misapplied::OnBundle(s));
+                }
+                None => None,
+            },
             Recv::Instance(_) => None,
-            Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => return (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
+            Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => return (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), Misapplied::Nowhere),
         };
-        (found.unwrap_or(Resolution::Unresolved), false)
+        (found.unwrap_or(Resolution::Unresolved), Misapplied::Nowhere)
     }
 
     /// The method `name` of a trait that a blanket `impl<T: B> Tr for T` gives every carrier, `B`
