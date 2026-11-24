@@ -125,5 +125,5 @@ The first compiler pass **SHOULD** run the following as its conformance set:
 | `transition` (§22.2.11) | `after` in a definition, `at` re-arming, `analysis(Static)` seeding, tie order (§12.1.2) |
 | `zi_nd` (§22.2.12) | `settle` commits, a switch branch selected by the environment, `delay` in small-signal |
 | `inertial` (§22.5.8) | `at` re-armed by a carrier, generic results |
-| `Tran` on nets of a `Resolve<Driven>` nature (§22.3.7) | relaxation of loops among resolved drives (§8.2.3) |
+| `Tran` on nets of a `Resolve<Driven>` nature (§22.3.7) | relaxation of loops among resolved drives (§8.2.3). **Runs:** the compiler elaborates and runs it, and `piperine-parity`'s `source_nets` holds it |
 | the trace of §15.1 | microstep order: commits, definitions, reactions |

@@ -311,8 +311,10 @@ digital<T> for Slice<T> {
 **Purpose.** Several sources share one active-low line through a resolved nature the model
 declares. No module knows how many drivers there are.
 
-```rust,fragment
-pub nature IrqLine { value: Driven }
+```rust
+pub nature IrqLine {
+    value: Driven,
+}
 
 impl Resolve<Driven> for IrqLine {
     fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {

@@ -2240,14 +2240,15 @@ fn the_gallery_works_four_nets() {
     // EU-12 AC 3: F.4 holds four worked nets, each with its nature, its `impl` and its module
     // code: a plain `bool` into a wired-AND nature, an open-drain line with a pull-up, a
     // tri-state bus with two drivers and a keeper, and a conflict of equal strengths; plus the
-    // typed bus of D12 as a fifth listing.
+    // typed bus of D12 as a fifth listing. The first three are `rust` fences in the formatter's form (a nature's body one field a
+    // line, a trailing comma), the typed bus a fragment.
     let f = spec("appendix_f_gallery_mixed.md");
     let s = section(&f, "## F.4");
     for heading in ["### F.4.1 A plain `bool` into a wired-AND net", "### F.4.2 An open-drain line with a pull-up", "### F.4.3 A tri-state bus with two drivers and a keeper", "### F.4.4 A conflict of equal strengths"] {
         assert!(s.contains(heading), "F.4 lacks {heading}");
     }
     let flat_s = flat(&s);
-    for needle in ["pub nature AndWire { value: bool }", "impl Resolve<bool> for AndWire", "pub nature Sda { value: Driven }", "impl Resolve<Driven> for Sda", "pub nature TriBus { value: Driven }", "impl Resolve<Driven> for TriBus", "let rp = Pullup(sda);", "let k = Keeper(line);", "pub nature DataBus { value: Data }", "impl Resolve<Option<u8>, Data> for DataBus", "`Driven { v: Logic::X, s: Strength::Strong }`", "`E0511`"] {
+    for needle in ["pub nature AndWire { value: bool, }", "impl Resolve<bool> for AndWire", "pub nature Sda { value: Driven, }", "impl Resolve<Driven> for Sda", "pub nature TriBus { value: Driven, }", "impl Resolve<Driven> for TriBus", "let rp = Pullup(sda);", "let k = Keeper(line);", "pub nature DataBus { value: Data }", "impl Resolve<Option<u8>, Data> for DataBus", "`Driven { v: Logic::X, s: Strength::Strong }`", "`E0511`"] {
         assert!(flat_s.contains(needle), "F.4 lacks {needle}");
     }
     assert!(!flat_s.contains(": Wire;") && !flat_s.contains(": Wire,"), "no library Wire");
@@ -2551,4 +2552,16 @@ fn keeper_and_bidir_blocks_repeat_their_generic_names() {
     for fact in ["The `digital` block repeats the module's generic names, `digital<W> for Keeper<W>` (§10 rule 6)", "The `analog` and `digital` blocks repeat the module's generic names, `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>` (§10 rule 6)"] {
         assert!(flat_text.contains(fact), "§22 lacks \"{fact}\"");
     }
+}
+
+#[test]
+fn c_2_3_and_g_38_say_tran_on_a_resolved_nature_runs() {
+    // resolved-nets RN-10 AC 2 (MD-57): the conformance item of Appendix C.2.3 that names `Tran` on nets of a `Resolve<Driven>`
+    // nature is no longer a promise, and G.38 says which of its items the compiler runs
+    let c = one_line(&section(&spec("appendix_c_implementation.md"), "### C.2.3"));
+    let row = c.split("| `Tran` on nets of a `Resolve<Driven>` nature").nth(1).and_then(|rest| rest.split(" | ").nth(1)).unwrap_or_else(|| panic!("C.2.3 has the row of `Tran`: {c}"));
+    assert!(row.contains("**Runs:**") && row.contains("`source_nets`"), "C.2.3 says `Tran` runs and names its test: {row}");
+    let g38 = one_line(&section(&spec("appendix_g_scope.md"), "### G.38"));
+    assert!(g38.contains("`Tran` on nets of a `Resolve<Driven>` nature runs"), "G.38 says `Tran` runs: {g38}");
+    assert!(g38.contains("20 gallery fences"), "G.38 counts the fences the gate builds: {g38}");
 }

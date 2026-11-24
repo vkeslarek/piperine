@@ -1010,6 +1010,957 @@ T34 → T35 → T39 → T36
 
 ---
 
+## Checks` cites. No test is removed, weakened or skipped beyond the table of design.md. Every model a test runs declares its own net nature with its `impl Resolve` (design D27): no test names `Wire`, `Tri`, `SumNet` or `Logic::wired`.
+- **Proof lines are real lines.** A check's expected line is confirmed against a real run in the task that first makes it pass; a line that differs from what the runner prints is corrected in that task's commit, never the test renamed to fit.
+- **Code clarity (user rules, `.specs/features/code-clarity/spec.md`) is part of every task's done-criteria.** Readable at a glance; the module tree says where each thing is; each crate one purpose; no free function (every function has an owner type); one purpose per type; object-oriented names with no abbreviation; no god method and no needless abstraction; the data path evident. Every new or changed struct, enum, method, field and variant carries a `///` doc comment; a non-evident block cites its spec rule. A removal removes the whole concept, with no dead field, no unused variant and no comment about what used to be there. AGENTS.md idiom rules bind (MD-13): no macro, no `unwrap()`/`expect()` on a path user input reaches.
+- **Conventions.** New IR enum variants, `CarrierRole` and plan `Source` variants are appended last. The interpreter refuses every new IR form by name (codegen context R1) in the task that adds it. Every new test target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`. Source-level models go in `crates/piperine-parity/tests/natures/*.msl`, `tests/resolved/*.msl` and `tests/nets/*.msl`.
+- **The Book** (21 chapters, Part 1 Fundamentals and Part 2 In depth): its prose never defers to Rust, its tone is respectful, every listing has a row in `tests/book/inventory.tsv` and a test. When a refused row starts to run its test fails with "now runs": the row becomes `run`, its `GAPS.md` §11 line is deleted, and a sentence that described the refusal is rewritten to what the binary prints.
+- **Code owners (D16).** A task that first raises `E0203` or `E0225` deletes the code's row from `crates/piperine-lang/tests/support/code_owners.tsv` and the code from the `GAPS.md` §10 list in its commit.
+- **Cross-lane files** (design.md "Cross-lane touches"): `spec_text.rs` and `docs.rs` are appended to, never edited above; `GAPS.md` keeps its section numbering; `inventory.tsv` rows are edited in place, never reordered.
+- Zero warnings on every crate the `**Build**` line names. In a worktree sharing a target directory, `touch crates/<crate>/src/lib.rs` before a gate.
+- One atomic commit per task, message as given (lowercase conventional subject of at most 72 characters), ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No merge; push only as the orchestrator asks.
+- **`lessons.py` is not run** during this feature (its `list` rewrites `.specs/lessons.json` and `.specs/LESSONS.md`).
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `AGENTS.md` (build and verify, test placement), `CLAUDE.md` ("Where the tests are", MD-28 amended by MD-72), `crates/piperine-lang/tests/suite_hygiene.rs` (the enforcing guard), `.specs/STATE.md` MD-38 (parity is measured), MD-57 (spec edits with `spec_text.rs`), MD-63 (the compiled backend), MD-72 (root Book tests), MD-77 (the buck runs on demand).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Checker (`piperine-lang/src/types`) | integration | every static AC; each code with its span and the names it cites | `crates/piperine-lang/tests/types_natures.rs` | `cargo test -p piperine-lang --test types_natures` |
+| Elaborator (`piperine-lang/src/elab`) | integration | the IR each form lowers to; `E0225`, `E0242`, `E0339` across instances, `E0187` of a drive; the instances of `resolve` | `crates/piperine-lang/tests/elab_natures.rs` | `cargo test -p piperine-lang --test elab_natures` |
+| IR (`piperine-ir`) | integration | the new forms built, checked, printed | `crates/piperine-ir/tests/resolved.rs` | `cargo test -p piperine-ir --test resolved` |
+| Interpreter refusals | integration | each new IR form refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
+| Plan (`piperine-plan`) | integration | the value, drive and others pins; the drive layout; the resolver's binding | `crates/piperine-plan/tests/digital_shape.rs` | `cargo test -p piperine-plan --test digital_shape` |
+| Printer (`piperine-transpile`) | integration | `Expr::Resolve` compiled and called per count | `crates/piperine-transpile/tests/resolve.rs` | `cargo test -p piperine-transpile --test resolve` |
+| Digital solver | integration | relaxation with absent and present drives, the pass bound, no latch | `crates/piperine-digital-solver/tests/relax.rs` | `cargo test -p piperine-digital-solver --test relax` |
+| Owner protocol | integration | the loop that does not settle reaches the owner as one `E0511` fault | `crates/piperine-solver/tests/protocol_transient.rs` | `cargo test -p piperine-solver --test protocol_transient` |
+| Source-level runs | integration | one test per run-time AC and edge case, from MSL source on the Rust backend; expected values from the rule; the host's `E0511` message | `crates/piperine-parity/tests/{source_natures,source_resolved,source_nets}.rs` | `cargo test -p piperine-parity --test source_natures` / `source_resolved` / `source_nets` |
+| The Book | integration | each of the ten rows, through the binary and the root package | `tests/book/*.rs`, `tests/book/inventory.tsv`, `crates/piperine-cli/tests/book.rs` | `cargo test -p piperine --test book_<chapter>`, `cargo test -p piperine-cli --test book` |
+| Spec text and repository records | integration | one assertion per amended sentence, removed `GAPS.md` row or code owner row | `crates/piperine-lang/tests/{spec_text,spec_codes}.rs`, `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-lang --test spec_text`, `--test spec_codes`, `cargo test -p piperine-cli --test docs` |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute. The levels follow the user's gate policy (design D28): nothing heavier than `batch` runs anywhere but a batch's last task.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | After a task whose tests are one or two targets of one crate | the `**Build**` line, then the `Run` line(s) the task's `Done when` names |
+| Full | After a task that changes the checker, the elaborator, the IR, the plan, the printer, an engine, the host or `std` | Quick, then `cargo test -p <crate>` for every crate the task touched (for the root package, only the `book_*` targets it touched, with `book_inventory` and `book_claims`); "with the buck" adds the buck targets |
+| Batch | The last task of each batch (T15, T21, T26, T33, T36), once | Full, then `env -u PIPERINE_NGSPICE cargo test --no-fail-fast` at the root, `cargo test -p piperine --test integrated`, `cargo test -p piperine-cli --test integrated`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`, `cargo test -p piperine-cli --test twins` |
+| Build | After a task with `Tests: none` | the `**Build**` line |
+
+---
+
+## Execution Plan
+
+Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order.
+
+Batches (whole phases): **B1** phase 1 (T1–T6, done) · **B2** phases 2–3 (T7–T10, done) · **B3** phases 4–5 (T11–T15) · **B4** phase 6 (T16, T17, T37, T18, T19, T38, T20, T21) · **B5** phase 7 (T22–T26) · **B6** phase 8 (T27–T33) · **B7** phase 9 (T34, T35, T39, T36). See "Base and order" for when each starts.
+
+### Phase 1: Project discrete natures, signal-flow nodes and `E0224` (done)
+
+```
+T1 → T2 → T3 → T4 → T5 → T6
+```
+
+### Phase 2: Relaxation below the language (done)
+
+```
+T7 → T8 → T9
+```
+
+### Phase 3: Records of phases 1 and 2 (done)
+
+```
+T10
+```
+
+### Phase 4: Contract (waits for `generics` A–B and `explicit-unknowns` B on `main`)
+
+```
+T11
+```
+
+### Phase 5: IR, plan and printer for resolved carriers
+
+```
+T12 → T13 → T14 → T15
+```
+
+### Phase 6: Checker and elaborator for natures that implement `Resolve`
+
+```
+T16 → T17 → T37 → T18 → T19 → T38 → T20 → T21
+```
+
+### Phase 7: Resolved carriers run from source
+
+```
+T22 → T23 → T24 → T25 → T26
+```
+
+### Phase 8: The library nets of §22.3 and `Bidir` (waits for `generics` C's generic modules, spec Q2)
+
+```
+T27 → T28 → T29 → T30 → T31 → T32 → T33
+```
+
+### Phase 9: The Book and the records
+
+```
+T34 → T35 → T39 → T36
+```
+
+---
+
+## Task Breakdown
+
+### T1: Checker: carriers of any discrete nature
+
+**What**: `Checker::bit_type` becomes `discrete_carrier_type`: every `NatureKind::Discrete` nature, the stdlib's or the project's, generic with defaults (§4 rule 12) or not, gives `Ty::Carrier { nature, value }`; `port_type`'s `Discrete` arm stops being `P0001`. `NatureRules::of` (design C2) answers "one driver, resolved, flow" for every kind and replaces the scattered `matches!` on `NatureKind` in `types/`. Create `crates/piperine-lang/tests/types_natures.rs` with its `//!` header.
+**Where**: `crates/piperine-lang/src/types/carrier.rs`
+**Depends on**: None
+**Reuses**: `bit_type`, `carried_type` (`E0112`), the one-driver checks of `types/module.rs`
+**Requirement**: RN-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_project_discrete_port_without_a_direction_is_e0310`, `connecting_byte_to_bit_u8_is_e0251_naming_both_natures`, `a_nature_value_without_repr_is_e0112`, `a_second_driver_of_a_project_discrete_carrier_is_e0220` and `a_generic_project_nature_takes_its_argument_or_its_default` pass under `**Run typesnatures**`
+- [x] The `types_carriers.rs` test that pinned `discrete nature` as `P0001` is replaced by these (design "Goldens")
+- [x] Code clarity: `NatureRules` and `discrete_carrier_type` doc-commented; no free function
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): carriers of every discrete nature`
+
+---
+
+### T2: A project discrete nature elaborates and runs
+
+**What**: The elaborator lowers a carrier of a project discrete nature as it lowers `Bit<T>` (`elab/nature.rs`: the net's value type is the nature's `value`, with its type arguments); placement connects it to a port of the same nature. Create `crates/piperine-parity/tests/source_natures.rs` and `tests/natures/byte_counter.msl`.
+**Where**: `crates/piperine-lang/src/elab/nature.rs`
+**Depends on**: T1
+**Reuses**: the `Bit<T>` path of `elab/carriers.rs`, `place.rs`
+**Requirement**: RN-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_counter_over_a_project_byte_nature_commits_and_records` and `a_project_nature_carrier_connects_to_a_port_of_the_same_nature` pass under `**Run sourcenatures**`
+- [x] Code clarity: every new method doc-commented; the data path from the nature to the net's type in one place
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): a project's discrete nature runs`
+
+---
+
+### T3: Checker: `others()` on a one-driver carrier is `E0224`
+
+**What**: `s.others()` on a carrier whose nature has no `resolve` is `E0224` naming the carrier (§5.2.7); on a resolved carrier it stays `P0001` until T17. Delete the `E0224` row of `code_owners.tsv` (D16).
+**Where**: `crates/piperine-lang/src/types/call.rs`
+**Depends on**: T2
+**Reuses**: `NatureRules`, `CARRIER_METHODS`
+**Requirement**: RN-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `others_on_a_one_driver_carrier_is_e0224` passes under `**Run typesnatures**`
+- [x] Code clarity: the rule cites §5.2.7; no free function
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): others on a one-driver carrier is e0224`
+
+---
+
+### T4: Checker: signal-flow ports and signals, `E0413`, `E0206`
+
+**What**: `port_type`'s `SignalFlow` arm gives `Ty::Node(nature)`; a flow contribution to a branch whose nature has no `flow` is `E0413` (§11 rule 11); a flow probe (`i`, `flow`) on it is `E0206` (§6 rule 10), whichever layer raises it today. Delete the `E0413` row of `code_owners.tsv` (D16).
+**Where**: `crates/piperine-lang/src/types/analog.rs`
+**Depends on**: T3
+**Reuses**: `NatureRules`, `E0240` of `types/analog.rs`
+**Requirement**: RN-08
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_flow_contribution_to_a_signal_flow_node_is_e0413` and `a_flow_probe_of_a_signal_flow_node_is_e0206` pass under `**Run typesnatures**`
+- [x] The `types_carriers.rs` test that pinned `signal-flow nature` as `P0001` is replaced (design "Goldens")
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): signal-flow nodes`
+
+---
+
+### T5: Elaborator: `SignalFlowCheck` and `E0242`
+
+**What**: After placement, `SignalFlowCheck::run` (design C8, D10, D11) counts, for every node whose natures all lack `flow`, the instances holding a potential contribution to `(n, gnd)`; zero or more than one is `E0242` naming the node and each driver; a node where any nature has `flow` is conservative and not counted. Create `crates/piperine-lang/tests/elab_natures.rs`. Delete the `E0242` row of `code_owners.tsv` (D16).
+**Where**: `crates/piperine-lang/src/elab/signal_flow.rs`
+**Depends on**: T4
+**Reuses**: the node table of `elab/place.rs`, the contribution list of `elab/contribute.rs`
+**Requirement**: RN-08
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_signal_flow_node_with_no_or_two_drivers_is_e0242` and `a_node_meeting_a_nature_with_flow_is_not_counted` pass under `**Run elabnatures**`
+- [x] Code clarity: `SignalFlowCheck` doc-commented citing §6 rule 2 and its Resolution
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(elab): a signal-flow node has one potential driver`
+
+---
+
+### T6: The gain chain over `VSignal` runs in every analysis
+
+**What**: Source tests of RN-08: two gain blocks `v(out) +> k * v(inp)` over `VSignal` nodes in `op`, `dc`, `ac` and `transient`, the expected value computed in Rust and compared under `ToleranceContract::DC_VOLTAGE` as it is (D12); a `VSignal` node connected to an `Electrical` port solves as a conservative node. Models in `tests/natures/gain_chain.msl`, `mixed_node.msl`.
+**Where**: `crates/piperine-parity/tests/source_natures.rs`
+**Depends on**: T5
+**Reuses**: the `Project` runner of `piperine-parity`, `ToleranceContract`
+**Requirement**: RN-08
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_signal_flow_node_with_one_driver_solves_and_loads_nothing`, `a_gain_chain_over_vsignal_gives_the_product_of_the_gains` and `vsignal_connected_to_an_electrical_port_is_conservative` pass under `**Run sourcenatures**`
+- [x] No contract or tolerance edited
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): a signal-flow gain chain runs in every analysis`
+
+---
+
+### T7: The drive presence field and relaxation below the language
+
+**What**: abi.md §9 D1 gains the sentence of design D3 (a drive net's layout is the value's layout followed by `driving: BOOL` with a known byte; zero bytes are absent). Create `crates/piperine-digital-solver/tests/relax.rs`: stub devices built on `ShapeBuf` (drivers writing value and `driving`, a resolver reading `driving` and passing the present drives to a `wired`-like fold) prove the cycle starts absent, stops within the drive count plus one, keeps no earlier level once released, leaves an absent drive out and passes an unknown one.
+**Where**: `crates/piperine-digital-solver/tests/relax.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `tests/support` devices of `piperine-digital-solver`, `ShapeBuf`, `relax` in `run.rs`
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_relaxing_cycle_starts_absent_and_stops_within_drives_plus_one_passes`, `a_released_loop_keeps_no_earlier_level` and `an_absent_drive_is_left_out_and_an_unknown_one_is_passed` pass under `**Run relax**`
+- [x] The abi.md sentence is in §9 D1
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(digital): relaxation with absent and unknown drives`
+
+---
+
+### T8: Digital solver: one `Unsettled` per relaxation step
+
+**What**: `Observation::Unsettled { nets: Vec<String>, at }`: `relax` pushes one per step still moving after its last pass, naming every `RELAX` net of the step in name order (design C9); the zeroing of moving known fields is unchanged.
+**Where**: `crates/piperine-digital-solver/src/run.rs`
+**Depends on**: T7
+**Reuses**: `relax`, `Obs`
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_unsettled_step_is_one_observation_naming_every_relax_net` passes under `**Run relax**`
+- [x] Code clarity: the variant's doc cites §8.2.3 step 4 and abi.md D1
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(digital): one unsettled observation per relaxation step`
+
+---
+
+### T9: Owner: `ObservationKind::Unsettled`
+
+**What**: `ObservationKind::Unsettled { nets }` appended; `adapters.rs` maps the digital observation to it instead of an empty `Record`; nothing else changes.
+**Where**: `crates/piperine-solver/src/analyses/adapters.rs`
+**Depends on**: T8
+**Reuses**: the adapter's observation mapping
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_unsettled_loop_reaches_the_owner_once_per_step` passes under `**Run prototran**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(solver): the owner sees an unsettled loop`
+
+---
+
+### T10: Records of phases 1 and 2
+
+**What**: `GAPS.md` loses L22 and L23 and the §11 row `modules#8` keeps only the `idt` refusal (owner `generics`); `tests/book/modules.rs` and `inventory.tsv` follow; `docs.rs` asserts the removed rows. The Handoff lists any code of D16 still owed.
+**Where**: `GAPS.md`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `inventory_guard.rs`, `docs.rs`
+**Requirement**: RN-10
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `gaps_no_longer_lists_project_or_signal_flow_natures` passes under `**Run docs**`
+- [x] `the_pi_controller_is_refused_only_for_its_generic_idt` passes under `**Run bookmodules**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Build
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(gaps): project and signal-flow natures run`
+
+---
+
+### T11: Contract: merge `main` and re-read the anchors
+
+**What**: Merge `main` into `feature/resolved-nets` (by hunk) once `generics` A–B and `explicit-unknowns` B are on it; re-read every anchor of design.md and its amendment: `types/carrier.rs`, `types/call.rs`, `NatureRules`, trait `impl`s on a nature and the lookup order (`generics` T26, T27, T46, T48 as `explicit-unknowns` D17 amended them), `Instantiations` of a trait function, `std/nets.msl` (`Strength`, `Driven`, `strongest`, `sum`, the generic modules, no net nature: `explicit-unknowns` T23) and `std/logic.msl` (its T44), the drive pin layout and the `E0511` fault (its T36, T37), `E0187` (its T30), and whether `pom_bundles.rs` still uses the library's `Wire`. Re-point the checks of B2 that `explicit-unknowns` T37 touched: in `relax.rs`, `an_absent_drive_is_left_out_and_an_unknown_one_is_passed` becomes `an_absent_drive_is_left_out_and_a_present_one_is_passed` (a present drive holds a value of its type; no drive is unknown), and `protocol_transient.rs`'s `an_unsettled_loop_reaches_the_owner_once_per_step` becomes `an_unsettled_loop_reaches_the_owner_as_one_e0511_fault`; where T37 already replaced either, C31 and C62 name its successor instead. Write on the Handoff each anchor that moved and how the following tasks adapt. Stop and report if a dependency is missing (D25).
+**Where**: `crates/piperine-digital-solver/tests/relax.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: design.md and its amendment; `explicit-unknowns` design "`resolved-nets`"
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The merge is clean or its conflicts are resolved by hunk without changing behaviour; the `**Build**` line passes
+- [x] `an_absent_drive_is_left_out_and_a_present_one_is_passed` passes under `**Run relax**`; `an_unsettled_loop_reaches_the_owner_as_one_e0511_fault` passes under `**Run prototran**` (or C31 and C62 name the successors T37 left, the commit body names both)
+- [x] The Handoff names every moved anchor
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `docs(specs): resolved-nets contract on the explicit model`
+
+---
+
+### T12: IR: resolved carriers, `Others`, `Resolve`, the resolution of a net
+
+**What**: Design C4 and the amendment's data model: `CarrierRole::Resolved { driven }`, `Expr::Others(u32)`, `Expr::Resolve { by_count, drives, except }`, `NetData::resolution: Option<Resolution>` with its `driven` type, appended; `Ir::check` (counts; each instance takes `[X; k]` and returns `V`; `Others` on a `Resolved` carrier, of type `V`); the structural printer; the interpreter refuses the three forms by name. Create `crates/piperine-ir/tests/resolved.rs`.
+**Where**: `crates/piperine-ir/src/model.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `IrBuilder`, `check.rs`, `print.rs`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_resolved_net_is_built_checked_and_printed` and `a_resolve_with_a_missing_count_or_another_type_is_refused` pass under `**Run irresolved**`
+- [x] `resolved_forms_are_refused_by_name` passes under `**Run interp**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(ir): resolved carriers and their nets`
+
+---
+
+### T13: Plan: value, drive and others pins
+
+**What**: Design C5 as amended: `DriveLayout::of(driven)`, the fields of `X` then a plain `driving: BOOL`; a `Resolved` carrier's value pin of `V` (read), drive pin of the drive layout (`RELAX`) and others pin of `V` (only when `Expr::Others` reads it); a definition or commit of it targets the drive pin.
+**Where**: `crates/piperine-plan/src/digital.rs`
+**Depends on**: T12
+**Reuses**: `CarrierLayout`, `ShapeBuf`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_resolved_carrier_has_value_drive_and_others_pins` and `the_drive_layout_appends_a_plain_driving_byte` pass under `**Run planshape**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(plan): pins of a resolved carrier`
+
+---
+
+### T14: Printer: `Expr::Resolve` and the drive write
+
+**What**: Design C6 as amended: `ResolvePrinter` gathers the present drives (`driving` 1) in order into `[X; k]` and calls `by_count[k]`; a write to a drive pin sets `driving` to 1. Create `crates/piperine-transpile/tests/resolve.rs` (an IR built by hand with a `sum` over `[f64; k]` and a resolution whose `X` differs from `V`).
+**Where**: `crates/piperine-transpile/src/print/resolve.rs`
+**Depends on**: T13
+**Reuses**: `print/digital.rs`, `print/value.rs`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `resolve_calls_the_instance_of_the_present_count` and `a_drive_write_marks_the_drive_present` pass under `**Run transresolve**`
+- [x] Transpile goldens byte-identical
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): resolve of the present drives`
+
+---
+
+### T15: Netlist: the resolver instance and its nets
+
+**What**: `Netlist::circuit` binds each resolved net: the drive nets to the holders' drive pins and the resolver's inputs in order, the value net to every value pin, each others net to its holder's others pin; a non-holder's others pin to the value net (D7).
+**Where**: `crates/piperine-plan/src/netlist.rs`
+**Depends on**: T14
+**Reuses**: `Netlist::circuit`
+**Requirement**: RN-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_resolved_net_binds_drives_value_and_others` passes under `**Run planshape**`
+- [x] Gate check passes: Batch (end of B3), with the buck
+
+**Tests**: integration
+**Gate**: batch
+
+**Commit**: `feat(plan): the resolver binds its nets`
+
+---
+
+### T16: Checker: natures that implement `Resolve`
+
+**What**: Design C3 as amended, D15, D23. Remove the `resolve` field: `NatureFieldKind::Resolve` and its parser arm, `NatureFieldNode::Resolve`, `Nature::resolve_fn`, and the kind `Resolved` that the field gave, with the statements of `docs/pom/reflection.md`, `model.md`, `mapping.md` and `resolution.md` that describe the field and their `pom_docs::DocAheadOfTheCode::WAITING` entries (explicit-unknowns F14); a `resolve:` line is then the parser's error for any word that is not a nature field. `ResolveImpls::check` at each `impl Resolve<X, V> for N`: `N` discrete, `V` its `value`, `resolve` pure with one const parameter `N: usize`, one parameter `[X; N]`, result `V`; anything else `E0203` naming nature and `impl`. `NatureRules::of` answers "resolved" from the nature's `impl`s; `port_type`'s resolved arm gives `Ty::Carrier`; `E0310` for `in`/`out` on a resolved port; `E0220` skipped for resolved carriers; `resolved-nets-bundles`' `E0261` (`pom/resolve/shape.rs`) asks the same capability. `pom_bundles.rs` fixtures that still use the library's `Wire` declare a nature with `impl Resolve<bool>` (design "Goldens"). Delete the `E0203` row of `code_owners.tsv` and of `GAPS.md` §10 (D16).
+**Where**: `crates/piperine-lang/src/types/nature.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `NatureRules`, `generics`' trait `impl` checks
+**Requirement**: RN-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_impl_resolve_makes_a_discrete_nature_resolved`, `resolve_may_call_a_library_or_project_function`, `an_impl_resolve_of_another_shape_is_e0203`, `a_resolve_field_is_not_a_nature_field` and `a_direction_on_a_resolved_port_is_e0310` pass under `**Run typesnatures**`
+- [x] `cargo test -p piperine-lang --test pom_bundles --test pom_docs` passes with the `Wire` fixtures replaced (both names in the commit body)
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(types): a nature is resolved by its impl of resolve`
+
+---
+
+### T17: Checker: `others()`, `E0221`, `E0220` and loops of resolved drives
+
+**What**: `s.others()` on a resolved carrier has the nature's `value` type `V`, in definitions, reactions and `analog`; one module holding a definition and a commit of one resolved carrier is `E0221`; a second drive of a carrier whose nature does not implement `Resolve` is `E0220` whose diagnostic names the nature and `Resolve` (§5.2.1); `E0339` counts a module-local loop only when it passes through a one-driver carrier (§8.2.3).
+**Where**: `crates/piperine-lang/src/types/definition.rs`
+**Depends on**: T16
+**Reuses**: the loop walk of `definition.rs`, `types/call.rs`, `types/module.rs` (`E0220`)
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_definition_and_a_commit_of_one_resolved_carrier_is_e0221`, `a_module_local_loop_of_resolved_drives_is_accepted` and `a_second_drive_of_a_one_driver_carrier_names_the_nature_and_resolve` pass under `**Run typesnatures**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): others, e0220 and loops of resolved drives`
+
+---
+
+### T37: Checker: a drive picks its `impl` (`E0180`, `E0181`)
+
+**What**: `ResolveImpls::pick`: the type of a definition or commit to a resolved carrier picks the nature's `impl Resolve<X, V>` whose `X` it is (§5.2.15); a type no `impl` accepts is `E0180` naming the nature and the driven type (a `Logic` into `AndWire`); a literal several `impl`s accept is `E0181`. The drive's type is recorded for the elaborator.
+**Where**: `crates/piperine-lang/src/types/nature.rs`
+**Depends on**: T17
+**Reuses**: `ResolveImpls`, the literal inference of `types/`
+**Requirement**: RN-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_drive_no_impl_accepts_is_e0180_and_an_ambiguous_literal_e0181` and `a_drive_picks_the_impl_of_its_type` pass under `**Run typesnatures**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): a drive picks its impl of resolve`
+
+---
+
+### T18: Elaborator: a body's resolved carriers, drives and `others()`
+
+**What**: A resolved port or signal is a carrier of role `Resolved { driven }`; the body's definition or commits of it are its drive, of type `X`; `s.others()` lowers to `Expr::Others`.
+**Where**: `crates/piperine-lang/src/elab/carriers.rs`
+**Depends on**: T37
+**Reuses**: `Structure`, `Frame`, `elab/drives.rs`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive` and `others_lowers_to_the_bodys_others_read` pass under `**Run elabnatures**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): resolved carriers of a body`
+
+---
+
+### T19: Elaborator: `ResolverBodies` and the instances of `resolve`
+
+**What**: Design C7, D4, D5, D8, D21: after placement, per resolved net, `DriveOrder::of` sorts the holders (§4 rule 2 Resolution, host first), the drive and others nets are added, the net's `impl` is the one its drives picked (for a net nobody drives, and for the host's drive, D21: the only `impl`, else `impl Resolve<V>`, else `E0181`; spec Q4), its `resolve::<k>` is instantiated for `k` in `0..=N` through `Instantiations`, one resolver body per (nature, `impl`, `N`, others readers) and one resolver instance `<net path>$resolve` are placed; `NetData::resolution` is filled.
+**Where**: `crates/piperine-lang/src/elab/resolvers.rs`
+**Depends on**: T18
+**Reuses**: `Instantiations`, `IrBuilder`, `elab/place.rs`
+**Requirement**: RN-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `resolve_is_instantiated_once_per_drive_count`, `drives_are_ordered_by_instance_path_segment_by_segment` and `others_depends_on_the_other_drives_only` pass under `**Run elabnatures**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): resolvers of resolved nets`
+
+---
+
+### T38: Elaborator: one driven type per net (`E0225`)
+
+**What**: Design D22: in `ResolverBodies`, two drives of one net whose driven types differ are `E0225` naming both holders' instance paths and both types (§5.2.15). Delete the `E0225` row of `code_owners.tsv` (owner `explicit-unknowns`) and the code from the `GAPS.md` §10 list (D16).
+**Where**: `crates/piperine-lang/src/elab/resolvers.rs`
+**Depends on**: T19
+**Reuses**: the drive types T37 records
+**Requirement**: RN-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `two_driven_types_on_one_net_are_e0225` passes under `**Run elabnatures**`
+- [x] `no_owned_code_is_raised` passes under `**Run speccodes**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(elab): one driven type per resolved net`
+
+---
+
+### T20: Elaborator: initial values of resolved carriers
+
+**What**: §5.2.3 and §5.2.12 as amended: `= v` on a resolved signal or port is the declaring module's drive's first commit at `(0, 0)`, of type `X`; a resolved carrier with no drive of the declaring module needs no initial value; a drive with no initial value starts at `Default::default()` of `X`, and a type without `Default` whose driver gives none is `E0187` naming the carrier and `Default` (an undelayed definition gives one, explicit-unknowns Handoff).
+**Where**: `crates/piperine-lang/src/elab/place.rs`
+**Depends on**: T38
+**Reuses**: the initial-value path of one-driver carriers, `explicit-unknowns`' `E0187`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `an_initial_value_is_the_declaring_modules_first_drive_commit` and `a_resolved_drive_without_default_or_initial_value_is_e0187` pass under `**Run elabnatures**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(elab): initial values of resolved carriers`
+
+---
+
+### T21: Elaborator: loops across instances
+
+**What**: `DriveLoops` over the placed drive graph: a loop that passes through a one-driver carrier is `E0339` naming its drives (today it may only fail at bind); a loop among resolved drives is accepted and left to relaxation (§8.2.3).
+**Where**: `crates/piperine-lang/src/elab/loops.rs`
+**Depends on**: T20
+**Reuses**: the drive table of `NetData::resolution`, the definition dependencies of `elab/drives.rs`
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_loop_through_a_one_driver_carrier_across_instances_is_e0339` and `a_loop_of_resolved_drives_across_instances_is_accepted` pass under `**Run elabnatures**`
+- [x] Gate check passes: Batch (end of B4), with the buck
+
+**Tests**: integration
+**Gate**: batch
+
+**Commit**: `feat(elab): loops across instances`
+
+---
+
+### T22: Drives combine through `resolve`, from source
+
+**What**: Create `crates/piperine-parity/tests/source_resolved.rs` and `tests/resolved/*.msl`, each model declaring its nature (D27): three drivers of `Total` (`impl Resolve<f64> for Total` with `sum`) in instances named out of order; a project `resolve` that records its argument order; an undriven `Total` and an undriven `AndWire` (F.4.1); a drive change that leaves the value; an initial value; a drive with none, of a type with `Default` (`Option<u8>` into a nature of `impl Resolve<Option<u8>, u8>`).
+**Where**: `crates/piperine-parity/tests/source_resolved.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: the runner of `source_natures.rs`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `three_summing_drivers_give_their_sum_in_the_microstep_any_changes`, `an_undriven_resolved_carrier_holds_resolve_of_no_drive`, `resolve_receives_the_drives_in_instance_path_order`, `a_drive_without_initial_value_is_its_types_default_until_its_first_commit`, `a_drive_change_that_leaves_the_value_fires_no_changed` and `an_initial_value_is_the_declaring_modules_first_drive` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): resolved drives from source`
+
+---
+
+### T23: `others()` from source
+
+**What**: Three drivers of `Total` each emitting its `others()`; a non-driver reading `others()`.
+**Where**: `crates/piperine-parity/tests/source_resolved.rs`
+**Depends on**: T22
+**Reuses**: T22's models
+**Requirement**: RN-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `others_is_resolve_of_every_drive_but_the_readers` and `others_of_a_module_without_a_drive_is_the_value` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(parity): others from source`
+
+---
+
+### T24: Relaxation from source
+
+**What**: A ring of pass elements over `AndWire` (each drives what the rest of its net drives, through `others()`) settles; a released ring keeps no level.
+**Where**: `crates/piperine-parity/tests/source_resolved.rs`
+**Depends on**: T23
+**Reuses**: T22's models
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_loop_of_resolved_drives_is_accepted_and_settles` and `a_released_ring_latches_nothing` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(parity): relaxation from source`
+
+---
+
+### T25: Host: `E0511` names the loop's drives
+
+**What**: Design C9 as amended, D24: `LoopDrives` in the host's failure path maps the drive nets of the `E0511` fault (`explicit-unknowns` T37) to the instance paths that hold them through `NetData::resolution`, in drive order, the host's drive as `host`, and writes them in the message. Source tests: two drivers of `AndWire` that each drive the negation of `others()` stop the run with `E0511` naming both; a loop settling on its first pass raises nothing.
+**Where**: `crates/piperine-api/src/failure.rs`
+**Depends on**: T24
+**Reuses**: `Failure`, `NetData::resolution`
+**Requirement**: RN-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_loop_that_does_not_settle_stops_the_run_with_e0511_naming_its_drives` and `a_loop_settling_on_its_first_pass_raises_nothing` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): e0511 names the drives of the loop`
+
+---
+
+### T26: Resolved nets in every analysis
+
+**What**: The per-analysis table of §22.3 over `Total` and a module with a reaction: definitions, `resolve`, `others()` and a reaction run at the microsteps of `(0, ·)` and of each `dc` sweep point; in `ac` the nets are constant.
+**Where**: `crates/piperine-parity/tests/source_resolved.rs`
+**Depends on**: T25
+**Reuses**: the analyses of `piperine-api`
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `resolved_nets_run_at_the_microsteps_of_each_sweep_point_and_hold_in_ac` passes under `**Run sourceresolved**`
+- [x] Gate check passes: Batch (end of B5)
+
+**Tests**: integration
+**Gate**: batch
+
+**Commit**: `test(parity): resolved nets in every analysis`
+
+---
+
+### T27: `Strength`, `Driven`, `Driven::strongest`
+
+**What**: Waits for `generics` phase C's generic modules on `main` (spec Q2, D25); merge `main` first and stop if GN-13 is missing. Create `crates/piperine-parity/tests/source_nets.rs` and `tests/nets/*.msl`: a nature `Line { value: Driven }` with `impl Resolve<Driven> for Line { Driven::strongest }` driven by timed commits gives the table of §22.3.2; `strongest` of any permutation is one result and `strongest([x, x])` is `x`. Fix in the compiler any form of `std/nets.msl` that does not check or run (CLAUDE.md: the library is an acceptance target).
+**Where**: `crates/piperine-parity/tests/source_nets.rs`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: T22's runner; `std/nets.msl`, `std/logic.msl`
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `strongest_gives_the_table_of_22_3_2` and `strongest_of_equal_drives_is_that_drive_in_any_order` pass under `**Run sourcenets**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): strengths and strongest`
+
+---
+
+### T28: A nature with two `impl`s, and a typed bus
+
+**What**: Design D19 as amended, spec RN-02 AC 9, RN-06 AC 3: a nature `Bus { value: bool }` with `impl Resolve<bool> for Bus` (high when every drive is) and `impl Resolve<u8, bool> for Bus` (high when every drive is non-zero) resolves each carrier by its drives' type (the resolver body's key carries `X`); `DataBus` with `impl Resolve<Option<u8>, Data>` (Appendix F.4.4) gives `Free`, `Byte(b)`, `Contended`.
+**Where**: `crates/piperine-lang/src/elab/resolvers.rs`
+**Depends on**: T27
+**Reuses**: `ResolverBodies`, `ResolveImpls`
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type` and `a_typed_bus_resolves_to_free_byte_or_contended` pass under `**Run sourcenets**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(elab): a resolved nature with several impls`
+
+---
+
+### T29a: A generic module over a resolved nature parameter (`W: Nature + Resolve<Driven>`)
+
+**What**: Added 2026-11-24 by the coordinator's ruling: the library of §22.3 (`Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`) is generic over a *discrete* nature, which T27 found the checker could not express (a port typed by a nature parameter was always a node; `Resolve<Driven>` as a bound was `E0161`). `Bound::Resolve { arguments }` in `GenericSignature::bound`; a nature parameter with it is a resolved carrier in the generic body (`Ty::Carrier { nature: <the parameter>, value: V }`, `V` the second argument or `X`; drives typed `X`; `others()` typed `V`; `NatureRules` says resolved, `ResolveImpls::of` answers from the bound); `satisfies` asks `ResolveImpls::of` of the argument nature (`E0187` naming the argument and the bound); `Substitution::apply` replaces the carrier's nature; the placement's inference learns the nature from a carrier meeting a carrier of a parameter; the elaborator reads the instance's carrier (`typed_carrier`) and picks the concrete `impl` by `X` (`concrete_implementation`). A bound with no, or three, arguments or with no `Nature` is `E0187`.
+**Where**: `crates/piperine-lang/src/types/` (`generics.rs`, `bounds.rs`, `carrier.rs`, `nature.rs`, `nature_rules.rs`, `substitution.rs`, `inference.rs`, `module_generics.rs`), `crates/piperine-lang/src/elab/carriers.rs`, `body.rs`
+**Depends on**: T28
+**Reuses**: `ResolveImpls`, `NatureRules`, the generic module instances of `generics` C
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_nature_parameter_bound_by_resolve_is_a_resolved_carrier_in_the_body`, `a_placement_on_a_nature_without_the_resolve_impl_is_e0187_naming_nature_and_bound` and `a_resolve_bound_takes_one_or_two_arguments_and_a_nature` pass under `**Run typesgenmod**`
+- [x] `a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_nature` passes under `**Run elabgenmod**`
+- [x] `a_tribuf_over_a_nature_parameter_runs_on_a_declared_nature` passes under `**Run sourcenets**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(types): a generic module over a resolved nature parameter`
+
+---
+
+### T29: `Tribuf`, `Pullup`, `Pulldown`
+
+**What**: Source tests of §22.3.5 on `Line`: `Tribuf` with `oe` high and low; a pull that wins only while every stronger drive is released, for `Pullup` and `Pulldown`. A library module placed on a nature without `impl Resolve<Driven>` (`AndWire`) is `E0187` naming the nature and the bound.
+**Where**: `crates/piperine-parity/tests/source_nets.rs`
+**Depends on**: T28
+**Reuses**: `tests/nets/*.msl`
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `tribuf_drives_strong_or_high_impedance` and `a_pull_wins_only_while_every_stronger_drive_is_released` pass under `**Run sourcenets**`
+- [x] `a_library_module_on_a_nature_without_resolve_driven_is_e0187` passes under `**Run typesnatures**`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): tribuf and pulls`
+
+---
+
+### T30: `Keeper`
+
+**What**: Source test of §22.3.6 on `Line`: weak X before any 0 or 1 has been seen; holds the last level the others drove, weakly, after they release; a contended X is not recorded. Amend the fence of §22.3.6 and `std/nets.msl` to `digital<W> for Keeper<W>` (§10 rule 6, D26), with a `spec_text` guard.
+**Where**: `crates/piperine-parity/tests/source_nets.rs`
+**Depends on**: T29
+**Reuses**: `tests/nets/*.msl`
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `a_keeper_drives_weak_x_until_it_sees_a_level_then_holds_it` passes under `**Run sourcenets**`
+- [x] `keeper_and_bidir_blocks_repeat_their_generic_names` passes under `**Run spectext**` for `Keeper`
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): keeper`
+
+---
+
+### T31: `Tran`, `Tgate` and the conformance item of Appendix C.2.3
+
+**What**: Source tests of §22.3.7, §22.3.8 and RN-05 AC 3 on `Line`: `Tran` with `en` high and low; `Tgate` conducting on `s` high or `sn` low; two parallel `Tran`s carry a strong level and stay two carriers with their own `changed()`; a ring of `Tran`s settles.
+**Where**: `crates/piperine-parity/tests/source_nets.rs`
+**Depends on**: T30
+**Reuses**: `tests/nets/*.msl`
+**Requirement**: RN-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `tran_drives_each_side_with_the_others_of_the_other`, `tgate_joins_while_s_high_or_sn_low` and `two_parallel_trans_carry_a_strong_level_and_stay_two_carriers` pass under `**Run sourcenets**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(parity): tran and tgate`
+
+---
+
+### T32: `Bidir`
+
+**What**: A transient with a `Tribuf`, a `Bidir` and an RC load on its node toggling `oe` (§22.4.3 rows 1 and 2, rules 1 to 3); a contended net (X at `Strong`) makes the pad act as driven toward mid-rail; two `Bidir`s alone on one net stop the run with `E0511` naming both (rule 4). Amend the fences of §22.4.3 and `std/convert.msl` to `analog<W> for Bidir<W>` and `digital<W> for Bidir<W>` (D26).
+**Where**: `crates/piperine-parity/tests/source_nets.rs`
+**Depends on**: T31
+**Reuses**: `tests/nets/*.msl`, T25's message
+**Requirement**: RN-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `bidir_drives_the_node_while_the_wire_is_driven`, `bidir_drives_the_wire_from_the_node_when_released`, `bidir_acts_as_driven_on_a_contended_net`, `a_change_of_driving_is_a_time_point_and_a_jump` and `two_bidirs_alone_stop_the_run_with_e0511` pass under `**Run sourcenets**`
+- [x] `keeper_and_bidir_blocks_repeat_their_generic_names` passes under `**Run spectext**` for both modules
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): bidir`
+
+---
+
+### T33: Edge cases of resolved nets
+
+**What**: The spec's edge cases: a top-level resolved port's host drive comes first (D8, with the `impl` of D21); a panic inside `resolve` is a run fault naming the nature and the carrier (D13); a drive at `Strength::HighZ` of any level is left out; one drive still goes through `resolve` (RN-03 AC 7); a parent drives a child's `pub` resolved signal; a net nobody drives on a nature with two `impl`s follows D21 (spec Q4).
+**Where**: `crates/piperine-parity/tests/source_nets.rs`
+**Depends on**: T32
+**Reuses**: `tests/nets/*.msl`
+**Requirement**: RN-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_hosts_drive_of_a_top_port_comes_first`, `a_panic_in_resolve_is_a_run_fault_naming_nature_and_carrier`, `a_high_impedance_drive_of_any_level_is_left_out`, `one_drive_still_goes_through_resolve` and `an_undriven_net_of_a_nature_with_two_impls_follows_its_rule` pass under `**Run sourcenets**`
+- [x] `a_parent_drives_a_childs_pub_resolved_signal` passes under `**Run sourcenets**` (follow-up commit: the checker accepts a resolved child field as a drive target, the elaborator makes a `Resolved`-role reach carrier that holds a drive of the child's net)
+- [x] Gate check passes: Batch (end of B6), without the buck (user's gate policy)
+
+**Tests**: integration
+**Gate**: batch
+
+**Commit**: `test(parity): edge cases of resolved nets`
+
+---
+
+### T34: The Book's alarm runs (natures#3, natures~e99c1920, natures~91c3bffe)
+
+**What**: The chapter "Natures and carriers": the alarm's CLI listing becomes the binary's output; the sentence natures~e99c1920 ("Today the command refuses the file and runs nothing:") is rewritten to introduce the output (prose respectful, never deferring to Rust); `tests/book/natures.rs` replaces `the_open_drain_line_is_refused_until_a_nature_can_implement_resolve` by run tests; rows natures#3 and natures~91c3bffe move to `run`/`holds` in `inventory.tsv` and their `GAPS.md` §11 lines go; `crates/piperine-cli/tests/book.rs` holds the listing.
+**Where**: `docs/book/content.html`
+**Depends on**: None (its phase follows the previous one)
+**Reuses**: `Chapter`, `Refusal`, `inventory_guard.rs`
+**Requirement**: RN-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_alarm_prints_three_records_of_the_line`, `the_pulldown_alarm_prints_the_exercise_answer` and `the_book_no_longer_says_the_alarm_is_refused` pass under `**Run booknatures**`
+- [x] `every_cli_listing_of_the_book_is_what_the_binary_prints` passes under `**Run clibook**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `docs(book): the alarm line runs`
+
+---
+
+### T35: The IRQ line, the four worked nets and the library's line (digital#16 to digital#20, core-std#6)
+
+**What**: `tests/book/digital.rs` replaces `the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve` by run tests: digital#16 (`IrqSource`, `IrqController`, `Board` over `IrqLine`) gives the outcomes of Appendix E.7; digital#17 to digital#20 give the tables of Appendix F.4.1 to F.4.4. `tests/book/core_std.rs` replaces `the_resolved_line_is_refused_until_a_nature_can_implement_resolve` by a run of core-std#6. The six rows move to `run` in `inventory.tsv`; their `GAPS.md` §11 lines go; any sentence of "Driving with strength" that described the refusal is rewritten to what the binary prints.
+**Amendment (main, 2026-11-23):** natures#2 is judged by elaboration, not by an operating point (gap L21): its nodes `mid` and `vout` float, so the operating point is singular (`E0503`) whatever this feature does; T39's flip is that the block elaborates with `Sda` declared.
+**Where**: `tests/book/digital.rs`
+**Depends on**: T34
+**Reuses**: `Chapter`, `Commands`, Appendix E.7 and F.4 tables
+**Requirement**: RN-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `the_irq_line_runs_on_its_resolved_nature` and `the_four_worked_nets_give_the_tables_of_f_4` pass under `**Run bookdigital**`; `the_resolved_line_runs_on_its_nature` passes under `**Run bookcorestd**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `docs(book): the irq line and the worked nets run`
+
+---
+
+### T39: The signal families of chapter 5 (natures#2)
+
+**What**: Waits for `composite-values` phase C (L24) on `main` (spec Q3); merge `main` first and stop if L24 is open. `tests/book/natures.rs` replaces `signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net` by a test that elaborates the block (with the chapter's `Sda`) and reads each carrier's initial value: `en` false, `last` `None`, `count` 0, `level` 0.0, `st` `Tx::Idle`, `lines` eight `false`, `bus` `10xx`, `sda` `Driven::Z` (no drive). natures#2 moves to `run`; its `GAPS.md` §11 line goes.
+**Where**: `tests/book/natures.rs`
+**Depends on**: T35
+**Reuses**: `Chapter`, `Model`
+**Requirement**: RN-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `signals_of_every_family_run` passes under `**Run booknatures**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Full
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `docs(book): the signal families run`
+
+---
+
 ### T36: Records: GAPS, spec, roadmap, decisions, code owners
 
 **What**: `GAPS.md` loses L21 and the resolved-net group of L58 (`TribufDelayed` stays with `generics`), with §9 and the counts; the §11 list holds no net row (T34, T35, T39 removed them); Appendix C.2.3 and G.38 say `Tran` on nets of a `Resolve<Driven>` nature runs, guarded in `spec_text.rs`; if Appendix E.7 and F.4 are still `rust,fragment` (explicit-unknowns Handoff), they become `rust` and `std_galleries` builds 18 fences; `ROADMAP.md` names the feature delivered; `.specs/STATE.md` gains the next free `MD-` entry (resolved nets below the POM: D4 to D8, D21 to D24); every `code_owners.tsv` row this feature raises is gone.

@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 0 silent, 2 broken, 17 loud (L1 to L77 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, in six tables) plus
+**Counts.** 0 silent, 2 broken, 16 loud (L1 to L77 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the three `resolved-nets` rows (L21, L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L77 (L76 and L77 found by the `generics` phase C round 4 fix, owners `spec-closure` and `generics` phase E (T118); L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
+| §4 Loud | L1–L77 (L21, L22 and L23 closed by `resolved-nets`; L76 and L77 found by the `generics` phase C round 4 fix, owners `spec-closure` and `generics` phase E (T118); L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -95,7 +95,6 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops through the nets of such a nature (a loop that does not settle is `E0511`, raised by the digital engine); also owes `explicit-unknowns` EU-04 AC 4 for a drive of a resolved carrier (`E0187` when its drive has no initial value and its type no `Default`: `types/module.rs` skips every carrier whose nature is not one-driver, so no test can reach it until a resolved nature runs; check C14's drive half) | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 
 Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
@@ -147,7 +146,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
-| L58 | Stdlib refused with the form it is built on. **Generics (phase E):** `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `inertial`; **Resolved nets (L21):** `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `limvds` as a function value (L9) | §22 | by its group |
+| L58 | Stdlib refused with the form it is built on. **Generics (phase E):** `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `inertial`, `TribufDelayed` (its `inertial` delay). **Other:** `AckWithin` (a `u32` param), `limvds` as a function value (L9) | §22 | by its group |
 | L59 | the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L71 | a host write of a `Logic` param or of a four-state pattern: a `Logic` param is a struct param (`P0001`), and no host call takes `"10xz"` for a `Logic<4>` cell, though the host prints a cell as that pattern (EU-15 AC 4). T47 planned `parse the same pattern for a host write` and dropped it: no criterion asks for one and the write fails loud (owner `resolved-nets`, whose host drive of a resolved `Logic` carrier is the first caller; it parses the pattern with the rules of §22.1.4 and writes the two planes of `abi.md` P3) | §22.1.1, §22.1.4 | `P0001` (a struct param) | S |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
@@ -292,7 +291,7 @@ does not count.
 | IV §14 core primitives | 80 % | `others`, `include_str!`, `noise_table` (L58) |
 | V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
 | VI §19–§21 output, input, metadata | 45 % | files, host metadata |
-| VII §22 stdlib | 36 % (about 30 of 75 names; `normal` runs) | everything generic, every resolved net, `idt`, filters, tables |
+| VII §22 stdlib | 36 % (about 30 of 75 names; `normal` runs) | everything generic, `idt`, filters, tables (the nets of §22.3 run: `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`) |
 | VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
 | A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
 | C reference implementation | defaults in place | the C.2 text is stale (X1, X2); 1 of the 5 conformance items runs |
@@ -332,7 +331,7 @@ E0807 E0808 E0809`
 | Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7, L72 | M to L |
 | Composite values | phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows | L |
 | Generics and generation (phases A to C delivered: L4, L7, L8, L9, L30, L31, X6; S3 closed) | L32 (phase D: templates, placement through a template or a function) | L |
-| Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
+| Resolved nets (delivered) and bundles | L25: bundles (`resolved-nets-bundles`); the nets of §22.3 run | L |
 | Unknown semantics (delivered) | nothing open (L18 and L19 closed by `unknown-semantics`; L51, L52 and L53 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B delivered `Logic<N>`, `logic` and `matches_bits`, L68) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V13, V16, PSS on the device ABI | L |

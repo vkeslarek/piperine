@@ -360,8 +360,10 @@ none is analog.
 **Purpose.** No strength and no `Logic`: the `impl` says that a driver that is missing reads
 high, which is the pull-up.
 
-```rust,fragment
-pub nature AndWire { value: bool }
+```rust
+pub nature AndWire {
+    value: bool,
+}
 
 impl Resolve<bool> for AndWire {
     fn resolve<const N: usize>(drives: [bool; N]) -> bool {
@@ -398,8 +400,10 @@ module Board(in a: Bit, in b: Bit) {
 
 **Purpose.** The pull-up is a module, and the line shows Z when it is missing.
 
-```rust,fragment
-pub nature Sda { value: Driven }
+```rust
+pub nature Sda {
+    value: Driven,
+}
 
 impl Resolve<Driven> for Sda {
     fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
@@ -408,7 +412,11 @@ impl Resolve<Driven> for Sda {
 }
 
 module OpenDrainPin(sda: Sda, in pull_low: Bit) {
-    sda = if pull_low { Driven::strong(false) } else { Driven::Z };
+    sda = if pull_low {
+        Driven::strong(false)
+    } else {
+        Driven::Z
+    };
 }
 
 module I2cBus(in m: Bit, in s: Bit) {
@@ -437,8 +445,10 @@ module I2cBus(in m: Bit, in s: Bit) {
 
 **Purpose.** Two buffers share one line, and a keeper remembers the last level that was driven.
 
-```rust,fragment
-pub nature TriBus { value: Driven }
+```rust
+pub nature TriBus {
+    value: Driven,
+}
 
 impl Resolve<Driven> for TriBus {
     fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
