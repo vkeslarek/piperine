@@ -10,7 +10,7 @@ use std::sync::Arc;
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{CrateGraph, Design, DesignDiagnostic};
-use piperine_lang::types::Types;
+use piperine_lang::types::{Types, UnfinishedForm};
 use piperine_solver::prelude::CircuitInstance;
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
@@ -23,6 +23,8 @@ pub struct Project {
     root: PathBuf,
     dependencies: Vec<(String, PathBuf)>,
     cache: Option<PathBuf>,
+    /// The unfinished forms the type checks admit (tests of generics phase C).
+    forms: Vec<UnfinishedForm>,
 }
 
 /// A design a stage refused: the stage (`graph`, `parse`, `typeck`, `elaborate`, `transpile`,
@@ -62,12 +64,18 @@ impl Running {
 impl Project {
     /// A project whose root crate is the file `root`.
     pub fn new(root: &Path) -> Project {
-        Project { root: root.to_path_buf(), dependencies: Vec::new(), cache: None }
+        Project { root: root.to_path_buf(), dependencies: Vec::new(), cache: None, forms: Vec::new() }
     }
 
     /// This project with a dependency crate called `name`, rooted at the file `lib`.
     pub fn dependency(mut self, name: &str, lib: &Path) -> Project {
         self.dependencies.push((name.to_string(), lib.to_path_buf()));
+        self
+    }
+
+    /// This project with the unfinished `forms` admitted by its type checks (the gate of generics phase C; deleted with it).
+    pub fn admitting(mut self, forms: &[UnfinishedForm]) -> Project {
+        self.forms = forms.to_vec();
         self
     }
 
@@ -98,9 +106,9 @@ impl Project {
     pub fn elaborate(&self, top: &str) -> Result<Ir, Rejection> {
         let design = self.design()?;
         // every item is typed, reached from the top or not, as `Session::elaborate` does (S3, GN-09)
-        Types::check_model(&design).map_err(|found| Self::diagnosed("typeck", found))?;
-        Types::check(&design, top).map_err(|found| Self::diagnosed("typeck", found))?;
-        Elaborator::new(&design).run(top).map_err(|found| Self::diagnosed("elaborate", found))
+        Types::check_model_admitting(&design, &self.forms).map_err(|found| Self::diagnosed("typeck", found))?;
+        Types::check_admitting(&design, top, &self.forms).map_err(|found| Self::diagnosed("typeck", found))?;
+        Elaborator::new(&design).admitting(&self.forms).run(top).map_err(|found| Self::diagnosed("elaborate", found))
     }
 
     /// `top` elaborated, transpiled, compiled and bound to the solver.
