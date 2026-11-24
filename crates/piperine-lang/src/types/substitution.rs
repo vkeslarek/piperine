@@ -177,7 +177,10 @@ impl Checker<'_> {
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {
             let GenericValue::Type(ty) = argument else { continue };
             for bound in &parameter.bounds {
-                if matches!(bound, Bound::Callable { .. }) {
+                if let (Bound::Callable { inputs, .. }, Ty::Module(module)) = (bound, ty) {
+                    // §8.4.5: a template of a module whose ports have the types of `P`
+                    satisfied &= self.module_fits_callable(*module, &parameter.name, inputs, file, span);
+                } else if matches!(bound, Bound::Callable { .. }) {
                     self.unsupported(file, span, &format!("the template parameter `{}` of `{item_name}`, bounded by `Fn`", parameter.name));
                     satisfied = false;
                 } else if !BoundCheck::new(self).satisfies(ty, bound) {

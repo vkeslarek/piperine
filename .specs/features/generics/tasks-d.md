@@ -230,9 +230,9 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 **Done when**:
 
-- [ ] `a_module_whose_ports_match_fits_fn_p_names_not_counting` and `a_module_whose_ports_differ_is_e0360_naming_the_first` pass under `**Run typestempl**`
-- [ ] `a_fn_bounded_parameter_is_inferred_from_its_template_param` passes under `**Run typestempl**`
-- [ ] Gate check passes: Full (last task of batch B14)
+- [x] `a_module_whose_ports_match_fits_fn_p_names_not_counting` and `a_module_whose_ports_differ_is_e0360_naming_the_first` pass under `**Run typestempl**`
+- [x] `a_fn_bounded_parameter_is_inferred_from_its_template_param` passes under `**Run typestempl**`
+- [x] Gate check passes: Full (last task of batch B14)
 
 **Tests**: integration
 **Gate**: full

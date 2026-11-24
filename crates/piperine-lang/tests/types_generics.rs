@@ -461,14 +461,13 @@ fn phase_d_and_e_forms_stay_p0001_by_name() {
     assert!(!LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
     let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
     assert!(LaterPhases::refuses(through, "placement through a template value or a function"), "{:?}", LaterPhases::found(through));
-    // a template parameter (`C: Fn(..)`, phase D, GN-21): given as an argument or left to inference, it is `P0001` naming the
-    // parameter, never `E0187` (a bound it does not satisfy) or `E0181` (cannot infer)
+    // a template parameter (`C: Fn(..)`, GN-23): a module whose ports differ from `P` is `E0360` (T88), and one left to inference is `E0181`
     let bound = "module Cell(a: Electrical) {}\nmodule Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner::<Cell>(); }\n";
-    assert!(LaterPhases::refuses(bound, "the template parameter `C` of `Inner`, bounded by `Fn`"), "{:?}", LaterPhases::found(bound));
-    assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "P0001"), "{:?}", LaterPhases::found(bound));
+    assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "E0360"), "{:?}", LaterPhases::found(bound));
+    assert_eq!(LaterPhases::found(bound).len(), 1, "{:?}", LaterPhases::found(bound));
     let open = "module Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner(); }\n";
-    assert!(LaterPhases::refuses(open, "the template parameter `C` of `Inner`, bounded by `Fn`"), "{:?}", LaterPhases::found(open));
-    assert!(LaterPhases::found(open).iter().all(|(code, _)| code == "P0001"), "{:?}", LaterPhases::found(open));
+    assert!(LaterPhases::found(open).iter().all(|(code, _)| code == "E0181"), "{:?}", LaterPhases::found(open));
+    assert_eq!(LaterPhases::found(open).len(), 1, "{:?}", LaterPhases::found(open));
 }
 
 #[test]

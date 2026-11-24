@@ -109,7 +109,7 @@ block	modules#8	f26832ff2564dcd3	run	piperine/book_modules::the_pi_controller_ru
 block	modules#9	76ab743eefe57ede	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
 block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_template_and_bundle	L32	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
-block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that_returns_a_template_is_refused_where_it_is_placed	L32	-
+block	modules#12	7d514f590b39e281	run	piperine/book_modules::a_function_that_returns_a_template_places_its_result	-	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-

@@ -141,8 +141,8 @@ fn the_debug_prints_card_runs_with_its_analog_trace() {
 fn the_template_card_is_refused_for_its_template_and_bundle() {
     // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module
     // generic over the template. The generic module runs (T71); what is left is exactly: the struct `Cell` with a carrier
-    // field, a bundle (L25, `resolved-nets-bundles`), the two placements through a template value or a function and the
-    // `Fn` bound of `C` the module `Bsim4` is checked against (L32, phase D)
+    // field, a bundle (L25, `resolved-nets-bundles`) and the placement through `cell` with the bundle literal as its argument;
+    // `nch(..)(d, g, s, b)` and the `Fn` bound of `C` are typed from T86 and T88 on
     let chapter = Chapter::read();
     let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit = false;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
     let after = "}\nmodule Top() { let i = Inner::<Bsim4>(); }\n";
@@ -150,8 +150,6 @@ fn the_template_card_is_refused_for_its_template_and_bundle() {
     let wanted = [
         ("P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet"),
         ("P0001", "placement through a template value or a function is not supported yet"),
-        ("P0001", "placement through a template value or a function is not supported yet"),
-        ("P0001", "the template parameter `C` of `Inner`, bounded by `Fn` is not supported yet"),
     ];
     assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the refusals still owed");
     Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", wanted[0].0, wanted[0].1);

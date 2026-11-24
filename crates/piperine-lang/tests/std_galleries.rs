@@ -475,14 +475,15 @@ fn the_fences_generics_lifted_are_checked() {
 /// Stream<T>` and a `Stream<T>`, and F.3's memory bank has the `Cell` bundle (the probe through several natures and the
 /// `fall` on its receiver follow from it); both are the bundle, `GAPS.md` L25 (`resolved-nets-bundles`). F.3's template
 /// parameter `C: Fn(..)` and the placement through it are phase D, L32 (`generics`). The generic modules themselves check.
-const REMAINING_REFUSALS: [&str; 10] = [
+const REMAINING_REFUSALS: [&str; 11] = [
     "E.6 as `Slice`: P0001: `flip` type is not supported yet",
     "E.6 as `Slice`: P0001: `struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet",
     "F.3 as `BehavioralCell`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
     "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
     "F.3 as `BehavioralCell`: P0001: method `fall` on this receiver is not supported yet",
     "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
-    "F.3 as `Dram`: P0001: the template parameter `C` of `MemoryBank`, bounded by `Fn` is not supported yet",
+    "F.3 as `Dram`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
+    "F.3 as `Dram`: P0001: placement through a template value or a function is not supported yet",
     "F.3 as `Dram1T1C`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
     "F.3 as `MemoryBank`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
     "F.3 as `MemoryBank`: P0001: placement through a template value or a function is not supported yet",
@@ -504,7 +505,7 @@ impl GenericModules {
 #[test]
 fn the_fences_generics_phase_c_lifted_are_checked() {
     // GN-31 AC 2: a gallery fence that writes a generic module (and, in it, a generation `for`) is held to the type checker,
-    // each of its modules as the top: it checks clean, with no diagnostic at all (the generic "not supported yet" included), but for the bundle (L25) and the template parameter (L32), each `P0001` by name and pinned exactly
+    // each of its modules as the top: it checks clean, with no diagnostic at all (the generic "not supported yet" included), but for the bundle (L25) and the placement through the bundle-typed `Fn` parameter, each `P0001` by name and pinned exactly
     let mut held = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
     for g in galleries() {

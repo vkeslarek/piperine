@@ -114,3 +114,36 @@ fn a_param_block_on_a_template_placement_is_e0361() {
     let source = TemplateSource::new(&format!("{head}module Top(x: E) {{ let a = C1(x) {{ cs: 2.0 }}; let c = pick(true)(x) {{ cs: 2.0 }}; }}"));
     assert_eq!(source.codes(), ["E0361", "E0361"], "{}", source.message());
 }
+
+/// Two modules with the ports of `Fn(E, E)`, one that differs, and a bank bound by `C: Fn(E, E)`.
+const BANK: &str = "module Pair(a: E, b: E) { cs: f64 = 1.0; }\nmodule Twin(p: E, q: E) { cs: f64 = 2.0; }\n\
+module Wrong(a: E, b: Bit) { }\nmodule Short(a: E) { }\n\
+module Bank<C: Fn(E, E)>(x: E, y: E) { cell: C; let first = cell(x, y); }\n";
+
+#[test]
+fn a_module_whose_ports_match_fits_fn_p_names_not_counting() {
+    // §8.4.5 (GN-23 AC 1): `Pair(a, b)` and `Twin(p, q)` have the types and directions of `Fn(E, E)`, names not counting
+    let source = TemplateSource::new(&format!("{BANK}module Top(x: E, y: E) {{ let one = Bank::<Pair>(x, y) {{ cell: Pair {{ cs: 3.0 }} }}; let two = Bank::<Twin>(x, y) {{ cell: Twin {{ }} }}; }}"));
+    assert_eq!(source.codes(), Vec::<String>::new(), "{}", source.message());
+}
+
+#[test]
+fn a_module_whose_ports_differ_is_e0360_naming_the_first() {
+    // §8.4.5 (GN-23 AC 2): `Wrong` differs at its second port, `Short` has too few: `E0360` naming the first port that differs
+    let wrong = TemplateSource::new(&format!("{BANK}module Top(x: E, y: E) {{ let one = Bank::<Wrong>(x, y) {{ cell: Wrong {{ }} }}; }}"));
+    assert_eq!(wrong.codes(), ["E0360"], "{}", wrong.message());
+    assert!(wrong.message().contains("`b`") && wrong.message().contains("Wrong"), "names the module and its first differing port: {}", wrong.message());
+    let short = TemplateSource::new(&format!("{BANK}module Top(x: E, y: E) {{ let one = Bank::<Short>(x, y) {{ cell: Short {{ }} }}; }}"));
+    assert_eq!(short.codes(), ["E0360"], "{}", short.message());
+}
+
+#[test]
+fn a_fn_bounded_parameter_is_inferred_from_its_template_param() {
+    // §8.1 and §8.4.1 (GN-23): `cell: C` holds a template, and the placement that binds the param names `C`
+    // (`Bank(x, y) { cell: Pair { cs: 3.0 } }` infers `C = Pair`); a placement that leaves it out is `E0181`
+    let inferred = TemplateSource::new(&format!("{BANK}module Top(x: E, y: E) {{ let one = Bank(x, y) {{ cell: Pair {{ cs: 3.0 }} }}; }}"));
+    assert_eq!(inferred.codes(), Vec::<String>::new(), "{}", inferred.message());
+    let open = TemplateSource::new(&format!("{BANK}module Top(x: E, y: E) {{ let one = Bank(x, y); }}"));
+    assert_eq!(open.codes(), ["E0181"], "{}", open.message());
+    assert!(open.message().contains("`C`"), "{}", open.message());
+}

@@ -77,6 +77,8 @@ impl Checker<'_> {
             plain if self.is_param_type(&plain) => Some(plain),
             // a param of a type parameter (`reset: T`, §8.1.15): typed under the parameter's bounds
             Ty::Param(parameter) if self.is_value_type_parameter(parameter) => Some(Ty::Param(parameter)),
+            // a param of a type parameter bound by `Fn(P)` (`cell: C`, §8.4.1) holds a template of a module that fits `P`
+            Ty::Param(parameter) if self.callable_of(parameter).is_some() => Some(Ty::Param(parameter)),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -229,7 +231,7 @@ impl Checker<'_> {
         self.callees.insert(expr, Callee::Module(module));
         self.exprs[callee.index()] = Some(Ty::Module(module));
         let substitution = if self.design.decl_data(module).generics_span.is_some() {
-            let Some(given) = self.generic_placement(expr, *callee, module, args) else {
+            let Some(given) = self.generic_placement(expr, *callee, module, args, &fields) else {
                 self.placing.pop();
                 self.keep_handed_after_failure(module, args);
                 return None;

@@ -303,13 +303,13 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (14 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (12 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list, and `E0702` left it when T45 raised it. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` is retired (T55): the width mismatch of `cast` is the `E0127` of its `where`, raised by the elaborator.
 `E0123 E0124 E0203 E0225
-E0360 E0362 E0371 E0372 E0373 E0374 E0375
+E0371 E0372 E0373 E0374 E0375
 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
@@ -358,7 +358,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type), then its `flip`; the definitions through its members raise no cascade; the generic module `Slice` runs |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
 | modules#10 | L32 | `generics` | `MemoryBank`: the `Cell` struct with carrier fields (bundle, L25) is `P0001`, the placement through the template `cell` is `P0001` and the template `C` bounded by `Fn` is `P0001` naming it (phase D); the generic module, the generation `for` of its body and the arrays of carriers run |
-| modules#12 | L32 | `generics` | `nch(0.13u, 2u)(d, g, s, b)`: placement through a template value or a function is `P0001` |
 | modules#14 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |
 | modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` implements them (its GN-26 AC 3 flips this row) |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function are `P0001` and the `Fn` bound of `C` is `P0001` naming the template parameter (phase D); the struct `Cell` with carrier fields is `P0001` (bundle, L25); the generic module runs |

@@ -61,6 +61,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 let wanted = self.checker.callable_type(inputs, *output);
                 match (ty, wanted) {
                     (Ty::Param(param), Some(wanted)) => self.checker.bounds_of(*param).iter().any(|own| matches!(own, Bound::Callable { inputs, output } if self.checker.callable_type(inputs, *output).as_ref() == Some(&wanted))),
+                    (Ty::Module(module), Some(_)) => self.checker.first_differing_port(*module, inputs).is_none(),
                     (found, Some(wanted)) => *found == wanted,
                     (_, None) => false,
                 }
@@ -117,8 +118,21 @@ impl Checker<'_> {
     /// The function parameter or binding `callee` names when its type is a type parameter bound by `Fn`.
     pub(super) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
         let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return None };
+        if matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
+            return self.module_param_callable(decl).map(|_| decl);
+        }
         let Some(Ty::Param(param)) = self.locals.get(&decl).cloned() else { return None };
         self.callable_of(param).map(|_| decl)
+    }
+
+    /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
+    /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
+    fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
+        let DeclKind::Param(data) = &self.design.decl_data(param).kind else { return None };
+        match self.lower_type(data.ty)? {
+            Ty::Param(parameter) => self.callable_of(parameter),
+            _ => None,
+        }
     }
 
     /// A call of a value of a type parameter bounded by `Fn(A) -> R`: its arguments are positional
@@ -131,6 +145,11 @@ impl Checker<'_> {
                 self.infer(arg.value);
             }
             return None;
+        }
+        if matches!(self.design.decl_data(parameter).kind, DeclKind::Param(_)) {
+            let Some(Ty::Fn(params, result)) = self.module_param_callable(parameter) else { return None };
+            self.apply(expr, &params, args)?;
+            return Some(*result);
         }
         self.local_call(expr, parameter, args)
     }

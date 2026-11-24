@@ -4,7 +4,7 @@
 //! by the value a `Bit<T>` carrier holds or a value input has, a const parameter by the length of an array connected.
 //! Two natures for one nature parameter are `E0180` naming both (DC4); a parameter nothing gives is `E0181`.
 
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, FileId, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution, TypeId};
 
 use super::check::Checker;
 use super::inference::Inference;
@@ -14,7 +14,7 @@ use super::{GenericValue, Instantiation, Substitution, Ty};
 impl Checker<'_> {
     /// The substitution the placement `expr` of the generic module `module` makes, recorded as its instantiation
     /// (`Types::instantiation`); `None` after a diagnostic.
-    pub(super) fn generic_placement(&mut self, expr: ExprId, callee: ExprId, module: DeclId, args: &[Arg]) -> Option<Substitution> {
+    pub(super) fn generic_placement(&mut self, expr: ExprId, callee: ExprId, module: DeclId, args: &[Arg], fields: &[FieldInit]) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let signature = self.generic_signature(module);
@@ -22,6 +22,7 @@ impl Checker<'_> {
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, callee, module, file, span)?;
         self.learn_from_connections(&mut inference, &declared, args, file)?;
+        self.learn_from_templates(&mut inference, module, fields)?;
         let substitution = self.complete_arguments(&mut inference, &signature, module, module, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, module, file, span)?;
@@ -30,7 +31,7 @@ impl Checker<'_> {
     }
 
     /// The type of each port of `module` as it is declared, its generic parameters opaque; `None` when one is refused.
-    fn module_port_types(&mut self, module: DeclId) -> Option<Vec<Ty>> {
+    pub(super) fn module_port_types(&mut self, module: DeclId) -> Option<Vec<Ty>> {
         let ports: Vec<TypeId> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
             DeclKind::Port(port) => Some(port.ty),
             _ => None,
@@ -61,6 +62,26 @@ impl Checker<'_> {
                 }
             }
             inference.unify(port, &given);
+        }
+        Some(())
+    }
+
+    /// Learns a parameter bound by `Fn(P)` from the template a param block binds to a param of its type
+    /// (`MemoryBank(wl, bl) { cell: Dram1T1C { cs: 30f } }` gives `C = Dram1T1C`, §8.4.1).
+    fn learn_from_templates(&mut self, inference: &mut Inference<'_>, module: DeclId, fields: &[FieldInit]) -> Option<()> {
+        for field in fields {
+            let Resolution::Decl(param) = field.res else { continue };
+            let DeclKind::Param(data) = &self.design.decl_data(param).kind else { continue };
+            let outer = std::mem::replace(&mut self.generic_item, Some(module));
+            let declared = self.lower_type(data.ty);
+            self.generic_item = outer;
+            let Some(declared @ Ty::Param(parameter)) = declared else { continue };
+            if !self.bounds_of(parameter).iter().any(|bound| matches!(bound, super::Bound::Callable { .. })) {
+                continue;
+            }
+            // a template that did not type was refused where it is written: nothing is left to infer from it
+            let given = self.infer(field.value)?;
+            inference.unify(&declared, &given);
         }
         Some(())
     }

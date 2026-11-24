@@ -253,7 +253,7 @@ impl Checker<'_> {
     }
 
     /// The substitution for every parameter: what was found, else the default, else `E0181` naming
-    /// the first parameter left open; a template parameter (`Fn` bound, phase D) left open is `P0001`.
+    /// the first parameter left open, a template parameter (`Fn` bound) included.
     pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, item: DeclId, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
         let mut substitution = Substitution::new();
         for parameter in signature.parameters() {
@@ -263,11 +263,6 @@ impl Checker<'_> {
                 None => None,
             };
             let Some(value) = value else {
-                if parameter.bounds.iter().any(|bound| matches!(bound, Bound::Callable { .. })) {
-                    let (name, _) = self.callee_names(item, function);
-                    self.unsupported(file, span, &format!("the template parameter `{}` of `{name}`, bounded by `Fn`", parameter.name));
-                    return None;
-                }
                 let (name, turbofish) = self.callee_names(item, function);
                 let (kind, how) = match parameter.kind {
                     ParameterKind::Const(_) => ("const parameter", "an array argument or"),
