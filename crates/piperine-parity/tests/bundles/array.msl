@@ -87,3 +87,22 @@ module WordBench() {
     let relay = Relay(word);
     let read = Read(clk, word);
 }
+
+/// A bundle with a field of `W` carriers.
+struct Sized<const W: usize> { out bits: [Bit; W] }
+
+/// Drives the even bits of a sized word high and the odd ones low.
+module Even<const W: usize>(w: Sized<W>) { for k in 0..W { w.bits[k] = k % 2 == 0; } }
+
+/// Records the first three bits of a sized word at each rising edge.
+module Tap<const W: usize>(in clk: Bit, in w: Sized<W>) { }
+digital<W> for Tap<W> { on clk.rise() { emit!("sized", zero = w.bits[0], one = w.bits[1], two = w.bits[2]); } }
+
+/// A word of three bits, driven and read through the parameter of the modules.
+module SizedBench() {
+    signal clk: Bit;
+    signal word: Sized<3>;
+    let clock = Clock(clk);
+    let even = Even::<3>(word);
+    let tap = Tap::<3>(clk, word);
+}

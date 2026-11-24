@@ -184,3 +184,19 @@ fn an_array_field_of_carriers_binds_whole_and_is_written_by_element() {
     assert_eq!(fill.drives().len(), 2, "one drive per element of the field");
 }
 
+
+#[test]
+fn a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_port() {
+    // §7 rule 11, §1.2: `Word<2>` and `Word<3>` are two bundles, each field written again with the parameter replaced: the carrier
+    // of `bits` holds as many elements as the port's argument says, whether it is written (`Word<3>`) or a parameter of the module
+    let words = |name: &str, src: &str| {
+        let ir = Elab::ir(src, "Top");
+        let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+        top.carriers().iter().filter(|c| c.name == name).map(|c| c.count).collect::<Vec<_>>()
+    };
+    let fill = "struct Word<const W: usize> { out bits: [Bit; W] }\nmodule Fill<const W: usize>(w: Word<W>) { for k in 0..W { w.bits[k] = k == 0; } }\n";
+    assert_eq!(words("narrow.bits", &format!("{fill}module Top() {{ signal narrow: Word<2>; let f = Fill::<2>(narrow); }}")), [Some(2)], "`Word<2>` has two bits");
+    assert_eq!(words("wide.bits", &format!("{fill}module Top() {{ signal wide: Word<5>; let f = Fill::<5>(wide); }}")), [Some(5)], "`Word<5>` has five");
+    let written = "struct Word<const W: usize> { out bits: [Bit; W + 1] }\nmodule Fill(w: Word<2>) { w.bits[0] = true; w.bits[1] = false; w.bits[2] = true; }\nmodule Top() { signal word: Word<2>; let f = Fill(word); }";
+    assert_eq!(words("word.bits", written), [Some(3)], "`[Bit; W + 1]` with `W = 2` has three");
+}

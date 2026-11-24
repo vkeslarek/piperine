@@ -473,6 +473,11 @@ impl<'d> Checker<'d> {
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
             TypeKind::Tuple(items) => self.tuple_type(items),
+            // the elements of an array of bundles are planned one by one at the declaration (`pom/resolve/leaves.rs`)
+            TypeKind::Array { elem, len } if self.design.bundle_struct_of_type(*elem).is_some() && self.design.literal_index(*len).is_none() => {
+                self.unsupported(file, node.span, "an array of bundles whose length is not an integer written in the source (`[Lane; N]`): its elements are planned one by one at the declaration");
+                None
+            }
             TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
             TypeKind::Flip(_) | TypeKind::Infer => {
                 self.unsupported(file, node.span, Unsupported::ty(&node.kind));

@@ -8,11 +8,11 @@
 
 use std::collections::BTreeMap;
 
-use super::super::body::{ExprKind, GenericArgNode, GenericArgsNode, LitKind, PathNode, TypeKind, TypeNode};
+use super::super::body::{ExprKind, ExprNode, GenericArgNode, GenericArgsNode, LitKind, PathNode, TypeKind, TypeNode};
 use super::super::bundles::{BundleLeaf, BundleView};
 use super::super::decl::{DeclData, DeclKind, GenericParamData, Name, PortData, SignalData};
 use super::super::design::Design;
-use super::super::ids::{DeclId, TypeId};
+use super::super::ids::{DeclId, ExprId, TypeId};
 use super::super::meta::Meta;
 use super::super::resolution::{PortKind, Resolution};
 
@@ -223,10 +223,11 @@ impl<'design> TypeSubstitution<'design> {
             }
             TypeKind::Array { elem, len } => {
                 let replaced = self.of_type(*elem);
-                if replaced == *elem {
+                let length = self.of_length(*len);
+                if replaced == *elem && length == *len {
                     return ty;
                 }
-                TypeKind::Array { elem: replaced, len: *len }
+                TypeKind::Array { elem: replaced, len: length }
             }
             TypeKind::Tuple(items) => {
                 let replaced: Vec<TypeId> = items.iter().map(|item| self.of_type(*item)).collect();
@@ -245,6 +246,45 @@ impl<'design> TypeSubstitution<'design> {
             TypeKind::FnPtr { .. } | TypeKind::Infer => return ty,
         };
         self.design.push_type(TypeNode { kind, span: node.span, owner: node.owner })
+    }
+
+    /// The length expression `expr` of an array type written again with the constant parameters replaced: a name of a parameter is
+    /// the constant it is given, and the operators over such names (`W + 1`, `(W)`, `-W`) are written again over what they are
+    /// given; any other expression is its own.
+    fn of_length(&mut self, expr: ExprId) -> ExprId {
+        let node = self.design.expr_node(expr).clone();
+        let kind = match &node.kind {
+            ExprKind::Path(path) => return self.length_named_by_path(*path, &node).unwrap_or(expr),
+            ExprKind::Paren(inner) => match self.of_length(*inner) {
+                replaced if replaced == *inner => return expr,
+                replaced => ExprKind::Paren(replaced),
+            },
+            ExprKind::Unary { op, expr: operand } => match self.of_length(*operand) {
+                replaced if replaced == *operand => return expr,
+                replaced => ExprKind::Unary { op: *op, expr: replaced },
+            },
+            ExprKind::Binary { op, lhs, rhs } => {
+                let (left, right) = (self.of_length(*lhs), self.of_length(*rhs));
+                if (left, right) == (*lhs, *rhs) {
+                    return expr;
+                }
+                ExprKind::Binary { op: *op, lhs: left, rhs: right }
+            }
+            _ => return expr,
+        };
+        self.design.push_expr(ExprNode { kind, span: node.span, owner: node.owner })
+    }
+
+    /// What the parameter a one-segment path `path` names is given, as an expression: the constant written, or the name written
+    /// as a type (`Word<W>` where `W` is a parameter of the module) read as the name of a constant. `None` for any other path.
+    fn length_named_by_path(&mut self, path: crate::pom::PathId, written: &ExprNode) -> Option<ExprId> {
+        match self.parameter_named_by_path(self.design.path_node(path))? {
+            GenericArgNode::Const(given) => Some(given),
+            GenericArgNode::Type(given) => match self.design.type_node(given).kind.clone() {
+                TypeKind::Path(named) => Some(self.design.push_expr(ExprNode { kind: ExprKind::Path(named), span: written.span, owner: written.owner })),
+                _ => None,
+            },
+        }
     }
 
     /// The argument of the generic parameter a lone name `ty` is, if it is one.

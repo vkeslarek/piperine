@@ -246,3 +246,13 @@ fn an_array_of_carriers_as_a_field_is_driven_and_read_by_index() {
     let words = Model::records(&built, &seen, "word");
     assert_eq!(words.first(), Some(&vec![("low".to_string(), 1), ("high".to_string(), 0)]), "{words:?}");
 }
+
+#[test]
+fn a_constant_parameter_in_an_array_length_of_a_field_gives_its_argument_of_carriers() {
+    // §7 rule 11: `Sized<3>` has three carriers in `bits`, whichever way the modules that drive and read it spell the length: the
+    // driver writes the even ones high, so the tap records (zero, one, two) = (1, 0, 1).
+    let built = Model::of("array.msl").built("SizedBench");
+    let seen = built.run(20e-9, 1e-9);
+    let words = Model::records(&built, &seen, "sized");
+    assert_eq!(words.first(), Some(&vec![("zero".to_string(), 1), ("one".to_string(), 0), ("two".to_string(), 1)]), "{words:?}");
+}

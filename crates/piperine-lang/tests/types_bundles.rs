@@ -38,6 +38,12 @@ impl Bundles {
         found.iter().map(|d| (d.diagnostic.code.to_string(), src[d.diagnostic.span().range()].to_string())).collect()
     }
 
+    /// The message of each diagnostic of `src` from `Top`.
+    fn messages(src: &str) -> Vec<String> {
+        let design = Bundles::design(src);
+        Types::check(&design, "Top").err().map(|found| found.iter().map(|d| d.diagnostic.message.clone()).collect()).unwrap_or_default()
+    }
+
     /// The code and message of each diagnostic.
     fn summary(found: &[DesignDiagnostic]) -> Vec<(String, String)> {
         found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
@@ -214,4 +220,26 @@ fn an_array_of_carriers_as_a_field_is_driven_and_read_by_index() {
     // the element of the field is read through a consumer's view too, and driving it from the wrong view is `E0222`
     let refused = Bundles::refused(&format!("{word}module Top(w: flip Word) {{ w.d[0] = true; }}"));
     assert_eq!(refused.first().map(|(code, _)| code.as_str()), Some("E0222"), "{refused:?}");
+}
+
+#[test]
+fn a_constant_parameter_in_an_array_length_of_a_field_is_replaced_by_its_argument() {
+    // §7 rule 11: `Word<2>` has a field of two carriers: the element `1` is in range and the element `2` is not
+    let word = "struct Word<const W: usize> { out bits: [Bit; W] }\n";
+    Bundles::accepted(&format!("{word}module Fill(w: Word<2>) {{ w.bits[0] = true; w.bits[1] = false; }}\nmodule Top() {{ signal word: Word<2>; let f = Fill(word); }}"));
+    Bundles::accepted(&format!("{word}module Fill<const W: usize>(w: Word<W>) {{ for k in 0..W {{ w.bits[k] = true; }} }}\nmodule Top() {{ signal word: Word<2>; let f = Fill::<2>(word); }}"));
+    // the two lengths do not connect (`E0251`)
+    let refused = Bundles::refused(&format!("{word}module Fill(w: Word<3>) {{ w.bits[0] = true; w.bits[1] = true; w.bits[2] = true; }}\nmodule Top() {{ signal word: Word<2>; let f = Fill(word); }}"));
+    assert!(refused.contains(&("E0251".to_string(), "word".to_string())), "{refused:?}");
+}
+
+#[test]
+fn an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form() {
+    // §7 rule 11: the elements of an array of bundles are planned one by one at the declaration, so its length is an integer
+    // written in the source; `[Lane; N]` with `N` a parameter of the module is `P0001` naming that form
+    let lane = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\n";
+    let refused = Bundles::refused(&format!("{lane}module Bank<const N: usize>(tx: [Lane; N]) {{ for k in 0..N {{ let r = Raise(tx[k]); }} }}\nmodule Top() {{ signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); }}"));
+    assert_eq!(refused.first().map(|(code, _)| code.as_str()), Some("P0001"), "{refused:?}");
+    let message = Bundles::messages(&format!("{lane}module Bank<const N: usize>(tx: [Lane; N]) {{ }}\nmodule Top() {{ signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); }}"));
+    assert!(message.iter().any(|m| m.contains("an array of bundles whose length is not an integer written in the source")), "{message:?}");
 }
