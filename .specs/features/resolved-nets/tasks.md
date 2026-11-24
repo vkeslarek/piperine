@@ -675,8 +675,8 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `three_summing_drivers_give_their_sum_in_the_microstep_any_changes`, `an_undriven_resolved_carrier_holds_resolve_of_no_drive`, `resolve_receives_the_drives_in_instance_path_order`, `a_drive_without_initial_value_is_its_types_default_until_its_first_commit`, `a_drive_change_that_leaves_the_value_fires_no_changed` and `an_initial_value_is_the_declaring_modules_first_drive` pass under `**Run sourceresolved**`
-- [ ] Gate check passes: Full
+- [x] `three_summing_drivers_give_their_sum_in_the_microstep_any_changes`, `an_undriven_resolved_carrier_holds_resolve_of_no_drive`, `resolve_receives_the_drives_in_instance_path_order`, `a_drive_without_initial_value_is_its_types_default_until_its_first_commit`, `a_drive_change_that_leaves_the_value_fires_no_changed` and `an_initial_value_is_the_declaring_modules_first_drive` pass under `**Run sourceresolved**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

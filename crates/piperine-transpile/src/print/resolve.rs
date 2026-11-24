@@ -36,6 +36,10 @@ impl ValuePrinter<'_> {
             return Err(self.unsupported(e, "an instance of resolve that takes no array"));
         };
         let driven = self.type_of(driven)?;
+        if gathered.is_empty() {
+            // no drive to gather: the instance of no drive, its empty array typed so that the call fixes its `Real`
+            return Ok(Piece::new(self.call_text(*first, vec![format!("[<{driven}>::default(); 0]")]), Prec::Atom));
+        }
         let mut text = format!("{{ let mut present_ = [<{driven}>::default(); {}]; let mut count_ = 0usize; ", gathered.len());
         for (value, driving) in &gathered {
             text.push_str(&format!("if {driving} {{ present_[count_] = {value}; count_ += 1; }} "));

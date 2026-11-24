@@ -87,7 +87,7 @@ fn resolve_is_instantiated_once_per_drive_count() {
     let source = format!("{TOTAL}module Top() {{ signal n: Total; signal m: Total; let a = Driver(n); let b = Driver(n); let c = Driver(m); let d = Driver(m); }}");
     let ir = Elab::ir(&source, "Top");
     let text = ir.print_structural();
-    assert!(text.contains("resolve [\"resolve::<0>\", \"resolve::<1>\", \"resolve::<2>\"]"), "{text}");
+    assert!(text.contains("resolve [\"Total.resolve::<f64>::<0>\", \"Total.resolve::<f64>::<1>\", \"Total.resolve::<f64>::<2>\"]"), "{text}");
     assert_eq!(text.matches("body \"Total<f64>$resolve~2\"").count(), 1, "one resolver body for both nets:\n{text}");
     assert!(text.contains("resolved by Top.n$resolve") && text.contains("resolved by Top.m$resolve"), "{text}");
 }

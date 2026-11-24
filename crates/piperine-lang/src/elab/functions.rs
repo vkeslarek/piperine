@@ -107,7 +107,20 @@ impl Elaboration<'_, '_> {
         // the type as written, under no substitution: the name of an instance is the same wherever it is asked
         match self.consts.written_as_declared(owner.self_ty) {
             Some(ty) => format!("{}.{own}{suffix}", ty.source_name(self.design)),
-            None => own,
+            None => match self.nature_target_name(parent) {
+                Some(nature) => format!("{nature}.{own}{suffix}"),
+                None => own,
+            },
+        }
+    }
+
+    /// The name of the nature a trait `impl` is written for (`impl Resolve<f64> for Total`): a nature is no written
+    /// type, so two `impl`s of one trait for two natures tell their methods apart by it.
+    fn nature_target_name(&self, implementation: DeclId) -> Option<String> {
+        let entry = self.impls.impls().iter().find(|entry| entry.decl == implementation)?;
+        match &entry.target {
+            crate::types::ImplTarget::Declared(decl) => self.design.decl_data(*decl).name.as_ref().map(|n| n.text.clone()),
+            _ => None,
         }
     }
 
