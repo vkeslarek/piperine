@@ -48,7 +48,10 @@ impl Checker<'_> {
         if let Some(after) = after {
             self.check_as(after, &Ty::F64, "E0433");
         }
-        let Some(DriveTarget { carrier, element, .. }) = target else { return };
+        let Some(DriveTarget { carrier, element, reached, .. }) = target else { return };
+        if reached {
+            return;
+        }
         let element_defined = self.book.elements.iter().any(|(c, e, k, _)| *c == carrier && *k == DriveKind::Definition && e.overlaps(element));
         if element != Element::Whole || self.book.elements.iter().any(|(c, _, k, _)| *c == carrier && *k == DriveKind::Definition) {
             if element_defined || (self.book.defined.contains_key(&carrier) && element == Element::Whole) {

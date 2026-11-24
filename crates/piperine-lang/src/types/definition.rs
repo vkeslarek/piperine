@@ -66,6 +66,9 @@ impl Checker<'_> {
                 if matches!(&self.design.decl_data(*item).kind, DeclKind::Field(field) if field.dir.is_some()) {
                     return None;
                 }
+                if let Some(reached) = self.reached_drive_target(place, *item) {
+                    return Some(reached);
+                }
                 let text = match self.design.decl_data(*item).kind {
                     DeclKind::Port(_) | DeclKind::Signal(_) => "a carrier of an instance",
                     _ => "a member of an instance",
@@ -97,7 +100,7 @@ impl Checker<'_> {
                             return self.not_drivable(file, node.span, what, "an `in` port: a module never writes its own input (§5.2.5)");
                         }
                         self.exprs[place.index()] = Some((*value).clone());
-                        Some(DriveTarget { carrier: decl, held: *value, element: Element::Whole })
+                        Some(DriveTarget { carrier: decl, held: *value, element: Element::Whole, reached: false })
                     }
                     array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
                         self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
@@ -151,7 +154,10 @@ impl Checker<'_> {
                 self.coded(file, "E0336", span, message, "a continuous expression");
             }
         }
-        let Some(DriveTarget { carrier, element, .. }) = target else { return };
+        let Some(DriveTarget { carrier, element, reached, .. }) = target else { return };
+        if reached {
+            return;
+        }
         if element != Element::Whole {
             return self.define_element(file, carrier, element, place_span, data.after.is_none());
         }

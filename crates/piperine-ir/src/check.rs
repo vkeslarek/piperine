@@ -760,8 +760,8 @@ impl<'a> Checker<'a> {
                     }
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
-                    if body.carriers.get(carrier as usize).is_none_or(|c| c.role != CarrierRole::Reached) {
-                        self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {carrier}: not a carrier of role `reached`"));
+                    if body.carriers.get(carrier as usize).is_none_or(|c| !matches!(c.role, CarrierRole::Reached | CarrierRole::Resolved { .. })) {
+                        self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {carrier}: not a carrier of role `reached` or `resolved`"));
                     }
                     if child_carrier as usize >= callee.carriers.len() {
                         self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {child_carrier} of child {}, out of range ({} carriers)", child.name, callee.carriers.len()));

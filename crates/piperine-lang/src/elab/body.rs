@@ -53,6 +53,14 @@ pub(super) struct ModulePlan {
     pub(super) reaches: Vec<piperine_ir::Reach>,
 }
 
+impl ModulePlan {
+    /// Whether carrier `carrier` of the body stands for a carrier of a child (`inst.name`): a resolved one is a drive of the
+    /// child's net, with no net of its own.
+    pub(super) fn is_reached(&self, carrier: u32) -> bool {
+        self.reaches.iter().any(|reach| matches!(reach.item, piperine_ir::ReachedItem::Carrier { carrier: reached, .. } if reached == carrier))
+    }
+}
+
 impl Elaboration<'_, '_> {
     /// What the body being lowered says of each resolved carrier: its nature, the `impl` its drives picked, whether it
     /// holds a drive of the net and whether it reads `others()`.

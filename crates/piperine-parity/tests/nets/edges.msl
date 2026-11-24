@@ -114,3 +114,16 @@ module BombBench() {
     signal fuse_net: Bomb;
     let f = Fuse(fuse_net);
 }
+
+/// A child with a `pub` resolved signal that it drives itself with 1, and whose value `OffsetLook` writes.
+module Holder() {
+    pub signal w: Offset;
+    w = 1.0;
+    let look = OffsetLook(w);
+}
+
+/// The parent drives the child's `pub` resolved signal too, with 20: the drives are the child's 1 and the parent's 20, 121.
+module ParentDrivesBench() {
+    let h = Holder();
+    h.w = 20.0;
+}

@@ -935,7 +935,7 @@ T34 → T35 → T39 → T36
 **Done when**:
 
 - [x] `the_hosts_drive_of_a_top_port_comes_first`, `a_panic_in_resolve_is_a_run_fault_naming_nature_and_carrier`, `a_high_impedance_drive_of_any_level_is_left_out`, `one_drive_still_goes_through_resolve` and `an_undriven_net_of_a_nature_with_two_impls_follows_its_rule` pass under `**Run sourcenets**`
-- [ ] `a_parent_drives_a_childs_pub_resolved_signal` passes under `**Run sourcenets**` - NOT DONE: the checker refuses it (`E0222`, "a parent never writes a child's drive", `types/definition.rs`, the `Field` arm of `written_target`) and the elaborator has no drive of a reached carrier (`reach.rs` `frame_carrier` makes a read-only `Reached` carrier). Deferred to the coordinator (see the Handoff)
+- [x] `a_parent_drives_a_childs_pub_resolved_signal` passes under `**Run sourcenets**` (follow-up commit: the checker accepts a resolved child field as a drive target, the elaborator makes a `Resolved`-role reach carrier that holds a drive of the child's net)
 - [x] Gate check passes: Batch (end of B6), without the buck (user's gate policy)
 
 **Tests**: integration

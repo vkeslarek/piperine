@@ -455,3 +455,9 @@ fn a_typed_bus_resolves_to_free_byte_or_contended() {
     assert_eq!(seen_by("ByteBusBench"), 42.0, "one talker is its byte, the released one is left out");
     assert_eq!(seen_by("ContendedBusBench"), -1.0, "two talkers are Contended");
 }
+
+#[test]
+fn a_parent_drives_a_childs_pub_resolved_signal() {
+    // §5.2.2, RN-03 edge case: the parent holds a drive of the child's `pub` resolved signal beside the child's own: 1 + 20 + 100
+    assert_eq!(edge_values("ParentDrivesBench", "offsets", "value").last(), Some(&121.0), "the child's drive and the parent's");
+}

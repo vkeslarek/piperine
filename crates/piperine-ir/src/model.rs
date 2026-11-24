@@ -289,7 +289,8 @@ pub enum CarrierRole {
     Reached,
     /// A carrier of a resolved nature (`signal sda: Sda`, part II §5.2): it reads the net's resolved value, of the
     /// carrier's `ty` (the nature's `V`), and a definition or a commit of it is the body's own drive, of type `driven`
-    /// (the `X` of the net's `impl Resolve<X, V>`). `Expr::Others` reads what the other drives resolve to.
+    /// (the `X` of the net's `impl Resolve<X, V>`). `Expr::Others` reads what the other drives resolve to. A `Reach` of the
+    /// body may name it: the body then holds a drive of a child's `pub` resolved signal, bound to the child's net.
     Resolved { driven: ValueType },
     /// A signal the elaborator makes for its own use, which the source never names (the mirror of an element of an
     /// array of carriers the `analog` block reads): a signal to the solver, never listed to the user (no default probe,
@@ -496,7 +497,7 @@ pub struct Reach {
     pub item: ReachedItem,
 }
 
-/// What a `Reach` names: the body's own node or carrier of role `Reached` (`node`, `carrier`),
+/// What a `Reach` names: the body's own node or carrier of role `Reached` or `Resolved` (`node`, `carrier`),
 /// and the child's node or carrier it stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReachedItem {

@@ -282,14 +282,7 @@ impl Elaboration<'_, '_> {
     /// A carrier this module does not drive has no initial value. `None` after a diagnostic.
     fn lower_resolved_carrier(&mut self, frame: usize, decl: DeclId, nature: DeclId, init: Option<ExprId>) -> Option<Carrier> {
         let data = self.design.decl_data(decl).clone();
-        let impls = self.types.resolve_impls(nature).to_vec();
-        let picked = self.concrete_implementation(decl, nature);
-        let chosen = match picked {
-            Some(implementation) => impls.iter().find(|candidate| candidate.implementation == implementation),
-            None if impls.len() == 1 => impls.first(),
-            None => impls.iter().find(|candidate| candidate.driven == candidate.value).or(impls.first()),
-        }?
-        .clone();
+        let (chosen, picked) = self.chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.stored_type(&chosen.driven) else {
             self.unsupported(data.file, data.span, "a resolved carrier whose drive type has no value in the IR");
             return None;
@@ -300,11 +293,25 @@ impl Elaboration<'_, '_> {
                 let value = self.carrier_init(expr, frame)?;
                 Some(self.ir_constant(value, &driven))
             }
-            None if picked.is_some() => self.default_constant(&chosen.driven, &driven),
+            None if picked => self.default_constant(&chosen.driven, &driven),
             None => None,
         };
         let name = format!("{}{}", self.frames[frame].prefix, data.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
         Some(Carrier { name, ty, role: CarrierRole::Resolved { driven }, init, origin: self.locator.decl(decl), count: None })
+    }
+
+    /// The `impl Resolve` the resolved carrier `decl` of `nature` is driven by, and whether a drive picked it: the one the
+    /// first drive picked (§5.2.15), else the nature's only one, else the one whose `X` is `V`.
+    pub(super) fn chosen_resolve_impl(&self, decl: DeclId, nature: DeclId) -> Option<(crate::types::ResolveImpl, bool)> {
+        let impls = self.types.resolve_impls(nature).to_vec();
+        let picked = self.concrete_implementation(decl, nature);
+        let chosen = match picked {
+            Some(implementation) => impls.iter().find(|candidate| candidate.implementation == implementation),
+            None if impls.len() == 1 => impls.first(),
+            None => impls.iter().find(|candidate| candidate.driven == candidate.value).or(impls.first()),
+        }?
+        .clone();
+        Some((chosen, picked.is_some()))
     }
 
     /// The `impl Resolve` of `nature` the first drive of the resolved carrier `decl` picked. A carrier of a nature parameter
