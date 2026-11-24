@@ -187,19 +187,55 @@ fn inst_name_in_the_module_that_places_the_template_reads_the_concrete_module() 
 }
 
 #[test]
-fn a_non_node_item_through_a_template_is_refused_by_name_never_as_a_type_error() {
-    // §8.4.8: `c0.cs` is a param of the concrete `Dram`, which only elaboration knows (GAPS §9, `non-node item through a
-    // template`): the refusal is `P0001` naming the construct, in the placing module and from its parent, never `E0180`/`E0417`
-    let from_parent = format!(
-        "{}\nmodule Outer() {{ signal y: Electrical; let top = Top(); signal probe: Electrical; }}\nanalog for Outer {{ i(probe, gnd) +> top.bank.c0.cs; }}",
-        own_bank("pub ", "")
-    );
-    for source in [own_bank("", "i(a, gnd) +> c0.cs;"), own_bank("", "i(a, gnd) +> c0.cs * 2.0;"), from_parent] {
-        let entry = if source.contains("module Outer") { "Outer" } else { "Top" };
-        let diagnostics = Elab::run(&source, entry).expect_err("a non-node item through a template is not typed");
-        assert_eq!(Elab::codes(&diagnostics), ["P0001"], "{source}");
-        assert!(diagnostics[0].diagnostic.message.contains("a non-node item of a child read through a template param"), "{diagnostics:?}");
+fn a_non_node_item_through_a_template_reads_the_concrete_module() {
+    // §8.4.8: `c0.cs` (a `pub` param), `c0.twice` (a `pub let` over it), a `let` with no type bound to the read and `bank.c0.cs`
+    // from the parent read the `Dram` the template names, at its `cs = 2`; each takes the type its context wants
+    let bank = |items: &str, extra: &str| {
+        format!(
+            "module Dram(a: Electrical) {{ pub cs: f64 = 1.0; pub let twice = cs * 2.0; pub signal sn: Electrical; }}\n\
+             analog for Dram {{ i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd) - cs; }}\n\
+             module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; pub let c0 = cell(a); signal p: Electrical; }}\n\
+             analog<C> for Bank<C> {{ {items} }}\n\
+             module Top() {{ signal x: Electrical; pub let bank = Bank::<_>(x) {{ cell: Dram {{ cs: 2.0 }} }}; signal q: Electrical; }}\n{extra}"
+        )
+    };
+    for (items, extra, printed) in [
+        ("i(p, gnd) +> c0.cs;", "", "b0.flow +> direct 2.0"),
+        ("i(p, gnd) +> c0.cs * c0.twice;", "", "b0.flow +> direct (2.0 * (2.0 * 2.0))"),
+        ("let g = c0.cs; i(p, gnd) +> -g;", "", "let g = 2.0"),
+        ("if c0.cs > 1.0 { i(p, gnd) +> 1.0; }", "", "if (2.0 > 1.0)"),
+        ("", "analog for Top { i(q, gnd) +> bank.c0.cs + bank.c0.twice; }", "b0.flow +> direct (2.0 + 4.0)"),
+    ] {
+        let printed_ir = Elab::ir(&bank(items, extra), "Top").print_structural();
+        assert!(printed_ir.contains(printed), "{items}{extra}: {printed_ir}");
     }
+}
+
+#[test]
+fn a_non_node_item_through_a_template_of_another_type_is_e0180_at_elaboration() {
+    // §8.4.8, §3 rule 9: the read takes the type its context wants (`f64` in a contribution), and the concrete `n: u32` of the
+    // module the template names is an error of the instantiation, naming both types
+    let source = "module Dram(a: Electrical) { pub n: u32 = 3; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n\
+                  module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); signal p: Electrical; }\n\
+                  analog<C> for Bank<C> { i(p, gnd) +> c0.n; }\n\
+                  module Top() { signal x: Electrical; let bank = Bank::<_>(x) { cell: Dram { } }; }";
+    let diagnostics = Elab::run(source, "Top").expect_err("`n` is a `u32`");
+    assert_eq!(Elab::codes(&diagnostics), ["E0180"]);
+    assert!(diagnostics[0].diagnostic.message.contains("the item `n` of module `Dram` is `u32`, and the read wants `f64`"), "{diagnostics:?}");
+}
+
+#[test]
+fn a_generated_cells_param_reads_the_iteration_its_indexes_name() {
+    // §8.2.23, §8.4.8: `bank.cells[1].cs` reads the template's `cs` at the iteration 1, and `row.cells[2].k` the value the
+    // placement in generation gives at the iteration 2; an iteration the loop does not make is `E0342`
+    let modules = "module Dram(a: Electrical) { pub cs: f64 = 1.0; pub k: f64 = 0.0; }\nanalog for Dram { i(a, gnd) +> v(a, gnd) * cs; }\n\
+                   module Bank<C: Fn(Electrical), const ROWS: usize>(a: Electrical) { cell: C; for r in 0..ROWS { pub let cells = cell(a); } }\n\
+                   module Row(a: Electrical) { for r in 0..3 { pub let cells = Dram(a) { k: r as f64 }; } }\n\
+                   module Top() { signal x: Electrical; let bank = Bank::<_, 2>(x) { cell: Dram { cs: 2.0 } }; let row = Row(x); signal q: Electrical; }\n";
+    let printed = Elab::ir(&format!("{modules}analog for Top {{ i(q, gnd) +> bank.cells[1].cs + row.cells[2].k; }}"), "Top").print_structural();
+    assert!(printed.contains("b0.flow +> direct (2.0 + 2.0)"), "{printed}");
+    let diagnostics = Elab::run(&format!("{modules}analog for Top {{ i(q, gnd) +> bank.cells[2].cs; }}"), "Top").expect_err("no third row");
+    assert_eq!(Elab::codes(&diagnostics), ["E0342"]);
 }
 
 #[test]

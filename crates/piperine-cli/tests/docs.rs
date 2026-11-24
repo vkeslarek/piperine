@@ -278,7 +278,7 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert_eq!(rows("## 3. Silent", "## 4."), 0, "no silent entry (S3 closed by `generics` phase C)");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 16, "sixteen loud rows (the fix round 2 of `generics` phase D closed L80 and L79; before that eighteen: the verification of `generics` phase D found L78, L79 and L80; it closed L29 and L32, which left fifteen; before that seventeen: (`composite-values` phase D closed L13; L76, an item only some iterations make, and L77, generation in a hoisted module, found by the `generics` phase C round 4 fix; `generics` phase C closed L30 and L31; `composite-values` phase C closed L24; `analog-operators` closed L43, L44, L45, L47, L49, L60 and L72, the last of which it found, and found L73, the flow of a flow branch read as a value, and L74, the forms of a `fn` inside a `ddx` that have no finite symbolic reading; L70 closed by T54 and L69 by T58; L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 16, "sixteen loud rows (the fix round 2 of `generics` phase D closed L78, L79 and L80 and found L81; before that eighteen: the verification of `generics` phase D found L78, L79 and L80; it closed L29 and L32, which left fifteen; before that seventeen: (`composite-values` phase D closed L13; L76, an item only some iterations make, and L77, generation in a hoisted module, found by the `generics` phase C round 4 fix; `generics` phase C closed L30 and L31; `composite-values` phase C closed L24; `analog-operators` closed L43, L44, L45, L47, L49, L60 and L72, the last of which it found, and found L73, the flow of a flow branch read as a value, and L74, the forms of a `fn` inside a `ddx` that have no finite symbolic reading; L70 closed by T54 and L69 by T58; L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
 }
 
 #[test]
@@ -889,7 +889,7 @@ fn gaps_drops_what_composite_values_phase_c_closed() {
     assert!(!book.contains("the arrays of carriers of `MemoryBank`") && !book.contains("(an array of carriers, L24)"), "section 11 still names the array of carriers");
     // the counts follow: the loud count in the header is the number of `L` rows the tables hold
     let rows = gaps.lines().filter(|line| line.strip_prefix("| L").is_some_and(|rest| rest.split_once(" |").is_some_and(|(id, _)| id.chars().all(|c| c.is_ascii_digit())))).count();
-    assert!(gaps.contains(&format!("2 broken, {rows} loud (L1 to L80")), "the header counts the {rows} loud rows");
+    assert!(gaps.contains(&format!("2 broken, {rows} loud (L1 to L81")), "the header counts the {rows} loud rows");
     // section 9: the digital row says the arrays of carriers run; the cluster table says phase C closed L24
     assert!(gaps.contains("arrays of carriers, element and field commits run (composite-values phase C)"), "section 9 says the arrays of carriers run");
     assert!(gaps.contains("phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows"), "the cluster row says phase C closed L24");
@@ -962,8 +962,8 @@ fn gaps_drops_what_generics_phase_d_closed() {
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     let row = coverage.lines().find(|l| l.starts_with("| III §8.4–§8.5 ")).expect("section 9 has the row of III section 8.4 and 8.5");
     assert!(row.contains("run settings") && !row.contains("`m`/`dtemp`") && !row.contains("| 0 % |"), "the row names the run settings and is no longer 0 %: {row}");
-    assert!(row.contains("| 85 % |") && row.contains("L78") && !row.contains("L79") && row.contains("L33"), "the row gives the coverage and the rows that are left: {row}");
-    for (gap, owner) in [("L78", "spec-closure")] {
+    assert!(row.contains("| 85 % |") && row.contains("L81") && !row.contains("L78") && !row.contains("L79") && row.contains("L33"), "the row gives the coverage and the rows that are left: {row}");
+    for (gap, owner) in [("L81", "spec-closure")] {
         let found = gaps.lines().find(|l| l.starts_with(&format!("| {gap} |"))).unwrap_or_else(|| panic!("GAPS.md has no row {gap}"));
         assert!(found.contains(&format!("Owner `{owner}`")), "{gap} has an owner: {found}");
     }
@@ -994,10 +994,14 @@ fn state_records_templates_and_run_settings() {
 #[test]
 fn gaps_drops_what_generics_phase_d_fix_round_2_closed() {
     // generics phase D fix round 2: a param default reads the params before it (§8.1.16) and a template's type carries its
-    // arguments (§8.4.3), so L80 and L79 leave `GAPS.md` and the ROADMAP says so
+    // arguments (§8.4.3) and an item of a child placed through a template reads as a value (§8.4.8), so L78 to L80 leave
+    // `GAPS.md`, the general read of a child's child's `let` over the solve or carrier is L81, and the ROADMAP says so
     let gaps = read("GAPS.md");
     assert!(!gaps.contains("| L80 |"), "GAPS.md still has the row L80");
     assert!(!gaps.contains("| L79 |"), "GAPS.md still has the row L79");
-    assert!(gaps.contains("L79 and L80 closed by its fix round 2"), "section 4's list says who closed L79 and L80");
-    assert!(read("ROADMAP.md").contains("fix round 2 closed L80") && read("ROADMAP.md").contains("and L79 (the type `Name<G>`"), "the ROADMAP row says fix round 2 closed L80 and L79");
+    assert!(!gaps.contains("| L78 |"), "GAPS.md still has the row L78");
+    assert!(gaps.contains("L78, L79 and L80 closed by its fix round 2, which found L81"), "section 4's list says who closed L78 to L80 and found L81");
+    let l81 = gaps.lines().find(|l| l.starts_with("| L81 |")).expect("the row L81");
+    assert!(l81.contains("Owner `spec-closure`") && l81.contains("an item of a child's child that is not a param or a `let` over its params"), "L81 names its refusal and owner: {l81}");
+    assert!(read("ROADMAP.md").contains("fix round 2 closed L80") && read("ROADMAP.md").contains("and L79 (the type `Name<G>`") && read("ROADMAP.md").contains("and L78 (an item of a child placed through a template"), "the ROADMAP row says fix round 2 closed L78 to L80");
 }

@@ -2619,3 +2619,16 @@ fn a_param_default_reads_earlier_params_in_the_spec() {
         assert!(params.contains(fact), "§8.1 lacks \"{fact}\"");
     }
 }
+
+/// Generics phase D fix round 2 (L78): an item read through a template takes the type its context wants, checked at elaboration.
+#[test]
+fn a_template_item_takes_the_type_its_context_wants_in_the_spec() {
+    let templates = flat(&section(&spec("part_iii_structure.md"), "### 8.4 "));
+    for fact in [
+        "that is not a node takes the type its context wants, as an open literal does (§1.4.4), and",
+        "elaboration checks the concrete item has it (`E0180`, an error of the instantiation).",
+        "context gives a type, such as a method's receiver, is `E0181`",
+    ] {
+        assert!(templates.contains(fact), "§8.4 lacks \"{fact}\"");
+    }
+}

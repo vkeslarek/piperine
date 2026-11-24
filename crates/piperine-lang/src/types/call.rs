@@ -287,6 +287,10 @@ impl Checker<'_> {
         if name == "others" && self.others_on_one_driver(expr, *recv, args) {
             return None;
         }
+        // `c0.cs.abs()`: the receiver's type is the concrete item's, which nothing here gives (§8.4.8)
+        if self.untyped_template_receiver(*recv, args) {
+            return None;
+        }
         // The built-in a stdlib item resolved to, or the built-in row of the language.
         let builtin = match res {
             Resolution::Decl(f) => match self.stdlib_builtin(*f) {

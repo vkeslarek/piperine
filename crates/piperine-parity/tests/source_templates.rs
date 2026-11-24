@@ -119,3 +119,14 @@ fn a_template_of_a_nature_generic_module_runs_through_its_type() {
     let expected = RustOracle::conductance_divider(1.0, 0.5, 2.0);
     assert!((mid[0] - expected).abs() < TOLERANCE, "{mid:?} against {expected}");
 }
+
+#[test]
+fn the_items_of_a_template_placed_child_read_as_values() {
+    // §8.4.8: `c0.cs + c0.twice` in the bank and `bank.c0.cs`, `bank.cells[1].cs` from the rig read the param and the `pub let` of
+    // the `Dram` the template names, at its `cs = 3`: 3 + 2 * 3, 3 and 10 * 3
+    let cs = 3.0;
+    let seen = RUN.operating_point("items.msl", "RigItems", &["level", "own", "row"]);
+    for (value, wanted) in seen.iter().zip([cs + 2.0 * cs, cs, 10.0 * cs]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}

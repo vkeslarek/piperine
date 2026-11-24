@@ -116,9 +116,13 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
-    /// The reads of an item of a child only a folded template names (`reach.rs`), typed as a node: where one of them stands in a
-    /// type mismatch, the item is no node of a type the checker could give, which is a named refusal, not an ill-typed program.
-    pub(super) template_reads: Vec<(FileId, Span)>,
+    /// The reads of an item of a child only a folded template names (`reach.rs`), typed as a node until a context wants a value
+    /// of them (`template_items.rs`).
+    pub(super) template_reads: BTreeSet<ExprId>,
+    /// The `let`s with no type bound to a read through a template, by binding: the first use that wants a value types them.
+    pub(super) template_locals: BTreeMap<DeclId, ExprId>,
+    /// The type each read through a template was given by its context, which the elaborator checks the concrete item against.
+    pub(super) template_items: BTreeMap<ExprId, Ty>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
     /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
@@ -204,7 +208,9 @@ impl<'d> Checker<'d> {
             in_guard: false,
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
-            template_reads: Vec::new(),
+            template_reads: BTreeSet::new(),
+            template_locals: BTreeMap::new(),
+            template_items: BTreeMap::new(),
             handles: BTreeSet::new(),
             bound_substitution: None,
             bound_arguments: BTreeMap::new(),
@@ -251,7 +257,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, template_items: self.template_items, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -380,8 +386,7 @@ impl<'d> Checker<'d> {
 
     /// A mismatch under the code of the rule that was broken.
     pub(super) fn mismatch_coded(&mut self, file: FileId, span: Span, code: &'static str, expected: &str, found: &str) {
-        if self.is_template_read_mismatch(file, span, found) {
-            self.unsupported(file, span, "a non-node item of a child read through a template param (only the nodes of the folded template's module are typed, §8.4.8)");
+        if self.untyped_template_read(file, span, found) {
             return;
         }
         self.report(file, Diagnostic::new(code, format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));

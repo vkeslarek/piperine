@@ -102,7 +102,7 @@ impl Elaboration<'_, '_> {
 
     /// The `let` binding and the module whose body holds it, when `receiver` (through parentheses and indexes) is `owner.child` with
     /// `child` the name of a placement `let`.
-    fn child_of_module(&self, receiver: ExprId) -> Option<(DeclId, DeclId)> {
+    pub(super) fn child_of_module(&self, receiver: ExprId) -> Option<(DeclId, DeclId)> {
         let mut at = receiver;
         loop {
             match &self.design.expr_node(at).kind {
@@ -165,7 +165,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The module the placement bound to `demand.child` places under the key params `keys`.
-    fn concrete_module_of(&self, keys: &Bindings, demand: &NestedDemand) -> Option<DeclId> {
+    pub(super) fn concrete_module_of(&self, keys: &Bindings, demand: &NestedDemand) -> Option<DeclId> {
         let value = self.body_let_value(demand.child)?;
         self.placed_module(self.peel_parens(value), keys)
     }
@@ -359,20 +359,33 @@ impl Elaboration<'_, '_> {
         (ordinals.last().copied().unwrap_or(0), held.len() as u64)
     }
 
+    /// The iterations of the generation around the placement owned by `owner` in the module of `frame`, expanded under the frame's
+    /// keys and generic arguments.
+    pub(super) fn iterations_under(&mut self, frame: usize, owner: DeclId) -> Vec<Iteration> {
+        let module = self.frames[frame].module;
+        self.with_generation_of(frame, module, |this, _| this.generated.of(owner).cloned().unwrap_or_default())
+    }
+
     /// The entries the body of `module` lowers in the variant of `frame`: its generation expanded under the frame's keys and
-    /// generic arguments, the state of the body being lowered put back after.
+    /// generic arguments.
     fn entries_under(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
+        self.with_generation_of(frame, module, |this, keys| this.demand_entries(module, keys))
+    }
+
+    /// `read` of the generation of `module` expanded under the keys and generic arguments of `frame`, the state of the body being
+    /// lowered put back after.
+    fn with_generation_of<T>(&mut self, frame: usize, module: DeclId, read: impl FnOnce(&mut Self, &Bindings) -> T) -> T {
         let keys = self.frame_bindings(frame);
         let outer_generated = std::mem::take(&mut self.generated);
         let outer_keys = std::mem::replace(&mut self.body_keys, keys.clone());
         let outer_params = self.consts.set_frame_params(keys.clone());
         let outer_substitution = self.consts.set_substitution(self.frames[frame].substitution.clone());
         self.expand_generation(module);
-        let entries = self.demand_entries(module, &keys);
+        let found = read(self, &keys);
         self.consts.set_substitution(outer_substitution);
         self.consts.set_frame_params(outer_params);
         self.body_keys = outer_keys;
         self.generated = outer_generated;
-        entries
+        found
     }
 }

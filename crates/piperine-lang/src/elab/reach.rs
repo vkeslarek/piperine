@@ -67,7 +67,13 @@ impl Elaboration<'_, '_> {
     /// A field read `c.x` as a value: the carrier, the param or the `let` of the child it names.
     pub(super) fn lower_field(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
+        // `bank.c0.cs`: a value of a child's child, a constant of the body (`reach_values.rs`)
+        if let Some(value) = self.nested_value(scope, expr, ty.clone(), origin.clone()) {
+            return value;
+        }
         let (frame, item) = self.reached_item(scope, expr)?;
+        let substitution = self.frames[frame].substitution.clone();
+        self.read_has_its_type(scope, expr, self.frames[frame].module, item, &substitution)?;
         match self.design.decl_data(item).kind.clone() {
             DeclKind::Param(_) => match self.frames[frame].params.get(&item).copied() {
                 Some(value) => Some(self.constant_expr(value, ty, origin)),
@@ -91,6 +97,32 @@ impl Elaboration<'_, '_> {
                 lowered
             }
         }
+    }
+
+    /// A read through a template (`c0.cs`, §8.4.8) was given its type by its context (`Types::template_item`): the concrete item
+    /// `item` of `module`, its type under `substitution`, has it, or the read is `E0180` naming both, an error of this
+    /// instantiation (§3 rule 9).
+    pub(super) fn read_has_its_type(&mut self, scope: &Scope, expr: ExprId, module: DeclId, item: DeclId, substitution: &crate::types::Substitution) -> Option<()> {
+        let Some(wanted) = self.types.template_item(expr).cloned() else { return Some(()) };
+        let declared = match &self.design.decl_data(item).kind {
+            DeclKind::Param(param) => self.typed_written(param.ty),
+            DeclKind::Port(_) | DeclKind::Signal(_) => match self.types.carrier(item) {
+                Some(crate::types::Ty::Carrier { value, .. }) => Some((**value).clone()),
+                _ => None,
+            },
+            _ => self.typed_local(item),
+        };
+        let found = declared.map(|ty| substitution.apply(&ty));
+        if found.as_ref() == Some(&wanted) {
+            return Some(());
+        }
+        let name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let found_name = found.map_or_else(|| "a node".to_string(), |ty| format!("`{}`", ty.name(self.design)));
+        let message = format!("mismatched types: the item `{name}` of module `{module_name}` is {found_name}, and the read wants `{}` (§8.4.8)", wanted.name(self.design));
+        let span = self.design.expr_node(expr).span;
+        self.report(scope.file, crate::msl::Diagnostic::new("E0180", message, span, "the concrete item has another type"));
+        None
     }
 
     /// The frame of the child a field read `c.x` names and the item `x` of it. `None` after a
@@ -161,6 +193,10 @@ impl Elaboration<'_, '_> {
                 frame.params.insert(*key, value);
             }
         }
+        // a placement through a template fixes every param of the module with the template, which the body's key fixes (§8.4.8)
+        for (param, value) in self.template_params_of(scope, call)? {
+            frame.params.insert(param, value);
+        }
         // an instance of a generic module reads its names under its own arguments
         if self.is_generic_module(module) {
             let instance = self.placement_instance(scope, call, module)?;
@@ -170,6 +206,22 @@ impl Elaboration<'_, '_> {
         let index = self.frames.len() - 1;
         self.reach_frames.insert((scope.frame, key), index);
         Some(index)
+    }
+
+    /// The value of every param of the module the placement `call` places through a template (`cell(a)`, `C1(a)`), the template's
+    /// block or the module's defaults; none for a placement by name. `None` after a diagnostic.
+    fn template_params_of(&mut self, scope: &Scope, call: ExprId) -> Option<Vec<(DeclId, piperine_ir::Constant)>> {
+        let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return Some(Vec::new()) };
+        let Ok(through) = self.template_through(scope, call, &class) else { return None };
+        let Some(template) = through else { return Some(Vec::new()) };
+        let bound = match self.consts.template_bindings(&template) {
+            Ok(bound) => bound,
+            Err(fault) => {
+                self.const_fault(&fault, "a param of a template");
+                return None;
+            }
+        };
+        Some(self.params_of(template.module).into_iter().filter_map(|param| bound.get(param).map(|value| (param, value))).collect())
     }
 
     /// The nodes of the array of nodes `decl` of the reach frame `frame`, made the first time: one node of the body for each

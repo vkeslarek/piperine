@@ -1,0 +1,27 @@
+//! Items of a child placed through a template read as values (part III §8.4.8): `Bank` reads the param `cs` and the `pub let`
+//! `twice` of the cell its template names, and the rig reads them again through `bank.c0.cs` and a generated `bank.cells[1].cs`.
+//! The expected values are computed by Rust in `source_templates.rs`.
+
+/// One cell with a public capacitance and a value derived from it.
+module Dram(a: Electrical) { pub cs: f64 = 1.0; pub let twice = cs * 2.0; }
+analog for Dram { i(a, gnd) +> v(a, gnd) * cs; }
+
+/// The bank drives `level` with the cell's own `cs` plus `twice`.
+module Bank<C: Fn(Electrical), const ROWS: usize>(a: Electrical, level: Electrical) {
+    cell: C;
+    pub let c0 = cell(a);
+    for r in 0..ROWS { pub let cells = cell(a); }
+}
+analog<C, ROWS> for Bank<C, ROWS> { potential(level) +> c0.cs + c0.twice; }
+
+module RigItems() {
+    signal a: Electrical;
+    signal level: Electrical;
+    let bank = Bank::<_, 2>(a, level) { cell: Dram { cs: 3.0 } };
+    signal own: Electrical;
+    signal row: Electrical;
+}
+analog for RigItems {
+    potential(own) +> bank.c0.cs;
+    potential(row) +> bank.cells[1].cs * 10.0;
+}

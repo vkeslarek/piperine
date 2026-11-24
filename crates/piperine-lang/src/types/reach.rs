@@ -4,8 +4,7 @@
 //! definition of a child's carrier is `E0222` (`definition.rs`). A field of anything else keeps
 //! the `field access` refusal.
 
-use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
 use super::Ty;
@@ -25,20 +24,15 @@ impl Checker<'_> {
             // A field of a value (§1.3.4): the type says whether it exists. A missing or private
             // item of a placed child already has its `E0343`.
             // `bank.c0.sn` where `c0` is placed through a callable param (`cell: C`, `C: Fn(..)`): the module is the
-            // template's, known at elaboration, which resolves the item (`E0343` for a missing or private one, §8.4.8)
+            // template's, known at elaboration, which resolves the item (`E0343` for a missing or private one, §8.4.8); a node
+            // until a context wants a value of it (`template_items.rs`)
             _ if self.placed_through_callable(*receiver) => {
                 self.infer_receiver(*receiver)?;
-                self.template_reads.push((file, node.span));
+                self.template_reads.insert(expr);
                 Some(Ty::AnyNode)
             }
             _ => self.field_of_value(expr, *receiver, name),
         }
-    }
-
-    /// Whether a mismatch that found `found` at `span` of `file` holds a read through a template: a node-typed read the context wants a
-    /// value of another type of.
-    pub(super) fn is_template_read_mismatch(&self, file: FileId, span: Span, found: &str) -> bool {
-        found == "node" && self.template_reads.iter().any(|(held, read)| *held == file && span.start <= read.start && read.end <= span.end)
     }
 
     /// Whether `receiver` (a name, possibly reached through a child: `c0`, `bank.c0`) is bound by a `let` to a call of a callable

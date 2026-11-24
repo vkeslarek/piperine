@@ -39,7 +39,7 @@ mod literals; mod widths;
 mod logic_pattern; mod loops;
 mod model;
 mod methods;
-mod module; mod module_bounds; mod module_generics; mod templates;
+mod module; mod module_bounds; mod module_generics; mod templates; mod template_items;
 mod obligations; mod operators;
 mod patterns;
 mod plain;

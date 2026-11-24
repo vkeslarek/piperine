@@ -197,3 +197,21 @@ fn a_placement_through_a_template_of_a_nature_generic_module_checks_its_ports() 
     let wrong = TemplateSource::new(&format!("{GENERIC_MODULES}{other}const T: S<F> = S::<F> {{ r: 2.0 }};\nmodule Top(x: E, y: E) {{ let c = T(x, y); }}"));
     assert_eq!(wrong.codes()[0], "E0251", "{}", wrong.message());
 }
+
+#[test]
+fn a_non_node_item_through_a_template_takes_the_type_its_context_wants() {
+    // §8.4.8: `c0.cs` names an item of a module only elaboration knows; the checker gives it the type its context wants (here the
+    // `f64` of a contribution) and records it for the elaborator; a context that wants none, a method's receiver, is `E0181`
+    let bank = |items: &str| {
+        TemplateSource::new(&format!(
+            "module Bank<C: Fn(E)>(a: E) {{ cell: C; let c0 = cell(a); signal p: E; }}\nanalog<C> for Bank<C> {{ {items} }}\n\
+             module Top(x: E) {{ let bank = Bank::<_>(x) {{ cell: Cell {{ cs: 2.0 }} }}; }}"
+        ))
+    };
+    let typed = bank("i(p, gnd) +> c0.cs * 2.0;");
+    let types = Types::check(&typed.design, "Top").unwrap_or_else(|found| panic!("{:?}", TemplateSource::codes_of(&found)));
+    let read = (0..typed.design.expr_count()).map(|index| ExprId(index as u32)).find(|id| &typed.text[typed.design.expr_node(*id).span.range()] == "c0.cs").expect("the read");
+    assert_eq!(types.template_item(read), Some(&Ty::F64), "the read takes the `f64` its context wants");
+    let untyped = bank("i(p, gnd) +> c0.cs.abs();");
+    assert_eq!(untyped.codes(), ["E0181"], "{}", untyped.message());
+}

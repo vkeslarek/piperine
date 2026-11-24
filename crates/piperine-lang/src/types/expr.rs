@@ -49,6 +49,14 @@ impl Checker<'_> {
                 self.exprs[expr.index()] = Some(expected.clone());
                 return;
             }
+            // An item read through a template takes the value type the context wants (§8.4.8, `template_items.rs`).
+            if self.template_read_of(expr).is_some() && expected.is_value() {
+                self.infer(expr);
+                if self.fix_template_read(expr, expected) {
+                    self.exprs[expr.index()] = Some(expected.clone());
+                    return;
+                }
+            }
             // Where the expected type flows into the parts of the expression: the value of a
             // block or of the arms of an `if` is where a mismatch is reported.
             let found = match &node.kind {
@@ -210,6 +218,11 @@ impl Checker<'_> {
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() || t.is_other_float() => Some(t),
                     Some(Ty::F64) | None => Some(Ty::F64),
+                    // `-c0.cs`: the minus of an item read through a template is an `f64`, as the M1 operators are
+                    Some(_) if self.template_read_of(*operand).is_some() => {
+                        self.check(*operand, &Ty::F64);
+                        Some(Ty::F64)
+                    }
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::F64, &other);
@@ -382,6 +395,12 @@ impl Checker<'_> {
                 self.require_trait(file, span, &t, DerivedTrait::PartialOrd);
                 Some(t)
             }
+            // both operands read through a template: the M1 operators are `f64`
+            _ if self.template_read_of(first).is_some() => {
+                self.check(first, &Ty::F64);
+                self.check(second, &Ty::F64);
+                None
+            }
             found => {
                 if let Some(found) = found
                     && found != Ty::F64
@@ -398,7 +417,12 @@ impl Checker<'_> {
 
     /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
     /// two operands of one type are typed.
-    pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+    pub(super) fn literal_last(&mut self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+        // an item read through a template takes its type from the other operand, as a bare literal does (§8.4.8)
+        let (lhs_read, rhs_read) = (self.template_read_of(lhs).is_some(), self.template_read_of(rhs).is_some());
+        if lhs_read != rhs_read {
+            return if lhs_read { (rhs, lhs) } else { (lhs, rhs) };
+        }
         let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
         // a bare float literal takes the type of the other operand (`2.0 * b` with `b: f16`), unless that operand is a bare integer
         // literal: `1 + 1.0` is typed from the float, so the integer literal is the one that does not convert
@@ -784,6 +808,7 @@ impl Checker<'_> {
             Some(t) => {
                 if let (None, Some(init)) = (ty, init) {
                     self.wait_for_use(*binding, init);
+                    self.wait_for_template_use(*binding, init);
                 }
                 self.locals.insert(*binding, t);
             }

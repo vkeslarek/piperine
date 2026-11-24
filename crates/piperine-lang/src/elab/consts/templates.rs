@@ -67,25 +67,34 @@ impl ConstEval<'_, '_> {
         let Some(template) = self.templates.get(number).cloned() else {
             return Err(ConstFault::Unsupported { expr, what: "a field read of a value that is not a template".to_string() });
         };
+        let Some(param) = self.design.decl_data(template.module).children.iter().copied().find(|child| {
+            let data = self.design.decl_data(*child);
+            matches!(data.kind, DeclKind::Param(_)) && data.name.as_ref().is_some_and(|own| own.text == name)
+        }) else {
+            return Err(ConstFault::Unsupported { expr, what: format!("a param `{name}` the template's module does not have") });
+        };
+        self.template_bindings(&template)?.get(param).ok_or(ConstFault::Unsupported { expr, what: format!("the param `{name}` of a template, which has no value") })
+    }
+
+    /// The value of every param of the module of `template` that has one: what its block binds, else the default, folded over
+    /// the params before it (§8.1.16). A required param the block leaves out has none.
+    pub(in crate::elab) fn template_bindings(&mut self, template: &TemplateValue) -> Result<Bindings, ConstFault> {
         let mut known = Bindings::new();
         for (param, value, _) in &template.fields {
             known.bind(*param, *value);
         }
         let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Param(_))).collect();
         for param in params {
-            let data = self.design.decl_data(param);
-            let is_named = data.name.as_ref().is_some_and(|own| own.text == name);
-            if known.get(param).is_none() {
-                let DeclKind::Param(declared) = &data.kind else { continue };
-                if let Some(default) = declared.default {
-                    let value = self.fold(default, &known)?;
-                    known.bind(param, value);
-                }
+            if known.get(param).is_some() {
+                continue;
             }
-            if is_named {
-                return known.get(param).ok_or(ConstFault::Unsupported { expr, what: format!("the param `{name}` of a template, which has no value") });
+            if let DeclKind::Param(declared) = &self.design.decl_data(param).kind
+                && let Some(default) = declared.default
+            {
+                let value = self.fold(default, &known)?;
+                known.bind(param, value);
             }
         }
-        Err(ConstFault::Unsupported { expr, what: format!("a param `{name}` the template's module does not have") })
+        Ok(known)
     }
 }
