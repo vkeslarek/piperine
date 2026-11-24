@@ -147,3 +147,17 @@ fn a_fn_bounded_parameter_is_inferred_from_its_template_param() {
     assert_eq!(open.codes(), ["E0181"], "{}", open.message());
     assert!(open.message().contains("`C`"), "{}", open.message());
 }
+
+#[test]
+fn a_param_default_reads_earlier_params_and_a_template_params_trait() {
+    // §8.1.16: a default is a const expression over earlier params; `fet.gain()` reads the template param `fet` through the trait
+    // half of `N: Mosfet + Fn(E)` (§8.4.5), typed `f64` by the trait's signature
+    let source = TemplateSource::new(
+        "trait Mosfet { fn gain(self) -> f64; }\nimpl Mosfet for Cell { fn gain(self) -> f64 { self.cs * 2.0 } }\n\
+         module Pair<N: Mosfet + Fn(E)>(a: E) { fet: N; level: f64 = fet.gain(); r: f64 = 2.0; g: f64 = level / r; let one = fet(a); }\n\
+         module Top(x: E) { let pair = Pair::<_>(x) { fet: Cell { cs: 3.0 } }; }",
+    );
+    assert_eq!(source.codes(), Vec::<String>::new(), "{}", source.message());
+    assert_eq!(source.type_of("fet.gain()"), Some(Ty::F64));
+    assert_eq!(source.type_of("level / r"), Some(Ty::F64));
+}

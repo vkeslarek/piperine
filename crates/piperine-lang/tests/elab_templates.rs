@@ -237,8 +237,7 @@ fn mosfet_pair(params: &str, analog: &str) -> String {
 #[test]
 fn the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl() {
     // §8.4.5, §3.1.4: `fet.gain()` through `N: Mosfet + Fn(..)` runs the `impl Mosfet` of the module the template names, in a body
-    // `let` and straight in the `analog` block; each placement keeps its own model's answer (a param default that reads the
-    // param `fet` is the general §8.1.16 gap, `GAPS.md` §9)
+    // `let` and straight in the `analog` block; each placement keeps its own model's answer
     for analog in ["let gain = fet.gain(); potential(s) +> gain;", "potential(s) +> fet.gain();"] {
         let printed = Elab::ir(&mosfet_pair("", analog), "Top").print_structural();
         let body_of = |model: &str| printed.split("\nbody ").find(|body| body.starts_with(&format!("\"Pair::<module `{model}`>"))).unwrap_or_else(|| panic!("no body for {model}: {printed}")).to_string();
@@ -299,4 +298,14 @@ fn a_template_of_a_generic_module_obeys_its_where_and_names_its_missing_argument
     let open = generic_cell("module Top() { signal x: Electrical; let c = G { k: 3.0 }(x); }");
     let found = Elab::run(&open, "Top").expect_err("N is never given");
     assert_eq!(Elab::codes(&found), ["E0181"], "{found:?}");
+}
+
+#[test]
+fn a_param_default_dispatches_the_trait_of_a_template_param() {
+    // §8.1.16, §8.4.5: `level: f64 = fet.gain()` reads the earlier param `fet` and runs the `impl Mosfet` of the module its template
+    // names, folded per placement: 3.0 * 2.0 for `Square`, 3.0 * 0.5 for `Linear`
+    let ir = Elab::ir(&mosfet_pair("level: f64 = fet.gain();", "potential(s) +> level;"), "Top");
+    let level = |path: &str| ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}")).param(1).copied();
+    assert_eq!(level("Top.a"), Some(Constant::Real(Real::new(3.0 * 2.0))));
+    assert_eq!(level("Top.b"), Some(Constant::Real(Real::new(3.0 * 0.5))));
 }

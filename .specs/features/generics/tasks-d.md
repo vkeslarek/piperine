@@ -23,6 +23,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
+**Run elabparams**: `cargo test -p piperine-lang --test elab_params`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
@@ -644,6 +645,15 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 **C108** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; T97, every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
+**C110** - A param default reads the params declared before it, folded per instance over the values they take there, a template param's trait method included (`level: f64 = fet.gain()`); the params a later default reads are structural; a default that reads the param itself or a later one is `E0321`. (§8.1.2, §8.1.16; fix round 2, L80)
+Proof: run typestempl | test a_param_default_reads_earlier_params_and_a_template_params_trait ... ok
+Proof: run elabparams | test a_default_that_reads_earlier_params_is_folded_per_instance ... ok
+Proof: run elabparams | test a_default_that_reads_itself_or_a_later_param_is_e0321 ... ok
+Proof: run elabtempl | test a_param_default_dispatches_the_trait_of_a_template_param ... ok
+Proof: run srctempl | test a_param_default_reads_the_params_before_it ... ok
+Proof: run spectext | test a_param_default_reads_earlier_params_in_the_spec ... ok
+Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+
 **C109** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
@@ -660,6 +670,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T92 (done):** `bank.cells[r][c].sn` reads a child placed in generation: the bank's body lowers one reached node per iteration (`DemandEntry`), the reader finds its slot by expanding the bank's generation under the bank's keys (`entries_under`). The swappable MOSFET listing calls `SQUARE.gain()` in a param default of the rig (a method on a param template inside a `let` or a param default, `fet.gain()`, is not typed yet: `a param default that reads a param` / `an expression the type checker gave no value type`), and `DiffPair<N: Mosfet + Fn(..)>` places `fet`. T93 must write the Book listing in that shape.
 **T93 (done):** modules#14 (the swappable MOSFET listing, run) and modules#15 (its placement, fragment) are new Book blocks after the binning fragment, so the extern block is now modules#16 (inventory, GAPS section 11 and its test follow); the Book counts 289 blocks (129 `msl`). modules#10 and cheatsheet#8 are narrowed to the bundle `Cell` and its literal (two `P0001`: the type and `struct expression`), their rows go to L25 / `resolved-nets-bundles`; the cascade `placement through a template value or a function` on a param whose `Fn` bound failed to type is gone (`fn_bound_failed`). The L32 row itself and the GAPS counts are left to T102. For the merge with B16: `tests/book/inventory_guard.rs` block counts, `GAPS.md` counts line and `docs/book/content.html` both lanes touch.
 **Fix round 1 (2026-11-24, verification-d.md findings 1 to 12):** (1) `v(c0.sn)` in the module that places the template resolves against the folded template's module (`elab/reach.rs::template_item`). (2) A non-node item through a template cannot be typed before the template folds, so it is a named `P0001` (L78), never `E0180`/`E0417` (`Checker::template_reads`). (3) `fet.gain()` through `N: Mosfet + Fn(..)` runs at elaboration on the template (`lower.rs::is_template_method`) in a body `let` and in `analog`; the parity `DiffPair` drives `s` with it. A param default that reads the param `fet` is the general §8.1.16 gap (L80). (4) A template of a generic module names its arguments (`types/templates.rs`, `TemplateValue::arguments`, `placement_instance`); `Ty::Module` still carries none (L79). (5) `reads_session_parameter` follows calls transitively. (6) to (9), (12): records, decision log, check text, doc comments and the `#[link]` example amended. (10), (11): `E0342` names the loop that is out of range, `add_nested_node` takes a `NestedRead`. A placement of a generic module that records no instance is a named `P0001`, never a silent drop.
+**Fix round 2 (2026-11-24, coordinator ruling: the spec forms run, nothing deferred):** (L80) a param default reads the params before it (§8.1.16): `ParamPlan::default_over_params` keeps a default that does not fold alone, `bind_params` folds it at each placement over the values bound before it (the host's key overrides now apply in the same pass, before the `where`), `key_value`, `placement_bindings` and the hoisted params do the same, and a param a later default reads is structural (§8.1.2 amended, AFK default pending user review: a host `set` of it would leave the default stale). A default that reads itself or a later param is `E0321`. Also: the pre-format twins of `std/analog.msl` and `std/constants.msl` take the doc comments of fix round 1 (`msl_format` was red).
 **Dispatched:** none yet.
 **Walked:** none yet.
 

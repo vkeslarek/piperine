@@ -330,3 +330,33 @@ fn an_option_param_bound_over_the_parents_param_reads_some_of_it() {
         assert_eq!(Placed::aggregate(&ir, &params[0]), (None, vec![Constant::Real(Real::new(wanted))]), "{binding}");
     }
 }
+
+#[test]
+fn a_default_that_reads_earlier_params_is_folded_per_instance() {
+    // §8.1.16: `g: f64 = 1.0 / r` folds at each placement over the `r` it takes there; §8.1.2: `r` is structural, since a host
+    // `set` of it would leave `g` stale, and each body states the default its `r` gives
+    let src = "module R(a: Electrical) { r: f64 = 2.0; g: f64 = 1.0 / r; }\nanalog for R { i(a, gnd) +> v(a, gnd) * g; }\n\
+               module Top() { signal x: Electrical; let bound = R(x) { r: 4.0 }; let defaulted = R(x); let given = R(x) { g: 3.0 }; }";
+    let ir = Elab::ir(src, "Top");
+    let values = |path: &str| ir.instance_at(path).expect("the instance").params().iter().map(|c| c.to_string()).collect::<Vec<_>>();
+    assert_eq!(values("Top.bound"), ["4.0".to_string(), (1.0_f64 / 4.0).to_string()], "`g` reads the bound `r`");
+    assert_eq!(values("Top.defaulted"), ["2.0".to_string(), (1.0_f64 / 2.0).to_string()], "`g` reads the default of `r`");
+    assert_eq!(values("Top.given"), ["2.0", "3.0"], "a given `g` is the value given");
+    let body = ir.instance_at("Top.bound").expect("the instance").body();
+    assert!(body.params()[0].structural, "`r` is structural");
+    assert_eq!(body.params()[1].default, Some(Constant::Real(Real::new(1.0 / 4.0))), "the body's default of `g` reads its own `r`");
+    // the top's own params are bound the same way
+    let ir = Elab::ir("module R(a: Electrical) { r: f64 = 2.0; g: f64 = 1.0 / r; }\nanalog for R { i(a, gnd) +> v(a, gnd) * g; }", "R");
+    assert_eq!(ir.instance_at("R").expect("the top").params()[1], Constant::Real(Real::new(1.0 / 2.0)));
+}
+
+#[test]
+fn a_default_that_reads_itself_or_a_later_param_is_e0321() {
+    // §8.1.16: a default reads only the params declared before it
+    for (params, read) in [("g: f64 = 1.0 / r; r: f64 = 2.0;", "r"), ("g: f64 = g * 2.0;", "g")] {
+        let src = format!("module R(a: Electrical) {{ {params} }}\nanalog for R {{ i(a, gnd) +> v(a, gnd) * g; }}\nmodule Top() {{ signal x: Electrical; let one = R(x); }}");
+        let err = Elab::run(&src, "Top").expect_err("the default reads a param not declared before it");
+        assert_eq!(Elab::codes(&err), ["E0321"], "{params}");
+        assert!(err[0].diagnostic.message.contains(&format!("it reads `{read}`, which is not declared before this param")), "{params}: {}", err[0].diagnostic.message);
+    }
+}

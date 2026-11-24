@@ -53,6 +53,11 @@ impl RustOracle {
     fn linear(k: f64, gate: f64) -> (f64, f64) {
         (k * gate, k * 0.5)
     }
+
+    /// The middle of a divider of the conductances `1 / upper` and `1 / lower` driven at `drive`.
+    fn divider(drive: f64, upper: f64, lower: f64) -> f64 {
+        drive * lower / (upper + lower)
+    }
 }
 
 #[test]
@@ -86,4 +91,17 @@ fn the_swappable_mosfet_runs_each_model() {
         assert!((seen[0] - response).abs() < TOLERANCE && (seen[1] - response).abs() < TOLERANCE, "{seen:?} against {response}");
         assert!((seen[2] - gain).abs() < TOLERANCE, "{seen:?} against gain {gain}");
     }
+}
+
+#[test]
+fn a_param_default_reads_the_params_before_it() {
+    // §8.1.16: `g: f64 = 1.0 / r` is folded per instance over the `r` the placement binds, so the divider of `r = 1` over `r = 3`
+    // sits at 3/4 of the drive (with the module's `g = 1` for both it would sit at 1/2); `level: f64 = fet.gain()` reads the
+    // template param `fet` through the trait of `N: Mosfet + Fn(..)` (§8.4.5)
+    let divider = RUN.operating_point("defaults.msl", "RigDivider", &["mid"]);
+    let expected = RustOracle::divider(1.0, 1.0, 3.0);
+    assert!((divider[0] - expected).abs() < TOLERANCE, "{divider:?} against {expected}");
+    let gain = RUN.operating_point("defaults.msl", "RigGain", &["d", "s"]);
+    let (response, level) = RustOracle::square(3.0, 0.5);
+    assert!((gain[0] - response).abs() < TOLERANCE && (gain[1] - level).abs() < TOLERANCE, "{gain:?} against {response} and {level}");
 }

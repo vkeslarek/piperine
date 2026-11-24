@@ -2605,3 +2605,17 @@ fn the_recommended_fallback_is_the_ambient_temperature_in_the_spec() {
     assert!(stdlib.contains("`vt(t)` is the thermal voltage at the temperature `t`, in kelvin"), "§22.2.2 vt takes the temperature");
     assert!(stdlib.contains("`vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))`"), "§22.2.2 vt fallback");
 }
+
+/// Generics phase D fix round 2 (L80): a param default reads the params before it, folded per instance, and the params it reads
+/// are structural.
+#[test]
+fn a_param_default_reads_earlier_params_in_the_spec() {
+    let params = flat(&section(&spec("part_iii_structure.md"), "### 8.1 "));
+    for fact in [
+        "an array length, a template (§8.4), the default of a later param (§8.1.16), or the trip count of a loop that places instances",
+        "A default is a const expression over constants, const generics and earlier params. It is folded at elaboration for each instance, over the values its earlier params take there; reading the param itself or a later one is `E0321`.",
+        "§8.1.2 adds the params a later default reads",
+    ] {
+        assert!(params.contains(fact), "§8.1 lacks \"{fact}\"");
+    }
+}

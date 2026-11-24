@@ -82,7 +82,6 @@ impl Elaboration<'_, '_> {
     fn place_instance(&mut self, placing: Placing, stack: &mut Vec<BodyKey>) -> Option<Placed> {
         let param_plans = self.plans_of(placing.module, placing.instance.as_ref())?.clone();
         let (params, bindings) = self.bind_params(&placing, &param_plans)?;
-        let (params, bindings) = self.apply_overrides(placing.module, &placing.path, &param_plans, params, bindings, (placing.file, placing.span));
         // a module that places itself with the params it was placed with never ends; with others it is a recursion by
         // generation that the params bring to an end (§8.2.7), bounded by the depth of D7
         let key = self.body_key(placing.module, placing.instance.as_ref(), &bindings)?;
@@ -248,16 +247,26 @@ impl Elaboration<'_, '_> {
         self.place(placing, stack)
     }
 
-    /// The value of each param of the instance, the one given, else the default, and the
-    /// bindings its children's param values read. A required param left out is `E0319`; a false
-    /// `where` is `E0317`, naming the param's path.
+    /// The value of each param of the instance, the one the host bound before the run to a key param, else the one given, else
+    /// the default (one that reads earlier params folded over their values here, §8.1.16), and the bindings its children's param
+    /// values read. A required param left out is `E0319`; a false `where` is `E0317`, naming the param's path.
     fn bind_params(&mut self, placing: &Placing, plans: &[ParamPlan]) -> Option<(Vec<Constant>, Bindings)> {
         let mut values = Vec::new();
         let mut bindings = Bindings::new();
         let mut ok = true;
         for (index, param) in plans.iter().enumerate() {
-            let given = placing.given.iter().find(|(i, _, _)| *i as usize == index);
-            match given.map(|(_, value, _)| *value).or(param.default) {
+            let given = placing.given.iter().find(|(i, _, _)| *i as usize == index).map(|(_, value, _)| *value);
+            let chosen = match self.host_override(placing.module, &placing.path, plans, index, (placing.file, placing.span)).or(given) {
+                Some(value) => Some(value),
+                None => match self.default_of_instance(placing, param, &bindings) {
+                    Ok(value) => value,
+                    Err(()) => {
+                        ok = false;
+                        continue;
+                    }
+                },
+            };
+            match chosen {
                 Some(value) => {
                     self.bind_param(&mut bindings, param.decl, value);
                     values.push(value);
@@ -311,5 +320,16 @@ impl Elaboration<'_, '_> {
             }
         }
         ok.then_some((values, bindings))
+    }
+
+    /// The default of `param` at `placing`, folded over the values its earlier params take there (`bound`) under the arguments of
+    /// the instance of a generic module it places. `Err` after the diagnostic of a default that does not fold.
+    fn default_of_instance(&mut self, placing: &Placing, param: &ParamPlan, bound: &Bindings) -> Result<Option<Constant>, ()> {
+        let outer = placing.instance.as_ref().map(|instance| self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let folded = self.default_at(param, bound);
+        if let Some(outer) = outer {
+            self.consts.set_substitution(outer);
+        }
+        folded.map_err(|fault| self.const_fault(&fault, "a param default"))
     }
 }

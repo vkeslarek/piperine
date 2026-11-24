@@ -6,7 +6,7 @@ use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId
 
 use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
-use super::consts::Bindings;
+use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::instances::Instance;
 use super::structural::BodyKey;
@@ -20,6 +20,9 @@ pub(super) struct ParamPlan {
     pub(super) decl: DeclId,
     pub(super) name: String,
     pub(super) default: Option<Constant>,
+    /// A default that reads earlier params (`g: f64 = 1.0 / r`, §8.1.16): folded at each placement over the values the
+    /// params before it take there, so `default` is `None`. Every param it reads is structural (`structural.rs`).
+    pub(super) default_over_params: Option<ExprId>,
     /// The `where` condition as written, evaluated at each placement over the bound values.
     pub(super) where_: Option<ExprId>,
 }
@@ -67,19 +70,46 @@ impl Elaboration<'_, '_> {
             let data = self.design.decl_data(param).clone();
             let DeclKind::Param(p) = &data.kind else { continue };
             let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            let default = match p.default {
+            let (default, default_over_params) = match p.default {
                 Some(expr) => match self.fold_param_value(expr, &Bindings::new()) {
-                    Ok(value) => Some(value),
+                    Ok(value) => (Some(value), None),
+                    Err(ConstFault::UnboundParam { .. }) if self.reads_earlier_params_only(module, param, expr) => (None, Some(expr)),
+                    Err(ConstFault::UnboundParam { .. }) => continue,
                     Err(fault) => {
                         self.const_fault(&fault, "a param default");
                         continue;
                     }
                 },
-                None => self.absent_option(p.ty),
+                None => (self.absent_option(p.ty), None),
             };
-            plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
+            plans.push(ParamPlan { decl: param, name, default, default_over_params, where_: p.where_ });
         }
         plans
+    }
+
+    /// Whether the default `expr` of the param `param` of `module` reads only params declared before `param` (§8.1.16); a
+    /// read of `param` itself or of a later param is `E0321`, reported here.
+    fn reads_earlier_params_only(&mut self, module: DeclId, param: DeclId, expr: ExprId) -> bool {
+        let order = self.params_of(module);
+        let own = order.iter().position(|p| *p == param);
+        let mut read = Vec::new();
+        self.collect_params(expr, &mut read);
+        let Some(later) = read.into_iter().find(|p| order.iter().position(|q| q == p) >= own) else { return true };
+        let name = self.design.decl_data(later).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let file = self.design.decl_data(param).file;
+        let span = self.design.expr_node(expr).span;
+        let message = format!("a param default is not an expression over params and constants declared before it: it reads `{name}`, which is not declared before this param (§8.1.16)");
+        self.report(file, crate::msl::Diagnostic::new("E0321", message, span, "reads a param not declared before it"));
+        false
+    }
+
+    /// The default `plan` gives a param at a placement whose earlier params hold `bound`: the folded constant, or the default
+    /// that reads earlier params folded over them (§8.1.16). `Ok(None)` for a param with no default.
+    pub(super) fn default_at(&mut self, plan: &ParamPlan, bound: &Bindings) -> Result<Option<Constant>, ConstFault> {
+        match plan.default_over_params {
+            Some(expr) => self.fold_param_value(expr, bound).map(Some),
+            None => Ok(plan.default),
+        }
     }
 
     /// The param plans of `module` as a placement of it sees them: those of its instance when it is generic.
@@ -200,7 +230,15 @@ impl Elaboration<'_, '_> {
             None => None,
         };
         let structural = self.keys.is_key(module, param);
-        Some(Param { name: plan.name, ty, default: plan.default, check, structural, origin: self.locator.decl(param) })
+        // a default that reads earlier params reads key params only, which the body fixes (§8.1.16)
+        let default = match self.default_at(&plan, &self.body_keys.clone()) {
+            Ok(default) => default,
+            Err(fault) => {
+                self.const_fault(&fault, "a param default");
+                return None;
+            }
+        };
+        Some(Param { name: plan.name, ty, default, check, structural, origin: self.locator.decl(param) })
     }
 
     /// The type a param of the declared type `ty` holds: one value, an `Option` kept whole as `ValueType::Option`

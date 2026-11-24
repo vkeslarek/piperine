@@ -165,14 +165,16 @@ argument, a generation range or condition, an array length, a param default and 
   body. It is checked at elaboration and on every host `set`. The host reads it as the param's
   bounds (§23.2).
 - **§8.1.2** A param is **structural** when one of the following reads it: generation (§8.2.7), a
-  const generic argument, an array length, a template (§8.4), or the trip count of a loop that
-  places instances (§8.3.4). A param is also structural when it alone selects the kind of a branch
+  const generic argument, an array length, a template (§8.4), the default of a later param
+  (§8.1.16), or the trip count of a loop that places instances (§8.3.4). A param is also structural when it alone selects the kind of a branch
   (§11 rule 3). A structural param is fixed at elaboration.
 - **§8.1.3** Units, aliases, Monte Carlo distributions, nodesets and "exclude from gradients" are
   not model text. `///` documents a param (§21). The rest belongs to the host session (§23).
 - **§8.1.15** A param's type is a value type. A module's name is one (§8.4). A param is never a
   carrier and is never written by a model: there is no assignment form for it.
 - **§8.1.16** A default is a const expression over constants, const generics and earlier params.
+  It is folded at elaboration for each instance, over the values its earlier params take there;
+  reading the param itself or a later one is `E0321`.
 - **§8.1.17** A param with no default and a type other than `Option<T>` is required. Every instance
   and every template **MUST** bind it. For the top module the host binds it.
 - **§8.1.18** At an instance, params are bound in a block, `Name(ports) { name: value }`, under the
@@ -185,6 +187,11 @@ argument, a generation range or condition, an array length, a param default and 
 
 > **Resolution.** §8.1.2 adds array lengths and instance-placing trip counts to the structural
 > params. Both change the elaborated netlist, as generation does.
+
+> **Resolution.** §8.1.2 adds the params a later default reads (generics phase D fix round 2,
+> 2026-11-24, AFK default pending user review): a default is folded at elaboration (§8.1.16), so a
+> host `set` of a param it reads would leave the defaulted value stale. Fixing that param keeps the
+> run exact, a `set` of it is refused (§8.1.24) and the host re-elaborates.
 
 > **Resolution.** §8.1.16, §8.1.19 and §8.1.20 are implied by "a value fixed during a solve" and by
 > the host listing params from the body (§21). §8.1.21 follows from elaboration preceding analysis.

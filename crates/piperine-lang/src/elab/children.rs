@@ -144,16 +144,27 @@ impl Elaboration<'_, '_> {
                 },
                 None => None,
             };
-            let value = self.key_value(module, key, written, file, span)?;
+            let value = self.key_value(module, key, written, &values, (file, span))?;
             self.bind_param(&mut values, key, value);
         }
         Some(values)
     }
 
-    /// The value key param `key` of `module` takes at a placement: `written`, else the default.
-    /// `None` after `E0319` for a key param with neither.
-    fn key_value(&mut self, module: DeclId, key: DeclId, written: Option<Constant>, file: FileId, span: crate::msl::Span) -> Option<Constant> {
-        let default = self.param_plans.get(&module).and_then(|plans| plans.iter().find(|p| p.decl == key)).and_then(|p| p.default);
+    /// The value key param `key` of `module` takes at a placement: `written`, else the default, folded over the key params
+    /// before it (`earlier`) when it reads them (§8.1.16). `None` after `E0319` for a key param with neither, or after the
+    /// diagnostic of a default that does not fold.
+    fn key_value(&mut self, module: DeclId, key: DeclId, written: Option<Constant>, earlier: &Bindings, (file, span): (FileId, crate::msl::Span)) -> Option<Constant> {
+        let plan = self.param_plans.get(&module).and_then(|plans| plans.iter().find(|p| p.decl == key)).cloned();
+        let default = match (written, plan) {
+            (None, Some(plan)) => match self.default_at(&plan, earlier) {
+                Ok(default) => default,
+                Err(fault) => {
+                    self.const_fault(&fault, "a param default");
+                    return None;
+                }
+            },
+            _ => None,
+        };
         match written.or(default) {
             Some(value) => Some(value),
             None => {
@@ -209,7 +220,7 @@ impl Elaboration<'_, '_> {
         let mut keys = Bindings::new();
         for key in self.keys.of(template.module).to_vec() {
             let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
-            let value = self.key_value(template.module, key, written, file, span)?;
+            let value = self.key_value(template.module, key, written, &keys, (file, span))?;
             self.bind_param(&mut keys, key, value);
         }
         Some((given, keys))
