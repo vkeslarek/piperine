@@ -213,12 +213,16 @@ fn an_array_argument_of_another_length_is_e0313_naming_both_lengths() {
 }
 
 #[test]
-fn an_initialized_array_with_an_element_on_an_out_port_is_e0223() {
-    // DC4, §5.2.6: the initial value is given by the driver; an element handed to a child's `out` port leaves the
-    // array's initial value given twice
-    let top = |decl: &str| format!("{CHILDREN}module Top(in d: Bit) {{ {decl}\nlet c = Cell(d, bits[1]); }}");
-    Source::assert_clean(&format!("{CHILDREN}module Top(in d: Bit) {{ signal bits: [Bit; 2];\nlet a = Cell(d, bits[0]); let c = Cell(d, bits[1]); }}"));
-    Source::assert_one(&top("signal bits: [Bit; 2] = [false; 2];"), "E0223", "initial value");
+fn an_initial_value_is_the_value_of_the_elements_no_out_port_holds_and_e0223_once_all_are_handed() {
+    // DC4, §5.2.6, §8.2.21: the instance holds the drive of the element handed to it, so the initial value is the value of
+    // the elements no `out` port holds; it is given twice (E0223) only once every element is handed
+    let top = |decl: &str, body: &str| format!("{CHILDREN}module Top(in d: Bit) {{ {decl}\n{body} }}");
+    Source::assert_clean(&top("signal bits: [Bit; 2] = [false; 2];", "let c = Cell(d, bits[1]);"));
+    Source::assert_clean(&top("signal bits: [Bit; 4] = [false; 4];", "let c = Cell(d, bits[3]); let e = Cell(d, bits[0]);"));
+    Source::assert_one(&top("signal bits: [Bit; 2] = [false; 2];", "let a = Cell(d, bits[0]); let c = Cell(d, bits[1]);"), "E0223", "every element");
+    // a run of a nested array hands its elements: the rows left keep the initial value
+    Source::assert_clean(&top("signal g: [[Bit; 4]; 2] = [[false; 4]; 2]; signal h: [[Bit; 4]; 2] = [[false; 4]; 2];", "let r = Reg(g[0], h[1]);"));
+    Source::assert_one(&top("signal h: [Bit; 4] = [false; 4]; signal q: [Bit; 4] = [false; 4];", "let r = Reg(h, q);"), "E0223", "`q`");
 }
 
 #[test]

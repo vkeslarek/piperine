@@ -9,6 +9,7 @@ use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Desi
 use super::continuity::Continuity;
 use super::class::FunctionClass;
 use super::closures::ClosureInfo;
+use super::coverage::DeferredCoverage;
 use super::definition::DriveBook;
 use super::assign::Places;
 use super::flow::{ExitFrame, Flow};
@@ -65,6 +66,9 @@ pub(super) struct Checker<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     /// The `Ty::Carrier` of each discrete port and signal declaration read or declared so far.
     pub(super) carriers: BTreeMap<DeclId, Ty>,
+    /// The array carriers whose length is not known yet and whose element drives the checker cannot judge: the
+    /// elaborator judges them per instance (`coverage.rs`, `elab/element_coverage.rs`).
+    pub(super) deferred_coverage: DeferredCoverage,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) widths: BTreeMap<ExprId, u32>,
     /// The type of each `T::default()` call checked so far.
@@ -175,6 +179,7 @@ impl<'d> Checker<'d> {
             reached: Vec::new(),
             somes: BTreeSet::new(),
             carriers: BTreeMap::new(),
+            deferred_coverage: DeferredCoverage::default(),
             builtins: BTreeMap::new(),
             widths: BTreeMap::new(),
             defaults: BTreeMap::new(),
@@ -242,7 +247,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in

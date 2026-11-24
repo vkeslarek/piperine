@@ -13,14 +13,26 @@ use super::element_target::Element;
 use super::ty::Length;
 use super::Ty;
 
+/// The array carriers whose element coverage the checker cannot judge because a length is generic or a param: each
+/// instance is judged by the elaborator, where lengths and generation indices are folded.
+#[derive(Debug, Clone, Default)]
+pub(super) struct DeferredCoverage {
+    /// Carriers with no initial value whose type has no `Default` and that a constant element drive names in part (`E0187`).
+    pub(super) missing_initial: BTreeSet<DeclId>,
+    /// Carriers with an initial value that `out` ports of children hold in part (`E0223` once every element is handed).
+    pub(super) handed_initial: BTreeSet<DeclId>,
+}
+
 /// Which elements of one carrier a set of drives names, in row-major order for nested arrays.
 #[derive(Debug)]
-pub(super) struct ElementCoverage {
+pub(crate) struct ElementCoverage {
     /// The number of elements, `None` while a length is generic (the elaborator folds it per instantiation).
     total: Option<u64>,
-    /// Whether a drive names every element: the whole carrier, an element decided at run time, or any element of an
-    /// array whose length is not known yet (one element drive stands for all, as for a generic length before).
+    /// Whether a drive names every element: the whole carrier, or an element decided at run time.
     everything: bool,
+    /// Whether a constant element or run names some of the elements of an array whose length is not known yet: the
+    /// elaborator judges which are left once it folds the length (`elab/element_coverage.rs`).
+    deferred: bool,
     /// The elements `[first, end)` the constant drives name.
     spans: Vec<(u64, u64)>,
 }
@@ -37,22 +49,45 @@ impl ElementCoverage {
             };
             at = element;
         }
-        ElementCoverage { total, everything: false, spans: Vec::new() }
+        ElementCoverage { total, everything: false, deferred: false, spans: Vec::new() }
+    }
+
+    /// The coverage of a carrier of `total` elements with no drive yet (the elaborator folded the length).
+    pub(crate) fn counted(total: u64) -> Self {
+        ElementCoverage { total: Some(total), everything: false, deferred: false, spans: Vec::new() }
+    }
+
+    /// A drive that reaches the whole carrier.
+    pub(crate) fn cover_all(&mut self) {
+        self.everything = true;
+    }
+
+    /// A drive that reaches the elements `[first, end)`.
+    pub(crate) fn cover_run(&mut self, first: u64, end: u64) {
+        self.spans.push((first, end));
     }
 
     /// A drive that reaches `element`.
     pub(super) fn cover(&mut self, element: Element) {
         match element {
             Element::Whole | Element::Any => self.everything = true,
-            Element::At(_) | Element::Run(..) if self.total.is_none() => self.everything = true,
+            Element::Unfolded => self.deferred = true,
+            Element::At(_) | Element::Run(..) if self.total.is_none() => self.deferred = true,
             Element::At(at) => self.spans.push((at, at + 1)),
             Element::Run(first, length) => self.spans.push((first, first + length)),
         }
     }
 
-    /// Every element is named.
-    pub(super) fn is_complete(&self) -> bool {
-        self.everything || (self.total.is_some() && self.gaps().is_empty())
+    /// Every element is named, or the length is not known yet and a constant element names some of them (judged per
+    /// instance by the elaborator, `is_deferred`).
+    pub(crate) fn is_complete(&self) -> bool {
+        self.everything || self.deferred || (self.total.is_some() && self.gaps().is_empty())
+    }
+
+    /// Whether only the elaborator can tell if every element is named: some constant element is, over an array whose
+    /// length is not known yet.
+    pub(super) fn is_deferred(&self) -> bool {
+        self.deferred && !self.everything
     }
 
     /// The runs `[first, end)` of elements no drive names; empty while the total is not known.
@@ -75,7 +110,7 @@ impl ElementCoverage {
 
     /// The carrier `name` as the elements no drive names (`b[2]`, `b[1..4]`, `b[0..1], b[3..4]`), `None` when none
     /// is left; the carrier's own name when there is nothing to tell apart.
-    pub(super) fn unnamed(&self, name: &str) -> Option<String> {
+    pub(crate) fn unnamed(&self, name: &str) -> Option<String> {
         if self.is_complete() {
             return None;
         }

@@ -33,6 +33,9 @@ pub(super) struct Structure {
     pub(super) hoisted: Vec<Hoisted>,
     pub(super) carriers: Vec<Carrier>,
     pub(super) drives: Vec<Drive>,
+    /// The carriers of the body (with the window of an array of them) that children hold at an `out` port: the part
+    /// of each the instance drives (`element_coverage.rs`).
+    pub(super) handed: Vec<(u32, Option<piperine_ir::CarrierWindow>)>,
     pub(super) events: Vec<Event>,
     pub(super) reactions: Vec<Reaction>,
     pub(super) streams: Vec<Stream>,

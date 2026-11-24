@@ -1,10 +1,13 @@
 //! Modules: params, ports and signals as typed nodes, module-body `let`s, and the placement of
 //! one module in another (§8.1): node arguments by nature and count, param block by type.
 
+use std::collections::BTreeSet;
+
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::coverage::ElementCoverage;
 use super::derives::DerivedTrait;
 use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
@@ -494,10 +497,12 @@ impl Checker<'_> {
     }
 
     /// A carrier handed to an `out` port has one drive, the instance's: a second hand-over, or
-    /// a definition or a commit of this module, is `E0220`; an initial value is `E0223`.
+    /// a definition or a commit of this module, is `E0220`. An initial value is the value of the elements no `out` port
+    /// holds (§5.2.6, §8.2.21), so it is `E0223` only once every element is handed (`handed_initial_values`).
     pub(super) fn handed_drives(&mut self) {
         let handed = std::mem::take(&mut self.book.handed);
         let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
+        let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
@@ -507,8 +512,32 @@ impl Checker<'_> {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a one-driver carrier has one drive (§5.2.1)"), "a second drive");
             } else if driven_here {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too (§5.2.6)"), "a second drive");
-            } else if self.has_initial(decl) {
-                self.coded(file, "E0223", span, format!("`{name}` has an initial value and is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
+            } else {
+                clean.push((decl, element, span, file));
+            }
+        }
+        self.handed_initial_values(&clean);
+    }
+
+    /// `E0223` for a carrier with an initial value that `out` ports hold every element of: the initial value would apply
+    /// to no element, the instance holds the drive (§5.2.6). With an element no `out` port holds, the initial value is
+    /// that element's. A length not known yet leaves the judgement to the elaborator of each instance.
+    fn handed_initial_values(&mut self, handed: &[(DeclId, super::element_target::Element, Span, FileId)]) {
+        let mut judged = BTreeSet::new();
+        for (decl, _, span, file) in handed {
+            if !judged.insert(*decl) || !self.has_initial(*decl) {
+                continue;
+            }
+            let Some(held) = self.carriers.get(decl).cloned() else { continue };
+            let mut coverage = ElementCoverage::of(&held);
+            for (_, element, _, _) in handed.iter().filter(|(carrier, ..)| carrier == decl) {
+                coverage.cover(*element);
+            }
+            if coverage.is_deferred() {
+                self.deferred_coverage.handed_initial.insert(*decl);
+            } else if coverage.is_complete() {
+                let name = self.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                self.coded(*file, "E0223", *span, format!("`{name}` has an initial value and every element is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
             }
         }
     }
@@ -548,7 +577,12 @@ impl Checker<'_> {
             }
             // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
             let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            let Some(unnamed) = self.driven_coverage(decl, &held).unnamed(&name) else { continue };
+            let coverage = self.driven_coverage(decl, &held);
+            if coverage.is_deferred() {
+                self.deferred_coverage.missing_initial.insert(decl);
+                continue;
+            }
+            let Some(unnamed) = coverage.unnamed(&name) else { continue };
             let found = value.name(self.design);
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));

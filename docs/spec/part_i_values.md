@@ -1193,7 +1193,7 @@ the error of the rule that applies (`E0161`, `E0180`, `E0187`).
   carrier an undelayed definition drives (its first evaluation, §8.2.29, is its first value) nor
   for a signal whose `out` port in a child holds the initial value. An array of carriers is `K`
   carriers and the rule holds per element: an element no undelayed definition and no `out` port
-  names has neither value nor initial value, and `E0187` names it (`b[1..4]`). `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
+  names has neither value nor initial value, and `E0187` names it (`b[1..4]`). A length that is a generic argument or a param is known per instance, so the elements are judged there, and `E0187` names the instance (`b[1..4]` in `M::<4>`); so are elements named through a generation index. `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
   parts all implement `Default`, implement it; **`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and
   `str` do not implement `Default`.** In this the language differs from Rust on purpose: a
   register with no reset value has no meaning that a number can express, so the source says

@@ -221,6 +221,9 @@ impl Elaboration<'_, '_> {
             if self.types.carrier(*port).is_some() {
                 match self.lower_carrier_argument(scope, &name, *port, arg.value) {
                     Some((carrier, window)) => {
+                        if matches!(&self.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
+                            self.structure.handed.push((carrier, window));
+                        }
                         carriers.push(Some(carrier));
                         windows.push(window);
                     }

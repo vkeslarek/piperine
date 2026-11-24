@@ -22,6 +22,9 @@ pub(super) enum Element {
     Run(u64, u64),
     /// An element decided at run time: any of them.
     Any,
+    /// An element an index names that the checker cannot fold yet but that reads nothing over time: a generic length, a
+    /// param or a generation `for` index. The elaborator folds it per instance, so it reaches one element there.
+    Unfolded,
 }
 
 impl Element {
@@ -38,7 +41,7 @@ impl Element {
         match self {
             Element::At(at) => Some((at, at + 1)),
             Element::Run(first, length) => Some((first, first + length)),
-            Element::Whole | Element::Any => None,
+            Element::Whole | Element::Any | Element::Unfolded => None,
         }
     }
 }
@@ -172,7 +175,9 @@ impl Checker<'_> {
         let mut flat = 0u64;
         for (step, length) in indexes.iter().zip(levels) {
             let Step::Index(index) = step else { return Element::Any };
-            let (Some(at), Length::Fixed(count)) = (self.fold_length(*index), length) else { return Element::Any };
+            let (Some(at), Length::Fixed(count)) = (self.fold_length(*index), length) else {
+                return if self.runtime_read(*index).is_none() { Element::Unfolded } else { Element::Any };
+            };
             flat = flat * count + at;
         }
         Element::At(flat)

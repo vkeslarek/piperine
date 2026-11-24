@@ -156,6 +156,7 @@ impl Elaboration<'_, '_> {
         self.check_selector_rule(&scope);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
         self.lower_digital(&mut scope, module);
+        self.judge_element_coverage(module, &name);
         let carriers = self.structure.carriers.clone();
         let reaches = self.structure.reaches.clone();
         let merged = scope.merged.clone();

@@ -147,7 +147,7 @@ impl Checker<'_> {
     }
 
     /// What `expr` reads that only exists over time: a port or a signal by name, or a probe.
-    fn runtime_read(&self, expr: ExprId) -> Option<String> {
+    pub(super) fn runtime_read(&self, expr: ExprId) -> Option<String> {
         let node = self.design.expr_node(expr);
         match &node.kind {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {

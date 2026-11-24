@@ -41,7 +41,7 @@ pub(super) struct GeneratedItems {
     /// The iterations of each item written in generation; none for an item of an arm that was not elaborated.
     iterations: BTreeMap<DeclId, Vec<Iteration>>,
     /// The items already refused, so each is reported once.
-    refused: BTreeSet<DeclId>,
+    pub(super) refused: BTreeSet<DeclId>,
     /// Every item met outside a generation or inside one, with its iteration, in the order the generation unrolls them: source
     /// order, a `for` iteration by iteration (§12.1.2).
     sequence: Vec<(DeclId, Iteration)>,

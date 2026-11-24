@@ -204,6 +204,8 @@ pub struct Types<'d> {
     pub(super) reached: Vec<DeclId>,
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
+    /// The array carriers whose element drives only the elaborator can judge, per instance (`DeferredCoverage`).
+    pub(super) deferred_coverage: super::coverage::DeferredCoverage,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) event_reads: BTreeSet<ExprId>,
     pub(super) widths: BTreeMap<ExprId, u32>,
@@ -384,6 +386,18 @@ impl<'d> Types<'d> {
     /// param or a declaration outside the reachable set.
     pub fn carrier(&self, decl: DeclId) -> Option<&Ty> {
         self.carriers.get(&decl)
+    }
+
+    /// Whether the elements of the array carrier `decl` no initial value covers are judged per instance (`E0187`): its
+    /// length is not known yet and a constant element names some of them.
+    pub fn defers_missing_initial_value(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.missing_initial.contains(&decl)
+    }
+
+    /// Whether the array carrier `decl` has an initial value and an `out` port of a child holds some of its elements, with a
+    /// length not known yet: `E0223` is judged per instance, once every element is handed.
+    pub fn defers_handed_initial_value(&self, decl: DeclId) -> bool {
+        self.deferred_coverage.handed_initial.contains(&decl)
     }
 
     /// The type of a port or signal declared as an array of discrete carriers (`[Bit<u8>; 4]`, nested included): an

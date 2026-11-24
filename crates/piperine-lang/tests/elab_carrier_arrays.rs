@@ -362,3 +362,80 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
     let rungs = ir.instance_at("Top.rungs").expect("the ladder");
     assert_eq!(rungs.bindings().len(), 4);
 }
+
+/// The `(code, message)` of each diagnostic of elaborating `Top` of `src`.
+struct Refusals;
+
+impl Refusals {
+    /// What elaborating `Top` of `src` refuses; empty when it elaborates.
+    fn of(src: &str) -> Vec<(String, String)> {
+        match Elab::run(src, "Top") {
+            Ok(_) => Vec::new(),
+            Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+        }
+    }
+
+    /// Asserts `src` is refused with the one code `code` whose message contains each of `named`.
+    fn assert_one(src: &str, code: &str, named: &[&str]) {
+        let found = Self::of(src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), [code], "{src}\n{found:?}");
+        for text in named {
+            assert!(found[0].1.contains(text), "`{text}` is named: {}", found[0].1);
+        }
+    }
+}
+
+/// A one-bit cell the per-instance tests place: it drives its `out` port.
+const CELL: &str = "module Cell(in d: Bit, out q: Bit) { q = d; }\n";
+
+#[test]
+fn a_generic_length_array_is_judged_per_element_at_each_instance() {
+    // §3.3.4, §8.2.20: `[Bit; N]` with only `b[0]` driven leaves `b[1..N]` with no value: E0187 naming them and the
+    // instance `M::<4>`, though the length is known only once the instance is
+    let module = |body: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N]; {body} }}\n");
+    let top = "module Top(in clk: Bit) { let m = M::<4>(clk); }";
+    Refusals::assert_one(&format!("{}{top}", module("b[0] = clk;")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
+    // the same module at a length one drive covers is clean, and a length of two names the one element left
+    Refusals::assert_one(&format!("{}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}", module("b[0] = clk;")), "E0187", &["`b[1]`", "`M::<2>`"]);
+    elaborates(&format!("{}module Top(in clk: Bit) {{ let m = M::<1>(clk); }}", module("b[0] = clk;")));
+    // an element handed to an `out` port of a child names its element too
+    Refusals::assert_one(&format!("{CELL}{}{top}", module("let c = Cell(clk, b[0]);")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
+}
+
+/// Elaborates `src` and asserts it holds no diagnostic.
+fn elaborates(src: &str) {
+    Elab::ir(src, "Top");
+}
+
+#[test]
+fn a_param_length_array_is_judged_per_element_at_each_variant() {
+    // §3.3.4, §8.1.2: `[Bit; n]` folds per body variant, so `Wide~n=4` with only `b[0]` driven is E0187 naming `b[1..4]`
+    let module = "module Wide(in clk: Bit) { n: u32 = 2; signal b: [Bit; n]; b[0] = clk; }\n";
+    Refusals::assert_one(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 4 }}(clk); }}"), "E0187", &["`b[1..4]`", "`Wide~n=4`"]);
+    elaborates(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 1 }}(clk); }}"));
+}
+
+#[test]
+fn a_generation_index_names_the_elements_it_reaches() {
+    // §8.2.23: `for k in 0..2 { Cell(clk, y[k]) }` over `[Bit; 4]` hands elements 0 and 1: E0187 names `y[2..4]`; a loop
+    // over every element is clean
+    let top = |range: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in {range} {{ let c = Cell(clk, y[k]); }} }}");
+    Refusals::assert_one(&top("0..2"), "E0187", &["`y[2..4]`"]);
+    elaborates(&top("0..4"));
+    // a definition inside generation is refused (P0001) and that is the one diagnostic, no E0187 beside it
+    Refusals::assert_one("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..2 { y[k] = clk; } }", "P0001", &["definition"]);
+    // and in a generic module, at its length
+    let generic = "module M<const N: usize>(in clk: Bit) { signal y: [Bit; N]; for k in 0..2 { let c = Cell(clk, y[k]); } }\n";
+    Refusals::assert_one(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<4>(clk); }}"), "E0187", &["`y[2..4]`", "`M::<4>`"]);
+    elaborates(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}"));
+}
+
+#[test]
+fn an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_element_is_e0223() {
+    // §5.2.6, §8.2.21: the initial value of an array is the value of the elements no `out` port holds, so it is E0223
+    // only once every element is handed; a generic length is judged at each instance
+    let module = |handed: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal y: [Bit; N] = [false; N]; {handed} }}\n");
+    let top = |length: u32| format!("module Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
+    elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
+    Refusals::assert_one(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(1)), "E0223", &["`y`", "`M::<1>`"]);
+}
