@@ -207,3 +207,41 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 19 | Low | `--print` resolves an internal mirror by its name | `piperine run mirror.msl --analysis op --print 'x$analog[0]'` prints `Top.x$analog[0]  true`; `Probe::resolve` does not skip `CarrierRole::Internal` (only the default list does) | a user who guesses or reads (IR print) the name sees an elaborator artifact as a signal; nothing lists it, so it is not discoverable by accident | have `Probe::resolve` refuse an `Internal` carrier as "names no signal of the top" | not blocking; for the next `generics` phase |
 | 20 | Low-Medium | A loop through elements of an array of carriers is refused by the digital bind after rustc compiles the device, not by `E0339` (§8.2.3, "a loop through a one-driver carrier", elaboration) | `b[1] = b[2] + 1; b[2] = b[1];` and `b[1] = b[at] + 1` both end in "Digital: bind rule cycle broken: Top.drive:b[1]..."; the scalar form is refused by the checker | the user waits for a full compile and gets a solver bind message with internal drive labels instead of the language code; the class predates this phase (composite-values' element definitions), and this phase's run-time-index reads only reach it through conservative edges that are sound | raise `E0339` naming the carrier and the elements at elaboration, where element drives are known; record a GAPS row (owner `composite-values` or `spec-closure`) until then | not blocking; route to the class owner |
+
+## Final suite (after the round 6 PASS)
+
+**Merge**: origin/main 7bf501f0e merged into `feature/generics` at 41cb566b3. origin/main 862aecd2 (composite-values phase D) had never been merged into the branch, so the merge carries phase D's code, not docs only. Conflicts resolved:
+- `GAPS.md` counts: 0 silent, 2 broken, 17 loud. L13 is closed by composite-values D; S3, L30, L31, L69 and L70 are closed and L76 and L77 found by generics C. There are 17 loud rows in §4.
+- the `docs.rs` count assertions follow the same counts.
+- `elab/consts.rs` declares both `floats` and `generated`.
+- `types/mod.rs` exports both `ElementCoverage` and `FloatText`.
+- `types_subset.rs`: the `f32`, `Float<N>` and generation rows are all gone.
+
+**Run** (PIPERINE_NGSPICE unset; `/var/tmp/piperine-tmp-d` cleared first, `helpers/` kept):
+- `cargo build --workspace --exclude piperine-lang-server --all-targets`: exit 0, 0 warnings.
+- Tests, package by package:
+
+| Package | Passed | Failed |
+| --- | --- | --- |
+| piperine-abi | 58 | 0 |
+| piperine-analog-solver | 109 | 0 |
+| piperine-api | 295 | 0 |
+| piperine-digital-solver | 160 | 0 |
+| piperine-interp | 71 | 0 |
+| piperine-ir | 157 | 0 |
+| piperine-plan | 64 | 0 |
+| piperine-solver | 401 | 0 |
+| piperine-numbers | 22 | 0 |
+| piperine-transpile | 165 | 0 |
+| piperine-project | 53 | 0 |
+| piperine-lang | 1375 | 0 |
+| piperine-cli | 198 | 0 |
+| piperine (root, `--no-fail-fast`) | 419 | **1** |
+
+- `piperine-parity -- --nocapture`: 518 passed, 0 failed.
+- The seven buck targets (`buck_whole`, `buck_dpwm`, `buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_closed_loop`): 23 passed.
+- `buck_scenarios`: 61 passed.
+- cli `twins`: 6 passed.
+- No release profile was built.
+
+**Red: 1.** `piperine --test book_compiler` `a_compiler_code_says_what_the_chapter_says` fails with "compiler~79f44db1: now runs: make the row `run` and drop its `GAPS.md` section 11 line". The test shows `P0001` with a generic module (`module Gen<const N: u32>() { }` placed as `Gen::<2>`). Phase C makes that run, so the Book claim "P0001" needs another unfinished form as its example (a template, phase D). The same test text is on both sides of the merge, so this was red on the branch before the merge too. No phase C check covered `book_compiler`; my targeted rounds missed it. Not fixed, per the gate policy.
