@@ -225,3 +225,13 @@ fn a_composite_const_read_in_value_code_is_written_out() {
     assert!(ir.expressions().any(|e| matches!(e, Expr::Array(parts) if parts.len() == 3)), "the array constant is written out");
     assert!(ir.expressions().any(|e| matches!(e, Expr::StructOf { fields, .. } if fields.len() == 2)), "the struct constant is written out");
 }
+
+#[test]
+fn a_function_over_an_array_of_options_reads_each_element_as_a_pair() {
+    // resolved-nets T28 (Appendix F.4.4: a `resolve` over `[Option<u8>; N]`): an array whose elements are `Option`s is an IR
+    // array of packed options, and `d[k]` is the pair of its two halves, each unpacked from the element read
+    let items = "fn first_or(d: [Option<u8>; 3], k: usize) -> u8 { match d[k] { Some(b) => b, None => 0 } }";
+    let ir = Elab::ir(&ElabSource::reaching(items, &["{ let f = first_or; 0.0 }"]), "Top");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::OptionPart { .. })), "the element is unpacked into its halves");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::Index { .. })), "the element is read from the array");
+}

@@ -49,6 +49,26 @@ impl Held {
     const STRONG: f64 = 3.0;
 }
 
+/// A model whose reader writes `level`, a number per change (`tests/nets/bus.msl`).
+struct Levels;
+
+impl Levels {
+    /// The `level` fields of the stream `name` of `built`, in the order they were written.
+    fn of(built: &Built, seen: &Seen, name: &str, field: &str) -> Vec<f64> {
+        let streams = Streams::of(built.ir.clone());
+        seen.all()
+            .iter()
+            .filter_map(|o| streams.decode(o))
+            .map(|r| r.unwrap_or_else(|f| panic!("{f}")))
+            .filter(|r| r.stream == name)
+            .map(|r| match r.fields.iter().find(|(candidate, _)| candidate == field) {
+                Some((_, Field::Real(value))) => *value,
+                other => panic!("a real field `{field}`, found {other:?}"),
+            })
+            .collect()
+    }
+}
+
 /// One MSL file of `tests/nets/`.
 struct Model {
     /// The project read from that file.
@@ -121,4 +141,41 @@ fn strongest_of_equal_drives_is_that_drive_in_any_order() {
         assert_eq!(line.settled(top), conflict, "{top}: a strong high and a strong low give X at Strong in any order");
     }
     assert_eq!(line.settled("EqualDrivesBench"), Held { level: Held::LOW, strength: Held::PULL }, "two equal drives are that drive");
+}
+
+#[test]
+fn a_nature_with_two_impls_resolves_each_carrier_by_its_driven_type() {
+    // §4 rule 8, RN-02 AC 9: `Bus` has `impl Resolve<bool>` (high when every drive is) and `impl Resolve<u8, bool>` (high when
+    // every drive is non-zero); a carrier resolves by the type its drives have. Two flags, one low, are low; two flags high
+    // are high; the counts 3 and 0 are low, 3 and 2 are high; and both kinds of net in one design each follow their own `impl`
+    let bus = Model::of("bus.msl");
+    let last = |top: &str| {
+        let built = bus.built(top);
+        let seen = built.run(10e-9, 1e-9);
+        Levels::of(&built, &seen, "bus", "level").last().copied().unwrap_or_else(|| panic!("{top}: the reader saw no value"))
+    };
+    assert_eq!(last("OneLowFlagBench"), 0.0, "the AND of the flags true and false");
+    assert_eq!(last("HighFlagsBench"), 1.0, "the AND of the flags true and true");
+    assert_eq!(last("ZeroCountBench"), 0.0, "counts 3 and 0: not every drive is non-zero");
+    assert_eq!(last("NonZeroCountsBench"), 1.0, "counts 3 and 2: every drive is non-zero");
+    let built = bus.built("TwoNetsBench");
+    let seen = built.run(10e-9, 1e-9);
+    let mut by_tag: Vec<(f64, f64)> = Levels::of(&built, &seen, "bus", "tag").into_iter().zip(Levels::of(&built, &seen, "bus", "level")).collect();
+    by_tag.sort_by(|left, right| left.0.total_cmp(&right.0));
+    assert_eq!(by_tag, vec![(1.0, 1.0), (2.0, 0.0)], "the flags' net (tag 1) is high and the counts' net (tag 2) is low, each by its own impl");
+}
+
+#[test]
+fn a_typed_bus_resolves_to_free_byte_or_contended() {
+    // Appendix F.4.4, §4 rule 8: `DataBus` is `Resolve<Option<u8>, Data>`: nobody drives it, it is `Free`; one talker among
+    // modules that release it, it is that `Byte`; two talkers, it is `Contended`. The reader writes -2, the byte and -1
+    let bus = Model::of("bus.msl");
+    let seen_by = |top: &str| {
+        let built = bus.built(top);
+        let seen = built.run(10e-9, 1e-9);
+        Levels::of(&built, &seen, "data", "seen").last().copied().unwrap_or_else(|| panic!("{top}: the reader saw no value"))
+    };
+    assert_eq!(seen_by("FreeBusBench"), -2.0, "no drive is Free");
+    assert_eq!(seen_by("ByteBusBench"), 42.0, "one talker is its byte, the released one is left out");
+    assert_eq!(seen_by("ContendedBusBench"), -1.0, "two talkers are Contended");
 }

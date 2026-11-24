@@ -20,8 +20,8 @@ impl Resolve<u8, bool> for Bus {
 
 /// Drives a flag.
 module Flag(w: Bus) {
-    on: bool = true;
-    w = on;
+    high: bool = true;
+    w = high;
 }
 
 /// Drives a count.
@@ -30,27 +30,29 @@ module Count(w: Bus) {
     w = count;
 }
 
-/// Writes the value of the net at each change, 1 or 0.
-module Watch(w: Bus) { }
+/// Writes the value of the net at each change, 1 or 0, with the `tag` that says which net it watches.
+module Watch(w: Bus) {
+    tag: f64 = 0.0;
+}
 digital for Watch {
     on w.changed() {
-        emit!("bus", level = if w { 1.0 } else { 0.0 });
+        emit!("bus", tag = tag, level = if w { 1.0 } else { 0.0 });
     }
 }
 
 /// Two flags, one low: a flag drive resolves by `Resolve<bool>`, the AND of the flags, low.
 module OneLowFlagBench() {
     signal n: Bus;
-    let a = Flag(n) { on: true };
-    let b = Flag(n) { on: false };
+    let a = Flag(n) { high: true };
+    let b = Flag(n) { high: false };
     let look = Watch(n);
 }
 
 /// Two flags, both high: high.
 module HighFlagsBench() {
     signal n: Bus;
-    let a = Flag(n) { on: true };
-    let b = Flag(n) { on: true };
+    let a = Flag(n) { high: true };
+    let b = Flag(n) { high: true };
     let look = Watch(n);
 }
 
@@ -74,12 +76,12 @@ module NonZeroCountsBench() {
 module TwoNetsBench() {
     signal flags: Bus;
     signal counts: Bus;
-    let f0 = Flag(flags) { on: true };
-    let f1 = Flag(flags) { on: true };
+    let f0 = Flag(flags) { high: true };
+    let f1 = Flag(flags) { high: true };
     let c0 = Count(counts) { count: 2 };
     let c1 = Count(counts) { count: 0 };
-    let look_flags = Watch(flags);
-    let look_counts = Watch(counts);
+    let look_flags = Watch(flags) { tag: 1.0 };
+    let look_counts = Watch(counts) { tag: 2.0 };
 }
 
 /// What a data bus holds when no module, one module or several drive it (Appendix F.4.4).
@@ -95,11 +97,19 @@ pub nature DataBus { value: Data }
 
 impl Resolve<Option<u8>, Data> for DataBus {
     fn resolve<const N: usize>(drives: [Option<u8>; N]) -> Data {
-        drives.iter().fold(Data::Free, |a, x| match (a, x) {
-            (y, None) => y,
-            (Data::Free, Some(b)) => Data::Byte(b),
-            _ => Data::Contended,
-        })
+        let held = Data::Free;
+        for k in 0..N {
+            match drives[k] {
+                None => {}
+                Some(byte) => {
+                    held = match held {
+                        Data::Free => Data::Byte(byte),
+                        _ => Data::Contended,
+                    };
+                }
+            }
+        }
+        held
     }
 }
 

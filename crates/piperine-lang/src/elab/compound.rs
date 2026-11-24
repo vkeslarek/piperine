@@ -327,6 +327,18 @@ impl Elaboration<'_, '_> {
                 let val = half(self, LevelPart::Value, payload.clone())?;
                 Some(Pair { is, val, literal: None })
             }
+            // one element of an array of `Option`s: the two halves of the packed element, each unpacked from the read
+            ExprKind::Index { expr: base, index } if matches!(self.typed(*base), Some(Ty::Array(..))) => {
+                let mut half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                    let whole = this.lower_expr(scope, *base)?;
+                    let at = this.lower_expr(scope, *index)?;
+                    let packed = this.emit(Expr::Index { expr: whole, index: at }, ValueType::Option(Box::new(payload.clone())), origin.clone());
+                    Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
+                };
+                let is = half(self, LevelPart::Is, ValueType::Bool)?;
+                let val = half(self, LevelPart::Value, payload.clone())?;
+                Some(Pair { is, val, literal: None })
+            }
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
                 Resolution::Builtin(id) if id.info().name == "None" => {
                     let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());

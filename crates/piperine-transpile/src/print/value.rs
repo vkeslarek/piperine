@@ -1036,17 +1036,22 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
+    /// `cond`, a `bool`, as the condition of an `if`.
+    pub(super) fn if_condition(&self, cond: ExprId) -> Result<String, Error> {
+        if matches!(self.ir.expr(cond), Expr::If { .. } | Expr::Block { .. }) {
+            // `if if a { b } else { c } { .. }` and `if { s; c } { .. }` are valid Rust; parentheses
+            // around either are a warning.
+            Ok(self.piece(cond)?.text)
+        } else {
+            Ok(self.piece(cond)?.at(Prec::Or))
+        }
+    }
+
     /// `if c {` arm `} else {` arm `}`; an `else` arm that is itself an `if` chains as `else if`,
     /// and a unit `if` with no `else` to speak of has none.
     fn if_else(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
         let ty = self.ir.expr_type(e);
-        let condition = if matches!(self.ir.expr(cond), Expr::If { .. } | Expr::Block { .. }) {
-            // `if if a { b } else { c } { .. }` and `if { s; c } { .. }` are valid Rust; parentheses
-            // around either are a warning.
-            self.piece(cond)?.text
-        } else {
-            self.piece(cond)?.at(Prec::Or)
-        };
+        let condition = self.if_condition(cond)?;
         let mut text = format!("if {condition} {}", Self::braced(&self.arm(then)?));
         match self.ir.expr(otherwise) {
             Expr::Unit if *ty == ValueType::Unit => {}
