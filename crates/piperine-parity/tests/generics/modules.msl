@@ -44,3 +44,23 @@ module Rig() {
     let none = Taps::<0>(b);
     let two = Taps::<2>(c);
 }
+
+// A monitor over a type: a `let` over `since` of a carrier of `T`, and an out flag.
+module Watch<T: Repr>(in clk: Bit, in d: Bit<T>, out viol: Bit = false) {
+    ts: f64 where ts > 0.0;
+    let age = since(d);
+}
+digital<T> for Watch<T> {
+    on clk.rise() {
+        require("setup", age >= ts);
+        viol <- age < ts;
+    }
+}
+
+module Monitored() {
+    signal clk: Bit = false;
+    signal d: Bit = false;
+    signal late: Bit;
+    let w = Watch(clk, d, late) { ts: 100p };
+}
+digital for Monitored { on at(0.5u) { d <- true; } on at(1u) { clk <- true; } }

@@ -10,7 +10,6 @@ mod generic_sources;
 
 use generic_sources::GenericSources;
 use piperine_lang::pom::Design;
-use piperine_lang::types::UnfinishedForm;
 
 /// The whole-model check with generic modules admitted: the form is still behind the unfinished-forms gate.
 struct Admitted;
@@ -18,7 +17,7 @@ struct Admitted;
 impl Admitted {
     /// The diagnostics of the check of `src`.
     fn found(src: &str) -> Vec<piperine_lang::pom::DesignDiagnostic> {
-        GenericSources::admitting_found(src, &[UnfinishedForm::GenericModules])
+        GenericSources::standard_found(src)
     }
 
     /// The codes of [`Admitted::found`].

@@ -12,7 +12,7 @@
 use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 
 use super::check::Checker;
-use super::{UnfinishedForm, UnfinishedForms};
+use super::UnfinishedForms;
 
 /// One pass over the items of a design that no top need reach.
 pub(super) struct ModelCheck<'d> {
@@ -52,18 +52,13 @@ impl<'d> ModelCheck<'d> {
         is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_module(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
     }
 
-    /// Whether `decl` is a generic struct or enum, or sits inside one, or is a generic module the gate has not admitted:
-    /// those wait for their own phase. A generic function and a method of a generic `impl` are checked once at the
-    /// definition (Q1 (c)), a generic module when its form is admitted.
+    /// Whether `decl` is a generic struct or enum, or sits inside one: those wait for their own phase. A generic function,
+    /// a generic module and a method of a generic `impl` are checked once at the definition (Q1 (c)).
     fn is_generic_beyond_a_module(&self, decl: DeclId) -> bool {
         let mut at = Some(decl);
         while let Some(current) = at {
             let data = self.design.decl_data(current);
-            let waits = match data.kind {
-                DeclKind::Struct(_) | DeclKind::Enum(_) => true,
-                DeclKind::Module(_) => !self.forms.admits(UnfinishedForm::GenericModules),
-                _ => false,
-            };
+            let waits = matches!(data.kind, DeclKind::Struct(_) | DeclKind::Enum(_));
             if data.generics_span.is_some() && waits {
                 return true;
             }

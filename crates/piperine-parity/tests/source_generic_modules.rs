@@ -1,6 +1,5 @@
 //! Generic modules run from MSL source on the Rust backend (feature `generics` phase C, GN-13, GN-15, GN-16, GN-20): each
-//! model is written in `tests/generics/modules.msl`, elaborated by the front end with the unfinished form admitted by
-//! name, compiled on the transpiled backend and run on the solver. Every expected value is computed here by Rust from the
+//! model is written in `tests/generics/modules.msl`, elaborated by the front end, compiled on the transpiled backend and run on the solver. Every expected value is computed here by Rust from the
 //! rule the test cites, never read back from the model.
 #![cfg(unix)]
 
@@ -20,13 +19,9 @@ mod bytes;
 use std::path::{Path, PathBuf};
 
 use bytes::CarrierBytes;
-use piperine_lang::types::UnfinishedForm;
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use support::{build, first_edge_value};
-
-/// The generic module forms the models need: still behind the unfinished-forms gate.
-const ADMITTED: [UnfinishedForm; 1] = [UnfinishedForm::GenericModules];
 
 /// The model `file` of `tests/generics/`, with generic modules admitted.
 struct ModuleModels;
@@ -35,7 +30,7 @@ impl ModuleModels {
     /// The project of `file`.
     fn project(file: &str) -> Project {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/generics").join(file);
-        Project::new(&path).admitting(&ADMITTED)
+        Project::new(&path)
     }
 
     /// The voltage of each node in `names` of `top` of `file` at its operating point.
@@ -111,4 +106,20 @@ fn a_const_generic_of_zero_makes_an_empty_module() {
     let rails: Vec<f64> = (0..2).map(|k| 2.0 * (f64::from(k) + 1.0)).collect();
     assert!((seen[0] - 1.0).abs() < 1e-9 && (seen[1] - 1.0).abs() < 1e-9, "{seen:?}");
     assert!((seen[2] - rails[0]).abs() < 1e-9 && (seen[3] - rails[1]).abs() < 1e-9, "{seen:?}");
+}
+
+#[test]
+fn a_low_pass_over_the_generic_integrator_settles_at_its_input() {
+    // GN-13 AC 1: `lowpass` places the stdlib `idt` at its default nature `State`; at DC the capacitor is open, so the
+    // output equals the 1 V input
+    let seen = ModuleModels::operating_point("lowpass.msl", "Top", &["a", "b"]);
+    assert!((seen[0] - 1.0).abs() < 1e-9 && (seen[1] - 1.0).abs() < 1e-6, "{seen:?}");
+}
+
+#[test]
+fn a_monitor_over_a_type_reads_its_let_of_the_carrier() {
+    // GN-13 AC 1: `Watch<T>` names `age = since(d)` in its body and reads it in a reaction; at `bool` the check passes
+    // (d was stable 0.5 us >= 100 ps at the edge)
+    let ir = ModuleModels::project("modules.msl").elaborate("Monitored").unwrap_or_else(|r| panic!("{r}"));
+    assert!(ir.bodies().any(|body| body.name() == "Watch::<bool>"));
 }

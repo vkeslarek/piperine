@@ -123,6 +123,7 @@ impl Elaboration<'_, '_> {
         scope.keys = keys.clone();
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
+        self.frames[0].substitution = self.consts.substitution().clone();
         self.body_keys = keys.clone();
         self.consts.set_frame_params(keys.clone());
         self.index_children(module);
@@ -225,13 +226,15 @@ impl Elaboration<'_, '_> {
     /// frame left comes back with `leave_frame`.
     pub(super) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
         let params = self.frame_bindings(frame);
-        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params) }
+        let substitution = self.consts.set_substitution(self.frames[frame].substitution.clone());
+        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params), substitution }
     }
 
     /// Back to the frame `entry` left.
     pub(super) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
         scope.frame = entry.outer;
         self.consts.set_frame_params(entry.params);
+        self.consts.set_substitution(entry.substitution);
     }
 
     /// The nodes of a module, ports first and then signals, each with its nature and initial value,
@@ -319,4 +322,6 @@ pub(super) struct FrameEntry {
     outer: usize,
     /// The module params the types read before.
     params: Bindings,
+    /// The substitution the types read before.
+    substitution: crate::types::Substitution,
 }

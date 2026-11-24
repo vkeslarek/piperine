@@ -128,15 +128,23 @@ fn a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_powe
 #[test]
 fn a_bundle_is_refused_where_the_solver_reaches_it() {
     // natures#8 (refused): the Stream bundle and the Slice of the Book; natures~52790298 "Directions are
-    // written once, from the producer's side, and flip gives the consumer's view" (refused with it). A
-    // `struct` of carriers and a generic module are `P0001` (L25, L30)
+    // written once, from the producer's side, and flip gives the consumer's view" (refused with it). The generic
+    // module `Slice` runs (T71), so what is left is the bundle `Stream` alone (L25, `resolved-nets-bundles`): the `struct`
+    // with carrier fields, its `flip` and the definitions through its members, in this order. The harness gives the
+    // signals a type with a `Default` (`Slice<T: Repr + Default>`, §3.3.4)
     let chapter = Chapter::read();
-    let placing = "module Top(in clk: Bit) { signal b: Stream<u8>; signal d: Stream<u8>; let s = Slice::<u8>(clk, b, d); }\n";
+    let placing = "module Top(in clk: Bit) { signal b: Stream<Option<u8>>; signal d: Stream<Option<u8>>; let s = Slice::<Option<u8>>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    assert!(given.contains(&("P0001".to_string(), "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet".to_string())), "{given:?}");
-    assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
-    let generic = "module Top(in clk: Bit) { signal c: Bit; let s = Slice::<u8>(c, gnd, gnd); }\n";
-    Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", generic).run(OperatingPoint::of_top()), "natures#8", "P0001", "generic module is not supported yet");
+    let member = "the target of a definition is a member of an instance: a parent never writes a child's drive (§8.2.10)";
+    let wanted = [
+        ("P0001", "`struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet"),
+        ("P0001", "`flip` type is not supported yet"),
+        ("E0222", member),
+        ("E0222", member),
+        ("E0222", member),
+    ];
+    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the bundle's refusals");
+    Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8", wanted[0].0, wanted[0].1);
 }
 
 #[test]

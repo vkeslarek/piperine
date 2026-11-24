@@ -71,13 +71,28 @@ fn the_nature_card_is_the_standard_librarys() {
 }
 
 #[test]
-fn the_module_card_is_refused_for_its_const_generic() {
-    // cheatsheet#2 (refused): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0, x:
-    // f64) where N >= 1 { .. }` with its params, an `Option<f64>` and an array of carriers, placed as
-    // `M::<2>`: a generic module is `P0001` (L30)
+fn the_module_card_is_refused_for_its_hoisted_out_carrier() {
+    // cheatsheet#2 (refused): `module M<const N: usize>(a: Electrical, in clk: Bit, out q: Bit<u8> = 0, x: f64) where
+    // N >= 1 { .. }` placed as `M::<2>`. The generic module runs (T71); the card's value input `x: f64` makes `M` a module
+    // that is called, and a called module is hoisted into its caller, which holds no `out` carrier (L75)
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: Electrical; signal c: Bit; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\n";
-    Refusal::expect(chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()), "cheatsheet#2", "P0001", "generic module is not supported yet");
+    let after = "module Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b, 1.0); }\n";
+    Refusal::expect(chapter.wrapped("shape.msl", "", "cheatsheet#2", after).run(Commands::operating_point()), "cheatsheet#2", "P0001", "a hoisted module that holds an `out` carrier, is not supported yet");
+}
+
+#[test]
+fn the_module_card_runs_for_its_const_generic_without_its_value_input() {
+    // cheatsheet#2 (run, T116 amended): the card's params, `Option<f64>` param, node signal and `signal s: [Bit; N] =
+    // [false; N]`, written without the value input `x`, placed as `M::<2>`: `M` is a generic module with a body of its own
+    let chapter = Chapter::read();
+    let card = chapter.text("cheatsheet#2").replace(", x: f64)", ")");
+    assert_ne!(card, chapter.text("cheatsheet#2"), "the card writes its value input");
+    // the card is syntax alone: the harness holds the node `mid` and `a` with sources, or the operating point is singular
+    let after = "analog<N> for M<N> { v(mid) +> 0.0; }\nmodule Top() { signal a: Electrical; signal c: Bit = false; signal b: Bit<u8>; let m = M::<2>(a, c, b); }\nanalog for Top { v(a) +> 0.0; }\n";
+    let model = Model::written("shape.msl", &format!("{card}\n{after}"));
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("the card is refused: {:?}", Refusal::of(Err(failure), "cheatsheet#2")));
+    let rows = format!("{:?}", ran.table.rows);
+    assert!(rows.contains("Top.b") && rows.contains("Top.c"), "the operating point lists the top's signals: {rows}");
 }
 
 #[test]
@@ -131,14 +146,23 @@ fn the_debug_prints_card_runs_with_its_analog_trace() {
 }
 
 #[test]
-fn the_template_card_is_refused_for_its_generic_module_and_its_placements() {
-    // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a
-    // module generic over the template: a generic module is `P0001` (L32, with the placement through a
-    // function of modules#12)
+fn the_template_card_is_refused_for_its_template_and_its_bundle() {
+    // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module
+    // generic over the template. The generic module runs (T71); what is left is exactly: the struct `Cell` with a carrier
+    // field, a bundle (L25, `resolved-nets-bundles`), the two placements through a template value or a function and the
+    // `Fn` bound of `C` the module `Bsim4` is checked against (L32, phase D)
     let chapter = Chapter::read();
-    let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
+    let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit = false;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
     let after = "}\nmodule Top() { let i = Inner::<Bsim4>(); }\n";
-    Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", "P0001", "generic module is not supported yet");
+    let given = Refusal::of(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8");
+    let wanted = [
+        ("P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet"),
+        ("P0001", "placement through a template value or a function is not supported yet"),
+        ("P0001", "placement through a template value or a function is not supported yet"),
+        ("E0187", "`module `Bsim4`` does not satisfy the bound `Fn` of `C` in `Inner` (§3.8.7)"),
+    ];
+    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the refusals still owed");
+    Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", wanted[0].0, wanted[0].1);
 }
 
 #[test]

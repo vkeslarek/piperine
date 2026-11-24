@@ -9,9 +9,6 @@
 /// One form of the language whose checking runs ahead of its lowering.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnfinishedForm {
-    /// A generic module: checked at its definition and placed with inferred arguments (T60, T61), lowered per instance
-    /// (T65 to T68); flipped by T71.
-    GenericModules,
     /// Generation `for`/`if` in a module body (T72 to T76); flipped by T77.
     Generation,
     /// Generation `for`/`if` around reactions of a `digital` block (T78, T79); flipped by T80, which deletes the gate.
@@ -27,7 +24,7 @@ pub struct UnfinishedForms {
 
 impl UnfinishedForms {
     /// The forms production still refuses, in the order their tasks flip them.
-    pub const IN_FORCE: [UnfinishedForm; 3] = [UnfinishedForm::GenericModules, UnfinishedForm::Generation, UnfinishedForm::DigitalGeneration];
+    pub const IN_FORCE: [UnfinishedForm; 2] = [UnfinishedForm::Generation, UnfinishedForm::DigitalGeneration];
 
     /// The gate production uses: every form refused.
     pub fn closed() -> UnfinishedForms {

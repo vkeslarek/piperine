@@ -1,11 +1,10 @@
 //! Scope: the elaborator's generic module instances (generics GN-13, GN-15, part III §8): one body per distinct list of
 //! generic arguments, a false module `where` reported for the instance, a chain of growing arguments bounded, and the POM
-//! left as written. The form is still behind the unfinished-forms gate, so each test admits it by name.
+//! left as written.
 
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic};
-use piperine_lang::types::UnfinishedForm;
 
 /// A design over the real standard library, elaborated with generic modules admitted.
 struct ModuleElab;
@@ -15,7 +14,7 @@ impl ModuleElab {
     fn run(src: &str, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         let design = Design::builder().source("top.msl", src).build();
         assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", design.diagnostics());
-        Elaborator::new(&design).admitting(&[UnfinishedForm::GenericModules]).run(top)
+        Elaborator::new(&design).run(top)
     }
 
     /// The `(code, message)` of each diagnostic of elaborating `top`.

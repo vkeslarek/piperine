@@ -98,16 +98,16 @@ block	natures#5	c62d8033ca3aff49	shown	-	-	-
 block	natures#6	acda13a1a5efeb66	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
 block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
 block	natures#8	2873c252462bda40	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
-block	modules#1	b8d5395ceea2ea36	refused	piperine/book_modules::the_ladder_is_refused_for_its_generic_module	L30	-
-block	modules#2	88069ff453a25020	refused	piperine/book_modules::the_half_reactions_are_refused_with_the_ladder	L31	-
+block	modules#1	b8d5395ceea2ea36	refused	piperine/book_modules::the_ladder_is_refused_for_its_generation	L31	-
+block	modules#2	88069ff453a25020	refused	piperine/book_modules::the_half_reactions_are_refused_for_their_generation	L31	-
 block	modules#3	fd35830b4553e5ac	shown	-	-	-
 block	modules#4	d7b4e96dd3da2949	shown	-	-	-
-block	modules#5	a0d616b7b3da06dd	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run ladder.msl --analysis op
-block	modules#6	7c3db491e9d50314	refused	piperine/book_modules::the_lowpass_module_is_refused_for_the_generic_integrator	L30	-
+block	modules#5	0e59f5f5480a7f94	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run ladder.msl --analysis op
+block	modules#6	7c3db491e9d50314	run	piperine/book_modules::the_lowpass_module_runs_over_the_generic_integrator	-	-
 block	modules#7	785f58bd27638c90	run	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	-
-block	modules#8	f26832ff2564dcd3	refused	piperine/book_modules::the_pi_controller_is_refused_only_for_its_generic_idt	L30	-
+block	modules#8	f26832ff2564dcd3	run	piperine/book_modules::the_pi_controller_runs_with_its_generic_idt	-	-
 block	modules#9	76ab743eefe57ede	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
-block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_generic_module	L32	-
+block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_template_bundle_and_generation	L32	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
 block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that_returns_a_template_is_refused_where_it_is_placed	L32	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
@@ -139,7 +139,7 @@ block	digital#13	7e552894751fa311	held	piperine-cli/book::every_cli_listing_of_t
 block	digital#14	1211c7f06efc588a	run	piperine/book_digital::the_debouncer_pwm_and_pwm_check_print_their_records	-	-
 block	digital#15	2525e0948e3c847b	shown	-	-	-
 block	digital#16	32e20e7026d4fcdb	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
-block	digital#21	d7e1731297196c91	refused	piperine/book_digital::the_flip_flop_is_refused_for_its_generic_module	L30	-
+block	digital#21	d7e1731297196c91	run	piperine/book_digital::the_flip_flop_runs_for_a_type_with_a_default	-	-
 block	digital#22	5857ae3c7d886c0f	run	piperine/book_digital::a_pipeline_in_one_reaction_reads_every_register_before_the_edge	-	-
 block	mixed#1	8f2566e772665b48	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
 block	mixed#2	05e4a50ddb334346	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
@@ -178,7 +178,7 @@ block	core-std#4	1cb038700030c8c4	run	piperine/book_core_std::the_latch_takes_it
 block	core-std#5	7dfd7bc254fb3c54	run	piperine/book_core_std::the_dac_ramp_scales_its_code_by_the_reference	-	-
 block	core-std#6	1fe178b5474b2090	refused	piperine/book_core_std::the_resolved_line_is_refused_until_a_nature_can_implement_resolve	L21	-
 block	core-std#7	73e0cf5006f6d85d	run	piperine/book_core_std::the_pad_drives_its_node_and_reads_it_back	-	-
-block	core-std#8	5c0cb59d0b639a56	refused	piperine/book_core_std::the_register_with_a_setup_check_is_refused_for_the_generic_monitor	L30	-
+block	core-std#8	5c0cb59d0b639a56	run	piperine/book_core_std::the_register_with_a_setup_check_runs	-	-
 block	core-std#9	8df4b148eabfdf77	run	piperine/book_core_std::the_probe_writes_a_check_and_a_log_record	-	-
 block	core-std#10	bfca7381ca325fda	run	piperine/book_core_std::the_watchdog_builds_with_its_u16_param	-	-
 block	core-std#11	8e7f72e7c63ab65b	run	piperine/book_core_std::a_crates_own_vt_replaces_the_library_one	-	-
@@ -257,13 +257,13 @@ block	simulation#8	bb39a1d477539ba8	held	piperine-cli/book::every_cli_listing_of
 block	simulation#9	e9f2e26422078619	shown	-	-	-
 block	simulation#10	93d9904c6f268314	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis ac --from 1e3 --to 1e6 --per-decade 1 --print b
 block	cheatsheet#1	a91c1587123be4d7	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
-block	cheatsheet#2	69490dc245b2826e	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_const_generic	L30	-
+block	cheatsheet#2	69490dc245b2826e	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_hoisted_out_carrier	L75	-
 block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
 block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
 block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book_cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
-block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_generic_module_and_its_placements	L32	-
+block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_template_and_its_bundle	L32	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
 block	cheatsheet#10	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
 block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
@@ -281,7 +281,7 @@ claim	welcome~e9269920	e9269920165af6c3	prose	-	-	A solver often tries a time st
 claim	welcome~3afc3430	3afc34303f9d001f	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	Its reaction, on at(t0) { fired <- true; }, means "when time reaches t0, set fired".
 claim	welcome~cd0a6683	cd0a6683d2118361	prose	-	-	Everything else writes nothing. let x = expr; only gives an expression a name.
 claim	welcome~6e662db9	6e662db9ee7d0481	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The piperine command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself.
-claim	welcome~e12daa72	e12daa72d55a284c	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: in analog, idt; elsewhere, generic modules and resolved natures (a nature that implements Resolve).
+claim	welcome~1d96407a	1d96407a563040a4	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: generation (for and if around items), templates, bundles and resolved natures (a nature that implements Resolve).
 claim	welcome~4bc80e1d	4bc80e1dc680d2f3	holds	piperine/book_welcome::e0319_a_param_with_no_default_must_be_bound	-	E0319
 claim	welcome~0808ef8f	0808ef8f1e6f4968	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	Bind it: Resistor(vin, vout) { r: 1k }.
 claim	welcome~4bc8171d	4bc8171dc680e23e	holds	piperine/book_welcome::e0312_a_port_must_be_connected	-	E0312
@@ -336,7 +336,8 @@ claim	generics~feb63716	feb63716adc7e66b	prose	-	-	It gives every item that has 
 claim	generics~f43d6021	f43d60213078ff9f	prose	-	-	On a function or a module it is about constants and params, as in where N >= 1; on a single param it is about that param, as in r: f64 = 1k where r > 0.0 (chapter 7).
 claim	generics~7b1ada2a	7b1ada2aaf7531fa	prose	-	-	A netlist with N sections, placed as Ladder::<4>(x, y).
 claim	generics~3a14da6c	3a14da6c949c48be	holds	piperine/book_generics::a_closure_is_passed_to_the_methods_of_an_option	-	map is a method of Option that takes a function: on Some(x) it calls the function with x and wraps the result in Some, and on None it calls nothing.
-claim	generics~00f0fd4f	00f0fd4f03e8f020	holds	piperine/book_generics::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
+claim	generics~c212674a	c212674a7361cf71	holds	piperine/book_generics::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	Generic modules run too: a module over a type, a length or a nature is lowered once for each list of arguments a placement gives it.
+claim	generics~e60a0a07	e60a0a0748ede288	holds	piperine/book_generics::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A form of the language that does not run yet is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
 claim	generics~a6fd5a57	a6fd5a57da31a3f5	holds	piperine/book_generics::the_generic_listings_run_where_a_top_reaches_them	-	Every listing of this chapter runs where a top reaches it.
 claim	generics~76d9eeda	76d9eedaf1be706f	holds	piperine/book_generics::an_impl_is_compared_with_its_trait	-	An impl is compared with the trait it provides: a missing or an extra item, a signature that differs and a supertrait the type does not implement are E0187, found where the impl is written.
 claim	generics~80317d1d	80317d1de450c243	holds	piperine/book_generics::e0900_a_bound_is_not_a_where_an_impl_type_or_a_qualified_path	-	E0900
@@ -383,12 +384,12 @@ claim	natures~42b8e61d	42b8e61dc142ae1f	holds	piperine/book_natures::e0210_an_in
 claim	modules~e1c9cfba	e1c9cfbaca0c7ca0	prose	-	-	By the end of this chapter you can build a design out of smaller modules: place instances, bind params, generate a row of stages with a loop, look inside a child from its parent, and write a module that returns a value, such as a filter you can call inside an expression.
 claim	modules~9df7d4b2	9df7d4b27dc00585	holds	piperine/book_modules::a_module_body_takes_a_param_with_a_where_and_an_instance_with_a_param_block	-	c: f64 = 1p where c 0.0;
 claim	modules~fbe506f7	fbe506f7f13abb2c	holds	piperine/book_modules::a_module_body_takes_a_param_with_a_where_and_an_instance_with_a_param_block	-	let r1 = Resistor(a, b) { r: 1k };
-claim	modules~b53307eb	b53307eb7b1a3b15	refused	modules#1	L30	Ladder<const N: usize> takes the number of sections as a generic argument, and where N >= 1 refuses an empty ladder.
+claim	modules~b53307eb	b53307eb7b1a3b15	refused	modules#1	L31	Ladder<const N: usize> takes the number of sections as a generic argument, and where N >= 1 refuses an empty ladder.
 claim	modules~87ce6f6e	87ce6f6e612d4c68	refused	modules#2	L31	Swap the DC source for the Step of chapter 1 and add a block that reports when each tap passes half of the step:
 claim	modules~3f8e84ba	3f8e84ba1992d29f	refused	modules#2	L31	The stream gets one record per stage, in order, because the edge reaches the taps one after another:
 claim	modules~f355ab23	f355ab23250e139e	prose	-	-	The times are left for you; the exercise at the end of the chapter gives an estimate to check them against.
 claim	modules~85f8dd48	85f8dd48131db07e	holds	piperine/book_modules::a_ladder_written_out_runs_an_operating_point_and_a_dc_sweep	-	An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point.
-claim	modules~8b927a42	8b927a42685fb21f	refused	modules#6	L30	At each instance they stand for the expressions the caller wrote, here v(a) and 1u.
+claim	modules~8b927a42	8b927a42685fb21f	holds	piperine/book_modules::the_lowpass_module_runs_over_the_generic_integrator	-	At each instance they stand for the expressions the caller wrote, here v(a) and 1u.
 claim	modules~ca384a57	ca384a570243c413	holds	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	idt(e) is the time integral of e, itself a library module that returns a value.
 claim	modules~1faf8c12	1faf8c12cb1fa180	refused	piperine/book_modules::binding_m_and_dtemp_is_refused_as_an_unknown_param	L29	Every instance has these two implicit params, and you bind them like any other: Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel. m multiplies down the hierarchy; dtemp offsets the temperature and adds up.
 claim	modules~4bd2871d	4bd2871dc689f513	holds	piperine/book_modules::e0320_a_block_names_a_param_the_module_does_not_have	-	E0320
@@ -401,7 +402,7 @@ claim	modules~80317e1d	80317e1de450c3f6	holds	piperine/book_modules::e0903_a_bod
 claim	modules~4bd9131d	4bd9131dc68f4ea5	unraised	piperine/book_modules::e0340_is_not_raised_generation_is_refused_before_its_range_is_checked	L31	E0340
 claim	modules~4bcf211d	4bcf211dc68711ea	holds	piperine/book_modules::e0330_one_name_is_declared_once_in_a_module	-	E0330
 claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_module_and_its_behavior_live_in_one_file	-	E0401
-claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked	L30	E0304
+claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_waits_for_the_generation_of_the_generic_ladder	L31	E0304
 claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
 claim	analog~750ad45d	750ad45df3f747a1	holds	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	The command runs: it prints the two clip records, then the table of the rows, and writes the plot:
 claim	analog~139c67b5	139c67b5de8bbf3a	holds	piperine/book_analog::the_diode_with_a_trace_runs	-	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.

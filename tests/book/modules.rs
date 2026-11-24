@@ -67,31 +67,31 @@ impl Commands {
 }
 
 #[test]
-fn the_ladder_is_refused_for_its_generic_module() {
+fn the_ladder_is_refused_for_its_generation() {
     // modules#1 (refused): the ladder file; modules~b53307eb "Ladder<const N: usize> takes the number of
-    // sections as a generic argument, and where N >= 1 refuses an empty ladder" (refused with it). Both
-    // commands of the Run it box stop at `Ladder::<3>`: `P0001`, a generic module (L30)
+    // sections as a generic argument, and where N >= 1 refuses an empty ladder" (refused with it). The generic module
+    // runs (T71); both commands of the Run it box stop at the generation `for` of its body: `P0001` (L31, T77)
     let chapter = Chapter::read();
     let model = chapter.marked("ladder.msl", "modules#1");
-    Refusal::expect(model.run(Commands::operating_point()), "modules#1", "P0001", "generic module is not supported yet");
+    let generation = "generation `for`/`if` in a module body is not supported yet";
+    Refusal::expect(model.run(Commands::operating_point()), "modules#1", "P0001", generation);
     let sweep = Refusal::of(model.run(Commands::sweep_of_the_source()), "modules#1");
-    assert_eq!(sweep, [("P0001".to_string(), "generic module is not supported yet".to_string())], "the sweep stops at the same place");
+    assert_eq!(sweep, [("P0001".to_string(), generation.to_string())], "the sweep stops at the same place");
 }
 
 #[test]
-fn the_half_reactions_are_refused_with_the_ladder() {
+fn the_half_reactions_are_refused_for_their_generation() {
     // modules#2 (refused): the digital block that reports when each tap passes half of the step;
     // modules~87ce6f6e "Swap the DC source for the Step ... and add a block that reports when each tap
     // passes half of the step" and modules~3f8e84ba "The stream gets one record per stage" (refused with
-    // it). Generation in a `digital` block is `P0001` (L31), next to the ladder's generic module (L30)
+    // it). Generation in a module body and in a `digital` block are the two `P0001`s left (L31, T77 and T80)
     let chapter = Chapter::read();
     let model = chapter.wrapped("ladder.msl", &format!("{}\n", chapter.text("modules#1")), "modules#2", "");
     let transient = Overrides { analysis: Some("transient".to_string()), stop: Some(20e-6), streams: vec!["half".to_string()], ..Overrides::default() };
-    let given = Refusal::of(model.run(transient.clone()), "modules#2");
-    for expected in ["generic module is not supported yet", "generation `for`/`if` in a `digital` block is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
-    Refusal::expect(model.run(transient), "modules#2", "P0001", "generation `for`/`if` in a `digital` block is not supported yet");
+    let given = Refusal::of(model.run(transient), "modules#2");
+    let wanted = ["generation `for`/`if` in a module body is not supported yet", "generation `for`/`if` in a `digital` block is not supported yet"];
+    assert_eq!(given, wanted.map(|message| ("P0001".to_string(), message.to_string())), "exactly the two generations");
+    Refusal::expect(model.run(Overrides { analysis: Some("transient".to_string()), stop: Some(20e-6), streams: vec!["half".to_string()], ..Overrides::default() }), "modules#2", "P0001", wanted[1]);
 }
 
 #[test]
@@ -128,14 +128,28 @@ fn a_module_body_takes_a_param_with_a_where_and_an_instance_with_a_param_block()
 }
 
 #[test]
-fn the_lowpass_module_is_refused_for_the_generic_integrator() {
-    // modules#6 (refused): `lowpass` and `SlowBuffer`; modules~8b927a42 "At each instance they stand for the
-    // expressions the caller wrote, here v(a) and 1u" (refused with it). The `idt` inside `lowpass` is a
-    // generic module (L30); its feedback through an instance is L38
+fn the_lowpass_module_runs_over_the_generic_integrator() {
+    // modules#6 (run): `lowpass` and `SlowBuffer`; modules~8b927a42 "At each instance they stand for the expressions the
+    // caller wrote, here v(a) and 1u". The `idt` inside `lowpass` is the standard generic module at its default nature
+    // `State`, and `y` reads itself through it: `dy/dt = (x - y) / tau`. A 1 V step at the start (`a` is 0 at the operating
+    // point) gives `y(t) = 1 - e^{-t/tau}`, which Rust computes at each time of the table
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: Electrical; signal b: Electrical; let s = SlowBuffer(a, b); }\n";
+    let after = "module Top() { signal a: Electrical; signal b: Electrical; let s = SlowBuffer(a, b); }\nanalog for Top { v(a) +> if now() > 0.0 { 1.0 } else { 0.0 }; }\n";
     let model = chapter.wrapped("lowpass.msl", "", "modules#6", after);
-    Refusal::expect(model.run(Commands::of_top()), "modules#6", "P0001", "generic module is not supported yet");
+    let overrides = Overrides { print: vec!["b".to_string()], ..Faulty::transient_of_top(5e-6, Some(1e-8)) };
+    let ran = model.run(overrides).unwrap_or_else(|failure| panic!("{failure:#}"));
+    let tau = 1e-6_f64;
+    let mut checked = 0;
+    for row in 0..ran.table.rows.len() {
+        let time = ran.real(row, "time");
+        if time < 5e-8 {
+            continue;
+        }
+        let wanted = 1.0 - (-time / tau).exp();
+        assert!((ran.real(row, "Top.b") - wanted).abs() < 2e-2, "t = {time:e}: {} against {wanted}", ran.real(row, "Top.b"));
+        checked += 1;
+    }
+    assert!(checked > 100, "the step response is read at {checked} times");
 }
 
 #[test]
@@ -152,17 +166,21 @@ fn the_book_shows_the_integrator_the_standard_library_gives() {
 }
 
 #[test]
-fn the_pi_controller_is_refused_only_for_its_generic_idt() {
-    // modules#8 (refused): `windup` and `PiAw`: the ports `e: VSignal` and `y: VSignal` are signal-flow
-    // nodes (spec §6 rule 2), so only the integral's `idt`, a generic module (L30), is refused
+fn the_pi_controller_runs_with_its_generic_idt() {
+    // modules#8 (run): `windup` and `PiAw`: the ports `e: VSignal` and `y: VSignal` are signal-flow nodes (spec §6 rule 2)
+    // and the integral's `idt` is the generic module at its default nature. At DC the integral settles where
+    // `ki e + kt windup(u) = 0` with `u = kp e + xi`: a large error saturates the output at `hi`, a negative one at `lo`
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: VSignal; signal b: VSignal; let c = PiAw(a, b); }\n";
-    let model = chapter.wrapped("piaw.msl", "", "modules#8", after);
-    let given = Refusal::of(model.run(Commands::of_top()), "modules#8");
-    let expected = "generic module is not supported yet";
-    assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    assert!(given.iter().all(|(_, message)| !message.contains("signal-flow")), "a signal-flow node is typed: {given:?}");
-    Refusal::expect(model.run(Commands::of_top()), "modules#8", "P0001", expected);
+    let (kp, ki, kt, lo, hi) = (0.5_f64, 2e3_f64, 10e3_f64, 0.0_f64, 1.0_f64);
+    for error in [3.0_f64, -1.0] {
+        let after = format!("module Top() {{ signal a: VSignal; signal b: VSignal; let c = PiAw(a, b); }}\nanalog for Top {{ v(a) +> {error:?}; }}\n");
+        let ran = chapter.wrapped("piaw.msl", "", "modules#8", &after).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure:#}"));
+        let bound = if error > 0.0 { hi } else { lo };
+        // the settled `u = kp e + xi` lies beyond the limit, where `windup` is `bound - u`: `ki e + kt (bound - u) = 0`
+        let settled = bound + ki * error / kt;
+        assert!(if error > 0.0 { settled > hi } else { settled < lo }, "the controller saturates: u settles at {settled} (kp e = {})", kp * error);
+        assert!((ran.signal("Top.b") - bound).abs() < 1e-6, "e = {error}: the output sits at its limit {bound}, found {}", ran.signal("Top.b"));
+    }
 }
 
 #[test]
@@ -178,19 +196,22 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
 }
 
 #[test]
-fn the_memory_bank_is_refused_for_its_generic_module() {
+fn the_memory_bank_is_refused_for_its_template_bundle_and_generation() {
     // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11
-    // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a
-    // parent's body. The generic module (L30); the struct as a type and the arrays of carriers run
+    // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The
+    // generic module runs (T71) and so do the arrays of carriers. What is left, exactly: the bundle `Cell`, a struct with a
+    // carrier field (L25), the generation `for` of the bank (L31) and the template `C`, which nothing infers (L32, phase D)
     let chapter = Chapter::read();
     let top = format!("module Top() {{\n    signal wl: [Bit; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    // the arrays of carriers run since composite-values phase C (L24): the generic module is the one refusal left (L30)
-    assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
+    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
+    assert_eq!(codes, ["P0001", "P0001", "E0181"], "{given:?}");
+    assert!(given[0].1.contains("`Cell` has a carrier field, a bundle is not supported yet"), "{given:?}");
+    assert_eq!(given[1].1, "generation `for`/`if` in a module body is not supported yet");
+    assert!(given[2].1.contains("cannot infer the type parameter `C` of `MemoryBank`"), "{given:?}");
     assert!(!given.iter().any(|(_, message)| message.contains("array of")), "the arrays of carriers run: {given:?}");
-    assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "generic module is not supported yet");
+    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "generation `for`/`if` in a module body is not supported yet");
 }
 
 #[test]
@@ -300,19 +321,19 @@ fn e0401_a_module_and_its_behavior_live_in_one_file() {
 }
 
 #[test]
-fn e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked() {
-    // modules~4bcb9f1d: "E0304 Ladder::<0>(vin, vout): the module's where N >= 1 is false". The ladder is a
-    // generic module, `P0001` (L30) wherever it is placed, so the `where` is never evaluated and `E0304`
-    // is not raised
+fn e0304_waits_for_the_generation_of_the_generic_ladder() {
+    // modules~4bcb9f1d: "E0304 Ladder::<0>(vin, vout): the module's where N >= 1 is false". The generic module is placed
+    // (T65, T71), but the ladder's body is the generation `for` of L31: it is refused there, before the instance
+    // `Ladder::<0>` is lowered, so `E0304` is not raised by the Book's ladder (T77 raises it)
     let chapter = Chapter::read();
     let zero = "module Empty() { signal vin: Electrical; pub signal vout: Electrical; pub let lad = Ladder::<0>(vin, vout) { r: 1k, c: 1n }; }\n";
-    // the whole-model check (S3) refuses the listing's own `LadderTop` for the same placement, so the model is
-    // the listing up to it: the `Empty` placement is the one refusal
+    // the whole-model check refuses the listing's own `LadderTop` for the same generation, so the model is the listing up
+    // to it: the `Empty` placement and the ladder's body are what is left
     let block = chapter.text("modules#1");
     let (listing, _) = block.split_once("module LadderTop()").expect("modules#1 ends with LadderTop");
     let model = Model::written("empty.msl", &format!("{listing}\n{zero}"));
     let given = Refusal::of(model.run(Faulty::operating_point_of("Empty")), "modules~4bcb9f1d");
-    assert_eq!(given, [("P0001".to_string(), "generic module is not supported yet".to_string())]);
+    assert_eq!(given, [("P0001".to_string(), "generation `for`/`if` in a module body is not supported yet".to_string())]);
 }
 
 #[test]

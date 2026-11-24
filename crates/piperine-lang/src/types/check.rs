@@ -732,10 +732,6 @@ impl<'d> Checker<'d> {
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Module(m) = &data.kind else { return };
         if data.generics_span.is_some() {
-            if !self.forms.admits(super::UnfinishedForm::GenericModules) {
-                self.unsupported(data.file, data.span, "generic module");
-                return;
-            }
             self.generic_signature(decl);
         }
         if m.abi.is_some() {
@@ -763,7 +759,9 @@ impl<'d> Checker<'d> {
                     // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
                     // module that holds the closure, typed with it, not module items (design D9).
                     (DeclKind::Binding(_), _) => {}
-                    (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
+                    (DeclKind::Generation(_), ItemPhase::Declarations) if !self.forms.admits(super::UnfinishedForm::Generation) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
+                    // admitted by a test before T72 types it: nothing to check yet
+                    (DeclKind::Generation(_), _) => {}
                     (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
                     (_, _) => {}
                 }

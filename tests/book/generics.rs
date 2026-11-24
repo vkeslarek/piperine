@@ -26,6 +26,7 @@ use support::faulty::Faulty;
 use support::model::{Model, Ran};
 use support::printed::Printed;
 use support::records::Fields;
+use support::refusal::Refusal;
 use support::value_file::ValueFile;
 
 /// A listing of the chapter whose forms the compiler does not run yet, reached from a top.
@@ -121,25 +122,28 @@ fn the_generic_listings_run_where_a_top_reaches_them() {
 
 #[test]
 fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
-    // generics~00f0fd4f "A model that uses one is stopped before the run with the code P0001 and a
+    // generics~e60a0a07 "A model that uses one is stopped before the run with the code P0001 and a
     // message that names the form, so nothing is ever computed by a rule other than the ones above": the form
     // of the chapter's status box, each on the smallest model (when one of them runs, this test fails and the
     // box loses it)
     // the const parameter `N` read as a value, the smallest model of the forms the box once listed, now runs
     let width = ValueFile::written("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());");
     ValueFile::int(&width, "y", 4);
-    // a generic module, the form chapter 7 places
-    let module = Faulty::elaborating("generics~00f0fd4f", "module Hold<T: Repr>(in d: Bit<T>, out q: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; signal q: Bit<u8>; let h = Hold::<u8>(d, q); }\n", "Top");
-    assert!(module.given.iter().any(|reported| reported.code == "P0001" && reported.message == "generic module is not supported yet"), "{:?}", module.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    // generics~c212674a: a generic module, which the box no longer lists since T71: the smallest one placed runs
+    let model = piperine::Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..piperine::Overrides::default() };
+    Model::written("hold.msl", "module Hold<T: Repr + Default>(in d: Bit<T>, out q: Bit<T>) {}\nmodule Top() { signal d: Bit<Option<u8>> = None; signal q: Bit<Option<u8>>; let h = Hold::<Option<u8>>(d, q); }\n").run(model).unwrap_or_else(|failure| panic!("a generic module is refused: {:?}", Refusal::of(Err(failure), "g")));
+    // generation in a module body is the form still stopped before the run, naming it
+    let generation = Faulty::elaborating("generics~e60a0a07", "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, gnd); } }\n", "Top");
+    assert!(generation.given.iter().any(|reported| reported.code == "P0001" && reported.message == "generation `for`/`if` in a module body is not supported yet"), "{:?}", generation.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }
 
 #[test]
 fn an_impl_is_compared_with_its_trait() {
     // generics~76d9eeda (the status box): "An impl is compared with the trait it provides: a missing or an extra item, a signature that
     // differs and a supertrait the type does not implement are E0187, found where the impl is written" (generics T27)
-    let extra = ValueFile::refused("generics~00f0fd4f", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { const VDD: f64 = 1.0; const EXTRA: f64 = 2.0; }", "emit!(\"r\", v = Core::VDD);");
+    let extra = ValueFile::refused("generics~e60a0a07", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { const VDD: f64 = 1.0; const EXTRA: f64 = 2.0; }", "emit!(\"r\", v = Core::VDD);");
     assert!(extra.first("E0187").message.contains("`impl Supply for Core` defines `EXTRA`, which the trait does not have"), "{:?}", extra.first("E0187").message);
-    let missing = ValueFile::refused("generics~00f0fd4f", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { }", "emit!(\"r\", v = 1.0);");
+    let missing = ValueFile::refused("generics~e60a0a07", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { }", "emit!(\"r\", v = 1.0);");
     assert!(missing.first("E0187").message.contains("`impl Supply for Core` leaves out `VDD`"), "{:?}", missing.first("E0187").message);
 }
 

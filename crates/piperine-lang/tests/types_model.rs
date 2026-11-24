@@ -117,20 +117,20 @@ fn an_unreached_generic_module_with_an_error_fails_the_model_check() {
     // GN-13 AC 1, S3: a generic module nothing places is typed once at its definition, so an error in its body is
     // reported where it is written, with the code it has when reached, never as `P0001`
     let broken = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nanalog<T> for Hold<T> { let flag: bool = 1.0; }\nmodule Top() { }\n";
-    let admitting = GenericSources::admitting_found(broken, &[UnfinishedForm::GenericModules]);
-    assert_eq!(GenericSources::codes_of(&admitting), ["E0180"], "{admitting:?}");
+    let found = GenericSources::standard_found(broken);
+    assert_eq!(GenericSources::codes_of(&found), ["E0180"], "{found:?}");
     let clean = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nmodule Top() { }\n";
-    assert!(GenericSources::admitting_found(clean, &[UnfinishedForm::GenericModules]).is_empty(), "a clean generic module passes the model check");
+    assert!(GenericSources::standard_found(clean).is_empty(), "a clean generic module passes the model check");
 }
 
 #[test]
 fn unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed() {
-    // the interim gate (design-c.md): production refuses each form it lists as `main` does, an unreached faulty generic
-    // module passes the model check, and the placement of one is `P0001` `generic module`
-    assert_eq!(UnfinishedForms::IN_FORCE, [UnfinishedForm::GenericModules, UnfinishedForm::Generation, UnfinishedForm::DigitalGeneration]);
-    let broken = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nanalog<T> for Hold<T> { let flag: bool = 1.0; }\nmodule Top() { }\n";
-    assert!(GenericSources::standard_codes(broken).is_empty(), "a generic module is not seeded by production");
+    // the interim gate (design-c.md): generic modules left it (T71); production still refuses generation in a body and in a
+    // `digital` block as `main` does
+    assert_eq!(UnfinishedForms::IN_FORCE, [UnfinishedForm::Generation, UnfinishedForm::DigitalGeneration]);
     let placed = "module Hold<T: Repr + Default>(in d: Bit<T>) { }\nmodule Top() { signal d: Bit<bool> = false; let h = Hold::<bool>(d); }\n";
-    let found = GenericSources::standard_found(placed);
-    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("generic module")), "{:?}", GenericSources::codes_of(&found));
+    assert!(GenericSources::standard_found(placed).is_empty(), "a placement of a generic module is typed by production");
+    let generated = "module Top() { signal a: Electrical; for k in 0..2 { let r = Short(a, a); } }\n";
+    let found = GenericSources::standard_found(generated);
+    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("generation")), "{:?}", GenericSources::codes_of(&found));
 }

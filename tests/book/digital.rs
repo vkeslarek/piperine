@@ -428,12 +428,36 @@ fn the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resol
 }
 
 #[test]
-fn the_flip_flop_is_refused_for_its_generic_module() {
-    // digital#21 (refused): `Dff<T: Repr>`: a generic module is `P0001` (L30)
+fn the_flip_flop_runs_for_a_type_with_a_default() {
+    // digital#21 (run): `Dff<T: Repr + Default>` at `Option<u8>`, a type with a `Default` of its own (§3.3.4); `q` starts at
+    // `None`, the clock of chapter 5 rises at 0.5 us and commits `d` = `Some(42)`, and a reset that is held high never
+    // fires. The records are written where `q` changes: at the start (`changed()` fires at (0, 0)), where `unwrap_or(7)` of
+    // `None` is 7, and at the first edge, where it is 42
     let chapter = Chapter::read();
-    let after = "module Top() { signal clk: Bit; signal r: Bit; signal d: Bit<u8>; signal q: Bit<u8>; let f = Dff::<u8>(clk, r, d, q) { reset: 0 }; }\n";
-    let model = chapter.wrapped("dff.msl", "", "digital#21", after);
-    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#21", "P0001", "generic module is not supported yet");
+    let after = "module Top() { signal clk: Bit; signal r: Bit = true; signal d: Bit<Option<u8>> = Some(42); signal q: Bit<Option<u8>>; let o = Osc(clk) { f: 1M }; let f = Dff(clk, r, d, q) { reset: None }; }\n\
+                 digital for Top { on q.changed() { emit!(\"q\", v = q.unwrap_or(7u8)); } }\n";
+    let model = chapter.wrapped("dff.msl", &Oscillator::text(&chapter), "digital#21", after);
+    let ran = model.run(Commands::transient_of("Top", 2e-6)).unwrap_or_else(|failure| panic!("{:?}", Refusal::of(Err(failure), "digital#21")));
+    let seen: Vec<Field> = ran.stream("q").iter().map(|record| Fields::of(record, "v").clone()).collect();
+    let (first, then) = (None::<u8>, Some(42u8));
+    assert_eq!(seen, [Field::Int(i128::from(first.unwrap_or(7))), Field::Int(i128::from(then.unwrap_or(7)))], "None at the start, then `d` committed at the first edge");
+    Printed::holds("5.000000e-7", ran.stream("q")[1].time, "the first rising edge of the 1 MHz clock");
+}
+
+#[test]
+fn e0187_the_flip_flop_at_u8_has_no_default() {
+    // digital#21 (§3.3.4, MD-78): `u8` has no `Default`, so `Dff::<u8>` is `E0187` naming `u8` and `Default`: the
+    // type is refused, the model is not wrong
+    let chapter = Chapter::read();
+    let after = "module Top() { signal clk: Bit; signal r: Bit = true; signal d: Bit<u8> = 0; signal q: Bit<u8>; let o = Osc(clk) { f: 1M }; let f = Dff::<u8>(clk, r, d, q) { reset: 0 }; }\n";
+    let model = chapter.wrapped("dff.msl", &Oscillator::text(&chapter), "digital#21", after);
+    let given = Refusal::of(model.run(Commands::transient_of("Top", 2e-6)), "digital#21");
+    // `q` is handed to the `out` port of a placement that did not type, so it is judged as a signal nothing drives
+    let wanted = [
+        "`q` has no initial value and its type `u8` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)",
+        "`u8` does not satisfy the bound `Default` of `T` in `Dff` (§3.8.7)",
+    ];
+    assert_eq!(given, wanted.map(|message| ("E0187".to_string(), message.to_string())), "the bound and what follows from it");
 }
 
 /// The multiply-accumulate pipeline of the chapter, in a bench that holds its inputs.

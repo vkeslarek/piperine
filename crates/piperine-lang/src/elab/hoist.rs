@@ -208,7 +208,13 @@ impl Elaboration<'_, '_> {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module => fields.clone(),
             _ => params.clone().unwrap_or_default(),
         };
-        let bound = self.hoisted_params(module, &fields, file, node.span)?;
+        // a generic module places an instance: its arguments folded under the caller's, its `where` discharged
+        let instance = if self.is_generic_module(module) { Some(self.module_instance(call, module)?) } else { None };
+        let substitution = instance.as_ref().map_or_else(|| self.consts.substitution().clone(), |instance| self.instance_substitution(instance.item, &instance.arguments));
+        let outer = self.consts.set_substitution(substitution.clone());
+        let bound = self.hoisted_params(module, &fields, file, node.span);
+        self.consts.set_substitution(outer);
+        let bound = bound?;
         let name = self.hoisted_name(parent, call, module);
         let prefix = format!("{}{name}.", self.frames[parent].prefix);
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
@@ -218,6 +224,7 @@ impl Elaboration<'_, '_> {
         frame.prefix = prefix;
         frame.params = bound;
         frame.unrolled = scope.unrolled.clone();
+        frame.substitution = substitution.clone();
         let mut node_ports = Vec::new();
         let bound = PortArguments::bind(self.design, module, args);
         for (k, port) in ports.iter().enumerate() {
@@ -235,8 +242,17 @@ impl Elaboration<'_, '_> {
         self.frames.push(frame);
         let index = self.frames.len() - 1;
         self.frames[parent].placements.insert(call, index);
+        let outer = self.consts.set_substitution(substitution);
+        let hoisted = self.hoist_frame(scope, call, index, (module, &name), &ports, &bound);
+        self.consts.set_substitution(outer);
+        hoisted
+    }
+
+    /// The contents of the frame `index` of the placement `call`, lowered under the substitution of its instance.
+    fn hoist_frame(&mut self, scope: &Scope, call: ExprId, index: usize, (module, name): (DeclId, &str), ports: &[DeclId], bound: &PortArguments) -> Option<usize> {
+        let caller = self.frames[self.frames[index].parent.unwrap_or(0)].substitution.clone();
         let gained = self.hoist_nodes(index, module);
-        self.record_hoisted(index, module, &name, call, gained);
+        self.record_hoisted(index, module, name, call, gained);
         self.lower_carriers(index, module);
         // A discrete `in` value input: the hoisted carrier, driven by the caller's expression.
         for (position, port) in ports.iter().enumerate() {
@@ -244,7 +260,11 @@ impl Elaboration<'_, '_> {
             let Some(carrier) = self.frames[index].carriers.get(port).copied() else { continue };
             let origin = self.expr_origin(arg.value);
             let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
-            if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None, wanted.as_ref()) {
+            // the caller's expression reads the caller's generic names, not the callee's
+            let callee = self.consts.set_substitution(caller.clone());
+            let value = self.lower_drive_value(scope, arg.value, None, wanted.as_ref());
+            self.consts.set_substitution(callee);
+            if let Some((value, _)) = value {
                 self.structure.drives.push(Drive { carrier, value, after: None, origin, element: None, path: vec![] });
             }
         }

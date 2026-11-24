@@ -8,7 +8,7 @@ use super::check::{Checker, Context};
 use super::derives::DerivedTrait;
 use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
-use super::{Callee, Ty};
+use super::{Callee, Substitution, Ty};
 
 impl Checker<'_> {
     /// A diagnostic of a rule of the specification that carries its own code.
@@ -209,12 +209,11 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if !self.forms.admits(super::UnfinishedForm::GenericModules) && self.design.decl_data(module).generics_span.is_some() {
-            self.unsupported(file, node.span, "generic module");
-            return None;
-        }
         // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
         self.placing.push(Some(module));
+        // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
+        self.callees.insert(expr, Callee::Module(module));
+        self.exprs[callee.index()] = Some(Ty::Module(module));
         let substitution = if self.design.decl_data(module).generics_span.is_some() {
             let Some(given) = self.generic_placement(expr, *callee, module, args) else {
                 self.placing.pop();
@@ -225,13 +224,11 @@ impl Checker<'_> {
             None
         };
         self.reach(module);
-        self.callees.insert(expr, Callee::Module(module));
-        self.exprs[callee.index()] = Some(Ty::Module(module));
         let outer = std::mem::replace(&mut self.placement_substitution, substitution.clone());
         self.connections(expr, module, args, file);
         self.placement_substitution = outer;
         self.placing.pop();
-        self.param_block(&fields);
+        self.param_block(&fields, substitution.as_ref());
         let placed = self.placement_type(module)?;
         Some(substitution.map_or(placed.clone(), |substitution| substitution.apply(&placed)))
     }
@@ -509,13 +506,13 @@ impl Checker<'_> {
     /// are checked like a placement's block, and its type is the module it names, so a template
     /// of another module is a mismatch (`E0180`) naming both.
     pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
-        self.param_block(fields);
+        self.param_block(fields, None);
         self.exprs[expr.index()] = Some(Ty::Module(module));
         Some(Ty::Module(module))
     }
 
     /// `{ name: value }` of a placement: each value against the declared type of its param.
-    pub(super) fn param_block(&mut self, fields: &[FieldInit]) {
+    pub(super) fn param_block(&mut self, fields: &[FieldInit], substitution: Option<&Substitution>) {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
@@ -525,7 +522,9 @@ impl Checker<'_> {
                 },
                 _ => None,
             };
-            match param.and_then(|t| self.lower_type(t)) {
+            // a param of a generic module's type `T` takes the type the placement gave `T`
+            let declared = param.and_then(|t| self.lower_type(t)).map(|ty| substitution.map_or(ty.clone(), |given| given.apply(&ty)));
+            match declared {
                 Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
                 // a value of `T` bound to an `Option<T>` param is `Some` of it (§3.2.3, PI-03 AC 2)
                 Some(Ty::Option(inner)) => {
