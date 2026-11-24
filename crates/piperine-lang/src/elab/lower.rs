@@ -316,6 +316,17 @@ impl Elaboration<'_, '_> {
                 }
             };
         }
+        // a method of a module type (`fet.gain()`, `N: Mosfet`) runs at elaboration on the template the param holds (§3.1.4, §8.4.5)
+        if self.is_template_method(expr) {
+            let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+            return match self.consts.value(expr, &bindings) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
+                Err(fault) => {
+                    self.const_fault(&fault, "a method of a template");
+                    None
+                }
+            };
+        }
         match &node.kind {
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
@@ -766,6 +777,11 @@ impl Elaboration<'_, '_> {
             BinOp::Shl => BinaryOp::Shl,
             BinOp::Shr => BinaryOp::Shr,
         }
+    }
+
+    /// Whether `expr` calls a method on a value of a module type: a template, which exists at elaboration only.
+    fn is_template_method(&self, expr: ExprId) -> bool {
+        matches!(&self.design.expr_node(expr).kind, ExprKind::MethodCall { recv, .. } if matches!(self.typed(*recv), Some(Ty::Module(_))))
     }
 
     /// Whether `expr` reads only literals and constants through operators, casts and the

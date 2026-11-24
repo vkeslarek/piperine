@@ -217,3 +217,34 @@ fn an_out_of_range_generated_cell_names_its_element_and_the_length_of_its_own_lo
         assert!(diagnostics[0].diagnostic.message.contains(&expected), "{read}: {diagnostics:?}");
     }
 }
+
+/// A swappable pair: `Pair<N: Mosfet + Fn(..)>` reads `fet.gain()` where `reads` puts it.
+fn mosfet_pair(params: &str, analog: &str) -> String {
+    format!(
+        "trait Mosfet {{ fn gain(self) -> f64; }}\n\
+         module Square(g: Electrical, d: Electrical) {{ k: f64 = 1.0; }}\n\
+         analog for Square {{ potential(d) +> k * v(g) * v(g); }}\n\
+         impl Mosfet for Square {{ fn gain(self) -> f64 {{ self.k * 2.0 }} }}\n\
+         module Linear(g: Electrical, d: Electrical) {{ k: f64 = 1.0; }}\n\
+         analog for Linear {{ potential(d) +> k * v(g); }}\n\
+         impl Mosfet for Linear {{ fn gain(self) -> f64 {{ self.k * 0.5 }} }}\n\
+         module Pair<N: Mosfet + Fn(Electrical, Electrical)>(g: Electrical, d: Electrical) {{ fet: N; {params} signal s: Electrical; let left = fet(g, d); }}\n\
+         analog<N> for Pair<N> {{ {analog} }}\n\
+         module Top() {{ signal g: Electrical; signal d: Electrical; let a = Pair::<_>(g, d) {{ fet: Square {{ k: 3.0 }} }}; let b = Pair::<_>(g, d) {{ fet: Linear {{ k: 3.0 }} }}; }}"
+    )
+}
+
+#[test]
+fn the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl() {
+    // §8.4.5, §3.1.4: `fet.gain()` through `N: Mosfet + Fn(..)` runs the `impl Mosfet` of the module the template names, in a body
+    // `let` and straight in the `analog` block; each placement keeps its own model's answer (a param default that reads the
+    // param `fet` is the general §8.1.16 gap, `GAPS.md` §9)
+    for analog in ["let gain = fet.gain(); potential(s) +> gain;", "potential(s) +> fet.gain();"] {
+        let printed = Elab::ir(&mosfet_pair("", analog), "Top").print_structural();
+        let body_of = |model: &str| printed.split("\nbody ").find(|body| body.starts_with(&format!("\"Pair::<module `{model}`>"))).unwrap_or_else(|| panic!("no body for {model}: {printed}")).to_string();
+        let (square, linear) = (body_of("Square"), body_of("Linear"));
+        assert!(square.contains("direct 6.0") || square.contains("let gain = 6.0"), "{analog}: {square}");
+        assert!(linear.contains("direct 1.5") || linear.contains("let gain = 1.5"), "{analog}: {linear}");
+        assert!(!square.contains("1.5") && !linear.contains("6.0"), "{analog}: a body holds only its own model's gain");
+    }
+}
