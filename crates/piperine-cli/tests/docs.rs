@@ -944,3 +944,14 @@ fn gaps_no_longer_lists_l51_or_l53() {
     assert!(!coverage.contains("functions that return `Event`") && !coverage.contains("`Event` functions"), "section 9 still lists functions that return `Event`, in either spelling");
     assert!(gaps.contains("L51, L53"), "the closed list of section 4 names L53");
 }
+
+#[test]
+fn gaps_l77_is_owned_by_generics_phase_e() {
+    // generics phase C round 5 finding 18: L77, generation in a hoisted module's body, is the feature's own leftover (generation
+    // and hoisting are both its forms), owned by its phase E task T118, not by a spec lane
+    let gaps = read("GAPS.md");
+    let l77 = gaps.lines().find(|l| l.starts_with("| L77 |")).expect("the row L77");
+    assert!(l77.contains("Owner `generics` phase E, T118") && !l77.contains("Owner `spec-closure`"), "L77 is owned by generics phase E: {l77}");
+    let tasks = read(".specs/features/generics/tasks-e.md");
+    assert!(tasks.contains("### T118: Generation in the body of a hoisted module"), "the task T118 is planned");
+}
