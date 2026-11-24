@@ -278,6 +278,21 @@ fn a_cycle_of_node_connections_runs_as_hardware() {
 }
 
 #[test]
+fn a_cycle_of_node_connections_two_levels_deep_runs_as_hardware() {
+    // §8.2.14, §8.3.5 (finding 27): banks that reach their cell's storage node through a template (`p.c0.sn`) and are wired to each
+    // other's, or to their own, settle where Kirchhoff's law over the cells' 1 S branches puts them, fed 1 A at `p.c0.sn`
+    let pair = RustOracle::unit_branches(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
+    let own = RustOracle::unit_branches(1, &[(0, Some(0)), (0, None)], 0, 1.0);
+    for (top, names, wanted) in [("RigBankPair", &["p.c0.sn", "q.c0.sn"][..], pair), ("RigBankOwn", &["p.c0.sn"][..], own)] {
+        let seen = RUN.operating_point("connections.msl", top, names);
+        assert_eq!(seen.len(), wanted.len(), "{top}");
+        for (value, wanted) in seen.iter().zip(&wanted) {
+            assert!((value - wanted).abs() < TOLERANCE, "{top}: {value} is not {wanted}: {seen:?}");
+        }
+    }
+}
+
+#[test]
 fn a_cycle_through_values_is_refused() {
     // §8.2.16, §8.3.5: two cells that each take the other's `k` at a value input read themselves, `E0332`, from source
     let refused = RUN.refusal("value_cycle.msl", "RigValueCycle");

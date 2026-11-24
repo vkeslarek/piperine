@@ -38,6 +38,13 @@ impl Checker<'_> {
         if !expected.is_value() {
             return false;
         }
+        if let Some(binding) = self.open_template_reads.remove(&read) {
+            let name = self.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let (file, span) = (self.file_of_expr(read), self.design.expr_node(read).span);
+            self.coded(file, "E0332", span, format!("the `let` `{name}` reads its own name through a value of its child (§8.2.16)"), "a `let` that reads itself");
+            self.poisoned.insert(binding);
+            return true;
+        }
         self.template_items.insert(read, expected.clone());
         self.exprs[read.index()] = Some(expected.clone());
         if let Some(local) = self.template_local_of(expr) {

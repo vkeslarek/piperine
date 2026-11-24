@@ -122,6 +122,9 @@ pub(super) struct Checker<'d> {
     /// The reads of an item of a child only a folded template names (`reach.rs`), typed as a node until a context wants a value
     /// of them (`template_items.rs`).
     pub(super) template_reads: BTreeSet<ExprId>,
+    /// The reads through a template made through an instance whose `let` was being typed, to that `let`: a node connection, and
+    /// a read of the `let` itself when a context wants a value of it (§8.2.16).
+    pub(super) open_template_reads: BTreeMap<ExprId, DeclId>,
     /// The `let`s with no type bound to a read through a template, by binding: the first use that wants a value types them.
     pub(super) template_locals: BTreeMap<DeclId, ExprId>,
     /// The type each read through a template was given by its context, which the elaborator checks the concrete item against.
@@ -222,6 +225,7 @@ impl<'d> Checker<'d> {
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
             template_reads: BTreeSet::new(),
+            open_template_reads: BTreeMap::new(),
             template_locals: BTreeMap::new(),
             template_items: BTreeMap::new(),
             access_roles: BTreeMap::new(),

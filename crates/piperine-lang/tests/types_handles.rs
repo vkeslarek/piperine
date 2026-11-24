@@ -268,6 +268,31 @@ fn a_node_chosen_by_the_run_is_e0133() {
 }
 
 #[test]
+fn a_cycle_of_node_connections_through_any_depth_of_reach_is_hardware() {
+    // §8.2.14, §8.3.5 (finding 27): a node reached two or more levels deep (`p.c0.sn` through a template, `p.cells[1].sn` of a
+    // generation, `p.mid.c0.sn` three levels deep) is a connection too: the cross pair and the self-connection type; a value
+    // read the same way (`p.c0.cs` at a value input) reads the open `let` itself, `E0332`
+    let modules = "module Dram(a: Electrical) { pub cs: f64 = 1.0; pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd); }\n\
+                   module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }\n\
+                   module Row<C: Fn(Electrical)>(a: Electrical) { cell: C; for j in 0..2 { pub let cells = cell(a); } }\n\
+                   module Plain(a: Electrical) { pub let c0 = Dram(a); }\nmodule Deep(a: Electrical) { pub let mid = Plain(a); }\n\
+                   module VBank<C: Fn(Electrical)>(a: Electrical, g: f64) { cell: C; pub let c0 = cell(a); }\nanalog<C> for VBank<C> { i(a, gnd) +> v(a, gnd) * g; }\n";
+    for top in [
+        "module Top() { let p = Bank::<_>(q.c0.sn) { cell: Dram { } }; let q = Bank::<_>(p.c0.sn) { cell: Dram { } }; }",
+        "module Top() { let p = Bank::<_>(p.c0.sn) { cell: Dram { } }; }",
+        "module Top() { let p = Row::<_>(q.cells[1].sn) { cell: Dram { } }; let q = Row::<_>(p.cells[0].sn) { cell: Dram { } }; }",
+        "module Top() { let p = Row::<_>(p.cells[1].sn) { cell: Dram { } }; }",
+        "module Top() { let p = Deep(q.mid.c0.sn); let q = Deep(p.mid.c0.sn); }",
+        "module Top() { let p = Deep(p.mid.c0.sn); }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+    let value = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; let p = VBank::<_>(x, p.c0.cs) {{ cell: Dram {{ }} }}; }}"));
+    assert_eq!(value.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{value:?}");
+    assert!(value[0].1.contains("the `let` `p` reads its own name"), "{value:?}");
+}
+
+#[test]
 fn a_let_assigned_only_values_of_elaboration_chooses_a_node() {
     // §1.4.7 (coordinator ruling, finding 26): a `let` is a constant when its initializer, every value assigned to it and every
     // condition around those fold at elaboration, so a choice by it is typed as the node; an assigned value or a condition

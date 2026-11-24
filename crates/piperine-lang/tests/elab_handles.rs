@@ -240,6 +240,31 @@ fn a_cycle_of_node_connections_binds_each_port_to_the_node_it_names() {
     assert_eq!(NodePaths::of(&fed_back, "Top.b.c0"), ["Top.b.c0.sn", "Top.b.c0.sn"]);
 }
 
+#[test]
+fn a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port() {
+    // §8.2.14, §8.3.5 (finding 27): through a template two levels deep and a generation, the cross pair binds
+    // each bank's port to the other's cell node and the self-connection binds the bank's port to its own cell's node
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }\n\
+                   module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }\n\
+                   module Row<C: Fn(Electrical)>(a: Electrical) { cell: C; for j in 0..2 { pub let cells = cell(a); } }\n\
+                   module Plain(a: Electrical) { pub let c0 = Dram(a); }\nmodule Deep(a: Electrical) { pub let mid = Plain(a); }\n";
+    let pair = Elab::ir(&format!("{modules}module Top() {{ let p = Bank::<_>(q.c0.sn) {{ cell: Dram {{ }} }}; let q = Bank::<_>(p.c0.sn) {{ cell: Dram {{ }} }}; }}"), "Top");
+    assert_eq!(NodePaths::of(&pair, "Top.p.c0"), ["Top.q.c0.sn", "Top.p.c0.sn"]);
+    assert_eq!(NodePaths::of(&pair, "Top.q.c0"), ["Top.p.c0.sn", "Top.q.c0.sn"]);
+    let own = Elab::ir(&format!("{modules}module Top() {{ let p = Bank::<_>(p.c0.sn) {{ cell: Dram {{ }} }}; }}"), "Top");
+    assert_eq!(NodePaths::of(&own, "Top.p.c0"), ["Top.p.c0.sn", "Top.p.c0.sn"]);
+    let row = Elab::ir(&format!("{modules}module Top() {{ let p = Row::<_>(q.cells[1].sn) {{ cell: Dram {{ }} }}; let q = Row::<_>(p.cells[0].sn) {{ cell: Dram {{ }} }}; }}"), "Top");
+    assert_eq!(NodePaths::of(&row, "Top.p.cells[0]"), ["Top.q.cells[1].sn", "Top.p.cells[0].sn"]);
+    assert_eq!(NodePaths::of(&row, "Top.q.cells[1]"), ["Top.p.cells[0].sn", "Top.q.cells[1].sn"]);
+    // three levels deep (`p.mid.c0.sn`) the checker types the cycle as it types the forward read, and elaboration refuses both
+    // alike by name, the gap L82: never `E0332`
+    for top in ["module Top() { signal x: Electrical; let p = Deep(x); let q = Dram(p.mid.c0.sn); }", "module Top() { let p = Deep(q.mid.c0.sn); let q = Deep(p.mid.c0.sn); }"] {
+        let diagnostics = Elab::run(&format!("{modules}{top}"), "Top").expect_err("a reach three levels deep is L82");
+        let messages: Vec<String> = diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect();
+        assert!(diagnostics.iter().all(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a field of something that is not a name bound to a placement")), "{top}: {messages:?}");
+    }
+}
+
 /// The path of the node each port and signal of an instance is bound to, in the instance's node order.
 struct NodePaths;
 

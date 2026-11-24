@@ -46,3 +46,19 @@ module RigOwn() {
     let p = D2(p.sn);
     let feed = Feed(p.sn);
 }
+
+/// A bank that places its cell through a template (§8.4.8): its storage node is reached two levels deep, `p.c0.sn`.
+module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }
+
+/// `RigPair` two levels deep (verification finding 27): two banks, each wired to the storage node of the other's cell.
+module RigBankPair() {
+    let p = Bank::<_>(q.c0.sn) { cell: D2 { } };
+    let q = Bank::<_>(p.c0.sn) { cell: D2 { } };
+    let feed = Feed(p.c0.sn);
+}
+
+/// `RigOwn` two levels deep: a bank wired to its own cell's storage node.
+module RigBankOwn() {
+    let p = Bank::<_>(p.c0.sn) { cell: D2 { } };
+    let feed = Feed(p.c0.sn);
+}

@@ -33,7 +33,14 @@ impl Checker<'_> {
             // template's, known at elaboration, which resolves the item (`E0343` for a missing or private one, §8.4.8); a node
             // until a context wants a value of it (`template_items.rs`)
             _ if self.placed_through_callable(*receiver) => {
-                self.infer_receiver(*receiver)?;
+                // through an instance whose `let` is being typed (`let p = Bank::<_>(p.c0.sn) { .. };`) the read is a node, a
+                // connection; a context that wants a value of it reads the open `let` itself (`template_items.rs`, `E0332`)
+                if let Some(binding) = self.open_head(*receiver) {
+                    self.open_instance(*receiver)?;
+                    self.open_template_reads.insert(expr, binding);
+                } else {
+                    self.infer_receiver(*receiver)?;
+                }
                 self.template_reads.insert(expr);
                 Some(Ty::AnyNode)
             }
@@ -84,13 +91,25 @@ impl Checker<'_> {
     }
 
     /// Whether `receiver` names an instance whose `let` is being typed, directly (`p`) or as the head of a chain of children
-    /// (`b.c0`): its placement records the module before it types its arguments (`Checker::placement`).
+    /// (`b.c0`, `p.cells[1]`): its placement records the module before it types its arguments (`Checker::placement`).
     fn names_an_open_instance(&self, receiver: ExprId) -> bool {
+        self.open_head(receiver).is_some()
+    }
+
+    /// The `let` being typed that `receiver` names as the head of a chain of children, through any depth of reach and the
+    /// iterations of a generation (`p`, `b.c0`, `p.cells[1]`, `p.c0.c1`), when its placement records its module already.
+    fn open_head(&self, receiver: ExprId) -> Option<DeclId> {
         match &self.design.expr_node(receiver).kind {
-            ExprKind::Paren(inner) => self.names_an_open_instance(*inner),
-            ExprKind::Path(_) => self.open_placement(receiver).is_some(),
-            ExprKind::Field { expr: inner, res: Resolution::Decl(item), .. } => self.is_child_item(*item) && !self.is_node_item(*item) && self.names_an_open_instance(*inner),
-            _ => false,
+            ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => self.open_head(*inner),
+            ExprKind::Path(path) => {
+                self.open_placement(receiver)?;
+                match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                    Some(Resolution::Decl(binding)) => Some(binding),
+                    _ => None,
+                }
+            }
+            ExprKind::Field { expr: inner, res: Resolution::Decl(item), .. } if self.is_child_item(*item) && !self.is_node_item(*item) => self.open_head(*inner),
+            _ => None,
         }
     }
 
@@ -100,6 +119,15 @@ impl Checker<'_> {
         let node = self.design.expr_node(receiver).clone();
         let ty = match &node.kind {
             ExprKind::Paren(inner) => self.open_instance(*inner)?,
+            // an iteration of a placement in generation: the element of the array of its instances (§8.2.23)
+            ExprKind::Index { expr: inner, index } => {
+                let whole = self.open_instance(*inner)?;
+                self.infer(*index);
+                match whole {
+                    Ty::Array(element, _) => *element,
+                    other => other,
+                }
+            }
             ExprKind::Path(_) => Ty::module(self.open_placement(receiver)?),
             ExprKind::Field { expr: inner, res: Resolution::Decl(item), .. } => {
                 self.open_instance(*inner)?;
