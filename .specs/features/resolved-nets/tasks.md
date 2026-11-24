@@ -912,9 +912,9 @@ T34 → T35 → T39 → T36
 
 **Done when**:
 
-- [ ] `bidir_drives_the_node_while_the_wire_is_driven`, `bidir_drives_the_wire_from_the_node_when_released`, `bidir_acts_as_driven_on_a_contended_net`, `a_change_of_driving_is_a_time_point_and_a_jump` and `two_bidirs_alone_stop_the_run_with_e0511` pass under `**Run sourcenets**`
-- [ ] `keeper_and_bidir_blocks_repeat_their_generic_names` passes under `**Run spectext**` for both modules
-- [ ] Gate check passes: Full
+- [x] `bidir_drives_the_node_while_the_wire_is_driven`, `bidir_drives_the_wire_from_the_node_when_released`, `bidir_acts_as_driven_on_a_contended_net`, `a_change_of_driving_is_a_time_point_and_a_jump` and `two_bidirs_alone_stop_the_run_with_e0511` pass under `**Run sourcenets**`
+- [x] `keeper_and_bidir_blocks_repeat_their_generic_names` passes under `**Run spectext**` for both modules
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

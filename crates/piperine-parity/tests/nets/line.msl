@@ -370,3 +370,86 @@ module RingBench() {
     let on_b = Tagged(b) { tag: 2.0 };
     let on_c = Tagged(c) { tag: 3.0 };
 }
+
+/// An ideal source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.8; }
+analog for Vsrc { v(p) +> dc; }
+
+/// A resistor `r` and a capacitor `c` from `p` to ground: what a pad drives.
+module RcLoad(p: Electrical) { r: f64 = 100k; c: f64 = 1p; }
+analog for RcLoad { i(p) +> v(p) / r + ddt(c * v(p)); }
+
+/// A tribuf driving the net high, a `Bidir` pad on it and an RC load on the pad's node: row 1 of the table of §22.4.3, the pad
+/// drives the node as `D2A` does from what the net holds.
+module BidirDrivenBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let t = Tribuf(n, true, true);
+    let pad = Bidir(n, a, vdd);
+    let load = RcLoad(a);
+    let look = Look(n);
+}
+
+/// Nobody drives the net and an ideal source holds the node high: row 2, the pad drives the net with the level it reads.
+module BidirReleasedHighBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let outside = Vsrc(a) { dc: 1.8 };
+    let pad = Bidir(n, a, vdd);
+    let look = Look(n);
+}
+
+/// The same with the node held low.
+module BidirReleasedLowBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let outside = Vsrc(a) { dc: 0.0 };
+    let pad = Bidir(n, a, vdd);
+    let look = Look(n);
+}
+
+/// A strong high and a strong low on the net: X at `Strong`, which the pad treats as driven, toward mid-rail.
+module BidirContendedBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let high = Tribuf(n, true, true);
+    let low = Tribuf(n, false, true);
+    let pad = Bidir(n, a, vdd);
+    let load = RcLoad(a);
+    let look = Look(n);
+}
+
+/// A tribuf that drives the net high from 5 ns on: the pad goes from released to driving, and its node from 0 V to the rail.
+module BidirToggleBench() {
+    signal clk: Bit;
+    signal n: Line;
+    signal a: Electrical;
+    signal vdd: Electrical;
+    let clock = Clock(clk);
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let t = Tribuf(n, true, clk);
+    let pad = Bidir(n, a, vdd);
+    let load = RcLoad(a);
+    let look = Look(n);
+}
+
+/// Two pads alone on one net: each drives because the other does not, a loop with no fixed point.
+module TwoBidirsBench() {
+    signal n: Line;
+    signal a: Electrical;
+    signal b: Electrical;
+    signal vdd: Electrical;
+    let supply = Vsrc(vdd) { dc: 1.8 };
+    let p = Bidir(n, a, vdd);
+    let q = Bidir(n, b, vdd);
+    let load_a = RcLoad(a);
+    let load_b = RcLoad(b);
+}

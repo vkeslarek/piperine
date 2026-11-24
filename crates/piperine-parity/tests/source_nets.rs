@@ -7,8 +7,14 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_api::{Field, Streams};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use piperine_api::{Failure, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
+use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
+use piperine_solver::prelude::NodeIdentifier;
+use piperine_transpile::Settings;
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -71,6 +77,13 @@ impl Levels {
     }
 }
 
+/// A sink that keeps nothing: a run is judged by what it returns.
+struct Ignore;
+
+impl RecordSink for Ignore {
+    fn record(&mut self, _: &Record) {}
+}
+
 /// One MSL file of `tests/nets/`.
 struct Model {
     /// The project read from that file.
@@ -82,6 +95,28 @@ impl Model {
     fn of(file: &str) -> Model {
         let root: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/nets").join(file);
         Model { project: Project::new(&root) }
+    }
+
+    /// The operating point of `top`, as the host runs it on the Rust backend.
+    fn operating_point(file: &str, top: &str) -> Result<piperine_api::Table, Failure> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/nets").join(file);
+        let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some(top.into()), backend: Some("rust".into()), analysis: Some("op".into()), ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let cache = tempfile::tempdir().expect("a temp dir");
+        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+        Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore)))
+    }
+
+    /// `(time, v(a))` of every accepted point of the transient of `top` to `stop`, and the net's history.
+    fn pad(&self, top: &str, stop: f64) -> (Vec<(f64, f64)>, Vec<Held>) {
+        let built = self.built(top);
+        let a = NodeIdentifier::Anonymous(built.ir.node_at(&format!("{top}.a")).expect("the node a").id().index());
+        let (seen, result) = built.run_with(stop, 0.1e-9);
+        let node = result.iter().map(|point| (point.time(), point.get_node(&a).expect("v(a)"))).collect();
+        let mut net = Model::held(&built, &seen);
+        net.dedup();
+        (node, net)
     }
 
     /// `top` elaborated and compiled once.
@@ -245,6 +280,70 @@ fn two_parallel_trans_carry_a_strong_level_and_stay_two_carriers() {
     for tag in [1.0, 2.0, 3.0] {
         let last = ring_tags.iter().zip(&ring_levels).rev().find(|(candidate, _)| **candidate == tag).map(|(_, level)| *level);
         assert_eq!(last, Some(Held::HIGH), "net {tag} of the ring settles on the level");
+    }
+}
+
+/// The rail of the pad benches and what the load takes of it (`rout` 100 ohms against 100 kohms).
+const RAIL: f64 = 1.8;
+
+/// The node of a pad whose load is `100 kohm` while it drives `level` of the rail through `rout` = 100 ohms.
+fn pad_node(level: f64) -> f64 {
+    level * RAIL * 100e3 / (100e3 + 100.0)
+}
+
+#[test]
+fn bidir_drives_the_node_while_the_wire_is_driven() {
+    // §22.4.3 row 1, rules 1 and 2: the net is driven high, so the pad drives the net `Driven::Z` and the node as `D2A`
+    // does: the rail through `rout` into the load, a divider. The net stays the tribuf's strong high
+    let (node, net) = Model::of("line.msl").pad("BidirDrivenBench", 10e-9);
+    let (time, volts) = *node.last().expect("a transient");
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir driven", "v(a)", Coordinate::Time(time)), pad_node(1.0), volts);
+    assert_eq!(net, vec![Held { level: Held::HIGH, strength: Held::STRONG }], "the pad adds nothing to the net");
+}
+
+#[test]
+fn bidir_drives_the_wire_from_the_node_when_released() {
+    // §22.4.3 row 2: nobody else drives the net, so the pad makes no contribution to the node (an ideal source holds it) and
+    // drives the net `Driven::strong(seen)`: the node thresholded, low at 0 V and high at the rail
+    let line = Model::of("line.msl");
+    let (_, high) = line.pad("BidirReleasedHighBench", 10e-9);
+    assert_eq!(high.last(), Some(&Held { level: Held::HIGH, strength: Held::STRONG }), "the node is at the rail: {high:?}");
+    let (_, low) = line.pad("BidirReleasedLowBench", 10e-9);
+    assert_eq!(low.last(), Some(&Held { level: Held::LOW, strength: Held::STRONG }), "the node is at 0 V: {low:?}");
+}
+
+#[test]
+fn bidir_acts_as_driven_on_a_contended_net() {
+    // §22.4.3 row 1: the net is X at `Strong` (a strong high against a strong low), which is not `HighZ`, so the pad is
+    // driven from `others().v`, and X reads as mid-rail
+    let (node, net) = Model::of("line.msl").pad("BidirContendedBench", 10e-9);
+    let (time, volts) = *node.last().expect("a transient");
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir contended", "v(a)", Coordinate::Time(time)), pad_node(0.5), volts);
+    assert_eq!(net.last(), Some(&Held { level: Held::X, strength: Held::STRONG }), "the contended net: {net:?}");
+}
+
+#[test]
+fn a_change_of_driving_is_a_time_point_and_a_jump() {
+    // §22.4.3 rule 2: the tribuf starts driving at 5 ns, so `driving` changes there: the solver has a time point at 5 ns, the
+    // node is at 0 V just before it (the pad released, the load to ground) and at the rail's divider a nanosecond after
+    let (node, _) = Model::of("line.msl").pad("BidirToggleBench", 8e-9);
+    assert!(node.iter().any(|(time, _)| (time - 5e-9).abs() < 1e-12), "a time point at 5 ns: {:?}", node.iter().map(|(time, _)| time).collect::<Vec<_>>());
+    let before = node.iter().rev().find(|(time, _)| *time < 5e-9).expect("a point before").1;
+    let after = node.iter().find(|(time, _)| *time >= 6e-9).expect("a point after").1;
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir toggle", "v(a) before 5 ns", Coordinate::Time(5e-9)), 0.0, before);
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("bidir toggle", "v(a) after 6 ns", Coordinate::Time(6e-9)), pad_node(1.0), after);
+}
+
+#[test]
+fn two_bidirs_alone_stop_the_run_with_e0511() {
+    // §22.4.3 rules 3 and 4: two pads alone on one net each drive because the other does not, a loop with no fixed point:
+    // the run stops with `E0511` naming both drives by their holders' instance paths
+    match Model::operating_point("line.msl", "TwoBidirsBench") {
+        Err(Failure::Host { code, message }) => {
+            assert_eq!(code, "E0511");
+            assert!(message.contains("TwoBidirsBench.p") && message.contains("TwoBidirsBench.q"), "{message}");
+        }
+        other => panic!("E0511, found {other:?}"),
     }
 }
 
