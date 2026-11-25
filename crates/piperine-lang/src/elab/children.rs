@@ -231,10 +231,17 @@ impl Elaboration<'_, '_> {
     /// binds, as `lower_child` keeps them, and the values of the module's key params.
     fn template_values(&mut self, template: &TemplateValue, instance: Option<&Instance>, file: FileId, span: crate::msl::Span) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
         let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
-        let given: Vec<(u32, Option<Constant>, ExprId)> = template.fields.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
+        let constants = match self.template_constants(template) {
+            Ok(constants) => constants,
+            Err(fault) => {
+                self.const_fault(&fault, "a param value of a template");
+                return None;
+            }
+        };
+        let given: Vec<(u32, Option<Constant>, ExprId)> = constants.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
         let mut keys = Bindings::new();
         for key in self.keys.of(template.module).to_vec() {
-            let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
+            let written = constants.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
             let value = self.key_value((template.module, instance), key, written, &keys, (file, span))?;
             self.bind_param(&mut keys, key, value);
         }

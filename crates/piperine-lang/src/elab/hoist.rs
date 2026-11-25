@@ -486,10 +486,17 @@ impl Elaboration<'_, '_> {
         let mut bindings = Bindings::new();
         let mut out = std::collections::BTreeMap::new();
         let mut ok = true;
+        let template_values = match template.map(|template| self.template_constants(template)).transpose() {
+            Ok(values) => values.unwrap_or_default(),
+            Err(fault) => {
+                self.const_fault(&fault, "a param value of a template");
+                return None;
+            }
+        };
         for param in &params {
             let data = self.design.decl_data(*param).clone();
             let DeclKind::Param(p) = &data.kind else { continue };
-            let folded = template.and_then(|template| template.fields.iter().find(|(bound, _, _)| bound == param)).map(|(_, value, _)| *value);
+            let folded = template_values.iter().find(|(bound, _, _)| bound == param).map(|(_, value, _)| *value);
             let given = fields.iter().find(|f| f.res == Resolution::Decl(*param)).map(|f| f.value).filter(|_| template.is_none());
             let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             // a given value reads the caller's constants (its params, its loop variables); a default the params before it (§8.1.16)

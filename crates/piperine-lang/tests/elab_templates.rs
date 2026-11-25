@@ -595,3 +595,44 @@ fn the_params_an_array_of_templates_reads_become_structural() {
         "two values of `l`, two bodies"
     );
 }
+
+#[test]
+fn a_template_carrying_composite_params_places_with_and_without_a_result() {
+    // §8.4.1, §8.3.12: a template whose block gives an array, a tuple, a struct or an array of arrays is a value of the elaboration; a
+    // placement through it, by a `let`, a `const` or an element of an array, binds the composite to the param, for a module with
+    // a result and for one without
+    let inner = "module Inner(x: f64) -> f64 { c: [f64; 2] = [1.0, 2.0]; x * c[1] }\n";
+    let from_let = format!("{inner}module Top() {{ signal y: Bit<f64>; let t = Inner {{ c: [3.0, 9.0] }}; let b = t(1.0); y = b; }}");
+    let from_const = format!("{inner}const T: Inner = Inner {{ c: [3.0, 9.0] }};\nmodule Top() {{ signal y: Bit<f64>; let b = T(1.0); y = b; }}");
+    let from_element = format!("{inner}module Top() {{ signal y: Bit<f64>; let fs = [Inner {{ }}, Inner {{ c: [3.0, 9.0] }}]; let b = fs[1](1.0); y = b; }}");
+    for source in [from_let, from_const, from_element] {
+        let printed = Elab::ir(&source, "Top").print_structural();
+        assert!(printed.contains("([3.0, 9.0] : [f64; 2])[1i32]"), "the read `c[1]` goes through the template's array:\n{printed}");
+    }
+    let cell = "module Cell(a: Electrical) { cs: [f64; 2] = [1.0, 2.0]; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs[1]; }\n";
+    let by_let = format!("{cell}module Top() {{ signal x: Electrical; let t = Cell {{ cs: [3.0, 4.0] }}; let c = t(x); }}");
+    let ir = Elab::ir(&by_let, "Top");
+    assert!(matches!(ir.instance_at("Top.c").and_then(|i| i.param(0).copied()), Some(Constant::Aggregate(_))), "the instance holds the array");
+    let option = "module Inner(x: f64) -> f64 { c: Option<f64> = Some(2.0); x * c.unwrap_or(5.0) }\nmodule Top() { signal y: Bit<f64>; let t = Inner { c: Some(4.0) }; let b = t(1.0); y = b; }";
+    assert!(Elab::ir(option, "Top").print_structural().contains("option(true, 4.0)"), "a template gives the param its own `Option`");
+    let tuple = "module Cell(a: Electrical) { p: (f64, f64) = (1.0, 2.0); }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * p.1; }\nmodule Top() { signal x: Electrical; let t = Cell { p: (5.0, 6.0) }; let c = t(x); }";
+    Elab::ir(tuple, "Top");
+    let record = "struct P { a: f64, b: f64 }\nmodule Cell(a: Electrical) { p: P = P { a: 1.0, b: 2.0 }; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * p.b; }\nmodule Top() { signal x: Electrical; let t = Cell { p: P { a: 5.0, b: 6.0 } }; let c = t(x); }";
+    Elab::ir(record, "Top");
+    let nested = "module Inner(x: f64) -> f64 { c: [[f64; 2]; 2] = [[1.0, 2.0], [3.0, 4.0]]; x * c[1][0] }\nmodule Top() { signal y: Bit<f64>; let t = Inner { c: [[5.0, 6.0], [7.0, 8.0]] }; let b = t(1.0); y = b; }";
+    assert!(Elab::ir(nested, "Top").print_structural().contains("[[5.0, 6.0], [7.0, 8.0]]"));
+}
+
+#[test]
+fn two_templates_with_equal_composite_params_are_one_value() {
+    // §8.4 (two equal templates are one value): a template block's array, compared by its elements, selects one body variant
+    let cell = "module Cell(a: Electrical) { cs: [f64; 2] = [1.0, 2.0]; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs[1]; }\nmodule Inner() { cell: Cell; signal x: Electrical; let c1 = cell(x); }\n";
+    let equal = format!("{cell}module Top() {{ let a = Inner {{ cell: Cell {{ cs: [3.0, 4.0] }} }}(); let b = Inner {{ cell: Cell {{ cs: [3.0, 4.0] }} }}(); }}");
+    let ir = Elab::ir(&equal, "Top");
+    let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_eq!(body("Top.a"), body("Top.b"));
+    let different = format!("{cell}module Top() {{ let a = Inner {{ cell: Cell {{ cs: [3.0, 4.0] }} }}(); let b = Inner {{ cell: Cell {{ cs: [3.0, 5.0] }} }}(); }}");
+    let ir = Elab::ir(&different, "Top");
+    let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_ne!(body("Top.a"), body("Top.b"));
+}

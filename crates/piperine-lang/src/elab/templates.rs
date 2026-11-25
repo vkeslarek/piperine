@@ -7,7 +7,7 @@
 
 use piperine_ir::{AggregateData, Constant, ValueType};
 
-use super::consts::{Bindings, ConstFault};
+use super::consts::{Bindings, ConstFault, ConstTree};
 use super::elaborator::Elaboration;
 use super::instances::ConcreteValue;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind, StructClass};
@@ -20,8 +20,10 @@ pub(in crate::elab) struct TemplateValue {
     pub(super) module: DeclId,
     /// The generic arguments of the module, in the order of its parameters (§8.4.3); empty for a module that is not generic.
     pub(super) arguments: Vec<ConcreteValue>,
-    /// The params the block binds: the param, its folded value and the expression that gave it.
-    pub(super) fields: Vec<(DeclId, Constant, ExprId)>,
+    /// The params the block binds: the param, its folded value and the expression that gave it. The value is held taken apart
+    /// (`ConstTree`), so it belongs to no arena (the evaluator's and the IR's composites are numbered separately) and two
+    /// templates with equal values are equal (§8.4: two equal templates are one value).
+    pub(super) fields: Vec<(DeclId, ConstTree, ExprId)>,
 }
 
 /// What holds the elements of an array of templates.
@@ -41,7 +43,7 @@ pub(in crate::elab) struct Templates {
 impl Templates {
     /// The number of `value`: the one it was given before, else the next.
     pub(in crate::elab) fn intern(&mut self, value: TemplateValue) -> Constant {
-        let number = match self.values.iter().position(|known| known.module == value.module && known.arguments == value.arguments && known.fields.iter().map(|f| (f.0, f.1)).eq(value.fields.iter().map(|f| (f.0, f.1)))) {
+        let number = match self.values.iter().position(|known| known.module == value.module && known.arguments == value.arguments && known.fields.iter().map(|f| (f.0, &f.1)).eq(value.fields.iter().map(|f| (f.0, &f.1)))) {
             Some(number) => number,
             None => {
                 self.values.push(value);
@@ -61,6 +63,50 @@ impl Templates {
 }
 
 impl Elaboration<'_, '_> {
+    /// The constants the params of `template` are bound to, each added to the IR's arena: what a placement through the template
+    /// binds (`children.rs`, `hoist.rs`). A value the placement's `Option` param takes from a bare `T` is `Some` of it (§3.2.3).
+    pub(super) fn template_constants(&mut self, template: &TemplateValue) -> Result<Vec<(DeclId, Constant, ExprId)>, ConstFault> {
+        let mut constants = Vec::with_capacity(template.fields.len());
+        for (param, tree, expr) in &template.fields {
+            let value = self.template_field_constant(*expr, tree)?;
+            constants.push((*param, value, *expr));
+        }
+        Ok(constants)
+    }
+
+    /// The tree `tree`, the value of the expression `expr` of a template's block, as a constant of the IR's arena. The value of a
+    /// bare `T` bound to an `Option<T>` param is held as its `Some` (`fold_param_value`, `template_literal`), so it has that type.
+    fn template_field_constant(&mut self, expr: ExprId, tree: &ConstTree) -> Result<Constant, ConstFault> {
+        // an array of templates: the aggregate of the numbers of its elements (`fold_template_array`)
+        if let Some(crate::types::Ty::Array(element, _)) = self.typed(expr)
+            && matches!(*element, crate::types::Ty::Module(_))
+        {
+            return self.import_template_numbers(expr, tree);
+        }
+        let held = self.typed(expr).and_then(|ty| self.stored_type(&ty));
+        let ty = match held {
+            Some(held) if self.types.implicit_some(expr) => Some(ValueType::Option(Box::new(held))),
+            other => other,
+        };
+        match (ty, tree) {
+            (Some(ty), _) => self.import_tree(expr, tree, &ty),
+            (None, ConstTree::Scalar(value)) => Ok(*value),
+            (None, ConstTree::Composite { .. }) => Err(ConstFault::Unsupported { expr, what: "a composite value of a type that has no value type".to_string() }),
+        }
+    }
+
+    /// The array of template numbers `tree` holds, as the aggregate `fold_template_array` makes.
+    fn import_template_numbers(&mut self, expr: ExprId, tree: &ConstTree) -> Result<Constant, ConstFault> {
+        let ConstTree::Composite { parts, .. } = tree else { return Err(ConstFault::Unsupported { expr, what: "an array of templates that is not an array".to_string() }) };
+        let mut numbers = Vec::with_capacity(parts.len());
+        for part in parts {
+            let ConstTree::Scalar(number) = part else { return Err(ConstFault::Unsupported { expr, what: "an array of templates inside an array of templates".to_string() }) };
+            numbers.push(*number);
+        }
+        let ty = ValueType::Array(Box::new(ValueType::UInt(32)), numbers.len() as u64);
+        Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty, variant: None, parts: numbers })))
+    }
+
     /// The template at `index` of the array of templates `array`, folded (`Constant::Int` of its number).
     fn fold_template_element(&mut self, expr: ExprId, array: ExprId, index: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let unsupported = |what: &str| ConstFault::Unsupported { expr, what: what.to_string() };
@@ -193,7 +239,8 @@ impl Elaboration<'_, '_> {
         let mut folded = Vec::new();
         for field in &fields {
             let Resolution::Decl(param) = field.res else { continue };
-            folded.push((param, self.fold_param_value(field.value, bindings)?, field.value));
+            let value = self.fold_param_value(field.value, bindings)?;
+            folded.push((param, self.imported_tree(value), field.value));
         }
         let arguments = self.consts.template_arguments(expr, bindings)?;
         Ok(self.consts.intern_template(TemplateValue { module, arguments, fields: folded }))

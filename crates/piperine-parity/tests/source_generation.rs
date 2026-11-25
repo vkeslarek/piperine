@@ -289,3 +289,28 @@ fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
         }
     }
 }
+
+/// The model of `composite_params.msl`: a template carrying composite params, placed by name and through the template.
+struct CompositeParams;
+
+impl CompositeParams {
+    /// The changes of the net `Bench.<name>` of the run: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&GenerationModels::project("composite_params.msl"), "Bench");
+        let seen = built.run(2e-9, 0.5e-9);
+        support::transient(&seen, &format!("Bench.{name}"))
+    }
+}
+
+#[test]
+fn a_template_carrying_composite_params_runs_through_a_placement() {
+    // §8.3.12, §8.4.1, §3.2.10: with `a` = 3 after 1 ns, `Mix` at its defaults is `a * c[1] + 3 + 4 + 9` and the template `{ c: [5, 6], o: None,
+    // os: [None, Some(1)] }` is `a * 6 + 0 + 0 + 1`; `Gain` through `{ c: [7, 8] }` is `a * 8` and by name `a * 2`
+    let defaults = |a: u8| a * 2 + 3 + 4 + 9;
+    let given = |a: u8| a * 6 + 1;
+    let ns = 1_000_000;
+    assert_eq!(CompositeParams::changes("by_name"), vec![(ns, vec![defaults(3)])]);
+    assert_eq!(CompositeParams::changes("by_template"), vec![(ns, vec![given(3)])]);
+    assert_eq!(CompositeParams::changes("gained_name"), vec![(ns, vec![3 * 2])]);
+    assert_eq!(CompositeParams::changes("gained_template"), vec![(ns, vec![3 * 8])]);
+}
