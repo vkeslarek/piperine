@@ -442,7 +442,7 @@ Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperi
 
 The phase's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-23): design-e.md DE3, DE4; DE1 to DE3 answered by the user 2026-11-23 (design-e.md).
+**Settled mid-build:** T103 (2026-11-24): phase D (b60dcd9c6) and `analog-operators` (MD-82: L43-L45, L47, L49, L60, L72 closed; `delay` and `noise` and the noise analysis on `main`) are both on `main`; the merge of origin/main was a fast-forward and the Build line is green. Every L58 generics-group item exists in `crates/piperine-lang/std/` (`analog.msl`: `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`; `monitor.msl`: `Stable`, `Hold`, `Setup`, `MinPulse`, `inertial`; `values.msl`: `since`; `carriers.msl`: `Short`); findings on which fail at run time are appended per task. GAPS L88 (arrays of templates) is owned by phase E: added as T119 (after T118). Gate policy of the user (2026-11-24): per task the Build line and touched crates/targets only; no full workspace suite. Planning (2026-11-23): design-e.md DE3, DE4; DE1 to DE3 answered by the user 2026-11-23 (design-e.md).
 **Amended (2026-11-24, coordinator, phase C round 5 finding 18):** T118 (generation in a hoisted module's body, GAPS L77) and check C135 join phase 22, after T112; the task was phase C's leftover (`tasks-c.md` Handoff, round 4 fix).
 **Dispatched:** none yet.
 **Walked:** none yet.
