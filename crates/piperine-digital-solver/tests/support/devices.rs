@@ -836,6 +836,57 @@ pub fn setter() -> Handle {
     make::<Setter>(&SETTER, "setter")
 }
 
+// ─── Pulser ─────────────────────────────────────────────────────────────────
+
+/// A pulse of one microstep, as `idtmod`'s `seat` makes one (docs/spec §22.2.9 rule 3): `out` goes
+/// high one microstep after `up` fires and low again at the microstep after that.
+///
+/// pins: up=0 (PORT event); out=1 (PORT BIT, init LOW); rise=2 (PRIVATE event)
+/// fn 0 "rise": reads [out, out.PREVIOUS, out.CHANGED] writes [rise.CHANGED]
+/// reaction 0 "raise": on [up] writes [S0 {out}]; out <- HIGH, no delay
+/// reaction 1 "lower": on [rise] writes [S0 {out}]; out <- LOW, no delay
+pub struct Pulser;
+static PULSER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static PULSER: OnceLock<Module> = OnceLock::new();
+
+impl Pulser {
+    /// The device, bound by name like the others.
+    pub fn handle() -> Handle {
+        make::<Pulser>(&PULSER, "pulser")
+    }
+
+    /// Its shape: the edge function of `out` and the two reactions.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let up = s.pin(PinSpec::event("up", role::PORT));
+        let out = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("out", role::PORT, &BIT) });
+        let rise = s.pin(PinSpec::event("rise", role::PRIVATE));
+        s.function(edge_function(out, rise));
+        s.reaction(ReactionSpec { name: "raise", on: vec![up], writes: vec![statement(out, 1, 0)], ..ReactionSpec::default() });
+        s.reaction(ReactionSpec { name: "lower", on: vec![rise], writes: vec![statement(out, 1, 0)], ..ReactionSpec::default() });
+        s.freeze()
+    }
+}
+
+impl Device for Pulser {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&PULSER_SHAPE, Pulser::shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Pulser, Arc::clone(shared(&PULSER_SHAPE, Pulser::shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        bump("pulser", false);
+        cx.set(0, rising(cx) as u8);
+        Ok(())
+    }
+    fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("pulser", true);
+        cx.commit(0, if k == 0 { &HIGH } else { &LOW }, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
 // ─── Settler ────────────────────────────────────────────────────────────────
 
 /// A reaction on `SETTLE` that commits after `delay` seconds.

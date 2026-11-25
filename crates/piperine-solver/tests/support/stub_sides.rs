@@ -35,6 +35,8 @@ pub enum Call {
     Attempt { to: f64, landing: bool },
     Rebase(Origin),
     Accept,
+    /// A zero-width solve; it converges and takes the next scripted acceptance.
+    ZeroWidth,
     Equilibrium,
     AnalogMark(u32),
     AnalogRestore(u32),
@@ -229,6 +231,10 @@ impl AnalogSide for ScriptedAnalog {
     fn accept(&mut self) -> Result<Accepted> {
         self.record(Call::Accept);
         Ok(self.accepts.pop_front().unwrap_or_default())
+    }
+    fn zero_width(&mut self) -> Result<Option<Accepted>> {
+        self.record(Call::ZeroWidth);
+        Ok(Some(self.accepts.pop_front().unwrap_or_default()))
     }
     fn equilibrium(&mut self) -> Result<Accepted> {
         self.record(Call::Equilibrium);

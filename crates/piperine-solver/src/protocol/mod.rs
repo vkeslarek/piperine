@@ -1,8 +1,8 @@
 //! The owner's synchronization protocol (abi.md §5, §10), written once over
 //! two traits: `DiscreteSide` and `AnalogSide` (`sides`). `transient` holds
 //! `Protocol` and the transient loop, `operating_point` the operating point,
-//! `sink` the delivery of observations, `host` the host's waiters and writes, `retake` the
-//! retake of a step whose crossings change what analog reads (§15.2 rule 4). It
+//! `sink` the delivery of observations, `host` the host's waiters and writes, `retake` what the
+//! analog side reads at a time point after its step: a retake, or a zero-width solve (§15.2 rule 4). It
 //! names no item of either sub-solver crate; `solver-abi-integration`
 //! implements the traits for them and calls the protocol from the drivers.
 
@@ -21,6 +21,6 @@ pub use sides::{
 };
 pub use host::{HostCx, SetOutcome, Waiter};
 pub use sink::Sink;
-pub use statistics::{InstantCause, StepEnd, StepStatistics};
+pub use statistics::{InstantCause, StepEnd, StepStatistics, ZeroWidthCause};
 pub use step::{StepObserver, StepView};
 pub use transient::{Ended, Protocol, ProtocolOptions};
