@@ -29,10 +29,12 @@ impl PassingValues {
         }
     }
 
-    /// Forgets the values passed through, which the owner has read, and keeps what each net holds:
-    /// a value it loses from now on passes through again (`Digital::reopen`).
+    /// Forgets what the owner has read (`Digital::reopen`): the values passed through and the
+    /// values held, which its last solve read. The record starts again from the values the nets
+    /// hold now, so a net that changes once from here passes through nothing.
     pub(crate) fn consume(&mut self) {
         self.passed.clear();
+        self.held.clear();
     }
 
     /// Whether no analog-read net passed through a value.

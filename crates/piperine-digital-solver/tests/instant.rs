@@ -829,3 +829,44 @@ fn a_part_after_the_pulse_leaves_the_settle_phase_to_the_owner() {
     assert_eq!(second.passing, [(seat, HIGH.to_vec())], "the instant's pulse, reported by its last part");
     assert!(!d.holds_settle_commits(), "the settle phase did not run in the instant");
 }
+
+#[test]
+fn a_reopened_instant_reports_only_what_passes_after_the_reading() {
+    // docs/spec §15.2 rule 4: a Pulser on `go` clocks a Dff whose `d` is `!q`; both `clk` and `q`
+    // are read by the analog side. Round 1 pulses `clk` (passed through high) and toggles `q` to 1.
+    // The owner reads that and reopens the instant; in round 2 `go` fires again, `clk` pulses again
+    // and `q` toggles back to 0, once. Round 2 reports `clk`'s high and `q` at 0: never `q` at 1,
+    // which round 1's reading already read
+    let plan = bind_by_name_with(
+        vec![
+            ("p", Pulser::handle(), vec![("up", "go"), ("out", "clk")]),
+            ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+            ("i", inverter(), vec![("a", "q"), ("y", "d")]),
+        ],
+        Resolution::default(),
+        |nets| {
+            for name in ["clk", "q"] {
+                nets.iter_mut().find(|n| n.name == name).unwrap().analog_reads = true;
+            }
+        },
+    )
+    .expect("binds");
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    let (go, clk, q) = (net(&d, "go"), net(&d, "clk"), net(&d, "q"));
+    d.fire(go, Tick(7)).unwrap();
+    let first = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
+    assert_eq!(d.read(q), HIGH, "q toggled to 1");
+    assert_eq!(first.passing, [(clk, HIGH.to_vec()), (q, HIGH.to_vec())], "round 1: clk passed high, q at 1");
+    d.reopen(Tick(7), true);
+    d.fire(go, Tick(7)).unwrap();
+    let second = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
+    assert_eq!(d.read(q), LOW, "q toggled back to 0");
+    assert_eq!(second.passing, [(clk, HIGH.to_vec()), (q, LOW.to_vec())], "round 2: clk passed high again, q read at 0");
+    // without the second pulse, round 2's single change of q passes through nothing
+    d.reopen(Tick(7), true);
+    d.host_commit(q, 0, &HIGH, Tick(7)).unwrap();
+    let third = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
+    assert!(third.passing.is_empty(), "a single change after a reading: {:?}", third.passing);
+}

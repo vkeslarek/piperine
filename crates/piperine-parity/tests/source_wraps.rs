@@ -2,7 +2,8 @@
 //! (§15.2 rule 4: a zero-width solve at the instant reads it): the stdlib `idtmod` (Part VII
 //! §22.2.9) wraps its integral through a `seat` pulse of one microstep (`tests/wraps/idtmod_ramp.msl`,
 //! the sawtooth computed here in Rust across several wraps), and a zero-delay glitch into an `idt`
-//! and an RC gains no area at any step (`tests/wraps/glitch.msl`).
+//! and an RC gains no area at any step (`tests/wraps/glitch.msl`), and a change a crossing of the
+//! zero-width solve makes is read once more, at its own value (`tests/wraps/rounds.msl`).
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -159,4 +160,43 @@ fn a_zero_delay_glitch_gains_no_area_at_any_step() {
             assert!(largest < 1e-12, "{name} gains no area from the glitch at step {step:e}: {largest:e}");
         }
     }
+}
+
+/// The bench of `wraps/rounds.msl`.
+struct RoundsBench;
+
+impl RoundsBench {
+    /// The time of wrap `k` (from 1) of its `idtmod`.
+    fn wrap(k: u32) -> f64 {
+        (f64::from(k) - 0.5) / 0.3e6
+    }
+}
+
+#[test]
+fn a_change_made_after_a_zero_width_solve_is_read_once_at_its_value() {
+    // §15.2 rule 4 over two rounds, on the real sides: at each wrap round 1 counts `level` up and
+    // pulses idtmod's `seat` (a zero-width solve for the value passed through); that solve seats the
+    // phase, which makes the bench's second crossing, and round 2 counts `level` up once more (a
+    // zero-width solve for the crossing's change). The solution at each wrap holds the count of both
+    // rounds, every reading is counted under its own cause, and no value round 1 read counts again
+    let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps/rounds.msl");
+    let built = build(&Project::new(&path), "Rounds");
+    let (_, result) = built.run_with(9e-6, 0.05e-6);
+    let statistics = result.statistics();
+    let node = |name: &str| NodeIdentifier::Anonymous(built.ir.node_at(&format!("Rounds.{name}")).expect("a node").id().index());
+    let (phase, count) = (node("phase"), node("count"));
+    let points: Vec<(f64, f64, f64)> = result
+        .iter()
+        .map(|point| (point.time(), point.get_node(&phase).expect("v(phase)"), point.get_node(&count).expect("v(count)")))
+        .collect();
+    for k in 1..=3u32 {
+        let wrap = RoundsBench::wrap(k);
+        let at = points.iter().filter(|(time, ..)| (time - wrap).abs() < 1e-12).collect::<Vec<_>>();
+        assert_eq!(at.len(), 1, "one solution at wrap {k} ({wrap:e} s): {at:?}");
+        let (_, seated, counted) = *at[0];
+        assert!((seated - (-0.5)).abs() < 1e-8, "wrap {k} seats the phase at the bottom: {seated}");
+        assert_eq!(counted, 2.0 * f64::from(k), "the solution at wrap {k} reads both rounds' counts");
+    }
+    assert_eq!(statistics.zero_width_for(ZeroWidthCause::PassedValue), 3, "one per wrap, for the seat");
+    assert_eq!(statistics.zero_width_for(ZeroWidthCause::CrossingChange), 3, "one per wrap, for round 2's count");
 }

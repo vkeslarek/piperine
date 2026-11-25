@@ -155,7 +155,7 @@ pub struct Digital {
     pub(crate) suspended: Option<(Tick, u32)>,
     /// What the analog-read nets have passed through in the instant being run, over all its parts:
     /// a suspension for the host's waiters keeps it, a new instant starts it again, and a `reopen`
-    /// keeps only what the nets hold (the owner has read what they passed through).
+    /// starts it again from the values the nets hold (the owner has read the instant so far).
     pub(crate) passing: PassingValues,
     /// The instant the last `run_instant` ran to its end and the last microstep it ran, for `reopen`.
     pub(crate) last_run: Option<(Tick, u32)>,
