@@ -193,9 +193,12 @@ Proof: run sourcenested | test a_cell_through_generic_templates_three_and_four_l
 **C23** - A reach refused for its cause (a node declared in generation, a hoisted module that holds a placement) reports that cause once, with no cascade (GAPS L94, L95)
 Proof: run elabnested | test a_reach_refused_for_its_cause_reports_that_cause_once ... ok
 
+**C24** - A `let` over the solve three and four levels below the reader (`R.vs`, `v(sn)`), and a `let` over it and a port (`vs2 = vs + v(a)`), is elaborated in one pass in every form whose hops the text names: the names the `let` reads are demands known before the first pass (verification finding 7)
+Proof: run elabnested | test a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_one_pass ... ok
+
 ---
 
 ## Handoff
 
-**Settled mid-build:** the reach, spec and tests are written together; the design decision (demands found by running the elaboration again) is in `reach_through_templates.rs`'s module doc.
+**Settled mid-build:** the reach, spec and tests are written together; the design decision (demands found from the text before the first pass, `reach_seed.rs`, and by running the elaboration again only for a hop through a type-parameter template) is in `reach_through_templates.rs`'s module doc.
 **Dispatched:** none

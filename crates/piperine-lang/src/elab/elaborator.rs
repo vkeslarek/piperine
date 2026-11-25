@@ -43,7 +43,16 @@ impl<'d> Elaborator<'d> {
     /// [`run`](Self::run) with the params a host bound before the run: a binding of a key param
     /// selects the variant of its value at that instance (`Overrides`); any other is ignored.
     pub fn run_with(self, top: &str, overrides: &Overrides) -> Result<Ir, Vec<DesignDiagnostic>> {
-        let types = Types::check(self.design, top)?;
+        self.run_with_statistics(top, overrides).0
+    }
+
+    /// [`run_with`](Self::run_with), and what the run cost ([`RunStatistics`]).
+    pub fn run_with_statistics(self, top: &str, overrides: &Overrides) -> (Result<Ir, Vec<DesignDiagnostic>>, RunStatistics) {
+        let mut statistics = RunStatistics::default();
+        let types = match Types::check(self.design, top) {
+            Ok(types) => types,
+            Err(diagnostics) => return (Err(diagnostics), statistics),
+        };
         let top_decl = types.reached()[0];
         // the reads the text names through children of children are the demands of the first run (`reach_seed.rs`); a run that meets
         // one its tables lack (a hop through a type-parameter template) says so, and is made again with it
@@ -51,12 +60,21 @@ impl<'d> Elaborator<'d> {
         let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).static_demands();
         loop {
             let (result, wanted) = Elaboration::new(self.design, &types, overrides.clone(), demands.clone()).run(top_decl);
+            statistics.passes += 1;
             if wanted.is_empty() {
-                return result;
+                return (result, statistics);
             }
             demands.extend(wanted);
         }
     }
+}
+
+/// What one run of the [`Elaborator`] cost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RunStatistics {
+    /// How many times the design was elaborated: one, plus one for each run that met a read through a child of a child its tables
+    /// lacked (a hop through a type-parameter template, `reach_through_templates.rs`); zero when the type check refused the design.
+    pub passes: usize,
 }
 
 /// The state of one run. Its passes are `impl` blocks in the files named after them.

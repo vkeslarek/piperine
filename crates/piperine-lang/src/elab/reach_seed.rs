@@ -3,9 +3,12 @@
 //!
 //! A read `p.h1.h2.x` names a placement `p` of the reader, then one name for each hop and the item `x`. Each hop whose name the
 //! checker resolved to a placement `let` (`Resolution::Decl`) is a demand of the module that holds that `let`: the names after it.
-//! When `x` is a `let` of the module the last hop places, the names that `let` reads through its own children are read through
-//! the same hops (§8.2.25: it is evaluated in the reader's context), so the chain goes on with them. A hop the text does not name a
-//! module for (a read through a type-parameter template) is left to the run, which asks for what it meets
+//! When `x` is a `let` of the module the last hop places, what that `let` reads is read through the same hops (§8.2.25: it is
+//! evaluated in the reader's context), so the chain goes on with each of its reads: a field chain through its own children
+//! (`c1.sn`), and a plain name of an item of its own module (`v(sn)` reads the node `sn`, `twice + 1.0` the `let` `twice`, whose
+//! reads go on in turn). Every read of a module item in an expression, whatever the form around it (a call, an operator, a method,
+//! an index, a block), is a path expression of the arena, so these two kinds are every read a `let` makes. A hop the text does not
+//! name a module for (a read through a type-parameter template) is left to the run, which asks for what it meets
 //! (`NestedDemands::require`).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,6 +31,15 @@ struct ReadName {
     text: String,
 }
 
+/// What the expressions of the design read, by the declaration that owns them (the `let` whose value holds them).
+#[derive(Debug, Default)]
+struct DesignReads<'c> {
+    /// The field chains rooted at a placement.
+    chains: BTreeMap<DeclId, Vec<&'c ReadChain>>,
+    /// The declarations a plain name resolves to.
+    names: BTreeMap<DeclId, BTreeSet<DeclId>>,
+}
+
 /// A read of the design: a field chain rooted at a name bound to a placement.
 #[derive(Debug, Clone)]
 struct ReadChain {
@@ -43,16 +55,16 @@ impl Elaboration<'_, '_> {
     /// The demands the text of the design names, in the order of its reads, without duplicates.
     pub(super) fn static_demands(&self) -> Vec<NestedDemand> {
         let chains = self.outermost_chains();
-        let mut by_owner: BTreeMap<DeclId, Vec<&ReadChain>> = BTreeMap::new();
+        let mut reads = DesignReads { names: self.plain_reads(), ..DesignReads::default() };
         for chain in &chains {
-            by_owner.entry(chain.owner).or_default().push(chain);
+            reads.chains.entry(chain.owner).or_default().push(chain);
         }
         let mut demands = Vec::new();
         let mut seen = BTreeSet::new();
         for chain in &chains {
             // a read of the reader's own child (`c0.sn`, one name) is no demand; it is the chain of a `let` below a hop that is
             let Some(base) = self.placed_by_root(chain.root) else { continue };
-            self.add_chain(base, chain.names.clone(), &by_owner, &mut demands, &mut seen, 0);
+            self.add_chain(base, chain.names.clone(), &reads, &mut demands, &mut seen, 0);
         }
         demands
     }
@@ -67,6 +79,19 @@ impl Elaboration<'_, '_> {
             }
         }
         (0..count).map(|index| ExprId(index as u32)).filter(|expr| !receivers.contains(expr) && self.typed(*expr).is_some()).filter_map(|expr| self.chain_of(expr)).collect()
+    }
+
+    /// The declaration each plain name of the design resolves to, by the declaration that owns the name's expression.
+    fn plain_reads(&self) -> BTreeMap<DeclId, BTreeSet<DeclId>> {
+        let mut reads: BTreeMap<DeclId, BTreeSet<DeclId>> = BTreeMap::new();
+        for index in 0..self.design.expr_count() {
+            let node = self.design.expr_node(ExprId(index as u32));
+            let ExprKind::Path(path) = &node.kind else { continue };
+            if let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|segment| segment.res) {
+                reads.entry(node.owner).or_default().insert(decl);
+            }
+        }
+        reads
     }
 
     /// `expr` through parentheses and indexes.
@@ -106,9 +131,9 @@ impl Elaboration<'_, '_> {
         self.placed_module(call, &Bindings::new())
     }
 
-    /// The demands of the read of `names` below a placement of `base`, and of the reads the `let` it ends on makes through its own
-    /// children, below the same hops.
-    fn add_chain(&self, base: DeclId, names: Vec<ReadName>, by_owner: &BTreeMap<DeclId, Vec<&ReadChain>>, demands: &mut Vec<NestedDemand>, seen: &mut BTreeSet<Vec<ReadName>>, depth: usize) {
+    /// The demands of the read of `names` below a placement of `base`, and of the reads the `let` it ends on makes, below the same
+    /// hops: through its own children, and of the items of its own module it names.
+    fn add_chain(&self, base: DeclId, names: Vec<ReadName>, reads: &DesignReads, demands: &mut Vec<NestedDemand>, seen: &mut BTreeSet<Vec<ReadName>>, depth: usize) {
         if depth > CLOSURE_DEPTH || !seen.insert(names.clone()) {
             return;
         }
@@ -127,13 +152,30 @@ impl Elaboration<'_, '_> {
             return;
         }
         let Some(let_decl) = data.parent else { return };
-        for inner in by_owner.get(&let_decl).into_iter().flatten() {
-            let root = ReadName { placement: Some(inner.root), text: self.design.decl_data(inner.root).name.as_ref().map_or_else(String::new, |n| n.text.clone()) };
-            let mut below: Vec<ReadName> = names[..names.len() - 1].to_vec();
-            below.push(root);
+        let hops = &names[..names.len() - 1];
+        for inner in reads.chains.get(&let_decl).into_iter().flatten() {
+            let mut below: Vec<ReadName> = hops.to_vec();
+            below.push(ReadName { placement: Some(inner.root), text: self.decl_name(inner.root) });
             below.extend(inner.names.iter().cloned());
-            self.add_chain(base, below, by_owner, demands, seen, depth + 1);
+            self.add_chain(base, below, reads, demands, seen, depth + 1);
         }
+        // a name of the holder's own node, carrier or `let` (`v(sn)`): read through the same hops; a placement is read only through a
+        // field chain, met above, and a param is folded with the frame, no demand
+        for read in reads.names.get(&let_decl).into_iter().flatten() {
+            let text = self.decl_name(*read);
+            let own = self.item_named(holder, &text) == Some(*read);
+            let item = matches!(self.design.decl_data(*read).kind, DeclKind::Port(_) | DeclKind::Signal(_)) || (self.body_let_value(*read).is_some() && !self.is_placement_binding(*read));
+            if own && item {
+                let mut below: Vec<ReadName> = hops.to_vec();
+                below.push(ReadName { placement: None, text });
+                self.add_chain(base, below, reads, demands, seen, depth + 1);
+            }
+        }
+    }
+
+    /// The name `decl` is declared with.
+    fn decl_name(&self, decl: DeclId) -> String {
+        self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone())
     }
 
     /// The module that holds the item `names` ends on: the one the last hop places, or `base` when the chain has one name.

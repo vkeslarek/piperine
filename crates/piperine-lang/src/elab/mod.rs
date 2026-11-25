@@ -55,6 +55,6 @@ mod variants;
 
 pub use consts::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree, Exit};
 pub use {files::{FileFault, IncludedFiles}, tables::{HexText, TableFault, TableText}};
-pub use elaborator::Elaborator;
+pub use elaborator::{Elaborator, RunStatistics};
 pub use host_sources::HostSourceParam;
 pub use {override_text::LiteralText, structural::Overrides};

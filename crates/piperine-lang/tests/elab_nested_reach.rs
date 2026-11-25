@@ -10,6 +10,7 @@ mod nested;
 
 use nested::{MODELS, READS};
 use piperine_ir::Ir;
+use piperine_lang::elab::{Elaborator, Overrides};
 use support::Elab;
 
 /// The top that reads `reach` below the placement `placement`, with `reads` as its `analog` block.
@@ -169,5 +170,24 @@ fn a_reach_refused_for_its_cause_reports_that_cause_once() {
         let messages: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert!(messages[0].starts_with("P0001") && messages[0].contains(cause), "{messages:?}");
+    }
+}
+
+#[test]
+fn a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_one_pass() {
+    // §8.2.25 (verification finding 7): `R.vs` is `v(sn)` read in the reader's context, so the node `sn` it names is a demand of
+    // each hop, known from the text before the first pass; so are the names a `let` reads through another `let` of its module
+    // (`vs2 = vs + v(a)`: the node `sn` through `vs`, and the port `a`). A form whose hops the text names takes one pass, never one
+    // for each level
+    let models = MODELS.replace("pub let vs = v(sn);", "pub let vs = v(sn); pub let vs2 = vs + v(a);");
+    for (placement, reach, form) in READS.iter().filter(|(placement, _, _)| !placement.contains("::<_>")) {
+        for item in ["vs", "vs2"] {
+            let design = support::Elab::design(&format!("{models}{}", top(placement, &format!("potential(o) +> {reach}.{item};"))));
+            let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
+            let ir = result.unwrap_or_else(|d| panic!("{form}: {item}: {d:?}"));
+            let reader = ir.instance_at("Top").expect("the top");
+            assert!(reader.body().nodes().iter().any(|node| node.name == format!("{reach}.sn")), "{form}: {item}: `Top` reaches `{reach}.sn`");
+            assert_eq!(statistics.passes, 1, "{form}: `{reach}.{item}` is elaborated in one pass");
+        }
     }
 }
