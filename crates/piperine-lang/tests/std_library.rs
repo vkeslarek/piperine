@@ -869,3 +869,81 @@ fn the_index_lists_stay_honest() {
         assert!(!listed.contains(&format!("{space}::{name}")), "{space}::{name} is an Index row again: drop it from STD_BEHIND_THE_INDEX");
     }
 }
+
+/// The items of L58's generics group (GN-27 AC 1), each placed or called once in `GROUP_SOURCE`.
+const GENERICS_GROUP: [(&str, &str); 20] = [
+    ("Short", "carriers.msl"),
+    ("since", "values.msl"),
+    ("cast", "values.msl"),
+    ("same", "values.msl"),
+    ("idt", "analog.msl"),
+    ("idtmod", "analog.msl"),
+    ("zi_nd", "analog.msl"),
+    ("zi_np", "analog.msl"),
+    ("zi_zd", "analog.msl"),
+    ("zi_zp", "analog.msl"),
+    ("laplace_nd", "analog.msl"),
+    ("laplace_np", "analog.msl"),
+    ("laplace_zd", "analog.msl"),
+    ("laplace_zp", "analog.msl"),
+    ("noise_table", "analog.msl"),
+    ("Stable", "monitor.msl"),
+    ("Setup", "monitor.msl"),
+    ("Hold", "monitor.msl"),
+    ("inertial", "monitor.msl"),
+    ("MinPulse", "monitor.msl"),
+];
+
+/// A module of the root crate that places or calls every item of [`GENERICS_GROUP`].
+const GROUP_SOURCE: &str = "\
+module Top(a: Electrical, b: Electrical, in clk: Bit, in en: Bit, in d: Bit, in v: Bit<u8>, x: f64, n: u8, tpd: f64, period: f64) {
+    let s = Short(a, b);
+    let age = since(d);
+    let c = cast::<u8, i8>(n);
+    let e = same(n, n);
+    let i = idt(x, Some(0.0), None);
+    let m = idtmod(x, Some(0.0), 1.0, Some(-0.5));
+    let zn = zi_nd::<2, 1>(x, period) { num: [1.0, 0.5], den: [0.25] };
+    let znp = zi_np::<2, 1>(x, period) { num: [1.0, 0.5], poles: [(0.5, 0.0)] };
+    let zzd = zi_zd::<1, 1>(x, period) { zeros: [(0.5, 0.0)], den: [0.25] };
+    let zzp = zi_zp::<1, 1>(x, period) { zeros: [(0.5, 0.0)], poles: [(0.5, 0.0)] };
+    let ln = laplace_nd::<1, 2>(x) { num: [1.0], den: [1.0, 1.0] };
+    let lnp = laplace_np::<1, 1>(x) { num: [1.0], poles: [(-1.0, 0.0)] };
+    let lzd = laplace_zd::<1, 2>(x) { zeros: [(-1.0, 0.0)], den: [1.0, 1.0] };
+    let lzp = laplace_zp::<1, 1>(x) { zeros: [(-1.0, 0.0)], poles: [(-2.0, 0.0)] };
+    let nt = noise_table::<2>(None) { table: [(1.0, 1e-18), (1e3, 1e-20)] };
+    let st = Stable(en, d);
+    let su = Setup(clk, d) { ts: 1n };
+    let ho = Hold(clk, d) { th: 1n };
+    let ine = inertial(v, tpd);
+    let mp = MinPulse(d) { w: 1n };
+}
+";
+
+/// What the generics group's placement test reads from the root crate's call and placement expressions.
+struct GroupItems;
+
+impl GroupItems {
+    /// The declaration the callee `name` (with or without a turbofish) of the root crate resolves to.
+    fn resolved<'d>(design: &'d Design, name: &str) -> Option<piperine_lang::pom::Decl<'d>> {
+        let expr = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text().split("::<").next() == Some(name) && matches!(e.resolution(), Resolution::Decl(_)))?;
+        match expr.resolution() {
+            Resolution::Decl(id) => Some(design.decl(id)),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn each_generics_group_item_resolves_to_its_std_declaration() {
+    // GN-27 AC 1: no item of L58's generics group stands for a checker intrinsic: each one written in a
+    // project resolves to the declaration written in its `std` file, and the project builds clean
+    let design = Design::builder().source("top.msl", GROUP_SOURCE).build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    for (name, file) in GENERICS_GROUP {
+        let decl = GroupItems::resolved(&design, name).unwrap_or_else(|| panic!("`{name}` resolves to a declaration"));
+        assert!(decl.krate().is_std(), "`{name}` is declared in std");
+        assert_eq!(decl.file().name().rsplit('/').next(), Some(file), "`{name}` is declared in {file}");
+        assert!(decl.as_module().is_some() || decl.as_function().is_some_and(|f| !f.is_intrinsic()), "`{name}` has a source body");
+    }
+}

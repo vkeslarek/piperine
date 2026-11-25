@@ -145,8 +145,8 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 
 **Done when**:
 
-- [ ] `each_generics_group_item_resolves_to_its_std_declaration` passes under `**Run stdlibrary**`
-- [ ] Gate check passes: Quick
+- [x] `each_generics_group_item_resolves_to_its_std_declaration` passes under `**Run stdlibrary**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
