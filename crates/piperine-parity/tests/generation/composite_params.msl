@@ -1,6 +1,6 @@
 //! Composite params of a template (generics phase E fix round 1, part III §8.3.12, §8.4.1, §3.2.10): a template of a module carries an
 //! array, an `Option` and an array of `Option`s as its params, and a placement through it reads them. `Mix` has a result and
-//! `Gain` has none; each is placed by name with its defaults and through a template that gives every composite param its own value.
+//! `Gain` has none; each is placed by name with its defaults and through a template that gives every composite param its own value. `Wrap` has a result and holds a template param `t` it places, by default and as its placement overrides it.
 
 module Mix(x: u8) -> u8 {
     c: [u8; 2] = [1, 2];
@@ -14,12 +14,20 @@ module Gain(in a: Bit<u8>, out y: Bit<u8>) {
     y = a * c[1];
 }
 
+module Wrap(x: u8) -> u8 {
+    t: Mix = Mix { c: [1, 2] };
+    let q = t(x);
+    q
+}
+
 module Bench() {
     signal a: Bit<u8> = 2;
     signal by_name: Bit<u8>;
     signal by_template: Bit<u8>;
     signal gained_name: Bit<u8>;
     signal gained_template: Bit<u8>;
+    signal wrapped_default: Bit<u8>;
+    signal wrapped_given: Bit<u8>;
     let t = Mix { c: [5, 6], o: None, os: [None, Some(1)] };
     let m = Mix(a);
     let n = t(a);
@@ -28,6 +36,10 @@ module Bench() {
     let g = Gain { c: [7, 8] };
     let h = Gain(a, gained_name);
     let i = g(a, gained_template);
+    let w = Wrap(a);
+    let v = Wrap(a) { t: Mix { c: [9, 9], o: None, os: [None, None] } };
+    wrapped_default = w;
+    wrapped_given = v;
 }
 
 digital for Bench {

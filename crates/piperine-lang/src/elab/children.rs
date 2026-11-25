@@ -193,16 +193,18 @@ impl Elaboration<'_, '_> {
     /// template written in place; `Err` after the diagnostic of a head that does not fold.
     pub(super) fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
         let CallClass::Instance { module: placed, via } = class else { return Ok(None) };
+        // a placement in the body of a hoisted module reads the params its own placement bound, not the keys of the body that holds it
+        let keys = if scope.frame == 0 { scope.keys.clone() } else { self.frame_bindings(scope.frame) };
         match via {
             Some(via) if placed.is_some_and(|placed| *via == placed) => return Ok(None),
-            Some(via) if self.is_module_param(*via) => return Ok(scope.keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned()),
+            Some(via) if self.is_module_param(*via) => return Ok(keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned()),
             Some(_) => {}
             // a choice of templates written as the head folds as any head does; a module named by its path places by name
             None if !self.has_an_expression_head(call) => return Ok(None),
             None => {}
         }
         let ExprKind::Call { callee, .. } = &self.design.expr_node(call).kind else { return Ok(None) };
-        let folded = self.fold_param_value(*callee, &scope.keys.overlaid(&scope.unrolled));
+        let folded = self.fold_param_value(*callee, &keys.overlaid(&scope.unrolled));
         match folded {
             Ok(number) => Ok(self.consts.templates().get(number).cloned()),
             Err(fault) => {

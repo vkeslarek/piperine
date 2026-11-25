@@ -653,3 +653,16 @@ fn equal_arrays_of_templates_share_one_body_keyed_by_value() {
     assert_eq!(Placed::real(&ir, "Top.a.c1"), Constant::Real(Real::new(6.0)));
     assert_eq!(Placed::real(&ir, "Top.c.c1"), Constant::Real(Real::new(7.0)));
 }
+
+#[test]
+fn a_template_param_of_a_module_with_a_result_places_the_templates_params() {
+    // §8.4.4, §8.3.12: `t(x)` in the body of `Mid`, a module with a result, places the template `t` holds in the frame of its own
+    // placement: the default's params, and the params of the template the placement of `Mid` overrides it with, scalar or composite
+    let scalar = |declared: &str, over: &str| format!("module Inner(x: f64) -> f64 {{ r: f64 = 3.0; x * r }}\nmodule Mid(x: f64) -> f64 {{ t: Inner = {declared}; let q = t(x); q }}\nmodule Top() {{ signal y: Bit<f64> = 0.0; let r = Mid(1.0){over}; }}\ndigital for Top {{ on at(1n) {{ y <- r; }} }}");
+    let read = |source: String| Elab::ir(&source, "Top").print_structural();
+    assert!(read(scalar("Inner { r: 8.0 }", "")).contains("y <- (1.0 * 8.0)"));
+    assert!(read(scalar("Inner { r: 8.0 }", " { t: Inner { r: 1.5 } }")).contains("y <- (1.0 * 1.5)"));
+    let array = |declared: &str, over: &str| format!("module Inner(x: f64) -> f64 {{ c: [f64; 2] = [3.0, 4.0]; x * c[1] }}\nmodule Mid(x: f64) -> f64 {{ t: Inner = {declared}; let q = t(x); q }}\nmodule Top() {{ signal y: Bit<f64> = 0.0; let r = Mid(1.0){over}; }}\ndigital for Top {{ on at(1n) {{ y <- r; }} }}");
+    assert!(read(array("Inner { c: [8.0, 9.0] }", "")).contains("([8.0, 9.0] : [f64; 2])[1i32]"));
+    assert!(read(array("Inner { c: [8.0, 9.0] }", " { t: Inner { c: [1.0, 2.0] } }")).contains("([1.0, 2.0] : [f64; 2])[1i32]"));
+}

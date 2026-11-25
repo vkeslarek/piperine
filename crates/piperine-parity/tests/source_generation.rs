@@ -313,6 +313,9 @@ fn a_template_carrying_composite_params_runs_through_a_placement() {
     assert_eq!(CompositeParams::changes("by_template"), vec![(ns, vec![given(3)])]);
     assert_eq!(CompositeParams::changes("gained_name"), vec![(ns, vec![3 * 2])]);
     assert_eq!(CompositeParams::changes("gained_template"), vec![(ns, vec![3 * 8])]);
+    // `Wrap` places its param `t`: the default `Mix { c: [1, 2] }` is `a * 2 + 3 + 4 + 9`, the override `{ c: [9, 9], o: None, os: [None, None] }` is `a * 9 + 0 + 0 + 9`
+    assert_eq!(CompositeParams::changes("wrapped_default"), vec![(ns, vec![defaults(3)])]);
+    assert_eq!(CompositeParams::changes("wrapped_given"), vec![(ns, vec![3 * 9 + 9])]);
 }
 
 #[test]

@@ -541,6 +541,7 @@ Proof: run srcgenr | test a_template_array_element_placed_in_generation_runs ...
 Proof: run elabtemplates | test equal_arrays_of_templates_share_one_body_keyed_by_value ... ok
 Proof: run elabresults | test a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templates_params ... ok
 Proof: run srcgenr | test a_module_with_a_result_through_a_callable_bound_param_runs ... ok
+Proof: run elabtemplates | test a_template_param_of_a_module_with_a_result_places_the_templates_params ... ok
 
 **C154** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
