@@ -304,9 +304,11 @@ transient step that reads the change, so the set has no solve of its own.
    When the microstep loop of a transient time point passes through a value, a **zero-width
    solve** at `t` reads every change the loop made: each carrier or param that passed through a
    value at the first value it passed through, every other one at its value after the loop. A
-   zero-width solve is a solve at `t` in which no time passes. Every state is carried from the
-   solution at `t` (rule 1), so an integrand gains no area there: a pulse of zero width has zero
-   area, whatever the step that arrived at `t`. A constraint the values force moves its states as
+   zero-width solve is solved at `t` as a backward-Euler step of width ε = 10⁻⁶ tick from the
+   solution at `t`, its time kept at `t`. Every state is carried from that solution (rule 1): it
+   moves by at most ε times its derivative, far below any tolerance, so an integrand gains no
+   area that a tolerance can see, whatever the step that arrived at `t` (a pulse of zero width
+   has zero area). A constraint the values force moves its states as
    in the step that reads a jump (rule 2): an `idt` whose `reset` holds takes its `ic` there.
    Its solution replaces the solution at `t`, the reactions that ran are not run again, and a
    crossing only that solution makes fires at the next microstep of `t`. When the reactions of
@@ -357,8 +359,11 @@ transient step that reads the change, so the set has no solve of its own.
 > reached `analog`, and `idtmod` (§22.2.9), whose wrap is a pulse of `seat`, never wrapped. A
 > retake of the step to `t` would read the pulse too, but over the whole step: an integrand that
 > reads it would gain an area of the step times its value, which depends on the step, where a
-> pulse of zero width has none. The solver runs the order of §15: the step to `t` first, on the
-> left value, then the microsteps of `t` (MD-62).
+> pulse of zero width has none. The zero-width solve is a backward-Euler step of width
+> ε = 10⁻⁶ tick and not a solve with every state fixed: a constraint that moves states (rule 2)
+> then conserves them over each cut it closes as the step that reads a jump does, and each state
+> moves by at most ε times its derivative. The solver runs the order of §15: the step to `t`
+> first, on the left value, then the microsteps of `t` (MD-62).
 
 **Errors**
 

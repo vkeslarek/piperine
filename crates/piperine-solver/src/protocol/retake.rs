@@ -4,8 +4,9 @@
 //! - a crossing made by a jump fires after the step that read the jump, and when its reactions
 //!   change what `analog` reads, that step is taken again to `t` with the change (a **retake**);
 //! - a value `analog` reads that passes within the instant (held at the end of one microstep and
-//!   lost at a later one, as a pulse is) is read by a **zero-width solve** at `t`: no time passes,
-//!   so every `ddt` state is held and no integrand gains area, and a read that forces a state (an
+//!   lost at a later one, as a pulse is) is read by a **zero-width solve** at `t`: a backward-Euler
+//!   step of width ε = 1e-6 tick, so every `ddt` state moves by at most ε times its derivative,
+//!   far below any tolerance, and no integrand gains area a tolerance sees; a read that forces a state (an
 //!   `idt` whose `reset` pulses, the seat of `idtmod`'s wrap) takes effect there. After a
 //!   zero-width solve, a change the next round makes is read by another one, so the earlier
 //!   reading is never undone.

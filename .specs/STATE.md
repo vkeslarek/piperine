@@ -1944,7 +1944,8 @@ whoever merges second). Found by `generics` phase E (T109): `idtmod` never wrapp
 2. **Rule (§15.2 rule 4, amended).** A carrier or param `analog` reads that holds a value at the end of one microstep of a
    transient time point and loses it later in that instant (host suspensions included) has passed through it. A
    **zero-width solve** at `t` reads every change of the loop, each passing carrier at the first value it passed through:
-   no time passes, every `ddt` state is carried, so no integrand gains area (a zero-width pulse has zero area), and a
+   a backward-Euler step of width ε = 10⁻⁶ tick, so every `ddt` state moves by at most ε times its derivative, far below
+   any tolerance, and no integrand gains area a tolerance sees (a zero-width pulse has zero area), and a
    constraint the values force (`idt`'s `reset`) moves its state there. Its solution replaces the one at `t`; a crossing it
    makes fires at the next microstep, and what that crossing's reactions pass through or change is read by another
    zero-width solve (never a retake, which would undo the first; one loop with rule 4's retake, round bound `E0504`). The

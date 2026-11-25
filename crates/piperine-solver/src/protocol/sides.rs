@@ -332,8 +332,10 @@ pub trait AnalogSide {
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
     /// Solves once more at the time of the last accepted solution, on the discrete values delivered
-    /// since, with no time passing (docs/spec §15.2 rule 4): every `ddt` state is held, so no
-    /// integrand gains area, and what the delivered values force takes effect. The solution
+    /// since (docs/spec §15.2 rule 4): a backward-Euler step of width ε = 1e-6 tick from that
+    /// solution, its time kept there. Every `ddt` state moves by at most ε times its derivative,
+    /// far below any tolerance, so no integrand gains area a tolerance sees, and what the delivered
+    /// values force takes effect. The solution
     /// replaces the accepted one at that time; the next step reads a jump. `None`: it did not converge.
     fn zero_width(&mut self) -> Result<Option<Accepted>>;
     /// Takes back the last `accept` and puts the side back as `mark` found it, so the same step
