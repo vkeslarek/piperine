@@ -539,3 +539,20 @@ fn every_gallery_fence_is_in_the_formatters_form() {
         assert_eq!(formatted, text, "{} ({}:{}) is not in the formatter's form", gallery.section, gallery.block.file, gallery.block.line);
     }
 }
+
+/// The items of L58's generics group, as the names the fences write them with.
+const GENERIC_LIBRARY: [&str; 15] = ["Short", "since", "idt", "idtmod", "zi_nd", "laplace_nd", "noise_table", "Stable", "Setup", "Hold", "MinPulse", "inertial", "cast", "same", "TribufDelayed"];
+
+#[test]
+fn the_fences_of_the_generic_library_are_checked() {
+    // GN-31 AC 2: every gallery fence that writes an item of the generic library is held to the checker, whole-model, with no
+    // diagnostic: none of them is left refused for a form of the `generics` feature (T113 holds the items themselves)
+    let fences: Vec<Gallery> = galleries().into_iter().filter(|g| GENERIC_LIBRARY.iter().any(|item| uses(&g.block.text, item))).collect();
+    let used: BTreeSet<&str> = GENERIC_LIBRARY.iter().copied().filter(|item| fences.iter().any(|g| uses(&g.block.text, item))).collect();
+    assert!(used.contains("idtmod"), "the fences write at least `idtmod` (D.3): {used:?}");
+    for g in fences {
+        let found = piperine_lang::types::Types::check_model(&gallery_design(&g)).err().unwrap_or_default();
+        let lines: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
+        assert!(lines.is_empty(), "{} ({}:{}) is held to the checker: {lines:?}", g.section, g.block.file, g.block.line);
+    }
+}

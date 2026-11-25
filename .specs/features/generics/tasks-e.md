@@ -405,9 +405,9 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 �
 
 **Done when**:
 
-- [ ] `the_fences_of_the_generic_library_are_checked` passes under `**Run galleries**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
-- [ ] Gate check passes: Quick
+- [x] `the_fences_of_the_generic_library_are_checked` passes under `**Run galleries**`
+- [x] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
