@@ -275,8 +275,8 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 �
 
 **Done when**:
 
-- [ ] `the_laplace_family_gives_the_closed_form_step_response` and `an_improper_or_unpaired_laplace_is_refused` pass under `**Run srcstd**`
-- [ ] Gate check passes: Quick
+- [x] `the_laplace_family_gives_the_closed_form_step_response` and `an_improper_or_unpaired_laplace_is_refused` pass under `**Run srcstd**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -382,3 +382,57 @@ fn idt_and_idtmod_integrate_against_section_22() {
         }
     }
 }
+
+/// The step responses of `laplace.msl`, from §22.2.14: a unit step at `STEP` through `H(s)` with unit DC gain.
+struct Laplace;
+
+impl Laplace {
+    /// The instant of the step, in seconds, and the time constant of the first-order sections.
+    const STEP: f64 = 1e-6;
+    const TAU: f64 = 1e-6;
+    /// The real part and the imaginary part of the second-order section's poles, `-a +- jb`.
+    const A: f64 = 1e6;
+    const B: f64 = 2e6;
+
+    /// The response of `1 / (1 + s tau)` at `at`.
+    fn first_order(at: f64) -> f64 {
+        if at < Self::STEP { 0.0 } else { 1.0 - (-(at - Self::STEP) / Self::TAU).exp() }
+    }
+
+    /// The response of `1 / ((1 + s/p)(1 + s/conj p))` for `p = -a + jb` at `at`.
+    fn second_order(at: f64) -> f64 {
+        if at < Self::STEP {
+            return 0.0;
+        }
+        let t = at - Self::STEP;
+        1.0 - (-Self::A * t).exp() * ((Self::B * t).cos() + Self::A / Self::B * (Self::B * t).sin())
+    }
+}
+
+#[test]
+fn the_laplace_family_gives_the_closed_form_step_response() {
+    // §22.2.14: four spellings of one low-pass (`tau = 1 us`) and a second-order section, read every half us after a step at
+    // 1 us; the readings are the closed forms of the step response
+    let records = StdModels::records("laplace.msl", "LaplaceBench", 8e-6, 5e-9);
+    let read = StdModels::of_stream(&records, "laplace");
+    assert!(read.len() >= 14, "one reading per half us: {}", read.len());
+    for record in read {
+        let at = record.time;
+        for name in ["nd", "np", "zd", "zp"] {
+            let seen = StdModels::real(record, name);
+            assert!((seen - Laplace::first_order(at)).abs() < 5e-3, "laplace_{name} at {at}: {seen} against {}", Laplace::first_order(at));
+        }
+        let seen = StdModels::real(record, "second");
+        assert!((seen - Laplace::second_order(at)).abs() < 5e-3, "second order at {at}: {seen} against {}", Laplace::second_order(at));
+    }
+}
+
+#[test]
+fn an_improper_or_unpaired_laplace_is_refused() {
+    // §22.2.14: `N > D` fails the `where` of `laplace_nd` (E0304); a complex pole without its conjugate fails
+    // `conjugate_closed` (E0317)
+    let improper = StdModels::project("laplace_refused.msl").elaborate("ImproperBench").expect_err("N > D").to_string();
+    assert!(improper.contains("E0304"), "{improper}");
+    let unpaired = StdModels::project("laplace_refused.msl").elaborate("UnpairedBench").expect_err("an unpaired pole").to_string();
+    assert!(unpaired.contains("E0317"), "{unpaired}");
+}

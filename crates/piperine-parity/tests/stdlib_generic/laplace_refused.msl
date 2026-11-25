@@ -1,0 +1,9 @@
+//! An improper `laplace_nd` (`N > D`, E0304) and a complex pole with no conjugate (E0317).
+
+module ImproperBench() {
+    let y = laplace_nd::<3, 2>(1.0) { num: [1.0, 0.0, 0.0], den: [1.0, 1u] };
+}
+
+module UnpairedBench() {
+    let y = laplace_np::<1, 1>(1.0) { num: [1.0], poles: [(-1M, 2M)] };
+}
