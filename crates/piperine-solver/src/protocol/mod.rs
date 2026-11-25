@@ -21,6 +21,6 @@ pub use sides::{
 };
 pub use host::{HostCx, SetOutcome, Waiter};
 pub use sink::Sink;
-pub use statistics::{InstantCause, StepEnd, StepStatistics};
+pub use statistics::{InstantCause, StepEnd, StepStatistics, ZeroWidthCause};
 pub use step::{StepObserver, StepView};
 pub use transient::{Ended, Protocol, ProtocolOptions};

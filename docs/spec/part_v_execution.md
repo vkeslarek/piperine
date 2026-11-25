@@ -318,7 +318,7 @@ transient step that reads the change, so the set has no solve of its own.
    first step after `t` reads what the instant leaves behind: it reads a jump (rule 6). In an
    operating point, a round solves the equilibrium again (§16), which carries no state, and a
    value passed through is not solved; a host `set` between two runs, which solves nothing, makes
-   no zero-width solve either.
+   no zero-width solve either. The run's statistics count the zero-width solves by cause.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.

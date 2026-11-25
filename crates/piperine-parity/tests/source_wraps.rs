@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use piperine_parity::project::Project;
 use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::NodeIdentifier;
+use piperine_solver::protocol::ZeroWidthCause;
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -124,11 +125,12 @@ impl GlitchBench {
     const NODES: [&'static str; 2] = ["integral", "charged"];
 
     /// Each node's value at every accepted step after the glitch, over a run to 3 us with the step
-    /// cap `step`.
-    fn after_glitch(step: f64) -> Vec<Vec<f64>> {
+    /// cap `step`, and the zero-width solves the run made for a passed value.
+    fn after_glitch(step: f64) -> (Vec<Vec<f64>>, u64) {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps/glitch.msl");
         let built = build(&Project::new(&path), "Glitch");
         let (_, result) = built.run_with(3e-6, step);
+        let solves = result.statistics().zero_width_for(ZeroWidthCause::PassedValue);
         let accepted: Vec<_> = result.iter().filter(|point| point.time() >= 1e-6).collect();
         let values = Self::NODES
             .iter()
@@ -138,7 +140,7 @@ impl GlitchBench {
                 accepted.iter().map(|point| point.get_node(&node).expect("its voltage")).collect()
             })
             .collect();
-        values
+        (values, solves)
     }
 }
 
@@ -149,7 +151,8 @@ fn a_zero_delay_glitch_gains_no_area_at_any_step() {
     // are both 0, at a step cap of 50 ns and of 200 ns alike: a retake of the step to 1 us would
     // have integrated the high over the whole step (0.05 and 0.2 here)
     for step in [0.05e-6, 0.2e-6] {
-        let values = GlitchBench::after_glitch(step);
+        let (values, solves) = GlitchBench::after_glitch(step);
+        assert_eq!(solves, 1, "one zero-width solve, at the glitch (step {step:e})");
         for (name, node) in GlitchBench::NODES.iter().zip(values) {
             assert!(!node.is_empty(), "{name} has steps after the glitch");
             let largest = node.iter().fold(0.0_f64, |most, v| most.max(v.abs()));

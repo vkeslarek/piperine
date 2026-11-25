@@ -32,7 +32,7 @@ use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions}
 
 use piperine_solver::protocol::{
     Accepted, Advance, LandingCause, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
-    Protocol, ProtocolOptions, Restart, SetOutcome, Sink,
+    Protocol, ProtocolOptions, Restart, SetOutcome, Sink, ZeroWidthCause,
 };
 use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
@@ -781,6 +781,7 @@ fn a_value_passed_within_an_instant_is_read_by_a_zero_width_solve_and_settle_fol
             Call::RunInstant { at: 6, samples: vec![], limit: horizon(6, 6), mode: settling },
         ]
     );
+    assert_eq!(p.statistics().zero_width_for(ZeroWidthCause::PassedValue), 1, "counted for its cause");
 }
 
 #[test]
@@ -830,6 +831,10 @@ fn a_crossing_the_zero_width_solve_makes_is_read_by_another() {
         ]
     );
     assert_eq!(seq[8], Call::Deliver(vec![kept, low, made], Restart::Integrator), "every change of the instant");
+    assert_eq!(
+        (p.statistics().zero_width_for(ZeroWidthCause::PassedValue), p.statistics().zero_width_for(ZeroWidthCause::CrossingChange)),
+        (1, 1)
+    );
 }
 
 #[test]

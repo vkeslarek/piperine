@@ -17,6 +17,7 @@
 use piperine_analog_solver::error::{Error, Result, RunCode, SolverDomain};
 
 use super::sides::{Accepted, AnalogSide, AnalysisKind, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Outcome, Restart, Tick};
+use super::statistics::ZeroWidthCause;
 use super::transient::Protocol;
 
 /// Whether the step being taken reads a jump: the previous instant of the transient delivered a
@@ -65,8 +66,8 @@ enum Reading {
     /// `analog` reads: the step is retaken to `t` with every change read so far.
     Retake,
     /// Values passed through, or a change made after a zero-width solve: read by a zero-width
-    /// solve at `t`.
-    ZeroWidth(Vec<Boundary>),
+    /// solve at `t`, for this cause.
+    ZeroWidth(Vec<Boundary>, ZeroWidthCause),
 }
 
 /// What one round of the instant changed, passed through and fired.
@@ -105,12 +106,12 @@ impl Readings {
     /// `analog` reads), by a retake until a zero-width solve was made and by a zero-width solve after.
     fn next(&self, round: &mut Round) -> Option<Reading> {
         if !round.passing.is_empty() {
-            return Some(Reading::ZeroWidth(std::mem::take(&mut round.passing)));
+            return Some(Reading::ZeroWidth(std::mem::take(&mut round.passing), ZeroWidthCause::PassedValue));
         }
         if !self.reads_jump || round.made.is_empty() || round.boundary.is_empty() {
             return None;
         }
-        Some(if self.zero_width { Reading::ZeroWidth(round.boundary.clone()) } else { Reading::Retake })
+        Some(if self.zero_width { Reading::ZeroWidth(round.boundary.clone(), ZeroWidthCause::CrossingChange) } else { Reading::Retake })
     }
 
     /// What the first step after `t` reads, the last round left `unread`: every change of the
@@ -192,10 +193,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 }
                 self.analog.accept()?
             }
-            Reading::ZeroWidth(values) => {
+            Reading::ZeroWidth(values, cause) => {
                 self.analog.deliver(&values, Restart::Integrator);
                 let solved = self.analog.zero_width()?;
                 self.keep_analog_traces();
+                self.statistics.record_zero_width(cause);
                 readings.zero_width = true;
                 solved.ok_or_else(|| self.zero_width_failed(time, &values))?
             }

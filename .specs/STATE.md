@@ -1955,7 +1955,7 @@ whoever merges second). Found by `generics` phase E (T109): `idtmod` never wrapp
    `Outcome::passing`) and leaves that instant's settle phase to the owner; `piperine-solver` reads them
    (`protocol/retake.rs::read_instant`, one loop for retakes and zero-width solves; `AnalogSide::zero_width`;
    `TransientSolver::device_zero_width`: one backward-Euler solve from the solution at `t` over 1e-6 of a tick, the time
-   kept at `t`), and the adapter gives the analog copy
+   kept at `t`), counts them (`StepStatistics::zero_width_for`, `ZeroWidthCause`), and the adapter gives the analog copy
    back what a pulse took away (`restore_passed`). GAPS X1 closed (its §15 text was already the solve-then-react order; the
    stale §15.2 note is replaced).
 
