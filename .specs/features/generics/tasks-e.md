@@ -25,6 +25,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
 **Run typestempl**: `cargo test -p piperine-lang --test types_templates`
+**Run apisession**: `cargo test -p piperine-api --test session`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
