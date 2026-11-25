@@ -191,3 +191,38 @@ fn a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_
         }
     }
 }
+
+#[test]
+fn every_read_whose_hops_the_text_names_is_elaborated_in_one_pass() {
+    // verification finding 8: the demands of a read through children of children are known from the text before the first pass
+    // (`reach_seed.rs`), so every item of the cell (a node, a `let` over the solve, a carrier, a param, a `let` over the params) is
+    // one pass in every form, by name, through templates, a template placed through a template and in generation, and so is a
+    // cycle of node connections. The one rerun left is the documented fallback: a `let` of a cell placed through a type parameter
+    // (`GBank<C>`'s `cell(a)`), whose module the text does not name, so the names that `let` reads are found by running, one pass
+    // for each level below the reader
+    let elaborate = |src: &str| {
+        let design = support::Elab::design(src);
+        let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
+        assert!(result.is_ok(), "{src}: {:?}", result.err());
+        statistics.passes
+    };
+    for (placement, reach, form) in READS {
+        let through_type_parameter = placement.contains("::<_>");
+        let depth = if form.starts_with('4') { 4 } else { 3 };
+        for (item, read) in [("sn", format!("v({reach}.sn)")), ("vs", format!("{reach}.vs")), ("q", format!("{reach}.q")), ("k", format!("{reach}.k")), ("twice", format!("{reach}.twice"))] {
+            let expected = if through_type_parameter && item == "vs" { depth } else { 1 };
+            let passes = elaborate(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {read};"))));
+            assert_eq!(passes, expected, "{form}: `{read}`");
+        }
+    }
+    for cycle in [
+        "let p = Level3(q.mid.c0.sn); let q = Level3(p.mid.c0.sn);",
+        "let p = Level4(p.top.mid.c0.sn);",
+        "let p = Holder { make: Bank { cell: Cell { } } }(q.b.c0.sn); let q = Holder { make: Bank { cell: Cell { } } }(p.b.c0.sn);",
+        "let p = Plane { cell: Cell { } }(q.grid.row.cells[1].sn); let q = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);",
+        "let p = Tall(q.tower.rows.cells[1].sn); let q = Tall(p.tower.rows.cells[1].sn);",
+        "let p = GPlane::<_>(q.grid.row.cells[1].sn) { cell: Cell { } }; let q = GPlane::<_>(p.grid.row.cells[1].sn) { cell: Cell { } };",
+    ] {
+        assert_eq!(elaborate(&format!("{MODELS}module Top() {{ {cycle} }}")), 1, "{cycle}");
+    }
+}

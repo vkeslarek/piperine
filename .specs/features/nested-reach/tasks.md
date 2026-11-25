@@ -196,6 +196,9 @@ Proof: run elabnested | test a_reach_refused_for_its_cause_reports_that_cause_on
 **C24** - A `let` over the solve three and four levels below the reader (`R.vs`, `v(sn)`), and a `let` over it and a port (`vs2 = vs + v(a)`), is elaborated in one pass in every form whose hops the text names: the names the `let` reads are demands known before the first pass (verification finding 7)
 Proof: run elabnested | test a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_one_pass ... ok
 
+**C25** - Every item of the cell (node, `let` over the solve, carrier, param, `let` over the params) in every form of `READS`, and a cycle of node connections by name, through templates, a template of a template and in generation, is elaborated in one pass (`Elaborator::run_with_statistics`); the one rerun left, a `let` of a cell placed through a type parameter, takes one pass per level below the reader (verification finding 8)
+Proof: run elabnested | test every_read_whose_hops_the_text_names_is_elaborated_in_one_pass ... ok
+
 ---
 
 ## Handoff
