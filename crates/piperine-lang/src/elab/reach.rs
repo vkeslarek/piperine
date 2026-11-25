@@ -53,7 +53,7 @@ impl Elaboration<'_, '_> {
         if terminal.is_none() {
             let span = self.design.expr_node(expr).span;
             // a module that declares a node in generation was refused by its count (`declares_in_generation`)
-            self.unsupported_after_no_refusal(scope.file, span, "a name of a child that is not one of its nodes, as a node");
+            self.unsupported_unless_refused(frame, scope.file, span, "a name of a child that is not one of its nodes, as a node");
         }
         terminal
     }
@@ -227,15 +227,18 @@ impl Elaboration<'_, '_> {
         } else if self.frames[scope.frame].is_reached() {
             (self.frame_bindings(scope.frame), None)
         } else {
-            self.unsupported_after_no_refusal(scope.file, span, "a field of a child of a child");
+            self.unsupported_unless_refused(scope.frame, scope.file, span, "a field of a child of a child");
             return None;
         };
         let Some(module) = self.placed_module(call, &keys) else {
-            self.unsupported_after_no_refusal(scope.file, span, "a field of a child of a child");
+            self.unsupported_unless_refused(scope.frame, scope.file, span, "a field of a child of a child");
             return None;
         };
         if scope.frame == 0 && child.is_none() {
-            self.unsupported_after_no_refusal(scope.file, span, "a field of a child of a child");
+            // a placement of the body with no child of its own is a hoisted one: refused when it was hoisted, if it holds a placement
+            if !self.refused_modules.contains(&module) {
+                self.unsupported_unless_refused(scope.frame, scope.file, span, "a field of a child of a child");
+            }
             return None;
         }
         let name = format!("{}{}", self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone()), key.subscripts());
@@ -367,6 +370,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(module).clone();
         let found = data.children.iter().find(|child| matches!(self.design.decl_data(**child).kind, DeclKind::Generation(_)) && self.declares_node(**child));
         if let Some(generation) = found {
+            self.refused_modules.insert(module);
             self.unsupported(data.file, self.design.decl_data(*generation).span, "a node declared in generation of a module a parent reads through");
         }
         found.is_some()

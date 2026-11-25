@@ -472,6 +472,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(module).clone();
         let DeclKind::Module(m) = &data.kind else { return false };
         let refuse = |this: &mut Self, what: &str| {
+            this.refused_modules.insert(module);
             this.unsupported(file, span, &format!("a hoisted module that holds {what},"));
             false
         };

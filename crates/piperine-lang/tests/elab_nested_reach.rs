@@ -226,3 +226,28 @@ fn every_read_whose_hops_the_text_names_is_elaborated_in_one_pass() {
         assert_eq!(elaborate(&format!("{MODELS}module Top() {{ {cycle} }}")), 1, "{cycle}");
     }
 }
+
+
+#[test]
+fn a_refusal_of_another_cause_hides_no_refusal_of_a_read() {
+    // verification finding 9: a read refused for its own cause (`v(r.h.n)`, a node of a hoisted module read through a child) says so
+    // though the run refused something else before it, a sibling read through a module that declares a node in generation (GAPS L94)
+    // or a hoisted module that holds a placement (L95): only a read through the refused module itself is silent after its cause
+    let models = format!(
+        "{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let mid = Level2(a); }}\n\
+         module HW(x: f64) -> f64 {{ signal n: Electrical; pub let w = Level2(n); x }}\n\
+         module HN(x: f64) -> f64 {{ pub signal n: Electrical; x }}\nmodule MidH(a: Electrical) {{ pub let h = HN(1.0); }}\nmodule TopH(a: Electrical) {{ pub let m = MidH(a); }}\n"
+    );
+    let own = "a name of a child that is not one of its nodes, as a node";
+    for (placement, reads, earlier) in [
+        ("let g = GenNode(a); let r = MidH(a);", "v(g.mid.c0.sn) + v(r.h.n)", "a node declared in generation of a module a parent reads through"),
+        ("let g = GenNode(a); let r = TopH(a);", "v(g.mid.c0.sn) + v(r.m.h.n)", "a node declared in generation of a module a parent reads through"),
+        ("let h = HW(1.0); let r = MidH(a);", "v(h.w.c0.sn) + v(r.h.n)", "a hoisted module that holds a placement of a module that is not hoisted"),
+    ] {
+        let found = Elab::run(&format!("{models}{}", top(placement, &format!("potential(o) +> {reads};"))), "Top").expect_err("both reads are refused");
+        let messages: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
+        assert_eq!(messages.len(), 2, "{reads}: {messages:?}");
+        assert!(messages[0].starts_with("P0001") && messages[0].contains(earlier), "{reads}: the earlier cause first: {messages:?}");
+        assert!(messages[1].starts_with("P0001") && messages[1].contains(own), "{reads}: the read's own refusal: {messages:?}");
+    }
+}

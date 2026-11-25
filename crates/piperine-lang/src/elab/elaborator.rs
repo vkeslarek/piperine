@@ -130,6 +130,9 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
     /// What the design reads through a child of a child, by module (`reach_through_templates.rs`).
     pub(super) nested_demands: super::reach_through_templates::NestedDemands,
+    /// The modules refused for a cause of their own that a read through them meets: one that declares a node in generation
+    /// (`reach.rs`), a hoisted one that holds a placement (`hoist.rs`). A read through one of them adds no second diagnostic.
+    pub(super) refused_modules: std::collections::BTreeSet<DeclId>,
     /// The diverging expressions lowered so far (`exits.rs`).
     pub(super) divergences: Divergences,
     /// How many placements of a module an unrolled loop has hoisted so far, by the frame that
@@ -179,6 +182,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
             nested_demands: super::reach_through_templates::NestedDemands::known(demands),
+            refused_modules: std::collections::BTreeSet::new(),
             divergences: Divergences::default(),
             unrolled_names: BTreeMap::new(),
             looped: BTreeMap::new(),
@@ -341,12 +345,26 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
     }
 
-    /// [`unsupported`](Self::unsupported) unless the run has refused something already: a read that fails because of a refusal
-    /// reported before it (a child whose own lowering was refused) adds no second diagnostic for the same cause.
-    pub(super) fn unsupported_after_no_refusal(&mut self, file: FileId, span: Span, what: &str) {
-        if self.diagnostics.is_empty() {
+    /// [`unsupported`](Self::unsupported) unless the read through the frame `frame` passes through a module refused for its own
+    /// cause (`refused_modules`): that refusal is the read's, reported once. Any other refusal of the run, of another module or of
+    /// another read, hides nothing.
+    pub(super) fn unsupported_unless_refused(&mut self, frame: usize, file: FileId, span: Span, what: &str) {
+        if !self.reads_through_refused(frame) {
             self.unsupported(file, span, what);
         }
+    }
+
+    /// Whether the frame `frame`, or a frame it hangs from, is of a module refused for its own cause (`refused_modules`).
+    pub(super) fn reads_through_refused(&self, frame: usize) -> bool {
+        let mut at = Some(frame);
+        while let Some(index) = at {
+            let Some(held) = self.frames.get(index) else { return false };
+            if self.refused_modules.contains(&held.module) {
+                return true;
+            }
+            at = held.parent;
+        }
+        false
     }
 }
 
