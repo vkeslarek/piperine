@@ -16,13 +16,14 @@ body Diode  @devices.msl:31:1
   local new: f64
   local old: f64
   analog
-    let nvt = (n * vt())
+    let nvt = (n * vt(if temperature_given() { temperature() } else { 300.15 }))
     let vcrit = (nvt * ln((nvt / (sqrt(2.0) * is))))
     let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, nvt, vcrit), seed vcrit)
     let id = (is * (exp((vd / nvt)) - 1.0))
     b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)
-fn vt() -> f64  @analog.msl:10:1
-  ((1.380649e-23 * temperature()) / 1.602176634e-19)
+fn vt(t: f64) -> f64  @analog.msl:10:1
+  local t: f64
+  ((1.380649e-23 * t) / 1.602176634e-19)
 fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64  @analog.msl:21:1
   local new: f64
   local old: f64
@@ -39,7 +40,7 @@ arenas
   fn 1: body e82
   instance 0: name diode  body 0  parent -  children ()  nodes (gnd, gnd)
   e0: f64 = real 1.380649e-23  @analog.msl:10:24
-  e1: f64 = env temperature  @analog.msl:10:24
+  e1: f64 = local 0  @analog.msl:10:24
   e2: f64 = mul e0 e1  @analog.msl:10:24
   e3: f64 = real 1.602176634e-19  @analog.msl:10:24
   e4: f64 = div e2 e3  @analog.msl:10:24
@@ -131,46 +132,50 @@ arenas
   e90: f64 = real 0.0  @devices.msl:34:18
   e91: bool = ge e89 e90  @devices.msl:34:18
   e92: f64 = param 1  @devices.msl:37:17
-  e93: f64 = call fn 0 ()  @devices.msl:37:17
-  e94: f64 = mul e92 e93  @devices.msl:37:17
-  e95: f64 = local 0  @devices.msl:38:17
-  e96: f64 = local 0  @devices.msl:38:17
-  e97: f64 = real 2.0  @devices.msl:38:17
-  e98: f64 = sqrt (e97)  @devices.msl:38:17
-  e99: f64 = param 0  @devices.msl:38:17
-  e100: f64 = mul e98 e99  @devices.msl:38:17
-  e101: f64 = div e96 e100  @devices.msl:38:17
-  e102: f64 = ln (e101)  @devices.msl:38:17
-  e103: f64 = mul e95 e102  @devices.msl:38:17
-  e104: f64 = probe n0 n1  @devices.msl:39:28
-  e105: f64 = local 4  @devices.msl:39:28
-  e106: f64 = local 5  @devices.msl:39:28
-  e107: f64 = local 0  @devices.msl:39:28
-  e108: f64 = local 1  @devices.msl:39:28
-  e109: f64 = call fn 1 (e105, e106, e107, e108)  @devices.msl:39:28
-  e110: fn(f64, f64) -> f64 = closure (4, 5) e109  @devices.msl:39:28
-  e111: f64 = local 1  @devices.msl:39:28
-  e112: f64 = limit L0 e104 e110 e111  @devices.msl:39:28
-  e113: f64 = param 0  @devices.msl:40:17
-  e114: f64 = local 2  @devices.msl:40:17
-  e115: f64 = local 0  @devices.msl:40:17
-  e116: f64 = div e114 e115  @devices.msl:40:17
-  e117: f64 = exp (e116)  @devices.msl:40:17
-  e118: f64 = real 1.0  @devices.msl:40:17
-  e119: f64 = sub e117 e118  @devices.msl:40:17
-  e120: f64 = mul e113 e119  @devices.msl:40:17
-  e121: f64 = local 3  @devices.msl:41:17
-  e122: f64 = env gmin  @devices.msl:41:17
-  e123: f64 = local 2  @devices.msl:41:17
-  e124: f64 = mul e122 e123  @devices.msl:41:17
-  e125: f64 = add e121 e124  @devices.msl:41:17
-  e126: f64 = param 2  @devices.msl:41:17
+  e93: bool = env temperature_given  @devices.msl:37:17
+  e94: f64 = env temperature  @devices.msl:37:17
+  e95: f64 = real 300.15  @devices.msl:37:17
+  e96: f64 = if e93 e94 e95  @devices.msl:37:17
+  e97: f64 = call fn 0 (e96)  @devices.msl:37:17
+  e98: f64 = mul e92 e97  @devices.msl:37:17
+  e99: f64 = local 0  @devices.msl:38:17
+  e100: f64 = local 0  @devices.msl:38:17
+  e101: f64 = real 2.0  @devices.msl:38:17
+  e102: f64 = sqrt (e101)  @devices.msl:38:17
+  e103: f64 = param 0  @devices.msl:38:17
+  e104: f64 = mul e102 e103  @devices.msl:38:17
+  e105: f64 = div e100 e104  @devices.msl:38:17
+  e106: f64 = ln (e105)  @devices.msl:38:17
+  e107: f64 = mul e99 e106  @devices.msl:38:17
+  e108: f64 = probe n0 n1  @devices.msl:39:28
+  e109: f64 = local 4  @devices.msl:39:28
+  e110: f64 = local 5  @devices.msl:39:28
+  e111: f64 = local 0  @devices.msl:39:28
+  e112: f64 = local 1  @devices.msl:39:28
+  e113: f64 = call fn 1 (e109, e110, e111, e112)  @devices.msl:39:28
+  e114: fn(f64, f64) -> f64 = closure (4, 5) e113  @devices.msl:39:28
+  e115: f64 = local 1  @devices.msl:39:28
+  e116: f64 = limit L0 e108 e114 e115  @devices.msl:39:28
+  e117: f64 = param 0  @devices.msl:40:17
+  e118: f64 = local 2  @devices.msl:40:17
+  e119: f64 = local 0  @devices.msl:40:17
+  e120: f64 = div e118 e119  @devices.msl:40:17
+  e121: f64 = exp (e120)  @devices.msl:40:17
+  e122: f64 = real 1.0  @devices.msl:40:17
+  e123: f64 = sub e121 e122  @devices.msl:40:17
+  e124: f64 = mul e117 e123  @devices.msl:40:17
+  e125: f64 = local 3  @devices.msl:41:17
+  e126: f64 = env gmin  @devices.msl:41:17
   e127: f64 = local 2  @devices.msl:41:17
   e128: f64 = mul e126 e127  @devices.msl:41:17
+  e129: f64 = add e125 e128  @devices.msl:41:17
+  e130: f64 = param 2  @devices.msl:41:17
+  e131: f64 = local 2  @devices.msl:41:17
+  e132: f64 = mul e130 e131  @devices.msl:41:17
   s0: let 4 e24
   s1: let 5 e72
-  s2: let 0 e94
-  s3: let 1 e103
-  s4: let 2 e112
-  s5: let 3 e120
-  s6: contribute b0 flow (direct e125, ddt e128)
+  s2: let 0 e98
+  s3: let 1 e107
+  s4: let 2 e116
+  s5: let 3 e124
+  s6: contribute b0 flow (direct e129, ddt e132)

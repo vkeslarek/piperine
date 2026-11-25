@@ -91,7 +91,7 @@ module Resistor(p: Electrical, n: Electrical) {
 }
 
 analog for Resistor {
-    i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - tnom)));
+    i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature().unwrap_or(AMBIENT_TEMPERATURE) - tnom)));
 }
 ```
 
@@ -165,14 +165,17 @@ argument, a generation range or condition, an array length, a param default and 
   body. It is checked at elaboration and on every host `set`. The host reads it as the param's
   bounds (§23.2).
 - **§8.1.2** A param is **structural** when one of the following reads it: generation (§8.2.7), a
-  const generic argument, an array length, a template (§8.4), or the trip count of a loop that
-  places instances (§8.3.4). A param is also structural when it alone selects the kind of a branch
+  const generic argument, an array length, a template (§8.4), the default of a later param
+  (§8.1.16), the condition of a node chosen at elaboration (§1.4.7), or the trip count of a loop
+  that places instances (§8.3.4). A param is also structural when it alone selects the kind of a branch
   (§11 rule 3). A structural param is fixed at elaboration.
 - **§8.1.3** Units, aliases, Monte Carlo distributions, nodesets and "exclude from gradients" are
   not model text. `///` documents a param (§21). The rest belongs to the host session (§23).
 - **§8.1.15** A param's type is a value type. A module's name is one (§8.4). A param is never a
   carrier and is never written by a model: there is no assignment form for it.
 - **§8.1.16** A default is a const expression over constants, const generics and earlier params.
+  It is folded at elaboration for each instance, over the values its earlier params take there;
+  reading the param itself or a later one is `E0321`.
 - **§8.1.17** A param with no default and a type other than `Option<T>` is required. Every instance
   and every template **MUST** bind it. For the top module the host binds it.
 - **§8.1.18** At an instance, params are bound in a block, `Name(ports) { name: value }`, under the
@@ -185,6 +188,11 @@ argument, a generation range or condition, an array length, a param default and 
 
 > **Resolution.** §8.1.2 adds array lengths and instance-placing trip counts to the structural
 > params. Both change the elaborated netlist, as generation does.
+
+> **Resolution.** §8.1.2 adds the params a later default reads (generics phase D fix round 2,
+> 2026-11-24): a default is folded at elaboration (§8.1.16), so a host `set` of a param it reads
+> would leave the defaulted value stale. Fixing that param keeps the run exact, a `set` of it is
+> refused (§8.1.24) and the host re-elaborates. **Approved**: 2026-11-24 - user: "Vamos ficar com opção 1"
 
 > **Resolution.** §8.1.16, §8.1.19 and §8.1.20 are implied by "a value fixed during a solve" and by
 > the host listing params from the body (§21). §8.1.21 follows from elaboration preceding analysis.
@@ -504,7 +512,7 @@ value (§8.4), called with connections.
   | a loop whose trip count is not a constant | no | loops over params and constants are unrolled, one instance each |
   | a const context (§8.1); a bound param value | no | a result is not fixed during a solve |
 
-  `m`, `dtemp` and a param block apply to a placement as to any instance:
+  A param block applies to a placement as to any instance:
   `zi_nd(v(inp), 1u) { num: [0.5, 0.5], den: [] }`.
 - **§8.3.5** **Feedback.** A result has a **direct dependence** on a value input when its
   expression reads that input other than through a carrier of the module. A result that reads only
@@ -610,14 +618,15 @@ Its type is `Name`. Calling it with connections places an instance.
 - **§8.4.1** A template goes wherever a value goes: a param, a `const`, a function's result. It
   has no `Repr`, so it is never carried (§1).
 - **§8.4.2** A template binds params under §8.1.18. Every required param **MUST** be bound in it.
-  Params it leaves out take their defaults. `m` and `dtemp` (§8.5) **MAY** be bound in it.
+  Params it leaves out take their defaults.
 - **§8.4.3** A template of a generic module names its arguments, `Name::<G> { … }`, or lets them be
   inferred. Its type is `Name<G>`.
 - **§8.4.4** A placement whose head is a template value, `cell(connections)` or
   `nch(l, w)(d, g, s, b)`, takes connections only. It **MUST NOT** carry a param block.
 - **§8.4.5** The bound `C: Fn(P)` holds for every module whose port list has the types and
   directions `P`, in order. Port names do not matter. A value of type `C` is a template of such a
-  module.
+  module. A bound may combine a trait and `Fn(P)`, `N: Mosfet + Fn(Electrical, Electrical)`:
+  only a module that declares `impl Mosfet for` it fits (`E0187` otherwise).
 - **§8.4.6** A template-valued expression is evaluated at elaboration. It **MUST** be a const
   expression over params and constants. Every param it reads is structural (§8.1.2), and so is a
   param of template type.
@@ -625,6 +634,13 @@ Its type is `Name`. Calling it with connections places an instance.
   nothing (§3). The caller places the result.
 - **§8.4.8** `inst.name` on an instance placed through a template-typed param is resolved at
   elaboration against the concrete module.
+
+> **Amendment.** §8.4.1: a module's bare name used as a value, `let t = Cell;`, the head `(Cell)(x)`,
+> a param value `cell: Cell = Cell` or a function's result, is the template `Cell {}`: every param
+> at its default, as a function's name used as a value is the function (§1.2.10). A required param
+> it leaves unbound is `E0319`, as for `Cell {}` (§8.4.2). `let t = Cell; t(x)` and `(Cell)(x)`
+> place the instance `Cell(x)` places (generics phase D, finding 35).
+> **Approved**: 2026-11-24 - user: "ACeito os dois"
 
 > **Resolution.** §8.4.2 and §8.4.4: a template is complete, and the call adds connections only.
 > Overriding a template's params at the call would be a struct update, which the language lacks
@@ -635,6 +651,13 @@ Its type is `Name`. Calling it with connections places an instance.
 
 > **Resolution.** §8.4.8: elaboration is fully concrete, so `bank.cells[3][5].sn` (F.3) is checked
 > against the module actually bound. A missing or non-`pub` item is `E0343`.
+
+> **Resolution.** §8.4.8 in a body checked once (§3 rule 9): an item read through a template param
+> that is not a node takes the type its context wants, as an open literal does (§1.4.4), and
+> elaboration checks the concrete item has it (`E0180`, an error of the instantiation). A read no
+> context gives a type is `E0181`: a method's receiver, the operand of `as` (which types its result,
+> never its operand, §1.4.5), a `let` with no type that nothing reads (generics phase D fix rounds 2
+> and 3, 2026-11-24). **Approved**: 2026-11-24 - user: "Nó escolhido na elaboração é permitido senão perdemos a liberdade de mudar o hardware na elaboração o que deveria ser fácil. Restante ok"
 
 **Dynamic semantics**
 
@@ -683,44 +706,32 @@ pub fn nch(l: f64, w: f64) -> Bsim4 {
 let m1 = nch(0.13u, 2u)(d, g, s, b);                                       // likewise
 ```
 
-### 8.5 Implicit params and extern modules
+### 8.5 Run settings and extern modules
 
-Every instance has two **implicit params**, `m` and `dtemp`, inherited by its children. An **extern
-module** is implemented outside the language.
+An instance has no implicit params: `m` and `dtemp` are ordinary names. The run sets a temperature and a
+multiplicity, and a model reads them. An **extern module** is implemented outside the language.
 
-**Static semantics: implicit params**
+**Static semantics: run settings**
 
-- **§8.5.1** `m: f64 = 1.0 where m > 0.0` and `dtemp: f64 = 0.0` exist on every instance, core and
-  extern included. They are bound in the param block like any param. Neither is structural.
-- **§8.5.2** A module **MUST NOT** declare a port, param, signal or `let` named `m` or `dtemp`.
-- **§8.5.3** The **effective multiplicity** of an instance is the product of `m` along its path.
-  Its effective temperature offset is the sum of `dtemp` along its path. Inside a module, the names
-  `m` and `dtemp` read the effective values.
+- **§8.5.1** An instance has no implicit params. A model **MAY** declare a param, a port, a signal or a `let` named
+  `m` or `dtemp` like any other name, and a placement that binds a param the module does not declare is `E0320`.
+- **§8.5.2** `temperature() -> Option<f64>` is `Some(t)`, in kelvin, when the run sets its temperature (`temp`) and
+  `None` otherwise. `multiplicity() -> Option<f64>` is a function of the standard library (§22.2.3),
+  `simparam("multiplicity")`: `Some(m)` when the run sets the session parameter `multiplicity` and `None`
+  otherwise. Neither is per instance: one value serves every instance of the run.
+- **§8.5.3** Nothing scales or offsets a model. The model decides whether to use the value as its temperature all
+  along, as an initial temperature, or to ignore it. The recommended fallbacks are
+  `temperature().unwrap_or(AMBIENT_TEMPERATURE)` and `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)` (the constants of `std::constants`, §22).
+- **§8.5.4** The run sets the temperature and the `multiplicity` session parameter before it starts, and they hold
+  for the whole run. Neither has a placement or a `set` spelling. The multiplicity is a `simparam` entry
+  (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`, §23), not a key of its own.
+- **§8.5.5** A model that wants its own multiplicity declares an ordinary param, `m: Option<f64>`, and combines it
+  in a body `let`: `let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`. A param default is a const
+  context (§8.1.16): `multiplicity()` there is `E0321`, an expression that is not over params and constants.
 
-> **Resolution.** §8.5.3 reads "inherited by its children" as VAMS 6.3.6 does for `$mfactor`:
-> multiplicities multiply down the hierarchy. `dtemp` sums, as stated for `temperature()`. That
-> a model reads the names `m` and `dtemp` at all is this note's addition (G.54).
-
-**Dynamic semantics: implicit params**
-
-- **§8.5.4** An instance behaves as `m` identical instances in parallel (VAMS 6.3.6). With `M` its
-  effective multiplicity:
-
-  | Quantity | Scaling |
-  | --- | --- |
-  | a flow contribution | multiplied by `M` |
-  | a flow probe, `p.inflow()` | divided by `M`: the model sees one instance |
-  | a potential contribution, a potential probe | unchanged |
-  | noise power contributed to a flow | multiplied by `M` |
-  | noise power contributed to a potential | divided by `M` |
-  | discrete carriers, events, reactions | unaffected |
-
-- **§8.5.5** `temperature()` inside an instance returns the analysis temperature plus its
-  effective `dtemp` (§14.4).
-- **§8.5.6** A host `set` of `m` or `dtemp` during a run is a param change (§9 rule 4).
-
-> **Resolution.** The potential-noise row of §8.5.4 completes "noise power is multiplied by `m`"
-> with the other half of VAMS 6.3.6: `m` sources in parallel average a series noise.
+> **Resolution.** User decision of 2026-11-23 (generics phase D): `m` and `dtemp` as implicit params, their
+> effective products and sums and the automatic scaling are withdrawn (G.54 is superseded). The run's
+> settings are read by the model, and the model alone decides what they mean.
 
 **Static semantics: extern modules**
 
@@ -749,7 +760,7 @@ module** is implemented outside the language.
   | `"cosim"` | carriers of one-driver discrete natures only, each `in` or `out` |
 
 - **§8.5.12** An extern module is a module in every other respect: it is placed, templated
-  (§8.4), bound by `Fn(P)`, and given `m` and `dtemp`.
+  (§8.4), bound by `Fn(P)`, and, when the run sets a temperature or a multiplicity, given those values as the descriptor's `temperature` and `m`; the descriptor keeps its own defaults otherwise.
 
 > **Resolution.** §8.5.9 resolves a relative path against the source file, as `include_str!` does
 > (§20). §8.5.10 lets the body list a subset of the descriptor's params.
@@ -758,7 +769,7 @@ module** is implemented outside the language.
 
 | ABI | Contract |
 | --- | --- |
-| `"osdi"` | The model is an analog block the language did not write, reached through an adapter over the device ABI (§8.5.8). It is loaded at every Newton iteration. Its limiting vetoes convergence (§18). Its state advances on accepted steps. Its params, operating-point variables, noise sources and internal nodes appear in the metadata (§21) under the descriptor's names. `m` and `dtemp` are passed as the descriptor's multiplicity and temperature. |
+| `"osdi"` | The model is an analog block the language did not write, reached through an adapter over the device ABI (§8.5.8). It is loaded at every Newton iteration. Its limiting vetoes convergence (§18). Its state advances on accepted steps. Its params, operating-point variables, noise sources and internal nodes appear in the metadata (§21) under the descriptor's names. The run's temperature and multiplicity are passed as the descriptor's temperature and multiplicity when the run sets them; the descriptor keeps its own defaults otherwise. |
 | `"cosim"` | The foreign simulator is one module in the microstep loop (§15). At a microstep where an input changed, or at a time it asked for, it is given the inputs and returns commits and the next time it wants to run. The commits apply at the next microstep. The requested time is a scheduled time (§17.2). It never probes. It is never advanced into a step that can be rejected, so it needs no rollback. It is reached through the device ABI (§8.5.8). |
 
 - **§8.5.13** An `"osdi"` instance follows the first table of §16.2 as an `analog` block does: it
@@ -782,8 +793,6 @@ module** is implemented outside the language.
 | `E0372` | `#[link]` missing, or its file or model cannot be loaded | elaboration |
 | `E0373` | ports or params that do not match the foreign descriptor (§8.5.10) | elaboration |
 | `E0374` | a port kind the ABI does not allow (§8.5.11) | elaboration |
-| `E0375` | a model item named `m` or `dtemp` (§8.5.2) | elaboration |
-| §8.1 | `m <= 0.0` (`E0317`) | elaboration |
 | §10 | a behavior block for an extern module (`E0402`) | elaboration |
 
 **Examples**

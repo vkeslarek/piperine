@@ -1,0 +1,12 @@
+//! A cycle through values is no hardware (part III §8.2.16, §8.3.5): two cells that each take the other's gain as a value input
+//! read themselves, `E0332`.
+
+/// A cell whose leak is `g * k` siemens.
+module Cell(a: Electrical, g: f64) { pub k: f64 = 1.0; }
+analog for Cell { i(a, gnd) +> v(a, gnd) * g * k; }
+
+module RigValueCycle() {
+    signal x: Electrical;
+    let p = Cell(x, q.k);
+    let q = Cell(x, p.k);
+}

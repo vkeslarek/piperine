@@ -231,6 +231,7 @@ const GLOBALS: &[u32] = &[
     global::START,
     global::SETTLE,
     global::NAMED,
+    global::TEMPERATURE_GIVEN,
 ];
 const PIN_FLAGS: u32 = pin_flag::STRUCTURAL
     | pin_flag::OPTIONAL

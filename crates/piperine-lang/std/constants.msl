@@ -11,3 +11,9 @@ pub const PI: f64 = 3.141592653589793;
 pub const E: f64 = 2.718281828459045;
 
 pub const inf: f64 = 1.0 / 0.0;
+
+/// 27 °C in kelvin, ngspice's default temperature: the recommended fallback of `temperature()`.
+pub const AMBIENT_TEMPERATURE: f64 = 300.15;
+
+/// ngspice's default multiplicity: the recommended fallback of `multiplicity()`.
+pub const DEFAULT_MULTIPLICITY: f64 = 1.0;

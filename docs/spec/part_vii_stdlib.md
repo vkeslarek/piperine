@@ -55,7 +55,8 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 | `every` | module, result `Event` | §22.1.7 | `at` |
 | `since` | module, result `f64` | §22.1.8 | `changed`, `now` |
 | `State` | nature | §22.2.1 | — |
-| `vt` | `fn` | §22.2.2 | `temperature` |
+| `vt` | `fn` | §22.2.2 | — |
+| `multiplicity` | `fn` | §22.2.2 | `simparam` |
 | `white_noise`, `flicker_noise`, `noise_table` | module, result `f64` | §22.2.3 | `noise`, `freq` |
 | `limexp`; `pnjlim`, `fetlim`, `limvds`, `deltalim` | module; `fn` | §22.2.4 | `limit` |
 | `above` | module, result `Event` | §22.2.5 | `cross`, `init` |
@@ -597,16 +598,23 @@ pub nature State {
 3. A user state **SHOULD** be normalized to order one before it is placed on a `State` node (§4 rule 4).
 4. `State` is the default nature of `idt`, `idtmod`, `slew`, `zi_nd` and `laplace_*`.
 
-#### 22.2.2 `vt`
+#### 22.2.2 `vt` and `multiplicity`
 
 ```rust
-pub fn vt() -> f64 {
-    K_B * temperature() / Q
+/// The thermal voltage at the temperature `t`, in kelvin: a model passes the temperature it chose.
+pub fn vt(t: f64) -> f64 {
+    K_B * t / Q
+}
+
+/// The run's multiplicity: `Some(m)` when the run sets the session parameter `multiplicity`, `None` otherwise.
+pub fn multiplicity() -> Option<f64> {
+    simparam("multiplicity")
 }
 ```
 
-1. `vt()` is the thermal voltage at the instance's temperature, `dtemp` included (§8.5).
+1. `vt(t)` is the thermal voltage at the temperature `t`, in kelvin. A model passes the temperature it chose, `vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))` (§8.5.3).
 2. It reads only environment that is constant during an analysis. It is callable everywhere, definitions included (§14).
+3. `multiplicity() -> Option<f64>` is `simparam("multiplicity")`: `Some(m)` when the run sets the session parameter `multiplicity`, `None` otherwise. It is no core row (§8.5.2).
 
 #### 22.2.3 `white_noise`, `flicker_noise`, `noise_table`
 
@@ -634,7 +642,7 @@ pub module noise_table<const N: usize>(name: Option<str>) -> f64 {
 1. Each use is one instance, hence one noise source (§11.1). Two uses are independent. One instance read in two contributions is fully correlated.
 2. `name` groups sources in reports. It has no effect on correlation.
 3. `psd` is read only where the source is a source (§16.2). `flicker_noise` is never evaluated at `freq() == 0`.
-4. The implicit param `m` multiplies noise power (§8.5).
+4. Nothing multiplies noise power: a model that wants a multiplicity scales `psd` itself (§8.5).
 
 > **Resolution.** `table` is a param, an array passed to `table_model` by value (§1.4.6). The definition is `noise(table_model(freq(), table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
 

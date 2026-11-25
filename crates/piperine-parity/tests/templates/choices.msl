@@ -1,0 +1,90 @@
+//! A node chosen at elaboration (part I §1.4.7, user decision of 2026-11-24): the param `k` picks which node `Pick` probes, which
+//! it drives and which its load connects to. The expected values are computed by Rust in `source_templates.rs`.
+
+/// A conductance between two nodes.
+module Load(p: Electrical, n: Electrical) { g: f64 = 1.0; }
+analog for Load { i(p, n) +> v(p, n) * g; }
+
+/// Drives `level` with the line `k` picks, holds the target `k` picks at 0.3, and loads the line `k` does not pick.
+module Pick(a: Electrical, b: Electrical, level: Electrical, t1: Electrical, t2: Electrical) {
+    k: f64 = 1.0;
+    let load = Load(if k > 0.5 { b } else { a }, gnd);
+}
+analog for Pick {
+    potential(level) +> v(if k > 0.5 { a } else { b });
+    v(if k > 0.5 { t1 } else { t2 }) +> 0.3;
+}
+
+module RigChoices() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal l1: Electrical;
+    signal l2: Electrical;
+    signal t1: Electrical;
+    signal t2: Electrical;
+    signal u1: Electrical;
+    signal u2: Electrical;
+    let one = Pick(a, b, l1, t1, t2) { k: 1.0 };
+    let zero = Pick(a, b, l2, u1, u2) { k: 0.0 };
+}
+analog for RigChoices {
+    potential(a) +> 0.2;
+    potential(b) +> 0.8;
+    i(t2, gnd) +> v(t2, gnd);
+    i(u1, gnd) +> v(u1, gnd);
+}
+
+/// Drives `flipped` with the line a `let` assigned from params picks (`s` starts at `sel` and is flipped), and `toggled` with
+/// the line a `let` toggled three times under a condition over `k` picks (verification finding 26).
+module PickAssigned(a: Electrical, b: Electrical, flipped: Electrical, toggled: Electrical) {
+    sel: bool = false;
+    k: f64 = 1.0;
+}
+analog for PickAssigned {
+    let s = sel;
+    s = !sel;
+    potential(flipped) +> v(if s { a } else { b });
+    let t = sel;
+    for j in 0..3 {
+        if k > 0.5 {
+            t = !t;
+        }
+    }
+    potential(toggled) +> v(if t { a } else { b });
+}
+
+module RigAssigned() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal f1: Electrical;
+    signal t1: Electrical;
+    signal f2: Electrical;
+    signal t2: Electrical;
+    let low = PickAssigned(a, b, f1, t1) { sel: false };
+    let high = PickAssigned(a, b, f2, t2) { sel: true, k: 0.0 };
+}
+analog for RigAssigned {
+    potential(a) +> 0.2;
+    potential(b) +> 0.8;
+}
+
+/// Drives `level` with the line chosen by a condition that assigns its `let` first (`{ s = !s; s }`, verification finding 28):
+/// with `sel` false the condition is true and picks `a`.
+module PickInCondition(a: Electrical, b: Electrical, level: Electrical) { sel: bool = false; }
+analog for PickInCondition {
+    let s = sel;
+    potential(level) +> v(if { s = !s; s } { a } else { b });
+}
+
+module RigInCondition() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal l1: Electrical;
+    signal l2: Electrical;
+    let low = PickInCondition(a, b, l1) { sel: false };
+    let high = PickInCondition(a, b, l2) { sel: true };
+}
+analog for RigInCondition {
+    potential(a) +> 0.2;
+    potential(b) +> 0.8;
+}

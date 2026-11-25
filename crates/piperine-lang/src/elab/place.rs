@@ -83,7 +83,6 @@ impl Elaboration<'_, '_> {
     fn place_instance(&mut self, placing: Placing, stack: &mut Vec<BodyKey>) -> Option<Placed> {
         let param_plans = self.plans_of(placing.module, placing.instance.as_ref())?.clone();
         let (params, bindings) = self.bind_params(&placing, &param_plans)?;
-        let (params, bindings) = self.apply_overrides(placing.module, &placing.path, &param_plans, params, bindings, (placing.file, placing.span));
         // a module that places itself with the params it was placed with never ends; with others it is a recursion by
         // generation that the params bring to an end (§8.2.7), bounded by the depth of D7
         let key = self.body_key(placing.module, placing.instance.as_ref(), &bindings)?;
@@ -115,8 +114,12 @@ impl Elaboration<'_, '_> {
                     let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                     nodes.push(NodeRef::Node(id));
                 }
-                // Bound to the child's node once the child is placed (`IrBuilder::bind_reached_node`).
-                NodeRole::Reached => nodes.push(NodeRef::Ground),
+                // The child's node as this body names it (`p.sn`): made before any child is placed, so a placement connects to
+                // it whatever the order of the two (§8.2), and made one node with the child's own once the child is placed.
+                NodeRole::Reached => {
+                    let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
+                    nodes.push(NodeRef::Node(id));
+                }
             }
         }
         self.merge_instance_nodes(&plan, &nodes);
@@ -136,25 +139,37 @@ impl Elaboration<'_, '_> {
             self.resolvers.record(ResolvedUse { instance, path: placing.path.clone(), net: nets[resolved.carrier as usize], plan: resolved.clone(), value: carrier.ty.clone(), driven: driven.clone(), host_port });
         }
         stack.push(key);
-        for (index, child) in plan.children.iter().enumerate() {
-            let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
-            if let Some(placed) = self.place_child(child, &parent, stack) {
-                self.bind_reaches(&plan, &placing.path, index as u32, instance, &placed);
-            }
-        }
+        self.place_children(&plan, instance, &placing.path, &bindings, (&nodes, &nets), stack);
         stack.pop();
         Some(Placed { instance, nodes, nets, host_ports })
     }
 
+    /// Places the children of `plan` under `instance`, in source order. A node connection is hardware, not a value (§8.2.14):
+    /// every node this body reaches into a child (`Th(c0.sn)`, `bank.c0.sn`) is a node already, made with the body's own, so a
+    /// child connects to it whether the child that owns it is placed before or after, or is the child itself (§8.3.5: a cycle of
+    /// node connections holds an unknown, the node).
+    fn place_children(&mut self, plan: &ModulePlan, instance: InstanceId, path: &str, bindings: &Bindings, (nodes, nets): (&[NodeRef], &[NetId]), stack: &mut Vec<BodyKey>) {
+        for (index, child) in plan.children.iter().enumerate() {
+            let parent = Parent { instance, path, nodes, nets, bindings };
+            if let Some(placed) = self.place_child(child, &parent, stack) {
+                self.bind_reaches(plan, path, index as u32, instance, &placed, nodes);
+            }
+        }
+    }
+
     /// Binds each node and carrier `instance` (at `path`) reads of its child number `child` (`inst.name`, a
-    /// `Reach` of the body) to the child instance's own, now that the child is placed. A reached carrier the body drives
-    /// is a holder of the child's net: it is recorded with the net it is bound to.
-    fn bind_reaches(&mut self, plan: &ModulePlan, path: &str, child: u32, instance: InstanceId, placed: &Placed) {
+    /// `Reach` of the body) to the child instance's own, now that the child is placed. The node `nodes` made for a reached slot
+    /// becomes one node with the child's (`IrBuilder::merge_nodes`), so a sibling placed before is connected to it too. A
+    /// reached carrier the body drives is a holder of the child's net: it is recorded with the net it is bound to.
+    fn bind_reaches(&mut self, plan: &ModulePlan, path: &str, child: u32, instance: InstanceId, placed: &Placed, nodes: &[NodeRef]) {
         for reach in plan.reaches.iter().filter(|r| r.child == child) {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
                     if let Some(own) = placed.nodes.get(child_node as usize) {
                         self.ir.bind_reached_node(instance, node, *own);
+                        if let Some(NodeRef::Node(standing)) = nodes.get(node as usize) {
+                            self.ir.merge_nodes(*own, *standing);
+                        }
                     }
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
@@ -272,16 +287,26 @@ impl Elaboration<'_, '_> {
         self.place(placing, stack)
     }
 
-    /// The value of each param of the instance, the one given, else the default, and the
-    /// bindings its children's param values read. A required param left out is `E0319`; a false
-    /// `where` is `E0317`, naming the param's path.
+    /// The value of each param of the instance, the one the host bound before the run to a key param, else the one given, else
+    /// the default (one that reads earlier params folded over their values here, §8.1.16), and the bindings its children's param
+    /// values read. A required param left out is `E0319`; a false `where` is `E0317`, naming the param's path.
     fn bind_params(&mut self, placing: &Placing, plans: &[ParamPlan]) -> Option<(Vec<Constant>, Bindings)> {
         let mut values = Vec::new();
         let mut bindings = Bindings::new();
         let mut ok = true;
         for (index, param) in plans.iter().enumerate() {
-            let given = placing.given.iter().find(|(i, _, _)| *i as usize == index);
-            match given.map(|(_, value, _)| *value).or(param.default) {
+            let given = placing.given.iter().find(|(i, _, _)| *i as usize == index).map(|(_, value, _)| *value);
+            let chosen = match self.host_override(placing.module, &placing.path, plans, index, (placing.file, placing.span)).or(given) {
+                Some(value) => Some(value),
+                None => match self.default_of_instance(placing, param, &bindings) {
+                    Ok(value) => value,
+                    Err(()) => {
+                        ok = false;
+                        continue;
+                    }
+                },
+            };
+            match chosen {
                 Some(value) => {
                     self.bind_param(&mut bindings, param.decl, value);
                     values.push(value);
@@ -335,5 +360,16 @@ impl Elaboration<'_, '_> {
             }
         }
         ok.then_some((values, bindings))
+    }
+
+    /// The default of `param` at `placing`, folded over the values its earlier params take there (`bound`) under the arguments of
+    /// the instance of a generic module it places. `Err` after the diagnostic of a default that does not fold.
+    fn default_of_instance(&mut self, placing: &Placing, param: &ParamPlan, bound: &Bindings) -> Result<Option<Constant>, ()> {
+        let outer = placing.instance.as_ref().map(|instance| self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let folded = self.default_at(param, bound);
+        if let Some(outer) = outer {
+            self.consts.set_substitution(outer);
+        }
+        folded.map_err(|fault| self.const_fault(&fault, "a param default"))
     }
 }

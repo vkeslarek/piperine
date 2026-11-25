@@ -117,7 +117,8 @@ fn a_for_loop_in_a_digital_block_lowers() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    let src = "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; let u = Resistor { r: 2.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }";
+    // two bundles (a `struct` with a carrier field, still refused by name; a module template is a value since generics phase D)
+    let src = "struct Pair { in a: Bit, b: Electrical }\nstruct Duo { in c: Bit, d: Electrical }\nmodule Top() { signal x: Pair; signal y: Duo; }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
@@ -141,32 +142,8 @@ fn a_contribution_in_the_analog_blocks_own_list_still_lowers() {
 }
 
 #[test]
-fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
-    // The type checker accepts the digital forms and the flow read of a potential branch
-    // (msl-digital T9 to T16); the structure passes that lower them come later. Until then every one
-    // is refused by name, never dropped and never lowered as a different circuit.
-    for (form, src, names) in [
-        // A carrier is lowered from msl-digital T28 on, and a resolved one from resolved-nets T18 on
-        // (`elab_natures::a_resolved_port_lowers_to_a_resolved_carrier_and_its_drive`).
-        // An element or field commit left this table when composite-values T76 typed it (`types_carrier_arrays`).
-        // `settle` lowers from unknown-semantics-events T5 on (`elab_digital::settle_lowers_to_the_settle_event_source`).
-        // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it
-        // (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
-        // The flow read of a potential branch is lowered from msl-digital T35 on: the form still
-        // refused in its place is the template of DIG-07 AC 1.
-        ("a template", "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }", vec!["module template"]),
-    ] {
-        let err = Elab::run(src, "Top").expect_err(form);
-        assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{form}: {:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
-        for name in names {
-            assert!(err.iter().any(|d| d.diagnostic.message.contains(name)), "{form}: no diagnostic names `{name}`: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        }
-    }
-}
-
-#[test]
 fn a_value_input_of_a_module_without_a_result_lowers_hoisted() {
-    // analog-structure T27 (AS-08 AC 1): the row `a value input` of the table above is lifted: a
+    // analog-structure T27 (AS-08 AC 1): a value input, once refused by name, is lifted: a
     // module with a value input is hoisted like one with a result. `Amp` has no body of its own; its
     // `analog` block joins `Top`'s under the placement's name, and the body records it (`hoisted`).
     let src = "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }";

@@ -289,26 +289,31 @@ mod tests {
         // partials; `LIMITED` is pnjlim(x, old) over plain f64, old by the rules of §18.
         let diode = "\
 // Diode.analog, `limit` site `vd`: its input, its function and its seed @ devices.msl:39:17
-fn vd_limit_block<R: Real>(a: R, k: R, is: R, n: R, temperature_: R) -> (R, impl Fn(R, R) -> R, R) {
-    let nvt = n * vt(temperature_);
+fn vd_limit_block<R: Real>(a: R, k: R, is: R, n: R, temperature_: R, temperature_given_: bool) -> (R, impl Fn(R, R) -> R, R) {
+    let nvt = n * vt(if temperature_given_ {
+        temperature_
+    } else {
+        R::constant(300.15)
+    });
     let vcrit = nvt * (nvt / (R::constant(2.0).sqrt() * is)).ln();
     (a - k, move |new, old| pnjlim(new, old, nvt, vcrit), vcrit)
 }
 
-// function 0 `limit:vd`: reads a, k, is, n, temperature_, vd_last_, vd_age_, is_static_; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
+// function 0 `limit:vd`: reads a, k, is, n, temperature_, temperature_given_, vd_last_, vd_age_, is_static_; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
 fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     let a = cx_.f64(0);
     let k = cx_.f64(1);
     let is = cx_.f64(2);
     let n = cx_.f64(3);
     let temperature_ = cx_.f64(4);
-    let vd_last_ = cx_.f64(5);
-    let vd_age_ = cx_.u8(6);
-    let is_static_ = cx_.bool(7);
+    let temperature_given_ = cx_.bool(5);
+    let vd_last_ = cx_.f64(6);
+    let vd_age_ = cx_.u8(7);
+    let is_static_ = cx_.bool(8);
     // PROPOSED: the input x and its partials, at the iterate
-    let (proposed_, _, _) = Self::vd_limit_block(Dual::<2>::seeded(a, 0), Dual::<2>::seeded(k, 1), Dual::<2>::constant(is), Dual::<2>::constant(n), Dual::<2>::constant(temperature_));
+    let (proposed_, _, _) = Self::vd_limit_block(Dual::<2>::seeded(a, 0), Dual::<2>::seeded(k, 1), Dual::<2>::constant(is), Dual::<2>::constant(n), Dual::<2>::constant(temperature_), temperature_given_);
     // the function and the seed, over plain f64
-    let (_, f_, seed_) = Self::vd_limit_block(a, k, is, n, temperature_);
+    let (_, f_, seed_) = Self::vd_limit_block(a, k, is, n, temperature_, temperature_given_);
     // rule `the seed start`: nothing held (AGE 0), or in an equilibrium solve a value held from the last accepted solution (STATIC, AGE 1)
     let from_seed_ = vd_age_ == 0 || (is_static_ && vd_age_ == 1);
     // rule `old`: LAST, or where the seed starts the seed
@@ -355,7 +360,7 @@ fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         let terms = printed(&ir, d, |m| m == Mode::Terms);
         assert!(terms.contains("let vd = vd_limit_;"), "{terms}");
         assert!(terms.contains("let vd_limit_ = cx_.f64(0);"), "{terms}");
-        for absent in ["a - k", "cx_.f64(6)", "pnjlim", "vcrit", "LAST", "_last", "_age", "is_static_"] {
+        for absent in ["a - k", "cx_.f64(7)", "pnjlim", "vcrit", "LAST", "_last", "_age", "is_static_"] {
             assert!(!terms.contains(absent), "`{absent}` in the terms function:\n{terms}");
         }
         let limit = printed(&ir, d, |m| matches!(m, Mode::Limit(_)));

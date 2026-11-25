@@ -126,6 +126,7 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
     role: u32,                                 // PORT | PARAM | GLOBAL | PRIVATE
     global: u32,                               // role GLOBAL: TEMPERATURE | RESOLUTION | DC | TRAN | AC | NOISE | START | SETTLE
                                                //              | NAMED (the host's session parameter called `name`)
+                                               //              | TEMPERATURE_GIVEN (a BIT: 1 when the run set its temperature)
     flags: u32,                                // STRUCTURAL | OPTIONAL | HAS_INIT | HAS_CHECK | QUIET | RECORD | RELAX
     layout: Layout,                            // CONTINUOUS: one F64. EVENT: empty
     unit: Str,
@@ -179,7 +180,7 @@ validation:
 | --- | --- |
 | `kind` | `CONTINUOUS` 1, `DISCRETE` 2, `EVENT` 3 |
 | `role` | `PORT` 1, `PARAM` 2, `GLOBAL` 3, `PRIVATE` 4 |
-| `global` | `TEMPERATURE` 1, `RESOLUTION` 2, `DC` 3, `TRAN` 4, `AC` 5, `NOISE` 6, `START` 7, `SETTLE` 8, `NAMED` 9 |
+| `global` | `TEMPERATURE` 1, `RESOLUTION` 2, `DC` 3, `TRAN` 4, `AC` 5, `NOISE` 6, `START` 7, `SETTLE` 8, `NAMED` 9, `TEMPERATURE_GIVEN` 10 |
 | `Pin.flags` | `STRUCTURAL` 1, `OPTIONAL` 2, `HAS_INIT` 4, `HAS_CHECK` 8, `QUIET` 16, `RECORD` 32, `RELAX` 64 |
 | `leaf` | `BOOL` 1, `U8` 2, `U16` 3, `U32` 4, `U64` 5, `I8` 6, `I16` 7, `I32` 8, `I64` 9, `F32` 10, `F64` 11 |
 | `op` | `FLOW` 1, `DDT` 2, `DELAY` 3 |
@@ -392,7 +393,7 @@ runs after the last solve of its sequence; the owner gives the digital side thos
 each analysis starts (`solver-crossings`, ENV-01 to ENV-03). A value that must exist at instants
 (temperature, the analysis kind, a session parameter) is a `GLOBAL` pin instead, and obeys
 P1–P4: `temperature()` in a reaction or a discrete function is a read of the `GLOBAL
-TEMPERATURE` pin.
+TEMPERATURE` pin. Whether the run set its temperature is the `GLOBAL TEMPERATURE_GIVEN` pin, a `BIT` (generics phase D, appended in place at `MINOR` 0): `temperature()` is `Option<f64>`, `Some` of the `TEMPERATURE` pin when `TEMPERATURE_GIVEN` is 1.
 
 ### 4.3 What the solver does with each cell
 

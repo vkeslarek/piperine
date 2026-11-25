@@ -216,56 +216,88 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
 }
 
 #[test]
-fn the_memory_bank_is_refused_for_its_template_and_bundle() {
-    // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11
-    // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The
-    // generic module runs (T71), so do the arrays of carriers and the generation `for` of the bank (T77). What is left, exactly:
-    // the bundle `Cell`, a struct with a carrier field (L25), the placement through the template `cell` and the template `C`,
-    // bounded by `Fn`, which is `P0001` by name until phase D (L32)
+fn the_memory_bank_is_refused_only_for_its_bundle() {
+    // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11 (fragment): the placement
+    // `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The generic module, the arrays of carriers,
+    // the generation `for` of the bank, the `Fn` bound, the template `cell` and the placement through it all run (generics phase D,
+    // `source_templates.rs`). What is left, exactly: the bundle `Cell`, a struct with a carrier field (L25), which the port of
+    // `Dram1T1C` names, and its literal `Cell { wl: wl[r], bl: bl[c] }`, the argument of the placement
     let chapter = Chapter::read();
     let top = format!("module Top() {{\n    signal wl: [Bit; 64] = [false; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
-    assert_eq!(codes, ["P0001", "P0001", "P0001"], "{given:?}");
-    assert!(given[0].1.contains("`Cell` has a carrier field, a bundle is not supported yet"), "{given:?}");
-    assert_eq!(given[1].1, "placement through a template value or a function is not supported yet");
-    assert_eq!(given[2].1, "the template parameter `C` of `MemoryBank`, bounded by `Fn` is not supported yet");
-    assert!(!given.iter().any(|(_, message)| message.contains("array of")), "the arrays of carriers run: {given:?}");
+    let messages: Vec<&str> = given.iter().map(|(_, message)| message.as_str()).collect();
+    assert_eq!(messages, ["`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet", "struct expression is not supported yet"], "the bundle type and its literal are all that is refused: {given:?}");
     Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet");
 }
 
 #[test]
-fn a_function_that_returns_a_template_is_refused_where_it_is_placed() {
-    // modules#12 (refused): `nch`, the binning function; modules#13 (fragment): `nch(0.13u, 2u)(d, g, s,
-    // b)` places its result. Placement through a template value or a function is `P0001` (L32)
+fn a_function_that_returns_a_template_places_its_result() {
+    // modules#12 (run): `nch`, the binning function; modules#13 (fragment): `nch(0.13u, 2u)(d, g, s, b)` places its result,
+    // a `Bsim4` with the `vth0` the length bins to (0.42 under 0.18u, §8.4.7). The `Bsim4` of the test pulls its terminal `d` to
+    // `vth0` through a unit conductance, so the operating point reads the binned value
     let chapter = Chapter::read();
-    let bsim4 = "module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\n";
+    let bsim4 = "module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\nanalog for Bsim4 { i(d, gnd) +> v(d, gnd) - vth0; i(g, gnd) +> v(g, gnd); i(s, gnd) +> v(s, gnd); i(b, gnd) +> v(b, gnd); }\n";
     let top = format!("module Top() {{\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n    signal b: Electrical;\n    {}\n}}\n", chapter.text("modules#13"));
-    let model = chapter.wrapped("nch.msl", bsim4, "modules#12", &top);
-    Refusal::expect(model.run(Commands::of_top()), "modules#12", "P0001", "placement through a template value or a function is not supported yet");
+    let ran = chapter.wrapped("nch.msl", bsim4, "modules#12", &top).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!((ran.signal("Top.d") - 0.42).abs() < 1e-9, "the binned vth0 of a 0.13u length: {}", ran.signal("Top.d"));
+}
+
+#[test]
+fn the_swappable_mosfet_listing_runs() {
+    // modules#14 (run): `trait Mosfet`, the stand-in models `Bsim3` (`k g^2`) and `Mos1` (`k g`) and `DiffPair<N: Mosfet + Fn(..)>`;
+    // modules#15 (fragment): the pair placed over `Mos1 { k: 3.0 }`, and over `Bsim3 { k: 3.0 }` once the model is swapped (§8.4). Each model
+    // gives its own operating point, computed here from its formula at a gate held at 0.5 V
+    let chapter = Chapter::read();
+    let fragment = chapter.text("modules#15");
+    let gate = 0.5;
+    let drain = |model: &str| -> f64 {
+        let placed = fragment.replace("Mos1", model);
+        let top = format!("module Top() {{\n    signal g: Electrical;\n    signal d1: Electrical;\n    signal d2: Electrical;\n    {placed}\n}}\nanalog for Top {{ potential(g) +> {gate}; }}\n");
+        let ran = chapter.wrapped("pair.msl", "", "modules#14", &top).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
+        assert!((ran.signal("Top.d1") - ran.signal("Top.d2")).abs() < 1e-9, "both legs of the pair hold the model's response");
+        ran.signal("Top.d1")
+    };
+    let mos1 = 3.0 * gate;
+    let bsim3 = 3.0 * gate * gate;
+    assert!((drain("Mos1") - mos1).abs() < 1e-9, "Mos1 gives k g = {mos1}");
+    assert!((drain("Bsim3") - bsim3).abs() < 1e-9, "Bsim3 gives k g^2 = {bsim3}");
 }
 
 #[test]
 fn the_extern_osdi_module_is_refused() {
-    // modules#14 (refused): `#[link("bsim4.osdi", model = "bsim4")] extern "osdi" module Bsim4`, placed in a
+    // modules#16 (refused): `#[link("bsim4.osdi", model = "bsim4")] extern "osdi" module Bsim4`, placed in a
     // top: an `extern` module is `P0001` (L33)
     let chapter = Chapter::read();
     let after = "module Top() { signal d: Electrical; signal g: Electrical; signal s: Electrical; signal b: Electrical; let m1 = Bsim4(d, g, s, b); }\n";
-    let model = chapter.wrapped("bsim4.msl", "", "modules#14", after);
-    Refusal::expect(model.run(Commands::of_top()), "modules#14", "P0001", "`extern` module is not supported yet");
+    let model = chapter.wrapped("bsim4.msl", "", "modules#16", after);
+    Refusal::expect(model.run(Commands::of_top()), "modules#16", "P0001", "`extern` module is not supported yet");
 }
 
 #[test]
-fn binding_m_and_dtemp_is_refused_as_an_unknown_param() {
-    // modules~1faf8c12: "Every instance has these two implicit params, and you bind them like any other:
-    // Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel": the binding is `E0320`
-    // today, `no param m` (L29); the Book's meaning is four resistors in parallel. The row is `refused`,
-    // owned by `generics` phase D (GN-24, GN-25), which implements `m`
-    let faulty = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
+fn the_multiplicity_listing_runs_as_four_in_parallel() {
+    // modules~93efd115 (generics phase D, GN-26 AC 3; replaces the claim modules~1faf8c12 and its test
+    // `binding_m_and_dtemp_is_refused_as_an_unknown_param`): "Placed as Resistor(a, b) { r: 1k, m: Some(4.0) } this
+    // resistor behaves as four in parallel; placed with no m it follows the run, so --simparam multiplicity=3 reaches
+    // every instance that leaves m unset" (modules#17 is the listing), and modules~007f1097: "Read in a param default,
+    // multiplicity() is E0321". The
+    // resistor sits over a fixed kilo-ohm one under one volt: the node reads the divider of the effective multiplicity
+    let chapter = Chapter::read();
+    let after = |block: &str| format!("module Fixed(p: Electrical, n: Electrical) {{ r: f64 = 1k; }}\nanalog for Fixed {{ i(p, n) +> v(p, n) / r; }}\nmodule Source(p: Electrical) {{}}\nanalog for Source {{ v(p, gnd) +> 1.0; }}\nmodule Top() {{\n    signal vin: Electrical;\n    signal o: Electrical;\n    let s = Source(vin);\n    let top = {block}(vin, o);\n    let bottom = Fixed(o, gnd);\n}}\n");
+    let divider = |count: f64| 1000.0 / (1000.0 / count + 1000.0);
+    let run = |block: &str, overrides: Overrides| chapter.wrapped("multiplicity.msl", "", "modules#17", &after(block)).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    let four = run("Resistor { m: Some(4.0) }", Commands::of_top());
+    assert!((four.signal("Top.o") - divider(4.0)).abs() < 2e-3, "four in parallel: {}", four.signal("Top.o"));
+    let followed = run("Resistor", Overrides { simparam: vec![("multiplicity".to_string(), 3.0)], ..Commands::of_top() });
+    assert!((followed.signal("Top.o") - divider(3.0)).abs() < 2e-3, "the run's multiplicity 3 reaches an instance with no `m`: {}", followed.signal("Top.o"));
+    let alone = run("Resistor", Commands::of_top());
+    assert!((alone.signal("Top.o") - divider(1.0)).abs() < 2e-3, "nothing set: one resistor: {}", alone.signal("Top.o"));
+    // read in a param default, `multiplicity()` is `E0321`
+    let default = Model::written("default.msl", "module Top() { k: f64 = multiplicity().unwrap_or(1.0); signal o: Electrical; }\n").run(Commands::of_top());
+    assert!(Refusal::of(default, "modules~007f1097").iter().any(|(code, _)| code == "E0321"), "a param default that reads the run");
+    // there is no implicit param: binding `m` on a module that declares none is `E0320` like any unknown name
+    let faulty = Faulty::elaborating("modules~93efd115", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
     assert_eq!(faulty.first("E0320").message, "no param `m` in `Resistor`");
-    let dtemp = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, dtemp: 5.0 };\n"), "Top");
-    assert_eq!(dtemp.first("E0320").message, "no param `dtemp` in `Resistor`");
 }
 
 #[test]

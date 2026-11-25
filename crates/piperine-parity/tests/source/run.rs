@@ -63,6 +63,14 @@ impl SourceRun {
             .collect()
     }
 
+    /// The diagnostics with which the front end refuses `top` of `file`: the compile is expected to fail.
+    pub fn refusal(&self, file: &str, top: &str) -> String {
+        match self.project(file).compile(top) {
+            Ok(_) => panic!("`{top}` of `{file}` was expected to be refused"),
+            Err(refused) => refused.to_string(),
+        }
+    }
+
     /// The message of the fault the transient of `top` of `file` runs into: the run is expected to fail.
     pub fn the_fault(&self, file: &str, top: &str) -> String {
         let built = build(&self.project(file), top);

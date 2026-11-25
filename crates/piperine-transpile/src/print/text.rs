@@ -143,7 +143,8 @@ impl Text {
     /// (`bl_i2_j`). The name of a
     /// generic instance (design D8) adds `::<` and `<` printed `_g`, `, ` printed `_c` and `>`
     /// printed `_e`; a tuple or array argument (`(u8, bool)`, `[u8; 2]`) adds `(` `)` `[` `]` and `; ` printed `_t`, `_z`, `_a`, `_y` and
-    /// `_l`: `word::<(u8, bool)>` is `word_g_tu8_cbool_z_e` (T54). `swap::<f64>` is `swap_gf64_e`, `Pair<Pair<f64>, u8>` is `Pair_gPair_gf64_e_cu8_e`
+    /// `_l`. A template argument (`Pair::<module `Square`>`, a module that meets a bound `Fn(..)`, §8.4.5) is `module `Name``, printed `_nName`:
+    /// `Pair_g_nSquare_e`. `word::<(u8, bool)>` is `word_g_tu8_cbool_z_e` (T54). `swap::<f64>` is `swap_gf64_e`, `Pair<Pair<f64>, u8>` is `Pair_gPair_gf64_e_cu8_e`
     /// and `Pair<Pair<f64, u8>>` is `Pair_gPair_gf64_cu8_e_e`, so nested argument lists spell apart. Two names of one owner that
     /// spell alike are refused where the owner is printed, never shadowed. A front-end name is also
     /// lowercased: an unnamed placement is `<module>$<k>`, with the module's own capital (`Lag$0.y`,
@@ -176,7 +177,7 @@ impl Text {
     /// variant's struct, `StartedBench_vv0_q0_d6`, which `LibraryPrinter::camel` turns into
     /// `StartedBenchVv0Q0D6`; a lowercase type name is a rustc warning).
     pub fn spelled_cased(name: &str) -> String {
-        name.replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m").replace('+', "_p").replace("; ", "_l").replace('(', "_t").replace(')', "_z").replace('[', "_i").replace(']', "_j")
+        name.replace("module `", "_n").replace('`', "").replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m").replace('+', "_p").replace("; ", "_l").replace('(', "_t").replace(')', "_z").replace('[', "_i").replace(']', "_j")
     }
 }
 
@@ -203,6 +204,13 @@ mod tests {
         assert_eq!(Text::spelled_cased("word::<(u8, bool)>"), "word_g_tu8_cbool_z_e");
         assert_eq!(Text::spelled_cased("word::<[u8; 2]>"), "word_g_iu8_l2_j_e");
         assert_ne!(Text::spelled_cased("Pair<Pair<f64>, u8>"), Text::spelled_cased("Pair<Pair<f64, u8>>"));
+    }
+
+    #[test]
+    fn a_template_argument_spells_as_the_module_it_names() {
+        // a body variant of `DiffPair::<module `Square`>~fet=0` is one Rust identifier, apart from the one of `Linear`
+        assert_eq!(Text::spelled_cased("DiffPair::<module `Square`>~fet=0"), "DiffPair_g_nSquare_e_vfet_q0");
+        assert_ne!(Text::spelled_cased("DiffPair::<module `Square`>"), Text::spelled_cased("DiffPair::<module `Linear`>"));
     }
 
     /// The significant digits of a decimal literal: its mantissa's digits, leading and trailing

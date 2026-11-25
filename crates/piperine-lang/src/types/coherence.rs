@@ -2,7 +2,7 @@
 //! `impl` the check sees (the whole-model check sees them all): a method may not repeat the name of
 //! a carrier method (`E0131`), an `impl` on a nature or a bundle holds functions only (`E0132`),
 //! `impl Trait for` a bundle is `E0134` while a nature takes trait impls (traits are capabilities,
-//! §3.1.9). An `impl` on a module is `E0130`, which the POM classifier raises (§3.1.4).
+//! §3.1.9). A module type takes `impl`s too (§3.1.4), its functions pure (`E0122`).
 
 use crate::pom::{Decl, DeclId, DeclKind, Reflect, Resolution};
 
@@ -19,7 +19,9 @@ enum Subject {
     Nature,
     /// A struct with a carrier field.
     Bundle,
-    /// Anything else: a value type, a module, a generic parameter.
+    /// A module type (§3.1.4): its `impl` functions are pure functions of the template.
+    Module,
+    /// Anything else: a value type, a generic parameter.
     Other,
 }
 
@@ -46,12 +48,28 @@ impl Checker<'_> {
                 _ => {}
             }
         }
+        if subject == Subject::Module {
+            self.module_impl_purity(decl);
+        }
         if !inherent && subject == Subject::Bundle {
             let (file, span) = (self.design.decl_data(decl).file, self.design.type_node(self_ty).span);
             self.coded(file, "E0134", span, "`impl Trait for` a bundle is refused: a trait is a capability of a nature or a value type (§3.1.9)".to_string(), "a bundle");
         } else if !inherent {
             self.trait_impl_rules(decl);
             self.overlap_rule(decl);
+        }
+    }
+
+    /// §3.1.4 (DD3): the functions of an `impl` on a module type are pure functions of the template, run at elaboration, so one
+    /// that probes or reads the environment of the solve is `E0122` naming it.
+    fn module_impl_purity(&mut self, decl: DeclId) {
+        for child in self.design.decl_data(decl).children.clone() {
+            if !matches!(self.design.decl_data(child).kind, DeclKind::Fn(_)) || !self.function_class(child, &mut std::collections::BTreeSet::new()).solve_reading {
+                continue;
+            }
+            let item = self.design.decl_data(child);
+            let (file, span, name) = (item.file, item.span, item.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
+            self.coded(file, "E0122", span, format!("the function `{name}` of an `impl` on a module type is solve-reading (it probes or reads the environment of the solve), and such a function is a pure function of the template run at elaboration (§3.1.4)"), "a module impl function out of its class");
         }
     }
 
@@ -223,6 +241,7 @@ impl Checker<'_> {
             Resolution::Decl(target) => match &self.design.decl_data(target).kind {
                 DeclKind::Nature(_) => Subject::Nature,
                 DeclKind::Struct(_) if Decl::new(self.design, target).as_struct().is_some_and(|s| s.is_bundle()) => Subject::Bundle,
+                DeclKind::Module(_) => Subject::Module,
                 _ => Subject::Other,
             },
             _ => Subject::Other,

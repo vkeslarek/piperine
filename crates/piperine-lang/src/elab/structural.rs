@@ -328,7 +328,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The params of `module`, in declaration order.
-    fn params_of(&self, module: DeclId) -> Vec<DeclId> {
+    pub(super) fn params_of(&self, module: DeclId) -> Vec<DeclId> {
         self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect()
     }
 
@@ -361,10 +361,9 @@ impl Elaboration<'_, '_> {
         found.into_iter().filter(|c| potential.contains(&c.ends)).collect()
     }
 
-    /// Classifies the key params of `modules` (the reached modules with a body): see the module
-    /// documentation. Run once, before any body is lowered.
-    pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
-        // A param of module type is structural (§8.4.6): its template selects what is placed.
+    /// A param of module type is structural (§8.4.6): its template selects what is placed. Every reached module has such keys, a
+    /// generic module's too: each instance of it is one body per template (`modules` holds the generic ones).
+    pub(super) fn classify_module_param_keys(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             for param in order.clone() {
@@ -373,6 +372,24 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The params of every reached module, a generic one's too, that elaboration folds wherever they are read: those the condition
+    /// of a node chosen at elaboration reads (the body names one node, §1.4.7) and those the default of a later param reads (the
+    /// default is folded, §8.1.16). Both are structural (§8.1.2).
+    pub(super) fn classify_folded_param_keys(&mut self, modules: &[DeclId]) {
+        for module in modules {
+            let order = self.params_of(*module);
+            let read: Vec<DeclId> = self.params_read_by_node_choices(*module).into_iter().chain(self.params_read_by_defaults(*module)).collect();
+            for param in read {
+                self.keys.add(*module, param, &order);
+            }
+        }
+    }
+
+    /// Classifies the key params of `modules` (the reached modules with a body): see the module
+    /// documentation. Run once, before any body is lowered.
+    pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             for contribution in self.potential_capable_contributions(*module) {
@@ -411,6 +428,13 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
+        // A param read by the head of a placement through a template (`nch(l, w)(d, g, s, b)`, `C1(a, b)`) is structural too (§8.4.6, GN-20).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_template_heads(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -430,6 +454,75 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The params of `module` that the condition or the scrutinee of a node chosen at elaboration reads (`v(if k > 0.5 { x } else
+    /// { p })`), in its body and its behaviors.
+    fn params_read_by_node_choices(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut owners = BTreeSet::new();
+        let mut pending: Vec<DeclId> = std::iter::once(module).chain(data.behaviors.iter().copied()).collect();
+        while let Some(decl) = pending.pop() {
+            if owners.insert(decl) {
+                pending.extend(self.design.decl_data(decl).children.iter().copied());
+            }
+        }
+        let mut found = Vec::new();
+        for index in 0..self.design.expr_count() {
+            let expr = ExprId(index as u32);
+            if !owners.contains(&self.design.expr_node(expr).owner) || !matches!(self.typed(expr), Some(crate::types::Ty::Node(_) | crate::types::Ty::AnyNode)) {
+                continue;
+            }
+            match &self.design.expr_node(expr).kind {
+                ExprKind::If { cond, .. } => self.collect_choice_params(*cond, &mut found, &mut Vec::new()),
+                ExprKind::Match { scrutinee, arms } => {
+                    self.collect_choice_params(*scrutinee, &mut found, &mut Vec::new());
+                    for guard in arms.iter().filter_map(|arm| arm.guard) {
+                        self.collect_choice_params(guard, &mut found, &mut Vec::new());
+                    }
+                }
+                _ => {}
+            }
+        }
+        found
+    }
+
+    /// Adds every param a node choice's condition `expr` reads to `found`, through the initializers of the `let`s it reads
+    /// (`let s = sel; if s { .. }`), the values assigned to them and the conditions around those (`if k > 0.5 { s = !s; }`).
+    fn collect_choice_params(&self, expr: ExprId, found: &mut Vec<DeclId>, followed: &mut Vec<DeclId>) {
+        self.collect_params(expr, found);
+        for local in self.read_bindings(expr) {
+            // each `let` is followed once: one that reads itself (`s = !s`, `{ s = !s; s }`) adds nothing new
+            if followed.contains(&local) {
+                continue;
+            }
+            followed.push(local);
+            if let Some(init) = self.let_initializer(local) {
+                self.collect_choice_params(init, found, followed);
+            }
+            if self.types.is_assigned(local) {
+                for read in self.assignment_reads(local) {
+                    self.collect_choice_params(read, found, followed);
+                }
+            }
+        }
+    }
+
+    /// The params of `module` that the default of a later param reads (`g: f64 = 1.0 / r`); a read of the param itself or of a
+    /// later one is `E0321` (`body.rs`), and fixes nothing.
+    fn params_read_by_defaults(&self, module: DeclId) -> Vec<DeclId> {
+        let order = self.params_of(module);
+        let mut found = Vec::new();
+        for (position, param) in order.iter().enumerate() {
+            if let DeclKind::Param(data) = &self.design.decl_data(*param).kind
+                && let Some(default) = data.default
+            {
+                let mut read = Vec::new();
+                self.collect_params(default, &mut read);
+                found.extend(read.into_iter().filter(|read| order[..position].contains(read)));
+            }
+        }
+        found
     }
 
     /// The params of `module` that the length of one of its arrays of carriers or nodes reads (`signal s: [Bit; n]`).
@@ -468,7 +561,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Adds every param `expr` reads, whatever else it reads, to `found`.
-    fn collect_params(&self, expr: ExprId, found: &mut Vec<DeclId>) {
+    pub(super) fn collect_params(&self, expr: ExprId, found: &mut Vec<DeclId>) {
         let node = self.design.expr_node(expr);
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
@@ -492,6 +585,25 @@ impl Elaboration<'_, '_> {
                     found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
                 }
             }
+        }
+        found
+    }
+
+    /// The params of `module` that the head of one of its placements through a template reads: `l` and `w` of
+    /// `nch(l, w)(d, g, s, b)`, whatever function the head calls (§8.4.6). A head that is a param of module type or a template
+    /// written in place is not one: the first is structural already, the second is read as a placement's block.
+    fn params_read_by_template_heads(&self, module: DeclId) -> Vec<DeclId> {
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let mut found = Vec::new();
+        for call in &data.instances {
+            let ExprKind::Call { callee, class: crate::pom::CallClass::Instance { module: Some(placed), via }, .. } = &self.design.expr_node(*call).kind else { continue };
+            match via {
+                Some(via) if via == placed || self.is_module_param(*via) => continue,
+                None if !self.has_an_expression_head(*call) => continue,
+                _ => {}
+            }
+            // through the `let`s that hold the template (`let t = if sel { .. } else { .. }; t(x)`)
+            self.collect_choice_params(*callee, &mut found, &mut Vec::new());
         }
         found
     }
@@ -526,6 +638,14 @@ impl Elaboration<'_, '_> {
             for field in self.placement_fields(*call, child) {
                 let Resolution::Decl(given) = field.res else { continue };
                 if !self.keys.is_key(child, given) {
+                    continue;
+                }
+                // a template value (`cell: A { r: l }`, `cell: sized(l)`, `cell: if sel { A {} } else { K }`) is a const expression over
+                // params (§8.4.6): every param it reads is structural, as for the head of a placement through a template
+                if self.is_module_param(given) {
+                    let mut read = Vec::new();
+                    self.collect_choice_params(field.value, &mut read, &mut Vec::new());
+                    out.extend(read.into_iter().map(|param| (child, param)));
                     continue;
                 }
                 for param in ParamReads::new(self.design, self.types).of(field.value).into_iter().flatten() {
@@ -647,8 +767,11 @@ impl Elaboration<'_, '_> {
         let fields = self.placement_fields(call, callee);
         for param in self.params_of(callee) {
             let DeclKind::Param(data) = &self.design.decl_data(param).kind else { continue };
-            let written = fields.iter().find(|f| f.res == Resolution::Decl(param)).map(|f| f.value);
-            let value = self.consts.value(written.or(data.default)?, &Bindings::new()).ok()?;
+            // a written value reads the caller; a default the params before it (§8.1.16)
+            let value = match fields.iter().find(|f| f.res == Resolution::Decl(param)) {
+                Some(field) => self.consts.value(field.value, caller).ok()?,
+                None => self.consts.value(data.default?, &bound).ok()?,
+            };
             bound.bind(param, value);
         }
         Some(bound)
@@ -858,37 +981,33 @@ impl Overrides {
 }
 
 impl Elaboration<'_, '_> {
-    /// `values` and `bindings` of the instance `path`, with each key param the host bound before the
-    /// run (`overrides`) set to that value, of the type of the param's default.
-    pub(super) fn apply_overrides(&mut self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], mut values: Vec<Constant>, mut bindings: Bindings, at: (FileId, crate::msl::Span)) -> (Vec<Constant>, Bindings) {
-        let top = path.split('.').next().unwrap_or(path);
-        for key in self.keys.of(module).to_vec() {
-            let Some(index) = plans.iter().position(|p| p.decl == key) else { continue };
-            let Some(given) = self.overrides.value(top, path, &plans[index].name).cloned() else { continue };
-            // D13: the host has no text for a template; the param is bound in the source.
-            if self.is_module_param(key) {
-                let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given:?}", plans[index].name);
-                self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "a module-typed param is bound in the source"));
-                continue;
-            }
-            let value = match (&given, plans[index].default) {
-                (Given::Text(text), _) => match self.constant_of_text(key, text) {
-                    Ok(value) => value,
-                    Err(why) => {
-                        let message = format!("`{path}.{}` refuses the value `{text}`: {why}", plans[index].name);
-                        self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "the value a host gave"));
-                        continue;
-                    }
-                },
-                (Given::Number(given), Some(Constant::Bool(_))) => Constant::Bool(*given != 0.0),
-                (Given::Number(given), Some(Constant::Int(_))) => Constant::Int(*given as i128),
-                (Given::Number(given), _) => Constant::Real(piperine_ir::Real::new(*given)),
-            };
-            if let Some(slot) = values.get_mut(index) {
-                *slot = value;
-            }
-            self.bind_param(&mut bindings, key, value);
+    /// The value the host bound before the run (`overrides`) to the key param `plans[index]` of the instance `path` of `module`,
+    /// of the type of the param's default; `None` when it bound none or after a diagnostic.
+    pub(super) fn host_override(&mut self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], index: usize, at: (FileId, crate::msl::Span)) -> Option<Constant> {
+        let key = plans[index].decl;
+        if !self.keys.is_key(module, key) {
+            return None;
         }
-        (values, bindings)
+        let top = path.split('.').next().unwrap_or(path);
+        let given = self.overrides.value(top, path, &plans[index].name).cloned()?;
+        // D13: the host has no text for a template; the param is bound in the source.
+        if self.is_module_param(key) {
+            let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given:?}", plans[index].name);
+            self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "a module-typed param is bound in the source"));
+            return None;
+        }
+        match (&given, plans[index].default) {
+            (Given::Text(text), _) => match self.constant_of_text(key, text) {
+                Ok(value) => Some(value),
+                Err(why) => {
+                    let message = format!("`{path}.{}` refuses the value `{text}`: {why}", plans[index].name);
+                    self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "the value a host gave"));
+                    None
+                }
+            },
+            (Given::Number(given), Some(Constant::Bool(_))) => Some(Constant::Bool(*given != 0.0)),
+            (Given::Number(given), Some(Constant::Int(_))) => Some(Constant::Int(*given as i128)),
+            (Given::Number(given), _) => Some(Constant::Real(piperine_ir::Real::new(*given))),
+        }
     }
 }

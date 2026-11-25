@@ -177,7 +177,7 @@ module GatedJunction(a: Electrical, k: Electrical, in en: Bit) {
     is: f64 = 1e-14;
 }
 analog for GatedJunction {
-    let nvt = vt();
+    let nvt = vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     if en {
         let vd = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
@@ -190,7 +190,7 @@ module Junction(a: Electrical, k: Electrical) {
     is: f64 = 1e-14;
 }
 analog for Junction {
-    let nvt = vt();
+    let nvt = vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     i(a, k) +> is * ((vd / nvt).exp() - 1.0) + gmin() * vd;

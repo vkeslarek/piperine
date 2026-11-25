@@ -169,7 +169,8 @@ impl Checker<'_> {
     /// The arguments written with `::<..>` after the function's name, in the order of its
     /// parameters (§3.8.5); more than the list takes is `E0187`. `None` after a refusal.
     pub(super) fn explicit_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, callee: ExprId, function: DeclId, file: FileId, span: Span) -> Option<()> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return Some(()) };
+        // a template written in place (`G::<2> { k: 3.0 }(x)`, §8.4.3) names its arguments on the path of its head
+        let (ExprKind::Path(path) | ExprKind::Struct { path, .. }) = &self.design.expr_node(callee).kind else { return Some(()) };
         let nodes = match self.design.path_node(*path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
             _ => return Some(()),
@@ -260,7 +261,7 @@ impl Checker<'_> {
     }
 
     /// The substitution for every parameter: what was found, else the default, else `E0181` naming
-    /// the first parameter left open; a template parameter (`Fn` bound, phase D) left open is `P0001`.
+    /// the first parameter left open, a template parameter (`Fn` bound) included.
     pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, item: DeclId, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
         let mut substitution = Substitution::new();
         for parameter in signature.parameters() {
@@ -270,11 +271,6 @@ impl Checker<'_> {
                 None => None,
             };
             let Some(value) = value else {
-                if parameter.bounds.iter().any(|bound| matches!(bound, Bound::Callable { .. })) {
-                    let (name, _) = self.callee_names(item, function);
-                    self.unsupported(file, span, &format!("the template parameter `{}` of `{name}`, bounded by `Fn`", parameter.name));
-                    return None;
-                }
                 let (name, turbofish) = self.callee_names(item, function);
                 let (kind, how) = match parameter.kind {
                     ParameterKind::Const(_) => ("const parameter", "an array argument or"),

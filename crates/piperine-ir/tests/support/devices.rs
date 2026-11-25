@@ -109,6 +109,12 @@ impl<'b> Ex<'b> {
         self.b.expr(Expr::Env(env), ValueType::F64, o)
     }
 
+    /// A boolean environment read (`temperature_given`).
+    pub fn env_flag(&mut self, env: Env) -> ExprId {
+        let o = self.origin();
+        self.b.expr(Expr::Env(env), ValueType::Bool, o)
+    }
+
     pub fn limit(&mut self, site: u32, x: ExprId, f: ExprId, seed: Option<ExprId>) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Limit { site, x, f, seed }, ValueType::F64, o)
@@ -163,23 +169,23 @@ impl Devices {
         b.nature("Electrical", voltage, Some(current))
     }
 
-    /// `std/analog.msl`: `pub fn vt() -> f64 { K_B * temperature() / Q }`, constants folded.
+    /// `std/analog.msl`: `pub fn vt(t: f64) -> f64 { K_B * t / Q }`, constants folded.
     pub fn vt(b: &mut IrBuilder) -> FunctionId {
         if let Some(id) = b.find_function("vt") {
             return id;
         }
         let mut e = Ex::new(b, "analog.msl", 10, 24);
         let kb = e.real(1.380649e-23);
-        let t = e.env(Env::Temperature);
+        let t = e.local(0);
         let num = e.binary(BinaryOp::Mul, kb, t);
         let q = e.real(1.602176634e-19);
         let body = e.binary(BinaryOp::Div, num, q);
         b.function(FunctionSpec {
             name: "vt".into(),
             origin: Origin { file: "analog.msl".into(), line: 10, col: 1 },
-            params: vec![],
+            params: vec![Local { name: "t".into(), ty: ValueType::F64, mutable: false }],
             ret: ValueType::F64,
-            locals: vec![],
+            locals: vec![Local { name: "t".into(), ty: ValueType::F64, mutable: false }],
             body,
         })
     }
@@ -408,10 +414,14 @@ impl Devices {
             Self::positive(b, BinaryOp::Gt, n, 33, 17),
             Self::positive(b, BinaryOp::Ge, cj0, 34, 18),
         ];
-        // let nvt = n * vt();
+        // let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
         let mut e = Ex::new(b, Self::FILE, 37, 17);
         let p = e.param(n);
-        let call = e.call(vt, vec![]);
+        let given = e.env_flag(Env::TemperatureGiven);
+        let temperature = e.env(Env::Temperature);
+        let ambient = e.real(300.15);
+        let kelvin = e.if_f64(given, temperature, ambient);
+        let call = e.call(vt, vec![kelvin]);
         let init = e.binary(BinaryOp::Mul, p, call);
         let let_nvt = b.stmt(Stmt::Let { local: nvt, init });
         // let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();

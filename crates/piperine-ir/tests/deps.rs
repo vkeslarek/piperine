@@ -81,14 +81,14 @@ fn dependencies_follow_locals_and_calls() {
     let (is, n, cj0) = (0, 1, 2);
     assert_eq!(
         d.dependencies(Target::Flow(0)),
-        Want::deps(&[], &[is, n], &[Env::Temperature, Env::Gmin], &[0], &[])
+        Want::deps(&[], &[is, n], &[Env::Temperature, Env::Gmin, Env::TemperatureGiven], &[0], &[])
     );
     assert!(!d.is_affine(0));
     assert_eq!(d.dependencies(Target::Charge(0)), Want::deps(&[], &[cj0], &[], &[0], &[]));
     // The limit site: its input v(a, k), its function (pnjlim over nvt and vcrit) and its seed.
     assert_eq!(
         d.dependencies(Target::Limit(0)),
-        Want::deps(&[0, 1], &[is, n], &[Env::Temperature], &[], &[])
+        Want::deps(&[0, 1], &[is, n], &[Env::Temperature, Env::TemperatureGiven], &[], &[])
     );
     // A param with no check depends on nothing.
     let (ir, id) = One::ir(Devices::vsource, vec![1.0, 0.0]);

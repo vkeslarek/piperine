@@ -160,7 +160,7 @@ fn temp_res(golden: &piperine_parity::golden::Golden, backend: Backend) -> Measu
         let mid = bench.node("mid");
         let mut context = Context::default();
         if let Some(kelvin) = kelvin {
-            context.tolerances.temperature = kelvin;
+            context.tolerances.set_temperature(kelvin);
         }
         let actual = bench.circuit().dc(context).expect("dc").solve().expect("the operating point solves").get_node(&mid).expect("v(mid)");
         Deviation::of("temp_res", quantity, &ToleranceContract::DC_VOLTAGE, &[(Coordinate::OperatingPoint, golden.printed(printed), actual)])

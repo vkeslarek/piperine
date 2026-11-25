@@ -21,7 +21,7 @@ fn compare(reference: &Reference, printed: &str, kelvin: Option<f64>, backend: B
     let mid = bench.node("mid");
     let mut context = Context::default();
     if let Some(kelvin) = kelvin {
-        context.tolerances.temperature = kelvin;
+        context.tolerances.set_temperature(kelvin);
     }
     let result = bench.circuit().dc(context).expect("dc").solve().unwrap_or_else(|error| panic!("temp_res: the operating point does not solve on {}: {error}", backend.name()));
     let actual = result.get_node(&mid).unwrap_or_else(|| panic!("temp_res: the solve holds no v(mid) on {}", backend.name()));

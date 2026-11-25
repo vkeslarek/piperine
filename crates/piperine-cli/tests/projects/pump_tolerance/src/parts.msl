@@ -42,7 +42,7 @@ pub module Diode(a: Electrical, k: Electrical) {
 }
 
 analog for Diode {
-    i(a, k) +> is * (limexp(v(a, k) / (n * vt())) - 1.0) + 1n * v(a, k);
+    i(a, k) +> is * (limexp(v(a, k) / (n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE)))) - 1.0) + 1n * v(a, k);
 }
 
 /// The 12 V / 12 W supply: an ideal source on `src` behind its output and wiring resistance,

@@ -1,0 +1,13 @@
+//! A bench of `source_implicit.rs`: `temperature` has no placement spelling (GN-26 AC 2).
+
+module Fixed(p: Electrical, n: Electrical) {
+    r: f64 = 1k;
+}
+analog for Fixed { i(p, n) +> v(p, n) / r; }
+
+/// A resistor binding a name its module does not declare: `temperature` has no placement spelling.
+module PlacedTemperature() {
+    signal o: Electrical;
+    let r = Fixed { temperature: 300.0 }(o, gnd);
+}
+

@@ -19,7 +19,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 3. Imports | `use` items, `self`/`super`/`crate`, visibility, `std::prelude` | import resolution |
 | 4. Behaviors | binds each `analog`/`digital` block to its module | `BehaviorData::module`, `ModuleData::behaviors`, `E0401`, `E0402`, `E0403` |
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
-| 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
+| 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle` |
 | 7. Members | `e.name` and `e.m()` through declared types | `ExprKind::Field::res`, `MethodCall::res`, `E0343` |
 | 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields, bundle fields | `E0370`, `E0125`, `E0201`, `E0260`, `E0261`, `E0262`, `E0264` |
 | 9. Index | `references`, `writers`, `instantiated_by` | the [`Index`](model.md#index) |
@@ -153,7 +153,6 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Event` | `settle` (§14.9) |
 | `Statement` | `bound_step` (§14.10) |
 | `Node` | `gnd` (§6) |
-| `ImplicitParam` | `m` (§8.5), `dtemp` (§8.5): in scope only inside a module body and the blocks bound to a module; `builtin_implicit(name)` finds one |
 | `Member` | `Repr::WIDTH`, `Repr::encode`, `Repr::decode` (§2): reached through a generic bounded by `Repr` (`builtin_member("Repr", name)`), never as a name |
 | `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `inflow` (§14.1) |
 
@@ -161,7 +160,7 @@ The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, 
 `f64`, `f128`). The six constants of §1 (`Q`, `K_B`, `EPS0`, `PI`, `E`, `inf`) are not rows: they are items of `std::constants`, found through the prelude like any library item. Standard-library modules such as `idt`, `transition` and `above` are *not*
 built in: they are declared in the standard library's `std::prelude` (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. The `Trait` and `Type` rows are kept equal to the tables H.8 and H.9 of Appendix H (plus `Repr`, `Nature`, `Fn` and the §1 types). Methods of the catalogue get no row: a method on a value needs its receiver's type and stays `Deferred(ReceiverTypeUnknown)`. An associated name written through a generic (`A::WIDTH`) resolves through its bounds: an item of a user trait, a `Repr` member row, `E0161` when `Repr` is the only bound and has no such member, and `Deferred(BuiltinTraitMember)` (silently) through any other built-in trait. A namespace item named like a core
-primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
+primitive of §14, or `gnd`, `Nature` or `str`, is `E0457`.
 
 ```rust
 use piperine_lang::pom::{builtin, builtin_method, BuiltinKind, Design, Resolution};
@@ -322,7 +321,6 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | Code | Stage | Defined in | Meaning | Span |
 | --- | --- | --- | --- | --- |
 | `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one; an `extern "intrinsic"` function in a crate other than `std` (the help reads `only the standard library declares intrinsic functions`). `Function::is_intrinsic` is true exactly for the ABI `intrinsic`; an `extern "intrinsic" fn` of `std` is reported nothing and a call to it is an ordinary `CallClass::Function` | the function's name |
-| `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
 | `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
 | `E0162` | 2, 3, 5 | `§3.4` | a name declared twice in one table of a namespace or of a block (§3.4.10); an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
@@ -365,7 +363,6 @@ assert_eq!(codes("const K: f64 = missing;"), ["E0161"]);
 assert_eq!(codes("mod a { fn hidden() {} }\nconst K: f64 = a::hidden;"), ["E0161"]);
 assert_eq!(codes("nature Bit { value: bool }\nmodule M() { signal s: Bit; signal s: Bit; }"), ["E0330"]);
 assert_eq!(codes("fn ddt() {}"), ["E0457"]);
-assert_eq!(codes("module M() {}\nimpl M {}"), ["E0130"]);
 assert_eq!(codes("analog for Nowhere {}"), ["E0401"]);
 assert_eq!(codes("extern \"osdi\" module D() {}\nanalog for D {}"), ["E0402"]);
 assert_eq!(codes("module M() {}\nanalog<N> for M {}"), ["E0403"]);

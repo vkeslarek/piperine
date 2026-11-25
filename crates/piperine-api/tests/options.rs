@@ -71,7 +71,7 @@ fn value(table: &Table, signal: &str) -> f64 {
 }
 
 /// `Top`: a source of `temperature()` volts over a resistor.
-const THERMOMETER: &str = "pub module Thermometer(p: Electrical, n: Electrical) {}\nanalog for Thermometer { v(p, n) +> temperature(); }\nmodule Top() {\n    signal a: Electrical;\n    let t = Thermometer(a, gnd);\n    let r = Resistor(a, gnd) { r: 1k };\n}\n";
+const THERMOMETER: &str = "pub module Thermometer(p: Electrical, n: Electrical) {}\nanalog for Thermometer { v(p, n) +> temperature().unwrap_or(AMBIENT_TEMPERATURE); }\nmodule Top() {\n    signal a: Electrical;\n    let t = Thermometer(a, gnd);\n    let r = Resistor(a, gnd) { r: 1k };\n}\n";
 
 /// `Top`: one node and a cubic conductance with the three roots 1, 2 and 3, so the operating
 /// point it converges to depends on where Newton starts.

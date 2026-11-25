@@ -1,0 +1,37 @@
+//! A template of a module generic over the nature of its ports (part III §8.4.3): its type `Load<Electrical>` names the
+//! argument, so a placement through a `const` or a param of that type connects nodes of that nature. The expected values are
+//! computed by Rust in `source_templates.rs`.
+
+/// A conductance between two nodes of any nature.
+module Load<K: Nature>(p: K, n: K) { g: f64 = 1.0; }
+analog<K> for Load<K> { flow(p, n) +> potential(p, n) * g; }
+
+const HALF: Load<Electrical> = Load::<Electrical> { g: 0.5 };
+
+/// A divider whose lower leg is placed through the param `leg`, of the type `Load<Electrical>`.
+module Divider(top: Electrical, mid: Electrical) {
+    leg: Load<Electrical>;
+    let upper = HALF(top, mid);
+    let lower = leg(mid, gnd);
+}
+
+module RigNatures() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let divider = Divider(top, mid) { leg: Load::<Electrical> { g: 2.0 } };
+}
+analog for RigNatures { potential(top) +> 1.0; }
+
+/// The same divider with its lower leg placed through `C: Fn(Electrical, Electrical)`, connected to `gnd` (§8.1.10).
+module BoundDivider<C: Fn(Electrical, Electrical)>(top: Electrical, mid: Electrical) {
+    leg: C;
+    let upper = HALF(top, mid);
+    let lower = leg(mid, gnd);
+}
+
+module RigBound() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let divider = BoundDivider::<_>(top, mid) { leg: Load::<Electrical> { g: 2.0 } };
+}
+analog for RigBound { potential(top) +> 1.0; }

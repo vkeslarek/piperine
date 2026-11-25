@@ -435,7 +435,7 @@ the flow of a branch.
 - **§6 rule 11.** `gnd` is a core name (§14 rule 1). It may be passed as a connection and named in a
   branch. It has no initial value, no flow probe of its own and no `inflow()`.
 
-> **Resolution.** `gnd`, `Nature`, `m`, `dtemp` and `str` are core names: the language provides them and no declaration in the language can define them (`E0457`, §14 rule 1). The prelude (§3.4.2) holds the standard library and is replaceable (§22).
+> **Resolution.** `gnd`, `Nature` and `str` are core names: the language provides them and no declaration in the language can define them (`E0457`, §14 rule 1). The prelude (§3.4.2) holds the standard library and is replaceable (§22).
 
 > **Resolution.** Rule 2 counts a node as signal-flow only when every nature meeting there
 > lacks `flow`. Its one potential driver is one module that contributes potential to
@@ -464,8 +464,8 @@ the flow of a branch.
   ([§12.1.5](part_iv_behavior.md#121-reactions)). In an event expression it is read by
   the solver ([§13](part_iv_behavior.md#13-events)).
 - **§6 rule 16.** A probe is a plain `f64` ([§3.3.1](part_i_values.md#33-uncertainty-and-absence)).
-- **§6 rule 17.** Flow probes are divided by the effective multiplicity
-  ([§8.5.3](part_iii_structure.md#85-implicit-params-and-extern-modules)).
+- **§6 rule 17.** No probe is scaled by a multiplicity: the run's multiplicity is read by the model
+  ([§8.5](part_iii_structure.md#85-run-settings-and-extern-modules)).
 - **§6 rule 18.** A node's value is continuous in time except at a jump, where it has a left
   and a right value ([§15.2](part_v_execution.md#152-the-jump)).
 

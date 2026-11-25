@@ -311,6 +311,27 @@ impl Added {
         rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(':').next().unwrap_or("").to_string())).collect()
     }
 
+    /// Build the design `build` adds to and open it on the interpreter, which must accept it.
+    fn accepted(build: impl FnOnce(&mut IrBuilder)) {
+        let mut b = IrBuilder::new();
+        build(&mut b);
+        let top_body = b.body(Buck::spec("Top", "top.msl", 1));
+        let top = b.instance(InstanceSpec {
+            path: "Top".into(),
+            name: "Top".into(),
+            body: top_body,
+            parent: None,
+            nodes: vec![],
+            params: vec![],
+            origin: Origin { file: "top.msl".into(), line: 1, col: 1 },
+        });
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "the design itself is well formed");
+        if let Err(rejected) = Interpreter::new(Arc::new(ir)) {
+            panic!("the interpreter refused a form it runs: {:?}", rejected.entries);
+        }
+    }
+
     /// `i(p, n) +> <value>` as the one statement of body `name`.
     fn contribution(b: &mut IrBuilder, name: &str, value: piperine_ir::ExprId, extra: Vec<piperine_ir::StmtId>) -> piperine_ir::BodyId {
         let stmt = b.stmt(Stmt::Contribute {
@@ -334,7 +355,7 @@ impl Added {
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let o = x.origin();
         let read = match env {
-            Env::Analysis(_) => {
+            Env::Analysis(_) | Env::TemperatureGiven => {
                 let on = x.b.expr(Expr::Env(env), ValueType::Bool, o);
                 let (one, zero) = (x.real(1.0), x.real(0.0));
                 x.if_(on, one, zero, ValueType::F64)
@@ -980,6 +1001,8 @@ fn each_generics_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(plain, Vec::<String>::new());
+    // whether the run set its temperature (GN-29 AC 1, the given half of `temperature()`) is a flag of the frame: it runs
+    Added::accepted(|b| Added::env(b, "Given", Env::TemperatureGiven));
     // a body that lowers an instance of a generic module (GN-15, T66) is named with its instance
     let module = {
         let mut b = IrBuilder::new();

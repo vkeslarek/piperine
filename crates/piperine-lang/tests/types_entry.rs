@@ -140,7 +140,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
     // For `DiodeIv` the reachable set is the three devices, the two library items they call and
     // the constants those read: nothing generic.
     let names: Vec<&str> = types.reached().iter().filter_map(|d| design.decl_data(*d).name.as_ref().map(|n| n.text.as_str())).collect();
-    assert_eq!(names, ["DiodeIv", "Vsource", "Resistor", "Diode", "vt", "pnjlim", "K_B", "Q"]);
+    assert_eq!(names, ["DiodeIv", "Vsource", "Resistor", "Diode", "vt", "AMBIENT_TEMPERATURE", "pnjlim", "K_B", "Q"]);
 }
 
 #[test]

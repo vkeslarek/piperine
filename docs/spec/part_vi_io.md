@@ -239,7 +239,7 @@ A **path** is the hierarchical name of an item of the elaborated design:
    `Dc`, of the operating point in `Ac` and `Noise`.
 7. A **gradient param** is an `f64` param that reaches a contribution, a probe-reading
    expression or an event time. The set is found by dependency analysis at elaboration.
-8. The implicit params `m` and `dtemp` (§8.5) are listed with every instance.
+8. The run's temperature and multiplicity (§8.5) are no params of an instance: a model's own `m` is listed like any param.
 9. An `extern "osdi"` module's params, operating-point variables, noise sources and internal
    nodes appear under the descriptor's names (§8.5).
 10. A param that only selects, or only feeds discrete values that are not real, is listed as

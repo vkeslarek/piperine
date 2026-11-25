@@ -123,7 +123,7 @@ fn a_placement_checks_nodes_count_and_params() {
     let placement = expr_of(&design, &src, "Resistor { r: 1k }(a, b)");
     let resistor: DeclId = design.module("Resistor").expect("Resistor").decl().id();
     assert_eq!(types.callee(placement), Some(Callee::Module(resistor)));
-    assert_eq!(types.ty(placement), Some(&Ty::Module(resistor)));
+    assert_eq!(types.ty(placement), Some(&Ty::module(resistor)));
     assert!(types.reached().contains(&resistor));
 
     // A param of the wrong type: at the value.
@@ -217,8 +217,8 @@ fn a_core_primitive_is_checked_where_it_is_written() {
 #[test]
 fn an_environment_function_in_a_const_context_is_e0323() {
     for (body, text) in [
-        ("module Top() { t: f64 = temperature(); }", "temperature()"),
-        ("module Top() { a: f64 = 1.0 where temperature() > 0.0; }", "temperature()"),
+        ("module Top() { t: Option<f64> = temperature(); }", "temperature()"),
+        ("module Top() { a: f64 = 1.0 where temperature().unwrap_or(1.0) > 0.0; }", "temperature()"),
         ("module Top() where gmin() > 0.0 { }", "gmin()"),
         ("const T0: f64 = source_scale();\nmodule Top() { a: f64 = T0; }", "source_scale()"),
     ] {

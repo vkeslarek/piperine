@@ -19,7 +19,7 @@ module DiodePnjlim(a: Electrical, k: Electrical) {
     n: f64 = 1.0 where n > 0.0;
 }
 analog for DiodePnjlim {
-    let nvt   = n * vt();
+    let nvt   = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     i(a, k) +> is * ((vd / nvt).exp() - 1.0) + gmin() * vd;

@@ -72,7 +72,7 @@ fn the_core_rows_are_unchanged() {
         ("Repr", Trait, "§2"), ("Nature", Trait, "§4"), ("Fn", Trait, "§3"),
         ("PartialEq", Trait, "App. H"), ("Eq", Trait, "App. H"), ("PartialOrd", Trait, "App. H"), ("Ord", Trait, "App. H"),
         ("Default", Trait, "App. H"), ("Resolve", Trait, "§4"), ("Debug", Trait, "App. H"), ("Hash", Trait, "App. H"),
-        ("str", Type, "§1"), ("gnd", Node, "§6"), ("m", ImplicitParam, "§8.5"), ("dtemp", ImplicitParam, "§8.5"),
+        ("str", Type, "§1"), ("gnd", Node, "§6"),
         ("Repr::WIDTH", Member, "§2"), ("Repr::encode", Member, "§2"), ("Repr::decode", Member, "§2"),
         ("potential", Fn, "§14.1"), ("flow", Fn, "§14.1"), ("ddx", Fn, "§14.2"), ("ac_stim", Fn, "§14.3"), ("temperature", Fn, "§14.4"),
         ("simparam", Fn, "§14.4"), ("analysis", Fn, "§14.4"), ("now", Fn, "§14.4"), ("freq", Fn, "§14.4"),
@@ -749,39 +749,19 @@ digital for M { on at(1.0) { let c = gnd; } }
 }
 
 #[test]
-fn m_and_dtemp_resolve_inside_a_module() {
-    let src = "\
-module M(p: f64) { let a = m; let b = dtemp; }
-analog for M { let c = m; let d = dtemp; }
-";
-    let design = build(src);
-    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(builtin_kinds(&design, "m"), [Some(BuiltinKind::ImplicitParam); 2]);
-    assert_eq!(builtin_kinds(&design, "dtemp"), [Some(BuiltinKind::ImplicitParam); 2]);
-}
-
-#[test]
-fn m_and_dtemp_are_unknown_outside_a_module() {
-    let src = "fn f() -> f64 { m }\nconst C: f64 = dtemp;\n";
-    let design = build(src);
+fn m_and_dtemp_are_ordinary_names() {
+    // GN-25 AC 3 (generics phase D, replaces the three implicit-param tests): `m` and `dtemp` are no built-in rows; a
+    // module's own param named `m` resolves to its declaration, and the bare name with no declaration is `E0161`, in a
+    // module as anywhere else
+    let declared = build("module M(m: f64) { let a = m; }\n");
+    assert!(declared.diagnostics().is_empty(), "{:?}", declared.diagnostics());
+    assert!(matches!(one(&declared, "m")[0], Resolution::Decl(_)), "{:?}", one(&declared, "m"));
+    let design = build("module N() { let b = dtemp; let c = m; }\n");
     let found = with_code(&design, "E0161");
     let at: Vec<&str> = found.iter().map(|d| primary_text(&design, d)).collect();
-    assert_eq!(at, ["m", "dtemp"], "{:?}", design.diagnostics());
-    assert_eq!(design.diagnostics().len(), 2);
-    assert_eq!(one(&design, "m"), [Resolution::Unresolved]);
+    assert_eq!(at, ["dtemp", "m"], "{:?}", design.diagnostics());
+    assert!(builtin("m").is_none() && builtin("dtemp").is_none(), "no row for either name");
     assert_eq!(one(&design, "dtemp"), [Resolution::Unresolved]);
-}
-
-#[test]
-fn a_local_shadows_an_implicit_param() {
-    let src = "\
-module M() {}
-analog for M { let m = 2.0; let k = m; let f = |dtemp: f64| dtemp; }
-";
-    let design = build(src);
-    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert!(matches!(one(&design, "m")[0], Resolution::Decl(_)), "{:?}", one(&design, "m"));
-    assert!(matches!(one(&design, "dtemp")[0], Resolution::Decl(_)), "{:?}", one(&design, "dtemp"));
 }
 
 #[test]

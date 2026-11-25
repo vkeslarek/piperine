@@ -546,7 +546,7 @@ fn a_const_reading_a_run_value_is_e0188() {
     // `E0122` at the checker, naming the function and its class (`types_values`), and the evaluator is not reached.
     // (`temperature()` is constant during an analysis, so a function that reads only it is pure: generics D13 amended,
     // the §3 table; a `const` over it is the evaluator's `E0188`, as before)
-    let pure = reaching("fn h() -> f64 { temperature() }\nconst K: f64 = h();", &["K"]);
+    let pure = reaching("fn h() -> f64 { temperature().unwrap_or(1.0) }\nconst K: f64 = h();", &["K"]);
     let err = Elab::run(&pure, "Top").expect_err("a const reading the environment");
     assert_eq!(Elab::codes(&err), ["E0188"], "{pure}");
     let src = reaching("fn h() -> f64 { now() }\nconst K: f64 = h();", &["K"]);

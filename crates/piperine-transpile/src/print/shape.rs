@@ -30,6 +30,7 @@ const GLOBALS: &[Named] = &[
     ("START", global::START),
     ("SETTLE", global::SETTLE),
     ("NAMED", global::NAMED),
+    ("TEMPERATURE_GIVEN", global::TEMPERATURE_GIVEN),
 ];
 const PIN_FLAGS: &[Named] = &[
     ("STRUCTURAL", pin_flag::STRUCTURAL),
@@ -506,11 +507,11 @@ mod tests {
         for body in [diode, vsource] {
             let plan = BodyPlan::new(ir.body(body));
             let shape = plan.shape().shape();
-            // the diode: 3 params, 2 nodes, the temperature `vt()` reads, 3 check pins; flow and
+            // the diode: 3 params, 2 nodes, the temperature `vt()` reads and whether the run set it, 3 check pins; flow and
             // charge terms; one limit; the limit, terms and 3 check functions. The source: 2
             // params, 2 nodes, a branch flow pin; two FLOW terms; one stimulus; stim and terms
             let counts = (shape.pins.len(), shape.terms.len(), shape.inputs.len(), shape.functions.len());
-            let expected = if body == diode { (9, 2, 1, 5) } else { (5, 2, 1, 2) };
+            let expected = if body == diode { (10, 2, 1, 5) } else { (5, 2, 1, 2) };
             assert_eq!(counts, expected, "{}", ir.body(body).name());
             one_call_per_entry(ir.body(body).name(), shape);
         }

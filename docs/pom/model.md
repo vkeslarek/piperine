@@ -1282,7 +1282,6 @@ What a built-in is.
 | `Event` | — | A built-in event (`settle`). |
 | `Statement` | — | A built-in statement (`bound_step`). |
 | `Node` | — | A reference node (`gnd`). |
-| `ImplicitParam` | — | `m` and `dtemp`: names only inside a module body and the blocks bound to a module (`builtin_implicit`; `builtin` never returns one). |
 | `Member` | — | An associated item of a built-in trait (`Repr::WIDTH`, `Repr::encode`, `Repr::decode`); reached only through a generic bounded by the trait (`builtin_member`), never as a name. |
 
 ### `BuiltinInfo`

@@ -27,7 +27,7 @@ fn every_constant_has_its_pinned_value() {
         ("global", &[
             (global::TEMPERATURE, 1), (global::RESOLUTION, 2), (global::DC, 3), (global::TRAN, 4),
             (global::AC, 5), (global::NOISE, 6), (global::START, 7), (global::SETTLE, 8),
-            (global::NAMED, 9),
+            (global::NAMED, 9), (global::TEMPERATURE_GIVEN, 10),
         ]),
         ("pin_flag", &[
             (pin_flag::STRUCTURAL, 1), (pin_flag::OPTIONAL, 2), (pin_flag::HAS_INIT, 4),

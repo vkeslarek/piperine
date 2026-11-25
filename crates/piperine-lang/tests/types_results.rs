@@ -88,7 +88,7 @@ fn a_placement_has_its_result_type() {
     let types = checked(&design, &src);
     assert_eq!([types.local(binding(&design, "a")), types.local(binding(&design, "nested")), types.local(binding(&design, "b"))], [Some(&Ty::F64), Some(&Ty::F64), Some(&Ty::F64)]);
     let plain = design.module("Plain").expect("Plain").decl().id();
-    assert_eq!(types.local(binding(&design, "inst")), Some(&Ty::Module(plain)));
+    assert_eq!(types.local(binding(&design, "inst")), Some(&Ty::module(plain)));
     let head = exprs_reading(&design, &types, &src, "ev(v(p))");
     assert_eq!(head.iter().map(|e| types.ty(*e)).collect::<Vec<_>>(), [Some(&Ty::Event)]);
     let inner = exprs_reading(&design, &types, &src, "twice(2.0)");

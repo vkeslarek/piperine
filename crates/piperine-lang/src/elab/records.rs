@@ -35,13 +35,38 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// Whether a call of `function` is inlined where it stands: it reaches `emit!` (§19 rule 10) or
-    /// takes a `str`, a text that exists at elaboration only (§1.2.9).
+    /// Whether a call of `function` is inlined where it stands: it reaches `emit!` (§19 rule 10), takes a
+    /// `str`, a text that exists at elaboration only (§1.2.9), or reads a session parameter, which the IR keeps
+    /// in the body that reads it and never in a function (`multiplicity()`, §8.5.2).
     pub(super) fn is_inlined(&self, function: DeclId) -> bool {
         let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
         let is_extern = matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some());
         // an `extern` function has no body to inline; its call is the call of a generic `extern` function, refused by name
-        !is_extern && (self.types.emits(function).is_some() || takes_text || self.takes_handle(function))
+        !is_extern && (self.types.emits(function).is_some() || takes_text || self.takes_handle(function) || self.reads_session_parameter(function))
+    }
+
+    /// Whether `function` reads a session parameter: its body calls `simparam`, or calls a function that does, however deep.
+    fn reads_session_parameter(&self, function: DeclId) -> bool {
+        let mut pending = vec![function];
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(at) = pending.pop() {
+            if !seen.insert(at) {
+                continue;
+            }
+            let DeclKind::Fn(f) = &self.design.decl_data(at).kind else { continue };
+            let Some(body) = &f.body else { continue };
+            for expr in self.body_exprs(body) {
+                if !matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. }) {
+                    continue;
+                }
+                match self.types.callee(expr) {
+                    Some(Callee::Core(id)) if id.info().name == "simparam" => return true,
+                    Some(Callee::Function(callee)) => pending.push(callee),
+                    _ => {}
+                }
+            }
+        }
+        false
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.

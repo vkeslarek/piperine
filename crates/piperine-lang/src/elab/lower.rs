@@ -58,7 +58,7 @@ pub(super) struct Scope {
     /// The `&str` params of the functions inlined at a call (`records.rs`), bound to their text.
     pub(super) texts: BTreeMap<DeclId, String>,
     /// The handle parameters of the functions inlined at a call (`handles.rs`), each bound to the caller's argument: the
-    /// name of a port or a signal of the frame, or `gnd`.
+    /// name of a port or a signal of the frame, or `gnd`; and the `let`s bound to a node, each to its initializer.
     pub(super) handles: BTreeMap<DeclId, ExprId>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
@@ -325,6 +325,17 @@ impl Elaboration<'_, '_> {
                 }
             };
         }
+        // a method of a module type (`fet.gain()`, `N: Mosfet`) runs at elaboration on the template the param holds (§3.1.4, §8.4.5)
+        if self.is_template_method(expr) {
+            let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+            return match self.consts.value(expr, &bindings) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
+                Err(fault) => {
+                    self.const_fault(&fault, "a method of a template");
+                    None
+                }
+            };
+        }
         match &node.kind {
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
@@ -574,6 +585,11 @@ impl Elaboration<'_, '_> {
             (_, None) if self.types.default_of(expr).is_some() => Some(self.emit(Expr::Default(ty.clone()), ty, origin)),
             (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && let Some(owner) = self.constructed_decl(*callee) => self.lower_constructor_call(scope, args, owner, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
+            // a callee that is an expression whose value is a function (`(|y: f64| y * 2.0)(x)`, `doubler()(x)`, `(twice)(x)`)
+            (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && self.is_function_valued(*callee) => {
+                let callee = *callee;
+                self.lower_expression_call(scope, callee, args, origin)
+            }
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");
                 None
@@ -721,6 +737,11 @@ impl Elaboration<'_, '_> {
                 scope.let_sources.insert(binding, init);
                 true
             }
+            // A `let` bound to a node holds no value: the name stands for the node, as a handle does (`let y = x; v(y)`, §6 rule 4)
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Node(_) | Ty::AnyNode)) => {
+                scope.handles.insert(binding, init);
+                true
+            }
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);
                 scope.let_sources.insert(binding, init);
@@ -775,6 +796,11 @@ impl Elaboration<'_, '_> {
             BinOp::Shl => BinaryOp::Shl,
             BinOp::Shr => BinaryOp::Shr,
         }
+    }
+
+    /// Whether `expr` calls a method on a value of a module type: a template, which exists at elaboration only.
+    fn is_template_method(&self, expr: ExprId) -> bool {
+        matches!(&self.design.expr_node(expr).kind, ExprKind::MethodCall { recv, .. } if matches!(self.typed(*recv), Some(Ty::Module(_))))
     }
 
     /// Whether `expr` reads only literals and constants through operators, casts and the

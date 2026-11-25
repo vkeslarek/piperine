@@ -107,22 +107,25 @@ block	modules#6	7c3db491e9d50314	run	piperine/book_modules::the_lowpass_module_r
 block	modules#7	785f58bd27638c90	run	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	-
 block	modules#8	f26832ff2564dcd3	run	piperine/book_modules::the_pi_controller_runs_with_its_generic_idt	-	-
 block	modules#9	76ab743eefe57ede	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
-block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_template_and_bundle	L32	-
+block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_only_for_its_bundle	L25	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
-block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that_returns_a_template_is_refused_where_it_is_placed	L32	-
+block	modules#12	7d514f590b39e281	run	piperine/book_modules::a_function_that_returns_a_template_places_its_result	-	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
-block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
+block	modules#14	bf8415c910606f11	run	piperine/book_modules::the_swappable_mosfet_listing_runs	-	-
+block	modules#15	2ca276483c741b1f	fragment	modules#14	-	-
+block	modules#16	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
+block	modules#17	f5ddcb63aa594437	run	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
-block	analog#2	bf3cc4ac19e90181	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
+block	analog#2	5bbb7c8746c8b33b	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
 block	analog#3	6395ae5e780ffca4	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
 block	analog#4	f44e0e6d9f174a31	shown	-	-	-
 block	analog#5	f0d9aa24342fc413	shown	-	-	-
 block	analog#6	86627a9b1ef08bf0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
-block	analog#7	2dcf8ccdabaf5fbf	run	piperine/book_analog::the_diode_with_a_trace_runs	-	-
+block	analog#7	689859973da09ad9	run	piperine/book_analog::the_diode_with_a_trace_runs	-	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
 block	analog#9	ad5153ed8a776aa7	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
 block	analog#10	680ede3e2ac2fe51	run	piperine/book_analog::the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple	-	-
-block	analog#11	35b144b2c97d9575	run	piperine/book_analog::the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep	-	-
+block	analog#11	570ed200131dc3ce	run	piperine/book_analog::the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep	-	-
 block	digital#1	b6a2c3d854639e4c	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
 block	digital#2	a15e186f7ce2d093	shown	-	-	-
 block	digital#3	a594897648f9a3c9	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
@@ -181,7 +184,7 @@ block	core-std#7	73e0cf5006f6d85d	run	piperine/book_core_std::the_pad_drives_its
 block	core-std#8	5c0cb59d0b639a56	run	piperine/book_core_std::the_register_with_a_setup_check_runs	-	-
 block	core-std#9	8df4b148eabfdf77	run	piperine/book_core_std::the_probe_writes_a_check_and_a_log_record	-	-
 block	core-std#10	bfca7381ca325fda	run	piperine/book_core_std::the_watchdog_builds_with_its_u16_param	-	-
-block	core-std#11	8e7f72e7c63ab65b	run	piperine/book_core_std::a_crates_own_vt_replaces_the_library_one	-	-
+block	core-std#11	7c1cb6112e994119	run	piperine/book_core_std::a_crates_own_vt_replaces_the_library_one	-	-
 block	errors#1	1bd5d00e8c8236b6	holds	piperine/book_errors::the_mismatched_type_diagnostic_has_the_parts_the_book_shows	-	-
 block	errors#2	290db49dc81491b3	holds	piperine/book_errors::the_ambiguous_name_diagnostic_has_the_parts_the_book_shows	-	-
 block	errors#3	e4bc76897a516209	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
@@ -196,7 +199,7 @@ block	abi#4	7f56c990874e7013	run	piperine/book_abi::the_flip_flop_starts_low_and
 block	abi#5	97e83a277ec19321	shown	-	-	-
 block	abi#6	52e5d7721de89cee	shown	-	-	-
 block	compiler#1	07f51b3645a3ebce	run	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	-
-block	compiler#2	a8029e9e14f098ed	run	piperine/book_compiler::the_diode_with_a_limited_junction_settles_where_the_junction_equation_says	-	-
+block	compiler#2	dd1f1631781e10eb	run	piperine/book_compiler::the_diode_with_a_limited_junction_settles_where_the_junction_equation_says	-	-
 block	compiler#3	835ad43867b51f3a	shown	-	-	-
 block	cli#1	a85641490b6e3b0b	shown	-	-	-
 block	cli#2	eea02ab5185142c6	shown	-	-	-
@@ -263,7 +266,7 @@ block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_car
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
 block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book_cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
-block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_template_and_bundle	L32	-
+block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_only_for_its_bundle	L25	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
 block	cheatsheet#10	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
 block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
@@ -281,7 +284,7 @@ claim	welcome~e9269920	e9269920165af6c3	prose	-	-	A solver often tries a time st
 claim	welcome~3afc3430	3afc34303f9d001f	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	Its reaction, on at(t0) { fired <- true; }, means "when time reaches t0, set fired".
 claim	welcome~cd0a6683	cd0a6683d2118361	prose	-	-	Everything else writes nothing. let x = expr; only gives an expression a name.
 claim	welcome~6e662db9	6e662db9ee7d0481	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The piperine command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself.
-claim	welcome~84a34395	84a34395aecc8811	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: templates and bundles.
+claim	welcome~e5efe1a9	e5efe1a9872d681b	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: bundles.
 claim	welcome~4bc80e1d	4bc80e1dc680d2f3	holds	piperine/book_welcome::e0319_a_param_with_no_default_must_be_bound	-	E0319
 claim	welcome~0808ef8f	0808ef8f1e6f4968	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	Bind it: Resistor(vin, vout) { r: 1k }.
 claim	welcome~4bc8171d	4bc8171dc680e23e	holds	piperine/book_welcome::e0312_a_port_must_be_connected	-	E0312
@@ -391,7 +394,8 @@ claim	modules~f355ab23	f355ab23250e139e	prose	-	-	The times are left for you; th
 claim	modules~85f8dd48	85f8dd48131db07e	holds	piperine/book_modules::a_ladder_written_out_runs_an_operating_point_and_a_dc_sweep	-	An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point.
 claim	modules~8b927a42	8b927a42685fb21f	holds	piperine/book_modules::the_lowpass_module_runs_over_the_generic_integrator	-	At each instance they stand for the expressions the caller wrote, here v(a) and 1u.
 claim	modules~ca384a57	ca384a570243c413	holds	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	idt(e) is the time integral of e, itself a library module that returns a value.
-claim	modules~1faf8c12	1faf8c12cb1fa180	refused	piperine/book_modules::binding_m_and_dtemp_is_refused_as_an_unknown_param	L29	Every instance has these two implicit params, and you bind them like any other: Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel. m multiplies down the hierarchy; dtemp offsets the temperature and adds up.
+claim	modules~93efd115	93efd1155317fe74	holds	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	Placed as Resistor(a, b) { r: 1k, m: Some(4.0) } this resistor behaves as four in parallel; placed with no m it follows the run, so --simparam multiplicity=3 reaches every instance that leaves m unset.
+claim	modules~007f1097	007f109759d32249	holds	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	Read in a param default, multiplicity() is E0321: the default is fixed before the run.
 claim	modules~4bd2871d	4bd2871dc689f513	holds	piperine/book_modules::e0320_a_block_names_a_param_the_module_does_not_have	-	E0320
 claim	modules~0d2be82e	0d2be82e6d92b89d	holds	piperine/book_modules::e0320_a_block_names_a_param_the_module_does_not_have	-	RcSection(a, b) { res: 1k }
 claim	modules~4bc8171d	4bc8171dc680e23e	holds	piperine/book_modules::e0312_a_port_is_left_unconnected	-	E0312
@@ -551,7 +555,7 @@ block	solver#12	fef80f23f68a3276	shown	-	-	-
 block	solver#13	aa30088d37939468	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis pz --input v1 --output vout
 block	solver#14	08d4bb8ee0696a6d	shown	-	-	-
 block	solver#15	dd386fb556b3f2b4	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis sens --wrt v1.dc --wrt r1.r --print vout
-block	solver#16	4698de5517cae20c	run	piperine/book_solver::the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter	-	-
+block	solver#16	db00e134ba22d231	run	piperine/book_solver::the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter	-	-
 block	solver#17	cdcd861b458be80e	shown	-	-	-
 block	solver#18	c375d7209380093e	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run hiss.msl --analysis noise --input v1 --output vout --from 10 --to 1e4 --per-decade 1
 block	solver#19	6f7e18a9dd9c3243	shown	-	-	-
@@ -742,7 +746,7 @@ claim	modules~1a89f2ad	1a89f2adc283d8ec	holds	piperine/book_modules::the_rule_of
 claim	analog~53c7822c	53c7822caf5c0ae7	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	A 2 V sine drives a resistor into two diodes back to back.
 claim	analog~a6eeb69c	a6eeb69ccb6689d9	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The output follows the input while it is small and is clipped near ±0.65 V.
 claim	analog~72e8923f	72e8923fe9f980b4	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	In an operating-point solve now() is 0 and the source sits at 0 V.
-claim	analog~36d33f2a	36d33f2a6c2ad8c3	holds	piperine/book_analog::the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature	-	let nvt = n * vt(); A let inside analog is a local of this iteration. vt() is the thermal voltage kT/q at the simulation temperature, about 25.9 mV at the default 300.15 K.
+claim	analog~1466dc01	1466dc01f1f4f07e	holds	piperine/book_analog::the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature	-	let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE)); A let inside analog is a local of this iteration. vt(t) is the thermal voltage kT/q at the temperature t you pass, about 25.9 mV at the default 300.15 K; the run's temperature is optional, so the model falls back to the ambient one.
 claim	analog~9e74b878	9e74b8782d40c6b2	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	At 0.6 V the diode carries about 0.12 mA, which drops 0.12 V over the resistor, so the input is at 0.72 V: the record confirms the hand calculation.
 claim	analog~239192ff	239192ff7bf8d964	holds	piperine/book_analog::a_source_with_ac_stim_is_its_dc_value_and_a_one_volt_phasor_in_the_sweep	-	To drive an AC sweep, a source adds ac_stim to its contribution: v(p, n) + dc + ac_stim(1.0, 0.0); is a DC source that becomes a 1 V phasor in the sweep and stays at dc everywhere else.
 claim	analog~7b3efc50	7b3efc5053dd56d6	holds	piperine/book_analog::the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond	-	Sampling, phi1 high. x follows vin and y is grounded, so cs charges to v(vin), with a time constant of ron · cs = 0.1 ns per switch.

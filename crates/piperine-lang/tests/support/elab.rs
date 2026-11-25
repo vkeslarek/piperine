@@ -16,7 +16,7 @@ impl Elab {
     /// Elaborate `top` of `src`; the design must hold no diagnostic of its own.
     pub fn run(src: &str, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         let design = Elab::design(src);
-        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
+        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
         Elaborator::new(&design).run(top)
     }
 

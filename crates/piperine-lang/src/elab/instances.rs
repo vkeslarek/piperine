@@ -242,7 +242,7 @@ impl Elaboration<'_, '_> {
 
     /// Discharges what the definition of `instance`'s function deferred (Q1 (c)): the `where`, the pairs of
     /// array lengths and the const expressions, for these arguments. `None` after a diagnostic.
-    fn discharge(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
+    pub(super) fn discharge(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
         // the `where` reads the instance's own type arguments (`A::WIDTH == B::WIDTH`)
         let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
         let discharged = self.discharge_under_substitution(instance, bindings);

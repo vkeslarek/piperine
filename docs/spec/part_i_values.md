@@ -43,8 +43,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   `ref` and `move`, heap types, `unsafe`, threads, `async`, `dyn`. `&` is the bitwise operator
   only ([§1.5.3](#15-expressions)) and `*` the multiplication only: no type, expression or
   pattern makes a reference or reads through one.
-- **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`
-  and `inf` (table below): they are `pub const` items of `std::constants`, re-exported by the
+- **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`,
+  `inf`, `AMBIENT_TEMPERATURE` and `DEFAULT_MULTIPLICITY` (table below): they are `pub const` items of `std::constants`, re-exported by the
   prelude.
 - **§1 rule 4.** Only a type with `Repr` can be carried: it is the `T` of `Bit<T>` and the
   `value` of a nature ([§4](part_ii_carriers.md#4-natures)).
@@ -74,7 +74,7 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 
 **Prelude constants**
 
-The six constants are `pub const` items of `std::constants` ([§22](part_vii_stdlib.md#22-standard-library)), re-exported by the prelude.
+The eight constants are `pub const` items of `std::constants` ([§22](part_vii_stdlib.md#22-standard-library)), re-exported by the prelude.
 
 | Name | Type | Value | Meaning |
 | --- | --- | --- | --- |
@@ -84,6 +84,8 @@ The six constants are `pub const` items of `std::constants` ([§22](part_vii_std
 | `PI` | `f64` | `3.141592653589793` | π, to the nearest `f64` |
 | `E` | `f64` | `2.718281828459045` | Euler's number, to the nearest `f64` |
 | `inf` | `f64` | `1.0 / 0.0` | positive infinity |
+| `AMBIENT_TEMPERATURE` | `f64` | `300.15` | 27 °C in kelvin, ngspice's default temperature: the recommended fallback, `temperature().unwrap_or(AMBIENT_TEMPERATURE)` ([§8.5](part_iii_structure.md#85-run-settings-and-extern-modules)) |
+| `DEFAULT_MULTIPLICITY` | `f64` | `1.0` | ngspice's default multiplicity `m`: the recommended fallback, `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)` ([§8.5](part_iii_structure.md#85-run-settings-and-extern-modules)) |
 
 ```rust
 pub const Q: f64 = 1.602176634e-19;
@@ -92,6 +94,10 @@ pub const EPS0: f64 = 8.8541878128e-12;
 pub const PI: f64 = 3.141592653589793;
 pub const E: f64 = 2.718281828459045;
 pub const inf: f64 = 1.0 / 0.0;
+/// 27 °C in kelvin, ngspice's default temperature: the recommended fallback of `temperature()`.
+pub const AMBIENT_TEMPERATURE: f64 = 300.15;
+/// ngspice's default multiplicity: the recommended fallback of `multiplicity()`.
+pub const DEFAULT_MULTIPLICITY: f64 = 1.0;
 ```
 
 > **Resolution.** The design names the constants and not their values. `Q` and `K_B` are the
@@ -386,7 +392,15 @@ fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
   (`+>`), each at the time its rule gives ([§5.2](part_ii_carriers.md#52-drives),
   [§12.1](part_iv_behavior.md#121-reactions), [§11](part_iv_behavior.md#11-analog)). Reading
   a carrier yields a value: a copy of what the carrier holds at that read
-  ([§5.1](part_ii_carriers.md#51-declaring-and-reading)).
+  ([§5.1](part_ii_carriers.md#51-declaring-and-reading)). A `let` bound to a node names that
+  node. An `if`, a `match` or a block whose result is a node is chosen at elaboration when its
+  condition, scrutinee and guards read only params, constants, generation indexes and `let`s of
+  those, in any arm: it names the node it folds to wherever a node goes (a probe, a contribution
+  target, a connection), and the params it reads are structural
+  ([§8.1.2](part_iii_structure.md#81-ports-and-params)). One whose choice reads a probe, a port, a
+  signal, a primitive of the run or a variable whose value depends on the run would choose hardware
+  at run time and is `E0133` (generics phase D, 2026-11-24).
+  **Approved**: 2026-11-24 - user: "Nó escolhido na elaboração é permitido senão perdemos a liberdade de mudar o hardware na elaboração o que deveria ser fácil. Restante ok"
 - **§1.4.8** A type is checked against a required type by equality. Two types are equal when
   they are the same scalar type, the same struct, enum, nature or module with equal generic
   arguments, or the same composite form with equal parts. Const arguments and array lengths
@@ -1019,6 +1033,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 | value type | the value | methods, trait implementations |
 | a nature | one carrier, read through a handle | events: `rise`, `fall`; capabilities: `Resolve` |
 | a bundle ([§7](part_ii_carriers.md#7-bundles)) | the bundle | events and queries over several carriers |
+| a module type ([§8.4](part_iii_structure.md#84-templates-and-swappable-modules)) | the template | trait implementations that make a module swappable; values and templates computed from its params |
 
 A **handle** is a read-only reference to one carrier or bundle, bound at elaboration. It is
 the `self` of an `impl` on a nature or bundle, and any function parameter of such a type. It
@@ -1029,8 +1044,11 @@ only reference a function holds, and it is not a value.
 - **§3.1.2** Generic names follow `impl`; bounds come from the declaration
   (`impl<T> Stream<T>`).
 - **§3.1.3** Names may not repeat a carrier method: `changed`, `prev`, `others`, `inflow`.
-- **§3.1.4** There is no `impl` on a module. What a module's blocks share is a `let` in its
-  body ([§8.2](part_iii_structure.md#82-the-body)).
+- **§3.1.4** A module type takes `impl Tr for M { … }` and an inherent `impl M { … }`. `self`
+  is the template. Its functions are pure functions of the template: they read its params,
+  compute, and return values or templates; they run at elaboration. A function that probes a
+  node, reads a quantity or time is `E0122`. What a module's blocks share is still a `let` in
+  its body ([§8.2](part_iii_structure.md#82-the-body)).
 - **§3.1.5** A handle may be read, probed, passed to another function, and have carrier
   methods called on it. It **MUST NOT** be returned, stored in a value, or written through.
 - **§3.1.6** Reading a handle of a discrete carrier yields the carrier's value
@@ -1086,10 +1104,9 @@ only reference a function holds, and it is not a value.
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0130` | an `impl` on a module | elaboration |
 | `E0131` | a method named `changed`, `prev`, `others` or `inflow` | elaboration |
 | `E0132` | an item other than a function in an `impl` on a nature or bundle | elaboration |
-| `E0133` | a handle returned, stored in a value, or written through | elaboration |
+| `E0133` | a handle returned, stored in a value, or written through; an `if`, `match` or block whose result is a node chosen by what the run computes (§1.4.7) | elaboration |
 | `E0134` | `impl Trait for` a bundle | elaboration |
 
 **Examples**
@@ -1287,7 +1304,7 @@ path_seg       ::= ( IDENT | 'self' | 'Self' | 'super' | 'crate' ) ( '::'? gener
 - **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the
   `pub` items of `std::prelude`, which re-exports the standard library
   ([§22](part_vii_stdlib.md#22-standard-library)) ([§3.5](#35-crates) rule 9). The **core names** need no
-  import and no declaration: `gnd`, `Nature`, `m`, `dtemp`, `str` and the core primitives
+  import and no declaration: `gnd`, `Nature`, `str` and the core primitives
   ([§14](part_iv_behavior.md#14-core-primitives)).
 - **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file. Each is an
   item at namespace scope, a file or an inline `mod`; a block may sit in any namespace of its
@@ -1550,7 +1567,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 - **§3.7.3** `trait A: B + C` makes `B` and `C` supertraits of `A`: a type that implements `A`
   **MUST** implement `B` and `C`, and the items of `B` and `C` may be used on `Self` inside
   `A`.
-- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type or nature `T`
+- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type, nature or module type `T`
   ([§3.1.9](#31-impl)). It defines every item of the trait that has no default and may define
   the others; it defines no item the trait does not have. Each item has the signature the
   trait gives, with `Self` standing for `T`.

@@ -15,6 +15,9 @@ mod alone;
 #[allow(dead_code)]
 #[path = "support/probe.rs"]
 mod probe;
+#[allow(dead_code)]
+#[path = "support/mixed.rs"]
+mod mixed;
 
 use alone::Alone;
 use devices::{Devices, Ex};
@@ -229,4 +232,55 @@ fn module_instance_names_compile_and_list_in_the_library() {
     let compiled = Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(compiled.report().warnings, "", "rustc has nothing to say of the generated source");
     assert_eq!(compiled.loaded().names(), vec!["Ladder::<3>", "idt::<State>~r=1k", "idt::<State>~r=2k"]);
+}
+
+/// A compiled body that reads the run's temperature as the `Option` pair `temperature()` is (GN-24, GN-25).
+struct RunTemperature;
+
+impl RunTemperature {
+    /// The run's temperature in kelvin, set by the run in the second drive.
+    const KELVIN: f64 = 350.0;
+
+    /// `module Reads(out given: Bit<f64>, out kelvin: Bit<f64>) {}` with
+    /// `given = if temperature_given { 1.0 } else { 0.0 }; kelvin = temperature;` as drives.
+    fn body(b: &mut IrBuilder) -> BodyId {
+        let file = "temperature.msl";
+        let body = b.body(digital::Buck::spec("Reads", file, 1));
+        for (i, name) in ["given", "kelvin"].into_iter().enumerate() {
+            b.carrier(body, digital::Buck::carrier(name, ValueType::F64, piperine_ir::CarrierRole::Out, None, file, 1, 20 + 10 * i as u32));
+        }
+        let at = digital::Buck::origin(file, 2, 1);
+        let flag = b.expr(Expr::Env(piperine_ir::Env::TemperatureGiven), ValueType::Bool, at.clone());
+        let (one, zero) = (b.expr(Expr::Real(1.0.into()), ValueType::F64, at.clone()), b.expr(Expr::Real(0.0.into()), ValueType::F64, at.clone()));
+        let given = b.expr(Expr::If { cond: flag, then: one, otherwise: zero }, ValueType::F64, at.clone());
+        let kelvin = b.expr(Expr::Env(piperine_ir::Env::Temperature), ValueType::F64, at.clone());
+        for (carrier, value) in [(0, given), (1, kelvin)] {
+            b.drive(body, piperine_ir::Drive { carrier, value, after: None, origin: at.clone(), element: None, path: vec![] });
+        }
+        body
+    }
+
+    /// The last value of nets `given` and `kelvin` after a run in the session `context`.
+    fn run(context: piperine_solver::prelude::Context) -> [f64; 2] {
+        let mut w = mixed::Wire::new();
+        let body = Self::body(&mut w.b);
+        w.place("reads", body, vec![], &[("given", ValueType::F64), ("kelvin", ValueType::F64)]);
+        let (seen, _) = mixed::Built::new(w.finish()).run_in(context, 2e-9, 1e-9);
+        let last = |name: &str| {
+            let bytes = seen.series(name).last().unwrap_or_else(|| panic!("net {name} has a value")).1.clone();
+            f64::from_le_bytes(bytes[..8].try_into().expect("eight bytes"))
+        };
+        [last("given"), last("kelvin")]
+    }
+}
+
+#[test]
+fn a_device_reads_whether_the_run_set_its_temperature() {
+    // GN-24 AC 1, GN-25 AC 1: the device's `TEMPERATURE_GIVEN` pin is 0 and `TEMPERATURE` holds the session's
+    // 300.15 K when the run sets none, and 1 and the run's kelvin when it sets one
+    let unset = RunTemperature::run(piperine_solver::prelude::Context::default());
+    assert_eq!(unset, [0.0, 300.15], "no `temp`: not given, the solver's default");
+    let mut context = piperine_solver::prelude::Context::default();
+    context.tolerances.set_temperature(RunTemperature::KELVIN);
+    assert_eq!(RunTemperature::run(context), [1.0, RunTemperature::KELVIN], "`temp` set: given, the run's kelvin");
 }

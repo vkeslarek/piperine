@@ -19,7 +19,6 @@ Structure is resolved at elaboration, and every function is inlined. AIR v2 ther
 | templates, binning functions | evaluation: a template is a value | §8.4 |
 | generics, const generics | monomorphization | §8.1 |
 | generation `for` / `if` | unrolling over params and constants | §8.2 |
-| `m`, `dtemp` | scaling of contributions and noise; an offset on `temperature()` | §8.5 |
 | value inputs, results, named expressions | inlining at each read; their instances are hoisted to the module | §8.2, §8.3 |
 | functions and closures | inlining | §3 |
 | the standard library | it is ordinary source: lowered like user code | §22 |

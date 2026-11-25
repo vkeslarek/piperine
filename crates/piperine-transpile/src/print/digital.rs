@@ -130,7 +130,7 @@ impl<'a> DigitalPrinter<'a> {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte
-            Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
+            Source::Static | Source::Analysis(_) | Source::TemperatureGiven => format!("let {name} = {cx}.bool({i});"),
             // a param's previous bytes are in the param's own layout (abi.md §4.1)
             Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),

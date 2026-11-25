@@ -51,10 +51,16 @@ impl Checker<'_> {
             // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
             // reads the call as a placement because a module parameter has the same bound
             CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.call_through_bound(expr, parameter, args),
-            CallClass::Instance { module: None, .. } => {
-                self.unsupported(file, node.span, "placement through a template value or a function");
+            // the `Fn` bound of the param names a type that failed (its refusal is reported where the type is written): the call has
+            // nothing left to say
+            CallClass::Instance { module: None, .. } if self.fn_bound_failed(*callee) => {
+                for arg in args {
+                    self.infer(arg.value);
+                }
                 return None;
             }
+            // any other head is a value called by its type: a function, else `E0180` (§1.5)
+            CallClass::Instance { module: None, .. } => return self.value_call(expr, *callee, args),
             CallClass::Probe => return self.probe(expr, false),
             CallClass::Unclassified => {
                 self.unsupported(file, node.span, "call that is not a function call");
@@ -75,8 +81,29 @@ impl Checker<'_> {
                     None
                 }
             },
-            _ => {
-                self.unsupported(file, node.span, Unsupported::expr(&node.kind));
+            // the callee is an expression, not a name (Part III `callee ::= path | call | '(' expr ')'`)
+            _ => self.value_call(expr, *callee, args),
+        }
+    }
+
+    /// A call whose callee is an expression that names nothing (`(f)(x)` aside, which is a name: `make()(x)`, `(|y: f64| y)(x)`,
+    /// `(if c { f } else { g })(x)`): its value is called by the type it has (§1.5). A function type takes the arguments; any other
+    /// type is `E0180`. A callee that did not type has its own diagnostic.
+    fn value_call(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Ty> {
+        match self.infer(callee) {
+            Some(Ty::Fn(params, result)) => {
+                self.apply(expr, &params, args)?;
+                Some(*result)
+            }
+            found => {
+                if let Some(found) = found {
+                    let (file, span) = (self.file_of_expr(expr), self.design.expr_node(callee).span);
+                    let message = format!("the callee's type `{}` is no function and no template (§1.5)", found.name(self.design));
+                    self.coded(file, "E0180", span, message, "a call of a value that is not a function");
+                }
+                for arg in args {
+                    self.infer(arg.value);
+                }
                 None
             }
         }
@@ -277,6 +304,10 @@ impl Checker<'_> {
             return None;
         }
         if name == "others" && self.others_on_one_driver(expr, *recv, args) {
+            return None;
+        }
+        // `c0.cs.abs()`: the receiver's type is the concrete item's, which nothing here gives (§8.4.8)
+        if self.untyped_template_receiver(*recv, args) {
             return None;
         }
         // The built-in a stdlib item resolved to, or the built-in row of the language.
