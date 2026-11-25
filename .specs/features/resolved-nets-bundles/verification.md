@@ -1,6 +1,6 @@
 # Resolved Nets: Bundles verification
 
-**Verdict**: FAIL (round 3, at ee7a46a43: R1 closed by 75c5406a3; the `main` merge f87c79299 makes a transient fail when an array element the analog side reads changes in an instant where a value is passed through, finding M1, Blocker)
+**Verdict**: PASS (round 4, at 9a94138e5: M1 closed by 1126b8675; every finding of rounds 1 to 3 closed)
 **Proofs**: `proofs.md` at the commit that follows this file (re-run by `check_proofs.py` after it)
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-24, over `feature/resolved-nets-bundles` at 51bd25e74
 **Scope**: the whole feature (T1 to T23, design D11 and D12), the merge of `main` at e9fefe239 (the `Fn(Cell)` bound fix) and the solver change 9e9312cec. The B1 round (verdict PASS at 73cef16b, finding F0 closed by cf54677e) is kept at the end.
@@ -68,6 +68,8 @@ These are my own probes at 51bd25e74, run with the debug `piperine` binary (`run
 | C41 | `types_bundles.rs` `an_array_of_bundles_of_a_generic_length_is_typed_per_instance`, `elab_bundles.rs` generic and computed length, `source_bundles.rs` the four runs | yes - exact per-lane records for N = 2, N = 3, `N + 1` and `[flip Stream<u8>; N]` |
 | C42 | `types_bundles.rs` `two_producers_of_one_element_of_an_array_of_bundles_is_e0220_naming_it`, `an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it`, the two `elab_bundles.rs` generic-instance tests | yes - names `lanes[1].a` and asserts that element 0 is not named |
 | C43 | `metadata.rs` `a_field_of_an_element_of_an_array_of_bundles_is_named_element_first`, `elab_bundles.rs` node-field and loop-index tests | yes - exact names `Top.lanes[1].a` and `Top.taps[1].p` with values |
+| C44 | `msl_parser`, `pom_bundles`, `types_bundles` (two), `elab_bundles` (two), `source_bundles` (two) field-default tests | yes - the producer's and the `flip` consumer's commits run from the field default. A misplaced default is E0261. My probes `p11` and `p12b` agree |
+| C45 | `digital instant` `a_pulse_of_an_element_of_an_array_net_is_passing_as_its_windows`; `source_wraps` element pulse and element beside a scalar pulse | yes - the engine test asserts the exact `boundary` and `passing` window bytes over three window layouts, and that nothing passes outside a window. The source tests are my p13 and p13s probes, with values computed in Rust |
 
 ## Findings
 
@@ -147,6 +149,33 @@ What I found when re-running the probes:
 | --- | --- | --- | --- |
 | R1 (round 2) | probe above | 75c5406a3 | 75c5406a3: an `in` field's default starts the `flip` consumer's leaf; the E0187 help names the field as its `struct` writes it (C44) |
 | **M1. Blocker - since the merge f87c79299, a transient fails with an internal error when an array element the analog side reads changes in an instant where any analog-read net passes through a value.** `PassingValues` records an array net with `Store::value`, which is empty for an array net, because its elements live in `SparseArray`. It records the net once at `instant.rs:161` (`self.passing.changed(id, self.store.value(id))`) and again in `passing.rs::read_state` (`store.value(*net)`). `DigitalSide::passing_slots` then cuts the element's window from 0 bytes, and `slot_of_bytes` raises the error. The adapters merge itself is correct: `passing_slots` cuts into window slots. What is wrong is the bytes the engine records for array nets. | `crates/piperine-digital-solver/src/instant.rs:161` and `crates/piperine-digital-solver/src/passing.rs` `read_state`. The probe `p13s` is an ordinary case: `signal g: Bit = false` and `gates: [Bit; 4]` drive `Cell(g, a)` and `Cell(gates[1], b)`, with `on at(2n) { g <- true; gates[1] <- true; }` and `on g.rise() { g <- false; }`, so `g` is a one-microstep pulse. The run fails with: "Transient: at t = 2e-9 s, Digital: internal error: the analog copy's window (elements 1..2) of net `Top.gates` lies outside the 0 bytes the engine delivered". A pulse on the element itself (`p13`: `gates[1] <- true` then `gates[1] <- false` on its rise) fails the same way. At fa63ecb02, before the merge, both probes ran (`p13s`, then without the passed-value record) | record the array net's analog bytes, `store.analog_value(id, spec)` (the windows the analog copy holds), both in `changed` and in `read_state`. Add a check: an element read by analog that pulses within an instant, and an element that changes beside a scalar pulse, run, and the zero-width solve sees the element's passed value | 1126b8675: `instant.rs` and `PassingValues::read_state` record `Store::analog_value` (the windows), a change only when a window element changed (`Store::analog_changed`); check C45 (`instant::a_pulse_of_an_element_of_an_array_net_is_passing_as_its_windows`, `source_wraps` `element_pulse.msl` (p13) and `element_beside.msl` (p13s): the zero-width solve at 2 ns reads the element's passed high) |
+
+## Round 4 (2026-11-25, at 9a94138e5)
+
+1126b8675 fixes M1. `origin/main` (59b636e11) has not moved. The `**Build**` line is clean.
+
+I re-ran every probe:
+
+- `p13` (an element of an array pulses) runs.
+- `p13s` (an element changes beside a scalar pulse) runs. The zero-width solve at 2 ns reads the pulse (`Top.a` is 1 V on the 2 ns row), and `Top.b` stays at 1 V from 2 ns on.
+- My own new probe `p14` runs. Its pulse sits in the second window of a net read through two windows (`gates[0]` and `gates[3]`), with `gates[2]` changing outside both windows in the same microstep. `Top.b` shows 1 V on the 2 ns row and 2 V after, and `Top.a` is untouched.
+- The `p1` table is identical to round 1.
+- `p7` and `p7d` are still E0360.
+- `p12b` and `p9` give the same values as before.
+- The unread `[Bit<u8>; 2^32]` transient takes 0.4 s.
+
+**The `Store::analog_changed` guard.** It counts a change of an array net only when an element inside one of the net's windows changed in this microstep, read from each element's own stamp. I looked for a passed value it could miss:
+
+- A pulse inside a window is two changes in two microsteps, and both are counted, so `passed` keeps the high.
+- A change outside every window is invisible to the analog side. Before the guard it re-recorded the same bytes, so the only cost was a needless zero-width solve. The guard drops it.
+- A write of equal bytes is not a change, at the element level or at the net level.
+- The initial-commit landing is gated by the same `Store::changed(net)` as before, so the guard does not change it.
+
+I found no case where it misses a passed value. It does cost O(window length) for each microstep in which the net changes, which is the same order as `analog_value` already pays, so it adds no new cost class.
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| M1 (round 3) | the probes above | 1126b8675 | 1126b8675 (C45) |
 
 ## Round B1 (2026-11-21, verdict PASS at 73cef16b)
 
