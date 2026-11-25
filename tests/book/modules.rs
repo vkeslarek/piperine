@@ -1,6 +1,6 @@
 //! Scope: chapter 7 of the Book, "Modules and hierarchy" (feature `root-e2e`, RE-02 and RE-03): the
 //! switched-capacitor integrator that runs, the library integrator the chapter shows, the generic
-//! ladder, the module that returns a value, the memory bank, the template and the extern module (all
+//! ladder, the module that returns a value, the memory bank, the template (all
 //! refused today, asserted refused with their diagnostics), and each sentence and mistake of the
 //! chapter, run through `piperine::`. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
@@ -265,27 +265,17 @@ fn the_swappable_mosfet_listing_runs() {
 }
 
 #[test]
-fn the_extern_osdi_module_is_refused() {
-    // modules#16 (refused): `#[link("bsim4.osdi", model = "bsim4")] extern "osdi" module Bsim4`, placed in a
-    // top: an `extern` module is `P0001` (L33)
-    let chapter = Chapter::read();
-    let after = "module Top() { signal d: Electrical; signal g: Electrical; signal s: Electrical; signal b: Electrical; let m1 = Bsim4(d, g, s, b); }\n";
-    let model = chapter.wrapped("bsim4.msl", "", "modules#16", after);
-    Refusal::expect(model.run(Commands::of_top()), "modules#16", "P0001", "`extern` module is not supported yet");
-}
-
-#[test]
 fn the_multiplicity_listing_runs_as_four_in_parallel() {
     // modules~93efd115 (generics phase D, GN-26 AC 3; replaces the claim modules~1faf8c12 and its test
     // `binding_m_and_dtemp_is_refused_as_an_unknown_param`): "Placed as Resistor(a, b) { r: 1k, m: Some(4.0) } this
     // resistor behaves as four in parallel; placed with no m it follows the run, so --simparam multiplicity=3 reaches
-    // every instance that leaves m unset" (modules#17 is the listing), and modules~007f1097: "Read in a param default,
+    // every instance that leaves m unset" (modules#16 is the listing), and modules~007f1097: "Read in a param default,
     // multiplicity() is E0321". The
     // resistor sits over a fixed kilo-ohm one under one volt: the node reads the divider of the effective multiplicity
     let chapter = Chapter::read();
     let after = |block: &str| format!("module Fixed(p: Electrical, n: Electrical) {{ r: f64 = 1k; }}\nanalog for Fixed {{ i(p, n) +> v(p, n) / r; }}\nmodule Source(p: Electrical) {{}}\nanalog for Source {{ v(p, gnd) +> 1.0; }}\nmodule Top() {{\n    signal vin: Electrical;\n    signal o: Electrical;\n    let s = Source(vin);\n    let top = {block}(vin, o);\n    let bottom = Fixed(o, gnd);\n}}\n");
     let divider = |count: f64| 1000.0 / (1000.0 / count + 1000.0);
-    let run = |block: &str, overrides: Overrides| chapter.wrapped("multiplicity.msl", "", "modules#17", &after(block)).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    let run = |block: &str, overrides: Overrides| chapter.wrapped("multiplicity.msl", "", "modules#16", &after(block)).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     let four = run("Resistor { m: Some(4.0) }", Commands::of_top());
     assert!((four.signal("Top.o") - divider(4.0)).abs() < 2e-3, "four in parallel: {}", four.signal("Top.o"));
     let followed = run("Resistor", Overrides { simparam: vec![("multiplicity".to_string(), 3.0)], ..Commands::of_top() });

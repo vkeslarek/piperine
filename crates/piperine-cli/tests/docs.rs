@@ -743,7 +743,7 @@ fn gaps_no_longer_lists_l28_or_its_book_rows() {
     // row and its section 11 holds no row of the debouncer, the PWM, its check or the watchdog
     let gaps = read("GAPS.md");
     assert!(!gaps.lines().any(|line| line.starts_with("| L28 |")), "GAPS.md still has an L28 row");
-    for closed in ["| digital#7 |", "| digital#11 |", "| digital#14 |", "| core-std#10 |", "| packages#12 |", "| cheatsheet#10 |", "| L57 |"] {
+    for closed in ["| digital#7 |", "| digital#11 |", "| digital#14 |", "| core-std#10 |", "| packages#12 |", "| cheatsheet#9 |", "| L57 |"] {
         assert!(!gaps.lines().any(|line| line.starts_with(closed)), "section 11 still lists {closed}");
     }
 }

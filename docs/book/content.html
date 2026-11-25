@@ -1930,13 +1930,6 @@ analog for SampleHold { v(vout) +> held; }</pre>
 
 <p><code>held</code> is a real number from the first instant, so the contribution reads it as it is. A <code>Logic</code> is not a number, so it reaches an <code>analog</code> block through a function that returns one: <code>x.to_volts(vdd)</code> gives <code>vdd</code> for 1, 0 for 0 and half of <code>vdd</code> for <code>x</code> and <code>z</code>, and <code>x.is_high()</code> gives a <code>bool</code>. The model says what <code>x</code> means electrically, by choosing the function. Using a <code>Logic</code> where an <code>f64</code> or a <code>bool</code> is required is error E0180.</p>
 
-<h3>Foreign functions</h3>
-
-<p>A function written in C is declared with <code>extern "C"</code> and no body. To use it inside <code>analog</code>, name its derivatives, one per <code>f64</code> argument, because the compiler cannot look inside:</p>
-
-<pre data-lang="msl">#[derivative(erfcx_dx)] extern "C" fn erfcx(x: f64) -> f64;
-extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
-
 <div class="callout mistake">
   <p class="callout-label">Common mistakes</p>
   <div class="table-wrap"><table class="codes">
@@ -1949,7 +1942,6 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
   <tr><td>E0187</td><td><code>signal en: Bit;</code></td><td>A <code>bool</code> has no default value. Write the first value: <code>signal en: Bit = false;</code>.</td></tr>
   <tr><td>E0112</td><td><code>out zone: Bit&lt;Zone&gt;</code> with <code>Zone</code> not deriving <code>Repr</code></td><td>A carried type needs a layout. Add <code>#[derive(Repr)]</code> to the enum.</td></tr>
   <tr><td>E0350</td><td><code>fn slope(x: f64) -&gt; f64 { ddt(x) }</code></td><td><code>ddt</code> is an instance with memory, and a <code>fn</code> has none. Make it a <code>module slope(x: f64) -&gt; f64</code>.</td></tr>
-  <tr><td>E0123</td><td><code>extern "C" fn erfcx(x: f64) -&gt; f64;</code> called in <code>analog</code></td><td>Add <code>#[derivative(erfcx_dx)]</code> so the solver has a Jacobian.</td></tr>
   </tbody></table></div>
 </div>
 
@@ -2464,18 +2456,7 @@ module DiffPair<N: Mosfet + Fn(Electrical, Electrical)>(g: Electrical, d1: Elect
 
 <pre data-lang="msl">let pair = DiffPair::<_>(g, d1, d2) { fet: Mos1 { k: 3.0 } };   // write Bsim3 { k: 3.0 } to swap the model</pre>
 
-<h3>Multiplicity and extern models</h3>
-
-<ul>
-<li><strong>Extern modules.</strong> A model compiled to OSDI, or another simulator by cosimulation, is declared with its ports and params and placed like any module:</li>
-</ul>
-
-<pre data-lang="msl">#[link("bsim4.osdi", model = "bsim4")]
-extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) {
-    l: f64 = 1u;
-    w: f64 = 1u;
-    vth0: f64 = 0.4;
-}</pre>
+<h3>Multiplicity</h3>
 
 <p><strong>Multiplicity and temperature.</strong> No instance carries an implicit param: the run sets one temperature and one multiplicity, a model reads them, and nothing is scaled for you. <code>temperature()</code> is <code>Some</code> in kelvin when the run sets <code>temp</code> and <code>None</code> otherwise, so <code>temperature().unwrap_or(AMBIENT_TEMPERATURE)</code> falls back to 27&nbsp;&deg;C, ngspice's default. <code>multiplicity()</code> is the run's <code>--simparam multiplicity=&lt;v&gt;</code>, <code>Some</code> when it is set, so <code>multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)</code> is one. A model that wants a multiplicity of its own declares an ordinary param and combines the two in its body:</p>
 
@@ -6662,7 +6643,7 @@ digital for Watchdog {
   <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
   <tbody>
   <tr><td>E0457</td><td><code>fn ddt(x: f64) -&gt; f64 { … }</code></td><td>A core name cannot be redefined. Pick another name; only library items can be replaced.</td></tr>
-  <tr><td>E0125</td><td><code>extern "intrinsic" fn my_parse(text: str) -&gt; f64;</code></td><td>Only <code>std</code> declares engine items. Write the function in MSL, or use <code>extern "C"</code>.</td></tr>
+  <tr><td>E0125</td><td><code>extern "intrinsic" fn my_parse(text: str) -&gt; f64;</code></td><td>Only <code>std</code> declares engine items. Write the function in MSL.</td></tr>
   <tr><td>E0603</td><td><code>require(…)</code>, <code>finish()</code> or <code>fatal(…)</code> in <code>analog</code></td><td>The reserved streams take records from reactions only. Move the call into <code>on settle { … }</code> or another reaction.</td></tr>
   <tr><td>E0605</td><td><code>emit!("checks", name = 3);</code></td><td>On a reserved stream the host's fields have fixed types: <code>name</code> is text. Use <code>require</code>, <code>cover</code> or <code>target</code>.</td></tr>
   <tr><td>E0161</td><td><code>x.cbrt()</code>, or another method the library does not list</td><td>The library of the built-in types is a closed list. Write the expression another way: <code>x.powf(1.0 / 3.0)</code>.</td></tr>
@@ -8837,12 +8818,10 @@ digital for M {
 }
 analog for M { emit!("newton", va = v(a)); }                      // every iteration: a trace</pre></div>
 
-<div class="cheat-card"><h4>Templates and extern</h4>
+<div class="cheat-card"><h4>Templates</h4>
 <pre data-lang="msl">cell: C;                               // C: Fn(Cell)
 let c0 = cell(Cell { wl: w, bl: b });
-let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
-<pre data-lang="msl">#[link("bsim4.osdi", model = "bsim4")]
-extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; }</pre></div>
+let m1 = nch(0.13u, 2u)(d, g, s, b);</pre></div>
 
 <div class="cheat-card"><h4>Where names come from</h4>
 <p><strong>Core</strong>, no import: <code>gnd</code> <code>Nature</code> <code>str</code>, the probes, <code>ddt</code> <code>delay</code> <code>limit</code> <code>noise</code> <code>cross</code> <code>at</code>, <code>bound_step</code>, <code>emit!</code> <code>include_str!</code>.</p>
@@ -9221,9 +9200,8 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 <ul>
 <li><strong>Delayed commits do not make time points (<code>LATER</code>).</strong> A commit whose delay always moves time forward by at least one tick changes nothing at the instant that made it. Only its due time is tested, on its own. The one change you can observe: <code>on settle</code> sees fewer time points.</li>
 <li><strong>What a time point is.</strong> A time at which the analog solver produces an accepted solution <em>and</em> runs the time-point procedure. The simulator may accept solutions at other times; those are not time points, and <code>settle</code> does not fire there.</li>
-<li><strong>The C interface of an <code>extern</code> module is this ABI.</strong> <code>"osdi"</code> names the OSDI adapter; <code>"cosim"</code> is a module whose reaction is irreversible. A <code>"cosim"</code> module stays digital-only for now.</li>
 <li><strong>Two new core functions, <code>gmin()</code> and <code>source_scale()</code>,</strong> in the same family as <code>now()</code> and <code>freq()</code>. They let a model see the solver's continuation variables, as junction models in ngspice do.</li>
-<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the bytes of <code>Logic::X</code>, of <code>None</code> and of every derived default), a <code>set</code> that would change an extern module's structure is refused like a structural param; records travel as quiet commits.</li>
+<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the bytes of <code>Logic::X</code>, of <code>None</code> and of every derived default), and records travel as quiet commits.</li>
 </ul>
 
 </section>
