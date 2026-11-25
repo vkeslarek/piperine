@@ -831,7 +831,7 @@ impl Elaboration<'_, '_> {
             Constant::FloatBits(bits) => self.emit(Expr::FloatBits(bits), ty, origin),
             Constant::Wide(id) => self.emit(Expr::Wide(id), ty, origin),
             // A composite constant of the IR's arena (a param of a hoisted placement) is written out as the expression that builds it
-            // (`consts/imported.rs`); `Option` aggregates have their own path (`option_param_read`).
+            // (`consts/imported.rs`), an `Option` as its packed pair.
             Constant::Aggregate(id) => {
                 let tree = self.imported_tree(value);
                 match self.tree_expr(&tree, &ty, &origin) {

@@ -82,6 +82,14 @@ impl Elaboration<'_, '_> {
             (ConstTree::Scalar(Constant::FloatBits(bits)), _) => Some(self.emit(Expr::FloatBits(*bits), ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Wide(id)), _) => Some(self.emit(Expr::Wide(*id), ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Aggregate(_)), _) => None,
+            // an `Option` is its two halves packed: `Some(p)` is `(true, p)`, `None` is `(false, zero)` (`compound.rs`)
+            (ConstTree::Composite { kind: CompositeKind::Option, parts }, ValueType::Option(payload)) => {
+                let (is, value) = match parts.first() {
+                    Some(held) => (self.emit(Expr::Bool(true), ValueType::Bool, origin.clone()), self.tree_expr(held, payload, origin)?),
+                    None => (self.emit(Expr::Bool(false), ValueType::Bool, origin.clone()), self.zero(payload, origin.clone())?),
+                };
+                Some(self.emit(Expr::OptionPack { is, value }, ty.clone(), origin.clone()))
+            }
             (ConstTree::Composite { kind, parts }, _) => {
                 let wanted = match (kind, ty) {
                     (CompositeKind::Tuple, ValueType::Tuple(types)) => types.clone(),
@@ -116,7 +124,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `tree` as a constant of type `ty`.
-    fn import_tree(&mut self, expr: ExprId, tree: &ConstTree, ty: &ValueType) -> Result<Constant, ConstFault> {
+    pub(in crate::elab) fn import_tree(&mut self, expr: ExprId, tree: &ConstTree, ty: &ValueType) -> Result<Constant, ConstFault> {
         match (tree, ty) {
             // a unit variant of an enum with no field: its tag is the position of the variant
             (ConstTree::Scalar(Constant::Int(position)), ValueType::Enum(_)) => Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ty.clone(), variant: Some(*position as u32), parts: Vec::new() }))),

@@ -382,3 +382,30 @@ fn an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves() {
     let printed = ir.print_structural();
     assert!(!reaction_exprs(&ir, &top, 0).is_empty() && printed.contains("some <- h.x.is") && printed.contains("n <- if h.x.is"), "the reaction reads the two halves of the result:\n{printed}");
 }
+
+/// One `Option`-carrying param of a module with a result, placed by `Top` at its default (part III §3.2.10 with §8.3.12).
+fn option_param_module(declaration: &str, read: &str, given: &str) -> String {
+    format!("module Inner(x: f64) -> f64 {{ {declaration} x * {read} }}\nmodule Top() {{ signal y: Bit<f64>; let b = Inner(1.0){given}; y = b; }}")
+}
+
+#[test]
+fn an_option_param_of_a_hoisted_placement_is_bound_to_its_constant() {
+    // §3.2.10, §8.3.12: an `Option` param, an array of them, one inside a tuple or a struct, by default and given, binds to its pair
+    // `(is, value)`: `Some(2.0)` is `option(true, 2.0)` and `None` is `option(false, 0.0)`; no refusal, no abort
+    let cases = [
+        ("c: Option<f64> = Some(2.0);", "c.unwrap_or(5.0)", "", "option(true, 2.0)"),
+        ("c: Option<f64> = Some(2.0);", "c.unwrap_or(5.0)", " { c: Some(3.0) }", "option(true, 3.0)"),
+        ("c: Option<f64> = Some(2.0);", "c.unwrap_or(5.0)", " { c: None }", "option(false, 0.0)"),
+        ("c: [Option<f64>; 2] = [Some(1.0), None];", "c[0].unwrap_or(5.0)", "", "[(option(true, 1.0) : Option<f64>), (option(false, 0.0) : Option<f64>)]"),
+        ("c: [Option<f64>; 2] = [Some(1.0), None];", "c[0].unwrap_or(5.0)", " { c: [None, Some(2.0)] }", "[(option(false, 0.0) : Option<f64>), (option(true, 2.0) : Option<f64>)]"),
+        ("c: (f64, Option<f64>) = (1.0, Some(2.0));", "c.1.unwrap_or(5.0)", "", "(1.0, (option(true, 2.0) : Option<f64>))"),
+    ];
+    for (declaration, read, given, wanted) in cases {
+        let printed = Elab::ir(&option_param_module(declaration, read, given), "Top").print_structural();
+        assert!(printed.contains(wanted), "{declaration} {given}: the read goes through {wanted}:\n{printed}");
+    }
+    let record = "struct P { a: Option<f64>, b: f64 }\nmodule Inner(x: f64) -> f64 { p: P = P { a: Some(1.0), b: 2.0 }; x * p.a.unwrap_or(3.0) + p.b }\nmodule Top() { signal y: Bit<f64>; let b = Inner(1.0); y = b; }";
+    assert!(Elab::ir(record, "Top").print_structural().contains("option(true, 1.0)"));
+    let whole = "fn sum(a: [Option<f64>; 2]) -> f64 { a[0].unwrap_or(1.0) + a[1].unwrap_or(2.0) }\nmodule Inner(x: f64) -> f64 { c: [Option<f64>; 2] = [Some(1.0), None]; x * sum(c) }\nmodule Top() { signal y: Bit<f64>; let b = Inner(1.0); y = b; }";
+    assert!(Elab::ir(whole, "Top").print_structural().contains("sum(([(option(true, 1.0)"), "the array is passed whole to the fn");
+}
