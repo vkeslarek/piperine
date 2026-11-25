@@ -24,6 +24,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
+**Run msl_parser**: `cargo test -p piperine-lang --test msl_parser`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
@@ -767,6 +768,16 @@ Proof: run apimetadata | test a_field_of_an_element_of_an_array_of_bundles_is_na
 Proof: run elabbundles | test a_node_field_of_an_array_of_bundles_is_one_array_of_nodes ... ok
 Proof: run elabbundles | test a_loop_variable_index_folds_to_the_element_of_each_iteration ... ok
 
+**C44** - A directed carrier field of a bundle takes an initial value, `= value` after its type, that starts the carrier on the side that drives the field: the producer's leaf for an `out` field, the `flip` consumer's leaf for an `in` field, a bundle signal's leaf for either; a field of a value `struct` or a nested bundle field with one is `E0261`; an E0187 on a bundle leaf names the field with the direction its `struct` writes (§7 rule 10, AFK default 2026-11-24 pending user review; verification F3, R1)
+Proof: run msl_parser | test a_struct_field_takes_an_initial_value_after_its_type ... ok
+Proof: run pombundles | test an_initial_value_belongs_to_an_out_field_of_a_bundle ... ok
+Proof: run typesbundles | test a_field_default_is_the_initial_value_of_the_carrier_its_producer_commits ... ok
+Proof: run typesbundles | test a_consumer_commits_the_in_field_its_flip_view_drives_from_the_field_default ... ok
+Proof: run elabbundles | test a_field_default_is_the_initial_value_of_the_leaf_a_view_makes_out ... ok
+Proof: run elabbundles | test an_in_field_default_is_the_initial_value_of_the_consumers_leaf ... ok
+Proof: run sourcebundles | test a_bit_field_with_a_default_is_written_by_commits ... ok
+Proof: run sourcebundles | test a_consumer_commits_a_bit_field_its_flip_view_drives_from_the_field_default ... ok
+
 ---
 
 ## Handoff
@@ -784,6 +795,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Settled T23 (2026-11-24):** the limit is closed (design D12, struct of arrays, AFK default pending user review): every array of bundles is one leaf per field typed `[F; N]`, `tx[k].a` is element `k` of `tx.a`; generic, param and computed lengths fold per instance; `E0187`/`E0220` name `lanes[1].a` (`Design::element_naming`); the host reads `Top.lanes[1].a` (`Probe::field_first`). The IR keeps arrays (`lanes.a` count N, nodes `d.p[k]`): `elab_bundles::a_loop_variable_index_folds_to_the_element_of_each_iteration` re-pinned to that shape. The P0001 and `an_array_of_bundles_of_a_generic_length_is_refused_naming_the_form` are gone; C41 now proves the run. T21: GAPS L25 has no line for this limit to keep.
 **Settled T21 (2026-11-24):** `origin/main` merged (e9fefe239). The merge needed one real fix: generics D's `Fn(P)` bound path lowered a bundle input (`C: Fn(Cell)`) as a value type (`P0001`), so a bundle input is named (`bounds.rs::callable_type`, `module_bounds.rs`) and the argument of a placement through the bound, a carrier or a literal of the struct, is checked (`bundle.rs::connect_bundle_input`); E.6 `Slice` and F.3 `MemoryBank` check clean (`std_galleries` `REMAINING_REFUSALS` is empty). Book: natures#8 and natures~52790298 (harness: a `Producer` and a `Consumer` that give `b.valid`/`d.ready` a value through initial-valued signals, `Slice::<Logic<4>>`, two transfers of `0101`), modules#10 with #11 (the bank of 64 x 32 cells, bit lines 1 V behind 1k, a cell's analog behavior added by the harness; the cell conduction does not read `c.wl`: an analog read of a digital element of an array net fails to bind, not a bundle gap), cheatsheet#8 run; GAPS L25 closed (counts 20 loud, section 9 II section 7 95 %, section 11 rows removed, `gaps_no_longer_lists_bundles`); `code_owners.tsv` had no row left. The compiler chapter's P0001 example (`compiler~79f44db1`) and the welcome sentence (now `welcome~28a764f7`) use an array of module templates (L88).
 **Settled fix round 1 (2026-11-24):** `origin/main` (7cf35a4f7) merged (df72502a1); F1 271f33816, F2 and F4 8a7abe6cf, F3 74b31a963 (the field default is an AFK default, pending user review: spec part II 7 rule 10). An `Fn(P)` bound carries the view of its input, so an observer or flipped template is E0360 at the bound. `NameMap::window_bytes` treats an empty seed as no bytes. The sparse test bound is 30 s (2 s alone). Gates: piperine-lang, solver, digital-solver (all targets), api, parity source_bundles/natures/nets/carrier_arrays/aggregates/templates/generic_modules/modules/resolved, Book targets, `piperine-cli --test docs`: green.
+**Settled fix round 2 (2026-11-25):** R1 closed by the coordinator's ruling (extends the §7 rule 10 AFK default, pending user review): a struct field's initial value starts the carrier on the side that drives it, so `in ready: Bit = false` is the `flip` consumer's start and a bundle signal's leaf takes either direction's; E0261 stays for a value `struct` field, a nested bundle field (its own fields carry theirs) and an undirected field. The E0187 help names the field with its written direction (`field `in d``). Check C44 added.
 **Dispatched:** none
 **Walked:** none
 

@@ -541,7 +541,7 @@ Read through the handle `Field` (see [Reflection](reflection.md#field)).
 | --- | --- | --- |
 | `dir` | `Option<Dir>` | The direction written before the name. |
 | `ty` | `TypeId` | The declared type. |
-| `init` | `Option<ExprId>` | The `= value` after the type of an `out` field of a bundle: the initial value of the carrier the field becomes at a producer (§7 rule 10). |
+| `init` | `Option<ExprId>` | The `= value` after the type of an `in` or `out` field of a bundle: the initial value of the carrier the field becomes on the side that drives it, the producer for `out`, the `flip` consumer for `in` (§7 rule 10). |
 
 ### `EnumData`
 

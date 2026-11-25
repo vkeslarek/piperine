@@ -341,6 +341,25 @@ impl Design {
         }
     }
 
+    /// The field the bundle leaf `leaf` stands for, as its `struct` writes it: the field's name and the direction written before it
+    /// (`in` for `rx.ready` of a `flip Pipe` whose `struct` writes `in ready`, whatever the view makes it). `None` for a declaration
+    /// that is no leaf.
+    pub(crate) fn leaf_field(&self, leaf: DeclId) -> Option<(String, Option<Dir>)> {
+        let owner = self.leaf_owner(leaf)?;
+        let path = self.bundle_leaves(owner).iter().find(|planned| planned.decl == leaf)?.path.clone();
+        let mut ty = match &self.decl_data(owner).kind {
+            DeclKind::Port(port) => port.ty,
+            DeclKind::Signal(signal) => signal.ty,
+            _ => return None,
+        };
+        while let TypeKind::Array { elem, .. } = &self.type_node(ty).kind {
+            ty = *elem;
+        }
+        let bundle = self.bundle_struct_of_type(ty)?;
+        let name = path.rsplit('.').next().unwrap_or(&path).to_string();
+        Some((name, self.direction_at(bundle, BundleView::Producer, &path)))
+    }
+
     /// Whether `expr` is the receiver of a field access (`d` of `d.p`).
     pub(crate) fn is_field_base(&self, expr: ExprId) -> bool {
         let parent = self.expr_parent.get(expr.index()).copied().flatten();

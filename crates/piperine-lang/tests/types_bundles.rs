@@ -347,11 +347,33 @@ fn a_field_default_is_the_initial_value_of_the_carrier_its_producer_commits() {
     let missing = found.iter().find(|d| d.diagnostic.code.as_ref() == "E0187").unwrap_or_else(|| panic!("{:?}", Bundles::summary(&found)));
     assert!(missing.diagnostic.message.contains("`p.q`"), "{}", missing.diagnostic.message);
     let help = missing.diagnostic.help.clone().unwrap_or_default();
-    assert!(help.contains("field `q`") && help.contains("struct"), "the help names the field's default: {help}");
+    assert!(help.contains("field `out q`") && help.contains("struct"), "the help names the field's default: {help}");
     // a bundle signal takes it the same way, and a child that holds the drive of it gives no second initial value (no E0223)
     Bundles::accepted("struct Pipe { out q: Bit = false }\nmodule Drv(in clk: Bit, p: Pipe) { }\ndigital for Drv { on clk.rise() { p.q <- true; } }\nmodule Top(in clk: Bit) { signal s: Pipe; let a = Drv(clk, s); }");
     // as an `out` port with an initial value, a definition of it would replace the value (§8.2.21)
     assert_eq!(Bundles::refused("struct Pipe { out q: Bit = false }\nmodule Top(p: Pipe) { p.q = true; }").first().map(|d| d.0.clone()), Some("E0338".to_string()));
     // the value is of the field's type
     assert_eq!(Bundles::refused("struct Pipe { out q: Bit = 3 }\nmodule Top(p: Pipe) { p.q = true; }").first().map(|d| d.0.clone()), Some("E0210".to_string()));
+}
+
+#[test]
+fn a_consumer_commits_the_in_field_its_flip_view_drives_from_the_field_default() {
+    // §7 rule 10, §5.2.8: a `flip` consumer that commits `p.d` (an `in` field, `out` in its view) takes the initial value from the
+    // field, `in d: Bit = false`. Without it the leaf is `E0187`, and the help names the field as its `struct` writes it (`in d`).
+    let with = "struct Pipe { out q: Bit = false, in d: Bit = false }\nmodule Top(p: flip Pipe) { }\ndigital for Top { on p.q.changed() { p.d <- !p.q; } }";
+    Bundles::accepted(with);
+    let without = "struct Pipe { out q: Bit = false, in d: Bit }\nmodule Top(p: flip Pipe) { }\ndigital for Top { on p.q.changed() { p.d <- !p.q; } }";
+    let design = Bundles::design(without);
+    let found = Types::check(&design, "Top").expect_err("`p.d` has no initial value");
+    let missing = found.iter().find(|d| d.diagnostic.code.as_ref() == "E0187").unwrap_or_else(|| panic!("{:?}", Bundles::summary(&found)));
+    assert!(missing.diagnostic.message.contains("`p.d`"), "{}", missing.diagnostic.message);
+    let help = missing.diagnostic.help.clone().unwrap_or_default();
+    assert!(help.contains("field `in d` in its `struct`") && help.contains("`= value`"), "the help writes the field with its own direction: {help}");
+    // the producer's help keeps its `out`
+    let producer = Bundles::design("struct Pipe { out q: Bit, in d: Bit }\nmodule Top(in clk: Bit, p: Pipe) { }\ndigital for Top { on clk.rise() { p.q <- p.d; } }");
+    let found = Types::check(&producer, "Top").expect_err("`p.q` has no initial value");
+    let help = found.iter().find(|d| d.diagnostic.code.as_ref() == "E0187").and_then(|d| d.diagnostic.help.clone()).unwrap_or_default();
+    assert!(help.contains("field `out q` in its `struct`"), "{help}");
+    // a consumer that defines the field it drives with an initial value replaces that value: `E0338`, as on any `out` port
+    assert_eq!(Bundles::refused("struct Pipe { out q: Bit = false, in d: Bit = false }\nmodule Top(p: flip Pipe) { p.d = true; }").first().map(|d| d.0.clone()), Some("E0338".to_string()));
 }

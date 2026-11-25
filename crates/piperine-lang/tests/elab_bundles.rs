@@ -310,3 +310,17 @@ fn a_field_default_is_the_initial_value_of_the_leaf_a_view_makes_out() {
     assert_eq!(init(&ir, "Top", "s.q"), Some(piperine_ir::Constant::Int(9)), "a signal of the bundle starts there too");
     assert_eq!(init(&ir, "Snk", "p.q"), None, "an input leaf takes no initial value: its parent gives it");
 }
+
+#[test]
+fn an_in_field_default_is_the_initial_value_of_the_consumers_leaf() {
+    // §7 rule 10: `in d: Bit<u8> = 4` starts the carrier on the side that drives `d`: the `flip` consumer's port leaf, and a signal
+    // of the bundle; a producer's `d` is an input its parent drives, so it takes none
+    let pipe = "struct Pipe { out q: Bit<u8> = 9, in d: Bit<u8> = 4 }\nmodule Snk(p: flip Pipe) { }\n";
+    let init = |ir: &Ir, body: &str, name: &str| ir.bodies().find(|b| b.name() == body).expect("a body").carriers().iter().find(|c| c.name == name).unwrap_or_else(|| panic!("no carrier `{name}`")).init;
+    let ir = Elab::ir(&format!("{pipe}module Top() {{ signal s: Pipe; let k = Snk(s); }}"), "Top");
+    assert_eq!(init(&ir, "Snk", "p.d"), Some(piperine_ir::Constant::Int(4)), "the consumer's leaf starts at the `in` field's value");
+    assert_eq!(init(&ir, "Snk", "p.q"), None, "the consumer's `q` is an input");
+    assert_eq!(init(&ir, "Top", "s.d"), Some(piperine_ir::Constant::Int(4)), "a signal of the bundle starts there too");
+    let ir = Elab::ir(&format!("{pipe}module Top(tx: Pipe) {{ }}"), "Top");
+    assert_eq!(init(&ir, "Top", "tx.d"), None, "the producer's `d` is an input");
+}

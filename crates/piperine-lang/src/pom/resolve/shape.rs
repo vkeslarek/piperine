@@ -203,19 +203,20 @@ impl<'design> BundleShape<'design> {
         }
     }
 
-    /// §7 rule 10, stated for the field: the initial value of a carrier is written at its declaration, and a bundle field is the
-    /// declaration of the carrier it becomes at a producer. So `= value` belongs to an `out` field of a bundle; on any other field
-    /// (an `in` field, a field of a value `struct`, a nested bundle) it is `E0261`.
+    /// §7 rule 10, stated for the field: the initial value of a carrier is written at its declaration, and a directed field of a
+    /// bundle is the declaration of the carrier it becomes on the side that drives it (the producer for `out`, the `flip` consumer
+    /// for `in`). So `= value` belongs to an `in` or `out` carrier field of a bundle; on any other field (a field of a value
+    /// `struct`, a nested bundle, a field with no direction) it is `E0261`.
     fn check_field_defaults(&self, decl: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
         let data = self.design.decl_data(decl);
         let bundle = matches!(&data.kind, DeclKind::Struct(s) if s.bundle == Some(true));
         for (field, written) in self.fields_of(decl) {
-            if written.init.is_none() || (bundle && written.dir == Some(Dir::Out) && self.shape_of(written.ty) == TypeShape::Carrier) {
+            if written.init.is_none() || (bundle && written.dir.is_some() && self.shape_of(written.ty) == TypeShape::Carrier) {
                 continue;
             }
             let (name, span) = self.field_name(field);
-            let message = format!("the field `{name}` has an initial value, which only an `out` field of a bundle takes: it is the value of the carrier the producer drives (§7 rule 10)");
-            out.push((data.file, Diagnostic::new("E0261", message, span, "an initial value on a field that is no `out` carrier")));
+            let message = format!("the field `{name}` has an initial value, which only an `in` or `out` carrier field of a bundle takes: it is the value of the carrier on the side that drives the field (§7 rule 10)");
+            out.push((data.file, Diagnostic::new("E0261", message, span, "an initial value on a field that is no directed carrier")));
         }
     }
 

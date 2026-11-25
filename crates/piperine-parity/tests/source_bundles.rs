@@ -229,6 +229,25 @@ fn a_bit_field_with_a_default_is_written_by_commits() {
 }
 
 #[test]
+fn a_consumer_commits_a_bit_field_its_flip_view_drives_from_the_field_default() {
+    // §7 rule 10, §5.2.8: `Taker` (`flip Hand`) commits `rx.ready`, an `in` field, with no initial value at its port: the field's
+    // `= true` is the start of the carrier on the side that drives it. `tick` rises at 5 ns and 15 ns; `Taker` toggles `ready` at
+    // each rise and `Sampler` reads it at the same rise, before that commit lands.
+    let built = Model::of("consumerdefault.msl").built("HandBench");
+    let seen = built.run(20e-9, 1e-9);
+    let beats = Model::records(&built, &seen, "beat");
+    let mut ready = true;
+    let expected: Vec<Vec<(String, i128)>> = (0..2)
+        .map(|_| {
+            let sampled = vec![("ready".to_string(), i128::from(ready))];
+            ready = !ready;
+            sampled
+        })
+        .collect();
+    assert_eq!(beats, expected, "{beats:?}");
+}
+
+#[test]
 fn an_array_of_bundles_connects_each_element_field_by_field() {
     // §7 rule 11, rule 14: `lanes[0]` goes to a producer of `true` and `lanes[1]` to one of `false`, each with its own consumer
     // (`b` follows `a`); the whole array goes to the probe, whose `ps[k].b` is the element `k` field by field: it records

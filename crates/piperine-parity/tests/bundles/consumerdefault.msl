@@ -1,0 +1,24 @@
+//! A field default on an `in` field (§7 rule 10): `in ready: Bit = true` is the initial value of the carrier the field becomes on
+//! the side that drives it, the `flip` consumer, so a consumer commits a registered `ready` with no initial value at its port.
+
+/// The producer's `tick` and the consumer's `ready`, which starts high.
+struct Hand { out tick: Bit = false, in ready: Bit = true }
+
+/// Toggles `tick` every 5 ns: it rises at 5 ns, 15 ns, ...
+module Ticker(p: Hand) { }
+digital for Ticker { on p.tick.changed() { p.tick <- !p.tick after 5n; } }
+
+/// Toggles its registered `ready` at each rising edge of `tick`.
+module Taker(rx: flip Hand) { }
+digital for Taker { on rx.tick.rise() { rx.ready <- !rx.ready; } }
+
+/// Records `ready` at each rising edge of `tick`, before the commit of that edge lands.
+module Sampler(in s: Hand) { }
+digital for Sampler { on s.tick.rise() { emit!("beat", ready = s.ready); } }
+
+module HandBench() {
+    signal h: Hand;
+    let ticker = Ticker(h);
+    let taker = Taker(h);
+    let sampler = Sampler(h);
+}

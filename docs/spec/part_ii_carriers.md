@@ -561,13 +561,17 @@ A **view** is the way one module sees a bundle: which of its one-driver fields i
   of a nature, a function result, or the operand of a value operator. It does not implement
   `Repr`.
 - **§7 rule 10.** A bundle signal or port has no initial value. A field's initial value comes
-  from its driver ([§5.2.3](#52-drives)), or from the field's own declaration: an `out` field
-  may carry `= value` after its type, `out valid: Bit = false`, the initial value of the carrier
-  the field becomes where the view makes it `out` (a producer's port, a signal). It is the field
-  declaration's, not the port's, so it is no initial value on a bundle port. An `in` field, a
-  field of a value `struct` and a nested bundle field take none (`E0261`). A producer that
-  commits a `Bit` field needs it, as it needs one on any `out` port of a type with no `Default`
-  (`E0187`, whose help names the field). *(AFK default 2026-11-24, pending user review.)*
+  from its driver ([§5.2.3](#52-drives)), or from the field's own declaration: an `in` or `out`
+  carrier field may carry `= value` after its type, `out valid: Bit = false`,
+  `in ready: Bit = false`. It is the initial value of the carrier the field becomes on the side
+  that drives it: the producer's port leaf for an `out` field, the `flip` consumer's port leaf
+  for an `in` field, and a bundle signal's leaf for either (the signal carries the field whoever
+  drives it). The leaf on the reading side is an input and takes none. The value is the field
+  declaration's, not the port's, so it is no initial value on a bundle port. A field of a value
+  `struct`, a nested bundle field (its own fields carry theirs) and a field with no direction
+  take none (`E0261`). A side that commits a `Bit` field it drives needs one, as it needs one on
+  any `out` port of a type with no `Default` (`E0187`, whose help names the field with the
+  direction its `struct` writes). *(AFK default 2026-11-24, pending user review.)*
 - **§7 rule 11.** A bundle may be generic, and may be an array element:
   `[flip Stream<T>; N]`.
 - **§7 rule 12.** Fields are reached with `.`: `tx.valid`, `c.bl`. Each field is a carrier
@@ -594,7 +598,7 @@ A **view** is the way one module sees a bundle: which of its one-driver fields i
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0260` | a `struct` that mixes carrier fields and value fields | elaboration |
-| `E0261` | a one-driver field without a direction, or a direction on any other field; an initial value on a field that is no `out` carrier of a bundle | elaboration |
+| `E0261` | a one-driver field without a direction, or a direction on any other field; an initial value on a field that is no `in` or `out` carrier of a bundle | elaboration |
 | `E0262` | `flip` on something that is not a bundle; `out` on a bundle port; `in` or `out` on a nested bundle field | elaboration |
 | `E0263` | a bundle literal with a missing, repeated or unknown field, or a field that is not a carrier of the field's nature | elaboration |
 | `E0264` | a bundle used as a value, or given an initial value | elaboration |

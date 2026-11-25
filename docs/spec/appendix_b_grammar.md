@@ -190,7 +190,7 @@ item           ::= nature_decl | module_decl | behavior_block | value_item
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
 nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
                  | attrs 'value' ':' type
-struct_field   ::= attrs 'pub'? dir? IDENT ':' ( type | sigtype ) ( '=' expr )?   // carrier fields make a bundle; `= expr` on an `out` carrier field only (§7 rule 10)
+struct_field   ::= attrs 'pub'? dir? IDENT ':' ( type | sigtype ) ( '=' expr )?   // carrier fields make a bundle; `= expr` on an `in` or `out` carrier field only (§7 rule 10)
 impl_block     ::= 'impl' generics? path generic_args? ( 'for' path generic_args? )? '{' impl_item* '}'
 impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 fn_decl        ::= 'const'? ( 'extern' STRING )? 'fn' IDENT generics? '(' ( fn_param ',' )* ')' ( '->' type )? ( 'where' expr )? ( block | ';' )

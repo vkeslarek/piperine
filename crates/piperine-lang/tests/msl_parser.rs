@@ -436,6 +436,11 @@ fn a_struct_field_takes_an_initial_value_after_its_type() {
     let Fields::Named(fields) = s.fields else { panic!("named fields") };
     assert!(matches!(&fields[0].init, Some(Expr { kind: ExprKind::Binary { .. }, .. })), "{:?}", fields[0].init);
     assert!(fields[1].init.is_none());
+    // an `in` field takes one the same way (the consumer's start)
+    let ItemKind::Struct(s) = only_item("struct Hand { in ready: Bit = true }").kind else { panic!() };
+    let Fields::Named(fields) = s.fields else { panic!("named fields") };
+    assert!(matches!(&fields[0].init, Some(Expr { kind: ExprKind::Lit(_), .. })), "{:?}", fields[0].init);
+    assert!(piperine_lang::msl::print::print(&parse("struct Hand { in ready: Bit = true }").file).contains("in ready: Bit = true"));
     // the printer writes it back, and reading that gives the same tree
     let printed = piperine_lang::msl::print::print(&parse("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").file);
     assert!(printed.contains("out q: Bit<u8> = 1 + 2"), "{printed}");

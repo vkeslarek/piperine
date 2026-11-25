@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, Dir, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
 use super::coverage::ElementCoverage;
@@ -697,9 +697,17 @@ impl Checker<'_> {
             let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { continue };
             let found = value.name(self.design);
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
-            // a field of a bundle takes no initial value at the port (§7 rule 10): the field's own declaration gives it
-            let help = match self.design.leaf_owner(decl) {
-                Some(_) => format!("write `= value` after the type of the field `{}` in its `struct` (a bundle's field default, §7 rule 10), or carry an `Option<{found}>`", name.rsplit('.').next().unwrap_or(&name)),
+            // a bundle port takes no initial value (§7 rule 10): the field's own declaration gives it, written with the direction the
+            // `struct` writes (`in ready: Bit = false` for a `flip` consumer that drives `ready`)
+            let help = match self.design.leaf_field(decl) {
+                Some((field, dir)) => {
+                    let written = match dir {
+                        Some(Dir::In) => "in ",
+                        Some(Dir::Out) => "out ",
+                        None => "",
+                    };
+                    format!("write `= value` after the type of the field `{written}{field}` in its `struct` (the initial value of the carrier on the side that drives the field, §7 rule 10), or carry an `Option<{found}>`")
+                }
                 None => format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`"),
             };
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(help));
