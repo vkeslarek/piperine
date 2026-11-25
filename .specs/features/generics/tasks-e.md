@@ -187,8 +187,8 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 
 **Done when**:
 
-- [ ] `setup_hold_and_stable_fail_exactly_on_their_violations` passes under `**Run srcstd**`
-- [ ] Gate check passes: Quick
+- [x] `setup_hold_and_stable_fail_exactly_on_their_violations` passes under `**Run srcstd**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -1,0 +1,74 @@
+//! `Setup`, `Hold` and `Stable` (§22.5.4 to §22.5.6) over a `u8` and over an enum: one rig places the three monitors over
+//! a carrier of any `T`, and the two benches drive it with the same schedule. The expected checks are computed by Rust in
+//! `source_stdlib_generic.rs` from the instants the schedule lists there.
+
+#[derive(Repr, PartialEq)]
+enum Level { Low, Mid, High }
+impl Default for Level { fn default() -> Level { Level::Low } }
+
+module Rig<T: Repr>(in clk: Bit, in en: Bit, in d: Bit<T>, out viol: Bit) {
+    let setup = Setup(clk, d, viol) { ts: 5n };
+    let hold = Hold(clk, d) { th: 5n };
+    let stable = Stable(en, d);
+}
+
+// `clk` is high from 10 to 20 ns, 30 to 40, 50 to 60 and 70 to 80; `en` is high from 40 to 60 ns; `viol` is read 5 ns after each
+// rising edge.
+module Schedule(out clk: Bit = false, out en: Bit = false) {}
+digital for Schedule {
+    on at(10n) { clk <- true; }
+    on at(20n) { clk <- false; }
+    on at(30n) { clk <- true; }
+    on at(40n) { clk <- false; en <- true; }
+    on at(50n) { clk <- true; }
+    on at(60n) { clk <- false; en <- false; }
+    on at(70n) { clk <- true; }
+    on at(80n) { clk <- false; }
+}
+
+// `d` changes at 8, 24, 33, 40, 46, 58, 62 and 66 ns.
+module ByteBench() {
+    signal clk: Bit;
+    signal en: Bit;
+    signal d: Bit<u8> = 0;
+    signal viol: Bit;
+    let schedule = Schedule(clk, en);
+    let rig = Rig(clk, en, d, viol);
+}
+digital for ByteBench {
+    on at(8n) { d <- 1u8; }
+    on at(24n) { d <- 2u8; }
+    on at(33n) { d <- 3u8; }
+    on at(40n) { d <- 4u8; }
+    on at(46n) { d <- 5u8; }
+    on at(58n) { d <- 6u8; }
+    on at(62n) { d <- 7u8; }
+    on at(66n) { d <- 8u8; }
+    on at(15n) { emit!("viol", value = viol); }
+    on at(35n) { emit!("viol", value = viol); }
+    on at(55n) { emit!("viol", value = viol); }
+    on at(75n) { emit!("viol", value = viol); }
+}
+
+module LevelBench() {
+    signal clk: Bit;
+    signal en: Bit;
+    signal d: Bit<Level> = Level::Low;
+    signal viol: Bit;
+    let schedule = Schedule(clk, en);
+    let rig = Rig(clk, en, d, viol);
+}
+digital for LevelBench {
+    on at(8n) { d <- Level::Mid; }
+    on at(24n) { d <- Level::High; }
+    on at(33n) { d <- Level::Low; }
+    on at(40n) { d <- Level::Mid; }
+    on at(46n) { d <- Level::High; }
+    on at(58n) { d <- Level::Low; }
+    on at(62n) { d <- Level::Mid; }
+    on at(66n) { d <- Level::High; }
+    on at(15n) { emit!("viol", value = viol); }
+    on at(35n) { emit!("viol", value = viol); }
+    on at(55n) { emit!("viol", value = viol); }
+    on at(75n) { emit!("viol", value = viol); }
+}

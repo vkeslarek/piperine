@@ -81,7 +81,7 @@ impl Section22 {
     }
 
     /// Whether two readings are the same real, `inf` included, up to the femtosecond the solver counts time in.
-    fn same_reading(left: f64, right: f64) -> bool {
+    pub fn same_reading(left: f64, right: f64) -> bool {
         left == right || (left - right).abs() < 1e-14
     }
 }
@@ -124,4 +124,92 @@ fn min_pulse_fails_exactly_for_a_narrow_pulse() {
         assert_eq!(StdModels::boolean(record, "pass"), *pass, "the check at {change}");
     }
     assert!(wanted.iter().any(|pass| !pass) && wanted.iter().any(|pass| *pass), "the table holds narrow and wide levels");
+}
+
+/// The schedule of `monitors.msl`: when `clk` is high, when `en` is high and when `d` changes, in seconds.
+struct MonitorSchedule;
+
+impl MonitorSchedule {
+    /// The rising edges of `clk`.
+    const RISES: [f64; 4] = [10e-9, 30e-9, 50e-9, 70e-9];
+    /// The falling edges of `clk`.
+    const FALLS: [f64; 4] = [20e-9, 40e-9, 60e-9, 80e-9];
+    /// The interval `[from, to)` in which `en` is high.
+    const ENABLED: (f64, f64) = (40e-9, 60e-9);
+    /// The changes of `d` after its first commit at (0, 0).
+    const CHANGES: [f64; 8] = [8e-9, 24e-9, 33e-9, 40e-9, 46e-9, 58e-9, 62e-9, 66e-9];
+    /// `ts` of `Setup` and `th` of `Hold`.
+    const MARGIN: f64 = 5e-9;
+
+    /// The start of the high phase of `clk` that holds `at`, when it holds one.
+    fn high_since(at: f64) -> Option<f64> {
+        Self::RISES.iter().zip(Self::FALLS).find(|(rise, fall)| **rise <= at && at < *fall).map(|(rise, _)| *rise)
+    }
+
+    /// Every change of `d` the monitors see, the first commit at (0, 0) included.
+    fn all_changes() -> Vec<f64> {
+        std::iter::once(0.0).chain(Self::CHANGES).collect()
+    }
+
+    /// §22.5.5: at each rising edge `Setup` passes when `d` last changed at least `ts` before it (a change in the edge's own
+    /// microstep is not yet recorded, rule 2).
+    fn setup_passes() -> Vec<bool> {
+        let changes = Self::all_changes();
+        Self::RISES.iter().map(|rise| Section22::since(&changes, *rise - 1e-15) >= Self::MARGIN).collect()
+    }
+
+    /// §22.5.6: at each change of `d` while `clk` is high, `Hold` passes when the change is not in the edge's own microstep
+    /// and comes at least `th` after the rise; the first commit is no check (rule 4). `(change, pass)` in order.
+    fn hold_checks() -> Vec<(f64, bool)> {
+        Self::CHANGES.iter().filter_map(|change| Self::high_since(*change).map(|rise| (*change, *change - rise >= Self::MARGIN))).collect()
+    }
+
+    /// §22.5.4: each change of `d` while `en` is high, in a microstep in which `en` does not change, is a failure.
+    fn stable_failures() -> Vec<f64> {
+        let (from, to) = Self::ENABLED;
+        Self::CHANGES.iter().copied().filter(|change| *change > from && *change < to).collect()
+    }
+}
+
+/// The checks of the stream `checks` named `name`, `(time, pass)` in order.
+fn checks_named(records: &[Record], name: &str) -> Vec<(f64, bool)> {
+    StdModels::of_stream(records, "checks")
+        .into_iter()
+        .filter(|record| matches!(record.fields.iter().find(|(field, _)| field == "name"), Some((_, Field::Text(text))) if text == name))
+        .map(|record| (record.time, StdModels::boolean(record, "pass")))
+        .collect()
+}
+
+#[test]
+fn setup_hold_and_stable_fail_exactly_on_their_violations() {
+    // §22.5.4 to §22.5.6, at `T = u8` and at an enum: each monitor's checks are the ones Rust derives from the schedule
+    for bench in ["ByteBench", "LevelBench"] {
+        let records = StdModels::records("monitors.msl", bench, 90e-9, 1e-9);
+        let setup = checks_named(&records, "setup");
+        let wanted = MonitorSchedule::setup_passes();
+        assert_eq!(setup.len(), wanted.len(), "{bench}: one setup check per rising edge: {setup:?}");
+        for (((time, pass), rise), expected) in setup.iter().zip(MonitorSchedule::RISES).zip(&wanted) {
+            assert!(Section22::same_reading(*time, rise), "{bench}: setup checked at {rise}: {time}");
+            assert_eq!(pass, expected, "{bench}: setup at {rise}");
+        }
+        let hold = checks_named(&records, "hold");
+        let wanted = MonitorSchedule::hold_checks();
+        assert_eq!(hold.len(), wanted.len(), "{bench}: one hold check per change of d while clk is high: {hold:?}");
+        for ((time, pass), (change, expected)) in hold.iter().zip(&wanted) {
+            assert!(Section22::same_reading(*time, *change), "{bench}: hold checked at {change}: {time}");
+            assert_eq!(pass, expected, "{bench}: hold at {change}");
+        }
+        let stable = checks_named(&records, "stable");
+        let wanted = MonitorSchedule::stable_failures();
+        assert_eq!(stable.len(), wanted.len(), "{bench}: one failure per change of d while en is high: {stable:?}");
+        for ((time, pass), change) in stable.iter().zip(&wanted) {
+            assert!(Section22::same_reading(*time, *change) && !pass, "{bench}: stable fails at {change}: {time} {pass}");
+        }
+        // §22.5.5 rule 3: `viol` read 5 ns after each rising edge is high exactly when that edge violated
+        let viol: Vec<bool> = StdModels::of_stream(&records, "viol").iter().map(|record| StdModels::boolean(record, "value")).collect();
+        let violated: Vec<bool> = MonitorSchedule::setup_passes().iter().map(|pass| !pass).collect();
+        assert_eq!(viol, violated, "{bench}: viol follows the setup check");
+    }
+    assert!(MonitorSchedule::setup_passes().contains(&false) && MonitorSchedule::setup_passes().contains(&true));
+    assert!(MonitorSchedule::hold_checks().iter().any(|(_, pass)| !pass) && MonitorSchedule::hold_checks().iter().any(|(_, pass)| *pass));
 }
