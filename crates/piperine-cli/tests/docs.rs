@@ -1095,3 +1095,29 @@ fn the_generics_checks_file_holds_every_phase() {
     assert_eq!(checks.matches("(GN-30, AC 1").count(), 1, "the twins check stands once");
     assert_eq!(checks.matches("(GN-30, AC 2").count(), 1, "the warning-free build check stands once");
 }
+
+#[test]
+fn the_generics_check_ids_are_unique_across_its_phases() {
+    // generics GN-31 AC 1: a check id names one claim in the feature's `checks.md` and in the four task files (the GN-30 checks of
+    // phases C to E stand once, as the twins and warning-free-build checks of `tasks.md`), so a proof is reported under its own claim
+    let mut seen: Vec<(String, String)> = Vec::new();
+    for file in ["tasks.md", "tasks-c.md", "tasks-d.md", "tasks-e.md", "checks.md"] {
+        let text = read(&format!(".specs/features/generics/{file}"));
+        let section = if file == "checks.md" { text.split("\n## Checks\n").nth(1) } else { text.split("\n## Checks\n").nth(1).and_then(|s| s.split("\n## Handoff").next()) };
+        let mut ids: Vec<&str> = Vec::new();
+        for line in section.expect("a Checks section").lines().filter(|l| l.starts_with("**C")) {
+            let id = line.trim_start_matches("**").split("** - ").next().expect("a check id");
+            if file != "tasks.md" && file != "checks.md" && line.contains("(GN-30,") {
+                continue;
+            }
+            assert!(!ids.contains(&id), "{file}: the check id {id} is used twice");
+            ids.push(id);
+            if file != "checks.md" {
+                if let Some((other, _)) = seen.iter().find(|(known, _)| known == id) {
+                    panic!("{file}: the check id {id} is also in {other}");
+                }
+                seen.push((id.to_string(), file.to_string()));
+            }
+        }
+    }
+}

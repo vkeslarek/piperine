@@ -7,43 +7,43 @@
 
 | Check | Proof | Result |
 | --- | --- | --- |
-| C110 | `run stdlibrary / test each_generics_group_item_resolves_to_its_std_declaration ... ok` | pass |
-| C110 | `run stdlibrary / test no_generics_group_item_is_refused_because_generic ... ok` | pass |
-| C111 | `run stdlibrary / test a_blocked_item_is_refused_naming_its_form ... ok` | pass |
-| C112 | `run typesmodel / test the_standard_library_is_checked_whole_with_no_instantiation ... ok` | pass |
-| C113 | `run srcstd / test since_reads_the_time_from_the_last_change ... ok` | pass |
-| C113 | `run srcstd / test min_pulse_fails_exactly_for_a_narrow_pulse ... ok` | pass |
-| C113 | `run srcstd / test setup_hold_and_stable_fail_exactly_on_their_violations ... ok` | pass |
-| C113 | `run srcstd / test inertial_delays_and_swallows_short_pulses ... ok` | pass |
-| C113 | `run srcstd / test short_makes_one_node_against_section_eleven ... ok` | pass |
-| C114 | `run srcstd / test idt_and_idtmod_integrate_against_section_22 ... ok` | pass |
-| C114 | `run srcstd / test the_laplace_family_gives_the_closed_form_step_response ... ok` | pass |
-| C114 | `run srcstd / test an_improper_or_unpaired_laplace_is_refused ... ok` | pass |
-| C114 | `run srcstd / test the_zi_family_follows_its_difference_equation ... ok` | pass |
-| C114 | `run srcstd / test noise_table_gives_the_interpolated_psd ... ok` | pass |
-| C115 | `run srcstd / test the_water_model_boils_and_vaporizes ... ok` | pass |
-| C116 | `run docs / test gaps_drops_the_generics_group_of_l58 ... ok` | pass |
-| C116 | `run docs / test the_generics_checks_file_holds_every_phase ... ok` | pass |
+| C142 | `run stdlibrary / test each_generics_group_item_resolves_to_its_std_declaration ... ok` | pass |
+| C142 | `run stdlibrary / test no_generics_group_item_is_refused_because_generic ... ok` | pass |
+| C143 | `run stdlibrary / test a_blocked_item_is_refused_naming_its_form ... ok` | pass |
+| C144 | `run typesmodel / test the_standard_library_is_checked_whole_with_no_instantiation ... ok` | pass |
+| C145 | `run srcstd / test since_reads_the_time_from_the_last_change ... ok` | pass |
+| C145 | `run srcstd / test min_pulse_fails_exactly_for_a_narrow_pulse ... ok` | pass |
+| C145 | `run srcstd / test setup_hold_and_stable_fail_exactly_on_their_violations ... ok` | pass |
+| C145 | `run srcstd / test inertial_delays_and_swallows_short_pulses ... ok` | pass |
+| C145 | `run srcstd / test short_makes_one_node_against_section_eleven ... ok` | pass |
+| C146 | `run srcstd / test idt_and_idtmod_integrate_against_section_22 ... ok` | pass |
+| C146 | `run srcstd / test the_laplace_family_gives_the_closed_form_step_response ... ok` | pass |
+| C146 | `run srcstd / test an_improper_or_unpaired_laplace_is_refused ... ok` | pass |
+| C146 | `run srcstd / test the_zi_family_follows_its_difference_equation ... ok` | pass |
+| C146 | `run srcstd / test noise_table_gives_the_interpolated_psd ... ok` | pass |
+| C147 | `run srcstd / test the_water_model_boils_and_vaporizes ... ok` | pass |
+| C148 | `run docs / test gaps_drops_the_generics_group_of_l58 ... ok` | pass |
+| C148 | `run docs / test the_generics_checks_file_holds_every_phase ... ok` | pass |
 | C135 | `run elabgenr / test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok` | pass |
 | C135 | `run srcgenr / test a_hoisted_module_with_generation_runs ... ok` | pass |
-| C117 | `run galleries / test the_fences_of_the_generic_library_are_checked ... ok` | pass |
-| C117 | `run bookinventory / test refused_rows_and_gaps_section_11_agree ... ok` | pass |
-| C136 | `run typesresults / test a_composite_param_of_a_module_with_a_result_checks_at_its_placement ... ok` | pass |
-| C136 | `run elabresults / test a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok` | pass |
-| C137 | `run elabtemplates / test an_array_of_templates_places_the_element_at_an_index ... ok` | pass |
-| C137 | `run elabtemplates / test an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params .` | pass |
-| C137 | `run typestempl / test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok` | pass |
-| C137 | `run srcgenr / test a_template_array_element_placed_in_generation_runs ... ok` | pass |
-| C138 | `run elabresults / test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok` | pass |
-| C138 | `run srcstd / test inertial_over_an_option_reads_its_result_in_a_reaction ... ok` | pass |
-| C139 | `run typestempl / test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok` | pass |
-| C139 | `run elabtemplates / test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok` | pass |
-| C139 | `run elabtemplates / test the_params_an_array_of_templates_reads_become_structural ... ok` | pass |
-| C139 | `run srcgenr / test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok` | pass |
-| C139 | `run apisession / test a_module_typed_param_is_not_set_by_text ... ok` | pass |
-| C139 | `run docs / test gaps_drops_the_generics_group_of_l58 ... ok` | pass |
-| C118 | `run twins / test every_twin_prints_the_bytes_it_printed_before_the_move ... ok` | pass |
-| C119 | `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piper` | pass |
+| C149 | `run galleries / test the_fences_of_the_generic_library_are_checked ... ok` | pass |
+| C149 | `run bookinventory / test refused_rows_and_gaps_section_11_agree ... ok` | pass |
+| C152 | `run typesresults / test a_composite_param_of_a_module_with_a_result_checks_at_its_placement ... ok` | pass |
+| C152 | `run elabresults / test a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok` | pass |
+| C153 | `run elabtemplates / test an_array_of_templates_places_the_element_at_an_index ... ok` | pass |
+| C153 | `run elabtemplates / test an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params .` | pass |
+| C153 | `run typestempl / test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok` | pass |
+| C153 | `run srcgenr / test a_template_array_element_placed_in_generation_runs ... ok` | pass |
+| C154 | `run elabresults / test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok` | pass |
+| C154 | `run srcstd / test inertial_over_an_option_reads_its_result_in_a_reaction ... ok` | pass |
+| C155 | `run typestempl / test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok` | pass |
+| C155 | `run elabtemplates / test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok` | pass |
+| C155 | `run elabtemplates / test the_params_an_array_of_templates_reads_become_structural ... ok` | pass |
+| C155 | `run srcgenr / test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok` | pass |
+| C155 | `run apisession / test a_module_typed_param_is_not_set_by_text ... ok` | pass |
+| C155 | `run docs / test gaps_drops_the_generics_group_of_l58 ... ok` | pass |
+| C150 | `run twins / test every_twin_prints_the_bytes_it_printed_before_the_move ... ok` | pass |
+| C151 | `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piper` | pass |
 | Build | `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p` | pass |
 | Build | `cargo test -p piperine-lang --test suite_hygiene` | pass |
 

@@ -364,7 +364,6 @@ Proof: run srcgen | test a_cast_to_a_tuple_holding_an_enum_runs ... ok
 Proof: run typesgen | test no_intrinsic_stands_for_cast_or_same ... ok
 Proof: run docs | test gaps_drops_the_cast_and_same_intrinsics ... ok
 
-
 **C120** - The Book listings that contradicted the spec are corrected, and each old form is refused as the spec says: a carrier port left out is `E0312` (§8.1.8), a `[Bit; N]` with no initial value is `E0187` (§3.3.4) and the rule holds per element of an array (one element defined, one handed to an `out` port: `E0187` names the rest; every element named: clean; an initial value beside some element definitions is the others' value, `E0338` once all are defined), a refused whole-array definition is the driver and raises no `E0187`, `Slice` is bounded by `Default` as gallery E.6 is. (GN-31, AC 2; Book amendments BA1 to BA3; T116)
 Proof: run bookcorestd | test a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was ... ok
 Proof: run bookcheatsheet | test an_array_of_bits_with_no_initial_value_is_e0187 ... ok
@@ -632,7 +631,7 @@ Proof: run typeshandles | test a_module_body_is_typed_in_any_order ... ok
 Proof: run elabhandles | test a_body_written_in_reverse_order_elaborates_as_written_forward ... ok
 Proof: run srctempl | test a_body_written_in_reverse_order_runs_as_forward ... ok
 
-**C120** - A node connection is hardware, not a value: a placement connects to the node of a child written after it, and a cross-coupled pair, an instance wired to its own node, a ring of three and a bank fed from its child's node (`b.c0.sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; the reverse body settles where the forward one does; a cycle through values is still `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 9, findings 24 and 25, coordinator ruling)
+**C156** - A node connection is hardware, not a value: a placement connects to the node of a child written after it, and a cross-coupled pair, an instance wired to its own node, a ring of three and a bank fed from its child's node (`b.c0.sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; the reverse body settles where the forward one does; a cycle through values is still `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 9, findings 24 and 25, coordinator ruling)
 Proof: run typeshandles | test a_cycle_of_node_connections_is_hardware ... ok
 Proof: run elabhandles | test a_placement_binds_the_node_of_a_child_written_after_it ... ok
 Proof: run elabhandles | test a_cycle_of_node_connections_binds_each_port_to_the_node_it_names ... ok
@@ -640,100 +639,108 @@ Proof: run srctempl | test a_placement_connects_to_the_node_of_a_child_written_a
 Proof: run srctempl | test a_cycle_of_node_connections_runs_as_hardware ... ok
 Proof: run srctempl | test a_cycle_through_values_is_refused ... ok
 
-**C121** - A `let` is a constant of elaboration when its initializer, every value assigned to it and every condition around those assignments fold there: a node chosen by such a `let` (`let s = sel; s = !sel;`, a toggle under a condition over a param, in a `for` over a range) types, folds to the node the `let` holds where the choice reads it and runs; its params are structural; one whose assigned value or surrounding condition reads the run is `E0133` alone, naming that read. (§1.4.7; fix round 9, finding 26, coordinator ruling)
+**C157** - A `let` is a constant of elaboration when its initializer, every value assigned to it and every condition around those assignments fold there: a node chosen by such a `let` (`let s = sel; s = !sel;`, a toggle under a condition over a param, in a `for` over a range) types, folds to the node the `let` holds where the choice reads it and runs; its params are structural; one whose assigned value or surrounding condition reads the run is `E0133` alone, naming that read. (§1.4.7; fix round 9, finding 26, coordinator ruling)
 Proof: run typeshandles | test a_let_assigned_only_values_of_elaboration_chooses_a_node ... ok
 Proof: run elabhandles | test a_let_assigned_only_values_of_elaboration_folds_to_the_node_it_holds_there ... ok
 Proof: run srctempl | test a_let_assigned_from_params_picks_the_node ... ok
 
-**C122** - A node connection reached through any depth of children is hardware too: a cross pair and a self-connection through a template two levels deep (`p.c0.sn`) and through a generation (`p.cells[1].sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; three levels deep (`p.mid.c0.sn`) the checker types the cycle and elaboration refuses it as it refuses the forward read, by name (L82); a value read through an open `let`'s child (`p.c0.cs` at a value input) is `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 10, finding 27)
+**C158** - A node connection reached through any depth of children is hardware too: a cross pair and a self-connection through a template two levels deep (`p.c0.sn`) and through a generation (`p.cells[1].sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; three levels deep (`p.mid.c0.sn`) the checker types the cycle and elaboration refuses it as it refuses the forward read, by name (L82); a value read through an open `let`'s child (`p.c0.cs` at a value input) is `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 10, finding 27)
 Proof: run typeshandles | test a_cycle_of_node_connections_through_any_depth_of_reach_is_hardware ... ok
 Proof: run elabhandles | test a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port ... ok
 Proof: run srctempl | test a_cycle_of_node_connections_two_levels_deep_runs_as_hardware ... ok
 Proof: run docs | test gaps_records_a_reach_three_levels_deep ... ok
 
-**C123** - A choice whose condition assigns its `let` first (`if { s = !s; s }`, a `match` over such a block, a `while` over a `let` in the condition) folds at elaboration to the node the condition picks and ends, within a time bound at elaboration and from source; one whose condition assigns a value of the run is `E0133` alone, naming the read. (§1.4.7; fix round 10, finding 28)
+**C159** - A choice whose condition assigns its `let` first (`if { s = !s; s }`, a `match` over such a block, a `while` over a `let` in the condition) folds at elaboration to the node the condition picks and ends, within a time bound at elaboration and from source; one whose condition assigns a value of the run is `E0133` alone, naming the read. (§1.4.7; fix round 10, finding 28)
 Proof: run elabhandles | test a_choice_whose_condition_assigns_folds_and_ends ... ok
 Proof: run srctempl | test a_condition_that_assigns_its_let_picks_the_node_and_ends ... ok
 
-**C124** - A body `let` read before its text position is read as one written before it, at every site a name resolves to a module-body `let` (callee: closure, value `E0180`, instance `E0333`, template, function value; operand; argument; `as` operand; condition; method receiver; index base; field receiver, node and param; connection; template head through a choice; param value): the two orders give the same diagnostics, and a reverse-order closure callee runs. (§8.2; fix round 13, finding 33)
+**C160** - A body `let` read before its text position is read as one written before it, at every site a name resolves to a module-body `let` (callee: closure, value `E0180`, instance `E0333`, template, function value; operand; argument; `as` operand; condition; method receiver; index base; field receiver, node and param; connection; template head through a choice; param value): the two orders give the same diagnostics, and a reverse-order closure callee runs. (§8.2; fix round 13, finding 33)
 Proof: run typeshandles | test every_site_reads_a_body_let_written_later_as_one_written_before ... ok
 Proof: run elabtempl | test every_callee_form_elaborates_to_what_it_names ... ok
 Proof: run srctempl | test every_callee_form_runs_what_it_names ... ok
 
-**C125** - Every alternative of Part III's `callee` (`path`, `call`, `'(' expr ')'`) is called by its value: a template (in place, a `const`, a choice by `if`, `match` or a block, a function result) places it with the params it holds, a function (a closure literal, a named function, a function's result, a choice of functions) is called, a value of any other type is `E0180`, and a choice the run makes is `E0362`; no form reaches a generic refusal. (Part III callee production, §1.5, §8.4.4, §8.4.6; fix round 13, finding 34)
+**C161** - Every alternative of Part III's `callee` (`path`, `call`, `'(' expr ')'`) is called by its value: a template (in place, a `const`, a choice by `if`, `match` or a block, a function result) places it with the params it holds, a function (a closure literal, a named function, a function's result, a choice of functions) is called, a value of any other type is `E0180`, and a choice the run makes is `E0362`; no form reaches a generic refusal. (Part III callee production, §1.5, §8.4.4, §8.4.6; fix round 13, finding 34)
 Proof: run typestempl | test every_callee_form_the_grammar_admits_is_called_by_its_value ... ok
 Proof: run elabtempl | test every_callee_form_elaborates_to_what_it_names ... ok
 Proof: run srctempl | test every_callee_form_runs_what_it_names ... ok
 Proof: run tcontrol | test a_function_value_returned_by_a_function_compiles_and_runs ... ok
 
-**C126** - A module's bare name used as a value (`let t = R;`, the head `(R)(x)`, a param value, a function's result) is the template `R {}`, every param at its default: `let t = R; t(x)` and `(R)(x)` place the instance `R(x)` places; a required param it leaves unbound is `E0319` alone; the phase-C `P0001` "placement through a template value or a function" is gone, and no cascade follows a head the checker refused. (§8.4.1 amendment, AFK default 2026-11-24 pending user review; fix round 14, finding 35)
+**C162** - A module's bare name used as a value (`let t = R;`, the head `(R)(x)`, a param value, a function's result) is the template `R {}`, every param at its default: `let t = R; t(x)` and `(R)(x)` place the instance `R(x)` places; a required param it leaves unbound is `E0319` alone; the phase-C `P0001` "placement through a template value or a function" is gone, and no cascade follows a head the checker refused. (§8.4.1 amendment, AFK default 2026-11-24 pending user review; fix round 14, finding 35)
 Proof: run typestempl | test a_bare_module_name_used_as_a_value_is_its_template_with_every_default ... ok
 Proof: run elabtempl | test a_bare_module_name_used_as_a_value_places_its_template_with_every_default ... ok
 Proof: run srctempl | test a_bare_module_name_places_its_template_with_every_default ... ok
 Proof: run typesgen | test phase_d_and_e_forms_stay_p0001_by_name ... ok
 
-**C127** - A template choice whose arms name two modules is one `E0180`; a call through the `let` that holds it adds no diagnostic, and a value of a module's type is never called "no function and no template". (§1.5.4, §8.4.4; fix round 15, finding 37)
+**C163** - A template choice whose arms name two modules is one `E0180`; a call through the `let` that holds it adds no diagnostic, and a value of a module's type is never called "no function and no template". (§1.5.4, §8.4.4; fix round 15, finding 37)
 Proof: run typestempl | test a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none ... ok
 
-**C128** - A template value handed to a param of module type is a const expression over the placing module's params, which become structural: a template literal over a param, a binning function over the parent's length and a choice over a param fold per instance, in the top module and in a placed one whose params its parent binds; one that reads a port is `E0362`. (§8.4.6; fix round 15, finding 36)
+**C164** - A template value handed to a param of module type is a const expression over the placing module's params, which become structural: a template literal over a param, a binning function over the parent's length and a choice over a param fold per instance, in the top module and in a placed one whose params its parent binds; one that reads a port is `E0362`. (§8.4.6; fix round 15, finding 36)
 Proof: run typestempl | test a_template_param_value_may_read_the_placing_modules_params ... ok
 Proof: run elabtempl | test a_template_param_value_over_the_placing_modules_params_folds_per_instance ... ok
 Proof: run srctempl | test a_template_param_value_over_the_parents_params_places_per_instance ... ok
 
-**C110** - No item of L58's generics group is refused because it is generic. (GN-27, AC 1; T105, T113)
+**C142** - No item of L58's generics group is refused because it is generic. (GN-27, AC 1; T105, T113)
 Proof: run stdlibrary | test each_generics_group_item_resolves_to_its_std_declaration ... ok
 Proof: run stdlibrary | test no_generics_group_item_is_refused_because_generic ... ok
 
-**C111** - An item that needs another feature's form is refused naming that form and listed under its id. (GN-27, AC 2; T113)
+**C143** - An item that needs another feature's form is refused naming that form and listed under its id. (GN-27, AC 2; T113)
 Proof: run stdlibrary | test a_blocked_item_is_refused_naming_its_form ... ok
 
-**C112** - Every item of the group type-checks under the whole-model check with no instantiation and no error. (GN-27, AC 3; T104)
+**C144** - Every item of the group type-checks under the whole-model check with no instantiation and no error. (GN-27, AC 3; T104)
 Proof: run typesmodel | test the_standard_library_is_checked_whole_with_no_instantiation ... ok
 
-**C113** - `since`, `MinPulse`, `Setup`, `inertial` and `Short` run and give their §22 values. (GN-28, AC 1; T106, T107, T108)
+**C145** - `since`, `MinPulse`, `Setup`, `inertial` and `Short` run and give their §22 values. (GN-28, AC 1; T106, T107, T108)
 Proof: run srcstd | test since_reads_the_time_from_the_last_change ... ok
 Proof: run srcstd | test min_pulse_fails_exactly_for_a_narrow_pulse ... ok
 Proof: run srcstd | test setup_hold_and_stable_fail_exactly_on_their_violations ... ok
 Proof: run srcstd | test inertial_delays_and_swallows_short_pulses ... ok
 Proof: run srcstd | test short_makes_one_node_against_section_eleven ... ok
 
-**C114** - Each item whose last other form has landed runs against its §22 entry: `Stable`, `Hold`, `idt`, `idtmod`, `laplace_*`, `zi_*`, `noise_table`. (GN-28, AC 2; T107, T109 to T112)
+**C146** - Each item whose last other form has landed runs against its §22 entry: `Stable`, `Hold`, `idt`, `idtmod`, `laplace_*`, `zi_*`, `noise_table`. (GN-28, AC 2; T107, T109 to T112)
 Proof: run srcstd | test idt_and_idtmod_integrate_against_section_22 ... ok
 Proof: run srcstd | test the_laplace_family_gives_the_closed_form_step_response ... ok
 Proof: run srcstd | test an_improper_or_unpaired_laplace_is_refused ... ok
 Proof: run srcstd | test the_zi_family_follows_its_difference_equation ... ok
 Proof: run srcstd | test noise_table_gives_the_interpolated_psd ... ok
 
-**C115** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
+**C147** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
 Proof: run srcstd | test the_water_model_boils_and_vaporizes ... ok
 
-**C116** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
+**C148** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
 Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
 Proof: run docs | test the_generics_checks_file_holds_every_phase ... ok
+Proof: run docs | test the_generics_check_ids_are_unique_across_its_phases ... ok
 
 **C135** - A hoisted module whose body holds generation is unrolled under its frame and runs; `GAPS.md` has no L77. (GN-17, AC 1; T118, phase C round 5 finding 18)
 Proof: run elabgenr | test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok
 Proof: run srcgenr | test a_hoisted_module_with_generation_runs ... ok
 
-**C117** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T114)
+**C149** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T114)
 Proof: run galleries | test the_fences_of_the_generic_library_are_checked ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
-**C136** - A composite param (an array of coefficients, a table, a tuple) of a module with a result is bound at its placement, and `laplace_*` and `noise_table` read theirs. (GN-28, AC 2; T110a, T110, T112; coordinator ruling 2026-11-24)
+**C152** - A composite param (an array of coefficients, a table, a tuple) of a module with a result is bound at its placement, and `laplace_*` and `noise_table` read theirs. (GN-28, AC 2; T110a, T110, T112; coordinator ruling 2026-11-24)
 Proof: run typesresults | test a_composite_param_of_a_module_with_a_result_checks_at_its_placement ... ok
 Proof: run elabresults | test a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok
+Proof: run elabresults | test an_option_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok
+Proof: run elabtemplates | test a_template_carrying_composite_params_places_with_and_without_a_result ... ok
+Proof: run elabtemplates | test two_templates_with_equal_composite_params_are_one_value ... ok
+Proof: run srcgenr | test a_template_carrying_composite_params_runs_through_a_placement ... ok
 
-**C137** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params. (GN-17, AC 1; T119, GAPS L88)
+**C153** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params. (GN-17, AC 1; T119, GAPS L88)
 Proof: run elabtemplates | test an_array_of_templates_places_the_element_at_an_index ... ok
 Proof: run elabtemplates | test an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params ... ok
 Proof: run typestempl | test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok
 Proof: run srcgenr | test a_template_array_element_placed_in_generation_runs ... ok
+Proof: run elabtemplates | test equal_arrays_of_templates_share_one_body_keyed_by_value ... ok
+Proof: run elabresults | test a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templates_params ... ok
+Proof: run srcgenr | test a_module_with_a_result_through_a_callable_bound_param_runs ... ok
 
-**C138** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
+**C154** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
 
-**C139** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
+**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
 Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
 Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok

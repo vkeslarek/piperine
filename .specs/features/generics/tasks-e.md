@@ -409,7 +409,7 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 �
 **Done when**:
 
 - [x] a checker test, an elab test (default, override by a literal, a `const` and a choice; `pair[k](x)` incl. a generation index; the params it reads are structural) and a source test (`source_generation`) pass
-- [x] `GAPS.md` drops L89 and `docs.rs` re-pins the counts (1 silent, 2 broken, 18 loud); check C139 is added to the Checks with those tests, and `proofs-e.md` is regenerated last
+- [x] `GAPS.md` drops L89 and `docs.rs` re-pins the counts (1 silent, 2 broken, 18 loud); check C155 is added to the Checks with those tests, and `proofs-e.md` is regenerated last
 - [x] Gate check passes: Quick
 
 **Tests**: integration
@@ -485,60 +485,68 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 �
 
 ## Checks
 
-**C110** - No item of L58's generics group is refused because it is generic. (GN-27, AC 1; T105, T113)
+**C142** - No item of L58's generics group is refused because it is generic. (GN-27, AC 1; T105, T113)
 Proof: run stdlibrary | test each_generics_group_item_resolves_to_its_std_declaration ... ok
 Proof: run stdlibrary | test no_generics_group_item_is_refused_because_generic ... ok
 
-**C111** - An item that needs another feature's form is refused naming that form and listed under its id. (GN-27, AC 2; T113)
+**C143** - An item that needs another feature's form is refused naming that form and listed under its id. (GN-27, AC 2; T113)
 Proof: run stdlibrary | test a_blocked_item_is_refused_naming_its_form ... ok
 
-**C112** - Every item of the group type-checks under the whole-model check with no instantiation and no error. (GN-27, AC 3; T104)
+**C144** - Every item of the group type-checks under the whole-model check with no instantiation and no error. (GN-27, AC 3; T104)
 Proof: run typesmodel | test the_standard_library_is_checked_whole_with_no_instantiation ... ok
 
-**C113** - `since`, `MinPulse`, `Setup`, `inertial` and `Short` run and give their §22 values. (GN-28, AC 1; T106, T107, T108)
+**C145** - `since`, `MinPulse`, `Setup`, `inertial` and `Short` run and give their §22 values. (GN-28, AC 1; T106, T107, T108)
 Proof: run srcstd | test since_reads_the_time_from_the_last_change ... ok
 Proof: run srcstd | test min_pulse_fails_exactly_for_a_narrow_pulse ... ok
 Proof: run srcstd | test setup_hold_and_stable_fail_exactly_on_their_violations ... ok
 Proof: run srcstd | test inertial_delays_and_swallows_short_pulses ... ok
 Proof: run srcstd | test short_makes_one_node_against_section_eleven ... ok
 
-**C114** - Each item whose last other form has landed runs against its §22 entry: `Stable`, `Hold`, `idt`, `idtmod`, `laplace_*`, `zi_*`, `noise_table`. (GN-28, AC 2; T107, T109 to T112)
+**C146** - Each item whose last other form has landed runs against its §22 entry: `Stable`, `Hold`, `idt`, `idtmod`, `laplace_*`, `zi_*`, `noise_table`. (GN-28, AC 2; T107, T109 to T112)
 Proof: run srcstd | test idt_and_idtmod_integrate_against_section_22 ... ok
 Proof: run srcstd | test the_laplace_family_gives_the_closed_form_step_response ... ok
 Proof: run srcstd | test an_improper_or_unpaired_laplace_is_refused ... ok
 Proof: run srcstd | test the_zi_family_follows_its_difference_equation ... ok
 Proof: run srcstd | test noise_table_gives_the_interpolated_psd ... ok
 
-**C115** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
+**C147** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
 Proof: run srcstd | test the_water_model_boils_and_vaporizes ... ok
 
-**C116** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
+**C148** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
 Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
 Proof: run docs | test the_generics_checks_file_holds_every_phase ... ok
+Proof: run docs | test the_generics_check_ids_are_unique_across_its_phases ... ok
 
 **C135** - A hoisted module whose body holds generation is unrolled under its frame and runs; `GAPS.md` has no L77. (GN-17, AC 1; T118, phase C round 5 finding 18)
 Proof: run elabgenr | test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok
 Proof: run srcgenr | test a_hoisted_module_with_generation_runs ... ok
 
-**C117** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T114)
+**C149** - Every gallery fence and Book row of a library item of the group is held to the checker. (GN-31, AC 2; T114)
 Proof: run galleries | test the_fences_of_the_generic_library_are_checked ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
-**C136** - A composite param (an array of coefficients, a table, a tuple) of a module with a result is bound at its placement, and `laplace_*` and `noise_table` read theirs. (GN-28, AC 2; T110a, T110, T112; coordinator ruling 2026-11-24)
+**C152** - A composite param (an array of coefficients, a table, a tuple) of a module with a result is bound at its placement, and `laplace_*` and `noise_table` read theirs. (GN-28, AC 2; T110a, T110, T112; coordinator ruling 2026-11-24)
 Proof: run typesresults | test a_composite_param_of_a_module_with_a_result_checks_at_its_placement ... ok
 Proof: run elabresults | test a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok
+Proof: run elabresults | test an_option_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok
+Proof: run elabtemplates | test a_template_carrying_composite_params_places_with_and_without_a_result ... ok
+Proof: run elabtemplates | test two_templates_with_equal_composite_params_are_one_value ... ok
+Proof: run srcgenr | test a_template_carrying_composite_params_runs_through_a_placement ... ok
 
-**C137** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params. (GN-17, AC 1; T119, GAPS L88)
+**C153** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params. (GN-17, AC 1; T119, GAPS L88)
 Proof: run elabtemplates | test an_array_of_templates_places_the_element_at_an_index ... ok
 Proof: run elabtemplates | test an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params ... ok
 Proof: run typestempl | test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok
 Proof: run srcgenr | test a_template_array_element_placed_in_generation_runs ... ok
+Proof: run elabtemplates | test equal_arrays_of_templates_share_one_body_keyed_by_value ... ok
+Proof: run elabresults | test a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templates_params ... ok
+Proof: run srcgenr | test a_module_with_a_result_through_a_callable_bound_param_runs ... ok
 
-**C138** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
+**C154** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
 
-**C139** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
+**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
 Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
 Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok
@@ -546,10 +554,10 @@ Proof: run srcgenr | test a_param_declared_as_an_array_of_templates_runs_by_defa
 Proof: run apisession | test a_module_typed_param_is_not_set_by_text ... ok
 Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
 
-**C118** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
+**C150** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-**C119** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
+**C151** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
 ---
@@ -564,7 +572,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T106 finding:** design-e.md's table says `since` is `inf` "before the first change"; part VII §22.1.8 (rules 2-3 and its table) makes the first commit at (0, 0) a change, so a read after (0, 0) is `now - 0` and only a reaction on that first change reads `inf`. The tests follow the spec text; the oracle (`Section22`) is written from it. `MinPulse` therefore also checks at (0, 0) (width `inf`, passes).
 **T108 findings (AFK default 2026-11-24; **Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu"):** (1) the task text says `inertial` at `bool` and `u8`; part VII §22.5.8 rule 7 and part I §3.3.4 say `bool`, `UInt`, `Int` and `Float` do **not** implement `Default` (on purpose), so `inertial` is E0187 at them. The spec stands; the proof runs at two enums with a `Default` (`Level`, `Mode`) and `inertial_at_a_type_without_default_is_refused` pins the refusal at `bool`. (2) A module result of type `Option<u8>` read in a reaction (`let y = inertial(x, 5n)` at `T = Option<u8>`, `y.is_some()`) is `P0001` "this form of an `Option` value" (`elab/compound.rs::lower_option`): not in GAPS. New row **L89** (loud, owner `spec-closure`) is added in T115 together with the counts (docs.rs pins every count, so the GAPS edit waits for T115/T118, with L77, L88 and the L58 group). `inertial` is read by sampling every ns (the result is a `T`, not a carrier with `changed()`).
 **T109 findings (AFK default 2026-11-24; **Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu"):** (1) `Water` (Part IV §13) runs: two fixes made it. `types/analog.rs::contributes_potential_to` saw only top-level statements of the `analog` block, so `pwr(t)` beside `temp(t) +> tb` in a `match` arm was refused as a flow read (it now walks nested statements, §11 rule 3); and the test model drives the heater with `pwr(t, gnd)` (the node first). `elab_structure.rs::the_water_model_places_idt_and_waits_for_the_flow_probe` stays: its source has no `analog` block, so it still pins L73's form; the acceptance is `the_water_model_boils_and_vaporizes`. (2) transpile: an `Option<f64>` carrier read in the generic-real analog block was printed `Option<R>` / unlifted (`print/value.rs::pin_type`, `carrier_value`); both fixed (idtmod's `base`). (3) **idtmod's wrap does not happen**: the digital side is right (`seat` pulses, `base` = `Some(acc - modulus)` at the crossing) but the analog solve never sees the `seat` pulse (§22.2.9 rule 3 needs a jump solve between the microsteps; GAPS X1: "§15 describes a solver that is gone"), so the integral keeps growing past `offset + modulus`: a **silent wrong result**. The test holds idtmod to §22.2.9 before the first wrap only (marked SPEC_DEVIATION in the test). New GAPS row **L90** (the wrap of `idtmod`; owner `spec-closure`, solver) is added in T115. `idt` (State and `Thermal`, `reset`) matches the closed form.
-**STOP at T110 (2026-11-24, executor, context budget; T103 to T109 done and pushed).** T110 (`laplace_*`), T111 (`zi_*`) and T112 (`noise_table`) are blocked by one gap, found by placing them from source (`laplace_nd::<1, 2>(step) { num: [1.0], den: [1.0, 1u] }`): `P0001` "a composite value where a scalar is required in a param value of a module with a result is not supported yet" (`elab/hoist.rs::hoisted_params` folds each param with `consts.value`, which refuses a composite; `Frame.params` is `BTreeMap<DeclId, Constant>`, scalar only, so the array params `num`, `den`, `zeros`, `poles` and `table` cannot be bound at a hoisted placement). Design-e.md's risk table said to give this its own GAPS row owned by `composite-values`: new row **L91** (loud, owner `composite-values`, found by `generics` phase E T110), to be added in T115 with L89 (Option module result read in a reaction, `spec-closure`) and L90 (idtmod wrap, `spec-closure`, solver). A fix needs: `hoisted_params` folding a composite to a `ConstTree`, `Frame.params` holding it, `frame_bindings` binding it (`Bindings::tree`), and the readers of a param array in a hoisted frame (`num[k]`) lowering through it. The closed-form step-response models and tests I drafted (`laplace.msl`: four forms at tau = 1 us and a second-order section with poles -1e6 +- j2e6; oracle `1 - exp(-t/tau)` and `1 - e^(-a t)(cos b t + (a/b) sin b t)`; refusals E0304 for `N > D`, E0317 for an unpaired root) were reverted, not committed. Remaining: T110, T111, T112 (blocked), T118 (generation in a hoisted body), T119 (arrays of templates, GAPS L88: not yet added to this file), T113, T114, T115. The `idtmod` wrap (L90) and the three gaps above also mean C114 (`laplace_*`, `zi_*`, `noise_table`, idtmod's wrap) cannot be met without them.
+**STOP at T110 (2026-11-24, executor, context budget; T103 to T109 done and pushed).** T110 (`laplace_*`), T111 (`zi_*`) and T112 (`noise_table`) are blocked by one gap, found by placing them from source (`laplace_nd::<1, 2>(step) { num: [1.0], den: [1.0, 1u] }`): `P0001` "a composite value where a scalar is required in a param value of a module with a result is not supported yet" (`elab/hoist.rs::hoisted_params` folds each param with `consts.value`, which refuses a composite; `Frame.params` is `BTreeMap<DeclId, Constant>`, scalar only, so the array params `num`, `den`, `zeros`, `poles` and `table` cannot be bound at a hoisted placement). Design-e.md's risk table said to give this its own GAPS row owned by `composite-values`: new row **L91** (loud, owner `composite-values`, found by `generics` phase E T110), to be added in T115 with L89 (Option module result read in a reaction, `spec-closure`) and L90 (idtmod wrap, `spec-closure`, solver). A fix needs: `hoisted_params` folding a composite to a `ConstTree`, `Frame.params` holding it, `frame_bindings` binding it (`Bindings::tree`), and the readers of a param array in a hoisted frame (`num[k]`) lowering through it. The closed-form step-response models and tests I drafted (`laplace.msl`: four forms at tau = 1 us and a second-order section with poles -1e6 +- j2e6; oracle `1 - exp(-t/tau)` and `1 - e^(-a t)(cos b t + (a/b) sin b t)`; refusals E0304 for `N > D`, E0317 for an unpaired root) were reverted, not committed. Remaining: T110, T111, T112 (blocked), T118 (generation in a hoisted body), T119 (arrays of templates, GAPS L88: not yet added to this file), T113, T114, T115. The `idtmod` wrap (L90) and the three gaps above also mean C146 (`laplace_*`, `zi_*`, `noise_table`, idtmod's wrap) cannot be met without them.
 **Coordinator rulings (2026-11-24):** (1) T110a (composite params at a hoisted placement) is in scope, before T110; no GAPS row for it (L91 is not added). (2) T119 (arrays of templates, L88) after T118. (3) L90 (idtmod wrap) is fixed on main by another agent: T115 records what main has; merge origin/main before T115. (4) L89: make it run if modest, else a GAPS row in T115. (5) `inertial` default accepted (marked above); `since` follows the spec. The Book rows `compiler~79f44db1` and `welcome~28a764f7` use the array-of-templates form as a refusal example: T119 rewrites both after merging origin/main.
 **T118 (2026-11-24):** each hoisted frame unrolls the generation of its own module (`Frame.generated`, parked and activated by `enter_frame`/`leave_frame`/`hoist_frame`; `GeneratedItems.frame` is the frame its lengths fold over); the `frame == 0` guards of carriers, elements, drives, definitions, `let`s, placement keys and nodes are gone; the refusal `generation in its body` left. The GAPS L77 row and the docs.rs counts move in T115.
 **T119 (2026-11-24):** `[A {}, A { r: 2.0 }]` and `fs[k](x)` run for a `let`, a `const` and a generation index: the checker takes `Ty::Module` as an array element (`types/aggregate.rs`), the classifier names the module through an element (`array_template`, `callee_class`), `fold_template_element` folds array and index (`elab/templates.rs`). Found on the way, a **silent wrong result** fixed: a module with a result placed through a template value (`let t = Scale { r: 3.0 }; t(1.0)`) ignored the template's params and used the defaults; `hoist()` now takes them from `template_through`. Still refused (loud, to be recorded in T115 as new row L91, owner `generics`): a `param` declared `[Cell; 2]` (`param of type [module Cell; 2] is not supported yet`).
