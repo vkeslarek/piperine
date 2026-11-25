@@ -185,7 +185,7 @@ impl Elaboration<'_, '_> {
     /// templates, whose head folds at elaboration (§8.4.6).
     pub(super) fn has_an_expression_head(&self, call: ExprId) -> bool {
         let ExprKind::Call { callee, class: CallClass::Instance { module: Some(_), via: None }, .. } = &self.design.expr_node(call).kind else { return false };
-        matches!(self.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_))
+        matches!(self.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) | ExprKind::Index { .. })
     }
 
     /// The template a placement through a template value places (§8.4.4, §8.4.9): the value the param of module type holds in the
@@ -194,16 +194,18 @@ impl Elaboration<'_, '_> {
     /// template written in place; `Err` after the diagnostic of a head that does not fold.
     pub(super) fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
         let CallClass::Instance { module: placed, via } = class else { return Ok(None) };
+        // a placement in the body of a hoisted module reads the params its own placement bound, not the keys of the body that holds it
+        let keys = if scope.frame == 0 { scope.keys.clone() } else { self.frame_bindings(scope.frame) };
         match via {
             Some(via) if placed.is_some_and(|placed| *via == placed) => return Ok(None),
-            Some(via) if self.is_module_param(*via) => return Ok(scope.keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned()),
+            Some(via) if self.is_module_param(*via) => return Ok(keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned()),
             Some(_) => {}
             // a choice of templates written as the head folds as any head does; a module named by its path places by name
             None if !self.has_an_expression_head(call) => return Ok(None),
             None => {}
         }
         let ExprKind::Call { callee, .. } = &self.design.expr_node(call).kind else { return Ok(None) };
-        let folded = self.fold_param_value(*callee, &scope.keys.overlaid(&scope.unrolled));
+        let folded = self.fold_param_value(*callee, &keys.overlaid(&scope.unrolled));
         match folded {
             Ok(number) => Ok(self.consts.templates().get(number).cloned()),
             Err(fault) => {
@@ -232,10 +234,17 @@ impl Elaboration<'_, '_> {
     /// binds, as `lower_child` keeps them, and the values of the module's key params.
     fn template_values(&mut self, template: &TemplateValue, instance: Option<&Instance>, file: FileId, span: crate::msl::Span) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
         let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
-        let given: Vec<(u32, Option<Constant>, ExprId)> = template.fields.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
+        let constants = match self.template_constants(template) {
+            Ok(constants) => constants,
+            Err(fault) => {
+                self.const_fault(&fault, "a param value of a template");
+                return None;
+            }
+        };
+        let given: Vec<(u32, Option<Constant>, ExprId)> = constants.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
         let mut keys = Bindings::new();
         for key in self.keys.of(template.module).to_vec() {
-            let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
+            let written = constants.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
             let value = self.key_value((template.module, instance), key, written, &keys, (file, span))?;
             self.bind_param(&mut keys, key, value);
         }
@@ -427,7 +436,7 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             }
-            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
+            let bindings = if self.is_template_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
             match self.fold_param_value(field.value, &bindings) {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child

@@ -173,12 +173,12 @@ fn a_compiler_code_says_what_the_chapter_says() {
     // (`P0002`, a value of the wrong type, is gone: a mismatch is `E0180` of chapter 11, PI-06.)
     // compiler~79f44fb1 "P0003": the top module asked for does not exist. (compiler~79f44ab1 "P0004" is
     // a bug of Piperine no source raises: a `prose` row.)
-    // the example is an array of module templates (L88, `GAPS.md`), valid MSL the compiler refuses by name; a bundle was the
-    // example until `resolved-nets-bundles` ran it, an `extern` module before that (the Book left `foreign-models` to its own
+    // the example is a param of type `str` (L93, `GAPS.md`), valid MSL the compiler refuses by name; an array of module templates was
+    // the example until `generics` phase E ran it, a bundle until `resolved-nets-bundles` ran it, an `extern` module before that (the Book left `foreign-models` to its own
     // feature), a module template as a value (`R { r: 2.0 }`, §8.4) until `generics` phase D ran it, and a generic module until phase C
-    let templates = "module A(a: Electrical) { r: f64 = 1.0; }\nanalog for A { i(a, gnd) +> v(a, gnd) / r; }\nmodule Top() { signal x: Electrical; let fs = [A {}, A { r: 2.0 }]; let r1 = fs[1](x); }\n";
-    let given = Refusal::of(Model::written("m.msl", templates).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
-    assert!(given.iter().any(|(code, message)| code == "P0001" && message.contains("inside an array") && message.contains("not supported yet")), "P0001 names the construct it cannot run: {given:?}");
+    let labelled = "module Top() { label: str = \"hi\"; }\n";
+    let given = Refusal::of(Model::written("m.msl", labelled).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
+    assert!(given.iter().any(|(code, message)| code == "P0001" && message == "param of type `str` is not supported yet"), "P0001 names the construct it cannot run: {given:?}");
     Refusal::expect(Model::written("m.msl", "module Top() { }\n").run(Faulty::operating_point_of("Nope")), "compiler~79f44fb1", "P0003", "`Nope` is not a module of the root crate");
 }
 

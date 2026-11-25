@@ -233,3 +233,106 @@ fn a_hoisted_placement_with_contributions_runs_once_per_iteration() {
     let expected = GenerationModels::divided(1.0 / 6e-3);
     assert!((seen[0] - expected).abs() < 1e-9, "{seen:?} against {expected}");
 }
+
+/// The bench of `tests/generation/hoisted_generation.msl`, run for 3 ns.
+struct HoistedGeneration;
+
+impl HoistedGeneration {
+    /// A nanosecond, in femtoseconds.
+    const NS: i64 = 1_000_000;
+
+    /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&GenerationModels::project("hoisted_generation.msl"), "Bench");
+        let seen = built.run(3e-9, 0.5e-9);
+        support::transient(&seen, &format!("Bench.{name}"))
+    }
+}
+
+#[test]
+fn a_hoisted_module_with_generation_runs() {
+    // GN-17 AC 1 (§8.2.23, §8.3.12): each placement of `Triple` unrolls its own three carriers `s[k] = x * (k + 1)`, and the
+    // result is their sum, `6 x`. `a` is 7 at 1 ns and 2 at 2 ns, `b` is 3 at 2 ns: `y` is `6 a` and `z` is `6 b`, each element
+    // of a frame named under its placement
+    let sum = |x: u8| 6 * x;
+    let ns = HoistedGeneration::NS;
+    assert_eq!(HoistedGeneration::changes("y"), vec![(ns, vec![sum(7)]), (2 * ns, vec![sum(2)])]);
+    assert_eq!(HoistedGeneration::changes("z"), vec![(2 * ns, vec![sum(3)])], "the second placement follows `b` alone");
+    for k in 0..3u8 {
+        assert_eq!(HoistedGeneration::changes(&format!("first.s[{k}]")), vec![(ns, vec![7 * (k + 1)]), (2 * ns, vec![2 * (k + 1)])], "the element {k} of the first frame");
+        assert_eq!(HoistedGeneration::changes(&format!("second.s[{k}]")), vec![(2 * ns, vec![3 * (k + 1)])], "the element {k} of the second frame");
+    }
+}
+
+#[test]
+fn a_template_array_element_placed_in_generation_runs() {
+    // GN-17, GAPS L88 (§8.4.1, §8.4.4): `fs[k](a)` in a generation `for` places the element `k` of the array of templates at its
+    // own params: `y[k]` is `a * m[k]` with `m` = 1, 2, 5, and `a` goes from 3 to 4 at 1 ns
+    let built = support::build(&GenerationModels::project("template_array.msl"), "Bench");
+    let seen = built.run(2e-9, 0.5e-9);
+    let ns = 1_000_000;
+    for (k, m) in [1u8, 2, 5].into_iter().enumerate() {
+        assert_eq!(support::transient(&seen, &format!("Bench.y[{k}]")), vec![(ns, vec![4 * m])], "element {k}: a * {m} after `a` becomes 4");
+    }
+}
+
+#[test]
+fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
+    // GN-17, GAPS L89 (§8.1, §8.4.1, §8.4.4): `fs[k](a)` of a param `fs: [Scale; 2]` places the element `k` at its own params, in a
+    // module without a result and in one with a result: line
+    // `k` is `a * m[k]` with the default `m` = 1, 2, the literal `m` = 5, 6 and the `const` `m` = 3, 7 and the choice `m` = 9, 4; `a` goes from 3 to 4 at 1 ns
+    let built = support::build(&GenerationModels::project("template_param_array.msl"), "Bench");
+    let seen = built.run(2e-9, 0.5e-9);
+    let ns = 1_000_000;
+    for (line, multipliers) in [("d", [1u8, 2]), ("l", [5, 6]), ("c", [3, 7]), ("x", [9, 4])] {
+        for (k, m) in multipliers.into_iter().enumerate() {
+            assert_eq!(support::transient(&seen, &format!("Bench.{line}.y[{k}]")), vec![(ns, vec![4 * m])], "line {line} element {k}: a * {m} after `a` becomes 4");
+        }
+    }
+    // §8.3.12: `Pick` (a module with a result) reads `fs[1](x)`: `m` of the second element of its default (2), of a literal (6) and of
+    // the `const` `TRIPLE` (7)
+    for (net, m) in [("pd", 2u8), ("pl", 6), ("pc", 7)] {
+        assert_eq!(support::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
+    }
+}
+
+/// The model of `composite_params.msl`: a template carrying composite params, placed by name and through the template.
+struct CompositeParams;
+
+impl CompositeParams {
+    /// The changes of the net `Bench.<name>` of the run: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&GenerationModels::project("composite_params.msl"), "Bench");
+        let seen = built.run(2e-9, 0.5e-9);
+        support::transient(&seen, &format!("Bench.{name}"))
+    }
+}
+
+#[test]
+fn a_template_carrying_composite_params_runs_through_a_placement() {
+    // §8.3.12, §8.4.1, §3.2.10: with `a` = 3 after 1 ns, `Mix` at its defaults is `a * c[1] + 3 + 4 + 9` and the template `{ c: [5, 6], o: None,
+    // os: [None, Some(1)] }` is `a * 6 + 0 + 0 + 1`; `Gain` through `{ c: [7, 8] }` is `a * 8` and by name `a * 2`
+    let defaults = |a: u8| a * 2 + 3 + 4 + 9;
+    let given = |a: u8| a * 6 + 1;
+    let ns = 1_000_000;
+    assert_eq!(CompositeParams::changes("by_name"), vec![(ns, vec![defaults(3)])]);
+    assert_eq!(CompositeParams::changes("by_template"), vec![(ns, vec![given(3)])]);
+    assert_eq!(CompositeParams::changes("gained_name"), vec![(ns, vec![3 * 2])]);
+    assert_eq!(CompositeParams::changes("gained_template"), vec![(ns, vec![3 * 8])]);
+    // `Wrap` places its param `t`: the default `Mix { c: [1, 2] }` is `a * 2 + 3 + 4 + 9`, the override `{ c: [9, 9], o: None, os: [None, None] }` is `a * 9 + 0 + 0 + 9`
+    assert_eq!(CompositeParams::changes("wrapped_default"), vec![(ns, vec![defaults(3)])]);
+    assert_eq!(CompositeParams::changes("wrapped_given"), vec![(ns, vec![3 * 9 + 9])]);
+}
+
+#[test]
+fn a_module_with_a_result_through_a_callable_bound_param_runs() {
+    // §8.4.4, §8.3.12: `s(a)` with `s: C`, `C: Fn(u8) -> u8` places `Scale` at the params of the template each `Mid` is given: `p` is
+    // `a * 5` and `q` is `a * 7`, with `a` going from 3 to 4 at 1 ns
+    let built = support::build(&GenerationModels::project("callable_result.msl"), "Bench");
+    let seen = built.run(2e-9, 0.5e-9);
+    let ns = 1_000_000;
+    // one level down (fix round 2, finding 10): `r` is `Apply`'s own `s(x)` at `m` 3, `w` the template `Twice` forwards to it at `m` 6
+    for (net, m) in [("p", 5u8), ("q", 7), ("r", 3), ("w", 6)] {
+        assert_eq!(support::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
+    }
+}

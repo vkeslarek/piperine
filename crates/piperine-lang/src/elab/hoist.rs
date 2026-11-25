@@ -48,31 +48,42 @@ impl PlacementKey {
     }
 }
 
+/// The frame a hoisted placement opens, as its contents are lowered: the call, the frame's index, the module it places and the name
+/// of the frame, the ports of the module and the arguments the placement binds to them.
+struct OpenedFrame<'a> {
+    /// The placement as written.
+    call: ExprId,
+    /// The index of the frame it opens.
+    index: usize,
+    /// The module the placement places.
+    module: DeclId,
+    /// The name of the frame under the caller's.
+    name: &'a str,
+    /// The ports of `module`.
+    ports: &'a [DeclId],
+    /// The arguments of the placement, by port.
+    bound: &'a PortArguments<'a>,
+}
+
 impl Elaboration<'_, '_> {
     /// The key of the placement `call` read or hoisted in `scope`: the iteration of the generation `for`s around it that the
     /// code being lowered sits in.
     pub(super) fn placement_key(&self, scope: &Scope, call: ExprId) -> PlacementKey {
-        let iteration = match scope.frame {
-            0 => self.implicit_ordinals(self.design.expr_node(call).owner, &scope.ordinals),
-            _ => Vec::new(),
-        };
+        let iteration = self.implicit_ordinals(self.design.expr_node(call).owner, &scope.ordinals);
         PlacementKey { call, iteration }
     }
 
-    /// The module with a result that `call` places, if it places one.
+    /// The module with a result that `call` places, if it places one. A call through a callable param reads the template the param
+    /// holds in the frame being lowered (a hoisted module's own `s: C` holds what its placement bound).
     pub(super) fn result_callee(&self, call: ExprId) -> Option<DeclId> {
-        match self.types.callee(call) {
-            Some(Callee::Module(m)) if matches!(&self.design.decl_data(m).kind, DeclKind::Module(d) if d.ret.is_some()) => Some(m),
-            _ => None,
-        }
+        self.placed_module(call, self.consts.frame_params()).filter(|m| matches!(&self.design.decl_data(*m).kind, DeclKind::Module(d) if d.ret.is_some()))
     }
 
-    /// The module `call` places when that module is hoisted: one with a result or with a value input.
+    /// The module `call` places when that module is hoisted: one with a result or with a value input. A call through a param of
+    /// a generic type bounded by `Fn(..)` (`s(5.0)` with `s: C`) places the module of the template the param holds in the frame
+    /// being lowered.
     pub(super) fn hoisted_callee(&self, call: ExprId) -> Option<DeclId> {
-        match self.types.callee(call) {
-            Some(Callee::Module(m)) if self.is_hoisted(m) => Some(m),
-            _ => None,
-        }
+        self.placed_module(call, self.consts.frame_params()).filter(|m| self.is_hoisted(*m))
     }
 
     /// Whether a placement of `module` is hoisted into the body that places it (Appendix C.1.1): it
@@ -121,9 +132,9 @@ impl Elaboration<'_, '_> {
             }
             // a placement written in generation is hoisted once for each iteration that elaborates it (§8.2.23)
             let owner = self.design.expr_node(call).owner;
-            let iterations = match (scope.frame, self.generated.of(owner)) {
-                (0, Some(iterations)) => iterations.clone(),
-                _ => vec![Iteration::default()],
+            let iterations = match self.generated.of(owner) {
+                Some(iterations) => iterations.clone(),
+                None => vec![Iteration::default()],
             };
             for iteration in &iterations {
                 let mut inner = Self::sub_scope(scope);
@@ -164,6 +175,19 @@ impl Elaboration<'_, '_> {
         let lowered = self.lower_expr(scope, result);
         self.leave_frame(scope, entry);
         lowered
+    }
+
+    /// `call`'s result of `Option` type as the pair of its two halves, lowered where it is read: the callee's result expression in its
+    /// frame (the `Option` form of [`Elaboration::lower_result`]).
+    pub(super) fn lower_result_pair(&mut self, scope: &mut Scope, call: ExprId) -> Option<super::compound::Pair> {
+        let frame = self.frame_of(scope, call)?;
+        let module = self.frames[frame].module;
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
+        let result = data.result?;
+        let entry = self.enter_frame(scope, frame);
+        let pair = self.lower_option(scope, result);
+        self.leave_frame(scope, entry);
+        pair
     }
 
     /// A read of the value input `decl` of the frame `scope.frame`: the caller's expression,
@@ -253,7 +277,7 @@ impl Elaboration<'_, '_> {
             }
             chain = self.frames[k].parent;
         }
-        let ExprKind::Call { callee, args, params, .. } = &node.kind else { return None };
+        let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
         if !self.hoistable(module, file, node.span) {
             return None;
         }
@@ -265,7 +289,16 @@ impl Elaboration<'_, '_> {
         let instance = if self.is_generic_module(module) { Some(self.module_instance(call, module)?) } else { None };
         let substitution = instance.as_ref().map_or_else(|| self.consts.substitution().clone(), |instance| self.instance_substitution(instance.item, &instance.arguments));
         let outer = self.consts.set_substitution(substitution.clone());
-        let bound = self.hoisted_params(module, &fields, file, node.span);
+        let caller_values = self.frame_bindings(parent).overlaid(&scope.unrolled);
+        // a placement written through a template value (`t(x)`, `fs[k](x)`) takes the params the template folds to (§8.4.4)
+        let through = match self.template_through(scope, call, class) {
+            Ok(through) => through,
+            Err(()) => {
+                self.consts.set_substitution(outer);
+                return None;
+            }
+        };
+        let bound = self.hoisted_params(module, (&fields, through.as_ref()), (&caller_values, &outer), file, node.span);
         self.consts.set_substitution(outer);
         let bound = bound?;
         // a placement written in generation is named by its iteration too: `y[1]`, `idt$0[1]`
@@ -310,14 +343,34 @@ impl Elaboration<'_, '_> {
         let index = self.frames.len() - 1;
         self.frames[parent].placements.insert(key.clone(), index);
         let outer = self.consts.set_substitution(substitution);
-        let hoisted = self.hoist_frame(scope, call, index, (module, &name), &ports, &bound);
+        let hoisted = self.hoist_frame(scope, OpenedFrame { call, index, module, name: &name, ports: &ports, bound: &bound });
         self.consts.set_substitution(outer);
         hoisted
     }
 
     /// The contents of the frame `index` of the placement `call`, lowered under the substitution of its instance.
-    fn hoist_frame(&mut self, scope: &Scope, call: ExprId, index: usize, (module, name): (DeclId, &str), ports: &[DeclId], bound: &PortArguments) -> Option<usize> {
+    fn hoist_frame(&mut self, scope: &Scope, opened: OpenedFrame) -> Option<usize> {
+        let OpenedFrame { index, module, .. } = opened;
         let caller = self.frames[self.frames[index].parent.unwrap_or(0)].substitution.clone();
+        // the generation of the callee's body unrolls under the frame's params; the caller's is parked while the frame is lowered
+        let parent = self.frames[index].parent.unwrap_or(0);
+        self.frames[parent].generated = std::mem::take(&mut self.generated);
+        let keys = self.frame_bindings(index);
+        let outer_keys = std::mem::replace(&mut self.body_keys, keys.clone());
+        let outer_params = self.consts.set_frame_params(keys);
+        self.expand_generation_of(module, index);
+        self.consts.set_frame_params(outer_params);
+        let lowered = self.hoist_contents(scope, &opened, &caller);
+        self.body_keys = outer_keys;
+        self.frames[index].generated = std::mem::take(&mut self.generated);
+        self.generated = std::mem::take(&mut self.frames[parent].generated);
+        lowered
+    }
+
+    /// What the frame `index` holds: its nodes, carriers, drives, definitions, placements and reactions.
+    fn hoist_contents(&mut self, scope: &Scope, opened: &OpenedFrame, caller: &crate::types::Substitution) -> Option<usize> {
+        let OpenedFrame { call, index, module, name, ports, bound } = *opened;
+        let caller = caller.clone();
         let gained = self.hoist_nodes(index, module);
         self.record_hoisted(index, module, name, call, gained);
         self.lower_carriers(index, module);
@@ -342,7 +395,7 @@ impl Elaboration<'_, '_> {
         let mut inner = Self::sub_scope(scope);
         inner.frame = index;
         let outer_params = self.consts.set_frame_params(self.frame_bindings(index));
-        self.lower_definitions(&inner, module);
+        self.lower_definitions(&inner);
         self.hoist_placements(&inner);
         self.lower_digital(&mut inner, module);
         self.consts.set_frame_params(outer_params);
@@ -352,11 +405,21 @@ impl Elaboration<'_, '_> {
     /// The node `signal`s of `module` as nodes of the body, named under the frame `frame`: its
     /// terminals are the frame's own. How many nodes the body gained.
     fn hoist_nodes(&mut self, frame: usize, module: DeclId) -> usize {
-        let signals: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && self.types.carrier(*c).is_none()).collect();
+        let mut children = self.design.decl_data(module).children.clone();
+        // the nodes declared in generation are arrays, one element per iteration (`generation.rs`)
+        children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
+        let signals: Vec<DeclId> = children.into_iter().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && (self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some())).collect();
         let prefix = self.frames[frame].prefix.clone();
         let mut gained = 0;
         for signal in signals {
-            if let Some(terminal) = self.add_node(signal, NodeRole::Signal, &prefix, frame) {
+            if self.types.node_array(signal).is_some() {
+                // an array of nodes: one node of the body per element, its shape kept for `w[k]` (`carrier_arrays.rs`)
+                if let Some((shape, first)) = self.add_node_array(signal, NodeRole::Signal, &prefix, frame) {
+                    self.frames[frame].nodes.insert(signal, first);
+                    self.frames[frame].node_shapes.insert(signal, shape);
+                    gained += 1;
+                }
+            } else if let Some(terminal) = self.add_node(signal, NodeRole::Signal, &prefix, frame) {
                 self.frames[frame].nodes.insert(signal, terminal);
                 gained += 1;
             }
@@ -415,30 +478,50 @@ impl Elaboration<'_, '_> {
         if m.instances.iter().any(|c| matches!(self.types.callee(*c), Some(Callee::Module(_))) && self.hoisted_callee(*c).is_none()) {
             return refuse(self, "a placement of a module that is not hoisted");
         }
-        // the generation of a body is unrolled for the body's own module only (`generation.rs`)
-        if data.children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Generation(_))) {
-            return refuse(self, "generation in its body");
-        }
         true
+    }
+
+    /// The constant a param value `expr` folds to over `read`, as for a placement that keeps its body: a composite (an array of
+    /// coefficients, a table) is a constant of the IR's arena, bound taken apart by `bind_param` (`frame_bindings`); an array of
+    /// templates is the aggregate of their numbers, held as a key of the frame (§8.4.6).
+    /// A value the placement gives is written in the caller, so it folds under the caller's generic arguments (`caller`).
+    fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, super::consts::ConstFault> {
+        let callee = caller.map(|substitution| self.consts.set_substitution(substitution.clone()));
+        // the fold of a placement that keeps its body (`fold_param_value`): a template or an array of them is the number(s) it interns
+        let folded = self.fold_param_value(expr, read);
+        if let Some(callee) = callee {
+            self.consts.set_substitution(callee);
+        }
+        folded
     }
 
     /// The params of a hoisted module, each bound to a constant: the value the placement's param
     /// block gives, else the default (edge case 5). A required param left out is `E0319`, a false
     /// `where` `E0317`. `None` after a diagnostic.
-    fn hoisted_params(&mut self, module: DeclId, fields: &[FieldInit], file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
+    fn hoisted_params(&mut self, module: DeclId, (fields, template): (&[FieldInit], Option<&super::templates::TemplateValue>), (caller, caller_substitution): (&Bindings, &crate::types::Substitution), file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
         let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut bindings = Bindings::new();
         let mut out = std::collections::BTreeMap::new();
         let mut ok = true;
+        let template_values = match template.map(|template| self.template_constants(template)).transpose() {
+            Ok(values) => values.unwrap_or_default(),
+            Err(fault) => {
+                self.const_fault(&fault, "a param value of a template");
+                return None;
+            }
+        };
         for param in &params {
             let data = self.design.decl_data(*param).clone();
             let DeclKind::Param(p) = &data.kind else { continue };
-            let given = fields.iter().find(|f| f.res == Resolution::Decl(*param)).map(|f| f.value);
+            let folded = template_values.iter().find(|(bound, _, _)| bound == param).map(|(_, value, _)| *value);
+            let given = fields.iter().find(|f| f.res == Resolution::Decl(*param)).map(|f| f.value).filter(|_| template.is_none());
             let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            // a given value reads the caller's constants; a default the params before it (§8.1.16)
-            let read = if given.is_some() { Bindings::new() } else { bindings.clone() };
+            // a given value reads the caller's constants (its params, its loop variables); a default the params before it (§8.1.16)
+            let read = if given.is_some() { caller.clone() } else { bindings.clone() };
             let value = match given.or(p.default) {
-                Some(expr) => match self.consts.value(expr, &read) {
+                // a template folded the value already
+                _ if let Some(folded) = folded => folded,
+                Some(expr) => match self.param_constant(expr, &read, given.is_some().then_some(caller_substitution)) {
                     Ok(value) => value,
                     Err(fault) => {
                         self.const_fault(&fault, "a param value of a module with a result");

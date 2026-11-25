@@ -1,0 +1,26 @@
+//! `Short` (§11) inside a library-level divider, over `Electrical` and `Thermal`: the middle of a divider of 1k over 3k from
+//! 4 V is two nodes joined by a `Short`. The expected values are computed in `source_stdlib_generic.rs`.
+
+module Drive<S: Nature>(p: S) { level: f64 = 4.0; }
+analog<S> for Drive<S> { potential(p) +> level; }
+
+module Link<S: Nature>(p: S, n: S) { r: f64 = 1k; }
+analog<S> for Link<S> { flow(p, n) +> potential(p, n) / r; }
+
+// the divider of the library: the upper link ends at `mid`, the lower starts at `other`, a `Short` makes them one node
+module JoinedDivider<S: Nature>(top: S, mid: S, other: S) {
+    let upper = Link(top, mid) { r: 1k };
+    let lower = Link(other, gnd) { r: 3k };
+    let joined = Short(mid, other);
+}
+
+module ElectricalRig() {
+    signal top: Electrical; signal mid: Electrical; signal other: Electrical;
+    let source = Drive(top);
+    let divider = JoinedDivider(top, mid, other);
+}
+module ThermalRig() {
+    signal top: Thermal; signal mid: Thermal; signal other: Thermal;
+    let source = Drive(top);
+    let divider = JoinedDivider(top, mid, other);
+}

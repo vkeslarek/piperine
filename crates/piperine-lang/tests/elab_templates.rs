@@ -488,3 +488,233 @@ fn every_callee_form_elaborates_to_what_it_names() {
         Elab::ir(&format!("{head}module Top() {{ n: u8 = 0; signal x: Electrical; {form} signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * b; }}"), "Top");
     }
 }
+
+#[test]
+fn an_array_of_templates_places_the_element_at_an_index() {
+    // §8.4.1, §8.4.4 (GAPS L88): `fs[1](x)` is the placement the element names, by a written index, a `const` index and the
+    // index of a generation `for`: the instance `Cell(x) { cs: 2.0 }` places, one per element in generation
+    let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let c1 = Cell(x) {{ cs: 2.0 }}; }}"), "Top");
+    let written = format!("{CELL}module Top() {{ signal x: Electrical; let fs = [Cell {{ }}, Cell {{ cs: 2.0 }}]; let c1 = fs[1](x); }}");
+    let constant = format!("{CELL}const FS: [Cell; 2] = [Cell {{ }}, Cell {{ cs: 2.0 }}];\nmodule Top() {{ signal x: Electrical; let c1 = FS[1](x); }}");
+    let by_param = format!("{CELL}module Top() {{ pick: usize = 1; signal x: Electrical; let fs = [Cell {{ }}, Cell {{ cs: 2.0 }}]; let c1 = fs[pick](x); }}");
+    for source in [written, constant, by_param] {
+        let ir = Elab::ir(&source, "Top");
+        assert_eq!(Placed::first_param(&ir, "Top.c1"), Placed::first_param(&direct, "Top.c1"), "{source}");
+        assert_eq!(ir.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()), "{source}");
+    }
+    let generated = format!("{CELL}module Top() {{ signal x: Electrical; let fs = [Cell {{ }}, Cell {{ cs: 2.0 }}, Cell {{ cs: 3.0 }}]; for k in 0..3 {{ let c = fs[k](x); }} }}");
+    let ir = Elab::ir(&generated, "Top");
+    for (k, cs) in [1.0, 2.0, 3.0].into_iter().enumerate() {
+        assert_eq!(Placed::real(&ir, &format!("Top.c[{k}]")), Constant::Real(Real::new(cs)), "element {k} of the generated placements");
+    }
+}
+
+#[test]
+fn an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params() {
+    // §8.4.4 with §8.3.12: the result of `fs[k](x)` is the module's result at the element's params, by a written index and by
+    // the index of a generation `for` (`x * r` at `r` of the element)
+    let module = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let written = format!("{module}module Top() {{ signal y: Bit<f64>; let fs = [Scale {{ }}, Scale {{ r: 2.0 }}]; let t = Scale {{ r: 3.0 }}; let a = fs[1](5.0); let b = t(1.0); y = a + b; }}");
+    let ir = Elab::ir(&written, "Top");
+    let printed = ir.print_structural();
+    assert!(printed.contains("(5.0 * 2.0)") && printed.contains("(1.0 * 3.0)"), "{printed}");
+    let generated = format!("{module}module Top() {{ signal y: [Bit<f64>; 2]; let fs = [Scale {{ r: 2.0 }}, Scale {{ r: 4.0 }}]; for k in 0..2 {{ let s = fs[k](1.0); y[k] = s; }} }}");
+    let ir = Elab::ir(&generated, "Top");
+    let printed = ir.print_structural();
+    assert!(printed.contains("(1.0 * 2.0)") && printed.contains("(1.0 * 4.0)"), "{printed}");
+}
+
+#[test]
+fn an_array_of_templates_written_as_a_repeat_is_that_many_equal_templates() {
+    // §1.5 (an array repeat `[e; N]` is `N` copies of `e`) with §8.4.1: `[Scale { r: 7.0 }; N]` holds `N` equal templates, as a `let`,
+    // as a param default, as a `const` given to a param, as an override and with a length a generation `for` walks; the result of
+    // every element is `x * r` of the repeated template
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let outer = "module Outer(x: f64) -> f64 { n: f64 = 7.0; fs: [Scale; 2] = [Scale { r: n }; 2]; fs[1](x) }\n";
+    let (x, r) = (1.0, 7.0);
+    for top in [
+        "module Top() { signal y: Bit<f64>; let fs = [Scale { r: 7.0 }; 2]; let a = fs[1](1.0); y = a; }",
+        "module Top() { fs: [Scale; 2] = [Scale { r: 7.0 }; 2]; signal y: Bit<f64>; let a = fs[1](1.0); y = a; }",
+        "module Top() { signal y: Bit<f64>; let a = Outer(1.0); y = a; }",
+        "const SEVENS: [Scale; 2] = [Scale { r: 7.0 }; 2];\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { n: 2.0, fs: SEVENS }; y = a; }",
+        "module Top() { signal y: Bit<f64>; let a = Outer(1.0) { fs: [Scale { r: 7.0 }; 2] }; y = a; }",
+    ] {
+        let printed = Elab::ir(&format!("{scale}{outer}{top}"), "Top").print_structural();
+        let result = format!("drive y = ({x:?} * {r:?})");
+        assert!(printed.contains(&result), "{top}: wants `{result}` in\n{printed}");
+    }
+    // the default reads the frame's `n`: an override of `n` is the template every element repeats
+    let printed = Elab::ir(&format!("{scale}{outer}module Top() {{ signal y: Bit<f64>; let a = Outer(1.0) {{ n: 4.0 }}; y = a; }}"), "Top").print_structural();
+    assert!(printed.contains(&format!("drive y = ({x:?} * {:?})", 4.0)), "{printed}");
+    let length = 3;
+    let printed = Elab::ir(&format!("{scale}module Top() {{ signal y: [Bit<f64>; {length}]; let fs = [Scale {{ r: 2.0 }}; {length}]; for k in 0..{length} {{ let s = fs[k](1.0); y[k] = s; }} }}"), "Top").print_structural();
+    for k in 0..length {
+        assert!(printed.contains(&format!("drive y[{k}] = ({x:?} * {:?})", 2.0)), "element {k}:\n{printed}");
+    }
+    // an index past the repeat's length is the panic of §1 rule 11, naming the length the repeat gives
+    let past = format!("{scale}module Top() {{ signal y: Bit<f64>; let fs = [Scale {{ r: 7.0 }}; 2]; let a = fs[2](1.0); y = a; }}");
+    let refused = Elab::run(&past, "Top").expect_err("an index past the repeat");
+    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    assert!(refused[0].diagnostic.message.contains("the element 2 of an array of 2 templates"), "{}", refused[0].diagnostic.message);
+}
+
+/// A module placing the elements of its param `pair` (an array of templates of `Cell`) at the written index 1 and at every index of a generation `for`.
+const PAIR_TOP: &str = "module Top() { pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; signal x: Electrical; let c1 = pair[1](x); for k in 0..2 { let g = pair[k](x); } }";
+
+#[test]
+fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
+    // §8.1, §8.4.4 (GAPS L89): the default array places `pair[1](x)` and every `pair[k](x)` of a generation `for`; an override by a
+    // literal, a `const` and a choice over a param places the elements the override names
+    let cs = |value: f64| Constant::Real(Real::new(value));
+    let ir = Elab::ir(&format!("{CELL}{PAIR_TOP}"), "Top");
+    assert_eq!(Placed::real(&ir, "Top.c1"), cs(2.0));
+    assert_eq!(
+        (Placed::real(&ir, "Top.g[0]"), Placed::real(&ir, "Top.g[1]")),
+        (cs(1.0), cs(2.0))
+    );
+    let top = "module Top() { signal x: Electrical; let m = Mid(x) { pair: PICK }; }";
+    let mid = "module Mid(x: Electrical) { sel: bool = false; pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; let c1 = pair[1](x); for k in 0..2 { let g = pair[k](x); } }";
+    let literal = format!(
+        "{CELL}{mid}\n{}",
+        top.replace("PICK", "[Cell { cs: 5.0 }, Cell { cs: 6.0 }]")
+    );
+    let constant = format!(
+        "{CELL}{mid}\nconst PAIR: [Cell; 2] = [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}];\n{}",
+        top.replace("PICK", "PAIR")
+    );
+    let choice = format!(
+        "{CELL}module Mid(x: Electrical) {{ sel: bool = true; pair: [Cell; 2] = if sel {{ [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}] }} else {{ [Cell {{ }}, Cell {{ }}] }}; let c1 = pair[1](x); for k in 0..2 {{ let g = pair[k](x); }} }}\nmodule Top() {{ signal x: Electrical; let m = Mid(x) {{ sel: true }}; }}"
+    );
+    let elements = format!(
+        "{CELL}{mid}\nmodule Top() {{ signal x: Electrical; let m = Mid(x) {{ pair: [Cell {{ cs: 5.0 }}, if true {{ Cell {{ cs: 6.0 }} }} else {{ Cell {{ }} }}] }}; }}"
+    );
+    for source in [literal, constant, choice, elements] {
+        let ir = Elab::ir(&source, "Top");
+        assert_eq!(Placed::real(&ir, "Top.m.c1"), cs(6.0), "{source}");
+        assert_eq!(
+            (
+                Placed::real(&ir, "Top.m.g[0]"),
+                Placed::real(&ir, "Top.m.g[1]")
+            ),
+            (cs(5.0), cs(6.0)),
+            "{source}"
+        );
+    }    // §8.3.12: the same param in a module with a result (`Outer` is hoisted, its frame holds the array as a key): the result
+    // `fs[1](x)` is `x * r` of the element, `r` the default's 3.0 or the override's 6.0, by a literal, a `const`, an element chosen
+    // by a param and through a second hoisted level (`Wrap` gives its own param `gs` to `Outer`'s `fs`)
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let outer = "module Outer(x: f64) -> f64 { k: u32 = 1; fs: [Scale; 2] = [Scale { }, Scale { r: 3.0 }]; fs[k](x) }\n";
+    let wrap = "module Wrap(x: f64) -> f64 { gs: [Scale; 2] = [Scale { r: 5.0 }, Scale { r: 6.0 }]; Outer(x) { fs: gs } }\n";
+    let placed = |placement: &str| format!("{scale}{outer}{wrap}const SIX: [Scale; 2] = [Scale {{ r: 5.0 }}, Scale {{ r: 6.0 }}];\nmodule Top() {{ signal y: Bit<f64>; let a = {placement}; y = a; }}");
+    let x = 2.0;
+    for (placement, r) in [
+        ("Outer(2.0)", 3.0),
+        ("Outer(2.0) { fs: [Scale { r: 5.0 }, Scale { r: 6.0 }] }", 6.0),
+        ("Outer(2.0) { fs: SIX }", 6.0),
+        ("Outer(2.0) { k: 0, fs: SIX }", 5.0),
+        ("Wrap(2.0)", 6.0),
+    ] {
+        let printed = Elab::ir(&placed(placement), "Top").print_structural();
+        let result = format!("drive y = ({x:?} * {r:?})");
+        assert!(printed.contains(&result), "{placement}: wants `{result}` in\n{printed}");
+    }
+}
+
+#[test]
+fn the_params_an_array_of_templates_reads_become_structural() {
+    // §8.4.6: `l` is read by an element of the array a param holds, so each value of `l` is its own body with its own cell
+    let mid = format!(
+        "{CELL}module Mid(x: Electrical) {{ l: f64 = 1.0; pair: [Cell; 2] = [Cell {{ cs: l }}, Cell {{ cs: l * 2.0 }}]; let c1 = pair[1](x); }}\n"
+    );
+    let ir = Elab::ir(
+        &format!(
+            "{mid}module Top() {{ signal x: Electrical; let a = Mid(x) {{ l: 3.0 }}; let b = Mid(x) {{ l: 0.5 }}; }}"
+        ),
+        "Top",
+    );
+    assert_eq!(
+        Placed::real(&ir, "Top.a.c1"),
+        Constant::Real(Real::new(6.0))
+    );
+    assert_eq!(
+        Placed::real(&ir, "Top.b.c1"),
+        Constant::Real(Real::new(1.0))
+    );
+    let bodies = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_ne!(
+        bodies("Top.a"),
+        bodies("Top.b"),
+        "two values of `l`, two bodies"
+    );
+}
+
+#[test]
+fn a_template_carrying_composite_params_places_with_and_without_a_result() {
+    // §8.4.1, §8.3.12: a template whose block gives an array, a tuple, a struct or an array of arrays is a value of the elaboration; a
+    // placement through it, by a `let`, a `const` or an element of an array, binds the composite to the param, for a module with
+    // a result and for one without
+    let inner = "module Inner(x: f64) -> f64 { c: [f64; 2] = [1.0, 2.0]; x * c[1] }\n";
+    let from_let = format!("{inner}module Top() {{ signal y: Bit<f64>; let t = Inner {{ c: [3.0, 9.0] }}; let b = t(1.0); y = b; }}");
+    let from_const = format!("{inner}const T: Inner = Inner {{ c: [3.0, 9.0] }};\nmodule Top() {{ signal y: Bit<f64>; let b = T(1.0); y = b; }}");
+    let from_element = format!("{inner}module Top() {{ signal y: Bit<f64>; let fs = [Inner {{ }}, Inner {{ c: [3.0, 9.0] }}]; let b = fs[1](1.0); y = b; }}");
+    for source in [from_let, from_const, from_element] {
+        let printed = Elab::ir(&source, "Top").print_structural();
+        assert!(printed.contains("([3.0, 9.0] : [f64; 2])[1i32]"), "the read `c[1]` goes through the template's array:\n{printed}");
+    }
+    let cell = "module Cell(a: Electrical) { cs: [f64; 2] = [1.0, 2.0]; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs[1]; }\n";
+    let by_let = format!("{cell}module Top() {{ signal x: Electrical; let t = Cell {{ cs: [3.0, 4.0] }}; let c = t(x); }}");
+    let ir = Elab::ir(&by_let, "Top");
+    assert!(matches!(ir.instance_at("Top.c").and_then(|i| i.param(0).copied()), Some(Constant::Aggregate(_))), "the instance holds the array");
+    let option = "module Inner(x: f64) -> f64 { c: Option<f64> = Some(2.0); x * c.unwrap_or(5.0) }\nmodule Top() { signal y: Bit<f64>; let t = Inner { c: Some(4.0) }; let b = t(1.0); y = b; }";
+    assert!(Elab::ir(option, "Top").print_structural().contains("option(true, 4.0)"), "a template gives the param its own `Option`");
+    let tuple = "module Cell(a: Electrical) { p: (f64, f64) = (1.0, 2.0); }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * p.1; }\nmodule Top() { signal x: Electrical; let t = Cell { p: (5.0, 6.0) }; let c = t(x); }";
+    Elab::ir(tuple, "Top");
+    let record = "struct P { a: f64, b: f64 }\nmodule Cell(a: Electrical) { p: P = P { a: 1.0, b: 2.0 }; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * p.b; }\nmodule Top() { signal x: Electrical; let t = Cell { p: P { a: 5.0, b: 6.0 } }; let c = t(x); }";
+    Elab::ir(record, "Top");
+    let nested = "module Inner(x: f64) -> f64 { c: [[f64; 2]; 2] = [[1.0, 2.0], [3.0, 4.0]]; x * c[1][0] }\nmodule Top() { signal y: Bit<f64>; let t = Inner { c: [[5.0, 6.0], [7.0, 8.0]] }; let b = t(1.0); y = b; }";
+    assert!(Elab::ir(nested, "Top").print_structural().contains("[[5.0, 6.0], [7.0, 8.0]]"));
+}
+
+#[test]
+fn two_templates_with_equal_composite_params_are_one_value() {
+    // §8.4 (two equal templates are one value): a template block's array, compared by its elements, selects one body variant
+    let cell = "module Cell(a: Electrical) { cs: [f64; 2] = [1.0, 2.0]; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs[1]; }\nmodule Inner() { cell: Cell; signal x: Electrical; let c1 = cell(x); }\n";
+    let equal = format!("{cell}module Top() {{ let a = Inner {{ cell: Cell {{ cs: [3.0, 4.0] }} }}(); let b = Inner {{ cell: Cell {{ cs: [3.0, 4.0] }} }}(); }}");
+    let ir = Elab::ir(&equal, "Top");
+    let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_eq!(body("Top.a"), body("Top.b"));
+    let different = format!("{cell}module Top() {{ let a = Inner {{ cell: Cell {{ cs: [3.0, 4.0] }} }}(); let b = Inner {{ cell: Cell {{ cs: [3.0, 5.0] }} }}(); }}");
+    let ir = Elab::ir(&different, "Top");
+    let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_ne!(body("Top.a"), body("Top.b"));
+}
+
+#[test]
+fn equal_arrays_of_templates_share_one_body_keyed_by_value() {
+    // §8.4 (two equal templates are one value), §8.4.6: the param `pair` is structural, and its body is keyed by what the array holds, so two
+    // placements with equal arrays (the default, and a literal equal to it) are one body, a different array is another, and the body's
+    // name shows the templates, never the arena id of the aggregate
+    let mid = format!("{CELL}module Mid(x: Electrical) {{ pair: [Cell; 2] = [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}]; let c1 = pair[1](x); }}\n");
+    let ir = Elab::ir(&format!("{mid}module Top() {{ signal x: Electrical; let a = Mid(x); let b = Mid(x) {{ pair: [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}] }}; let c = Mid(x) {{ pair: [Cell {{ cs: 5.0 }}, Cell {{ cs: 7.0 }}] }}; }}"), "Top");
+    let bodies = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_eq!(bodies("Top.a"), bodies("Top.b"), "equal arrays, one body");
+    assert_ne!(bodies("Top.a"), bodies("Top.c"), "different arrays, two bodies");
+    for path in ["Top.a", "Top.b", "Top.c"] {
+        assert!(!bodies(path).unwrap_or_default().contains("agg"), "{path}: the body name shows the value, not an arena id");
+    }
+    assert_eq!(Placed::real(&ir, "Top.a.c1"), Constant::Real(Real::new(6.0)));
+    assert_eq!(Placed::real(&ir, "Top.c.c1"), Constant::Real(Real::new(7.0)));
+}
+
+#[test]
+fn a_template_param_of_a_module_with_a_result_places_the_templates_params() {
+    // §8.4.4, §8.3.12: `t(x)` in the body of `Mid`, a module with a result, places the template `t` holds in the frame of its own
+    // placement: the default's params, and the params of the template the placement of `Mid` overrides it with, scalar or composite
+    let scalar = |declared: &str, over: &str| format!("module Inner(x: f64) -> f64 {{ r: f64 = 3.0; x * r }}\nmodule Mid(x: f64) -> f64 {{ t: Inner = {declared}; let q = t(x); q }}\nmodule Top() {{ signal y: Bit<f64> = 0.0; let r = Mid(1.0){over}; }}\ndigital for Top {{ on at(1n) {{ y <- r; }} }}");
+    let read = |source: String| Elab::ir(&source, "Top").print_structural();
+    assert!(read(scalar("Inner { r: 8.0 }", "")).contains("y <- (1.0 * 8.0)"));
+    assert!(read(scalar("Inner { r: 8.0 }", " { t: Inner { r: 1.5 } }")).contains("y <- (1.0 * 1.5)"));
+    let array = |declared: &str, over: &str| format!("module Inner(x: f64) -> f64 {{ c: [f64; 2] = [3.0, 4.0]; x * c[1] }}\nmodule Mid(x: f64) -> f64 {{ t: Inner = {declared}; let q = t(x); q }}\nmodule Top() {{ signal y: Bit<f64> = 0.0; let r = Mid(1.0){over}; }}\ndigital for Top {{ on at(1n) {{ y <- r; }} }}");
+    assert!(read(array("Inner { c: [8.0, 9.0] }", "")).contains("([8.0, 9.0] : [f64; 2])[1i32]"));
+    assert!(read(array("Inner { c: [8.0, 9.0] }", " { t: Inner { c: [1.0, 2.0] } }")).contains("([1.0, 2.0] : [f64; 2])[1i32]"));
+}

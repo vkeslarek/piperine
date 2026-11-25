@@ -14,6 +14,12 @@ mod spec_tables;
 
 use spec_tables::{section, table_rows};
 
+#[path = "support/elab.rs"]
+#[allow(dead_code)]
+mod support;
+
+use support::Elab;
+
 fn embedded() -> Design {
     Design::builder().source("top.msl", "").build()
 }
@@ -200,7 +206,7 @@ fn bit_rise_resolves_into_std_values() {
 fn calls_named<'d>(design: &'d Design, decl: piperine_lang::pom::Decl<'d>, name: &str) -> Vec<piperine_lang::pom::Expr<'d>> {
     decl.exprs()
         .into_iter()
-        .filter(|e| matches!(e.kind(), ExprKind::Call { callee, .. } if design.expr(*callee).text() == name))
+        .filter(|e| matches!(e.kind(), ExprKind::Call { callee, .. } if design.expr(*callee).text().split("::<").next() == Some(name)))
         .collect()
 }
 
@@ -868,4 +874,150 @@ fn the_index_lists_stay_honest() {
         assert!(pub_names(&design, space).contains(name), "{space}::{name} is gone from std: drop it from STD_BEHIND_THE_INDEX");
         assert!(!listed.contains(&format!("{space}::{name}")), "{space}::{name} is an Index row again: drop it from STD_BEHIND_THE_INDEX");
     }
+}
+
+/// The items of L58's generics group (GN-27 AC 1), each placed or called once in `GROUP_SOURCE`.
+const GENERICS_GROUP: [(&str, &str); 20] = [
+    ("Short", "carriers.msl"),
+    ("since", "values.msl"),
+    ("cast", "values.msl"),
+    ("same", "values.msl"),
+    ("idt", "analog.msl"),
+    ("idtmod", "analog.msl"),
+    ("zi_nd", "analog.msl"),
+    ("zi_np", "analog.msl"),
+    ("zi_zd", "analog.msl"),
+    ("zi_zp", "analog.msl"),
+    ("laplace_nd", "analog.msl"),
+    ("laplace_np", "analog.msl"),
+    ("laplace_zd", "analog.msl"),
+    ("laplace_zp", "analog.msl"),
+    ("noise_table", "analog.msl"),
+    ("Stable", "monitor.msl"),
+    ("Setup", "monitor.msl"),
+    ("Hold", "monitor.msl"),
+    ("inertial", "monitor.msl"),
+    ("MinPulse", "monitor.msl"),
+];
+
+/// A module of the root crate that places or calls every item of [`GENERICS_GROUP`].
+const GROUP_SOURCE: &str = "\
+module Top(a: Electrical, b: Electrical, in clk: Bit, in en: Bit, in d: Bit, in v: Bit<u8>, x: f64, n: u8, tpd: f64, period: f64) {
+    let s = Short(a, b);
+    let age = since(d);
+    let c = cast::<u8, i8>(n);
+    let e = same(n, n);
+    let i = idt(x, Some(0.0), None);
+    let m = idtmod(x, Some(0.0), 1.0, Some(-0.5));
+    let zn = zi_nd::<2, 1>(x, period) { num: [1.0, 0.5], den: [0.25] };
+    let znp = zi_np::<2, 1>(x, period) { num: [1.0, 0.5], poles: [(0.5, 0.0)] };
+    let zzd = zi_zd::<1, 1>(x, period) { zeros: [(0.5, 0.0)], den: [0.25] };
+    let zzp = zi_zp::<1, 1>(x, period) { zeros: [(0.5, 0.0)], poles: [(0.5, 0.0)] };
+    let ln = laplace_nd::<1, 2>(x) { num: [1.0], den: [1.0, 1.0] };
+    let lnp = laplace_np::<1, 1>(x) { num: [1.0], poles: [(-1.0, 0.0)] };
+    let lzd = laplace_zd::<1, 2>(x) { zeros: [(-1.0, 0.0)], den: [1.0, 1.0] };
+    let lzp = laplace_zp::<1, 1>(x) { zeros: [(-1.0, 0.0)], poles: [(-2.0, 0.0)] };
+    let nt = noise_table::<2>(None) { table: [(1.0, 1e-18), (1e3, 1e-20)] };
+    let st = Stable(en, d);
+    let su = Setup(clk, d) { ts: 1n };
+    let ho = Hold(clk, d) { th: 1n };
+    let ine = inertial(v, tpd);
+    let mp = MinPulse(d) { w: 1n };
+}
+";
+
+/// What the generics group's placement test reads from the root crate's call and placement expressions.
+struct GroupItems;
+
+impl GroupItems {
+    /// The declaration the callee `name` (with or without a turbofish) of the root crate resolves to.
+    fn resolved<'d>(design: &'d Design, name: &str) -> Option<piperine_lang::pom::Decl<'d>> {
+        let expr = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text().split("::<").next() == Some(name) && matches!(e.resolution(), Resolution::Decl(_)))?;
+        match expr.resolution() {
+            Resolution::Decl(id) => Some(design.decl(id)),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn each_generics_group_item_resolves_to_its_std_declaration() {
+    // GN-27 AC 1: no item of L58's generics group stands for a checker intrinsic: each one written in a
+    // project resolves to the declaration written in its `std` file, and the project builds clean
+    let design = Design::builder().source("top.msl", GROUP_SOURCE).build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    for (name, file) in GENERICS_GROUP {
+        let decl = GroupItems::resolved(&design, name).unwrap_or_else(|| panic!("`{name}` resolves to a declaration"));
+        assert!(decl.krate().is_std(), "`{name}` is declared in std");
+        assert_eq!(decl.file().name().rsplit('/').next(), Some(file), "`{name}` is declared in {file}");
+        assert!(decl.as_module().is_some() || decl.as_function().is_some_and(|f| !f.is_intrinsic()), "`{name}` has a source body");
+    }
+}
+
+/// The items of L58's generics group, each placed or called by a source of its own under `Top` (GN-27): the placement is the
+/// source a user writes for the item, over the real standard library.
+struct GenericsGroup;
+
+impl GenericsGroup {
+    /// The head every source shares: a mode enum with a `Default` for `inertial`.
+    const HEAD: &'static str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Run }\nimpl Default for Mode { fn default() -> Mode { Mode::Idle } }\n";
+
+    /// `(item, source)`: the source places the item from `Top`.
+    fn sources() -> Vec<(&'static str, String)> {
+        let top = |items: &str| format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; signal clk: Bit = false; signal d: Bit<u8> = 0; signal m: Bit<Mode> = Mode::Idle; {items} }}\n", Self::HEAD);
+        vec![
+            ("Short", top("let s = Short(a, b);")),
+            ("since", top("let w = since(d);")),
+            ("idt", top("let i = idt(1.0, Some(0.0));")),
+            ("idtmod", top("let i = idtmod(1.0, Some(0.0), 1.0, Some(0.0));")),
+            ("zi_nd", top("let z = zi_nd::<1, 1>(1.0, 1u) { num: [0.5], den: [-0.5] };")),
+            ("zi_np", top("let z = zi_np::<1, 1>(1.0, 1u) { num: [0.5], poles: [(0.5, 0.0)] };")),
+            ("zi_zd", top("let z = zi_zd::<1, 1>(1.0, 1u) { zeros: [(0.5, 0.0)], den: [-0.5] };")),
+            ("zi_zp", top("let z = zi_zp::<1, 1>(1.0, 1u) { zeros: [(0.5, 0.0)], poles: [(0.5, 0.0)] };")),
+            ("laplace_nd", top("let l = laplace_nd::<1, 2>(1.0) { num: [1.0], den: [1.0, 1u] };")),
+            ("laplace_np", top("let l = laplace_np::<1, 1>(1.0) { num: [1.0], poles: [(-1M, 0.0)] };")),
+            ("laplace_zd", top("let l = laplace_zd::<0, 2>(1.0) { zeros: [], den: [1.0, 1u] };")),
+            ("laplace_zp", top("let l = laplace_zp::<0, 1>(1.0) { zeros: [], poles: [(-1M, 0.0)] };")),
+            ("noise_table", format!("{}module Top() {{ signal a: Electrical; }}\nanalog for Top {{ i(a, gnd) +> v(a, gnd) / 1k + noise_table::<2>(\"t\") {{ table: [(1k, 1e-18), (10k, 4e-18)] }}; }}\n", Self::HEAD)),
+            ("Stable", top("let s = Stable(clk, d);")),
+            ("Setup", top("signal viol: Bit; let s = Setup(clk, d, viol) { ts: 1n };")),
+            ("Hold", top("let h = Hold(clk, d) { th: 1n };")),
+            ("MinPulse", top("let p = MinPulse(clk) { w: 1n };")),
+            ("inertial", top("let i = inertial(m, 1n);")),
+            // `inertial::<Driven>` of an expression over a net the model declares
+            ("TribufDelayed", format!("{}nature Line {{ value: Driven }}\nimpl Resolve<Driven> for Line {{ fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {{ Driven::strongest(drives) }} }}\nmodule Top() {{ signal n: Line; let t = TribufDelayed(n, true, true); }}\n", Self::HEAD)),
+            ("cast", format!("{}\ndigital for Top {{ on at(1n) {{ let c = cast::<u8, u8>(d); }} }}\n", top(""))),
+            ("same", format!("{}\ndigital for Top {{ on at(1n) {{ let e = same(d, d); }} }}\n", top(""))),
+        ]
+    }
+}
+
+#[test]
+fn no_generics_group_item_is_refused_because_generic() {
+    // GN-27 AC 1: every item of the group places or is called, and nothing it is refused for names "generic": a form that
+    // is still refused would name its own form (`a_blocked_item_is_refused_naming_its_form`)
+    for (item, source) in GenericsGroup::sources() {
+        let design = Elab::design(&source);
+        assert!(design.diagnostics().is_empty(), "{item}: the source must be clean: {:?}", design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
+        if let Err(found) = piperine_lang::elab::Elaborator::new(&design).run("Top") {
+            let messages: Vec<String> = found.iter().map(|d| d.diagnostic.message.clone()).collect();
+            assert!(messages.iter().all(|message| !message.to_lowercase().contains("generic")), "{item} is refused because it is generic: {messages:?}");
+            panic!("{item} does not elaborate: {messages:?}");
+        }
+    }
+}
+
+#[test]
+fn a_blocked_item_is_refused_naming_its_form() {
+    // GN-27 AC 2 (DE1, L33): a generic module that places an `extern` module is refused naming the `extern` module, never
+    // "generic": the refusal names the form that blocks the item
+    let source = "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module Foreign(a: Electrical) { }\nmodule Wrap<N: Nature>(a: N) { let f = Foreign(a); }\nmodule Top() { signal a: Electrical; let w = Wrap::<Electrical>(a); }\n";
+    let design = Elab::design(source);
+    let refused = match piperine_lang::elab::Elaborator::new(&design).run("Top") {
+        Ok(_) => panic!("an extern module is not placed yet (L33)"),
+        Err(found) => found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>(),
+    };
+    let text = refused.join(" | ");
+    assert!(text.to_lowercase().contains("extern"), "the refusal names the form: {text}");
+    assert!(!text.to_lowercase().contains("generic"), "never `generic`: {text}");
 }

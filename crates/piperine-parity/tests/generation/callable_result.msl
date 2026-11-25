@@ -1,0 +1,43 @@
+//! A module with a result placed through a param of a generic type bounded by `Fn(..)` (generics phase E fix round 1, part III §8.4.4,
+//! §8.3.12): `Mid` reads `s(a)` with `s: C` and `C: Fn(u8) -> u8`, and each placement of `Mid` gives `s` a template of `Scale`, so the result is
+//! `a * m` of that template. `Apply` has a result itself and places its own `s: C` as its result (its frame holds the template); `Twice`
+//! forwards its `t: D` to `Apply`'s `s`, so `r` is `a * 3` and `w` is `a * 6`.
+
+module Scale(x: u8) -> u8 {
+    m: u8 = 1;
+    x * m
+}
+
+module Mid<C: Fn(u8) -> u8>(in a: Bit<u8>, out y: Bit<u8>) {
+    s: C;
+    let scaled = s(a);
+    y = scaled;
+}
+
+module Apply<C: Fn(u8) -> u8>(x: u8) -> u8 {
+    s: C;
+    s(x)
+}
+
+module Twice<D: Fn(u8) -> u8>(x: u8) -> u8 {
+    t: D;
+    Apply(x) { s: t }
+}
+
+module Bench() {
+    signal a: Bit<u8> = 3;
+    signal p: Bit<u8>;
+    signal q: Bit<u8>;
+    let first = Mid { s: Scale { m: 5 } }(a, p);
+    let second = Mid { s: Scale { m: 7 } }(a, q);
+    signal r: Bit<u8>;
+    signal w: Bit<u8>;
+    let applied = Apply(a) { s: Scale { m: 3 } };
+    let forwarded = Twice(a) { t: Scale { m: 6 } };
+    r = applied;
+    w = forwarded;
+}
+
+digital for Bench {
+    on at(1n) { a <- 4; }
+}

@@ -1,0 +1,15 @@
+//! `noise_table` (§22.2.3): a current noise source of 1 kohm's load whose density is the three-point table
+//! (1 kHz, 4e-18), (100 kHz, 1e-18), (500 kHz, 3e-18) A^2/Hz under the control `1C`. The noise analysis reads the output density at
+//! 1 kHz, 10 kHz, 100 kHz and 1 MHz; the expected values are computed by Rust in `source_stdlib_generic.rs`.
+
+module Loaded(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Loaded {
+    i(p, n) +> v(p, n) / r + noise_table::<3>("table") { table: [(1k, 4e-18), (100k, 1e-18), (500k, 3e-18)] };
+}
+
+module TableBench() {
+    signal o: Electrical;
+    let load = Loaded { r: 1k }(o, gnd);
+}

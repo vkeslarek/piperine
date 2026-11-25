@@ -388,3 +388,52 @@ fn every_callee_form_the_grammar_admits_is_called_by_its_value() {
         assert_eq!(source.codes(), codes, "{form}: {}", source.message());
     }
 }
+
+#[test]
+fn an_array_of_templates_of_one_module_checks_and_places_its_element() {
+    // §8.4.1, §8.4.4 (GAPS L88): `[Cell { }, Cell { cs: 2.0 }]` is an array of `Cell` values, `fs[1](x)` places the module of its
+    // element, a `[Cell; 2]` `const` holds one, and an array of two modules is a mismatch (`E0180`)
+    let held = TemplateSource::new("module Top() { signal x: E; let fs = [Cell { }, Cell { cs: 2.0 }]; let c = fs[1](x); }\n");
+    assert!(held.codes().is_empty(), "{:?}", held.codes());
+    let declared = TemplateSource::new("const PAIR: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }];\nmodule Top() { signal x: E; let c = PAIR[0](x); }\n");
+    assert!(declared.codes().is_empty(), "{:?}", declared.codes());
+    let mixed = TemplateSource::new("module Top() { signal x: E; let fs = [Cell { }, Sizing { size: 1.0 }]; }\n");
+    assert_eq!(mixed.codes(), ["E0180"], "two modules in one array");
+}
+
+#[test]
+fn a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement() {
+    // §8.1, §8.4.1, §8.4.4 (GAPS L89): `pair: [Cell; 2] = [..]` is a param whose elements are templates of `Cell`; `pair[k](x)` places
+    // the module of an element; a default of the wrong module is `E0180`, a default of another length a mismatch
+    let ok = TemplateSource::new(
+        "module Top() { pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; signal x: E; let c = pair[1](x); for k in 0..2 { let d = pair[k](x); } }\n",
+    );
+    assert!(ok.codes().is_empty(), "{:?}: {}", ok.codes(), ok.message());
+    let wrong = TemplateSource::new(
+        "module Top() { pair: [Cell; 2] = [Cell { }, Sizing { size: 1.0 }]; }\n",
+    );
+    assert_eq!(wrong.codes(), ["E0180"], "an element of another module");
+    let short = TemplateSource::new("module Top() { pair: [Cell; 2] = [Cell { }]; }\n");
+    assert!(
+        !short.codes().is_empty(),
+        "a default of one element for two"
+    );
+    // §8.3.12: the same param in a module with a result, its default and an override of it from the placement
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let with_result = TemplateSource::new(&format!(
+        "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ }}, Scale {{ r: 3.0 }}]; fs[1](x) }}\n\
+         module Top() {{ signal y: Bit<f64>; let a = Outer(1.0); let b = Outer(1.0) {{ fs: [Scale {{ r: 5.0 }}, Scale {{ }}] }}; y = a + b; }}\n"
+    ));
+    assert!(with_result.codes().is_empty(), "{:?}: {}", with_result.codes(), with_result.message());
+    let wrong_in_result = TemplateSource::new(&format!(
+        "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ }}, Cell {{ }}]; fs[1](x) }}\nmodule Top() {{ signal y: Bit<f64>; y = Outer(1.0); }}\n"
+    ));
+    assert_eq!(wrong_in_result.codes(), ["E0180"], "an element of another module in a module with a result");    // an array repeat of a template is an array of templates of its module (§1.5): as a default, and as a `let` placed through
+    let repeated = TemplateSource::new(&format!(
+        "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ r: 7.0 }}; 2]; fs[1](x) }}\n\
+         module Top() {{ signal y: Bit<f64>; let gs = [Scale {{ r: 2.0 }}; 3]; let a = Outer(1.0); let b = gs[2](1.0); y = a + b; }}\n"
+    ));
+    assert!(repeated.codes().is_empty(), "{:?}: {}", repeated.codes(), repeated.message());
+    let repeated_wrong = TemplateSource::new("module Top() { pair: [Cell; 2] = [Sizing { size: 1.0 }; 2]; }\n");
+    assert_eq!(repeated_wrong.codes(), ["E0180"], "a repeat of another module");
+}

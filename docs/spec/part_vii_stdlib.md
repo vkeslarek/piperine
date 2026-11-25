@@ -1232,19 +1232,23 @@ const fn den_q<const D: usize>(poles: [(f64, f64); D]) -> [f64; D] {
 pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     zeros: [(f64, f64); N] where conjugate_closed(zeros);
     poles: [(f64, f64); D] where conjugate_closed(poles);
-    zi_nd(x, period) { num: poly_q(zeros), den: den_q(poles) }
+    zi_nd::<{
+        N + 1
+    }, D>(x, period) { num: poly_q(zeros), den: den_q(poles) }
 }
 
 pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
-    zi_nd(x, period) { num: poly_q(zeros), den }
+    zi_nd::<{
+        N + 1
+    }, D>(x, period) { num: poly_q(zeros), den }
 }
 
 pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N];
     poles: [(f64, f64); D] where conjugate_closed(poles);
-    zi_nd(x, period) { num, den: den_q(poles) }
+    zi_nd::<N, D>(x, period) { num, den: den_q(poles) }
 }
 ```
 
@@ -1296,22 +1300,25 @@ pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 
     num: [f64; N];
     den: [f64; D] where den[D - 1] != 0.0;
     signal w: [State; D - 1]; // w[k]: the k-th derivative of W, where den(s)·W = x
+    signal y: State; // the output num(s)·W, a node: a closure reads no carrier (§3 rule 7)
     let top = if D > 1 {
         ddt(pos(w[D - 2]))
     } else {
         x / den[0]
     };
-    let y = (0..N).map(
-        |k| num[k] * if k + 1 < D {
-            pos(w[k])
-        } else {
-            top
-        },
-    ).sum();
-    y
+    pos(y)
 }
 
 analog<N, D> for laplace_nd<N, D> {
+    let sum = 0.0;
+    for k in 0..N {
+        sum += num[k] * if k + 1 < D {
+            pos(w[k])
+        } else {
+            top
+        };
+    }
+    pos(y) +> sum;
     for k in 0..D - 1 {
         if k + 2 < D {
             rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]);
@@ -1329,19 +1336,27 @@ analog<N, D> for laplace_nd<N, D> {
 pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= D {
     zeros: [(f64, f64); N] where conjugate_closed(zeros);
     poles: [(f64, f64); D] where conjugate_closed(poles);
-    laplace_nd(x) { num: poly_s(zeros), den: poly_s(poles) }
+    laplace_nd::<{
+        N + 1
+    }, {
+        D + 1
+    }>(x) { num: poly_s(zeros), den: poly_s(poles) }
 }
 
 pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
     zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
-    laplace_nd(x) { num: poly_s(zeros), den }
+    laplace_nd::<{
+        N + 1
+    }, D>(x) { num: poly_s(zeros), den }
 }
 
 pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
     num: [f64; N];
     poles: [(f64, f64); D] where conjugate_closed(poles);
-    laplace_nd(x) { num, den: poly_s(poles) }
+    laplace_nd::<N, {
+        D + 1
+    }>(x) { num, den: poly_s(poles) }
 }
 ```
 
@@ -1979,7 +1994,7 @@ A tristate buffer with Verilog's inertial gate delay, slower to release than to 
 pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {
     ton: f64 = 100p;
     toff: f64 = 300p;
-    y = inertial(
+    y = inertial::<Driven>(
         if oe {
             Driven::strong(d)
         } else {

@@ -1,0 +1,17 @@
+//! The `laplace_*` filters (§22.2.14) of a step of 1 at 1 us: a first-order low-pass 1 / (1 + s tau), tau = 1 us, written four
+//! ways (numerator/denominator, numerator/poles, zeros/denominator, zeros/poles), and a second-order section with the poles
+//! -1e6 +- j2e6. The expected values are computed by Rust in `source_stdlib_generic.rs`.
+
+module LaplaceBench() {
+    signal go: Bit = false;
+    let step = if go { 1.0 } else { 0.0 };
+    let nd = laplace_nd::<1, 2>(step) { num: [1.0], den: [1.0, 1u] };
+    let np = laplace_np::<1, 1>(step) { num: [1.0], poles: [(-1M, 0.0)] };
+    let zd = laplace_zd::<0, 2>(step) { zeros: [], den: [1.0, 1u] };
+    let zp = laplace_zp::<0, 1>(step) { zeros: [], poles: [(-1M, 0.0)] };
+    let second = laplace_np::<1, 2>(step) { num: [1.0], poles: [(-1M, 2M), (-1M, -2M)] };
+}
+digital for LaplaceBench {
+    on at(1u) { go <- true; }
+    on every(0.5u, 0.5u) { emit!("laplace", nd = nd, np = np, zd = zd, zp = zp, second = second); }
+}

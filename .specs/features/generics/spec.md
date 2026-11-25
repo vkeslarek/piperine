@@ -399,18 +399,18 @@ The forms each item is expected to need beyond this feature, from its source in 
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| GN-01 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-02 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-03 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-04 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-05 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-06 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-07 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-08 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-09 | P1: generic functions, methods and traits (A) | - | Pending |
-| GN-10 | P1: handles (B) | - | Pending |
-| GN-11 | P1: handles (B) | - | Pending |
-| GN-12 | P1: handles (B) | - | Pending |
+| GN-01 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-02 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-03 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-04 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-05 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-06 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-07 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-08 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-09 | P1: generic functions, methods and traits (A) | - | Delivered (phase A) |
+| GN-10 | P1: handles (B) | - | Delivered (phase B) |
+| GN-11 | P1: handles (B) | - | Delivered (phase B) |
+| GN-12 | P1: handles (B) | - | Delivered (phase B) |
 | GN-13 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-14 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-15 | P1: generic modules and generation (C) | - | Delivered (phase C) |
@@ -425,14 +425,14 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-24 | P1: templates and implicit params (D) | - | Delivered (phase D) |
 | GN-25 | P1: templates and implicit params (D) | - | Delivered (phase D) |
 | GN-26 | P1: templates and implicit params (D) | - | Delivered (phase D) |
-| GN-27 | P2: the stdlib built on generics (E) | - | Pending |
-| GN-28 | P2: the stdlib built on generics (E) | - | Pending |
-| GN-29 | P1: every phase keeps the rest intact | - | Pending |
-| GN-30 | P1: every phase keeps the rest intact | - | Pending |
-| GN-31 | P1: every phase keeps the rest intact | - | Pending |
+| GN-27 | P2: the stdlib built on generics (E) | - | Delivered (phase E) |
+| GN-28 | P2: the stdlib built on generics (E) | - | Delivered (phase E) |
+| GN-29 | P1: every phase keeps the rest intact | - | Delivered (every phase) |
+| GN-30 | P1: every phase keeps the rest intact | - | Delivered (every phase) |
+| GN-31 | P1: every phase keeps the rest intact | - | Delivered (every phase) |
 | GN-32 | P1: generic functions, methods and traits (C) | - | Delivered (phase C) |
 
-**Coverage:** 32 total, 0 mapped to tasks (spec only).
+**Coverage:** 32 total, 32 delivered (phases A to E: tasks `tasks.md`, `tasks-c.md`, `tasks-d.md`, `tasks-e.md`; checks `checks.md`).
 
 ---
 

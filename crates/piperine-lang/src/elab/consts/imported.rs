@@ -53,6 +53,30 @@ impl Elaboration<'_, '_> {
         ConstTree::Composite { kind, parts }
     }
 
+    /// The text that tells the value `value` of a key param apart from every other, by what it holds: a composite is written out
+    /// by its parts, so two equal composites (two equal arrays of templates) have one text and select one body variant, where the
+    /// arena id of the aggregate (`agg2`) would give each its own.
+    pub(in crate::elab) fn key_text(&self, value: Constant) -> String {
+        Self::tree_text(&self.imported_tree(value))
+    }
+
+    /// `tree` written out: a scalar as its value, a composite as its parts in the brackets of its kind.
+    fn tree_text(tree: &ConstTree) -> String {
+        let (kind, parts) = match tree {
+            ConstTree::Scalar(value) => return value.to_string(),
+            ConstTree::Composite { kind, parts } => (kind, parts),
+        };
+        let written = parts.iter().map(Self::tree_text).collect::<Vec<_>>().join(",");
+        match kind {
+            CompositeKind::Tuple => format!("({written})"),
+            CompositeKind::Array => format!("[{written}]"),
+            CompositeKind::Struct => format!("{{{written}}}"),
+            CompositeKind::Option => format!("option({written})"),
+            CompositeKind::Variant(position) => format!("v{position}({written})"),
+            CompositeKind::Range { .. } => format!("range({written})"),
+        }
+    }
+
     /// A read of the composite `const` `decl` in value code: its tree written out as the expression
     /// that builds the value (a tuple, an array, a struct or a variant of constants). `None` after
     /// a diagnostic.
@@ -73,7 +97,7 @@ impl Elaboration<'_, '_> {
 
     /// `tree` as the expression of type `ty` that builds it. `None` for a range or a type with no
     /// constant form.
-    fn tree_expr(&mut self, tree: &ConstTree, ty: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn tree_expr(&mut self, tree: &ConstTree, ty: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
         match (tree, ty) {
             (ConstTree::Scalar(Constant::Int(position)), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: *position as u32, fields: Vec::new() }, ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Real(value)), _) => Some(self.emit(Expr::Real(Real::new(value.get())), ValueType::F64, origin.clone())),
@@ -82,6 +106,14 @@ impl Elaboration<'_, '_> {
             (ConstTree::Scalar(Constant::FloatBits(bits)), _) => Some(self.emit(Expr::FloatBits(*bits), ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Wide(id)), _) => Some(self.emit(Expr::Wide(*id), ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Aggregate(_)), _) => None,
+            // an `Option` is its two halves packed: `Some(p)` is `(true, p)`, `None` is `(false, zero)` (`compound.rs`)
+            (ConstTree::Composite { kind: CompositeKind::Option, parts }, ValueType::Option(payload)) => {
+                let (is, value) = match parts.first() {
+                    Some(held) => (self.emit(Expr::Bool(true), ValueType::Bool, origin.clone()), self.tree_expr(held, payload, origin)?),
+                    None => (self.emit(Expr::Bool(false), ValueType::Bool, origin.clone()), self.zero(payload, origin.clone())?),
+                };
+                Some(self.emit(Expr::OptionPack { is, value }, ty.clone(), origin.clone()))
+            }
             (ConstTree::Composite { kind, parts }, _) => {
                 let wanted = match (kind, ty) {
                     (CompositeKind::Tuple, ValueType::Tuple(types)) => types.clone(),
@@ -116,7 +148,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `tree` as a constant of type `ty`.
-    fn import_tree(&mut self, expr: ExprId, tree: &ConstTree, ty: &ValueType) -> Result<Constant, ConstFault> {
+    pub(in crate::elab) fn import_tree(&mut self, expr: ExprId, tree: &ConstTree, ty: &ValueType) -> Result<Constant, ConstFault> {
         match (tree, ty) {
             // a unit variant of an enum with no field: its tag is the position of the variant
             (ConstTree::Scalar(Constant::Int(position)), ValueType::Enum(_)) => Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ty.clone(), variant: Some(*position as u32), parts: Vec::new() }))),

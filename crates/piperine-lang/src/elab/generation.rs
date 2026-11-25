@@ -49,6 +49,8 @@ pub(super) struct GeneratedItems {
     /// Every item met outside a generation or inside one, with its iteration, in the order the generation unrolls them: source
     /// order, a `for` iteration by iteration (§12.1.2).
     sequence: Vec<(DeclId, Iteration)>,
+    /// The frame whose module's generation this is: the frame its array lengths and conditions fold over.
+    pub(super) frame: usize,
 }
 
 impl GeneratedItems {
@@ -92,7 +94,12 @@ impl GeneratedLevels {
 impl Elaboration<'_, '_> {
     /// Unrolls the generation of `module`'s body, over the key params of the body being lowered.
     pub(super) fn expand_generation(&mut self, module: DeclId) {
-        self.generated = GeneratedItems::default();
+        self.expand_generation_of(module, 0);
+    }
+
+    /// Unrolls the generation of `module`, the module of the frame `frame`, over the keys of the frame being lowered.
+    pub(super) fn expand_generation_of(&mut self, module: DeclId, frame: usize) {
+        self.generated = GeneratedItems { frame, ..GeneratedItems::default() };
         let children = self.design.decl_data(module).children.clone();
         self.expand_items(&children, None);
     }
@@ -251,7 +258,8 @@ impl Elaboration<'_, '_> {
         let Some(elaborated) = self.generated.of(decl).map(Vec::len) else { return true };
         let loops = self.generation_loops(decl).len();
         let typed = self.consts.typed_carrier(decl).or_else(|| self.consts.typed_node_array(decl));
-        let Some(shape) = typed.and_then(|ty| self.shape_in(&ty, 0)) else { return true };
+        let frame = self.generated.frame;
+        let Some(shape) = typed.and_then(|ty| self.shape_in(&ty, frame)) else { return true };
         let trips: u64 = shape.dims.iter().take(loops).product();
         if loops == 0 || elaborated as u64 == trips {
             return true;

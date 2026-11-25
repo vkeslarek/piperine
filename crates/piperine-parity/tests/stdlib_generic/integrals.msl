@@ -1,0 +1,16 @@
+//! `idt` and `idtmod` (§22.2.8, §22.2.9) of a constant of 1 MV/s (`idt`) and 0.3 MV/s (`idtmod`): the integral from an initial
+//! condition, one held by a `reset` between 5 and 7 us, one over a `Thermal` node, and an integral wrapped into [-0.5, 0.5).
+//! The expected values are computed by Rust in `source_stdlib_generic.rs`.
+
+module IntegralBench() {
+    signal rst: Bit = false;
+    let plain = idt(1M, Some(0.25));
+    let held = idt(1M, Some(0.25), reset: rst);
+    let hot = idt::<Thermal>(1M, Some(0.25));
+    let wrapped = idtmod(0.3M, Some(0.0), 1.0, Some(-0.5));
+}
+digital for IntegralBench {
+    on at(5u) { rst <- true; }
+    on at(7u) { rst <- false; }
+    on every(0.5u, 1u) { emit!("integral", plain = plain, held = held, hot = hot, wrapped = wrapped); }
+}

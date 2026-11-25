@@ -569,7 +569,7 @@ impl Elaboration<'_, '_> {
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
             // A module with a result is hoisted: its result is read where the placement stands.
-            (_, Some(Callee::Module(_))) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
+            (_, Some(Callee::Module(_)) | None) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
             (_, Some(Callee::Module(_))) => {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None
@@ -832,9 +832,20 @@ impl Elaboration<'_, '_> {
             Constant::Int(v) => self.emit(Expr::Int(v), ty, origin),
             Constant::FloatBits(bits) => self.emit(Expr::FloatBits(bits), ty, origin),
             Constant::Wide(id) => self.emit(Expr::Wide(id), ty, origin),
-            // The const evaluator builds no composite constant before the aggregate lowering; a
-            // composite folded value reaching here would be a lowering bug, never user input.
-            Constant::Aggregate(id) => panic!("the composite constant agg{} reached constant_expr before the aggregate lowering exists", id.0),
+            // A composite constant of the IR's arena (a param of a hoisted placement) is written out as the expression that builds it
+            // (`consts/imported.rs`), an `Option` as its packed pair.
+            Constant::Aggregate(id) => {
+                let tree = self.imported_tree(value);
+                match self.tree_expr(&tree, &ty, &origin) {
+                    Some(built) => built,
+                    // the checker's types exclude a composite with no form at its type: reaching here is the elaborator's bug, said
+                    // as one, and the run gives no `Ir` (the stand-in below never reaches a backend)
+                    None => {
+                        self.internal_error(&format!("the composite constant agg{} has no constant form at its type {ty:?}", id.0));
+                        self.emit(Expr::Int(0), ty, origin)
+                    }
+                }
+            }
         }
     }
 
@@ -910,7 +921,7 @@ impl Elaboration<'_, '_> {
                     Some(self.emit(Expr::Local(*index), ty, origin))
                 }
                 // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
-                None if scope.frame == 0 && self.body_let_value(decl).is_some() && self.generated.of(self.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
+                None if self.body_let_value(decl).is_some() && self.generated.of(self.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
                 // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
                 None if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;

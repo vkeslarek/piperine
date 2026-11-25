@@ -355,3 +355,94 @@ fn a_value_input_passed_by_name_reads_its_argument() {
     let named = format!("{items}module Top(o: Electrical) {{ }}\nanalog for Top {{ v(o) +> scaled(2.0, gain: 3.0); }}\n");
     assert_eq!(Elab::ir(&named, "Top").print_structural(), Elab::ir(&positional, "Top").print_structural(), "the same body");
 }
+
+/// A module with a result whose params are an array and a tuple of reals, placed by `Top` (part III §8.3.12: a placement binds
+/// each param to a constant, a composite one included).
+const COMPOSITE_PARAMS: &str = "module Poly(x: f64) -> f64 { c: [f64; 2] = [1.0, 2.0]; t: (f64, f64) = (3.0, 4.0); x * c[1] + t.0 }\nmodule Top() { signal y: Bit<f64> = 0.0; let a = Poly(2.0) { c: [5.0, 7.0] }; let b = Poly(2.0) { }; }\ndigital for Top { on every(1n, 1n) { y <- a + b; } }";
+
+#[test]
+fn a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant() {
+    // §8.3.12: the placement `a` gives the array `c` its own value, `b` leaves the default; each read of the result folds `c[1]`
+    // and `t.0` from its frame's constant: no refusal, and the two placements hold the two arrays' elements
+    let ir = Elab::ir(COMPOSITE_PARAMS, "Top");
+    let printed = ir.print_structural();
+    for wanted in ["([5.0, 7.0] : [f64; 2])[1i32]", "([1.0, 2.0] : [f64; 2])[1i32]"] {
+        assert!(printed.contains(wanted), "the read `c[1]` goes through the placement's own array {wanted}:\n{printed}");
+    }
+    assert!(printed.contains("((3.0, 4.0) : (f64, f64)).0"), "the tuple default `t.0` is read through its constant:\n{printed}");
+}
+
+#[test]
+fn an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves() {
+    // §3.2.10 with §8.3.12 (GAPS L89): a module whose result is an `Option<u8>` read in a reaction (`.is_some()`, `.unwrap_or`)
+    // lowers to the two halves of its result expression, read in the callee's frame
+    let src = "module Hold(in x: Bit<Option<u8>>) -> Option<u8> { x }\nmodule Top() {\n  signal x: Bit<Option<u8>> = None;\n  signal some: Bit = false;\n  signal n: Bit<u8> = 0;\n  let h = Hold(x);\n}\ndigital for Top { on at(1n) { some <- h.is_some(); n <- h.unwrap_or(7); } }\n";
+    let ir = Elab::ir(&src, "Top");
+    let top = body(&ir, "Top");
+    let printed = ir.print_structural();
+    assert!(!reaction_exprs(&ir, &top, 0).is_empty() && printed.contains("some <- h.x.is") && printed.contains("n <- if h.x.is"), "the reaction reads the two halves of the result:\n{printed}");
+}
+
+/// One `Option`-carrying param of a module with a result, placed by `Top` at its default (part III §3.2.10 with §8.3.12).
+fn option_param_module(declaration: &str, read: &str, given: &str) -> String {
+    format!("module Inner(x: f64) -> f64 {{ {declaration} x * {read} }}\nmodule Top() {{ signal y: Bit<f64>; let b = Inner(1.0){given}; y = b; }}")
+}
+
+#[test]
+fn an_option_param_of_a_hoisted_placement_is_bound_to_its_constant() {
+    // §3.2.10, §8.3.12: an `Option` param, an array of them, one inside a tuple or a struct, by default and given, binds to its pair
+    // `(is, value)`: `Some(2.0)` is `option(true, 2.0)` and `None` is `option(false, 0.0)`; no refusal, no abort
+    let cases = [
+        ("c: Option<f64> = Some(2.0);", "c.unwrap_or(5.0)", "", "option(true, 2.0)"),
+        ("c: Option<f64> = Some(2.0);", "c.unwrap_or(5.0)", " { c: Some(3.0) }", "option(true, 3.0)"),
+        ("c: Option<f64> = Some(2.0);", "c.unwrap_or(5.0)", " { c: None }", "option(false, 0.0)"),
+        ("c: [Option<f64>; 2] = [Some(1.0), None];", "c[0].unwrap_or(5.0)", "", "[(option(true, 1.0) : Option<f64>), (option(false, 0.0) : Option<f64>)]"),
+        ("c: [Option<f64>; 2] = [Some(1.0), None];", "c[0].unwrap_or(5.0)", " { c: [None, Some(2.0)] }", "[(option(false, 0.0) : Option<f64>), (option(true, 2.0) : Option<f64>)]"),
+        ("c: (f64, Option<f64>) = (1.0, Some(2.0));", "c.1.unwrap_or(5.0)", "", "(1.0, (option(true, 2.0) : Option<f64>))"),
+    ];
+    for (declaration, read, given, wanted) in cases {
+        let printed = Elab::ir(&option_param_module(declaration, read, given), "Top").print_structural();
+        assert!(printed.contains(wanted), "{declaration} {given}: the read goes through {wanted}:\n{printed}");
+    }
+    let record = "struct P { a: Option<f64>, b: f64 }\nmodule Inner(x: f64) -> f64 { p: P = P { a: Some(1.0), b: 2.0 }; x * p.a.unwrap_or(3.0) + p.b }\nmodule Top() { signal y: Bit<f64>; let b = Inner(1.0); y = b; }";
+    assert!(Elab::ir(record, "Top").print_structural().contains("option(true, 1.0)"));
+    let whole = "fn sum(a: [Option<f64>; 2]) -> f64 { a[0].unwrap_or(1.0) + a[1].unwrap_or(2.0) }\nmodule Inner(x: f64) -> f64 { c: [Option<f64>; 2] = [Some(1.0), None]; x * sum(c) }\nmodule Top() { signal y: Bit<f64>; let b = Inner(1.0); y = b; }";
+    assert!(Elab::ir(whole, "Top").print_structural().contains("sum(([(option(true, 1.0)"), "the array is passed whole to the fn");
+}
+
+#[test]
+fn a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templates_params() {
+    // §8.4.4, §8.3.12: `s(5.0)` with `s: C` and `C: Fn(f64) -> f64` places the module of the template the param holds, a module with a
+    // result, at that template's params: `5.0 * 9.0` for the placement that gives `r` 9, `5.0 * 2.0` for the one that gives 2
+    let src = |r: f64| format!("module Scale(x: f64) -> f64 {{ r: f64 = 1.0; x * r }}\nmodule Mid<C: Fn(f64) -> f64>(in u: Bit<f64>) {{ s: C; signal y: Bit<f64> = 0.0; let a = s(5.0); }}\ndigital<C> for Mid<C> {{ on at(1n) {{ y <- a; }} }}\nmodule Top() {{ signal u: Bit<f64> = 0.0; let m = Mid {{ s: Scale {{ r: {r:?} }} }}(u); }}");
+    for r in [9.0, 2.0] {
+        let printed = Elab::ir(&src(r), "Top").print_structural();
+        assert!(printed.contains(&format!("y <- (5.0 * {r:?})")), "the result is read at the template's `r`:\n{printed}");
+    }
+}
+
+#[test]
+fn a_callable_bound_param_of_a_hoisted_module_places_its_template() {
+    // §8.4.4, §8.3.12 one level down: `Outer<C: Fn(f64) -> f64>` has a result itself, so its frame holds `s`; `s(x)` places `Scale` at
+    // the template's `r` as its result, through a `let`, in its generation, in a reaction of a hoisted module with a value input, and
+    // through a second generic module the caller's `t: D` is forwarded to (`D` satisfies `C`'s `Fn(f64) -> f64` by its own bound)
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let (x, r) = (1.0, 7.0);
+    let product = format!("({x:?} * {r:?})");
+    let cases = [
+        ("module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; s(x) }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { s: Scale { r: 7.0 } }; y = a; }", format!("drive y = {product}")),
+        ("module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; let v = s(x); v }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { s: Scale { r: 7.0 } }; y = a; }", format!("drive y = {product}")),
+        ("module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; signal z: [Bit<f64>; 2]; for k in 0..2 { let v = s(x); z[k] = v; } x }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { s: Scale { r: 7.0 } }; y = a; }", format!("drive a.z[1] = {product}")),
+        ("module Inner<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; s(x) }\nmodule Outer<D: Fn(f64) -> f64>(x: f64) -> f64 { t: D; Inner(x) { s: t } }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { t: Scale { r: 7.0 } }; y = a; }", format!("drive y = {product}")),
+        ("module Outer<C: Fn(f64) -> f64>(in u: Bit<f64>) { s: C; signal y: Bit<f64> = 0.0; }\ndigital<C> for Outer<C> { on u.changed() { y <- s(1.0); } }\nmodule Top() { signal u: Bit<f64> = 0.0; let a = Outer(u) { s: Scale { r: 7.0 } }; }", format!("y <- {product}")),
+    ];
+    for (source, wanted) in cases {
+        let printed = Elab::ir(&format!("{scale}{source}"), "Top").print_structural();
+        assert!(printed.contains(&wanted), "{source}: wants `{wanted}` in\n{printed}");
+    }
+    // a forwarded parameter whose own bound is another `Fn` does not satisfy `C`'s: `E0187` naming both
+    let mismatch = format!("{scale}module Add(a: f64, b: f64) -> f64 {{ a + b }}\nmodule Inner<C: Fn(f64) -> f64>(x: f64) -> f64 {{ s: C; s(x) }}\nmodule Outer<D: Fn(f64, f64) -> f64>(x: f64) -> f64 {{ t: D; Inner(x) {{ s: t }} }}\nmodule Top() {{ signal y: Bit<f64>; let a = Outer(1.0) {{ t: Add {{ }} }}; y = a; }}");
+    let refused = Elab::run(&mismatch, "Top").expect_err("a forwarded bound of two inputs");
+    assert_eq!(Elab::codes(&refused), ["E0187"]);
+    assert!(refused[0].diagnostic.message.contains("`D` does not satisfy the bound `Fn` of `C`"), "{}", refused[0].diagnostic.message);
+}

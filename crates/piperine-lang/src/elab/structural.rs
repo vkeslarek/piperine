@@ -367,7 +367,7 @@ impl Elaboration<'_, '_> {
         for module in modules {
             let order = self.params_of(*module);
             for param in order.clone() {
-                if self.is_module_param(param) {
+                if self.is_template_param(param) {
                     self.keys.add(*module, param, &order);
                 }
             }
@@ -642,7 +642,7 @@ impl Elaboration<'_, '_> {
                 }
                 // a template value (`cell: A { r: l }`, `cell: sized(l)`, `cell: if sel { A {} } else { K }`) is a const expression over
                 // params (§8.4.6): every param it reads is structural, as for the head of a placement through a template
-                if self.is_module_param(given) {
+                if self.is_template_param(given) {
                     let mut read = Vec::new();
                     self.collect_choice_params(field.value, &mut read, &mut Vec::new());
                     out.extend(read.into_iter().map(|param| (child, param)));
@@ -685,7 +685,7 @@ impl Elaboration<'_, '_> {
 
     /// The key of the body `module` gets when its params hold `values`. `None` when a key param has no value in `values`.
     pub(super) fn body_key(&self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<BodyKey> {
-        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| value.to_string())).collect::<Option<Vec<_>>>()?;
+        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| self.key_text(value))).collect::<Option<Vec<_>>>()?;
         Some(BodyKey { module, instance: instance.cloned(), values: texts })
     }
 
@@ -991,7 +991,7 @@ impl Elaboration<'_, '_> {
         let top = path.split('.').next().unwrap_or(path);
         let given = self.overrides.value(top, path, &plans[index].name).cloned()?;
         // D13: the host has no text for a template; the param is bound in the source.
-        if self.is_module_param(key) {
+        if self.is_template_param(key) {
             let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given:?}", plans[index].name);
             self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "a module-typed param is bound in the source"));
             return None;

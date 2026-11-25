@@ -1,0 +1,22 @@
+//! The `zi_*` filters (§22.2.12, §22.2.13) sampled every 1 us over an input that holds 1 from the operating point, falls to 0 at
+//! 2.5 us and returns to 1 at 5.5 us: `nd` and `np` are y[n] = 0.5 x[n] + 0.5 y[n-1]; `zd` and `zp` are
+//! y[n] = x[n] - 0.5 x[n-1] + 0.5 y[n-1]. The result is recorded a quarter us after each sample; the expected values are computed
+//! by Rust in `source_stdlib_generic.rs`.
+
+module ZiBench() {
+    signal go: Bit = true;
+    let step = if go { 1.0 } else { 0.0 };
+    let nd = zi_nd::<1, 1>(step, 1u) { num: [0.5], den: [-0.5] };
+    let np = zi_np::<1, 1>(step, 1u) { num: [0.5], poles: [(0.5, 0.0)] };
+    let zd = zi_zd::<1, 1>(step, 1u) { zeros: [(0.5, 0.0)], den: [-0.5] };
+    let zp = zi_zp::<1, 1>(step, 1u) { zeros: [(0.5, 0.0)], poles: [(0.5, 0.0)] };
+}
+digital for ZiBench {
+    on at(2.5u) { go <- false; }
+    on at(5.5u) { go <- true; }
+    on every(1.25u, 1u) { emit!("zi", nd = nd, np = np, zd = zd, zp = zp); }
+}
+
+module ZiRefused() {
+    let y = zi_zp::<1, 1>(1.0, 1u) { zeros: [(0.5, 0.0)], poles: [(0.5, 1.0)] };
+}

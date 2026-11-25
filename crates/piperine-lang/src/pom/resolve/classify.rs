@@ -457,6 +457,47 @@ fn template_module(design: &Design, expr: ExprId, templates: &BTreeMap<ExprId, S
             modules.all(|module| module == Some(chosen)).then_some(chosen)
         }
         ExprKind::Block(block) => block_template(design, block, templates, depth + 1),
+        // one element of an array of templates of one module (§8.4.1, GAPS L88)
+        ExprKind::Index { expr: array, .. } => array_template(design, *array, templates, depth + 1),
+        _ => None,
+    }
+}
+
+/// The module every element of the array `expr` is a template of: an array written out, a repeated element, a `let` or a `const`
+/// holding one, or a name declared with the array type `[M; N]` of a module `M`; `None` for any other expression or elements
+/// of two modules.
+fn array_template(design: &Design, expr: ExprId, templates: &BTreeMap<ExprId, StructClass>, depth: usize) -> Option<DeclId> {
+    if depth > 64 {
+        return None;
+    }
+    let element_type = |ty: TypeId| match design.type_node(ty).kind {
+        TypeKind::Array { elem, .. } => match design.type_resolution(elem) {
+            Resolution::Decl(m) if matches!(design.decl_data(m).kind, DeclKind::Module(_)) => Some(m),
+            _ => None,
+        },
+        _ => None,
+    };
+    match &design.expr_node(expr).kind {
+        ExprKind::Paren(inner) => array_template(design, *inner, templates, depth),
+        ExprKind::Array(items) => {
+            let mut modules = items.iter().map(|item| template_module(design, *item, templates, depth + 1));
+            let chosen = modules.next()??;
+            modules.all(|module| module == Some(chosen)).then_some(chosen)
+        }
+        ExprKind::ArrayRepeat { elem, .. } => template_module(design, *elem, templates, depth + 1),
+        ExprKind::Path(_) => match path_res(design, expr) {
+            Resolution::Decl(d) => match &design.decl_data(d).kind {
+                DeclKind::Binding(_) => {
+                    let parent = design.decl_data(d).parent?;
+                    let DeclKind::Let(data) = &design.decl_data(parent).kind else { return None };
+                    array_template(design, data.value, templates, depth + 1)
+                }
+                DeclKind::Const(data) => data.value.and_then(|value| array_template(design, value, templates, depth + 1)).or_else(|| element_type(data.ty)),
+                DeclKind::Param(_) | DeclKind::Port(_) => element_type(design.declared_type(d)?),
+                _ => None,
+            },
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -515,7 +556,7 @@ fn callee_class(design: &Design, callee: ExprId, templates: &BTreeMap<ExprId, St
         },
         // `(if c { R { .. } } else { R { .. } })(connections)`, `(match ..)(..)`, `({ .. })(..)`: a choice of templates of one module
         // written as the head (§8.4.6), placed through no declaration; any other expression is a value called by its type
-        ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) => match template_module(design, callee, templates, 0) {
+        ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) | ExprKind::Index { .. } => match template_module(design, callee, templates, 0) {
             Some(m) => (CallClass::Instance { module: Some(m), via: None }, Some(m)),
             None => (CallClass::Function, None),
         },

@@ -1,0 +1,52 @@
+//! `inertial` (§22.5.8) over two enums with a `Default`: `T` is bound by `Default` (rule 7), which
+//! `bool` and the integers do not implement (§3.3.4). The input changes at the instants of the table in
+//! `source_stdlib_generic.rs`; the result is recorded every ns, half a ns after the instants the table uses. The expected output is computed there by Rust.
+
+#[derive(Repr, PartialEq)]
+enum Level { Low, Mid, High }
+impl Default for Level { fn default() -> Level { Level::Low } }
+
+#[derive(Repr, PartialEq)]
+enum Mode { Idle, Run }
+impl Default for Mode { fn default() -> Mode { Mode::Idle } }
+
+module LevelBench() {
+    signal x: Bit<Level> = Level::Low;
+    let y = inertial(x, 5n);
+}
+digital for LevelBench {
+    on at(10n) { x <- Level::Mid; }
+    on at(30n) { x <- Level::Low; }
+    on at(50n) { x <- Level::High; }
+    on at(53n) { x <- Level::Mid; }
+    on at(70n) { x <- Level::High; }
+    on at(76n) { x <- Level::Low; }
+    on every(0.5n, 1n) { emit!("y", value = y); }
+}
+
+module ModeBench() {
+    signal x: Bit<Mode> = Mode::Idle;
+    let y = inertial(x, 5n);
+}
+digital for ModeBench {
+    on at(10n) { x <- Mode::Run; }
+    on at(30n) { x <- Mode::Idle; }
+    on at(50n) { x <- Mode::Run; }
+    on at(53n) { x <- Mode::Idle; }
+    on at(70n) { x <- Mode::Run; }
+    on at(76n) { x <- Mode::Idle; }
+    on every(0.5n, 1n) { emit!("y", value = y); }
+}
+
+// `inertial` at `Option<u8>` (GAPS L89: the result of a module read as an `Option`): `None` until `Some(3)` holds for 20 ns
+module OptionBench() {
+    signal x: Bit<Option<u8>> = None;
+    let y = inertial(x, 5n);
+}
+digital for OptionBench {
+    on at(10n) { x <- Some(3); }
+    on at(30n) { x <- None; }
+    on at(50n) { x <- Some(4); }
+    on at(53n) { x <- None; }
+    on every(0.5n, 1n) { emit!("y", some = y.is_some(), n = y.unwrap_or(0)); }
+}

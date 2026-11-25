@@ -1,0 +1,50 @@
+//! The `Water` model of Part IV §13 over the stdlib `idt` at a nature the model declares (`idt::<Heat>`): a heater of constant
+//! power (1 MW from 0 s on, ambient 293.15 K) warms 1 kg of water to 373.15 K, holds it there while the heat vaporizes it, and warms the vapor after.
+
+#[derive(Repr, PartialEq)]
+enum Phase { Liquid, Boiling, Vapor }
+
+nature Heat {
+    potential: Energy { access: joules, units: "J", abstol: 1m },
+    flow:      Power  { access: pwr,    units: "W", abstol: 1n },
+}
+
+module Water(t: Thermal) {
+    mass: f64 = 1.0;     // kg
+    tb:   f64 = 373.15;  // K
+    cl:   f64 = 4.18k;   // J/(kg·K)
+    cv:   f64 = 2.01k;
+    hv:   f64 = 2.26M;   // J/kg
+    pub signal phase: Bit<Phase> = Phase::Liquid;
+    let ph = phase;
+    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);   // energy since boiling began
+}
+
+analog for Water {
+    match ph {
+        Phase::Liquid  => { pwr(t) +> ddt(mass * cl * temp(t)); }
+        Phase::Boiling => { temp(t) +> tb; }                 // held; the heat vaporizes
+        Phase::Vapor   => { pwr(t) +> ddt(mass * cv * temp(t)); }
+    }
+}
+
+digital for Water {
+    on above(temp(t) - tb) && phase == Phase::Liquid { phase <- Phase::Boiling; }   // also at time 0 if hot
+    on above(absorbed - mass * hv) { phase <- Phase::Vapor; }
+}
+
+digital for Water {
+    on phase.changed() { emit!("phase", value = phase); }
+}
+
+// A heater of 1 MW switched on at 0 s warms the water from the ambient 293.15 K, which a 1 mW/K leak holds the node to before.
+module Boiler() {
+    signal t: Thermal;
+    signal amb: Thermal;
+    let water = Water(t);
+}
+analog for Boiler {
+    temp(amb) +> 293.15;
+    pwr(t, amb) +> 1m * (temp(t) - temp(amb));
+    pwr(t, gnd) +> if now() > 0.0 { -1M } else { 0.0 };
+}

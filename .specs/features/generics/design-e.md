@@ -152,7 +152,7 @@ compiles from its source in `std/`."
 | # | Open point | Default taken | Why |
 | - | ---------- | ------------- | --- |
 | DE3 | `cast` and `same` (design.md D15 said phase E replaces their intrinsics) | **answered (user, 2026-11-23):** their intrinsics leave in phase C, T55, right after L70; phase E only checks they resolve to their source like the rest of the group | the user ruled the work lives in `generics` |
-| DE4 | Files and numbering | `design-e.md`/`tasks-e.md`; tasks T103 to T115, checks C110 to C119, phases 21 and 22 | design-c.md DC2 |
+| DE4 | Files and numbering | `design-e.md`/`tasks-e.md`; tasks T103 to T115, checks C142 to C151, C135 and C152 to C155 (renumbered at fix round 1: C110 to C119 and C136 to C139 collided with phases C and D), phases 21 and 22 | design-c.md DC2 |
 
 ## Questions answered (user, 2026-11-23)
 

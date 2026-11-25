@@ -251,16 +251,13 @@ fn a_let_in_generation_read_outside_its_loops_is_the_array_of_its_values() {
 }
 
 #[test]
-fn an_item_only_some_iterations_elaborate_and_generation_in_a_hoisted_module_are_refused_by_name() {
+fn an_item_only_some_iterations_elaborate_is_refused_by_name() {
     // an `if` inside a `for` that only some iterations take would make an array with gaps (§8.2.23 with §8.2.24): refused by
-    // that name, the one diagnostic; generation in the body of a module hoisted into its caller is refused by its name
+    // that name, the one diagnostic (generation in a hoisted module's body runs: T118)
     let gaps = "module Top(in clk: Bit) { for k in 0..2 { if k == 0 { signal s: Bit = false; } } }\n";
     let found = GenerationSources::refused(gaps);
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].0 == "P0001" && found[0].1.contains("a generated array with gaps"), "{found:?}");
-    let hoisted = "module H(x: f64) -> f64 { for k in 0..2 { signal s: Bit = false; } x }\nmodule Top(in clk: Bit) { let h = H(1.0); signal z: Bit<f64> = 0.0; }\n";
-    let found = GenerationSources::refused(hoisted);
-    assert!(found.iter().all(|(code, _)| code == "P0001") && found.iter().any(|(_, message)| message.contains("generation in its body")), "{found:?}");
 }
 
 #[test]
@@ -279,4 +276,19 @@ fn a_member_of_a_generated_instance_is_read_by_its_iteration_or_its_ordinal() {
     let past = format!("{cell}module Top(in clk: Bit) {{ signal y: [Bit; 2]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} signal z: Bit; z = c[2].m; }}\n");
     let found = GenerationSources::refused(&past);
     assert!(found.iter().any(|(code, message)| code == "E0342" && message.contains("`c`")), "{found:?}");
+}
+
+#[test]
+fn generation_in_a_hoisted_module_unrolls_under_its_frame() {
+    // §8.2.23 with §8.3.12: each placement of a module with a result is a frame that unrolls the generation of its own body under
+    // its own params: `Pick` places 2 carriers for `n = 2` and 3 for `n = 3`, named under the placement with the iteration's
+    // subscript, and the `if` of its body keeps the arm its param selects
+    let src = "module Pick(x: u8) -> u8 {\n  n: usize = 2;\n  for k in 0..n { signal s: Bit<u8>; s = x + (k as u8); }\n  if n > 2 { signal extra: Bit<u8>; extra = x; }\n  s[0]\n}\nmodule Top() {\n  signal a: Bit<u8> = 1;\n  signal y: Bit<u8>;\n  signal z: Bit<u8>;\n  let low = Pick(a);\n  let high = Pick(a) { n: 3 };\n  y = low;\n  z = high;\n}\n";
+    let ir = GenerationSources::ir(src);
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("the body Top");
+    let counts: Vec<(String, Option<u64>)> = body.carriers().iter().map(|c| (c.name.clone(), c.count)).collect();
+    for wanted in [("low.s", Some(2)), ("high.s", Some(3)), ("high.extra", None)] {
+        assert!(counts.iter().any(|(name, count)| (name.as_str(), *count) == wanted), "{wanted:?} in {counts:?}");
+    }
+    assert!(!counts.iter().any(|(name, _)| name == "low.extra"), "the frame of `n = 2` does not take the `if`: {counts:?}");
 }

@@ -289,6 +289,21 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
+    /// `P0004`: an invariant of the elaborator broken (a bug in it, not in the model), reported at the module of the body being
+    /// lowered; the run then gives no `Ir`, as for an ill-formed one (`well_formed`).
+    pub(super) fn internal_error(&mut self, what: &str) {
+        // every lowering runs with frame 0 set; before one, the body asked for (`lowering`) names the module
+        let module = self.frames.first().map(|frame| frame.module).or_else(|| self.lowering.as_ref().map(|key| key.module));
+        let (file, span) = match module {
+            Some(module) => {
+                let data = self.design.decl_data(module);
+                (data.file, data.name.as_ref().map_or(data.span, |n| n.span))
+            }
+            None => (FileId(0), Span::default()),
+        };
+        self.report(file, Diagnostic::new("P0004", format!("internal error: {what}"), span, "this is a bug in the elaborator, not in the model"));
+    }
+
     /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
@@ -310,5 +325,23 @@ mod tests {
         assert!(!ir.check().is_empty(), "the crafted IR must be broken");
         let err = Elaboration::well_formed(&design, types.reached()[0], ir).expect_err("no Ir");
         assert!(err.iter().all(|d| d.diagnostic.code == "P0004" && d.diagnostic.message.contains("internal error")), "{err:?}");
+    }
+
+    #[test]
+    fn a_composite_constant_with_no_form_at_its_type_is_an_internal_error_not_a_panic() {
+        // the checker's types never ask `constant_expr` for an array at `bool`; asked anyway, the elaborator says `P0004` at the
+        // module being lowered and goes on, so the run ends with that diagnostic and no `Ir`
+        let design = Design::builder().source("top.msl", "module Top() { }").build();
+        let types = Types::check(&design, "Top").expect("a clean model");
+        let top = types.reached()[0];
+        let mut elaboration = Elaboration::new(&design, &types, Overrides::default());
+        elaboration.frames = vec![Frame::root(top)];
+        let pair = elaboration.ir.aggregate(piperine_ir::AggregateData { ty: ValueType::Array(Box::new(ValueType::F64), 2), variant: None, parts: vec![piperine_ir::Constant::Real(piperine_ir::Real::new(1.0)); 2] });
+        let origin = piperine_ir::Origin { file: "top.msl".to_string(), line: 1, col: 1 };
+        elaboration.constant_expr(piperine_ir::Constant::Aggregate(pair), ValueType::Bool, origin);
+        let codes: Vec<&str> = elaboration.diagnostics.iter().map(|d| d.diagnostic.code.as_ref()).collect();
+        assert_eq!(codes, ["P0004"], "{:?}", elaboration.diagnostics);
+        let found = &elaboration.diagnostics[0];
+        assert!(found.diagnostic.message.starts_with("internal error: the composite constant") && found.file == design.decl_data(top).file, "{found:?}");
     }
 }

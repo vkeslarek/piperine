@@ -3,7 +3,7 @@
 
 use piperine_ir::Constant;
 
-use super::{Bindings, ConstEval, ConstFault};
+use super::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree};
 use crate::elab::instances::ConcreteValue;
 use crate::elab::templates::{TemplateValue, Templates};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
@@ -27,7 +27,13 @@ impl ConstEval<'_, '_> {
         let mut folded = Vec::new();
         for field in fields {
             let Resolution::Decl(param) = field.res else { continue };
-            folded.push((param, self.fold(field.value, bindings)?, field.value));
+            let value = self.fold(field.value, bindings)?;
+            let mut tree = self.export(value);
+            // a bare `T` bound to an `Option<T>` param is `Some` of it (§3.2.3), as `Elaboration::fold_param_value` holds it
+            if self.types.implicit_some(field.value) {
+                tree = ConstTree::Composite { kind: CompositeKind::Option, parts: vec![tree] };
+            }
+            folded.push((param, tree, field.value));
         }
         let arguments = self.template_arguments(expr, bindings)?;
         Ok(self.templates.intern(TemplateValue { module, arguments, fields: folded }))
@@ -80,8 +86,15 @@ impl ConstEval<'_, '_> {
     /// the params before it (§8.1.16). A required param the block leaves out has none.
     pub(in crate::elab) fn template_bindings(&mut self, template: &TemplateValue) -> Result<Bindings, ConstFault> {
         let mut known = Bindings::new();
-        for (param, value, _) in &template.fields {
-            known.bind(*param, *value);
+        for (param, tree, _) in &template.fields {
+            match tree {
+                ConstTree::Scalar(value) => known.bind(*param, *value),
+                // a composite param is read taken apart (`path`), the marker being its handle in this evaluator
+                ConstTree::Composite { .. } => {
+                    let marker = self.adopt(tree);
+                    known.bind_composite(*param, marker, tree.clone());
+                }
+            }
         }
         let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Param(_))).collect();
         for param in params {

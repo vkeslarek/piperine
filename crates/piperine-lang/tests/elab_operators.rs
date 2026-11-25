@@ -156,15 +156,15 @@ fn one_delay_call_is_one_site_however_often_it_is_read() {
 }
 
 #[test]
-fn noise_table_waits_for_its_dependencies() {
-    // AO-04 AC 3 (D17): `noise_table` is a module generic over `const N` with an array param. The generic module is
-    // placed (generics T71); what waits is the array param of a module with a result, a composite value where its
-    // hoisted frame reads a scalar; `GAPS.md` L58 holds it with the generics group (L45 closed with the noise sources).
+fn noise_table_places_with_its_array_param() {
+    // AO-04 AC 3 (D17), generics T110a and T112: `noise_table` is a module generic over `const N` with an array param; the
+    // placement binds the array at its hoisted frame and `table_model` reads the frame's constant, so the source elaborates
+    // to one noise source whose density is the table (it was refused while a composite param had no hoisted frame)
     let src = "module M(a: Electrical) { }\nanalog for M { i(a, gnd) +> noise_table::<2>(\"t\") { table: [(1k, 1e-18), (10k, 4e-18)] }; }\nmodule Top() { signal a: Electrical; let m = M(a); }";
-    let err = Elab::run(src, "Top").expect_err("noise_table is refused");
-    assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-    let message = &err[0].diagnostic.message;
-    assert!(message.contains("a composite value where a scalar is required in a param value of a module with a result"), "the refusal names the construct that waits: {message}");
+    let ir = Elab::ir(src, "Top");
+    let printed = ir.to_string();
+    assert!(printed.contains("= noise 0"), "one noise source: {printed}");
+    assert!(printed.contains("1e-18") && printed.contains("4e-18"), "the table's samples are in the body: {printed}");
 }
 
 #[test]

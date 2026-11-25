@@ -81,6 +81,8 @@ impl Checker<'_> {
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
             Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
+            // an array of templates (`pair: [Cell; 2]`, §8.4.1): each element a template, the param structural as one template is
+            Ty::Array(ref element, _) if matches!(**element, Ty::Module(_)) => Some(ty),
             // An integer, enum, `Option` or composite param (PI-01 to PI-03, CV-18).
             plain if self.is_param_type(&plain) => Some(plain),
             // a param of a type parameter (`reset: T`, §8.1.15): typed under the parameter's bounds

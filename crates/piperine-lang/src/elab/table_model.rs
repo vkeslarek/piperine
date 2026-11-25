@@ -112,7 +112,7 @@ impl Elaboration<'_, '_> {
     /// The `(abscissa, value)` pairs the constant `table` folds to; `None` after a diagnostic.
     fn table_samples(&mut self, scope: &Scope, table: ExprId) -> Option<Vec<(f64, f64)>> {
         let span = self.design.expr_node(table).span;
-        let tree = match self.consts.tree(table, &Bindings::new()) {
+        let tree = match self.consts.tree(table, &self.frame_bindings(scope.frame).overlaid(&scope.unrolled)) {
             Ok(tree) => tree,
             Err(fault) => {
                 self.const_fault(&fault, "the table of a `table_model`");

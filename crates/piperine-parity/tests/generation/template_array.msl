@@ -1,0 +1,21 @@
+//! An array of templates read by the index of a generation `for` (generics GN-17, T119, part III §8.4.1, §8.4.4): `fs[k](a)` places
+//! the module of element `k` at that element's params, so `y[k]` is `a * m` of the element.
+
+module Scale(x: u8) -> u8 {
+    m: u8 = 1;
+    x * m
+}
+
+module Bench() {
+    signal a: Bit<u8> = 3;
+    signal y: [Bit<u8>; 3];
+    let fs = [Scale { }, Scale { m: 2 }, Scale { m: 5 }];
+    for k in 0..3 {
+        let scaled = fs[k](a);
+        y[k] = scaled;
+    }
+}
+
+digital for Bench {
+    on at(1n) { a <- 4; }
+}

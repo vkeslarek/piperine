@@ -101,15 +101,19 @@ fn an_unreached_item_has_the_code_it_has_when_reached() {
 }
 
 #[test]
-fn the_standard_library_is_left_to_its_own_check() {
-    // an error in a `std` item that nothing reaches is not the project's (D2); the same error in
-    // the project is
+fn the_standard_library_is_checked_whole_with_no_instantiation() {
+    // GN-27 AC 3: every item of `std` (the embedded library, nothing placed) type-checks with no error
+    let design = Design::builder().source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let found = Types::check_model(&design).err().unwrap_or_default();
+    assert!(found.is_empty(), "{:?}", ModelSources::codes(&found));
+    // and an error in a `std` item that nothing reaches is reported like the same error in the project (D2 retired)
     let std_error = "pub fn broken(x: f64) -> bool { x + 1.0 }\n";
     let design = Design::builder().std_source("lib.msl", format!("pub mod prelude;\n{std_error}")).std_source("prelude.msl", "").source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
     assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
-    assert!(Types::check_model(&design).is_ok());
-    let (_, found) = ModelSources::errors(&format!("{std_error}module Top() {{ }}"));
-    assert_eq!(ModelSources::codes(&found), ["E0180"]);
+    let in_std = Types::check_model(&design).expect_err("an unreached `std` error is now found");
+    let (_, in_project) = ModelSources::errors(&format!("{std_error}module Top() {{ }}"));
+    assert_eq!(ModelSources::codes(&in_std), ModelSources::codes(&in_project));
 }
 
 #[test]

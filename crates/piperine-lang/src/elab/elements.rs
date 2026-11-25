@@ -134,7 +134,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn generated_carrier_levels(&self, scope: &Scope, root: ExprId) -> Vec<u64> {
         let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return Vec::new() };
         let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return Vec::new() };
-        if self.generated.of(decl).is_none() || scope.frame != 0 || !self.frames[0].carriers.contains_key(&decl) {
+        if self.generated.of(decl).is_none() || !self.frames[scope.frame].carriers.contains_key(&decl) {
             return Vec::new();
         }
         self.implicit_ordinals(decl, &scope.ordinals)
