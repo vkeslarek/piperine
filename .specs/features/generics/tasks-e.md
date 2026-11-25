@@ -88,7 +88,7 @@ T103 → T104 → T105 → T106 → T107 → T108
 ### Phase 22: The analog library items, `m` and noise, and the feature's closure
 
 ```
-T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 → T115
+T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 → T114 → T115
 ```
 
 ---
@@ -373,6 +373,28 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 �
 
 ---
 
+### T120: An `Option` result of a hoisted module is read in a reaction
+
+**What**: A module whose result is an `Option<T>` read in a reaction (`y.is_some()`, `y.unwrap_or(0)`, `let y = inertial(x, 5n)` at `T = Option<u8>`) lowers to the two halves of its result expression in the callee's frame (`lower_result_pair`, `elab/compound.rs`, `elab/hoist.rs`): GAPS L89 (found by T108) is closed without a row. Coordinator ruling 2026-11-24 (4): within callables/results scope and modest.
+**Where**: `crates/piperine-lang/src/elab/compound.rs`, `crates/piperine-lang/src/elab/hoist.rs`
+**Depends on**: T119
+**Reuses**: `lower_result`, `lower_option`
+**Requirement**: GN-28 (AC 1)
+**Executor**: Opus
+
+**Done when**:
+
+- [x] `an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves` passes under `**Run elabresults**`
+- [x] `inertial_over_an_option_reads_its_result_in_a_reaction` passes under `**Run srcstd**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(lang): an Option result of a hoisted module is read in a reaction`
+
+---
+
 ### T113: No item is refused because it is generic
 
 **What**: `std_library.rs` walks L58's generics group (`Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`, `MinPulse`) placing or calling each and asserts no refusal names "generic"; an item refused for another form names that form (none of the group is expected to be blocked once DE1 holds, so the test proves the rule on a dependency crate's generic module that places an `extern` module, L33: refused naming `extern` module, never "generic") and `GAPS.md` lists it under that form's id; GN-27's list in `spec.md` no longer names `merge` (struck at planning, DE2).
@@ -512,7 +534,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 Phase 21 → Phase 22
 
 Phase 21:  T103 → T104 → T105 → T106 → T107 → T108
-Phase 22:  T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 → T115
+Phase 22:  T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 → T114 → T115
 ```
 
 | Batch | Phases | Tasks | Notes |

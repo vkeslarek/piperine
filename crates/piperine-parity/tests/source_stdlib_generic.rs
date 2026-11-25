@@ -68,6 +68,14 @@ impl StdModels {
         }
     }
 
+    /// The integer field `name` of `record`.
+    fn integer(record: &Record, name: &str) -> i128 {
+        match record.fields.iter().find(|(field, _)| field == name) {
+            Some((_, Field::Int(value))) => (*value).into(),
+            other => panic!("{name} is an integer: {other:?}"),
+        }
+    }
+
     /// The boolean field `name` of `record`.
     fn boolean(record: &Record, name: &str) -> bool {
         match record.fields.iter().find(|(field, _)| field == name) {
@@ -534,5 +542,21 @@ fn noise_table_gives_the_interpolated_psd() {
     for (seen, f) in output.iter().zip(frequencies) {
         let wanted = 1e3 * TableModel::linear_constant(&table, f).sqrt();
         assert!((seen - wanted).abs() <= 1e-9 * wanted, "noise_table at {f} Hz: {seen:e}, table {wanted:e}");
+    }
+}
+
+#[test]
+fn inertial_over_an_option_reads_its_result_in_a_reaction() {
+    // §22.5.8 over `Option<u8>` (GAPS L89, `Option` of a module result): `Some(3)` held 20 ns passes 5 ns late and back to `None`
+    // 5 ns after it ends; the 3 ns `Some(4)` is swallowed. `y.is_some()` and `y.unwrap_or(0)` read what Rust's filter holds
+    let table = [(10e-9, Some(3u8)), (30e-9, None), (50e-9, Some(4)), (53e-9, None)];
+    let held = Section22::inertial(None, &table, 5e-9);
+    let records = StdModels::records("inertial.msl", "OptionBench", 100e-9, 1e-9);
+    let seen = StdModels::of_stream(&records, "y");
+    assert!(seen.len() >= 99, "one reading per ns: {}", seen.len());
+    for record in seen {
+        let expected = Section22::held_at(&held, record.time);
+        assert_eq!(StdModels::boolean(record, "some"), expected.is_some(), "y.is_some() at {}", record.time);
+        assert_eq!(StdModels::integer(record, "n"), i128::from(expected.unwrap_or(0)), "y.unwrap_or(0) at {}", record.time);
     }
 }

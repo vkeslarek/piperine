@@ -163,6 +163,19 @@ impl Elaboration<'_, '_> {
         lowered
     }
 
+    /// `call`'s result of `Option` type as the pair of its two halves, lowered where it is read: the callee's result expression in its
+    /// frame (the `Option` form of [`Elaboration::lower_result`]).
+    pub(super) fn lower_result_pair(&mut self, scope: &mut Scope, call: ExprId) -> Option<super::compound::Pair> {
+        let frame = self.frame_of(scope, call)?;
+        let module = self.frames[frame].module;
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
+        let result = data.result?;
+        let entry = self.enter_frame(scope, frame);
+        let pair = self.lower_option(scope, result);
+        self.leave_frame(scope, entry);
+        pair
+    }
+
     /// A read of the value input `decl` of the frame `scope.frame`: the caller's expression,
     /// lowered in the caller's frame. `None` when the frame has no such input (the read is not one).
     pub(super) fn input_of(&self, scope: &Scope, decl: DeclId) -> Option<Option<ExprId>> {

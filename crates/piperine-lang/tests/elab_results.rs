@@ -371,3 +371,14 @@ fn a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant() {
     }
     assert!(printed.contains("((3.0, 4.0) : (f64, f64)).0"), "the tuple default `t.0` is read through its constant:\n{printed}");
 }
+
+#[test]
+fn an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves() {
+    // §3.2.10 with §8.3.12 (GAPS L89): a module whose result is an `Option<u8>` read in a reaction (`.is_some()`, `.unwrap_or`)
+    // lowers to the two halves of its result expression, read in the callee's frame
+    let src = "module Hold(in x: Bit<Option<u8>>) -> Option<u8> { x }\nmodule Top() {\n  signal x: Bit<Option<u8>> = None;\n  signal some: Bit = false;\n  signal n: Bit<u8> = 0;\n  let h = Hold(x);\n}\ndigital for Top { on at(1n) { some <- h.is_some(); n <- h.unwrap_or(7); } }\n";
+    let ir = Elab::ir(&src, "Top");
+    let top = body(&ir, "Top");
+    let printed = ir.print_structural();
+    assert!(!reaction_exprs(&ir, &top, 0).is_empty() && printed.contains("some <- h.x.is") && printed.contains("n <- if h.x.is"), "the reaction reads the two halves of the result:\n{printed}");
+}

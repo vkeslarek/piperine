@@ -392,6 +392,8 @@ impl Elaboration<'_, '_> {
                 },
                 _ => unsupported(self),
             },
+            // a placement of a module with an `Option` result: the pair of its result expression, read in the callee's frame (`hoist.rs`)
+            ExprKind::Call { .. } if self.result_callee(expr).is_some() => self.lower_result_pair(scope, expr),
             // `simparam(name)`: the two halves of the session parameter's packed read (`session.rs`)
             ExprKind::Call { .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "simparam") => self.lower_session_pair(scope, expr, origin),
             // `temperature()`: whether the run set it and the run's kelvin, the two environment reads (`session.rs`)
