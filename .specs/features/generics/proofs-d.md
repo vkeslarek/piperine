@@ -1,6 +1,6 @@
-# generics phase D proofs (tasks-d.md checks, run from a scratch feature dir), fix round 15 (findings 36 to 38)
+# generics phase D proofs (tasks-d.md checks, run from a scratch feature dir), round 15
 
-**HEAD**: ac0270609
+**HEAD**: ae7fec30b
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 144 pass, 0 fail
@@ -157,18 +157,18 @@
 `Run typestempl` - exit 0
 
 ```
-test a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none ... ok
+test a_template_that_is_not_const_is_e0362 ... ok
 test the_type_of_a_generic_template_carries_its_arguments ... ok
 test an_unread_let_of_a_template_item_is_e0181 ... ok
 test a_placement_through_a_template_of_a_nature_generic_module_checks_its_ports ... ok
-test a_template_param_value_may_read_the_placing_modules_params ... ok
-test a_placement_through_a_template_or_a_function_types_as_its_module ... ok
 test a_template_leaves_an_option_param_out_as_a_placement_does ... ok
+test a_template_param_value_may_read_the_placing_modules_params ... ok
 test gnd_connects_through_a_callable_bound_as_at_a_placement ... ok
+test a_placement_through_a_template_or_a_function_types_as_its_module ... ok
 test a_bare_module_name_used_as_a_value_is_its_template_with_every_default ... ok
 test every_callee_form_the_grammar_admits_is_called_by_its_value ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.52s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.22s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_templates.rs (/var/tmp/piperine-target-a/debug/deps/types_templates-71532b19f8b42f57)
@@ -177,10 +177,10 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run elabtempl` - exit 0
 
 ```
-test a_template_of_a_generic_module_names_its_arguments ... ok
-test gnd_at_a_placement_through_a_callable_bound_is_ground ... ok
-test two_templates_of_one_generic_module_with_different_arguments_are_two_values ... ok
 test a_non_node_item_through_a_template_reads_the_concrete_module ... ok
+test two_templates_of_one_generic_module_with_different_arguments_are_two_values ... ok
+test gnd_at_a_placement_through_a_callable_bound_is_ground ... ok
+test a_template_of_a_generic_module_names_its_arguments ... ok
 test the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl ... ok
 test a_template_param_value_over_the_placing_modules_params_folds_per_instance ... ok
 test templates_fold_from_consts_functions_and_two_levels_of_params ... ok
@@ -188,7 +188,7 @@ test a_bare_module_name_used_as_a_value_places_its_template_with_every_default .
 test a_template_placement_is_identical_to_the_written_placement ... ok
 test every_callee_form_elaborates_to_what_it_names ... ok
 
-test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.47s
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.23s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_templates.rs (/var/tmp/piperine-target-a/debug/deps/elab_templates-48f7175a2550e82b)
@@ -197,10 +197,10 @@ test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run srctempl` - exit 0
 
 ```
-test a_template_of_a_nature_generic_module_runs_through_its_type ... ok
 test a_param_picks_the_node_a_module_probes_and_drives ... ok
 test every_callee_form_runs_what_it_names ... ok
 test a_body_written_in_reverse_order_runs_as_forward ... ok
+test gnd_connects_through_a_callable_bound ... ok
 test a_template_param_value_over_the_parents_params_places_per_instance ... ok
 test a_param_default_reads_the_params_before_it ... ok
 test a_cycle_of_node_connections_runs_as_hardware ... ok
@@ -208,7 +208,7 @@ test a_placement_connects_to_the_node_of_a_child_written_after_it ... ok
 test the_items_of_a_template_placed_child_read_as_values ... ok
 test the_swappable_mosfet_runs_each_model ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_templates.rs (/var/tmp/piperine-target-a/debug/deps/source_templates-f3f45abd6916a32d)
@@ -221,14 +221,14 @@ test the_lowpass_module_runs_over_the_generic_integrator ... ok
 test e0340_a_generation_range_read_from_a_signal ... ok
 test e0320_a_block_names_a_param_the_module_does_not_have ... ok
 test a_ladder_written_out_runs_an_operating_point_and_a_dc_sweep ... ok
-test the_half_reactions_report_each_stage_in_time_order ... ok
 test the_ladder_runs_for_an_operating_point_and_a_sweep ... ok
-test the_switched_capacitor_integrator_is_a_netlist_that_runs ... ok
+test the_half_reactions_report_each_stage_in_time_order ... ok
 test the_pi_controller_runs_with_its_generic_idt ... ok
+test the_switched_capacitor_integrator_is_a_netlist_that_runs ... ok
 test the_multiplicity_listing_runs_as_four_in_parallel ... ok
 test the_swappable_mosfet_listing_runs ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.87s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.69s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/modules.rs (/var/tmp/piperine-target-a/debug/deps/book_modules-f54c744dbbe5981c)
@@ -237,18 +237,18 @@ test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run spectext` - exit 0
 
 ```
-test the_step_that_reads_a_jump_is_first_order ... ok
-test tran_in_fences_is_the_module ... ok
 test section_22_no_longer_says_std_is_in_the_earlier_spelling ... ok
+test tran_in_fences_is_the_module ... ok
 test the_recommended_fallback_is_the_ambient_temperature_in_the_spec ... ok
-test zero_bytes_are_the_default_value ... ok
+test the_library_declares_no_net_nature ... ok
 test there_is_no_slice_and_no_borrow_in_the_grammar ... ok
+test zero_bytes_are_the_default_value ... ok
 test no_spec_text_says_stimulus_is_host_only ... ok
 test every_error_code_is_defined_exactly_once ... ok
 test part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_so ... ok
 test the_removed_words_are_absent_from_the_specification ... ok
 
-test result: ok. 148 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+test result: ok. 148 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/spec_text.rs (/var/tmp/piperine-target-a/debug/deps/spec_text-fc077905224603d9)
@@ -257,18 +257,18 @@ test result: ok. 148 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fi
 `Run docs` - exit 0
 
 ```
-test the_buck_spec_holds_the_bench_bounds ... ok
-test state_records_the_observable_landings_and_the_tick_epoch ... ok
-test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
-test the_per_level_feature_is_recorded_as_dropped ... ok
-test the_scenario_package_states_its_measured_step_count ... ok
-test transient_performance_closes_v12 ... ok
-test state_records_the_generics_decision ... ok
-test the_roadmap_is_forward_looking ... ok
 test abi_md_describes_the_unreleased_contract ... ok
+test the_buck_spec_holds_the_bench_bounds ... ok
+test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
+test the_scenario_package_states_its_measured_step_count ... ok
+test the_per_level_feature_is_recorded_as_dropped ... ok
+test transient_performance_closes_v12 ... ok
+test state_records_the_observable_landings_and_the_tick_epoch ... ok
+test state_holds_the_explicit_unknowns_decision ... ok
+test the_roadmap_is_forward_looking ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 
-test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/docs.rs (/var/tmp/piperine-target-a/debug/deps/docs-8e80bcc00dcc90ee)
@@ -278,17 +278,17 @@ test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test trait_methods_resolve_on_values_through_bounds_and_by_path ... ok
-test a_trait_plus_fn_bound_admits_only_a_module_that_implements_the_trait ... ok
 test a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type ... ok
 test impl_trait_for_a_nature_is_accepted ... ok
+test a_trait_plus_fn_bound_admits_only_a_module_that_implements_the_trait ... ok
+test a_hand_written_repr_type_checks_and_is_carried ... ok
+test a_hand_written_repr_missing_an_item_is_e0187 ... ok
 test a_non_function_item_in_an_impl_on_a_nature_is_e0132 ... ok
 test a_hand_written_repr_on_a_generic_type_is_typed_per_argument ... ok
-test a_hand_written_repr_missing_an_item_is_e0187 ... ok
-test a_hand_written_repr_type_checks_and_is_carried ... ok
 test overlapping_impls_are_e0187 ... ok
 test extra_items_signatures_supertraits_crate_and_pub_are_e0187 ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_traits.rs (/var/tmp/piperine-target-a/debug/deps/types_traits-64e37fe997026720)
@@ -302,7 +302,7 @@ test multiplicity_lowers_to_the_session_parameter ... ok
 test a_function_that_reaches_the_session_parameter_at_any_depth_reads_it_in_the_body ... ok
 test the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_implicit.rs (/var/tmp/piperine-target-a/debug/deps/elab_implicit-2d4196a8cc7ce969)
@@ -318,10 +318,9 @@ test nothing_set_reads_none ... ok
 test a_model_chooses_how_to_use_its_temperature ... ok
 test an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.77s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.64s
 
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 0.77s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_implicit.rs (/var/tmp/piperine-target-a/debug/deps/source_implicit-9025362e3484c5ee)
 ```
 
@@ -333,7 +332,7 @@ test m_and_dtemp_are_ordinary_names ... ok
 test temperature_is_an_option_of_the_run ... ok
 test multiplicity_is_a_stdlib_function_over_simparam ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_implicit.rs (/var/tmp/piperine-target-a/debug/deps/types_implicit-ee92cccdd4891539)
@@ -343,17 +342,17 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 test a_louder_second_diode_clips_the_negative_half_higher ... ok
-test the_clipper_prints_one_clip_record_per_period_near_0_72_volts ... ok
 test a_source_with_ac_stim_is_its_dc_value_and_a_one_volt_phasor_in_the_sweep ... ok
-test the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation ... ok
+test the_clipper_prints_one_clip_record_per_period_near_0_72_volts ... ok
 test the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature ... ok
 test e0417_a_contribution_is_an_f64_and_the_fix_runs ... ok
+test the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation ... ok
 test the_temperature_listings_run_with_the_ambient_fallback ... ok
 test the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond ... ok
 test the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple ... ok
 test the_switch_shorts_its_nodes_while_its_control_is_high ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.71s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.47s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/analog.rs (/var/tmp/piperine-target-a/debug/deps/book_analog-221e4c586a515805)
@@ -363,17 +362,17 @@ test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test resolved_forms_are_refused_by_name ... ok
-test the_interpreter_refuses_each_analog_operator_by_name ... ok
-test the_level_nodes_are_refused_by_name ... ok
 test each_generics_form_is_refused_by_name ... ok
+test the_level_nodes_are_refused_by_name ... ok
+test the_interpreter_refuses_each_analog_operator_by_name ... ok
 test a_digital_body_is_rejected_by_name ... ok
-test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
 test each_number_width_is_refused_by_name ... ok
+test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
 test an_analog_body_without_new_forms_still_runs_on_the_interpreter ... ok
 test each_composite_values_form_is_refused_by_name ... ok
 test the_interpreter_refuses_each_new_form_by_name ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
     Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/frozen.rs (/var/tmp/piperine-target-a/debug/deps/frozen-1d51dac525b72719)
@@ -383,13 +382,13 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 7 tests
+test a_body_whose_name_disagrees_with_its_instance_is_refused ... ok
 test an_instance_whose_name_disagrees_is_refused ... ok
 test a_body_instance_is_built_checked_and_printed ... ok
-test a_body_whose_name_disagrees_with_its_instance_is_refused ... ok
 test a_hand_written_repr_with_wrong_signatures_is_refused ... ok
-test a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed ... ok
-test a_function_instance_is_built_checked_and_printed ... ok
 test run_setting_reads_are_built_checked_and_printed ... ok
+test a_function_instance_is_built_checked_and_printed ... ok
+test a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -406,9 +405,9 @@ test a_hand_written_repr_round_trips_and_none_is_returned_to_the_caller ... ok
 test module_instance_names_compile_and_list_in_the_library ... ok
 test a_device_reads_whether_the_run_set_its_temperature ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.36s
 
-    Finished `test` profile [unoptimized] target(s) in 0.08s
+    Finished `test` profile [unoptimized] target(s) in 0.09s
      Running tests/generics.rs (/var/tmp/piperine-target-a/debug/deps/generics-ac3082b36ae9d38d)
 ```
 
@@ -418,15 +417,15 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test an_array_of_bits_with_no_initial_value_is_e0187 ... ok
 test the_nature_card_is_the_standard_librarys ... ok
 test the_analog_card_runs ... ok
-test the_debug_prints_card_runs_with_its_analog_trace ... ok
+test the_module_card_runs_with_its_value_input_and_its_out_carrier ... ok
 test the_module_card_runs_for_its_const_generic_without_its_value_input ... ok
 test the_body_items_card_runs_with_its_generation ... ok
-test the_module_card_runs_with_its_value_input_and_its_out_carrier ... ok
-test the_files_card_runs ... ok
+test the_debug_prints_card_runs_with_its_analog_trace ... ok
 test the_digital_card_runs ... ok
+test the_files_card_runs ... ok
 test a_name_of_yours_hides_the_library_but_not_the_core ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.47s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.29s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/cheatsheet.rs (/var/tmp/piperine-target-a/debug/deps/book_cheatsheet-1449ebc6201d4733)
@@ -435,18 +434,18 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run bookinventory` - exit 0
 
 ```
-test disputed_rows_are_listed_for_the_user ... ok
-test no_row_diverges ... ok
+test the_owner_and_disputed_rules_name_what_they_break ... ok
+test a_model_across_blocks_names_one_test ... ok
+test a_verdict_fits_its_block ... ok
 test a_marked_file_joins_its_blocks ... ok
+test disputed_rows_are_listed_for_the_user ... ok
 test no_block_row_is_pending ... ok
-test every_gaps_row_names_its_owner ... ok
-test refused_rows_and_gaps_section_11_agree ... ok
 test run_rows_name_tests_that_run_their_model ... ok
 test every_row_names_an_existing_test ... ok
 test the_book_uses_no_removed_name ... ok
 test the_book_reads_every_block ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-a/debug/deps/book_inventory-4e223d7a754dd3b2)
@@ -457,36 +456,35 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 6 tests
 test the_three_op_twins_run_on_both_backends ... ok
+test the_sweep_and_transient_twins_run_on_both_backends ... ok
 test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_two_backends_print_the_same_bytes ... ok
-test the_sweep_and_transient_twins_run_on_both_backends ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.82s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.80s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 0.59s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/twins.rs (/var/tmp/piperine-target-a/debug/deps/twins-89feed4c96f5a89f)
 ```
 
 `Run elabparams` - exit 0
 
 ```
-test an_enum_param_selects_its_arm ... ok
+test a_false_where_is_e0317_with_the_path ... ok
 test a_default_that_reads_earlier_params_is_folded_per_instance ... ok
-test a_default_that_reads_itself_or_a_later_param_is_e0321 ... ok
-test option_param_methods_read_the_bound_case ... ok
-test division_by_zero_is_inf_not_an_error ... ok
+test an_integer_default_converts_with_as ... ok
 test functions_methods_and_logic_fold ... ok
 test n_as_f64_reaches_the_contribution ... ok
+test option_param_methods_read_the_bound_case ... ok
+test division_by_zero_is_inf_not_an_error ... ok
 test an_integer_param_is_bound_and_read ... ok
-test an_option_param_bound_to_a_value_is_some ... ok
 test an_option_param_bound_over_the_parents_param_reads_some_of_it ... ok
+test an_option_param_bound_to_a_value_is_some ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/elab_params.rs (/var/tmp/piperine-target-a/debug/deps/elab_params-994acc5dddc0ee7d)
 ```
 
@@ -494,8 +492,8 @@ test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test a_solve_reading_call_in_a_const_context_is_e0122 ... ok
-test a_carrier_method_call_follows_the_lookup_order ... ok
 test a_node_chosen_at_a_node_argument_is_e0133_alone ... ok
+test a_node_chosen_by_the_run_is_e0133 ... ok
 test parentheses_around_a_node_argument_name_the_node ... ok
 test an_access_a_let_bound_nodes_nature_lacks_is_refused_as_for_the_node ... ok
 test a_let_assigned_only_values_of_elaboration_chooses_a_node ... ok
@@ -504,7 +502,7 @@ test a_node_chosen_at_elaboration_is_typed_as_the_node ... ok
 test a_handle_returned_stored_or_written_is_e0133 ... ok
 test every_site_reads_a_body_let_written_later_as_one_written_before ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.94s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.81s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_handles.rs (/var/tmp/piperine-target-a/debug/deps/types_handles-263992ad949300d1)
@@ -513,9 +511,9 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run elabhandles` - exit 0
 
 ```
-test an_access_a_let_bound_nodes_nature_lacks_is_e0206 ... ok
-test a_let_bound_to_a_node_probes_the_node ... ok
 test a_recursion_through_a_handle_function_is_e0126 ... ok
+test an_access_a_let_bound_nodes_nature_lacks_is_e0206 ... ok
+test a_placement_binds_the_node_of_a_child_written_after_it ... ok
 test a_node_of_a_child_connects_to_another_placement ... ok
 test a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port ... ok
 test parentheses_around_a_node_argument_lower_to_the_node ... ok
@@ -524,7 +522,7 @@ test a_node_chosen_through_lets_and_arm_statements_folds_to_the_node ... ok
 test a_choice_whose_condition_assigns_folds_and_ends ... ok
 test a_let_assigned_only_values_of_elaboration_folds_to_the_node_it_holds_there ... ok
 
-test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.15s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_handles.rs (/var/tmp/piperine-target-a/debug/deps/elab_handles-62e11896d25669a5)
@@ -536,12 +534,12 @@ test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 6 tests
 test a_recursion_past_the_depth_bound_faults_by_name ... ok
 test a_known_loop_past_the_bound_panics_naming_it ... ok
-test function_values_and_recursion_compile_and_run ... ok
 test a_function_value_returned_by_a_function_compiles_and_runs ... ok
+test function_values_and_recursion_compile_and_run ... ok
 test known_control_prints_plain_rust_and_runs ... ok
 test a_reaction_loop_commits_on_every_iteration_it_runs ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.69s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
 
     Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/control.rs (/var/tmp/piperine-target-a/debug/deps/control-e3ae2d5458db9a3b)
@@ -550,18 +548,18 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run typesgen` - exit 0
 
 ```
-test an_argument_that_misses_a_bound_is_e0187 ... ok
-test generic_arguments_are_explicit_or_inferred ... ok
+test a_generic_body_is_checked_once_at_its_definition ... ok
 test fn_bounds_take_closures_and_function_names ... ok
+test an_uninferred_generic_argument_is_e0181_naming_the_parameter ... ok
 test generic_structs_and_enums_type_check_per_instance ... ok
 test written_generic_types_lower_with_their_arguments ... ok
-test no_intrinsic_stands_for_cast_or_same ... ok
 test m_and_dtemp_bound_in_a_param_block_are_e0320_like_any_unknown_param ... ok
+test no_intrinsic_stands_for_cast_or_same ... ok
 test an_unreached_method_of_a_generic_impl_is_checked_at_its_definition ... ok
 test a_call_of_an_extern_intrinsic_types_over_the_logic_of_std ... ok
 test phase_d_and_e_forms_stay_p0001_by_name ... ok
 
-test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_generics.rs (/var/tmp/piperine-target-a/debug/deps/types_generics-07dcb527b6f69e72)
@@ -570,18 +568,18 @@ test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piper` - exit 0
 
 ```
-test every_integration_target_declares_its_scope ... ok
+test every_ignored_doc_example_is_registered ... ok
 test root_targets_match_the_naming_rule ... ok
 test the_walk_covers_the_three_solver_crates ... ok
 test no_file_scope_lint_suppression ... ok
-test lrm_covers_declarations_are_well_formed ... ok
 test no_ignored_tests ... ok
+test lrm_covers_declarations_are_well_formed ... ok
 test no_dead_architecture_identifiers ... ok
-test no_disabled_test_code ... ok
 test retired_unknown_codes_are_raised_nowhere ... ok
+test no_disabled_test_code ... ok
 test every_unknown_test_has_a_successor ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.73s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.69s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target-a/debug/deps/suite_hygiene-04ba8e96779992cb)
