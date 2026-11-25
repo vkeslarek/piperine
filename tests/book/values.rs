@@ -22,7 +22,6 @@ use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::{Model, Ran};
-use support::refusal::Refusal;
 
 /// A number as the Book prints it: the printed digits are the resolution of the comparison.
 struct Printed;

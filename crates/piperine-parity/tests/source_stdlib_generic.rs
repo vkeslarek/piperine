@@ -436,3 +436,54 @@ fn an_improper_or_unpaired_laplace_is_refused() {
     let unpaired = StdModels::project("laplace_refused.msl").elaborate("UnpairedBench").expect_err("an unpaired pole").to_string();
     assert!(unpaired.contains("E0317"), "{unpaired}");
 }
+
+/// The difference equation of `zi.msl`, from §22.2.12: `y[n] = sum num[k] x[n-k] - sum den[k] y[n-1-k]`, the history of a steady input
+/// at the operating point (rule on `settle`): `x` held at its first value and `y` at the value that input settles to.
+struct Difference;
+
+impl Difference {
+    /// The input of `ZiBench` at the sample `n` (at `n` us).
+    fn input(n: usize) -> f64 {
+        let at = n as f64 * 1e-6;
+        if at < 2.5e-6 || at > 5.5e-6 { 1.0 } else { 0.0 }
+    }
+
+    /// `y[1]`, `y[2]`, ... of a filter with `num` and `den`, over `count` samples.
+    fn run(num: &[f64], den: &[f64], count: usize) -> Vec<f64> {
+        let steady = num.iter().sum::<f64>() * Self::input(0) / (1.0 + den.iter().sum::<f64>());
+        let x = |n: i64| if n <= 0 { Self::input(0) } else { Self::input(n as usize) };
+        let mut y: Vec<f64> = vec![steady];
+        let mut out = Vec::new();
+        for n in 1..=count as i64 {
+            let history = |k: usize| y.get((n - 1 - k as i64) as usize).copied().unwrap_or(steady);
+            let value = num.iter().enumerate().map(|(k, c)| c * x(n - k as i64)).sum::<f64>() - den.iter().enumerate().map(|(k, c)| c * history(k)).sum::<f64>();
+            y.push(value);
+            out.push(value);
+        }
+        out
+    }
+}
+
+#[test]
+fn the_zi_family_follows_its_difference_equation() {
+    // §22.2.12 and §22.2.13: each reading, a quarter us after the sample n, is y[n] of the difference equation run in Rust over
+    // the same input, the history before the first sample being the steady state of the operating point
+    let records = StdModels::records("zi.msl", "ZiBench", 8e-6, 25e-9);
+    let read = StdModels::of_stream(&records, "zi");
+    assert!(read.len() >= 7, "one reading per us: {}", read.len());
+    let first_order = Difference::run(&[0.5], &[-0.5], read.len());
+    let with_zero = Difference::run(&[1.0, -0.5], &[-0.5], read.len());
+    for (n, record) in read.iter().enumerate() {
+        for (name, expected) in [("nd", first_order[n]), ("np", first_order[n]), ("zd", with_zero[n]), ("zp", with_zero[n])] {
+            let seen = StdModels::real(record, name);
+            assert!((seen - expected).abs() < 1e-6, "zi_{name} sample {}: {seen} against {expected}", n + 1);
+        }
+    }
+}
+
+#[test]
+fn an_unpaired_zi_pole_is_refused() {
+    // §22.2.13: a complex pole without its conjugate fails `conjugate_closed` (E0317)
+    let refused = StdModels::project("zi.msl").elaborate("ZiRefused").expect_err("an unpaired pole").to_string();
+    assert!(refused.contains("E0317"), "{refused}");
+}

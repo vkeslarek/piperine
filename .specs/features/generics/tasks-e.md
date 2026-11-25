@@ -296,8 +296,8 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 �
 
 **Done when**:
 
-- [ ] `the_zi_family_follows_its_difference_equation` passes under `**Run srcstd**`
-- [ ] Gate check passes: Quick
+- [x] `the_zi_family_follows_its_difference_equation` passes under `**Run srcstd**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

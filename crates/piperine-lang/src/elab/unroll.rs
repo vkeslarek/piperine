@@ -39,13 +39,15 @@ pub(super) enum Held {
     Placement,
     /// An element `w[k]` of an array of nodes: the node an index names is fixed at elaboration (`elements.rs`).
     NodeElement,
+    /// A `delay` (§22.2.1): each call is a site of its own, and its delay folds at elaboration.
+    Delay,
 }
 
 impl Held {
     /// The code of a trip count that does not fold.
     fn code(self) -> &'static str {
         match self {
-            Held::Contribution | Held::NodeElement => "E0416",
+            Held::Contribution | Held::NodeElement | Held::Delay => "E0416",
             Held::Placement => "E0351",
         }
     }
@@ -56,6 +58,7 @@ impl Held {
             Held::Contribution => "a contribution",
             Held::Placement => "a placement",
             Held::NodeElement => "an element of an array of nodes",
+            Held::Delay => "a `delay`",
         }
     }
 }
@@ -143,7 +146,11 @@ impl Elaboration<'_, '_> {
             },
             _ => false,
         };
-        self.body_exprs(body).iter().any(node_element).then_some(Held::NodeElement)
+        if self.body_exprs(body).iter().any(node_element) {
+            return Some(Held::NodeElement);
+        }
+        let delay = |expr: &ExprId| matches!(self.types.callee(*expr), Some(Callee::Core(id)) if id.info().name == "delay");
+        self.body_exprs(body).iter().any(delay).then_some(Held::Delay)
     }
 
     /// Every expression of `body`, nested ones included.
