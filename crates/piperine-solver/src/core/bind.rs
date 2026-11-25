@@ -139,20 +139,46 @@ impl NameMap {
         slot
     }
 
-    /// The bytes slot `slot` holds of `net_bytes`, the bytes of its whole net (`size` bytes an element).
-    pub fn slot_bytes(&self, slot: u32, net_bytes: &[u8], size: u32) -> Vec<u8> {
-        Self::window_bytes(self.slot_windows[slot as usize], net_bytes, size)
+    /// The bytes slot `slot` holds of `net_bytes`, the bytes of its whole net (`size` bytes an element) as the seed gives them. `net` names
+    /// the net in the error of a window that falls outside them.
+    pub fn slot_bytes(&self, slot: u32, net: &str, net_bytes: &[u8], size: u32) -> Result<Vec<u8>> {
+        Self::window_bytes(net, self.slot_windows[slot as usize], net_bytes, size)
     }
 
-    /// The bytes of `window` of `net_bytes`, the bytes of a whole net of `size` bytes an element: all of them for no window. An
-    /// array net's seed of one element's bytes seeds every element.
-    pub fn window_bytes(window: Option<(u32, u32)>, net_bytes: &[u8], size: u32) -> Vec<u8> {
-        let Some((first, length)) = window else { return net_bytes.to_vec() };
+    /// The bytes of `window` of `net_bytes`, the bytes of a whole net `net` of `size` bytes an element: all of them for no window. An
+    /// array net's seed of one element's bytes seeds every element; no seed gives none. A window outside the bytes is an internal error naming the net and
+    /// the window: the lengths of the seed, the element size and the window's own disagree.
+    pub fn window_bytes(net: &str, window: Option<(u32, u32)>, net_bytes: &[u8], size: u32) -> Result<Vec<u8>> {
+        let Some((first, length)) = window else { return Ok(net_bytes.to_vec()) };
+        // a net with no seed has none to cut: its slots start with no bytes, and the net's own initial value is `Default`
+        if net_bytes.is_empty() {
+            return Ok(Vec::new());
+        }
         let size = size as usize;
         if net_bytes.len() == size {
-            return net_bytes.repeat(length as usize);
+            return Ok(net_bytes.repeat(length as usize));
         }
-        net_bytes.get(first as usize * size..(first + length) as usize * size).map(<[u8]>::to_vec).unwrap_or_default()
+        net_bytes.get(first as usize * size..(first + length) as usize * size).map(<[u8]>::to_vec).ok_or_else(|| {
+            Error::simple(
+                SolverDomain::Digital,
+                format!("internal error: the window of elements {first}..{} of net `{net}` lies outside its {} bytes ({size} bytes an element)", first + length, net_bytes.len()),
+            )
+        })
+    }
+
+    /// The windows of the array net `net` of `count` elements that the analog copy holds, as `(slot, first, length)` in the order of the
+    /// slots: a slot that holds the whole net holds all its elements. The engine hands the analog side these windows' bytes one after
+    /// the other (`NetSpec::analog_windows`), so a slot's bytes are a range of them.
+    pub fn array_slots(&self, net: NetId, count: u64) -> Vec<(u32, u64, u64)> {
+        self.slot_nets
+            .iter()
+            .enumerate()
+            .filter(|(_, slot_net)| **slot_net == net)
+            .map(|(slot, _)| match self.slot_windows[slot] {
+                Some((first, length)) => (slot as u32, u64::from(first), u64::from(length)),
+                None => (slot as u32, 0, count),
+            })
+            .collect()
     }
 }
 
@@ -874,12 +900,19 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
     names.nets = nets.named.iter().map(|(k, v)| (k.clone(), NetId(*v as u32))).collect();
     names.params = params;
 
+    // an array net the analog side reads hands it the windows its slots hold, no more
+    for (net, spec) in nets.specs.iter_mut().enumerate().filter(|(_, spec)| spec.count > 0) {
+        spec.analog_windows = names.array_slots(NetId(net as u32), spec.count).into_iter().map(|(_, first, length)| (first, length)).collect();
+    }
     let seeds: Vec<(u32, Vec<u8>)> = names
         .slot_nets
         .iter()
         .enumerate()
-        .map(|(slot, id)| (slot as u32, names.slot_bytes(slot as u32, &nets.specs[id.0 as usize].init, nets.specs[id.0 as usize].size)))
-        .collect();
+        .map(|(slot, id)| {
+            let spec = &nets.specs[id.0 as usize];
+            names.slot_bytes(slot as u32, &spec.name, &spec.init, spec.size).map(|bytes| (slot as u32, bytes))
+        })
+        .collect::<Result<_>>()?;
     let analog_plan = AnalogPlan::bind(analog_instances, netlist)?;
     let digital_plan = DigitalPlan::bind(nets.specs, digital_instances, Resolution { seconds_per_tick: resolution })
         .map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))?;

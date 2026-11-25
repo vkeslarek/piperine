@@ -1199,7 +1199,7 @@ impl TransientSolver<'_> {
         // instant runs after the last solve of its sequence (abi.md §4.2).
         digital.set_continuation(self.system.context.tolerances.gmin, 1.0);
         let net_names: std::sync::Arc<[String]> = digital.plan().nets.iter().map(|n| n.name.clone()).collect();
-        let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
+        let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN)?;
         let settled = crate::analyses::adapters::Settled::default();
         if self.options.reenters_every_step() {
             side.record_settled(settled.clone());
@@ -1207,7 +1207,7 @@ impl TransientSolver<'_> {
         // A host write made since the capture is written again at the re-entry.
         let mut rewrites = Vec::new();
         if let Some((_, state)) = &resume {
-            for (slot, bytes) in side.resume(&state.digital, state.nets.bytes()) {
+            for (slot, bytes) in side.resume(&state.digital, state.nets.bytes())? {
                 bound.analog.set_discrete(slot, &bytes);
             }
             for (net, bytes) in &bound.host_writes {
@@ -1308,7 +1308,7 @@ impl TransientSolver<'_> {
         // The last step carries the state a later run re-enters from.
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
         let nets = (0..bound.digital.plan().nets.len())
-            .map(|i| bound.digital.read_dense(piperine_digital_solver::net::NetId(i as u32)))
+            .map(|i| bound.digital.read_analog(piperine_digital_solver::net::NetId(i as u32)))
             .collect();
         let state = crate::core::result::ReentryState {
             digital: bound.digital.checkpoint(),

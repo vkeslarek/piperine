@@ -304,7 +304,7 @@ impl<'a> DcSolver<'a> {
         // Reactions and discrete functions read the continuation values at rest: every
         // instant runs after the last solve of its sequence (abi.md §4.2).
         digital.set_continuation(self.system.context.tolerances.gmin, 1.0);
-        let side = DigitalSide::new(digital, bound, self.analysis);
+        let side = DigitalSide::new(digital, bound, self.analysis)?;
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);
         let options = ProtocolOptions { max_rounds: self.system.context.max_rounds, ..ProtocolOptions::new(spt) };

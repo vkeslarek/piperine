@@ -365,3 +365,19 @@ fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_elem
     assert_eq!(q, expected);
     assert!(started.elapsed() < std::time::Duration::from_secs(120), "built and ran in {:?}", started.elapsed());
 }
+
+#[test]
+fn a_transient_with_an_array_no_analog_function_reads_stays_sparse() {
+    // §5.1.8: `mem` has 2^32 elements and no analog function reads it, so the analog side is given none of it (it would be 4 GiB
+    // of bytes): the transient takes seconds, not minutes (the bound is a fifth of what the dense copy takes). The cell reads `gates[1]`, which rises at 2 ns: the node is at
+    // `2k * 1 mA` = 2 V before and `1k * 1 mA` = 1 V after.
+    let started = std::time::Instant::now();
+    let built = support::build(&RUN.project("sparse.msl"), "Sparse");
+    let node = built.ir.node_at("Sparse.a").expect("the node `a`").id();
+    let (_, result) = built.run_with(6e-9, 0.5e-9);
+    let at = |time: f64| result.iter().rev().find(|step| step.time() <= time).and_then(|step| step.get_node(&piperine_solver::prelude::NodeIdentifier::Anonymous(node.index()))).expect("a point");
+    assert!((at(1e-9) - 2.0).abs() < 1e-6, "before the rise: {}", at(1e-9));
+    assert!((at(5e-9) - 1.0).abs() < 1e-6, "after the rise: {}", at(5e-9));
+    // 2 s alone, 8 s beside a loaded suite; the dense copy of 2^32 elements does not finish in 150 s (2^28 takes 17 s)
+    assert!(started.elapsed() < std::time::Duration::from_secs(30), "built and ran in {:?}", started.elapsed());
+}

@@ -65,12 +65,12 @@ impl SettleCommits {
             let at = match nets.iter().position(|(n, _)| *n == net) {
                 Some(at) => at,
                 None => {
-                    nets.push((net, store.dense_value(net)));
+                    nets.push((net, store.analog_value(net, &specs[net.0 as usize])));
                     nets.len() - 1
                 }
             };
-            let offset = held.pending.offset as usize + held.pending.element.map_or(0, |e| e as usize * specs[net.0 as usize].size as usize);
-            nets[at].1[offset..offset + held.pending.bytes.len()].copy_from_slice(&held.pending.bytes);
+            let offset = u64::from(held.pending.offset) + held.pending.element.map_or(0, |e| e * u64::from(specs[net.0 as usize].size));
+            store.patch_analog(net, &specs[net.0 as usize], offset, &held.pending.bytes, &mut nets[at].1);
         }
         nets
     }

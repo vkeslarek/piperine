@@ -327,3 +327,16 @@ fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("Probe", MODULE.get_or_init(|| module::<Probe>("probe")));
     partials::verify_every_function("Counting", COUNTING_MODULE.get_or_init(|| module::<Counting>("counting")));
 }
+
+#[test]
+fn a_window_outside_its_nets_bytes_is_an_error_naming_the_net_and_the_window() {
+    // a seed of 2 elements of 2 bytes holds elements 0 and 1: the window of elements 1..3 is outside it, and an empty copy would hide it
+    let seed = [1u8, 2, 3, 4];
+    let inside = piperine_solver::abi::NameMap::window_bytes("mem", Some((1, 1)), &seed, 2).expect("element 1 is inside");
+    assert_eq!(inside, [3, 4]);
+    let error = piperine_solver::abi::NameMap::window_bytes("mem", Some((1, 2)), &seed, 2).expect_err("element 2 is outside");
+    let text = error.to_string();
+    assert!(text.contains("`mem`") && text.contains("1..3") && text.contains("4 bytes"), "{text}");
+    // a net with no seed has none to cut
+    assert_eq!(piperine_solver::abi::NameMap::window_bytes("mem", Some((1, 2)), &[], 2).expect("no seed, no bytes"), Vec::<u8>::new());
+}

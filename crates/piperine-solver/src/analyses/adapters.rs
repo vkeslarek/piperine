@@ -12,6 +12,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::rc::Rc;
 
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
@@ -87,6 +88,9 @@ pub(crate) struct DigitalSide {
     slot_nets: Vec<NetId>,
     /// The elements `(first, length)` of its array net each slot holds; `None` for a whole net.
     slot_windows: Vec<Option<(u32, u32)>>,
+    /// Where each slot's bytes lie in the bytes the engine hands the analog side for its net (`Digital::read_analog`): the range of
+    /// the window's elements among the net's windows, `None` for a net that is no array (all of its bytes).
+    slot_ranges: Vec<Option<Range<usize>>>,
     /// The bytes of each slot as the analog copy holds them: bind seeded the
     /// copy with each net's `init`, so a boundary is a slot whose bytes differ
     /// from it (the engine's own store starts at zero).
@@ -105,7 +109,7 @@ pub(crate) struct DigitalSide {
 impl DigitalSide {
     /// The discrete side of `digital` for an analysis whose kind is the global
     /// constant `analysis` (`DC`, `TRAN`, `AC` or `NOISE`).
-    pub(crate) fn new(digital: Digital, bound: &Bound, analysis: u32) -> DigitalSide {
+    pub(crate) fn new(digital: Digital, bound: &Bound, analysis: u32) -> Result<DigitalSide> {
         let names: &NameMap = &bound.names;
         let written = |net: NetId| {
             bound
@@ -121,10 +125,11 @@ impl DigitalSide {
             .iter()
             .enumerate()
             .map(|(slot, n)| {
-                let whole = written(*n).unwrap_or_else(|| digital.plan().nets[n.0 as usize].init.clone());
-                NameMap::window_bytes(names.slot_windows[slot], &whole, digital.plan().nets[n.0 as usize].size)
+                let spec = &digital.plan().nets[n.0 as usize];
+                let whole = written(*n).unwrap_or_else(|| spec.init.clone());
+                NameMap::window_bytes(&spec.name, names.slot_windows[slot], &whole, spec.size)
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let mut net_slots: HashMap<NetId, Vec<u32>> = HashMap::new();
         for (slot, net) in names.slot_nets.iter().enumerate() {
             net_slots.entry(*net).or_default().push(slot as u32);
@@ -137,7 +142,16 @@ impl DigitalSide {
             .chain(bound.temperature.iter().cloned())
             .chain(bound.host_writes.iter().cloned())
             .collect();
-        DigitalSide { digital, net_slots, slot_nets: names.slot_nets.clone(), slot_windows: names.slot_windows.clone(), copy, on_start, settled: None, rewound: false, microsteps: bound.microsteps }
+        let mut slot_ranges: Vec<Option<Range<usize>>> = vec![None; names.slot_nets.len()];
+        for (net, spec) in digital.plan().nets.iter().enumerate().filter(|(_, spec)| spec.count > 0) {
+            let mut base = 0usize;
+            for (slot, _, length) in names.array_slots(NetId(net as u32), spec.count) {
+                let bytes = length as usize * spec.size as usize;
+                slot_ranges[slot as usize] = Some(base..base + bytes);
+                base += bytes;
+            }
+        }
+        Ok(DigitalSide { digital, net_slots, slot_nets: names.slot_nets.clone(), slot_windows: names.slot_windows.clone(), slot_ranges, copy, on_start, settled: None, rewound: false, microsteps: bound.microsteps })
     }
 
     /// Each mark also leaves the settled state in `settled`.
@@ -150,40 +164,55 @@ impl DigitalSide {
         self.digital
     }
 
+    /// The bytes of `slot` within `net_bytes`, the bytes the engine handed the analog side for its net: an internal error naming the
+    /// net and the window when they lie outside them.
+    fn slot_of_bytes(&self, slot: usize, net_bytes: &[u8]) -> Result<Vec<u8>> {
+        let net = self.slot_nets[slot];
+        match &self.slot_ranges[slot] {
+            None => Ok(net_bytes.to_vec()),
+            Some(range) => net_bytes.get(range.clone()).map(<[u8]>::to_vec).ok_or_else(|| {
+                let window = self.slot_windows[slot].map_or_else(|| "the whole net".to_string(), |(first, length)| format!("elements {first}..{}", first + length));
+                Error::simple(
+                    SolverDomain::Digital,
+                    format!("internal error: the analog copy's window ({window}) of net `{}` lies outside the {} bytes the engine delivered", self.digital.net_name(net), net_bytes.len()),
+                )
+            }),
+        }
+    }
+
     /// The engine's checkpoint and every net's bytes in it.
     pub(crate) fn state(&self) -> (Checkpoint, Vec<Vec<u8>>) {
-        let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read_dense(NetId(i as u32))).collect();
+        let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read_analog(NetId(i as u32))).collect();
         (self.digital.checkpoint(), nets)
     }
 
     /// Puts the engine back to a captured checkpoint whose nets hold `nets`;
     /// the analog copy then holds what they hold: returns each slot's bytes.
-    pub(crate) fn resume(&mut self, checkpoint: &Checkpoint, nets: &[Vec<u8>]) -> Vec<(u32, Vec<u8>)> {
+    pub(crate) fn resume(&mut self, checkpoint: &Checkpoint, nets: &[Vec<u8>]) -> Result<Vec<(u32, Vec<u8>)>> {
         self.digital.restore(checkpoint);
         let mut slots = Vec::with_capacity(self.slot_nets.len());
-        for (slot, net) in self.slot_nets.iter().enumerate() {
-            let bytes = NameMap::window_bytes(self.slot_windows[slot], &nets[net.0 as usize], self.digital.plan().nets[net.0 as usize].size);
+        for slot in 0..self.slot_nets.len() {
+            let bytes = self.slot_of_bytes(slot, &nets[self.slot_nets[slot].0 as usize])?;
             self.copy[slot].clone_from(&bytes);
             slots.push((slot as u32, bytes));
         }
-        slots
+        Ok(slots)
     }
 
     /// The nets of `nets` whose bytes differ from the analog side's copy, as the boundary slots
     /// they are; the copy takes the new bytes, as the analog side will once they are delivered.
-    fn changed_slots(&mut self, nets: Vec<(NetId, Vec<u8>)>) -> Vec<Boundary> {
+    fn changed_slots(&mut self, nets: Vec<(NetId, Vec<u8>)>) -> Result<Vec<Boundary>> {
         let mut boundary = Vec::new();
         for (net, whole) in nets {
-            let size = self.digital.plan().nets[net.0 as usize].size;
             for slot in self.net_slots[&net].clone() {
-                let bytes = NameMap::window_bytes(self.slot_windows[slot as usize], &whole, size);
+                let bytes = self.slot_of_bytes(slot as usize, &whole)?;
                 if self.copy[slot as usize] != bytes {
                     self.copy[slot as usize].clone_from(&bytes);
                     boundary.push(Boundary { slot, bytes });
                 }
             }
         }
-        boundary
+        Ok(boundary)
     }
 
     fn time(&self, tick: DigitalTick) -> f64 {
@@ -243,9 +272,9 @@ impl DiscreteSide for DigitalSide {
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
         let microsteps = self.microsteps;
         let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| instant_error(e, microsteps))?;
-        let boundary = self.changed_slots(out.boundary);
+        let boundary = self.changed_slots(out.boundary)?;
         let host_events = out.host_events.iter().map(|n| n.0).collect();
-        let settle_boundary = self.changed_slots(out.settle_boundary);
+        let settle_boundary = self.changed_slots(out.settle_boundary)?;
         Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events, settle_boundary })
     }
 
@@ -265,7 +294,7 @@ impl DiscreteSide for DigitalSide {
         if let Some(settled) = &self.settled
             && !self.rewound
         {
-            let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read_dense(NetId(i as u32))).collect();
+            let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read_analog(NetId(i as u32))).collect();
             *settled.borrow_mut() = Some((self.digital.checkpoint(), nets));
         }
         self.rewound = false;
