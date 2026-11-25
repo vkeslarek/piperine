@@ -48,6 +48,23 @@ impl PlacementKey {
     }
 }
 
+/// The frame a hoisted placement opens, as its contents are lowered: the call, the frame's index, the module it places and the name
+/// of the frame, the ports of the module and the arguments the placement binds to them.
+struct OpenedFrame<'a> {
+    /// The placement as written.
+    call: ExprId,
+    /// The index of the frame it opens.
+    index: usize,
+    /// The module the placement places.
+    module: DeclId,
+    /// The name of the frame under the caller's.
+    name: &'a str,
+    /// The ports of `module`.
+    ports: &'a [DeclId],
+    /// The arguments of the placement, by port.
+    bound: &'a PortArguments<'a>,
+}
+
 impl Elaboration<'_, '_> {
     /// The key of the placement `call` read or hoisted in `scope`: the iteration of the generation `for`s around it that the
     /// code being lowered sits in.
@@ -324,13 +341,14 @@ impl Elaboration<'_, '_> {
         let index = self.frames.len() - 1;
         self.frames[parent].placements.insert(key.clone(), index);
         let outer = self.consts.set_substitution(substitution);
-        let hoisted = self.hoist_frame(scope, call, index, (module, &name), &ports, &bound);
+        let hoisted = self.hoist_frame(scope, OpenedFrame { call, index, module, name: &name, ports: &ports, bound: &bound });
         self.consts.set_substitution(outer);
         hoisted
     }
 
     /// The contents of the frame `index` of the placement `call`, lowered under the substitution of its instance.
-    fn hoist_frame(&mut self, scope: &Scope, call: ExprId, index: usize, (module, name): (DeclId, &str), ports: &[DeclId], bound: &PortArguments) -> Option<usize> {
+    fn hoist_frame(&mut self, scope: &Scope, opened: OpenedFrame) -> Option<usize> {
+        let OpenedFrame { index, module, .. } = opened;
         let caller = self.frames[self.frames[index].parent.unwrap_or(0)].substitution.clone();
         // the generation of the callee's body unrolls under the frame's params; the caller's is parked while the frame is lowered
         let parent = self.frames[index].parent.unwrap_or(0);
@@ -340,7 +358,7 @@ impl Elaboration<'_, '_> {
         let outer_params = self.consts.set_frame_params(keys);
         self.expand_generation_of(module, index);
         self.consts.set_frame_params(outer_params);
-        let lowered = self.hoist_contents(scope, call, index, (module, name), ports, bound, &caller);
+        let lowered = self.hoist_contents(scope, &opened, &caller);
         self.body_keys = outer_keys;
         self.frames[index].generated = std::mem::take(&mut self.generated);
         self.generated = std::mem::take(&mut self.frames[parent].generated);
@@ -348,8 +366,8 @@ impl Elaboration<'_, '_> {
     }
 
     /// What the frame `index` holds: its nodes, carriers, drives, definitions, placements and reactions.
-    #[allow(clippy::too_many_arguments)]
-    fn hoist_contents(&mut self, scope: &Scope, call: ExprId, index: usize, (module, name): (DeclId, &str), ports: &[DeclId], bound: &PortArguments, caller: &crate::types::Substitution) -> Option<usize> {
+    fn hoist_contents(&mut self, scope: &Scope, opened: &OpenedFrame, caller: &crate::types::Substitution) -> Option<usize> {
+        let OpenedFrame { call, index, module, name, ports, bound } = *opened;
         let caller = caller.clone();
         let gained = self.hoist_nodes(index, module);
         self.record_hoisted(index, module, name, call, gained);
