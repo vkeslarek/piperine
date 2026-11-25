@@ -1,0 +1,6 @@
+//! `inertial` over a `bool` (§22.5.8 rule 7, §3.3.4): `bool` has no `Default`, so the placement is refused naming the bound.
+
+module BoolBench() {
+    signal x: Bit = false;
+    let y = inertial(x, 5n);
+}

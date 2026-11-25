@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use piperine_api::{Field, Record, Streams};
 use piperine_parity::project::Project;
+use piperine_solver::prelude::{Context, NodeIdentifier};
 use support::build;
 
 /// The models of `tests/stdlib_generic/` and what they record.
@@ -36,6 +37,19 @@ impl StdModels {
         let streams = Streams::of(built.ir.clone());
         let seen = built.run(stop, step);
         seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect()
+    }
+
+    /// The voltage of each node in `names` of `top` of `file` at its operating point.
+    fn operating_point(file: &str, top: &str, names: &[&str]) -> Vec<f64> {
+        let mut running = Self::project(file).compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+        names
+            .iter()
+            .map(|name| {
+                let node = running.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("node {name}"));
+                solved.get_node(&NodeIdentifier::Anonymous(node.id().index())).expect("v(n)")
+            })
+            .collect()
     }
 
     /// The records of the stream `stream`, in time order.
@@ -78,6 +92,26 @@ impl Section22 {
     /// that width is at least `w`.
     fn min_pulse_passes(changes: &[f64], w: f64) -> Vec<bool> {
         (0..changes.len()).map(|k| Self::since_before(changes, k) >= w).collect()
+    }
+
+    /// §22.5.8: the output of an inertial delay `tpd` over the input that holds `first` at (0, 0) and takes `value` at `time`
+    /// for each of `changes`: a change is delivered at `time + tpd` when no later change comes before, and is an output
+    /// change only when it differs from what the output holds. `(time, value)` in order, the first commit at (0, 0) included.
+    fn inertial<V: PartialEq + Copy>(first: V, changes: &[(f64, V)], tpd: f64) -> Vec<(f64, V)> {
+        let mut output = vec![(0.0, first)];
+        for (k, (time, value)) in changes.iter().enumerate() {
+            let delivered = time + tpd;
+            let swallowed = changes.get(k + 1).is_some_and(|(next, _)| *next < delivered);
+            if !swallowed && output.last().is_some_and(|(_, held)| held != value) {
+                output.push((delivered, *value));
+            }
+        }
+        output
+    }
+
+    /// The value an output given by [`Section22::inertial`] holds at `at`.
+    fn held_at<V: Clone>(output: &[(f64, V)], at: f64) -> V {
+        output.iter().rev().find(|(time, _)| *time <= at).map(|(_, value)| value.clone()).expect("the output starts at (0, 0)")
     }
 
     /// Whether two readings are the same real, `inf` included, up to the femtosecond the solver counts time in.
@@ -212,4 +246,61 @@ fn setup_hold_and_stable_fail_exactly_on_their_violations() {
     }
     assert!(MonitorSchedule::setup_passes().contains(&false) && MonitorSchedule::setup_passes().contains(&true));
     assert!(MonitorSchedule::hold_checks().iter().any(|(_, pass)| !pass) && MonitorSchedule::hold_checks().iter().any(|(_, pass)| *pass));
+}
+
+/// What the benches of `inertial.msl` record, as the variant names Rust writes for its own values.
+struct InertialLabels;
+
+impl InertialLabels {
+    /// The input table of `LevelBench`: a level held 20 ns, a 3 ns pulse, a level held 6 ns.
+    const LEVELS: [(f64, &'static str); 6] = [(10e-9, "Mid"), (30e-9, "Low"), (50e-9, "High"), (53e-9, "Mid"), (70e-9, "High"), (76e-9, "Low")];
+    /// The input table of `ModeBench`, the same instants.
+    const MODES: [(f64, &'static str); 6] = [(10e-9, "Run"), (30e-9, "Idle"), (50e-9, "Run"), (53e-9, "Idle"), (70e-9, "Run"), (76e-9, "Idle")];
+
+    /// The variant name the `y` record holds.
+    fn recorded(record: &Record) -> String {
+        match record.fields.iter().find(|(field, _)| field == "value") {
+            Some((_, Field::Variant(name))) => name.clone(),
+            other => panic!("a y record holds a variant: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn inertial_delays_and_swallows_short_pulses() {
+    // §22.5.8 rules 1 and 2, at two enums with a `Default`: with `tpd` = 5 ns a level held 20 ns and one held 6 ns pass 5 ns
+    // late, and the 3 ns pulse does not pass: `y`, read every ns, is what Rust's filter holds at that instant
+    let tpd = 5e-9;
+    for (bench, first, table) in [("LevelBench", "Low", InertialLabels::LEVELS), ("ModeBench", "Idle", InertialLabels::MODES)] {
+        let held = Section22::inertial(first, &table, tpd);
+        assert!(held.len() < table.len() + 1, "{bench}: the 3 ns pulse is swallowed");
+        let records = StdModels::records("inertial.msl", bench, 100e-9, 1e-9);
+        let seen = StdModels::of_stream(&records, "y");
+        assert!(seen.len() >= 99, "{bench}: one reading per ns: {}", seen.len());
+        for record in seen {
+            assert_eq!(InertialLabels::recorded(record), Section22::held_at(&held, record.time), "{bench}: y at {}", record.time);
+        }
+    }
+}
+
+#[test]
+fn inertial_at_a_type_without_default_is_refused() {
+    // §22.5.8 rule 7 and §3.3.4: `bool` does not implement `Default`, so `inertial` over a `Bit` is `E0187`
+    let refused = StdModels::project("inertial_bool.msl").elaborate("BoolBench").expect_err("bool has no Default").to_string();
+    assert!(refused.contains("E0187") && refused.contains("Default"), "{refused}");
+}
+
+#[test]
+fn short_makes_one_node_against_section_eleven() {
+    // §11: the two nodes a `Short` joins are one: a divider of 1k over 3k from 4 V has its joined middle at
+    // 4 * 3k / (1k + 3k) = 3 V on both, and the 4 V - 3 V over 1k is the 1 mA the lower 3k carries; over `Electrical`
+    // and over `Thermal`
+    let (top, upper, lower) = (4.0_f64, 1e3_f64, 3e3_f64);
+    let middle = top * lower / (upper + lower);
+    for rig in ["ElectricalRig", "ThermalRig"] {
+        let seen = StdModels::operating_point("short.msl", rig, &["top", "mid", "other"]);
+        assert!((seen[1] - middle).abs() < 1e-6 && (seen[2] - middle).abs() < 1e-6, "{rig}: one node at {middle}: {seen:?}");
+        let (through_upper, through_lower) = ((seen[0] - seen[1]) / upper, seen[2] / lower);
+        assert!((through_upper - through_lower).abs() < 1e-9 && (through_upper - top / (upper + lower)).abs() < 1e-9, "{rig}: one current: {through_upper} {through_lower}");
+    }
 }

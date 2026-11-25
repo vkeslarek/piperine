@@ -208,8 +208,8 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 
 **Done when**:
 
-- [ ] `inertial_delays_and_swallows_short_pulses` and `short_makes_one_node_against_section_eleven` pass under `**Run srcstd**`
-- [ ] Gate check passes: Full (last task of batch B17)
+- [x] `inertial_delays_and_swallows_short_pulses` and `short_makes_one_node_against_section_eleven` pass under `**Run srcstd**`
+- [x] Gate check passes: Full (last task of batch B17)
 
 **Tests**: integration
 **Gate**: full
@@ -446,6 +446,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **Amended (2026-11-24, coordinator, phase C round 5 finding 18):** T118 (generation in a hoisted module's body, GAPS L77) and check C135 join phase 22, after T112; the task was phase C's leftover (`tasks-c.md` Handoff, round 4 fix).
 **T104 finding (2026-11-24):** `std` under the model check surfaced four stdlib errors, fixed in `std/` and mirrored in `docs/spec/part_vii_stdlib.md` and the preformat fixtures: (1) `zi_zp/zd/np` and `laplace_zp/zd/np` placed `zi_nd`/`laplace_nd` with no way to infer `N`/`D` (E0181): now `::<{ N + 1 }, D>` etc. (a coefficient array of `poly_q`/`poly_s` is one longer than its roots); (2) `laplace_nd` summed `pos(w[k])` inside a closure, which reads a carrier outside a handle (E0450, §3 rule 7): the output is now a node `y: State` driven in the `analog` block by a `for` sum (an extra algebraic row, same value); (3) `TribufDelayed` placed `inertial` without `T` (E0181): `inertial::<Driven>`. `std_library.rs::calls_named` strips a turbofish from the callee text before comparing (same assertion). T110/T111 must run these against closed forms.
 **T106 finding:** design-e.md's table says `since` is `inf` "before the first change"; part VII §22.1.8 (rules 2-3 and its table) makes the first commit at (0, 0) a change, so a read after (0, 0) is `now - 0` and only a reaction on that first change reads `inf`. The tests follow the spec text; the oracle (`Section22`) is written from it. `MinPulse` therefore also checks at (0, 0) (width `inf`, passes).
+**T108 findings (AFK default 2026-11-24, pending user review):** (1) the task text says `inertial` at `bool` and `u8`; part VII §22.5.8 rule 7 and part I §3.3.4 say `bool`, `UInt`, `Int` and `Float` do **not** implement `Default` (on purpose), so `inertial` is E0187 at them. The spec stands; the proof runs at two enums with a `Default` (`Level`, `Mode`) and `inertial_at_a_type_without_default_is_refused` pins the refusal at `bool`. (2) A module result of type `Option<u8>` read in a reaction (`let y = inertial(x, 5n)` at `T = Option<u8>`, `y.is_some()`) is `P0001` "this form of an `Option` value" (`elab/compound.rs::lower_option`): not in GAPS. New row **L89** (loud, owner `spec-closure`) is added in T115 together with the counts (docs.rs pins every count, so the GAPS edit waits for T115/T118, with L77, L88 and the L58 group). `inertial` is read by sampling every ns (the result is a `T`, not a carrier with `changed()`).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
