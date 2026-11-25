@@ -224,3 +224,46 @@ not needed for correctness at this conditioning.
 | --- | --- |
 | Targeted runs: the round 1 tests, plus scratch tests for R2-1 (red, the defect) and R2-2 and the buck count (green), all removed afterwards | as above |
 | Full suite | not run: FAIL |
+
+---
+
+# Round 3 (head `deea3204d`): PASS
+
+Fixes reviewed: `911f27711` (R2-1: `consume` now clears `held` as well as `passed`, so a `reopen` starts the
+record from the values the nets hold) and `deea3204d` (R2-2: the spec, the docs and MD-84 now describe the solve
+as a backward-Euler step of width ε = 10⁻⁶ tick).
+
+- **R2-1 closed.** I re-ran my R2-1 reproduction (temporary, reverted): a Pulser clocks a Dff with `d = !q`, and
+  `q` is read by the analog side. Round 2, after `reopen`, now gives `boundary=[(q, 0)]` and `passing=[]`
+  (before the fix: `passing=[(q, 1)]`). The branch's own engine test covers it, as does the real-sides source
+  test `wraps/rounds.msl`, which counts exactly one zero-width solve per cause per wrap (PassedValue == 3,
+  CrossingChange == 3).
+- **R2-2 closed.** §15.2 rule 4 and its Resolution now give the ε width and why it is not a solve with every
+  state fixed, and they match `device_zero_width`.
+- No new findings. `origin/main` has not moved (`7cf35a4f7`), so nothing was merged.
+
+## Final full suite (one run, `PIPERINE_NGSPICE` unset, lane B target)
+
+| Gate | Result |
+| --- | --- |
+| `build --workspace --exclude piperine-lang-server --all-targets` | builds. **1 warning, already on main:** `constant NS is never used` (`crates/piperine-parity/tests/buck_whole.rs:29`). The file is identical on `origin/main` (last touched by `ffe17a87a`), so this branch did not cause it. Red against the zero-warning bar; not fixed here. |
+| piperine-abi | 58 passed, 0 failed |
+| piperine-numbers | 22 passed, 0 failed |
+| piperine-plan | 67 passed, 0 failed |
+| piperine-interp | 72 passed, 0 failed |
+| piperine-digital-solver | 165 passed, 0 failed |
+| piperine-analog-solver | 110 passed, 0 failed |
+| piperine-project | 53 passed, 0 failed |
+| piperine-lang | 1504 passed, 0 failed |
+| piperine-ir | 162 passed, 0 failed |
+| piperine-transpile | 170 passed, 0 failed |
+| piperine-solver | 404 passed, 0 failed |
+| piperine-api | 305 passed, 0 failed |
+| piperine-cli | 205 passed, 0 failed |
+| piperine (root) | 422 passed, 0 failed |
+| piperine-parity `--nocapture` | 588 passed, 0 failed |
+| the seven buck targets, release, `-j 1` | 23 passed, 0 failed (closed loop: mean v(vout) 0.802938 V, 24 s wall clock) |
+| buck_scenarios, release, `-j 1` | 61 passed, 0 failed |
+| cli twins | 6 passed, 0 failed |
+
+`target-b/release` was deleted after the run.
