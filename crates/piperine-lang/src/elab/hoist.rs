@@ -265,7 +265,8 @@ impl Elaboration<'_, '_> {
         let instance = if self.is_generic_module(module) { Some(self.module_instance(call, module)?) } else { None };
         let substitution = instance.as_ref().map_or_else(|| self.consts.substitution().clone(), |instance| self.instance_substitution(instance.item, &instance.arguments));
         let outer = self.consts.set_substitution(substitution.clone());
-        let bound = self.hoisted_params(module, &fields, file, node.span);
+        let caller_values = self.frame_bindings(parent).overlaid(&scope.unrolled);
+        let bound = self.hoisted_params(module, &fields, (&caller_values, &outer), file, node.span);
         self.consts.set_substitution(outer);
         let bound = bound?;
         // a placement written in generation is named by its iteration too: `y[1]`, `idt$0[1]`
@@ -352,11 +353,18 @@ impl Elaboration<'_, '_> {
     /// The node `signal`s of `module` as nodes of the body, named under the frame `frame`: its
     /// terminals are the frame's own. How many nodes the body gained.
     fn hoist_nodes(&mut self, frame: usize, module: DeclId) -> usize {
-        let signals: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && self.types.carrier(*c).is_none()).collect();
+        let signals: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && (self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some())).collect();
         let prefix = self.frames[frame].prefix.clone();
         let mut gained = 0;
         for signal in signals {
-            if let Some(terminal) = self.add_node(signal, NodeRole::Signal, &prefix, frame) {
+            if self.types.node_array(signal).is_some() {
+                // an array of nodes: one node of the body per element, its shape kept for `w[k]` (`carrier_arrays.rs`)
+                if let Some((shape, first)) = self.add_node_array(signal, NodeRole::Signal, &prefix, frame) {
+                    self.frames[frame].nodes.insert(signal, first);
+                    self.frames[frame].node_shapes.insert(signal, shape);
+                    gained += 1;
+                }
+            } else if let Some(terminal) = self.add_node(signal, NodeRole::Signal, &prefix, frame) {
                 self.frames[frame].nodes.insert(signal, terminal);
                 gained += 1;
             }
@@ -422,10 +430,22 @@ impl Elaboration<'_, '_> {
         true
     }
 
+    /// The constant a param value `expr` folds to over `read`: a composite (an array of coefficients, a table) is a constant of the
+    /// IR's arena, bound taken apart by `bind_param` (`frame_bindings`).
+    /// A value the placement gives is written in the caller, so it folds under the caller's generic arguments (`caller`).
+    fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, super::consts::ConstFault> {
+        let callee = caller.map(|substitution| self.consts.set_substitution(substitution.clone()));
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, read) } else { self.consts.value(expr, read) };
+        if let Some(callee) = callee {
+            self.consts.set_substitution(callee);
+        }
+        folded
+    }
+
     /// The params of a hoisted module, each bound to a constant: the value the placement's param
     /// block gives, else the default (edge case 5). A required param left out is `E0319`, a false
     /// `where` `E0317`. `None` after a diagnostic.
-    fn hoisted_params(&mut self, module: DeclId, fields: &[FieldInit], file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
+    fn hoisted_params(&mut self, module: DeclId, fields: &[FieldInit], (caller, caller_substitution): (&Bindings, &crate::types::Substitution), file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
         let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut bindings = Bindings::new();
         let mut out = std::collections::BTreeMap::new();
@@ -435,10 +455,10 @@ impl Elaboration<'_, '_> {
             let DeclKind::Param(p) = &data.kind else { continue };
             let given = fields.iter().find(|f| f.res == Resolution::Decl(*param)).map(|f| f.value);
             let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            // a given value reads the caller's constants; a default the params before it (§8.1.16)
-            let read = if given.is_some() { Bindings::new() } else { bindings.clone() };
+            // a given value reads the caller's constants (its params, its loop variables); a default the params before it (§8.1.16)
+            let read = if given.is_some() { caller.clone() } else { bindings.clone() };
             let value = match given.or(p.default) {
-                Some(expr) => match self.consts.value(expr, &read) {
+                Some(expr) => match self.param_constant(expr, &read, given.is_some().then_some(caller_substitution)) {
                     Ok(value) => value,
                     Err(fault) => {
                         self.const_fault(&fault, "a param value of a module with a result");

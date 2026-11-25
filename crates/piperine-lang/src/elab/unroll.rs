@@ -22,7 +22,7 @@ use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatKind, StmtKind};
+use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution, StmtKind};
 use crate::types::{Callee, Ty};
 
 /// The most iterations one loop is unrolled into, and the deepest call an expansion follows
@@ -37,13 +37,15 @@ pub(super) enum Held {
     Contribution,
     /// A placement of a module with a result (§8.3.4).
     Placement,
+    /// An element `w[k]` of an array of nodes: the node an index names is fixed at elaboration (`elements.rs`).
+    NodeElement,
 }
 
 impl Held {
     /// The code of a trip count that does not fold.
     fn code(self) -> &'static str {
         match self {
-            Held::Contribution => "E0416",
+            Held::Contribution | Held::NodeElement => "E0416",
             Held::Placement => "E0351",
         }
     }
@@ -53,6 +55,7 @@ impl Held {
         match self {
             Held::Contribution => "a contribution",
             Held::Placement => "a placement",
+            Held::NodeElement => "an element of an array of nodes",
         }
     }
 }
@@ -130,7 +133,17 @@ impl Elaboration<'_, '_> {
         if crate::pom::nested_stmts(self.design, &body.stmts).iter().any(|s| matches!(self.design.stmt_node(*s).kind, StmtKind::Contribution { .. })) {
             return Some(Held::Contribution);
         }
-        (!self.placements_in(body).is_empty()).then_some(Held::Placement)
+        if !self.placements_in(body).is_empty() {
+            return Some(Held::Placement);
+        }
+        let node_element = |expr: &ExprId| match &self.design.expr_node(*expr).kind {
+            ExprKind::Index { expr: base, .. } => match &self.design.expr_node(*base).kind {
+                ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(decl)) if self.types.node_array(decl).is_some()),
+                _ => false,
+            },
+            _ => false,
+        };
+        self.body_exprs(body).iter().any(node_element).then_some(Held::NodeElement)
     }
 
     /// Every expression of `body`, nested ones included.

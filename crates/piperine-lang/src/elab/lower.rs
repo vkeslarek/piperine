@@ -830,9 +830,15 @@ impl Elaboration<'_, '_> {
             Constant::Int(v) => self.emit(Expr::Int(v), ty, origin),
             Constant::FloatBits(bits) => self.emit(Expr::FloatBits(bits), ty, origin),
             Constant::Wide(id) => self.emit(Expr::Wide(id), ty, origin),
-            // The const evaluator builds no composite constant before the aggregate lowering; a
-            // composite folded value reaching here would be a lowering bug, never user input.
-            Constant::Aggregate(id) => panic!("the composite constant agg{} reached constant_expr before the aggregate lowering exists", id.0),
+            // A composite constant of the IR's arena (a param of a hoisted placement) is written out as the expression that builds it
+            // (`consts/imported.rs`); `Option` aggregates have their own path (`option_param_read`).
+            Constant::Aggregate(id) => {
+                let tree = self.imported_tree(value);
+                match self.tree_expr(&tree, &ty, &origin) {
+                    Some(built) => built,
+                    None => panic!("the composite constant agg{} has no constant form at its type", id.0),
+                }
+            }
         }
     }
 

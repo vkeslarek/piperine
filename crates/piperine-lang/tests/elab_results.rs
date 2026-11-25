@@ -355,3 +355,19 @@ fn a_value_input_passed_by_name_reads_its_argument() {
     let named = format!("{items}module Top(o: Electrical) {{ }}\nanalog for Top {{ v(o) +> scaled(2.0, gain: 3.0); }}\n");
     assert_eq!(Elab::ir(&named, "Top").print_structural(), Elab::ir(&positional, "Top").print_structural(), "the same body");
 }
+
+/// A module with a result whose params are an array and a tuple of reals, placed by `Top` (part III §8.3.12: a placement binds
+/// each param to a constant, a composite one included).
+const COMPOSITE_PARAMS: &str = "module Poly(x: f64) -> f64 { c: [f64; 2] = [1.0, 2.0]; t: (f64, f64) = (3.0, 4.0); x * c[1] + t.0 }\nmodule Top() { signal y: Bit<f64> = 0.0; let a = Poly(2.0) { c: [5.0, 7.0] }; let b = Poly(2.0) { }; }\ndigital for Top { on every(1n, 1n) { y <- a + b; } }";
+
+#[test]
+fn a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant() {
+    // §8.3.12: the placement `a` gives the array `c` its own value, `b` leaves the default; each read of the result folds `c[1]`
+    // and `t.0` from its frame's constant: no refusal, and the two placements hold the two arrays' elements
+    let ir = Elab::ir(COMPOSITE_PARAMS, "Top");
+    let printed = ir.print_structural();
+    for wanted in ["([5.0, 7.0] : [f64; 2])[1i32]", "([1.0, 2.0] : [f64; 2])[1i32]"] {
+        assert!(printed.contains(wanted), "the read `c[1]` goes through the placement's own array {wanted}:\n{printed}");
+    }
+    assert!(printed.contains("((3.0, 4.0) : (f64, f64)).0"), "the tuple default `t.0` is read through its constant:\n{printed}");
+}

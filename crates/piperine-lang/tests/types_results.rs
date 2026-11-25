@@ -261,3 +261,12 @@ fn an_event_result_outside_an_event_position_is_e0354() {
     let src = "module Top(p: Electrical) { }\nanalog for Top { let e = cross(v(p)); }";
     assert_eq!(codes(&diagnostics(src)), ["E0443"]);
 }
+
+#[test]
+fn a_composite_param_of_a_module_with_a_result_checks_at_its_placement() {
+    // part III §8.3.12: a placement's param block gives an array or a tuple param its value like any other param; the check
+    // reads `c[1]` as an `f64` and the placement as the module's result type
+    let src = "module Poly(x: f64) -> f64 { c: [f64; 2] = [1.0, 2.0]; x * c[1] }\nmodule Top() { let a = Poly(2.0) { c: [5.0, 7.0] }; }";
+    let design = design_of(src);
+    checked(&design, src);
+}

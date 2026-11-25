@@ -21,6 +21,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run elabgenr**: `cargo test -p piperine-lang --test elab_generation`
 **Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
+**Run typesresults**: `cargo test -p piperine-lang --test types_results`
+**Run elabresults**: `cargo test -p piperine-lang --test elab_results`
+**Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -85,7 +88,7 @@ T103 → T104 → T105 → T106 → T107 → T108
 ### Phase 22: The analog library items, `m` and noise, and the feature's closure
 
 ```
-T109 → T110 → T111 → T112 → T113 → T114 → T115
+T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 → T115
 ```
 
 ---
@@ -239,11 +242,33 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 
 ---
 
+### T110a: Composite params at a hoisted placement
+
+**What**: A param of a hoisted module that is an array or a tuple (`num: [f64; N]`, `poles: [(f64, f64); D]`, `table`) is folded to a constant of the IR's arena (`hoisted_params` through `composite_constant`, a given value under the caller's frame bindings and generic substitution), held in `Frame.params`, bound taken apart by `frame_bindings` (`bind_param`), and written out where read (`constant_expr` builds the tree); a node array `signal w: [State; D - 1]` of a hoisted module is its elements' nodes under the frame's prefix, and a loop that indexes an array of nodes is unrolled like one that contributes. Coordinator ruling 2026-11-24: in scope, hoisted placement (planned row L91), no GAPS row.
+**Where**: `crates/piperine-lang/src/elab/hoist.rs`, `elab/lower.rs`, `elab/unroll.rs`
+**Depends on**: T109
+**Reuses**: `composite_constant`, `bind_param`, `tree_expr`, `add_node_array`
+**Requirement**: GN-28 (AC 2)
+**Executor**: Opus
+
+**Done when**:
+
+- [x] `a_composite_param_of_a_module_with_a_result_checks_at_its_placement` passes under `**Run typesresults**`
+- [x] `a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant` passes under `**Run elabresults**`
+- [x] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(lang): composite params at a hoisted placement`
+
+---
+
 ### T110: The `laplace_*` family
 
 **What**: Source tests: `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp` of a first-order low-pass and a second-order section give the step response the closed form gives at sample instants (§22.2.14); `laplace_nd` with `N > D` is `E0304`; a complex root without its conjugate is `E0317`.
 **Where**: `crates/piperine-parity/tests/source_stdlib_generic.rs`
-**Depends on**: T109
+**Depends on**: T110a
 **Reuses**: `crates/piperine-parity/tests/stdlib_generic/*.msl`
 **Requirement**: GN-28 (AC 2)
 **Executor**: Sonnet
@@ -322,6 +347,29 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 **Gate**: quick
 
 **Commit**: `feat(lang): unroll generation in a hoisted module's body`
+
+---
+
+### T119: Arrays of templates
+
+**What**: `[A {}, A { r: 2.0 }]` is an array of module templates and `fs[k](x)` places the template at an index, a generation index included: the classifier names the module through an element, and the const evaluator folds the array and the index (GAPS L88). Added by the coordinator 2026-11-24. The Book rows that use the form as their example of a refusal (`compiler~79f44db1`, welcome `~28a764f7`) are rewritten to a form that is still refused by name and re-pinned.
+**Where**: `crates/piperine-lang/src/types`, `crates/piperine-lang/src/elab`
+**Depends on**: T118
+**Reuses**: `elab/templates.rs`
+**Requirement**: GN-17
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `an_array_of_templates_places_the_element_at_an_index` passes under `**Run elabtemplates**`
+- [ ] `a_template_array_element_placed_in_generation_runs` passes under `**Run srcgenr**`
+- [ ] `GAPS.md` drops L88 (`docs.rs` counts follow); the Book rows rewritten
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(lang): arrays of module templates`
 
 ---
 
@@ -449,6 +497,8 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T108 findings (AFK default 2026-11-24, pending user review):** (1) the task text says `inertial` at `bool` and `u8`; part VII §22.5.8 rule 7 and part I §3.3.4 say `bool`, `UInt`, `Int` and `Float` do **not** implement `Default` (on purpose), so `inertial` is E0187 at them. The spec stands; the proof runs at two enums with a `Default` (`Level`, `Mode`) and `inertial_at_a_type_without_default_is_refused` pins the refusal at `bool`. (2) A module result of type `Option<u8>` read in a reaction (`let y = inertial(x, 5n)` at `T = Option<u8>`, `y.is_some()`) is `P0001` "this form of an `Option` value" (`elab/compound.rs::lower_option`): not in GAPS. New row **L89** (loud, owner `spec-closure`) is added in T115 together with the counts (docs.rs pins every count, so the GAPS edit waits for T115/T118, with L77, L88 and the L58 group). `inertial` is read by sampling every ns (the result is a `T`, not a carrier with `changed()`).
 **T109 findings (AFK default 2026-11-24, pending user review):** (1) `Water` (Part IV §13) runs: two fixes made it. `types/analog.rs::contributes_potential_to` saw only top-level statements of the `analog` block, so `pwr(t)` beside `temp(t) +> tb` in a `match` arm was refused as a flow read (it now walks nested statements, §11 rule 3); and the test model drives the heater with `pwr(t, gnd)` (the node first). `elab_structure.rs::the_water_model_places_idt_and_waits_for_the_flow_probe` stays: its source has no `analog` block, so it still pins L73's form; the acceptance is `the_water_model_boils_and_vaporizes`. (2) transpile: an `Option<f64>` carrier read in the generic-real analog block was printed `Option<R>` / unlifted (`print/value.rs::pin_type`, `carrier_value`); both fixed (idtmod's `base`). (3) **idtmod's wrap does not happen**: the digital side is right (`seat` pulses, `base` = `Some(acc - modulus)` at the crossing) but the analog solve never sees the `seat` pulse (§22.2.9 rule 3 needs a jump solve between the microsteps; GAPS X1: "§15 describes a solver that is gone"), so the integral keeps growing past `offset + modulus`: a **silent wrong result**. The test holds idtmod to §22.2.9 before the first wrap only (marked SPEC_DEVIATION in the test). New GAPS row **L90** (the wrap of `idtmod`; owner `spec-closure`, solver) is added in T115. `idt` (State and `Thermal`, `reset`) matches the closed form.
 **STOP at T110 (2026-11-24, executor, context budget; T103 to T109 done and pushed).** T110 (`laplace_*`), T111 (`zi_*`) and T112 (`noise_table`) are blocked by one gap, found by placing them from source (`laplace_nd::<1, 2>(step) { num: [1.0], den: [1.0, 1u] }`): `P0001` "a composite value where a scalar is required in a param value of a module with a result is not supported yet" (`elab/hoist.rs::hoisted_params` folds each param with `consts.value`, which refuses a composite; `Frame.params` is `BTreeMap<DeclId, Constant>`, scalar only, so the array params `num`, `den`, `zeros`, `poles` and `table` cannot be bound at a hoisted placement). Design-e.md's risk table said to give this its own GAPS row owned by `composite-values`: new row **L91** (loud, owner `composite-values`, found by `generics` phase E T110), to be added in T115 with L89 (Option module result read in a reaction, `spec-closure`) and L90 (idtmod wrap, `spec-closure`, solver). A fix needs: `hoisted_params` folding a composite to a `ConstTree`, `Frame.params` holding it, `frame_bindings` binding it (`Bindings::tree`), and the readers of a param array in a hoisted frame (`num[k]`) lowering through it. The closed-form step-response models and tests I drafted (`laplace.msl`: four forms at tau = 1 us and a second-order section with poles -1e6 +- j2e6; oracle `1 - exp(-t/tau)` and `1 - e^(-a t)(cos b t + (a/b) sin b t)`; refusals E0304 for `N > D`, E0317 for an unpaired root) were reverted, not committed. Remaining: T110, T111, T112 (blocked), T118 (generation in a hoisted body), T119 (arrays of templates, GAPS L88: not yet added to this file), T113, T114, T115. The `idtmod` wrap (L90) and the three gaps above also mean C114 (`laplace_*`, `zi_*`, `noise_table`, idtmod's wrap) cannot be met without them.
+**Coordinator rulings (2026-11-24):** (1) T110a (composite params at a hoisted placement) is in scope, before T110; no GAPS row for it (L91 is not added). (2) T119 (arrays of templates, L88) after T118. (3) L90 (idtmod wrap) is fixed on main by another agent: T115 records what main has; merge origin/main before T115. (4) L89: make it run if modest, else a GAPS row in T115. (5) `inertial` default accepted (marked above); `since` follows the spec. The Book rows `compiler~79f44db1` and `welcome~28a764f7` use the array-of-templates form as a refusal example: T119 rewrites both after merging origin/main.
+**T110a (2026-11-24):** the array/tuple param, the caller-frame fold (a given value reads the caller's params, loop variables and generic substitution) and `w[k]` in a hoisted frame needed four fixes: `hoisted_params` composite fold, `constant_expr` writing an aggregate out, `hoist_nodes` taking node arrays, and `held_by_loop` unrolling a loop that indexes a node array (`Held::NodeElement`, E0416 when its trip count does not fold).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
@@ -460,7 +510,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 Phase 21 → Phase 22
 
 Phase 21:  T103 → T104 → T105 → T106 → T107 → T108
-Phase 22:  T109 → T110 → T111 → T112 → T118 → T113 → T114 → T115
+Phase 22:  T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 → T115
 ```
 
 | Batch | Phases | Tasks | Notes |

@@ -73,7 +73,7 @@ impl Elaboration<'_, '_> {
 
     /// `tree` as the expression of type `ty` that builds it. `None` for a range or a type with no
     /// constant form.
-    fn tree_expr(&mut self, tree: &ConstTree, ty: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn tree_expr(&mut self, tree: &ConstTree, ty: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
         match (tree, ty) {
             (ConstTree::Scalar(Constant::Int(position)), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: *position as u32, fields: Vec::new() }, ty.clone(), origin.clone())),
             (ConstTree::Scalar(Constant::Real(value)), _) => Some(self.emit(Expr::Real(Real::new(value.get())), ValueType::F64, origin.clone())),
