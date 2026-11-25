@@ -24,6 +24,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesresults**: `cargo test -p piperine-lang --test types_results`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
+**Run typestempl**: `cargo test -p piperine-lang --test types_templates`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -449,8 +450,8 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 �
 
 **Done when**:
 
-- [ ] `gaps_drops_the_generics_group_of_l58` and `the_generics_checks_file_holds_every_phase` pass under `**Run docs**`
-- [ ] Gate check passes: Full (last task of batch B18)
+- [x] `gaps_drops_the_generics_group_of_l58` and `the_generics_checks_file_holds_every_phase` pass under `**Run docs**`
+- [x] Gate check passes: Quick and the Book targets (the user's gate policy of 2026-11-24: no full workspace suite per task; the proofs of the closing round run them)
 
 **Tests**: integration
 **Gate**: full
@@ -500,6 +501,20 @@ Proof: run srcgenr | test a_hoisted_module_with_generation_runs ... ok
 Proof: run galleries | test the_fences_of_the_generic_library_are_checked ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
+**C136** - A composite param (an array of coefficients, a table, a tuple) of a module with a result is bound at its placement, and `laplace_*` and `noise_table` read theirs. (GN-28, AC 2; T110a, T110, T112; coordinator ruling 2026-11-24)
+Proof: run typesresults | test a_composite_param_of_a_module_with_a_result_checks_at_its_placement ... ok
+Proof: run elabresults | test a_composite_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok
+
+**C137** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params. (GN-17, AC 1; T119, GAPS L88)
+Proof: run elabtemplates | test an_array_of_templates_places_the_element_at_an_index ... ok
+Proof: run elabtemplates | test an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params ... ok
+Proof: run typestempl | test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok
+Proof: run srcgenr | test a_template_array_element_placed_in_generation_runs ... ok
+
+**C138** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
+Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
+Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
+
 **C118** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
@@ -523,6 +538,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T118 (2026-11-24):** each hoisted frame unrolls the generation of its own module (`Frame.generated`, parked and activated by `enter_frame`/`leave_frame`/`hoist_frame`; `GeneratedItems.frame` is the frame its lengths fold over); the `frame == 0` guards of carriers, elements, drives, definitions, `let`s, placement keys and nodes are gone; the refusal `generation in its body` left. The GAPS L77 row and the docs.rs counts move in T115.
 **T119 (2026-11-24):** `[A {}, A { r: 2.0 }]` and `fs[k](x)` run for a `let`, a `const` and a generation index: the checker takes `Ty::Module` as an array element (`types/aggregate.rs`), the classifier names the module through an element (`array_template`, `callee_class`), `fold_template_element` folds array and index (`elab/templates.rs`). Found on the way, a **silent wrong result** fixed: a module with a result placed through a template value (`let t = Scale { r: 3.0 }; t(1.0)`) ignored the template's params and used the defaults; `hoist()` now takes them from `template_through`. Still refused (loud, to be recorded in T115 as new row L91, owner `generics`): a `param` declared `[Cell; 2]` (`param of type [module Cell; 2] is not supported yet`).
 **T110a (2026-11-24):** the array/tuple param, the caller-frame fold (a given value reads the caller's params, loop variables and generic substitution) and `w[k]` in a hoisted frame needed four fixes: `hoisted_params` composite fold, `constant_expr` writing an aggregate out, `hoist_nodes` taking node arrays, and `held_by_loop` unrolling a loop that indexes a node array (`Held::NodeElement`, E0416 when its trip count does not fold).
+**T115 (2026-11-24):** GAPS counts: 1 silent (S9, the wrap of `idtmod`: `fix/idtmod-wrap` is not on `main` yet; when it merges, S9 and the `SPEC_DEVIATION` guard in `idt_and_idtmod_integrate_against_section_22` leave and the counts become 0 silent, 2 broken, 19 loud), 19 loud (L40, L77, L88 closed, L89 found). Book: all 28 `book_*` and `cli book` targets pass; no Book row used a form this phase changed, so none flipped; the two bundles-branch rows (`compiler~79f44db1`, `welcome~28a764f7`) are not on this branch's base and are the merger's to re-pin if T119 makes their example run. Open for the proofs round: none.
 **Dispatched:** none yet.
 **Walked:** none yet.
 

@@ -1883,6 +1883,15 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    (`temperature_given()` selects between `temperature()` and the constant, no peephole and no special case), so the twin
    goldens and the diode pins moved by one read while every number stayed; `Env::TemperatureGiven` and the ABI `GLOBAL TEMPERATURE_GIVEN` pin (in place, `MINOR` 0) carry the
    other uses. A function that reads a session parameter is inlined where it stands.
+8. **The stdlib built on generics (phase E).** Every item of the generics group is stdlib source over the forms the earlier phases
+   made run, and `std` is under the whole-model check. A module with a result is hoisted into the body that places it and each
+   hoisted frame is a placement in full: its params are constants of the IR arena, a composite one (an array of coefficients, a
+   table) included, and a placement through a template value takes the template's params; its generation unrolls under its own
+   params (`Frame.generated`); an array of nodes is its elements' nodes under the frame's prefix; and an `Option` result is read
+   as the pair of its halves. A loop that indexes an array of nodes or calls `delay` unrolls like one that contributes. An array
+   of module templates (`[A {}, A { r: 2.0 }]`, `fs[k](x)`) is an array of the elaboration's template numbers. `inertial` needs a
+   `Default` type (`bool` and the integers have none, §3.3.4); `since` reads `inf` only for a reaction on the first change. AFK
+   defaults of 2026-11-24, pending user review: `inertial` at two enums, the oracle of `since` as the spec text.
 
 
 ### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input

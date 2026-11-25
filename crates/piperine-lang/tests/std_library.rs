@@ -984,6 +984,8 @@ impl GenericsGroup {
             ("Hold", top("let h = Hold(clk, d) { th: 1n };")),
             ("MinPulse", top("let p = MinPulse(clk) { w: 1n };")),
             ("inertial", top("let i = inertial(m, 1n);")),
+            // `inertial::<Driven>` of an expression over a net the model declares
+            ("TribufDelayed", format!("{}nature Line {{ value: Driven }}\nimpl Resolve<Driven> for Line {{ fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {{ Driven::strongest(drives) }} }}\nmodule Top() {{ signal n: Line; let t = TribufDelayed(n, true, true); }}\n", Self::HEAD)),
             ("cast", format!("{}\ndigital for Top {{ on at(1n) {{ let c = cast::<u8, u8>(d); }} }}\n", top(""))),
             ("same", format!("{}\ndigital for Top {{ on at(1n) {{ let e = same(d, d); }} }}\n", top(""))),
         ]
