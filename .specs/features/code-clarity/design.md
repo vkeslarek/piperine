@@ -3,7 +3,7 @@
 **Spec**: `.specs/features/code-clarity/spec.md` (CC-01 to CC-12; Assumptions rows 6 to 12 are the user's answers of 2026-11-25 and bind this design)
 **Inventory**: `.specs/features/code-clarity/findings.md` (taken at `902f83ae1`)
 **Base of this design**: `a8968de11` (`origin/main`, "chore: merge generics phase E")
-**Status**: Draft
+**Status**: Approved (2026-11-25, with tasks.md)
 
 ---
 
@@ -33,13 +33,13 @@ Counts re-taken at `a8968de11` with `grep` and `wc` (the inventory's `syn` scan 
 Nothing moved a finding. Two facts the inventory did not have, both used below:
 
 1. **A proof row names a `Run` group, not a target.** `Proof: run stdlibrary | test x ... ok` reads the line `**Run stdlibrary**: cargo test -p piperine-lang --test std_library`, and `check_proofs.py` matches the words `test`, `x`, `...`, `ok` in order on one output line. So `test std_library::x ... ok` still matches after a merge: **merging targets rewrites `Run` lines only** (about 600 of them), never the 3 397 proof rows, and a test keeps its name.
-2. **`str` has no `Repr`** (`docs/spec/part_i_values.md:60,223`), while `emit!` fields carry strings today (`msg = "overrange"`, `kind = "require"`). This meets the user's `trait Field: Repr` (Open question OQ2).
+2. **`str` has no `Repr`** (`docs/spec/part_i_values.md:60,223`), while `emit!` fields carry strings today (`msg = "overrange"`, `kind = "require"`). So the bound on a record field cannot have `Repr` as a supertrait; the user settled it on 2026-11-25 (spec Assumption 14): `RecordValue`, with no supertrait.
 
 ---
 
 ## Architecture Overview
 
-The feature is twelve batches (B0 to B11, `findings.md` §8) in 25 phases and 154 tasks. Three rules shape the order:
+The feature is twelve batches (B0 to B11, `findings.md` §8) in 25 phases and 155 tasks. Three rules shape the order:
 
 1. **Guards first, as ratchets.** B0 puts the inventory's scan in the tree as a test-only crate. Each guard starts with one allowance file per crate listing today's violations, fails on a violation that is not listed **and** on a listed row that no longer exists. A batch closes a finding by deleting rows. At the close every allowance file holds only the permanent exceptions the spec names (`main`, `extern "C"`, `#[test]`).
 2. **Moves before renames, renames before words.** A function moves to its owner (B5, B6), then the owner gets its final name (B9), then it gets its doc comment (B10): each line is touched once per kind of change.
@@ -63,21 +63,21 @@ flowchart TD
     P10 --> P13["P13 · B6c Elaboration\nT92–T99 · lane F"]
     P12 --> P14["P14 · CC-11 ground\nT100–T102 · single"]
     P13 --> P14
-    P14 --> P15["P15 · B7 Declare what exists I\nT103–T108 · lane F"]
-    P15 --> P16["P16 · B7 II + Option, Range\nT109–T113 · lane F"]
-    P14 --> P17["P17 · B8 Named variadic, emit\nT114–T122 · lane K"]
+    P14 --> P15["P15 · B7 Declare what exists I\nT103–T109 · lane F"]
+    P15 --> P16["P16 · B7 II + Option, Range\nT110–T114 · lane F"]
+    P14 --> P17["P17 · B8 Named variadic, emit\nT115–T123 · lane K"]
     P11 --> P18
-    P16 --> P18["P18 · B9 Names: glossary, layout, ir\nT123–T125 · single"]
+    P16 --> P18["P18 · B9 Names: glossary, layout, ir\nT124–T126 · single"]
     P17 --> P18
-    P18 --> P19["P19 · B9 Names, front\nT126–T130 · lane F"]
-    P18 --> P20["P20 · B9 Names, back\nT131–T135 · lane K"]
-    P19 --> P21["P21 · B9 Modules and crates\nT136–T139 · single"]
+    P18 --> P19["P19 · B9 Names, front\nT127–T131 · lane F"]
+    P18 --> P20["P20 · B9 Names, back\nT132–T136 · lane K"]
+    P19 --> P21["P21 · B9 Modules and crates\nT137–T140 · single"]
     P20 --> P21
-    P21 --> P22["P22 · B10 Words, front\nT140–T142 · lane F"]
-    P21 --> P23["P23 · B10 Words, back\nT143–T146 · lane K"]
-    P22 --> P24["P24 · B10 Structure words\nT147–T150 · single"]
+    P21 --> P22["P22 · B10 Words, front\nT141–T143 · lane F"]
+    P21 --> P23["P23 · B10 Words, back\nT144–T147 · lane K"]
+    P22 --> P24["P24 · B10 Structure words\nT148–T151 · single"]
     P23 --> P24
-    P24 --> P25["P25 · B11 Close\nT151–T154 · single"]
+    P24 --> P25["P25 · B11 Close\nT152–T155 · single"]
 ```
 
 ### Batches, phases and sizes
@@ -93,13 +93,13 @@ Size: S (days, one crate), M (one to two weeks, several crates), L (a batch of i
 | **B4 Refusals** | 3 | T15–T22 (8) | M | F | rule 2 made checkable; Q12; hands `spec-closure` its table |
 | **B5 Owners, back end** | 8, 11 | T53–T62, T77–T85 (19) | L | K | CC-04, CC-06, CC-07 for 11 crates |
 | **B6 Owners, front end** | 6, 7, 10, 13 | T41–T52, T69–T76, T92–T99 (28) | L (the largest) | F | CC-02, CC-04, CC-05 AC 2, CC-06 for `piperine-lang` |
-| **B7 Declare what exists** | 14, 15, 16 | T100–T108, T111–T113 (12) | L | F | CC-11 AC 2 |
-| **B8 Change the language** | 16, 17 | T109, T110, T114–T122 (11) | L | F (b, c), K (a) | CC-11 AC 1, 3 |
-| **B9 Names** | 18–21 | T123–T139 (17) | L, mechanical | single, F ∥ K, single | CC-05 |
-| **B10 Words** | 22–24 | T140–T150 (11) | M | F ∥ K, single | CC-01, CC-08, CC-10 |
-| **B11 Close** | 12, 25 | T86–T91, T151–T154 (10) | M | T, single | CC-12 AC 3, 6; CC-09 |
+| **B7 Declare what exists** | 14, 15, 16 | T100–T109, T112–T114 (13) | L | F | CC-11 AC 2 |
+| **B8 Change the language** | 16, 17 | T110, T111, T115–T123 (11) | L | F (b, c), K (a) | CC-11 AC 1, 3 |
+| **B9 Names** | 18–21 | T124–T140 (17) | L, mechanical | single, F ∥ K, single | CC-05 |
+| **B10 Words** | 22–24 | T141–T151 (11) | M | F ∥ K, single | CC-01, CC-08, CC-10 |
+| **B11 Close** | 12, 25 | T86–T91, T152–T155 (10) | M | T, single | CC-12 AC 3, 6; CC-09 |
 
-`findings.md` §8 puts S5 (`Range`, `Iterator`) and S6 (`Option`) in B8. They are **scheduled** inside phase 16, before the method catalogue (T111, T112), because the catalogue's signatures name those types; they stay B8 changes for CC-09 (spec, Book, corpora and tests in the same commit).
+`findings.md` §8 puts S5 (`Range`, `Iterator`) and S6 (`Option`) in B8. They are **scheduled** inside phase 16, before the method catalogue (T112, T113), because the catalogue's signatures name those types; they stay B8 changes for CC-09 (spec, Book, corpora and tests in the same commit).
 
 ### Lanes
 
@@ -141,7 +141,7 @@ Gate policy (user, 2026-11-23, `CLAUDE.md`): per task, the build and the touched
 | **Golden** | a task that touches a path from MSL source to generated bytes (`piperine-lang/src/elab`, `piperine-ir`, `piperine-plan`, `piperine-transpile`), or renames a name generated code spells | Quick, then `cargo test -p piperine-transpile --test golden`, `cargo test -p piperine-cli --test twins`, `cargo test -p piperine --test book_inventory` (`--test book inventory_guard::` after T89) |
 | **Ledger** | a task that removes, moves or merges a test, or renames a crate | Quick, then `cargo test -p piperine-repository-guards --test proof_ledger` |
 | **Build** | a task that changes no Rust (tracking files, the Book's prose, `ARCHITECTURE.md`) | the `**Build**` line |
-| **Final** | T154 only | `cargo test --workspace`; `cargo test -p piperine-parity -- --nocapture` with ngspice installed; `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`; the buck targets by name (`examples/buck/README.md`); `check_proofs.py code-clarity`; `check_proofs.py <feature>` for every feature with a `## Checks` |
+| **Final** | T155 only | `cargo test --workspace`; `cargo test -p piperine-parity -- --nocapture` with ngspice installed; `env -u PIPERINE_NGSPICE cargo test -p piperine-parity`; the buck targets by name (`examples/buck/README.md`); `check_proofs.py code-clarity`; `check_proofs.py <feature>` for every feature with a `## Checks` |
 
 Gate of each batch's tasks, and what its last task also shows before the phase merges:
 
@@ -158,23 +158,24 @@ Gate of each batch's tasks, and what its last task also shows before the phase m
 | B8 | Golden, plus `piperine-parity`, `piperine-api`, `piperine-cli` and `--test book` where the corpora or the Book move | `**Run variadics**`, `**Run srcio**` |
 | B9 | Quick or Golden by the crate; Ledger for a crate rename | the crate's naming allowance empty |
 | B10 | Quick (the crate builds under `#![deny(missing_docs)]`); Build for prose | the crate's documentation allowance empty |
-| B11 | Ledger for merges; Final for T154 | the after report; every feature's proofs |
+| B11 | Ledger for merges; Final for T155 | the after report; every feature's proofs |
 
 **CC-09 AC 1 reads "the full `cargo test` SHALL pass" at each commit.** The gate policy is later than the spec (2026-11-23 against 2026-11-18) and is the user's: each commit passes Quick (and Golden or Ledger where the table says), and byte-identity of every twin, golden, parity target and Book listing is proven once, by Final. A task that cannot keep a golden byte-identical stops and reports; only the changes listed under "What may move" may move bytes.
 
-The `**Build**` line is green at the base (`validate_tasks.py --execute` runs it before T1) and is rewritten by the three tasks that change what it names: T2 (drops `--exclude piperine-lang-server`, because Cargo warns on an excluded package that does not exist and the line fails on any warning), T5 (the hygiene guard moves to the guards crate), T138 (`piperine-lang` becomes `piperine-language`).
+The `**Build**` line is green at the base (`validate_tasks.py --execute` runs it before T1) and is rewritten by the three tasks that change what it names: T2 (drops `--exclude piperine-lang-server`, because Cargo warns on an excluded package that does not exist and the line fails on any warning), T5 (the hygiene guard moves to the guards crate), T139 (`piperine-lang` becomes `piperine-language`).
 
 ### What may move (CC-09)
 
 | Change | Approved by | Moves | Task |
 |---|---|---|---|
 | `P0001` loses "outside the M1 subset" | Q12 (row 8) | the label of every `P0001`; `GAPS.md:171` leaves | T16 |
-| `emit!(…)` → `emit(…)`; `check(..)`, `finish(..)`; `include_str!(…)` → `include_str(…)`; no `!` form | Q14 (a) (row 10) | spec Parts I, VI, VII, Appendices A, B, C, G; 171 `.msl` lines; 98 Book lines; 322 Rust test lines; `E0602` changes phase | T114–T122 |
-| `Option` is a std enum; `Range<T>` and `Iterator<T>` are named | Q14 (b), (c) (row 11) | spec §1, Appendix H.4, H.6, H.7, H.9; reflection shows `Option` as a `std` item | T109, T110 |
-| Builtins declared in `std` | CC-11 AC 2, Assumption 5 | wording of a diagnostic that named "the catalogue"; `E0457` narrows to `gnd` (S16) | T103–T113 |
+| `emit!("s", a = b)` → `emit("s", a: b)`; `check(..)`, `finish(..)`; `include_str!(…)` → `include_str(…)`; no `!` form | Q14 (a) (row 10), OQ1 (row 13) | spec Parts I, VI, VII, Appendices A, B, C, G; 171 `.msl` lines; 98 Book lines; 322 Rust test lines; `E0602` changes phase | T115–T123 |
+| `Dc`, `Transient`, `Ac`, `Noise` are written `Analysis::Dc`, …; `analysis(Static)` is `is_static()` | OQ4 (row 16) | 29 `.msl` lines (7 of them in `std`), 3 Book lines, 53 spec lines, 60 Rust test lines; no bare variant name resolves | T105, T106 |
+| `Option` is a std enum; `Range<T>` and `Iterator<T>` are named | Q14 (b), (c) (row 11) | spec §1, Appendix H.4, H.6, H.7, H.9; reflection shows `Option` as a `std` item | T110, T111 |
+| Builtins declared in `std` | CC-11 AC 2, Assumption 5 | wording of a diagnostic that named "the catalogue"; `E0457` narrows to `gnd` (S16) | T103–T114 |
 | `GND`, `vss`, `VSS` stop naming ground | S21, rule 1 (the spec knows `gnd` only) | nothing in the corpora (T29 stops if one uses an alias) | T29 |
 | A NaN pole and an empty shoot return the solver's `Error` instead of a panic | rule 9, `findings.md` §1.9 | nothing a passing run prints | T24 |
-| Names of `piperine-abi` and of the embedded runtime that generated code spells | Q3 (row 7); spec Out of Scope: generated code "follows the renames only" | transpile goldens, by identifier only: the task shows `git diff --word-diff` holds renamed identifiers and nothing else | T131, T136 |
+| Names of `piperine-abi` and of the embedded runtime that generated code spells | Q3 (row 7); spec Out of Scope: generated code "follows the renames only" | transpile goldens, by identifier only: the task shows `git diff --word-diff` holds renamed identifiers and nothing else | T132, T137 |
 
 No tolerance moves, `crates/piperine-parity/src/contract.rs` is not edited, and no numeric result of any twin, parity target or Book listing changes. A task that would move one stops (CC-11 AC 4).
 
@@ -194,7 +195,7 @@ No tolerance moves, `crates/piperine-parity/src/contract.rs` is not edited, and 
 | Hygiene guards | `lang/tests/suite_hygiene.rs`, `solver/tests/{crate_boundaries,workspace_shape}.rs` | move into the guards crate (T5); the ones that guard the present suite stay |
 | `tests/book/inventory_guard.rs` | root | proves every Book row names an existing test after each merge |
 | `lang/tests/support/code_owners.tsv` | lang | the model for the refusal table: a code has an owner, a guard reads the table |
-| `check_proofs.py` | the skill | the final proof that no criterion of any feature lost its test (T154) |
+| `check_proofs.py` | the skill | the final proof that no criterion of any feature lost its test (T155) |
 
 ### Integration Points
 
@@ -202,7 +203,7 @@ No tolerance moves, `crates/piperine-parity/src/contract.rs` is not edited, and 
 |---|---|
 | 45 features' `tasks*.md` / `checks*.md` | `ProofLedger` rewrites their `Run` lines and lone `Proof:` commands; a static guard checks them at every merge |
 | `tests/book/inventory.tsv` | `covered_by` cells rewritten by `ProofLedger`; `inventory_guard` checks them |
-| The Book (`docs/book/content.html`) | follows T89 (CLAUDE.md sentence), T120 (`emit`), T122 (`include_str`), T135 (public api names), T137, T138 (crate names), T149 (organization chapter) |
+| The Book (`docs/book/content.html`) | follows T89 (CLAUDE.md sentence), T121 (`emit`), T123 (`include_str`), T136 (public api names), T138, T139 (crate names), T150 (organization chapter) |
 | `GAPS.md`, `ROADMAP.md`, `CLAUDE.md`, `AGENTS.md` | each task that closes a row or renames a path they cite edits them in the same commit |
 | `spec-closure` (item 13) | receives the refusal table with every row `Unswept` (T22) and S9, arithmetic operator traits (Q14 (d)) |
 
@@ -245,7 +246,7 @@ No tolerance moves, `crates/piperine-parity/src/contract.rs` is not edited, and 
   - `every_inventory_row_names_a_test_that_exists`;
   - `every_retired_check_is_recorded` — each retired proof has its `retired.tsv` row and the reverse;
   - `the_parity_oracles_are_not_reduced` — the tests of `parity_*`, `tests/scenarios.rs`, the twins and the buck targets are a superset of `data/parity_oracles.tsv`, written by T4 from the base.
-- **Final proof**: T154 runs `check_proofs.py` for every feature.
+- **Final proof**: T155 runs `check_proofs.py` for every feature.
 
 ### Test-support crates — B2 (Q7, Q17)
 
@@ -350,7 +351,7 @@ Target module map of `crates/piperine-lang/src/types/` (67 files today; file nam
 | `types/carrier/` | `CarrierTyping` | `carrier.rs`, `definition.rs`, `coverage.rs`, `element_target.rs`, `event.rs`, `reaction.rs` |
 | `types/generics/` | `GenericsSolver` | `generics.rs`, `generic_values.rs`, `inference.rs`, `substitution.rs`, `obligations.rs`, `bounds.rs`, `module_bounds.rs`, `module_generics.rs` |
 | `types/traits/` | `TraitTable` (exists as data; gains the methods that read it) | `traits.rs`, `coherence.rs`, `derives.rs`, `repr.rs` |
-| gone | — | `catalogue.rs` (T113), `unsupported.rs` (T21) |
+| gone | — | `catalogue.rs` (T114), `unsupported.rs` (T21) |
 
 Order: T69 partitions the fields with no method moved; T70 to T75 move one concern each (a commit moves the files with `git mv`, changes the `impl` headers and the receivers, and nothing else); T76 leaves `Checker` with the worklist and closes its allowance row. The guard that holds it: `an_inherent_impl_lives_with_its_type` (every `impl T` block is in the file that declares `T` or below its directory), in `ownership`.
 
@@ -370,7 +371,7 @@ pub(crate) struct Elaboration<'d> { state: ElaborationState<'d> }
 
 `Scope` splits the same way: `ValueScope` (locals, the temporaries, the loop and exit state), `AnalogScope` (the branch and site context), `DigitalScope` (the reaction and carrier context), each owned by its lowering's directory and carried in one `Scope` of three fields.
 
-Target module map of `crates/piperine-lang/src/elab/` (73 files + `consts/`; the directory becomes `elaboration/` in T136):
+Target module map of `crates/piperine-lang/src/elab/` (73 files + `consts/`; the directory becomes `elaboration/` in T137):
 
 | Directory | Owner type | Files moved in |
 |---|---|---|
@@ -435,11 +436,11 @@ New `std` files and what each replaces:
 |---|---|---|---|
 | `std/traits.msl` | `Repr` (with `WIDTH`, `encode`, `decode`), `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash`, `From`, `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr`, `Resolve`, written as the spec prints them (`part_i_values.md:826`, H.8, H.10) | 16 `BUILTINS` rows, 3 `Member` rows, the signatures in `types/operators.rs:195-210`, `bounds.rs:266-376`, `generics.rs:163-172` | T103 |
 | `std/io.msl` | `pub trait TableRow`, `pub trait Integer`: the bounds of `parse_table` and `parse_hex`, today comments | `types/intrinsic.rs:75-90`; recognition by `(namespace, name)` strings | T104 |
-| `std/core.msl` | the §14 functions (`now`, `temperature`, `simparam`, `analysis`, `freq`, `gmin`, `source_scale`, `potential`, `flow`, `ddx`, `ac_stim`), `pub enum Analysis { Dc, Transient, Ac, Noise, Static }`, the modules `ddt`, `delay`, `limit`, `noise`, `cross`, `at`, the event `settle`, `bound_step` | `CORE_ROWS` (16), 25 `BUILTINS` rows, the `match name { "temperature" => … }` of `elab/analog.rs:174-200`, the two parser peeks for `bound_step` | T105, T106 |
-| `std/carriers.msl` | `impl<T: Repr> Bit<T> { changed, prev }`, `others`, `inflow`; `rise` and `fall` compile from the body `std/values.msl` already writes (S14) | 4 `Method` rows; `Builtin::Rise`/`Fall`; `rise_guard`/`fall_guard` | T107 |
-| `std/sequences.msl` | `pub extern "intrinsic" struct Range<T>;`, `pub extern "intrinsic" struct Iterator<T>;` and their methods | `Ty::Range`, `Ty::Iterator` as unnameable types (H.9) | T109, T112 |
-| `std/option.msl` | `pub enum Option<T> { None, Some(T) }` and its methods | 3 `BUILTINS` rows; 9 catalogue rows | T110, T112 |
-| `std/numbers.msl` | `impl f64 { … }` (32), the integer methods (13, the signed-only rows under an `Int<N>` impl), `impl bool` (2), `impl<T, const N: usize> [T; N]` (7) | the method catalogue, `types/catalogue.rs:70-217` | T111, T112 |
+| `std/core.msl` | the §14 functions (`now`, `temperature`, `simparam`, `analysis`, `is_static`, `freq`, `gmin`, `source_scale`, `potential`, `flow`, `ddx`, `ac_stim`), `pub enum Analysis { Dc, Transient, Ac, Noise }` (the variants are **not** re-exported: every use is written `Analysis::Dc`), the modules `ddt`, `delay`, `limit`, `noise`, `cross`, `at`, the event `settle`, `bound_step` | `CORE_ROWS` (16), 25 `BUILTINS` rows (the 5 bare variant rows among them), the `match name { "temperature" => … }` of `elab/analog.rs:174-200`, the two parser peeks for `bound_step` | T105, T106, T107 |
+| `std/carriers.msl` | `impl<T: Repr> Bit<T> { changed, prev }`, `others`, `inflow`; `rise` and `fall` compile from the body `std/values.msl` already writes (S14) | 4 `Method` rows; `Builtin::Rise`/`Fall`; `rise_guard`/`fall_guard` | T108 |
+| `std/sequences.msl` | `pub extern "intrinsic" struct Range<T>;`, `pub extern "intrinsic" struct Iterator<T>;` and their methods | `Ty::Range`, `Ty::Iterator` as unnameable types (H.9) | T110, T113 |
+| `std/option.msl` | `pub enum Option<T> { None, Some(T) }` and its methods | 3 `BUILTINS` rows; 9 catalogue rows | T111, T113 |
+| `std/numbers.msl` | `impl f64 { … }` (32), the integer methods (13, the signed-only rows under an `Int<N>` impl), `impl bool` (2), `impl<T, const N: usize> [T; N]` (7) | the method catalogue, `types/catalogue.rs:70-217` | T112, T113 |
 
 What `std` must be able to write, checked against the tree by T100 before any of it is used (the inventory lists them, `findings.md` §2.2 last paragraph; `generics` phase E is on the base): an inherent `impl` on a primitive type, written in `std` only; `extern "intrinsic"` on a method and on a module; a trait with default type parameters (`BitAnd<Rhs = Self, Out = Self>`, which `std/logic.msl` already uses in `impl … BitAnd for Logic<N>`); generic methods with an `Fn` bound (phase D). T100 records each form as *parses and checks today* or *missing*; a missing form is implemented as a general form by the task that first needs it, with its spec rule, never as a `std`-only exception. If a form cannot be made general inside its task, the task stops and the item stays a row of the guard's allowance with the reason (CC-11 AC 1: "keep it with a written reason the user reviews").
 
@@ -451,11 +452,11 @@ What `std` must be able to write, checked against the tree by T100 before any of
 | An overload by argument count (`potential(a)` / `potential(a, b)`) | the second node is a trailing `Option` parameter (§3.2.2), `None` meaning the reference; no overload exists |
 | The position class (`Allowed::{Analog, Instances, Everywhere}`) | §3's function classes: an intrinsic declares its class by where its declaration sits (`std::core::analog`, `std::core::structure`); the checker reads the class from the declaration |
 | `simparam`'s literal text, `emit`'s stream | not a special case: every `str` is a text known at elaboration (`part_i_values.md:223`); the existing refusal "a `str` that is not a text after inlining" covers both |
-| `analysis(Static)` | `Static` is the fifth variant of `Analysis`, documented as the class of analyses with no time (S7; OQ4) |
+| `analysis(Static)` and the bare names `Dc`, `Transient`, `Ac`, `Noise` | `pub enum Analysis { Dc, Transient, Ac, Noise }` is an ordinary enum of `std`: its variants are written `Analysis::Dc`, as any enum's are, and the prelude re-exports the type only (a model that wants the bare names writes `use std::core::Analysis::*;` itself). `Static` is not an analysis: `analysis(Static)` becomes `pub extern "intrinsic" fn is_static() -> bool;`. T106 rewrites every source, the Book, the spec and the tests, and the five bare rows leave `BUILTINS` (S7; spec Assumption 16) |
 
 **Kept, with the reason written in `std` as a doc comment and in the guard's closed list** (Q15): `Fn(P1, …, Pn)` and `Nature` (bounds on kinds of item), the primitive types and `gnd` (the type grammar's leaves), the nature quantity keys, the closed `#[derive]` set, `extern "intrinsic"` in `std` only.
 
-**The guard** (`crates/piperine-language/tests/std_declarations.rs`, ratchet from T102, strict at T113):
+**The guard** (`crates/piperine-language/tests/std_declarations.rs`, ratchet from T102, strict at T114):
 
 - `every_builtin_is_declared_in_std` — every name the resolver can return as `Resolution::Builtin` is in the closed primitive list of S17;
 - `no_std_item_is_found_by_its_spelling` — no comparison of an item's name against a string literal in `piperine-lang/src` outside `pom/language_items.rs` (the 220-site scan, as a test);
@@ -467,7 +468,7 @@ What `std` must be able to write, checked against the tree by T100 before any of
 
 All of it is the user's decision (rows 10 and 11). The spec text below is what the tasks write; each amendment lands in the commit that implements it, with a revision note in `docs/spec/index.md` naming the special case removed (CC-11 AC 3).
 
-#### Named variadic parameters (T114–T116)
+#### Named variadic parameters (T115–T117)
 
 **`docs/spec/part_i_values.md` §3.2**, first paragraph, replaces "There is no overloading, no variadic call and no default value in a signature." with:
 
@@ -478,42 +479,45 @@ All of it is the user's decision (rows 10 and 11). The spec text below is what t
 ```
 fn_param       ::= 'self' | IDENT ':' type | '..' IDENT ':' type
 call           ::= path '(' ( argument ',' )* ')'
-argument       ::= expr | IDENT ':' expr | IDENT '=' expr | '..' IDENT
+argument       ::= expr | IDENT ':' expr | '..' IDENT
 ```
 
 **Static semantics**, appended:
 
-> - **§3.2.11** A parameter written `..name: F` is a **named variadic**. It **MUST** be the last parameter, a function has at most one, and `F` **MUST** be a type parameter of the function bounded by `Fields`.
-> - **§3.2.12** In a call of such a function, the arguments after those that bind the other parameters are **fields**: each is `name = value`, or a bare identifier `name`, which means `name = name`. Any other argument in that position is an error. Field names are distinct within one call.
-> - **§3.2.13** The fields of one call form an **anonymous record type**: its field names in the order written, each with the type of its value. `F` is that type at that call. It is fixed at compilation; there is no map and no dynamic value. Each field's type **MUST** implement `Field`.
+> - **§3.2.11** A parameter written `..name: F` is a **named variadic**. It **MUST** be the last parameter, a function has at most one, and `F` **MUST** be a type parameter of the function bounded by `RecordFields`.
+> - **§3.2.12** In a call of such a function, a named argument `name: value` that names no optional parameter (§3.2.9) is a **field**, and so is a bare identifier `name` written after the arguments that bind the other parameters: it means `name: name`, as in a struct expression (§1.3). Any other argument in that position is an error. A name that is an optional parameter binds the parameter. Field names are distinct within one call.
+> - **§3.2.13** The fields of one call form an **anonymous record type**: its field names in the order written, each with the type of its value. `F` is that type at that call. It is fixed at compilation; there is no map and no dynamic value. Each field's type **MUST** implement `RecordValue`.
 > - **§3.2.14** A function with a named variadic is instantiated once per record type, as any generic function is (§3.8).
-> - **§3.2.15** In the body, the named variadic is a value of type `F`. A body that knows only `F: Fields` may pass it whole as the named variadic of another call, written `..name`, alone or after other fields; a field of the same name written twice is an error.
+> - **§3.2.15** In the body, the named variadic is a value of type `F`. A body that knows only `F: RecordFields` may pass it whole as the named variadic of another call, written `..name`, alone or after other fields; a field of the same name written twice is an error.
 
 **`std/records.msl`** (new):
 
 ```
-/// A type a record field may have (§19 rule 11): plain data.
-pub trait Field {}
+/// A value a record field can carry (§19 rule 11). It has no supertrait: the core implements it
+/// for every type with `Repr` and for `str`.
+pub trait RecordValue {}
 
 /// The record the named arguments of one call form (§3.2.13). The compiler implements it for
 /// each anonymous record type; no `impl` of it is written.
-pub trait Fields {}
+pub trait RecordFields {}
 
 /// Write one record to `stream` (§19).
-pub extern "intrinsic" fn emit<F: Fields>(stream: str, ..fields: F);
+pub extern "intrinsic" fn emit<F: RecordFields>(stream: str, ..fields: F);
 ```
 
-Errors: `E0604` ("a field name is repeated") moves from `emit!` to every such call; two new codes of the §3 family, taken by T115 as the next free numbers of `code_owners.tsv`, for "a named variadic that is not last, is repeated, or whose type is not a parameter bounded by `Fields`" and "an argument in the field position that is neither `name = value` nor an identifier".
+Errors: `E0604` ("a field name is repeated") moves from `emit!` to every such call; two new codes of the §3 family, taken by T116 as the next free numbers of `code_owners.tsv`, for "a named variadic that is not last, is repeated, or whose type is not a parameter bounded by `RecordFields`" and "an argument in the field position that is neither `name: value` nor an identifier".
 
-`piperine-lang` implements this for every `fn`, not for `emit` alone: T115's acceptance tests declare user functions with a named variadic and call them; T116's run one end to end.
+The spelling is the one the language already has for a named argument (§3.2.4) and for a struct field, shorthand included, so a call has one named-argument form (the user, spec Assumption 13: "Mantem o padrão"). `call`'s production keeps its named arguments as they are and gains `'..' IDENT`.
 
-#### `emit`, the reserved streams, `include_str` (T117–T122)
+`piperine-lang` implements this for every `fn`, not for `emit` alone: T116's acceptance tests declare user functions with a named variadic and call them; T117's run one end to end.
+
+#### `emit`, the reserved streams, `include_str` (T118–T123)
 
 **`docs/spec/part_vi_io.md` §19**: the production `emit ::= 'emit' '!' '(' …` is deleted; the section opens:
 
-> There is one output function: `emit("name", field = value, …)` writes a typed record to the stream `name`. It is declared in `std` (§22.6) as a function with a named variadic (§3.2.11), and follows every rule of a call.
+> There is one output function: `emit("name", field: value, …)` writes a typed record to the stream `name`. It is declared in `std` (§22.6) as a function with a named variadic (§3.2.11), and follows every rule of a call.
 
-Rule 11 becomes "Each field's type implements `Field` (§3.2.13)." `E0602` becomes "the stream of an `emit` is not a text known at elaboration" and moves from parse to elaboration.
+Rule 11 becomes "Each field's type implements `RecordValue` (§3.2.13)." `E0602` becomes "the stream of an `emit` is not a text known at elaboration" and moves from parse to elaboration.
 
 **The reserved streams** (`sim`, `checks`; rule 4, rule 14) are no longer written with `emit`. `std/io.msl`:
 
@@ -543,32 +547,32 @@ Appendix B loses the row "built-in `!` forms | `emit!`, `include_str!` | 2", con
 
 A source that still writes `emit!(` gets rule 4's parse error with the help "write `emit(…)`".
 
-Rewrite of the corpora (T119, T120): 171 lines in 65 `.msl` files, 322 lines of Rust test strings, 98 Book lines, 57 spec lines. The edit is `emit!(` → `emit(` plus the reserved-stream sites; T119 lists the reserved-stream sites it rewrote by hand.
+Rewrite of the corpora (T120, T121): 171 lines in 65 `.msl` files, 322 lines of Rust test strings, 98 Book lines, 57 spec lines. Each site changes twice: `emit!(` becomes `emit(`, and each field's `name = value` becomes `name: value` (the `=` at the top nesting level of the argument list; a field written `x = x` may stay `x: x`). T120 does it with the old production's own spans, so no `=` inside a value is touched, lists the reserved-stream sites it rewrote by hand, and proves the result by parsing every corpus and comparing every record.
 
-#### `Option`, `Range`, `Iterator` (T109, T110)
+#### `Option`, `Range`, `Iterator` (T110, T111)
 
 **Appendix H.4**: `Option` is declared in `std`: `pub enum Option<T> { None, Some(T) }`, with `Some` and `None` re-exported by the prelude. `?` (§1.8.14), a left-out trailing parameter (§3.2.2) and the implicit `Some` (§3.2.3) name this declaration. Inside the compiler the declaration maps to the checker's and the IR's existing option representation at one place (`LanguageItems`); the IR does not change and no golden moves. Making `Option` an enum with no representation of its own is not in this feature (it would move the IR) and is logged for `spec-closure`.
 
 **Appendix H.9** loses "a range and an iterator have a type no model can name": `Range<T>` is the type of `a..b` and `a..=b`, `Iterator<T>` the type `iter()` and every adaptor of H.7 return, both declared in `std/sequences.msl` as `extern "intrinsic"` structs. **§3 rule 10** gains `struct` among the items `extern "intrinsic"` may mark (function, module, struct): an item whose body or layout the core provides; it has no fields and no struct expression makes one. Naming the type gives it no new position: the rule that a range or an iterator lives inside one statement stays, with its code.
 
-Deferred (Q14 (d)): `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Neg` go to `spec-closure`; T153 writes the hand-off row.
+Deferred (Q14 (d)): `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Neg` go to `spec-closure`; T154 writes the hand-off row.
 
 ### Names — B9 (Q2, Q3, Q6)
 
-- **The glossary** is `findings.md` §1.3 (a), with `eval`/`Eval`, `spec`/`Spec` and `param` in it (Q2). It is data: `crates/piperine-repository-guards/data/glossary.tsv` (term, group, reason). The dictionary is `data/dictionary.txt`: the words the tree's names use after B9, each a full English word, reviewed in T123.
+- **The glossary** is `findings.md` §1.3 (a), with `eval`/`Eval`, `spec`/`Spec` and `param` in it (Q2). It is data: `crates/piperine-repository-guards/data/glossary.tsv` (term, group, reason). The dictionary is `data/dictionary.txt`: the words the tree's names use after B9, each a full English word, reviewed in T124.
 - **The rename list** is §1.3 (b), about 760 declared names. Each rename task covers one crate's declared names and every use in the workspace, and appends its rows to `.specs/features/code-clarity/renames.tsv` (old, new, kind, crate). The guard `no_renamed_name_survives_in_a_comment` reads that file (CC-10 AC 4).
-- **Type names that say too little** (§1.3: `Step` ×8, `Source` ×6, `Walk` ×5, …; `AnalysisKind` twice in one crate): each takes its subject (`UnrollStep`, `ManifestWalk`). T130 and T133.
-- **Modules** (T136): `elab` → `elaboration`, `rt` → `runtime`, `piperine-solver/src/core` → `circuit` (it holds bind, builder, circuit, net, result, introspect: the circuit and its binding), `deps` → `dependencies`, `diag` → `diagnostic`, `ty` → `checked_type`, `pat` → `pattern`, `iv` → `initial_value`, `num` → `number`, `sens.rs` → `finite_difference_sensitivity.rs` beside `sensitivity.rs`, parser `base.rs` → `tokens.rs` and `entry.rs` → `parse.rs`, `ir/src/handle.rs` and `written.rs` by content, `solver/tests/helpers` gone with T38.
-- **One layout** (T124, Q6): `x.rs` + `x/`; no file is named `mod.rs`. The hygiene test `mod_rs_declares_only` is replaced by `no_file_is_named_mod_rs`.
-- **Crates** (Q3): `piperine-interp` → `piperine-interpreter` (T137) and `piperine-lang` → `piperine-language` (T138; `lang` is an abbreviation and is not in the glossary — OQ3). `abi`, `ir`, `cli` are glossary terms; `transpile`, `plan`, `parity`, `project`, `numbers` are words. Each crate rename is one commit: the directory, every `Cargo.toml`, every `use piperine_lang` (the lib name follows), `ProofLedger`'s `rename-crate` over every feature's `Run` lines (about 500 name `-p piperine-lang`), the Book's organization chapter, `CLAUDE.md`, `AGENTS.md`, `README.md`, `GAPS.md`, `ROADMAP.md`, and this feature's own `**Build**` and `Run` lines.
+- **Type names that say too little** (§1.3: `Step` ×8, `Source` ×6, `Walk` ×5, …; `AnalysisKind` twice in one crate): each takes its subject (`UnrollStep`, `ManifestWalk`). T131 and T134.
+- **Modules** (T137): `elab` → `elaboration`, `rt` → `runtime`, `piperine-solver/src/core` → `circuit` (it holds bind, builder, circuit, net, result, introspect: the circuit and its binding), `deps` → `dependencies`, `diag` → `diagnostic`, `ty` → `checked_type`, `pat` → `pattern`, `iv` → `initial_value`, `num` → `number`, `sens.rs` → `finite_difference_sensitivity.rs` beside `sensitivity.rs`, parser `base.rs` → `tokens.rs` and `entry.rs` → `parse.rs`, `ir/src/handle.rs` and `written.rs` by content, `solver/tests/helpers` gone with T38.
+- **One layout** (T125, Q6): `x.rs` + `x/`; no file is named `mod.rs`. The hygiene test `mod_rs_declares_only` is replaced by `no_file_is_named_mod_rs`.
+- **Crates** (Q3): `piperine-interp` → `piperine-interpreter` (T138) and `piperine-lang` → `piperine-language` (T139; `lang` is an abbreviation and is not in the glossary; confirmed, spec Assumption 15). `abi`, `ir`, `cli` are glossary terms; `transpile`, `plan`, `parity`, `project`, `numbers` are words. Each crate rename is one commit: the directory, every `Cargo.toml`, every `use piperine_lang` (the lib name follows), `ProofLedger`'s `rename-crate` over every feature's `Run` lines (about 500 name `-p piperine-lang`), the Book's organization chapter, `CLAUDE.md`, `AGENTS.md`, `README.md`, `GAPS.md`, `ROADMAP.md`, and this feature's own `**Build**` and `Run` lines.
 
 ### Words — B10 (Q18)
 
 - A `///` on every struct, enum, trait, alias, method and function, public or private, and on each field and variant whose meaning its name and type do not give (1 322 items, 2 531 fields and variants at the inventory). A comment says what the item is for and, for a method, what it returns or changes; a non-evident block says why and cites its rule.
 - `#![deny(missing_docs)]` in every crate's `lib.rs`, added by the task that documents the crate; the private items are held by `every_private_item_is_documented` (`documentation`).
-- **Tags** (T147): a feature requirement id (`DIG-09`, `CV-24`, at least 605) or a task id (`T47`, 61) in a doc comment is replaced by the spec rule (`§n`) where one exists; `MD-n` stays. An id with no spec rule stays and is listed in `allowances/<crate>/requirement_tags.tsv` with the reason; `no_feature_or_task_id_in_a_doc_comment` reads it.
-- **Each `lib.rs`** (T148): purpose in the macro flow, module map, data path (input type → stages → output type), and nothing else but `mod` and `pub use` (A9). `every_crate_states_its_purpose_and_module_map` and `every_crate_states_its_data_path_with_existing_types` (the types the path names exist in the crate) hold them.
-- **`ARCHITECTURE.md`** (T149), new at the root, and the Book's "How Piperine is organized" (`docs/book/content.html:9679`): the whole path `.msl → POM → types → elaboration → IR → plan → transpile/interpreter → ABI → solver → api → cli` with the owner type of each step. `the_architecture_document_names_every_step_and_owner` checks each named type exists.
+- **Tags** (T148): a feature requirement id (`DIG-09`, `CV-24`, at least 605) or a task id (`T47`, 61) in a doc comment is replaced by the spec rule (`§n`) where one exists; `MD-n` stays. An id with no spec rule stays and is listed in `allowances/<crate>/requirement_tags.tsv` with the reason; `no_feature_or_task_id_in_a_doc_comment` reads it.
+- **Each `lib.rs`** (T149): purpose in the macro flow, module map, data path (input type → stages → output type), and nothing else but `mod` and `pub use` (A9). `every_crate_states_its_purpose_and_module_map` and `every_crate_states_its_data_path_with_existing_types` (the types the path names exist in the crate) hold them.
+- **`ARCHITECTURE.md`** (T150), new at the root, and the Book's "How Piperine is organized" (`docs/book/content.html:9679`): the whole path `.msl → POM → types → elaboration → IR → plan → transpile/interpreter → ABI → solver → api → cli` with the owner type of each step. `the_architecture_document_names_every_step_and_owner` checks each named type exists.
 
 ---
 
@@ -594,15 +598,17 @@ Deferred (Q14 (d)): `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Neg` go to `spec-closure
 | Concern | Location (file:line) | Impact | Mitigation |
 |---|---|---|---|
 | `Checker` and `Elaboration` are the most pinned code of the tree; a split that reorders one call changes a diagnostic's order | `lang/src/types/check.rs:54`, `lang/src/elab/elaborator.rs:52` | goldens, Book refusals | views over partitioned state: no call is reordered; T69 and T92 move fields only; one concern per commit; Golden gate on each |
-| `str` has no `Repr`; the user's signature is `trait Field: Repr` | `docs/spec/part_i_values.md:60,223`; `std/io.msl` (`msg = msg`) | with the supertrait, no record could carry a text and every `log` breaks | `Field` is declared without the supertrait and implemented for exactly the types §19 rule 11 allows today (plain data, which includes `str`); OQ2 |
-| A named variadic whose body can do nothing with it is a hollow general form | new | CC-11's point is lost | §3.2.15: forwarding with `..name`; T116's acceptance is a user wrapper over `emit`; OQ1 |
-| `name = value` beside §3.2.4's `name: value` gives calls two named-argument spellings | `docs/spec/appendix_b_grammar.md:201` | a new edge case in the language | the spelling lives in one production (`argument`) and one corpus edit; OQ1 asks before T114 |
+| `str` has no `Repr`, so a record field's bound cannot have it as a supertrait | `docs/spec/part_i_values.md:60,223`; `std/io.msl` (`msg = msg`) | with the supertrait, no record could carry a text and every `log` breaks | settled (spec Assumption 14): `pub trait RecordValue {}` with no supertrait, implemented by the core for the `Repr` types and `str`; T100 records §19 rule 11's exact set and T116 stops if a type a record carries today is in neither group |
+| A named variadic whose body can do nothing with it is a hollow general form | new | CC-11's point is lost | §3.2.15: forwarding with `..name`; T117's acceptance is a user wrapper over `emit`; accepted by the user (spec Assumption 13) |
+| A field's name may equal an optional parameter's | `docs/spec/part_i_values.md` §3.2.9 | with one spelling for both, `f(a, x: 1)` could mean either | §3.2.12: the parameter wins; a test in `named_variadics` pins it |
+| The `emit!` rewrite changes `=` to `:` at 700 sites, some with `=` or `==` inside a value | corpora, Book, Rust test strings | a value is corrupted by a textual replace | the rewrite uses the old production's spans, never a regular expression; every record and golden is compared after it |
+| `Analysis::Dc` at 145 sites, `std` included | `std/analog.msl:184-301`, `std/monitor.msl:78`, corpora, spec, Book | a bare name left behind stops resolving | that is the intended error; T106 removes the bare rows in the same commit as the rewrite, so the build finds every site |
 | The scan the inventory used is not in the tree | `findings.md` Appendix G | guards' numbers cannot be reproduced | T3 rebuilds it; T8 re-takes every count; no guard hard-codes a number from this document |
 | 510 refusal sites converted by hand | `lang/src/{types,elab}/**` | a message changes by a character | T15–T20 edit no test; `cargo test -p piperine-lang` green with no test changed is the proof |
-| `piperine-abi` public names appear in generated Rust | `transpile/src/print/**`, `transpile/tests/golden/` | goldens move on a rename | allowed by the spec's Out of Scope ("follows the renames only"); T131 and T136 show a word-diff with identifiers only; the cache hash changes, which is correct |
+| `piperine-abi` public names appear in generated Rust | `transpile/src/print/**`, `transpile/tests/golden/` | goldens move on a rename | allowed by the spec's Out of Scope ("follows the renames only"); T132 and T137 show a word-diff with identifiers only; the cache hash changes, which is correct |
 | Merging `solver` targets changes test order and shared statics | `solver/tests/**` (41 includes of `abi_devices.rs`) | a test that relied on process isolation fails | each former target is its own `mod`; a `static` moves into its `mod`; T38, T39 run the merged targets twice (`--test-threads=1` and default) |
-| `serde` derives (370) have one non-test consumer | `lang/src/pom/design.rs:177` | Q5's second half ("is JSON export of the POM wanted?") was not answered | derives stay (third-party derives are allowed); no task removes the surface; OQ5 |
-| `piperine-lang` → `piperine-language` touches every proof file | `.specs/features/*/tasks*.md` | a missed `-p piperine-lang` makes a proof select nothing | `ProofLedger` `rename-crate`, then `every_proof_names_a_test_that_exists`; `check_proofs.py` for every feature at T154 |
+| `serde` derives (370) have one non-test consumer | `lang/src/pom/design.rs:177` | none | settled (spec Assumption 17): the derives and the JSON export of the POM and the IR stay; no task removes them. A derive is an annotation on the type, not a macro this tree defines or a hand-written `impl`, so rule 7 allows it (the glossary of exceptions in `CLAUDE.md` rule 7 says so after T154) |
+| `piperine-lang` → `piperine-language` touches every proof file | `.specs/features/*/tasks*.md` | a missed `-p piperine-lang` makes a proof select nothing | `ProofLedger` `rename-crate`, then `every_proof_names_a_test_that_exists`; `check_proofs.py` for every feature at T155 |
 | Three hygiene exemptions and nine `SPEC_DEVIATION` comments record known defects | `lang/tests/suite_hygiene.rs:808-816`; `findings.md` M5 | rule 1: a recorded deviation is a defect | T48–T50 delete the exemptions; T31 moves the code or amends the feature's design text |
 | Doc comments written by rote restate the code | CC-10 AC 3 | 3 800 comments nobody reads | B10 runs last, on final names and owners; each task's `Done when` asks what and why; the Verifier reads a sample per crate |
 | The feature is long; `main` is frozen for other features meanwhile (Assumption 2) | — | queue blocked | phases are stop points; lanes cut the wall time; nothing is half-applied at a phase boundary because allowances make every guard green there |
@@ -623,9 +629,11 @@ Deferred (Q14 (d)): `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Neg` go to `spec-closure
 | `Option` | declared in `std`, mapped to the existing representation at one place | removes the user-visible special case without moving the IR |
 | `Range`, `Iterator` | `extern "intrinsic" struct` | the existing marker for "the core provides it", extended to one more item kind instead of a fake field list |
 | Reserved streams | two intrinsic functions with optional parameters | the field table becomes two signatures; the absent-field rule is §3.2.2's `None` |
-| Named-argument spelling in a named variadic | `name = value`, shorthand `name` | the user's words ("`pass` means `pass = pass`") and what 700 sites already write; OQ1 |
-| Crate renames | `piperine-interp` → `piperine-interpreter`, `piperine-lang` → `piperine-language` | Q3; both are abbreviations outside the glossary |
-| S5 and S6 scheduled inside B7's phase | T109, T110 before T111, T112 | the catalogue's signatures name `Option`, `Range` and `Iterator` |
+| Named-argument spelling in a named variadic | `name: value`, shorthand `name` | the user: one spelling for every named argument, the one optional parameters and struct fields have |
+| The bound of a record field | `RecordValue` (no supertrait), and `RecordFields` for the record | the user: `Field` is too generic a name; a text has no `Repr` |
+| `Analysis` | an ordinary `std` enum, variants always qualified; `is_static()` | the user: a static import is explicit, as in any language |
+| Crate renames | `piperine-interp` → `piperine-interpreter`, `piperine-lang` → `piperine-language` | Q3, confirmed for both (spec Assumption 15) |
+| S5 and S6 scheduled inside B7's phase | T110, T111 before T112, T113 | the catalogue's signatures name `Option`, `Range` and `Iterator` |
 | CC-09 AC 1 "full `cargo test` per commit" | read under the gate policy | the user's later rule; Final proves byte-identity once |
 
 **Project-level decision**: T1 appends the next free `MD-n` to `.specs/STATE.md` recording, as standing rules after this feature: the guards crate and its ratchet allowances; test support as dev-only crates, never `#[path]` across crates; one module layout (`x.rs` + `x/`); `LanguageItems` as the only way the compiler finds a `std` item; every `P0001` through `Refusal`; MD-28 amended (repository guards have their own crate; the Book is one target with one module per chapter).
@@ -634,12 +642,12 @@ Deferred (Q14 (d)): `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Neg` go to `spec-closure
 
 ## Open Questions
 
-None blocks the plan; each has a default taken from the user's answers, and the task that first depends on it is named so the answer can arrive before it.
+None. The five questions this design raised were answered by the user on 2026-11-25 (spec Assumptions rows 13 to 17) and are folded in above.
 
-| # | Question | Default taken | Decides |
+| # | Question | Answer | Where it landed |
 |---|---|---|---|
-| OQ1 | Fields of a named variadic are written `name = value` (the user's words, and `emit!`'s spelling today), while an optional parameter passed by name is written `name: value` (§3.2.4) and a struct field `name: value` with the same shorthand. Should fields be `name: value`, one spelling for every named argument? And is forwarding (`..fields`, §3.2.15) accepted as the third rule? | `name = value` and shorthand, as accepted; forwarding included, because without it a user function cannot use what it receives | T114 |
-| OQ2 | `trait Field: Repr` excludes `str`, and records carry texts today | `pub trait Field {}` with no supertrait, implemented for the plain data §19 rule 11 allows | T115 |
-| OQ3 | Does Q3 cover `piperine-lang` → `piperine-language`? (`findings.md` named only `piperine-interp`) | yes: it is an abbreviation outside the glossary | T138 |
-| OQ4 | `analysis(Static)`: fifth variant of `Analysis`, or a function `is_static()`? | fifth variant (no source changes) | T105 |
-| OQ5 | Q5's second half: is JSON export of the POM and the IR wanted? If not, 370 serde derives and `Design::from_json` can go | keep | no task |
+| OQ1 | The spelling of a field of a named variadic; forwarding | `name: value`, shorthand `name` meaning `name: name`; forwarding with `..fields` accepted | §3.2.11 to §3.2.15 above; T115 to T117; the corpus rewrite T120, T121 |
+| OQ2 | `trait Field: Repr` excludes `str` | no supertrait, and a specific name: `RecordValue`; the record's bound is `RecordFields` | `std/records.msl` above; T116 |
+| OQ3 | `piperine-lang` → `piperine-language`? | yes | T139 |
+| OQ4 | `analysis(Static)` | `pub enum Analysis { Dc, Transient, Ac, Noise }`, every use written `Analysis::Dc`, no implicit import of the variants; `is_static()` | T105, T106 |
+| OQ5 | The serde surface | keep the derives and the JSON export; a derive is an annotation, allowed under rule 7 | no task |
