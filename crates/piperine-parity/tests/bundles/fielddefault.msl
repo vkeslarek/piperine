@@ -1,0 +1,23 @@
+//! A field default (§7 rule 10): `out tick: Bit = false` gives the carrier a producer drives its initial value, so a `Bit` output
+//! of a bundle is written by commits with no initial value at the port (a bundle port takes none).
+
+/// The producer's `tick` and the consumer's `ack`.
+struct Beat { out tick: Bit = false, in ack: Bit }
+
+/// Toggles `tick` every 5 ns: it rises at 5 ns, 15 ns, ...
+module Pulser(p: Beat) { }
+digital for Pulser { on p.tick.changed() { p.tick <- !p.tick after 5n; } }
+
+/// Always acknowledges.
+module Acker(rx: flip Beat) { rx.ack = true; }
+
+/// Records the acknowledgement at each rising edge of `tick`.
+module Watch(in s: Beat) { }
+digital for Watch { on s.tick.rise() { emit!("beat", ack = s.ack); } }
+
+module BeatBench() {
+    signal b: Beat;
+    let pulser = Pulser(b);
+    let acker = Acker(b);
+    let watch = Watch(b);
+}

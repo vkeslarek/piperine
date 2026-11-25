@@ -74,12 +74,14 @@ impl Checker<'_> {
 
     /// The type of each port of `module` as it is declared, its generic parameters opaque; `None` when one is refused.
     pub(super) fn module_port_types(&mut self, module: DeclId) -> Option<Vec<Ty>> {
-        let ports: Vec<TypeId> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
-            DeclKind::Port(port) => Some(port.ty),
+        let ports: Vec<(DeclId, TypeId)> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
+            DeclKind::Port(port) => Some((*child, port.ty)),
             _ => None,
         }).collect();
         let outer = std::mem::replace(&mut self.generic_item, Some(module));
-        let types: Option<Vec<Ty>> = ports.iter().map(|ty| self.port_type(*ty)).collect();
+        // a bundle port is typed as its `struct` with the arguments it is written with (`Stream<T>`), an array of bundles as the
+        // array of it (`[Lane; N]`), so a connection can teach `T` and `N`
+        let types: Option<Vec<Ty>> = ports.iter().map(|(port, ty)| if self.design.is_bundle_owner(*port) { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
         self.generic_item = outer;
         types
     }
@@ -89,7 +91,7 @@ impl Checker<'_> {
     fn learn_from_connections(&mut self, inference: &mut Inference<'_>, declared: &[Ty], args: &[Arg], file: FileId) -> Option<()> {
         let mut natures: Vec<(DeclId, DeclId)> = Vec::new();
         for (arg, port) in args.iter().zip(declared) {
-            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.infer(arg.value));
+            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.bundle_named_type(arg.value)).or_else(|| self.infer(arg.value));
             // `gnd` is a node of any nature: it names none, so it teaches nothing
             let Some(given) = given.filter(|ty| *ty != Ty::AnyNode) else { continue };
             let declared_parameter = match port.innermost() {

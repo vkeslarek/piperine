@@ -533,7 +533,7 @@ Read through the handle `Struct` (see [Reflection](reflection.md#struct)).
 
 *struct* in `src/pom/decl.rs`.
 
-`dir name: ty`; the name is absent in a tuple field.
+`dir name: ty = init`; the name is absent in a tuple field.
 
 Read through the handle `Field` (see [Reflection](reflection.md#field)).
 
@@ -541,6 +541,7 @@ Read through the handle `Field` (see [Reflection](reflection.md#field)).
 | --- | --- | --- |
 | `dir` | `Option<Dir>` | The direction written before the name. |
 | `ty` | `TypeId` | The declared type. |
+| `init` | `Option<ExprId>` | The `= value` after the type of an `in` or `out` field of a bundle: the initial value of the carrier the field becomes on the side that drives it, the producer for `out`, the `flip` consumer for `in` (§7 rule 10). |
 
 ### `EnumData`
 
@@ -1143,6 +1144,19 @@ The kind of a module port, from its declared type.
 | `Carrier` | — | The port type resolves to a nature (a carrier of that nature). |
 | `Bundle` | — | The port type resolves to a bundle struct. |
 | `ValueInput` | — | The port type is a value type (a built-in or a declared non-bundle type): the port carries a value, not a signal. |
+
+### `BundleView`
+
+*enum* in `src/pom/bundles.rs`.
+
+The way one module sees a bundle (spec part II §7): `Port::bundle_view` reads it from the port as written. The checker and the elaborator
+read the fields the port stands for from a side table of the design, never from `children`.
+
+| Variant | Payload | Meaning |
+| --- | --- | --- |
+| `Producer` | — | `tx: Stream`: drives the `out` fields, reads the `in` fields. |
+| `Consumer` | — | `rx: flip Stream`: every direction of a one-driver field reversed. |
+| `Observer` | — | `in s: Stream`: every one-driver field an input. |
 
 ### `NatureKind`
 

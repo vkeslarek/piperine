@@ -473,23 +473,9 @@ fn the_fences_generics_lifted_are_checked() {
     assert_eq!(held, EXPECTED_HELD, "the fences that write phase A forms are held");
 }
 
-/// The only refusals of the seven fences that write a generic module, each with its owner: E.6's `Slice` takes a `flip
-/// Stream<T>` and a `Stream<T>`, and F.3's memory bank has the `Cell` bundle (the probe through several natures and the
-/// `fall` on its receiver follow from it); both are the bundle, `GAPS.md` L25 (`resolved-nets-bundles`). F.3's template
-/// parameter `C: Fn(..)` and the placement through it are phase D, L32 (`generics`). The generic modules themselves check.
-const REMAINING_REFUSALS: [&str; 11] = [
-    "E.6 as `Slice`: P0001: `flip` type is not supported yet",
-    "E.6 as `Slice`: P0001: `struct` item used as a type: `Stream` has a carrier field, a bundle is not supported yet",
-    "F.3 as `BehavioralCell`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
-    "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
-    "F.3 as `BehavioralCell`: P0001: method `fall` on this receiver is not supported yet",
-    "F.3 as `BehavioralCell`: P0001: probe through an access that names several natures is not supported yet",
-    "F.3 as `Dram`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
-    "F.3 as `Dram`: P0001: struct expression is not supported yet",
-    "F.3 as `Dram1T1C`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
-    "F.3 as `MemoryBank`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
-    "F.3 as `MemoryBank`: P0001: struct expression is not supported yet",
-];
+/// The refusals of the seven fences that write a generic module: none. E.6's `Slice` (a generic bundle, `flip Stream<T>`) and F.3's
+/// `MemoryBank` (the bundle `Cell`, its literal through the template `C: Fn(Cell)`) check clean (`resolved-nets-bundles`, GAPS L25).
+const REMAINING_REFUSALS: [&str; 0] = [];
 
 /// What a gallery fence writes of the forms `generics` phase C lifted: a generic module.
 struct GenericModules;
@@ -524,7 +510,7 @@ fn the_fences_generics_phase_c_lifted_are_checked() {
         held.push(g.section);
     }
     assert_eq!(held, ["D.1", "E.1", "E.2", "E.3", "E.6", "F.2", "F.3"], "the fences that write a generic module are held");
-    assert_eq!(refusals, REMAINING_REFUSALS, "every fence checks clean but for the bundle (L25), its literal and what reads through it, pinned exactly");
+    assert_eq!(refusals, REMAINING_REFUSALS, "every fence that writes a generic module checks clean");
 }
 
 /// PI-11 AC 3: each of the 20 gallery fences is the formatter's output for itself, so a reader

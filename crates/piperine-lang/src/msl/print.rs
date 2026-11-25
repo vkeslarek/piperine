@@ -824,8 +824,9 @@ impl<'h> Printer<'h> {
     }
 
     fn field(&self, f: &Field) -> String {
+        let init = f.init.as_ref().map_or(String::new(), |init| format!(" = {}", self.expr(init)));
         let body = match &f.name {
-            Some(n) => format!("{}: {}", n.spelled(), self.ty(&f.ty)),
+            Some(n) => format!("{}: {}{init}", n.spelled(), self.ty(&f.ty)),
             None => self.ty(&f.ty),
         };
         format!("{}{}{}{body}", self.meta(&f.meta), vis(f.public), dir(&f.dir))

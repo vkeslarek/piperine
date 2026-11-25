@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::pom::DeclId;
+use crate::pom::{DeclId, ElementNaming};
 
 use super::check::Checker;
 use super::element_target::Element;
@@ -114,17 +114,18 @@ impl ElementCoverage {
         gaps
     }
 
-    /// The carrier `name` as the elements no drive names (`b[2]`, `b[1..4]`, `b[0..1], b[3..4]`), `None` when none
-    /// is left; the carrier's own name when there is nothing to tell apart.
-    pub(crate) fn unnamed(&self, name: &str) -> Option<String> {
+    /// The carrier named by `naming` as the elements no drive names (`b[2]`, `b[1..4]`, `b[0..1], b[3..4]`, and for a field
+    /// of an array of bundles `lanes[1].a`), `None` when none is left; the carrier's own name when there is nothing to tell
+    /// apart.
+    pub(crate) fn unnamed(&self, naming: &ElementNaming) -> Option<String> {
         if self.is_complete() {
             return None;
         }
-        let Some(total) = self.total.filter(|total| *total > 1) else { return Some(name.to_string()) };
+        let Some(total) = self.total.filter(|total| *total > 1) else { return Some(naming.name("")) };
         let runs: Vec<String> = self
             .gaps()
             .into_iter()
-            .map(|(first, end)| if end - first == 1 { format!("{name}[{first}]") } else if (first, end) == (0, total) { name.to_string() } else { format!("{name}[{first}..{end}]") })
+            .map(|(first, end)| if end - first == 1 { naming.name(&format!("[{first}]")) } else if (first, end) == (0, total) { naming.name("") } else { naming.name(&format!("[{first}..{end}]")) })
             .collect();
         Some(runs.join(", "))
     }

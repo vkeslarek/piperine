@@ -342,6 +342,11 @@ impl<'d> Field<'d> {
     pub fn ty(self) -> Type<'d> {
         self.decl.design().ty(self.data().ty)
     }
+
+    /// The initial value written after the field, `= value`.
+    pub fn init(self) -> Option<Expr<'d>> {
+        self.data().init.map(|init| self.decl.design().expr(init))
+    }
 }
 
 /// `enum E<..> { variants }`

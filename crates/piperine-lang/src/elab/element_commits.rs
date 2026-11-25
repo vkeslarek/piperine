@@ -47,7 +47,7 @@ impl Elaboration<'_, '_> {
             return reached;
         }
         let (root, steps) = self.place_steps(place);
-        if self.root_decl(root).is_some_and(|d| self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&d))) {
+        if self.root_decl(scope, root).is_some_and(|d| self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&d))) {
             self.element_of_empty_array(scope.file, self.design.expr_node(place).span);
             return None;
         }
@@ -61,7 +61,7 @@ impl Elaboration<'_, '_> {
         let mut steps = steps.into_iter().peekable();
         let (mut element, mut constant) = (None, None);
         if let Some(count) = carried.count {
-            let Some(decl) = self.root_decl(root) else { return None };
+            let Some(decl) = self.root_decl(scope, root) else { return None };
             let shape = self.carrier_array_shape(decl, scope.frame)?.0;
             let span = self.design.expr_node(place).span;
             // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
@@ -116,6 +116,12 @@ impl Elaboration<'_, '_> {
                     steps.push(Step::Index(index));
                     at = self.peel_parens(expr);
                 }
+                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`bundles.rs`), and
+                // the element of an array of bundles it is in names the first levels of that leaf (`tx[k].a`, struct of arrays)
+                ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(at).filter(|place| self.design.leaf_owner(place.decl).is_some()) => {
+                    steps.extend(place.elements.iter().rev().map(|index| Step::Index(*index)));
+                    break;
+                }
                 ExprKind::Field { expr, name, .. } => {
                     steps.push(Step::Field { inner: expr, name: name.text });
                     at = self.peel_parens(expr);
@@ -128,7 +134,10 @@ impl Elaboration<'_, '_> {
     }
 
     /// The port or signal declaration a root expression names.
-    fn root_decl(&self, root: ExprId) -> Option<crate::pom::DeclId> {
+    fn root_decl(&mut self, scope: &Scope, root: ExprId) -> Option<crate::pom::DeclId> {
+        if let Some(leaf) = self.bundle_leaf(scope, root) {
+            return Some(leaf.decl);
+        }
         let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(crate::pom::Resolution::Decl(decl)) => Some(decl),

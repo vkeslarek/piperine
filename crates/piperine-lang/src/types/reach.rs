@@ -17,6 +17,19 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
+        // a field of a bundle port or signal is the carrier or node its leaf stands for (§7 rule 12); the bundle is no value to read
+        if let Some(place) = self.design.bundle_place(expr).filter(|place| self.design.leaf_owner(place.decl).is_some()) {
+            if self.design.is_bundle_group(place.decl) {
+                return self.bundle_as_value(expr);
+            }
+            // at an element of an array of bundles (`rx[k].valid`) the read is the element of the leaf's array (struct of arrays)
+            self.element_indexes(&place);
+            return self.item_type(place.decl, file, node.span).and_then(|read| read.element_at(place.elements.len()));
+        }
+        // a field of a bundle handle (`self.p`): read through the handle (`bundle_handles.rs`)
+        if let Some((_, ty)) = self.bundle_handle_field(expr) {
+            return if self.is_bundle_type(&ty) && !self.design.is_method_receiver(expr) && !self.design.is_field_base(expr) { self.bundle_as_value(expr) } else { Some(Self::handle_read_type(&ty)) };
+        }
         match res {
             // a node of an instance whose `let` is being typed (`let p = D2(q.sn); let q = D2(p.sn);`, `let p = D2(p.sn);`): a
             // connection is hardware, not a value (§8.2.14), so the cycle it closes holds an unknown, the node (§8.3.5)

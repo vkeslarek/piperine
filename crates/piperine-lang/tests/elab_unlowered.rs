@@ -117,8 +117,8 @@ fn a_for_loop_in_a_digital_block_lowers() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    // two bundles (a `struct` with a carrier field, still refused by name; a module template is a value since generics phase D)
-    let src = "struct Pair { in a: Bit, b: Electrical }\nstruct Duo { in c: Bit, d: Electrical }\nmodule Top() { signal x: Pair; signal y: Duo; }";
+    // two generic functions named as values (still refused by name; a bundle runs since resolved-nets-bundles)
+    let src = "fn g<T>(x: T) -> T { x }\nfn k<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; let j = k; }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));

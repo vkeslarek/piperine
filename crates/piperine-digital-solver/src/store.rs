@@ -227,6 +227,45 @@ impl Store {
         self.net(net).value.bytes()
     }
 
+    /// The bytes of `net` as the analog side reads them: a net's value, or, of an array net, the elements of each window the analog
+    /// copy holds (`spec.analog_windows`) one after the other, in that order. An array no analog function reads gives none: only
+    /// the windows are cut from the sparse array, never the array.
+    pub fn analog_value(&self, net: NetId, spec: &NetSpec) -> Vec<u8> {
+        match self.arrays.get(&net.0) {
+            Some(array) => spec.analog_windows.iter().flat_map(|&(first, length)| (first..first + length).flat_map(move |element| array.value(element).iter().copied())).collect(),
+            None => self.value(net).to_vec(),
+        }
+    }
+
+    /// Whether the bytes [`Store::analog_value`] gives changed in this microstep: an element of one of an array net's windows
+    /// changed (an element outside them is no change the analog side sees), or a scalar net changed.
+    pub fn analog_changed(&self, net: NetId, spec: &NetSpec) -> bool {
+        match self.arrays.contains_key(&net.0) {
+            true => spec.analog_windows.iter().any(|&(first, length)| (first..first + length).any(|element| self.element_changed(net, element))),
+            false => self.changed(net),
+        }
+    }
+
+    /// Writes `bytes` at byte `offset` of `net`'s whole elements into `packed`, the bytes [`Store::analog_value`] gave: into every
+    /// window that holds those bytes (an array net's windows may overlap), or at `offset` of a scalar net.
+    pub fn patch_analog(&self, net: NetId, spec: &NetSpec, offset: u64, bytes: &[u8], packed: &mut [u8]) {
+        if !self.arrays.contains_key(&net.0) {
+            packed[offset as usize..offset as usize + bytes.len()].copy_from_slice(bytes);
+            return;
+        }
+        let size = u64::from(spec.size);
+        let (from, to) = (offset, offset + bytes.len() as u64);
+        let mut base = 0u64;
+        for &(first, length) in &spec.analog_windows {
+            let (low, high) = ((first * size).max(from), ((first + length) * size).min(to));
+            if low < high {
+                let at = (base + low - first * size) as usize;
+                packed[at..at + (high - low) as usize].copy_from_slice(&bytes[(low - from) as usize..(high - from) as usize]);
+            }
+            base += length * size;
+        }
+    }
+
     /// The bytes before the most recent change (`PREVIOUS`); empty for a `QUIET` net.
     pub fn previous(&self, net: NetId) -> &[u8] {
         self.net(net).previous.bytes()

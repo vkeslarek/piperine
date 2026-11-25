@@ -130,6 +130,15 @@ impl Elaboration<'_, '_> {
     /// The frame of the child a field read `c.x` names and the item `x` of it. `None` after a
     /// diagnostic.
     pub(super) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
+        // a field of a bundle port or signal is the carrier or node its leaf stands for, in this module's own frame (§7 rule 12)
+        if let Some(place) = self.bundle_leaf(scope, expr) {
+            // a field of an element of an array of bundles is one element of its leaf: the element forms read it (`elements.rs`)
+            if !place.elements.is_empty() {
+                self.unsupported(scope.file, self.design.expr_node(expr).span, "a field of an element of an array of bundles in this position");
+                return None;
+            }
+            return Some((scope.frame, place.decl));
+        }
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else {
             self.unsupported(scope.file, node.span, "a field access that is not an item of a placed module");

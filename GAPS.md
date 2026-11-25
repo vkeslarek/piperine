@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 0 silent, 2 broken, 21 loud (L1 to L88 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the four `resolved-nets` rows (L21, L22, L23, L71) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, L29, L32, L78, L79 and L80 closed by `generics` phase D, in six tables) plus
+**Counts.** 0 silent, 2 broken, 20 loud (L1 to L88 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the four `resolved-nets` rows (L21, L22, L23, L71) the three `explicit-unknowns` rows (L64, L65, L68) and L25 (`resolved-nets-bundles`) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, L29, L32, L78, L79 and L80 closed by `generics` phase D, in six tables) plus
 7 backend and diagnostic notes, 8 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L88 (L88 found by the `generics` phase D round 14 verification, owner `generics` phase E; L83 to L87 found by the `generics` phase D fix round 14, owners `spec-closure` (L83), `generics` (L84), `closures` (L85, with `spec-closure` for its code, and L86) and `params-and-io` (L87); L21, L22, L23 and L71 closed by `resolved-nets`; L82 found by the `generics` phase D fix round 10, owner `spec-closure`; L78, L79 and L80 found by the `generics` phase D verification and fix round 1, L78, L79 and L80 closed by its fix round 2, which found L81, owner `spec-closure`; L76 and L77 found by the `generics` phase C round 4 fix, owners `spec-closure` and `generics` phase E (T118); L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
+| §4 Loud | L1–L88 (L88 found by the `generics` phase D round 14 verification, owner `generics` phase E; L83 to L87 found by the `generics` phase D fix round 14, owners `spec-closure` (L83), `generics` (L84), `closures` (L85, with `spec-closure` for its code, and L86) and `params-and-io` (L87); L21, L22, L23 and L71 closed by `resolved-nets`, L25 by `resolved-nets-bundles`; L82 found by the `generics` phase D fix round 10, owner `spec-closure`; L78, L79 and L80 found by the `generics` phase D verification and fix round 1, L78, L79 and L80 closed by its fix round 2, which found L81, owner `spec-closure`; L76 and L77 found by the `generics` phase C round 4 fix, owners `spec-closure` and `generics` phase E (T118); L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X2 (X1 closed by `fix/idtmod-wrap`; X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -99,7 +99,6 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 
 Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
 project's nature pass the checker), `potential`/`flow`, a flow probe of a potential branch, a
@@ -282,7 +281,7 @@ does not count.
 | I §3.4–§3.6 files, crates, packages | 100 % | nothing: the check of an unreached generic module (S3) closed (generics phase C) |
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
-| II §7 bundles | 0 % | all |
+| II §7 bundles | 95 % | bundles, `flip`, literals, `impl` on a bundle, generic bundles and arrays of bundles run (`resolved-nets-bundles`); a bundle is no value, by design (`E0264`) |
 | III §8–§8.2 modules, ports, params, the body | 90 % | generic modules and generation (the body and a `digital` block) run (phase C): placements, nodes, carriers, definitions, hoisted placements and `let`s in generation; not an item only some iterations make (L76) nor generation inside a hoisted module (L77); arrays of carriers and nodes as ports and signals run |
 | III §8.3 instances in expressions | 80 % | the stdlib `Water` (L40) |
 | III §8.4–§8.5 templates, run settings (`temperature()`, `multiplicity()`), extern | 85 % | templates (of generic modules too), placement through a template or a binning function, `Fn(P)` bounds, `inst.name` through a template, the run settings `temperature()` and `multiplicity()` run; left: a `pub let` over the solve or a carrier of a child's child (L81), `inst.name` three or more levels deep (L82), `extern` modules (L33) |
@@ -330,7 +329,7 @@ E0807 E0808 E0809`
 | Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7, L72 | M to L |
 | Composite values | phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows | L |
 | Generics and generation (phases A to D delivered: L4, L7, L8, L9, L29, L30, L31, L32, X6; S3 closed) | L77 (phase E) | L |
-| Resolved nets (delivered) and bundles | L25: bundles (`resolved-nets-bundles`); the nets of §22.3 run | L |
+| Resolved nets and bundles (delivered) | nothing open (L25, bundles, closed by `resolved-nets-bundles`; the nets of §22.3 run) | L |
 | Unknown semantics (delivered) | nothing open (L18 and L19 closed by `unknown-semantics`; L51, L52 and L53 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B delivered `Logic<N>`, `logic` and `matches_bits`, L68) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V13, V16, PSS on the device ABI | L |
@@ -351,10 +350,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type), then its `flip`; the definitions through its members raise no cascade; the generic module `Slice` runs |
-| natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
-| modules#10 | L25 | `resolved-nets-bundles` | `MemoryBank`: the `Cell` struct with carrier fields (bundle) is `P0001` (`struct` item used as a type) and so is its literal `Cell { wl: wl[r], bl: bl[c] }`; the generic module, the generation `for` of its body, the arrays of carriers, the `Fn` bound and the placement through the template `cell` run |
-| cheatsheet#8 | L25 | `resolved-nets-bundles` | the struct `Cell` with carrier fields is `P0001` (bundle) and so is its literal; `cell: C;`, the placements through a template or a function and the `Fn` bound run |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

@@ -1,0 +1,21 @@
+//! An element of an array net that changes in the instant a scalar passes through a value (docs/spec §15.2 rule 4,
+//! part II §5.1.8): at 2 ns `g` rises and falls at the next microstep, and `gates[1]` rises and stays high. The
+//! zero-width solve reads `g` high and `gates[1]` high: both cells sink 1 mA through 1 kOhm, `v(a)` and `v(b)` are 1 V.
+//! After the instant `g` is low again (`v(a)` back at 2 V) and `gates[1]` high (`v(b)` stays at 1 V).
+
+/// Sinks 1 mA into `p` through 1 kOhm (gate high) or 2 kOhm (gate low).
+module Cell(in gate: Bit, p: Electrical) { }
+analog for Cell { i(p, gnd) +> v(p) / (if gate { 1k } else { 2k }) - 1m; }
+
+module ElementBeside() {
+    signal g: Bit = false;
+    signal gates: [Bit; 4] = [false, false, false, false];
+    signal a: Electrical;
+    signal b: Electrical;
+    let ca = Cell(g, a);
+    let cb = Cell(gates[1], b);
+}
+digital for ElementBeside {
+    on at(2n) { g <- true; gates[1] <- true; }
+    on g.rise() { g <- false; }
+}

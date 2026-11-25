@@ -100,7 +100,7 @@ impl Checker<'_> {
 
     /// Whether `decl` is a value input: a port whose type is a value, not a nature.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
-        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.design.nature_of(p.ty).is_none())
+        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.design.nature_of(p.ty).is_none()) && !self.design.is_bundle_owner(decl)
     }
 
     /// The value inputs of `module`, in port order.

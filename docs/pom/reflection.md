@@ -553,6 +553,7 @@ A field of a struct or of a variant.
 | --- | --- | --- |
 | `dir(self)` | `Option<Dir>` | The direction word written before the name. |
 | `ty(self)` | `Type<'d>` | The declared type. |
+| `init(self)` | `Option<Expr<'d>>` | The initial value written after the type, `= value`. |
 
 ### `Enum`
 
@@ -779,6 +780,7 @@ One port of a module.
 | `default(self)` | `Option<Expr<'d>>` | The `= expr` default of the port (a driven carrier or value input). |
 | `kind(self)` | `PortKind` | The classification of the port (`Unknown` until classified). |
 | `nature(self)` | `Option<Nature<'d>>` | The nature of the port's type, through arrays and `flip`. |
+| `bundle_view(self)` | `Option<BundleView>` | The view of a bundle port (`Producer`, `Consumer` for `flip`, `Observer` for `in`); none for any other port. A bundle port stays one port with its bundle type: the fields it stands for are no ports of the module. |
 | `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this port, or ends in this port as a member of an instance (`c.p`), in source order. |
 
 ```rust

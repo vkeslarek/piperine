@@ -362,6 +362,13 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(arg).clone();
         let file = self.design.decl_data(node.owner).file;
         if let ExprKind::Field { .. } = &node.kind {
+            // a node field of an element of an array of bundles (`d[k].p`) is that node of its leaf (struct of arrays, `bundles.rs`)
+            if self.bundle_leaf(scope, arg).is_some_and(|place| !place.elements.is_empty()) {
+                return self.node_element(scope, arg)?.or_else(|| {
+                    self.unsupported(file, node.span, "a field of an element of an array of bundles that is no node");
+                    None
+                });
+            }
             return self.reached_terminal(scope, arg);
         }
         if let ExprKind::Index { .. } = &node.kind {

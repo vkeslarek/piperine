@@ -199,7 +199,7 @@ impl Table {
                     Probe::Flow { branch, .. } => result.get_branch(branch.clone()).map(Cell::Real),
                     Probe::Net { path, ty } => net(path).map(|bytes| Cell::decode(ty, &bytes)).transpose()?,
                     Probe::Param { path, ty } => net(path).map(|bytes| Cell::decode_param(ty, &bytes)).transpose()?,
-                    Probe::Shaped { path, shape, leaf } => net(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), &bytes)).transpose()?,
+                    Probe::Shaped { path, shape, leaf, .. } => net(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), &bytes)).transpose()?,
                     Probe::Term { instance, term: name } => term(instance, name).map(Cell::Real),
                     Probe::Empty { .. } => Some(Probe::empty_array()),
                 };
@@ -356,7 +356,7 @@ impl Table {
                         Probe::Node { id, .. } => step.get_node(id).map(Cell::Real),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()).map(Cell::Real),
                         Probe::Net { path, ty } => step.digital_named(path).map(|bytes| Cell::decode(ty, bytes)).transpose()?,
-                        Probe::Shaped { path, shape, leaf } => step.digital_named(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), bytes)).transpose()?,
+                        Probe::Shaped { path, shape, leaf, .. } => step.digital_named(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), bytes)).transpose()?,
                         Probe::Param { path, ty } => match step.digital_named(path) {
                             Some(bytes) => Some(Cell::decode_param(ty, bytes)?),
                             None => held.iter().find(|h| h.path == *path).map(|h| h.cell_at(step.time())),

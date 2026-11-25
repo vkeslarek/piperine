@@ -274,7 +274,9 @@ impl Checker<'_> {
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::IncludeStr(_) => self.include_str(expr),
-            ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields, None),
+            // a bundle literal is read only as a connection (`bundle.rs`), never as a value (§7 rules 8, 9)
+            ExprKind::Struct { class: StructClass::BundleLiteral, .. } => self.literal_outside_connection(expr),
+                        ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields, None),
             other => {
                 self.unsupported(file, node.span, Unsupported::expr(other));
                 None
@@ -638,12 +640,18 @@ impl Checker<'_> {
                     DeclKind::Param(p) => self.lower_type(p.ty),
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
                     DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
+                    // a bundle is no value (§7 rule 9)
+                    DeclKind::Port(_) | DeclKind::Signal(_) if self.design.is_bundle_owner(decl) => self.bundle_as_value(expr),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
                         let whole = self.binding_type(decl);
                         if let Some(read) = self.handle_read(decl) {
+                            // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
+                            if self.is_bundle_type(&read) && !self.design.is_method_receiver(expr) && !self.design.is_field_base(expr) {
+                                return self.bundle_as_value(expr);
+                            }
                             return Some(read);
                         }
                         let local = whole.map(|whole| self.generated_local(expr, decl, whole));

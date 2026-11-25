@@ -346,7 +346,9 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
-            ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
+            ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) && self.bundle_leaf(scope, expr).is_none() => self.lower_field_value(scope, *recv, &name.text, ty, origin),
+            // a field of an element of an array of bundles (`ps[k].b`) is one element of its leaf (struct of arrays, `elements.rs`)
+            ExprKind::Field { .. } if self.bundle_leaf(scope, expr).is_some_and(|place| !place.elements.is_empty()) => self.lower_bundle_element(scope, expr, origin),
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
             ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),

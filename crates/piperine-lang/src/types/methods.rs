@@ -37,6 +37,10 @@ impl Checker<'_> {
         match &self.design.decl_data(owner).kind {
             DeclKind::Impl(data) => {
                 let self_ty = data.self_ty;
+                // `impl Diff { fn vd(self) }`: `self` is a handle to the bundle (§7 rule 13)
+                if self.design.bundle_struct_of_type(self_ty).is_some() {
+                    return self.bundle_type(self_ty);
+                }
                 self.lower_type(self_ty)
             }
             DeclKind::Trait(_) => Some(Ty::Param(owner)),

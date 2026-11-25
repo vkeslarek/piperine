@@ -131,7 +131,7 @@ impl<'a, 'd> ParamReads<'a, 'd> {
 
     /// Whether `decl` is a port of a value type: a value input.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
-        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none() && !self.is_nature_parameter_type(p.ty))
+        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none() && !self.is_nature_parameter_type(p.ty)) && !self.design.is_bundle_owner(decl)
     }
 
     /// Whether the last `of` read went through a value input of a placement.

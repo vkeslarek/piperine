@@ -77,6 +77,12 @@ impl Elaboration<'_, '_> {
         {
             return Some(*index);
         }
+        // a field of a bundle port or signal is the carrier its leaf stands for (§7 rule 12)
+        if let Some(leaf) = self.bundle_leaf(scope, place)
+            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&leaf.decl))
+        {
+            return Some(*index);
+        }
         self.unsupported(scope.file, node.span, "a target that is not a carrier of this module");
         None
     }

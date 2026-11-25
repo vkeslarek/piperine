@@ -24,6 +24,8 @@ impl Elaboration<'_, '_> {
         // the carriers declared inside generation are the body's too, one array each (§8.2.23)
         let mut children = self.design.decl_data(module).children.clone();
         children.extend(self.generated.elaborated());
+        // each field of a bundle port or signal is a carrier of its own (`pom/bundles.rs`)
+        let children = self.design.module_items(&children);
         for decl in children {
             let missing = self.types.defers_missing_initial_value(decl);
             let handed = self.types.defers_handed_initial_value(decl);
@@ -53,7 +55,7 @@ impl Elaboration<'_, '_> {
         self.cover_definitions(&mut coverage, carrier);
         let data = self.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-        let Some(unnamed) = coverage.unnamed(&name) else { return };
+        let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { return };
         let Ty::Carrier { value, .. } = array.innermost() else { return };
         let found = value.name(self.design);
         let message = format!("`{unnamed}` in `{instance}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");

@@ -8,6 +8,7 @@ Companion of `.specs/features/resolved-nets/design.md`; its D2 and D20 put both 
 `feature/resolved-nets`.
 
 **Amended**: 2026-11-22 - the explicit-unknowns model (MD-78, spec amendment A6). The section below rules over every older sentence of this file.
+**Amended**: 2026-11-24 - arrays of bundles are a struct of arrays (D12). **Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu".
 
 ---
 
@@ -22,6 +23,43 @@ Companion of `.specs/features/resolved-nets/design.md`; its D2 and D20 put both 
 | Gates: "Full" ran the buck, the twins and parity after every elaborator task | per task the `**Build**` line and the touched crates' tests; the full root suite, the integrated suites, parity and the twins only at the end of a batch; the buck only "with the buck" (D9) | the user's gate policy |
 
 ---
+
+## Amendment of 2026-11-24: how a field becomes a carrier (D11, taken at T6)
+
+The checker and the elaborator key every carrier and node by the `DeclId` of its port or signal, so `Ty::Bundle`
+and a per-field walk through both would touch every site that names a carrier. Taken instead (the same data path,
+one place): stage `pom/resolve/leaves.rs` gives every bundle port and signal one **leaf** declaration per field,
+named by its dotted path (`tx.valid`), typed as the field is, with the direction the view gives it
+(`pom/bundles.rs`: `BundleView`, `BundleLeaf`). A leaf is a `Port` or `Signal` of the arena that is **no child**:
+`children` stays as authored, `Design::decls()` and positional argument binding never see it, and a field access
+keeps resolving to the struct's own field (`pom_classify::bundle_field_resolves`). `Design::module_items` is the one
+ordering of "children, each bundle followed by its leaves" the checker and the elaborator walk; `Design::bundle_field(expr)`
+is the one question "which leaf is `tx.valid`". `C2` (`types/bundle.rs`, `Ty::Bundle`) is not written: the views
+live in the leaf's direction. Rationale: MD-25 (the POM mirrors the source) is kept at the reflection surface, the
+integrity check (`Design::check`) knows the table, and every rule of §5 applies to a field with no new code.
+
+## Amendment of 2026-11-24: an array of bundles is a struct of arrays (D12, taken at T23)
+
+**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu" (coordinator ruling of 2026-11-24, taken as an AFK default). D11 planned the leaves of an array of bundles once at the
+declaration, one group per element (`rx[0].valid` .. `rx[n-1].valid`), so a length that is no written integer (`[Lane; N]`, a
+const generic or a module param, `N + 1`) could not be planned and was a named `P0001`. Taken instead, for every length, the
+written one included (one way, no special case): an array of bundles gets **one leaf per field, typed as the array of the
+field's type with the owner's lengths** (`tx: [Lane; N]` has `tx.a: [Bit; N]`; a nested field `tx.inner.x: [Bit; N]`; an array
+field `tx.bits: [[Bit; 2]; N]`). `Design::bundle_place` reads a chain as a `BundlePlace { decl, elements }`: the indexes before
+the first field name the element (one per element level, `BundleLeaves::element_levels`), and `tx[k].a` is the element `k` of
+the leaf `tx.a`. Every rule then is the one of arrays of carriers, reused unchanged: substitution and per-instance folding of
+the length, typing of `tx[k].a` as the element (`Ty::element_at`), places and drives (`element_target.rs`,
+`element_commits.rs` prepend the element indexes to the place's steps), element-granular `E0187`/`E0220` (checker and
+`elab/drive_overlaps.rs`, `elab/element_coverage.rs`), reads and events (`elements.rs::element_lookup`), and connections by
+window: `lanes[k]` given to a bundle port gives each port field the window `k` of the parent's leaf
+(`elab/bundles.rs::leaf_window`, nodes `leaf_node_run`); a whole array binds whole. The views (`flip` on the element) are the
+element's. Names a person reads stay the source's: `Design::element_naming` writes an element of a leaf whose levels are the
+element levels as `lanes[1].a` in diagnostics, and the host reads `Top.lanes[1].a` as the leaf `[1]` of the net `Top.lanes.a`
+(`piperine-api` `Probe::field_first`), naming the column as written. The IR keeps the arrays as arrays (`lanes.a` of count
+N, nodes `d.p[k]`), so no IR change. Removed: the per-element groups, `is_array_element_leaf`, `leaves_of_each_element`,
+`literal_index` and the `P0001` "an array of bundles whose length is not an integer written in the source". Rationale: the
+general array machinery already folds generic lengths per instance; a per-instance leaf table in the elaborator's frame would
+have been a bundle-only second path.
 
 ## What the code does today (`main` at `7df9e17c`)
 
@@ -164,6 +202,7 @@ previsto, parando só depois da revisão no item 13".
 | D8 | An observer view of a bundle with a resolved field | the resolved field (its nature implements `Resolve`, amendment) is drivable in every view, the observer's included (§7 rule 4: fields without a direction are the same in every view) | §5.2.2 any module that sees it may drive |
 | D9 | Gates (amendment) | per task: the `**Build**` line and the tests of the crates it touched; the full root suite, the integrated suites, parity and the twins once at the end of each batch, never elsewhere (user, 2026-11-21: "Quero que aplique o dos gates mais leves apenas"; 2026-11-22: "Suite completa é só no fim dos lotes e ponto final!"); the buck only in a task whose `Done when` says "with the buck" (MD-77) | the user's gate policy |
 | D10 | When B2 starts (amendment) | once `explicit-unknowns` phase A is on `main` (`composite-values` A–B already is): the fixtures need `E0187`'s rule before they are rewritten once | `explicit-unknowns` design "`resolved-nets-bundles`", T5 |
+| D12 | How an array of bundles is laid out (amendment of 2026-11-24, T23) | struct of arrays: one leaf per field, the array of the field's type with the owner's lengths; `tx[k].a` is element `k` of `tx.a` (**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu") | one path for every length; reuses arrays of carriers |
 
 ## Tech Decisions
 

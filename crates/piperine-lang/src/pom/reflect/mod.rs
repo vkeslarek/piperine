@@ -399,7 +399,7 @@ impl Design {
     /// Every declaration of the design in arena (source) order: the project's files first, `std`
     /// last.
     pub fn decls(&self) -> Vec<Decl<'_>> {
-        (0..self.decl_count()).map(|i| Decl::new(self, DeclId(i as u32))).collect()
+        (0..self.decl_count()).map(|i| DeclId(i as u32)).filter(|id| self.leaf_owner(*id).is_none()).map(|id| Decl::new(self, id)).collect()
     }
 
     /// The declarations of the root crate.

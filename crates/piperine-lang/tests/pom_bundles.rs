@@ -93,6 +93,19 @@ fn a_misplaced_or_missing_field_direction_is_e0261() {
 }
 
 #[test]
+fn an_initial_value_belongs_to_an_out_field_of_a_bundle() {
+    // §7 rule 10: `= value` after an `out` or an `in` carrier field is the initial value of the carrier on the side that drives the
+    // field (the producer, the `flip` consumer); on a field of a value `struct` or on a nested bundle field it is `E0261` at the
+    // field's name, and nothing else is wrong
+    let design = Bundles::design("struct Pipe { out q: Bit = false, in d: Bit }\nmodule Top() { }\n");
+    assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let design = Bundles::design("struct Pipe { out q: Bit = false, in d: Bit = true }\nmodule Top() { }\n");
+    assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "an `in` field takes one: {:?}", design.diagnostics());
+    let design = Bundles::design("struct Pipe { out q: Bit = false, in d: Bit = true }\nstruct Value { n: u8 = 3 }\nstruct Outer { out o: Bit = true, inner: Pipe = Pipe { q: false, d: false } }\nmodule Top() { }\n");
+    assert_eq!(Bundles::spans(&design, "E0261"), ["n", "inner"], "{:?}", design.diagnostics());
+}
+
+#[test]
 fn flip_out_and_nested_directions_are_e0262() {
     // §7 rules 5 and 6: a direction on a nested bundle field, `out` on a bundle port and `flip` on
     // a type that is no bundle are errors; `flip` on a bundle, `in` on a bundle port and a plain
@@ -122,4 +135,16 @@ fn a_bundle_declared_as_a_value_is_e0264() {
     }
     let plain = Bundles::design("struct Stream { out valid: Bit }\nmodule Top(p: Stream, in q: Stream) { signal t: Stream; }\n");
     assert_eq!(Bundles::codes(&plain), Vec::<String>::new(), "a bundle port and signal without a value are accepted: {:?}", plain.diagnostics());
+}
+
+#[test]
+fn a_carrier_method_on_a_whole_bundle_is_e0211() {
+    // §7 rule 12, §5.1: carrier methods apply to a field, not to the bundle; the message names the bundle and the method
+    let design = Bundles::design("struct Stream { out valid: Bit, in ready: Bit }\nmodule Top(tx: Stream, in clk: Bit) { let a = tx.valid.changed(); let b = tx.changed(); }\n");
+    assert_eq!(Bundles::spans(&design, "E0211"), ["changed"], "only the whole bundle: {:?}", design.diagnostics());
+    let message = &design.diagnostics().iter().find(|d| d.diagnostic.code == "E0211").expect("E0211").diagnostic.message;
+    assert!(message.contains("`changed`") && message.contains("`Stream`"), "names the method and the bundle: {message}");
+    // an `impl` of the bundle that declares the method is that method, not the carrier's
+    let design = Bundles::design("struct Stream { out valid: Bit, in ready: Bit }\nimpl Stream { fn changed(self) -> bool { true } }\nmodule Top(tx: Stream) { let b = tx.changed(); }\n");
+    assert!(Bundles::spans(&design, "E0211").is_empty(), "{:?}", design.diagnostics());
 }

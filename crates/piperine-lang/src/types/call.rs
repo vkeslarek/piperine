@@ -349,6 +349,16 @@ impl Checker<'_> {
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
             return self.edge_read(expr, edge, *recv, args);
         }
+        // §7 rule 13: a function of a bundle, called on a bundle carrier or on a bundle handle (`bundle_handles.rs`)
+        if let Some(bundle) = self.bundle_named_type(*recv) {
+            self.exprs[recv.index()] = Some(bundle.clone());
+            let Some(function) = self.method_of(&bundle, name) else {
+                let message = format!("no method `{name}` on `{}`", bundle.name(self.design));
+                self.coded(file, "E0161", method.span, message, "a bundle has the functions of its `impl` and no others");
+                return None;
+            };
+            return self.method_call_of(expr, *recv, &bundle, function, args);
+        }
         // §3.1.7: a method of a carrier is the carrier's own (above), then the `impl`s of its nature, then the value's
         if let Some(carrier @ Ty::Carrier { .. }) = self.carrier_named(*recv)
             && let Some(function) = self.method_of(&carrier, name)

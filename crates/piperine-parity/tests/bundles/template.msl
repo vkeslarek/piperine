@@ -1,0 +1,45 @@
+//! A bundle through a template bound (§8.4.5, §7 rules 3 to 5): `Fn(Link)` takes a module that has the bundle as a producer and
+//! `Fn(flip Link)` one that has it as a consumer, so the module that places the template drives what the bound's view leaves it.
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// The producer drives `data`, the consumer drives `ack`.
+struct Link { out data: Bit<u8>, in ack: Bit }
+
+/// A producer of 7.
+module Seven(tx: Link) { tx.data = 7; }
+
+/// A consumer that is always ready.
+module Ready(rx: flip Link) { rx.ack = true; }
+
+/// Records the data at each rising edge.
+module Tap(in clk: Bit, in s: Link) { }
+digital for Tap { on clk.rise() { emit!("link", data = s.data); } }
+
+/// A bank placing a producer template of the bundle, and the consumer that answers it.
+module FromProducer<P: Fn(Link)>(in clk: Bit) {
+    cell: P;
+    signal l: Link;
+    let producer = cell(l);
+    let consumer = Ready(l);
+    let tap = Tap(clk, l);
+}
+
+/// A bank placing a consumer template of the bundle, and the producer it takes.
+module FromConsumer<C: Fn(flip Link)>(in clk: Bit) {
+    cell: C;
+    signal l: Link;
+    let producer = Seven(l);
+    let consumer = cell(l);
+    let tap = Tap(clk, l);
+}
+
+/// The two banks, one of each view.
+module TemplateBench() {
+    signal clk: Bit;
+    let clock = Clock(clk);
+    let up = FromProducer { cell: Seven {} }(clk);
+    let down = FromConsumer { cell: Ready {} }(clk);
+}

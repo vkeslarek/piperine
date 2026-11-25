@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, Dir, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
 use super::coverage::ElementCoverage;
@@ -381,7 +381,8 @@ impl Checker<'_> {
             DeclKind::Port(p) => Some((*c, p.ty, p.dir)),
             _ => None,
         }).collect();
-        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type_under_placement(*ty)).collect();
+        // a bundle port has no type of its own: its fields are the leaves it stands for (`bundle.rs`)
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(decl, ty, _)| if self.design.is_bundle_owner(*decl) { None } else { self.port_type_under_placement(*ty) }).collect();
         let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
@@ -406,6 +407,10 @@ impl Checker<'_> {
         for (index, kind) in kinds.iter().cloned().enumerate() {
             let Some(arg) = bound.at(index) else { continue };
             let (port_decl, _, dir) = ports[index];
+            if self.design.is_bundle_owner(port_decl) {
+                self.connect_bundle(arg.value, port_decl);
+                continue;
+            }
             match kind {
                 Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
@@ -516,6 +521,20 @@ impl Checker<'_> {
         self.book.handed.push((decl, element, span, file));
     }
 
+    /// [`Checker::hand_over`] of the elements `element` of a carrier no expression names: a field of a bundle given whole
+    /// (`s.valid`), or of an element of an array of bundles (`lanes[k]` hands the element `k` of the leaf `lanes.a`). `place` is
+    /// the expression that names the bundle: one written inside generation reaches the carrier in the iterations elaboration
+    /// takes only.
+    pub(super) fn hand_over_element(&mut self, decl: DeclId, element: super::element_target::Element, place: ExprId, span: Span, file: FileId) {
+        if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
+            let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
+            self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
+            return;
+        }
+        let element = self.judged_element(place, decl, element);
+        self.book.handed.push((decl, element, span, file));
+    }
+
     /// One argument at an array port (§8.1.10): an array of carriers (or of nodes) of the port's shape, or a part of
     /// a nested one that has it. Another length or shape is `E0313` naming both; another element type `E0251`.
     fn connect_array(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
@@ -581,7 +600,8 @@ impl Checker<'_> {
         let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
         let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
-            let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            // the element as the source names it: `mem[2]`, `lanes[1].a` for a field of an array of bundles
+            let name = self.design.element_naming(decl).name(&element.subscript());
             // a resolved carrier has as many drives as modules hand it down or define it (§5.2.1): nothing here is a second one
             if matches!(self.carriers.get(&decl).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.design, *nature).resolved) {
                 continue;
@@ -612,7 +632,8 @@ impl Checker<'_> {
     fn handed_initial_values(&mut self, handed: &[(DeclId, super::element_target::Element, Span, FileId)]) {
         let mut judged = BTreeSet::new();
         for (decl, _, span, file) in handed {
-            if !judged.insert(*decl) || !self.has_initial(*decl) {
+            // a leaf of a bundle starts at the default of its field, which the instance that holds the drive repeats: no second initial value
+            if !judged.insert(*decl) || !self.has_initial(*decl) || self.design.leaf_owner(*decl).is_some() {
                 continue;
             }
             let Some(held) = self.carriers.get(decl).cloned() else { continue };
@@ -673,10 +694,23 @@ impl Checker<'_> {
                 self.deferred_coverage.missing_initial.insert(decl);
                 continue;
             }
-            let Some(unnamed) = coverage.unnamed(&name) else { continue };
+            let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { continue };
             let found = value.name(self.design);
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
-            self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
+            // a bundle port takes no initial value (§7 rule 10): the field's own declaration gives it, written with the direction the
+            // `struct` writes (`in ready: Bit = false` for a `flip` consumer that drives `ready`)
+            let help = match self.design.leaf_field(decl) {
+                Some((field, dir)) => {
+                    let written = match dir {
+                        Some(Dir::In) => "in ",
+                        Some(Dir::Out) => "out ",
+                        None => "",
+                    };
+                    format!("write `= value` after the type of the field `{written}{field}` in its `struct` (the initial value of the carrier on the side that drives the field, §7 rule 10), or carry an `Option<{found}>`")
+                }
+                None => format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`"),
+            };
+            self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(help));
         }
     }
 

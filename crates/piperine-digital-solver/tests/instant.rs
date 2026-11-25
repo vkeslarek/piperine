@@ -739,6 +739,42 @@ fn a_pulse_of_a_net_the_analog_side_reads_is_reported_as_passing() {
 }
 
 #[test]
+fn a_pulse_of_an_element_of_an_array_net_is_passing_as_its_windows() {
+    // docs/spec §15.2 rule 4 on an array net: `p` pulses element 1 of `lines` (4 elements). The analog side reads the
+    // net as its windows, so the value passed through is those windows with element 1 high, and an element outside
+    // every window passes nothing the analog side sees.
+    let run = |windows: Vec<(u64, u64)>| {
+        let lines = NetSpec { analog_reads: true, analog_windows: windows, ..NetSpec::array("lines", 1, 1, 4) };
+        let nets = vec![lines, NetSpec::event("go"), NetSpec::event("p.rise")];
+        let (lines, go, rise) = (NetId(0), NetId(1), NetId(2));
+        let pulser = piperine_digital_solver::plan::InstancePlan {
+            path: "p".into(),
+            handle: Pulser::handle(),
+            pins: vec![piperine_digital_solver::plan::Binding::Net(go), piperine_digital_solver::plan::Binding::ArrayElement { net: lines, element: 1 }, piperine_digital_solver::plan::Binding::Net(rise)],
+        };
+        let plan = piperine_digital_solver::plan::DigitalPlan::bind(nets, vec![pulser], Resolution::default()).expect("binds");
+        let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
+        d.start().unwrap();
+        instant(&mut d, Tick(0));
+        d.fire(go, Tick(7)).unwrap();
+        let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).expect("the pulse runs");
+        assert_eq!(d.read_element(lines, 1), LOW, "the pulse ends where it began");
+        (lines, out)
+    };
+    // the windows' bytes with element 1 at `value`: one byte per element of each window, in window order
+    let windows_with = |windows: &[(u64, u64)], value: u8| -> Vec<u8> {
+        windows.iter().flat_map(|&(first, length)| (first..first + length).map(move |element| if element == 1 { value } else { LOW[0] })).collect()
+    };
+    for windows in [vec![(0, 4)], vec![(1, 1)], vec![(2, 2), (0, 2)]] {
+        let (lines, out) = run(windows.clone());
+        assert_eq!(out.boundary, [(lines, windows_with(&windows, LOW[0]))], "what the instant leaves behind, windows {windows:?}");
+        assert_eq!(out.passing, [(lines, windows_with(&windows, HIGH[0]))], "the high element 1 passed through, windows {windows:?}");
+    }
+    let (_, out) = run(vec![(2, 2)]);
+    assert!(out.passing.is_empty(), "element 1 is in no window: {:?}", out.passing);
+}
+
+#[test]
 fn a_net_that_changes_once_passes_through_nothing() {
     // docs/spec §15.2 rule 4: a change the instant keeps is read by the first step after it, and
     // only that step; the settle phase runs in the instant

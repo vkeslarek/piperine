@@ -29,7 +29,7 @@ const ROWS: &[Row] = &[
     // and lowered generation (`types_generation`).
     Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
     // `a resolved nature` left this table when resolved-nets T16 typed it (`types_natures::an_impl_resolve_makes_a_discrete_nature_resolved`); the elaborator still refuses it by name (`elab_unlowered`) until T18.
-    Row { construct: "a bundle", source: "struct Bn { out a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
+    // `a bundle` left this table when resolved-nets-bundles T6 typed it (`types_bundles`).
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
     // `delay`, `noise`, `ddx` and `simparam` left this table when analog-operators T22 and T23 typed them (`types_analog_operators`).

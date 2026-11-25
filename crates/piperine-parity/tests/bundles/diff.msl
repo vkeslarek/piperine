@@ -1,0 +1,49 @@
+//! A differential pair as a bundle of nodes (§7 rule 14, BN-03 AC 5): the fields connect like ports of their nature, and probes
+//! and contributions on `d.p` and `d.n` are those of plain nodes.
+
+/// A pair of nodes.
+struct Diff { p: Electrical, n: Electrical }
+
+/// Holds the difference of the pair at `level` volts.
+module Source(d: Diff) { level: f64 = 1.0; }
+analog for Source { v(d.p, d.n) +> level; }
+
+/// Loads the pair with a resistor.
+module Load(d: Diff) { r: f64 = 1k; }
+analog for Load { i(d.p, d.n) +> v(d.p, d.n) / r; }
+
+/// Holds a node at ground.
+module Tie(a: Electrical) { }
+analog for Tie { v(a) +> 0.0; }
+
+/// Gives a pair on to a source and a load: a bundle port passed as a bundle carrier.
+module Wrap(d: Diff) {
+    let s = Source(d);
+    let l = Load(d);
+}
+
+/// A source and a load on one pair whose `n` is tied to ground by a field passed as a node.
+module DiffBench() {
+    signal pair: Diff;
+    let t = Tie(pair.n);
+    let w = Wrap(pair);
+}
+
+/// The difference of a pair, as a function of the bundle: `self` is a handle, its fields are read and probed (§7 rule 13).
+impl Diff {
+    fn vd(self) -> f64 { v(self.p, self.n) }
+}
+
+/// Follows twice the difference of a pair: its output is `2 * d.vd()` volts.
+module Mirror(d: Diff, o: Electrical) { }
+analog for Mirror { v(o) +> 2.0 * d.vd(); }
+
+/// A source holds the pair at 1 V and a mirror reads the difference through the bundle's function.
+module VdBench() {
+    signal pair: Diff;
+    signal m: Electrical;
+    let t = Tie(pair.n);
+    let s = Source(pair);
+    let l = Load(pair);
+    let mirror = Mirror(pair, m);
+}

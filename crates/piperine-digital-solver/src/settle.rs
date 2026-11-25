@@ -55,22 +55,22 @@ impl SettleCommits {
     /// The nets the analog side reads and the bytes the held commits will give them, in the order
     /// of each net's first commit: what the solve that arrives at the next time point reads (§15 S2).
     /// `store` holds the nets as the settle phase left them.
-    pub(crate) fn boundary(&self, analog_reads: impl Fn(NetId) -> bool, store: &Store) -> Vec<(NetId, Vec<u8>)> {
+    pub(crate) fn boundary(&self, specs: &[crate::net::NetSpec], store: &Store) -> Vec<(NetId, Vec<u8>)> {
         let mut nets: Vec<(NetId, Vec<u8>)> = Vec::new();
         for held in &self.held {
             let net = held.pending.net;
-            if !analog_reads(net) {
+            if !specs[net.0 as usize].analog_reads {
                 continue;
             }
             let at = match nets.iter().position(|(n, _)| *n == net) {
                 Some(at) => at,
                 None => {
-                    nets.push((net, store.value(net).to_vec()));
+                    nets.push((net, store.analog_value(net, &specs[net.0 as usize])));
                     nets.len() - 1
                 }
             };
-            let offset = held.pending.offset as usize;
-            nets[at].1[offset..offset + held.pending.bytes.len()].copy_from_slice(&held.pending.bytes);
+            let offset = u64::from(held.pending.offset) + held.pending.element.map_or(0, |e| e * u64::from(specs[net.0 as usize].size));
+            store.patch_analog(net, &specs[net.0 as usize], offset, &held.pending.bytes, &mut nets[at].1);
         }
         nets
     }

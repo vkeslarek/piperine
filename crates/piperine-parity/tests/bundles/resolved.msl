@@ -1,0 +1,63 @@
+//! A bundle field of a resolved nature (§7 rule 4, §5.2.2): it has no direction, every module that sees the bundle may drive
+//! it, the observer included, and it holds `resolve` of its drives. The library declares no net nature, the model does
+//! (§22.3).
+
+/// A net whose drives resolve by strength.
+nature Sda { value: Driven }
+impl Resolve<Driven> for Sda {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
+        Driven::strongest(drives)
+    }
+}
+
+/// A free-running clock of period 10 ns.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// A data line that resolves and a clock line one module drives.
+struct Bus { sda: Sda, out scl: Bit }
+
+/// The producer view: drives `scl`, and `sda` weakly low.
+module Master(m: Bus) {
+    m.scl = true;
+    m.sda = Driven { v: Logic::L, s: Strength::Weak };
+}
+
+/// The consumer view: reads `scl`, and drives `sda` at the pull strength, high.
+module Slave(s: flip Bus) {
+    s.sda = Driven { v: Logic::H, s: Strength::Pull };
+}
+
+/// The observer view: reads `scl`, and drives `sda` too, strongly low.
+module Spy(in o: Bus) {
+    o.sda = Driven { v: Logic::L, s: Strength::Strong };
+}
+
+/// Writes the level of `sda`, 0 low and 1 high, and its strength, 3 strong and 2 pull, once it settles at the first rising edge.
+module Look(in clk: Bit, in b: Bus) { }
+digital for Look {
+    on clk.rise() {
+        emit!("sda", level = if b.sda.v.is_high() { 1.0 } else { 0.0 }, strength = if b.sda.s == Strength::Strong { 3.0 } else if b.sda.s == Strength::Pull { 2.0 } else { 1.0 });
+    }
+}
+
+/// The three views drive `sda`: the strongest drive is the spy's.
+module BusBench() {
+    signal clk: Bit;
+    signal bus: Bus;
+    let clock = Clock(clk);
+    let master = Master(bus);
+    let slave = Slave(bus);
+    let spy = Spy(bus);
+    let look = Look(clk, bus);
+}
+
+/// Without the spy the pull of the slave is the strongest.
+module QuietBench() {
+    signal clk: Bit;
+    signal bus: Bus;
+    let clock = Clock(clk);
+    let master = Master(bus);
+    let slave = Slave(bus);
+    let look = Look(clk, bus);
+}
