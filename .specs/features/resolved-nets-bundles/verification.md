@@ -1,7 +1,7 @@
 # Resolved Nets: Bundles verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at the commit that follows this file (re-run by `check_proofs.py` after it; the run at 9e9312cec was 64 pass, 0 fail)
+**Verdict**: FAIL (round 2, at fa63ecb02: F1, F2 and F4 closed; F3 closed for the producer view only; R1 open, Minor)
+**Proofs**: `proofs.md` at the commit that follows this file (re-run by `check_proofs.py` after it)
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-24, over `feature/resolved-nets-bundles` at 51bd25e74
 **Scope**: the whole feature (T1 to T23, design D11 and D12), the merge of `main` at e9fefe239 (the `Fn(Cell)` bound fix) and the solver change 9e9312cec. The B1 round (verdict PASS at 73cef16b, finding F0 closed by cf54677e) is kept at the end.
 
@@ -77,6 +77,52 @@ These are my own probes at 51bd25e74, run with the debug `piperine` binary (`run
 | **F2. Major - 9e9312cec makes every transient materialise every array net densely, the arrays no analog function reads included. This defeats the sparse storage of §5.1.8 (CV-27).** `DigitalSide::mark` (with `settled`), `DigitalSide::state` and the run-end re-entry state now call `read_dense` for every net. `Store::dense_value` builds `count x size` bytes, one `Vec` per element. Before this commit an array net gave its empty `NetBytes`. | `crates/piperine-solver/src/analyses/adapters.rs:155`, `:268`, `crates/piperine-solver/src/analyses/transient.rs:1311`, `crates/piperine-digital-solver/src/store.rs:232`. Scenario: a resistor cell plus `signal mem: [Bit<u8>; K] = [7; K]` that nobody reads, 4 ns transient. K = 1024 takes 1.3 s and 43 MB. K = 2^26 takes 5.5 s and 110 MB. K = 2^28 takes 17.5 s and 306 MB. K = 2^32 does not finish in 150 s, while its `op` finishes at once. A gdb sample stops in `Store::dense_value` under `DigitalSide::mark`. The cost does not grow with the number of steps. The analog boundary also rebuilds a whole array on each change of an element that is read (`instant.rs:181`, `:223`) | copy only the windows the analog copy has slots for (`window_slots`), and keep a net no analog function reads out of the dense bytes (empty, as before). Build the dense bytes of one net only when it has slots, and cut each window straight from `SparseArray` without the whole array. Add a check: a transient with `[Bit<u8>; 1 << 32]` that nobody reads runs, with bounded memory | 8a7abe6cf: `NetSpec::analog_windows`, `Store::analog_value`/`patch_analog`; test `source_carrier_arrays::a_transient_with_an_array_no_analog_function_reads_stays_sparse` (an unread `[Bit<u8>; 2^32]`, a read element switches at 2 ns, bound 30 s: 2 s alone) |
 | **F3. Minor - E0187 on an `out` field of a bundle port tells the user to write something the language forbids.** For `module Drv(p: Pipe)` that commits `p.q <- ..` with `q: Bit`, the help reads "write `= value` after the type of `p.q`". §7 rule 10 (`E0264`) forbids an initial value on a bundle port, and the struct field grammar has no initialiser (`struct Pipe { out q: Bit = false }` is a parse error). A registered `Bit` field of a bundle can only be written as a definition from an initial-valued signal, the idiom of E.6 and the Book harness, and nothing says so. | `crates/piperine-lang/src/types/module.rs:699` (the help), `types/nature.rs:285`; spec part II §7 rule 10 with §5.2.6 and §5.2.8 | for a bundle leaf, say how the value is given: a definition from an initial-valued signal, or an `Option` field. If a registered bundle output should be writable, that is a spec question for the user. Give it a GAPS row with an owner | 74b31a963: struct field `= expr` (part II 7 rule 10, appendix B, E0261 for a misplaced one); tests `msl_parser`, `pom_bundles`, `types_bundles`, `elab_bundles`, `source_bundles::a_bit_field_with_a_default_is_written_by_commits`. AFK default, pending user review. |
 | **F4. Minor - `NameMap::window_bytes` silently gives empty bytes when a window falls outside its net's bytes.** This happens on a length mismatch between `init`, `size` and `count`. The analog copy then reads an empty slot and nothing reports it, which breaks the fail-loud rule. | `crates/piperine-solver/src/core/bind.rs:155` (`.unwrap_or_default()`) | return a bind error naming the net and the window, or assert the invariant | 8a7abe6cf: `NameMap::window_bytes` is a `Result` naming the net and the window (no seed gives none); test `bind::a_window_outside_its_nets_bytes_is_an_error_naming_the_net_and_the_window` |
+
+## Round 2 (2026-11-24, at fa63ecb02)
+
+These are the fix round's commits:
+
+- df72502a1 merges `main` (7cf35a4f7). `origin/main` has not moved since.
+- 271f33816 fixes F1.
+- 8a7abe6cf fixes F2 and F4.
+- 74b31a963 fixes F3.
+
+The `**Build**` line is clean, with no warning. Four closing tests pass when I run them myself:
+
+- `source_carrier_arrays::a_transient_with_an_array_no_analog_function_reads_stays_sparse` (2.1 s)
+- `source_bundles` (21 of 21)
+- `bind::a_window_outside_its_nets_bytes_is_an_error_naming_the_net_and_the_window`
+- `msl_parser` (17 of 17)
+
+These tests are not checks in tasks.md, so `proofs.md` does not carry them.
+
+I re-ran the round-1 probes at fa63ecb02:
+
+- **F1 is closed.**
+  - The probes `p7` (a `Snk(p: flip Pipe)` placed through `Fn(Pipe)`) and `p7d` (an observer `Obs(in p: Pipe)`) are both now `E0360` at the bound. The message names the port and the view ("takes the bundle as a consumer (`flip`), and `Fn` wants it as a producer").
+  - `Fn(flip Pipe)` with `Snk` and a correct literal runs (`s = q + 2 = 7`, `Top.d` stays 5).
+  - The wrong literal (`Pipe { q: s, d: d }`, which hands the parent's `in d` over) is `E0314` plus `E0187`, the same as a direct placement gives.
+  - E0360 at the bound is stronger than the E0314/E0187 I expected for the template itself: it names the mismatch where the bound is written, and the placement then keeps direct placement's rules. That matches the amended §8.4.5 text.
+- **F2 is closed.**
+  - A transient with an unread `[Bit<u8>; 2^32]` now takes 1.05 s. In round 1 it did not finish in 150 s.
+  - `Store::analog_value` cuts only the windows that `NetSpec::analog_windows` names, from the sparse array.
+  - `patch_analog` maps a held settle commit into every window it overlaps.
+  - The probes below still give correct values:
+    - The element and window probe `p1` gives the same table as in round 1.
+    - A whole-array port seeded `[true; 4]` gives 1 V.
+    - Element 999999 of a 10^6 array switches 3 V to 1 V at 2 ns.
+    - An unseeded `[Bit<Option<bool>>; 4]` read by analog switches at 2 ns (the "empty seed gives no bytes" path).
+- **F4 is closed.** `window_bytes` and `slot_of_bytes` return an internal error that names the net and the window.
+- **F3 is closed for the producer only.**
+  - `struct Pipe { out q: Bit = false, .. }` lets a producer commit `p.q` (`Top.s`: false, then true at 1 ns).
+  - `= value` on an `in` field is `E0261`, and the declaring signal's own initial value is `E0223`.
+  - The same defect remains for the consumer view. See R1.
+
+The §7 rule 10 amendment is a grammar change (a struct field takes `= expr`). It was taken as an AFK default and is pending the user's review. I take no position on that decision.
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| **R1. Minor - F3 remains for the consumer view.** A consumer that commits the field its `flip` view makes `out` gets `E0187` whose help names a remedy the language refuses. The commonest case is `rx.ready <- ..` on a `Bit`, a registered `ready`. An `in` field cannot take `= value` (`E0261`), and a bundle port cannot take one either (`E0264`). So a consumer cannot commit a `Bit` field it drives, only define it from an initial-valued signal. No GAPS row or owner names that refusal. | `crates/piperine-lang/src/types/module.rs:702`. Probe: `struct Pipe { out q: Bit = false, in d: Bit }` with `module Snk(p: flip Pipe)` and `on p.q.changed() { p.d <- !p.q; }`, placed as `Snk(Pipe { q: q, d: s })`. The result is `E0187` with the help "write `= value` after the type of the field `d` in its `struct` (a bundle's field default, §7 rule 10)". Writing `in d: Bit = true` gives `E0261` "only an `out` field of a bundle takes" one | Make the help follow the view: for a leaf that is `out` only under `flip`, name the remedy that exists (a definition from an initial-valued signal, or an `Option` field). Add a GAPS row with an owner for "a consumer commits a `Bit` field of a bundle", or put the question to the user together with the pending §7 rule 10 review (for example, `in ready: Bit = false` as the consumer's default). Add a check | |
 
 ## Round B1 (2026-11-21, verdict PASS at 73cef16b)
 
