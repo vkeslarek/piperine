@@ -375,7 +375,7 @@ impl Integrals {
 #[test]
 fn idt_and_idtmod_integrate_against_section_22() {
     // §22.2.8 and §22.2.9, read every us half a us past the instant: `idt` of a constant is `ic + x t` (at `State` and at
-    // `Thermal`), a `reset` holds `ic` and the integral resumes from it, and `idtmod` is the same integral wrapped
+    // `Thermal`), a `reset` holds `ic` and the integral resumes from it, and `idtmod` is the same integral wrapped, across its wraps (`fix/idtmod-wrap`)
     let records = StdModels::records("integrals.msl", "IntegralBench", 12e-6, 25e-9);
     let read = StdModels::of_stream(&records, "integral");
     assert!(read.len() >= 11, "one reading per us: {}", read.len());
@@ -385,12 +385,7 @@ fn idt_and_idtmod_integrate_against_section_22() {
         assert!((value("plain") - Integrals::plain(at)).abs() < 1e-3, "idt at {at}: {}", value("plain"));
         assert!((value("hot") - Integrals::plain(at)).abs() < 1e-3, "idt::<Thermal> at {at}: {}", value("hot"));
         assert!((value("held") - Integrals::held(at)).abs() < 1e-3, "idt with reset at {at}: {}", value("held"));
-        // SPEC_DEVIATION: only the readings before the first wrap are held to §22.2.9. The wrap is a jump of the seated integral
-        // through three microsteps of one instant (rule 3), and the engine's solve does not see the `seat` pulse between them
-        // (GAPS X1), so the wrapped integral keeps growing past `offset + modulus` (generics phase E, Handoff T109).
-        if Integrals::WRAPPED_RATE * at < Integrals::OFFSET + Integrals::MODULUS {
-            assert!((value("wrapped") - Integrals::wrapped(at)).abs() < 1e-3, "idtmod at {at}: {}", value("wrapped"));
-        }
+        assert!((value("wrapped") - Integrals::wrapped(at)).abs() < 1e-3, "idtmod at {at}: {}", value("wrapped"));
     }
 }
 
