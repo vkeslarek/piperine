@@ -339,7 +339,7 @@ a result that does.
 > microstep that commits it. Rejecting it keeps `prev()` and `changed()` at `(0, 0)` unambiguous
 > (G.51). An array of carriers is judged per element ("on the levels defined"): an initial value
 > beside undelayed definitions of some elements is the value of the others, and is `E0338` only
-> when the definitions name every element. *(AFK default 2026-11-24, pending user review.)*
+> when the definitions name every element. *(**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu".)*
 
 **Static semantics: generation, visibility**
 

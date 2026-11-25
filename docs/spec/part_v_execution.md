@@ -353,7 +353,7 @@ transient step that reads the change, so the set has no solve of its own.
 10. Sensitivities across a jump are those of the states carried and of the step that reads it
     (§23.3.2).
 
-> **Resolution (AFK default 2026-11-24, pending user review).** The value passed through within an
+> **Resolution (**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu").** The value passed through within an
 > instant and the zero-width solve that reads it (rule 4) are stated here. Before them the step
 > after `t` read only what the instant left behind, so a pulse that ended where it began never
 > reached `analog`, and `idtmod` (§22.2.9), whose wrap is a pulse of `seat`, never wrapped. A

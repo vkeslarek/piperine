@@ -132,7 +132,7 @@ nature** declares `potential`.
 > no `let` of its own has the name [§21](part_vi_io.md#21-metadata) rule 3 gives it. The
 > drives one instance holds on one net (two of its carriers connected to it) are ordered,
 > after the instance path, by the declaration order of those carriers in the instance's
-> module. *(AFK default 2026-11-24, pending user review.)*
+> module. *(**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu".)*
 
 **Dynamic semantics**
 
@@ -291,7 +291,7 @@ A **resolved carrier** is a carrier of a discrete nature that does
   `signal` **MUST NOT** have an initial value. An array of carriers is judged per element, as
   §8.2.21 does for definitions: the instance holds the drive of the elements handed to it only,
   so an initial value is the value of the elements no `out` port holds, and is `E0223` only once
-  every element is handed. *(AFK default 2026-11-24, pending user review.)*
+  every element is handed. *(**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu".)*
 - **§5.2.7** `s.others()` is defined on a resolved carrier only. It gives a `V`.
 - **§5.2.8** A one-driver carrier with no drive is allowed. It holds its initial value in every
   analysis; its value type implements `Default` or it is `E0187`.
