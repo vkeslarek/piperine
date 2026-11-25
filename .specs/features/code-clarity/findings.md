@@ -37,7 +37,7 @@ What the scanner does **not** see: names of locals and parameters, comment quali
 | Test targets | 373 integration targets + 16 unit-test executables = **389 link steps** (buck targets, `test = false`, not counted) |
 | Tests | 4 496 `#[test]` functions in the source; 4 330 run by default (4 025 in targets, 305 in `src/`) |
 | Build of all test targets, cold | 3 min 40 s wall on 12 cores; **1 753 CPU-seconds** in workspace units, 1 561 of them in test executables; 12 GB of target directory |
-| Run of all test targets | **36 min 42 s** serial, with ngspice; 26 % of it in 5 executables |
+| Run of all test targets | **36 min 42 s** serial, with ngspice; 26 % of it in 5 executables, 72 % in the packages that call `rustc`; the run leaves 60 cache directories (2.5 GB) in `TMPDIR` |
 | Tests cited by a proof line, task or inventory row | 4 022 of 4 351 distinct names (92 %); 3 349 proof rows in 44 features |
 
 ---
@@ -364,6 +364,10 @@ Test executables cost 1 561 CPU-seconds to build against 193 for all the library
 
 Merging targets is the lever with the best ratio in this section: a support module compiled once per crate instead of once per target. An estimate from the per-target medians: `piperine-solver` 58 → 8 targets and `piperine-analog-solver` 13 → 3 remove about 520 of the 1 561 CPU-seconds on their own.
 
+**Where the run time goes.** 1 581 of the 2 202 run-seconds (72 %) are in the five packages whose tests run designs on the compiled backend, which calls `rustc` for each design's device library: parity 624 s, api 383 s, root 271 s, cli 159 s, transpile 145 s. The eight crates that never call it (solver, analog-solver, digital-solver, ir, abi, plan, interp, project: 1 091 tests) run in 4 s together; the rest is `piperine-numbers` (329 s, exhaustive arithmetic) and `piperine-lang` (288 s, an unoptimised front end over the corpora).
+
+The compile cache is not shared: **33 `static CACHE: OnceLock<tempfile::TempDir>` in 31 test files** (api 19, cli 8, parity 5, root 1; e.g. `api/tests/analyses.rs:28`, `tests/book/support/model.rs:168`) give each target, sometimes each fixture, a cache directory of its own. The same design is therefore compiled again by every target that uses it, and a `TempDir` held by a `static` is never dropped: the one run of this inventory left **60 directories and 2.5 GB** behind in `TMPDIR`. One cache per test run, owned by the fixture library of §3.5 and placed under the target directory, removes the repeated `rustc` calls and the leak. How many of the 1 581 s it saves was not measured.
+
 ### 3.3 Duplicated and near-duplicated tests
 
 No two tests have an identical body. The duplication is by **layer**: the same design proven through each stage that existed when a feature landed.
@@ -508,7 +512,7 @@ Value: how much it moves the seven rules or the suite's cost. Effort: S (days, o
 |---|---|---|---|---|
 | 1 | Language server out of the tree (§4.3) | unblocks every workspace-wide guard; −6 400 lines | S | none |
 | 2 | Prose pins and dead guards out (P1, P2, P3; 230 tests, about 4 500 lines) | removes the tests that fail on documentation edits | S | proof rows of the pins re-pointed or retired (Q13) |
-| 3 | Shared test-support libraries + target merges for solver, analog-solver, digital-solver (§3.2, §3.5, §3.8) | about 520 of 1 561 build CPU-seconds, 486 `#[allow(dead_code)]`, 2 000 duplicated lines | M | proof rows re-pointed by script |
+| 3 | Shared test-support libraries, one shared compile cache, and target merges for solver, analog-solver, digital-solver (§3.2, §3.5, §3.8) | about 520 of 1 561 build CPU-seconds, 486 `#[allow(dead_code)]`, 2 000 duplicated lines | M | proof rows re-pointed by script |
 | 4 | `Refusal` owner and the refused-form table (R1, R2, R3) | makes rule 2 checkable and the `spec-closure` sweep a table | M | none if messages are kept byte-identical |
 | 5 | `Option<Bound>` (A2), the real user-input panics (§1.9 row 2), dead items (§4.1), hidden ground aliases (S21), duplicated rules (A4) | 5 small fixes, each removes a class | S | S21 changes what is accepted: spec-conformant, but say so |
 | 6 | Doc comments everywhere + `#![deny(missing_docs)]` (CC-10) | 1 322 items, 2 531 fields and variants | M, mechanical but must be written with understanding | none |
@@ -533,7 +537,7 @@ Order follows two constraints: guards that scan the workspace need the language 
 |---|---|---|---|
 | **B0 — Ground** | remove the language server and `editors/vscode` (on Q1); repository-guard target in one home (M7); baseline report of CC-12 AC 6 from §3.1 | §4.3, M7 | precondition of every guard |
 | **B1 — Lean tests I** | remove uncited tests where they duplicate (§3.6), the prose pins and the dead-architecture guards (P1 to P4); the re-pointing script for proofs and `inventory.tsv` | §3.4, §3.6, §3.7 | CC-12 AC 2, 5 |
-| **B2 — Lean tests II** | test-support libraries (ABI devices, IR fixtures, source fixtures) with owner types; merge targets crate by crate; drop the 485 `#[allow(dead_code)]` and the cross-crate `#[path]`s; `Device::react` default (A1, on Q8) | §3.2, §3.5, §3.8, T3 | CC-12 AC 3, 4, 6 |
+| **B2 — Lean tests II** | test-support libraries (ABI devices, IR fixtures, source fixtures) with owner types; one compile cache per test run in place of the 33 per-target ones (§3.2); merge targets crate by crate; drop the 485 `#[allow(dead_code)]` and the cross-crate `#[path]`s; `Device::react` default (A1, on Q8) | §3.2, §3.5, §3.8, T3 | CC-12 AC 3, 4, 6 |
 | **B3 — Small defects of structure** | A2, A4, A6, A8, A9, §1.9 user-input panics, §4.1 dead items, §4.2 decisions, M5 deviations, M6 | §1.6, §1.9, §4 | parts of CC-03, CC-07 |
 | **B4 — Refusals have an owner** | R1 to R4, R6, R7 | §6 | rule 2; hands `spec-closure` its table |
 | **B5 — Owners and small methods, back end** | free functions and god methods of abi, analog-solver, digital-solver, solver, plan, project, api, transpile, ir, interp (F6 to F13, G4 to G10); file splits of §5 for those crates; the length and parameter guards | §1.2, §1.5, §5 | CC-04, CC-06 for 11 crates |
