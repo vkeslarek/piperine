@@ -83,6 +83,15 @@ impl StdModels {
             other => panic!("{name} is a bool: {other:?}"),
         }
     }
+
+    /// The checks of the stream `checks` named `name`, `(time, pass)` in order.
+    fn checks_named(records: &[Record], name: &str) -> Vec<(f64, bool)> {
+        Self::of_stream(records, "checks")
+            .into_iter()
+            .filter(|record| matches!(record.fields.iter().find(|(field, _)| field == "name"), Some((_, Field::Text(text))) if text == name))
+            .map(|record| (record.time, Self::boolean(record, "pass")))
+            .collect()
+    }
 }
 
 /// Rust's own reading of the §22 rules the tests cite.
@@ -216,35 +225,26 @@ impl MonitorSchedule {
     }
 }
 
-/// The checks of the stream `checks` named `name`, `(time, pass)` in order.
-fn checks_named(records: &[Record], name: &str) -> Vec<(f64, bool)> {
-    StdModels::of_stream(records, "checks")
-        .into_iter()
-        .filter(|record| matches!(record.fields.iter().find(|(field, _)| field == "name"), Some((_, Field::Text(text))) if text == name))
-        .map(|record| (record.time, StdModels::boolean(record, "pass")))
-        .collect()
-}
-
 #[test]
 fn setup_hold_and_stable_fail_exactly_on_their_violations() {
     // §22.5.4 to §22.5.6, at `T = u8` and at an enum: each monitor's checks are the ones Rust derives from the schedule
     for bench in ["ByteBench", "LevelBench"] {
         let records = StdModels::records("monitors.msl", bench, 90e-9, 1e-9);
-        let setup = checks_named(&records, "setup");
+        let setup = StdModels::checks_named(&records, "setup");
         let wanted = MonitorSchedule::setup_passes();
         assert_eq!(setup.len(), wanted.len(), "{bench}: one setup check per rising edge: {setup:?}");
         for (((time, pass), rise), expected) in setup.iter().zip(MonitorSchedule::RISES).zip(&wanted) {
             assert!(Section22::same_reading(*time, rise), "{bench}: setup checked at {rise}: {time}");
             assert_eq!(pass, expected, "{bench}: setup at {rise}");
         }
-        let hold = checks_named(&records, "hold");
+        let hold = StdModels::checks_named(&records, "hold");
         let wanted = MonitorSchedule::hold_checks();
         assert_eq!(hold.len(), wanted.len(), "{bench}: one hold check per change of d while clk is high: {hold:?}");
         for ((time, pass), (change, expected)) in hold.iter().zip(&wanted) {
             assert!(Section22::same_reading(*time, *change), "{bench}: hold checked at {change}: {time}");
             assert_eq!(pass, expected, "{bench}: hold at {change}");
         }
-        let stable = checks_named(&records, "stable");
+        let stable = StdModels::checks_named(&records, "stable");
         let wanted = MonitorSchedule::stable_failures();
         assert_eq!(stable.len(), wanted.len(), "{bench}: one failure per change of d while en is high: {stable:?}");
         for ((time, pass), change) in stable.iter().zip(&wanted) {
@@ -347,10 +347,13 @@ struct Integrals;
 impl Integrals {
     /// The rate of `idt`'s input, in units per second, and its initial condition.
     const RATE: f64 = 1e6;
+    /// The initial condition of `idt`.
     const INITIAL: f64 = 0.25;
-    /// The rate of `idtmod`'s input and its modulus and offset.
+    /// The rate of `idtmod`'s input, in units per second.
     const WRAPPED_RATE: f64 = 0.3e6;
+    /// The modulus `idtmod` wraps by.
     const MODULUS: f64 = 1.0;
+    /// The offset `idtmod`'s range starts at.
     const OFFSET: f64 = -0.5;
     /// The interval of `rst`, in seconds.
     const RESET: (f64, f64) = (5e-6, 7e-6);
@@ -393,12 +396,20 @@ fn idt_and_idtmod_integrate_against_section_22() {
 struct Laplace;
 
 impl Laplace {
-    /// The instant of the step, in seconds, and the time constant of the first-order sections.
+    /// The instant of the step, in seconds.
     const STEP: f64 = 1e-6;
+    /// The time constant of the first-order sections, in seconds.
     const TAU: f64 = 1e-6;
-    /// The real part and the imaginary part of the second-order section's poles, `-a +- jb`.
+    /// The real part `a` of the second-order section's poles, `-a +- jb`.
     const A: f64 = 1e6;
+    /// The imaginary part `b` of the second-order section's poles, `-a +- jb`.
     const B: f64 = 2e6;
+    /// How far a first-order reading may sit from the closed form: the solver delivers 3.5e-7 at the bench's 5 ns step, so 2e-6 holds
+    /// a margin of five, and a realization a step late (5e-3 on this section) or a pole 0.1 % off (4e-4) fails it.
+    const FIRST_ORDER_TOLERANCE: f64 = 2e-6;
+    /// How far a second-order reading may sit from the closed form: the solver delivers 3.2e-6 at the bench's 5 ns step, so 1e-5
+    /// holds a margin of three, and a realization a step late or a pole 0.1 % off fails it by orders of magnitude more.
+    const SECOND_ORDER_TOLERANCE: f64 = 1e-5;
 
     /// The response of `1 / (1 + s tau)` at `at`.
     fn first_order(at: f64) -> f64 {
@@ -426,10 +437,10 @@ fn the_laplace_family_gives_the_closed_form_step_response() {
         let at = record.time;
         for name in ["nd", "np", "zd", "zp"] {
             let seen = StdModels::real(record, name);
-            assert!((seen - Laplace::first_order(at)).abs() < 5e-3, "laplace_{name} at {at}: {seen} against {}", Laplace::first_order(at));
+            assert!((seen - Laplace::first_order(at)).abs() < Laplace::FIRST_ORDER_TOLERANCE, "laplace_{name} at {at}: {seen} against {}", Laplace::first_order(at));
         }
         let seen = StdModels::real(record, "second");
-        assert!((seen - Laplace::second_order(at)).abs() < 5e-3, "second order at {at}: {seen} against {}", Laplace::second_order(at));
+        assert!((seen - Laplace::second_order(at)).abs() < Laplace::SECOND_ORDER_TOLERANCE, "second order at {at}: {seen} against {}", Laplace::second_order(at));
     }
 }
 
@@ -505,6 +516,7 @@ impl RecordSink for Ignore {
 struct TableModel;
 
 impl TableModel {
+    /// The value at `x` of the table of `(x, y)` samples, in increasing `x`: linear between two samples, the end sample's value beyond them.
     fn linear_constant(table: &[(f64, f64)], x: f64) -> f64 {
         if x <= table[0].0 {
             return table[0].1;
