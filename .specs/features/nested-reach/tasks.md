@@ -199,7 +199,7 @@ Proof: run elabnested | test a_let_over_the_solve_three_and_four_levels_below_th
 **C25** - Every item of the cell (node, `let` over the solve, carrier, param, `let` over the params) in every form of `READS`, and a cycle of node connections by name, through templates, a template of a template and in generation, is elaborated in one pass (`Elaborator::run_with_statistics`); the one rerun left, a `let` of a cell placed through a type parameter, takes one pass per level below the reader (verification finding 8)
 Proof: run elabnested | test every_read_whose_hops_the_text_names_is_elaborated_in_one_pass ... ok
 
-**C26** - A read refused for its own cause says so though the run refused something else before it (a sibling read through a module that declares a node in generation, GAPS L94, or a hoisted module that holds a placement, L95): only a read through the refused module is silent after its cause (verification finding 9)
+**C26** - A read refused for its own cause says so though the run refused something else before it (a sibling read through a module that declares a node in generation, GAPS L94, or a hoisted module that holds a placement, L95): only a read through the refused module is silent after its cause (verification finding 9). The read's own refusal, a node of a hoisted module read through a child (`v(r.h.n)`), is GAPS L96, owner `spec-closure`
 Proof: run elabnested | test a_refusal_of_another_cause_hides_no_refusal_of_a_read ... ok
 
 ---
