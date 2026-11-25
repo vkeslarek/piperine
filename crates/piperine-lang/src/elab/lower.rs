@@ -836,7 +836,12 @@ impl Elaboration<'_, '_> {
                 let tree = self.imported_tree(value);
                 match self.tree_expr(&tree, &ty, &origin) {
                     Some(built) => built,
-                    None => panic!("the composite constant agg{} has no constant form at its type", id.0),
+                    // the checker's types exclude a composite with no form at its type: reaching here is the elaborator's bug, said
+                    // as one, and the run gives no `Ir` (the stand-in below never reaches a backend)
+                    None => {
+                        self.internal_error(&format!("the composite constant agg{} has no constant form at its type {ty:?}", id.0));
+                        self.emit(Expr::Int(0), ty, origin)
+                    }
                 }
             }
         }
