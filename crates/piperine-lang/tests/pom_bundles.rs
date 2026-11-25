@@ -93,6 +93,16 @@ fn a_misplaced_or_missing_field_direction_is_e0261() {
 }
 
 #[test]
+fn an_initial_value_belongs_to_an_out_field_of_a_bundle() {
+    // §7 rule 10: `= value` after an `out` field is the carrier's initial value; on an `in` field, on a field of a value `struct` or
+    // on a bundle field it is `E0261` at the field's name, and nothing else is wrong
+    let design = Bundles::design("struct Pipe { out q: Bit = false, in d: Bit }\nmodule Top() { }\n");
+    assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let design = Bundles::design("struct Pipe { out q: Bit = false, in d: Bit = true }\nstruct Value { n: u8 = 3 }\nstruct Outer { out o: Bit = true, inner: Pipe = Pipe { q: false, d: false } }\nmodule Top() { }\n");
+    assert_eq!(Bundles::spans(&design, "E0261"), ["d", "n", "inner"], "{:?}", design.diagnostics());
+}
+
+#[test]
 fn flip_out_and_nested_directions_are_e0262() {
     // §7 rules 5 and 6: a direction on a nested bundle field, `out` on a bundle port and `flip` on
     // a type that is no bundle are errors; `flip` on a bundle, `in` on a bundle port and a plain

@@ -539,6 +539,8 @@ pub struct Field {
     /// `None` in a tuple field.
     pub name: Option<Ident>,
     pub ty: Type,
+    /// `= value` after the type of an `out` field of a bundle: the initial value of the carrier that field becomes at a producer.
+    pub init: Option<Expr>,
     pub span: Loc,
 }
 

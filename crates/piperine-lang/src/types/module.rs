@@ -632,7 +632,8 @@ impl Checker<'_> {
     fn handed_initial_values(&mut self, handed: &[(DeclId, super::element_target::Element, Span, FileId)]) {
         let mut judged = BTreeSet::new();
         for (decl, _, span, file) in handed {
-            if !judged.insert(*decl) || !self.has_initial(*decl) {
+            // a leaf of a bundle starts at the default of its field, which the instance that holds the drive repeats: no second initial value
+            if !judged.insert(*decl) || !self.has_initial(*decl) || self.design.leaf_owner(*decl).is_some() {
                 continue;
             }
             let Some(held) = self.carriers.get(decl).cloned() else { continue };
@@ -696,7 +697,12 @@ impl Checker<'_> {
             let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { continue };
             let found = value.name(self.design);
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
-            self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
+            // a field of a bundle takes no initial value at the port (§7 rule 10): the field's own declaration gives it
+            let help = match self.design.leaf_owner(decl) {
+                Some(_) => format!("write `= value` after the type of the field `{}` in its `struct` (a bundle's field default, §7 rule 10), or carry an `Option<{found}>`", name.rsplit('.').next().unwrap_or(&name)),
+                None => format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`"),
+            };
+            self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(help));
         }
     }
 

@@ -553,6 +553,7 @@ A field of a struct or of a variant.
 | --- | --- | --- |
 | `dir(self)` | `Option<Dir>` | The direction word written before the name. |
 | `ty(self)` | `Type<'d>` | The declared type. |
+| `init(self)` | `Option<Expr<'d>>` | The initial value written after the type, `= value`. |
 
 ### `Enum`
 

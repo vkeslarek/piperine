@@ -94,7 +94,7 @@ impl Lowerer<'_> {
         for f in list {
             let id = self.new_decl(DeclKind::Error, f.name.as_ref(), f.span.0, f.public);
             let (kind, meta) = self.within(id, |lw| {
-                (DeclKind::Field(FieldData { dir: f.dir, ty: lw.ty(&f.ty) }), lw.meta(&f.meta))
+                (DeclKind::Field(FieldData { dir: f.dir, ty: lw.ty(&f.ty), init: f.init.as_ref().map(|init| lw.expr(init)) }), lw.meta(&f.meta))
             });
             let decl = self.design.decl_mut(id);
             decl.kind = kind;

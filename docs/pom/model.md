@@ -533,7 +533,7 @@ Read through the handle `Struct` (see [Reflection](reflection.md#struct)).
 
 *struct* in `src/pom/decl.rs`.
 
-`dir name: ty`; the name is absent in a tuple field.
+`dir name: ty = init`; the name is absent in a tuple field.
 
 Read through the handle `Field` (see [Reflection](reflection.md#field)).
 
@@ -541,6 +541,7 @@ Read through the handle `Field` (see [Reflection](reflection.md#field)).
 | --- | --- | --- |
 | `dir` | `Option<Dir>` | The direction written before the name. |
 | `ty` | `TypeId` | The declared type. |
+| `init` | `Option<ExprId>` | The `= value` after the type of an `out` field of a bundle: the initial value of the carrier the field becomes at a producer (§7 rule 10). |
 
 ### `EnumData`
 

@@ -296,3 +296,17 @@ fn a_template_placed_through_a_bound_has_the_bundle_in_the_bounds_view() {
     assert_eq!(roles("Drv"), [("p.q".to_string(), CarrierRole::Out), ("p.d".to_string(), CarrierRole::In)]);
     assert_eq!(roles("Snk"), [("p.q".to_string(), CarrierRole::In), ("p.d".to_string(), CarrierRole::Out)]);
 }
+
+#[test]
+fn a_field_default_is_the_initial_value_of_the_leaf_a_view_makes_out() {
+    // §7 rule 10: `out q: Bit<u8> = 9` is the initial value of `q` of the port at a producer and of a signal, not of `q` at a consumer
+    // (`flip` makes it an input, which the parent drives); a field with none starts at its `Default`
+    let pipe = "struct Pipe { out q: Bit<u8> = 9, in d: Bit<Logic>, out r: Bit<Logic> }\nmodule Snk(p: flip Pipe) { }\n";
+    let init = |ir: &Ir, body: &str, name: &str| ir.bodies().find(|b| b.name() == body).expect("a body").carriers().iter().find(|c| c.name == name).unwrap_or_else(|| panic!("no carrier `{name}`")).init;
+    let ir = Elab::ir(&format!("{pipe}module Top(tx: Pipe) {{ }}"), "Top");
+    assert_eq!(init(&ir, "Top", "tx.q"), Some(piperine_ir::Constant::Int(9)), "the producer's port leaf starts at the field's value");
+    assert_eq!(init(&ir, "Top", "tx.r").map(|c| c != piperine_ir::Constant::Int(9)), Some(true), "no default: the `Default` of the type");
+    let ir = Elab::ir(&format!("{pipe}module Top() {{ signal s: Pipe; signal t: Bit<Logic>; let k = Snk(s); }}"), "Top");
+    assert_eq!(init(&ir, "Top", "s.q"), Some(piperine_ir::Constant::Int(9)), "a signal of the bundle starts there too");
+    assert_eq!(init(&ir, "Snk", "p.q"), None, "an input leaf takes no initial value: its parent gives it");
+}

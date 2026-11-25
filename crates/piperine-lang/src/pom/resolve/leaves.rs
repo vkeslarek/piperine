@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use super::super::body::{ExprKind, ExprNode, GenericArgNode, GenericArgsNode, PathNode, TypeKind, TypeNode};
 use super::super::bundles::{BundleLeaf, BundleView};
-use super::super::decl::{DeclData, DeclKind, GenericParamData, Name, PortData, SignalData};
+use super::super::decl::{DeclData, DeclKind, Dir, GenericParamData, Name, PortData, SignalData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, ExprId, TypeId};
 use super::super::meta::Meta;
@@ -156,9 +156,11 @@ impl<'design> LeafPlan<'design> {
             let nested = self.bundle_of(field_ty);
             let ty = self.leaf_type(field_ty, site.lengths);
             let direction = if nested.is_some() { None } else { view.field_direction(written.dir) };
+            // the field's initial value is the carrier's of whoever produces it: a leaf the view makes `out` (a signal is its own producer)
+            let initial = written.init.filter(|_| nested.is_none() && direction == Some(Dir::Out));
             let kind = match (&owner_data.kind, nested) {
-                (DeclKind::Port(_), nested) => DeclKind::Port(PortData { dir: direction, ty, default: None, kind: if nested.is_some() { PortKind::Bundle } else { PortKind::Carrier } }),
-                _ => DeclKind::Signal(SignalData { ty, init: None }),
+                (DeclKind::Port(_), nested) => DeclKind::Port(PortData { dir: direction, ty, default: initial, kind: if nested.is_some() { PortKind::Bundle } else { PortKind::Carrier } }),
+                _ => DeclKind::Signal(SignalData { ty, init: initial }),
             };
             let data = DeclData {
                 kind,

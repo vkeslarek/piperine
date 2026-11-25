@@ -334,3 +334,24 @@ fn a_literal_given_through_a_flipped_bound_is_handed_over_by_the_bounds_view() {
     assert!(found.iter().any(|(code, _)| code == "E0314"), "{found:?}");
     assert!(!found.iter().any(|(code, _)| code == "E0223"), "`s` is the bank's, the cell reads it: {found:?}");
 }
+
+#[test]
+fn a_field_default_is_the_initial_value_of_the_carrier_its_producer_commits() {
+    // §7 rule 10, §5.2.8: a `Bit` field committed in a reaction needs an initial value, and a bundle port takes none: the field gives
+    // it (`out q: Bit = false`). Without it the leaf is `E0187`, and the help sends the author to the field.
+    let with = "struct Pipe { out q: Bit = false, in d: Bit }\nmodule Top(in clk: Bit, p: Pipe) { }\ndigital for Top { on clk.rise() { p.q <- p.d; } }";
+    Bundles::accepted(with);
+    let without = "struct Pipe { out q: Bit, in d: Bit }\nmodule Top(in clk: Bit, p: Pipe) { }\ndigital for Top { on clk.rise() { p.q <- p.d; } }";
+    let design = Bundles::design(without);
+    let found = Types::check(&design, "Top").expect_err("`p.q` has no initial value");
+    let missing = found.iter().find(|d| d.diagnostic.code.as_ref() == "E0187").unwrap_or_else(|| panic!("{:?}", Bundles::summary(&found)));
+    assert!(missing.diagnostic.message.contains("`p.q`"), "{}", missing.diagnostic.message);
+    let help = missing.diagnostic.help.clone().unwrap_or_default();
+    assert!(help.contains("field `q`") && help.contains("struct"), "the help names the field's default: {help}");
+    // a bundle signal takes it the same way, and a child that holds the drive of it gives no second initial value (no E0223)
+    Bundles::accepted("struct Pipe { out q: Bit = false }\nmodule Drv(in clk: Bit, p: Pipe) { }\ndigital for Drv { on clk.rise() { p.q <- true; } }\nmodule Top(in clk: Bit) { signal s: Pipe; let a = Drv(clk, s); }");
+    // as an `out` port with an initial value, a definition of it would replace the value (§8.2.21)
+    assert_eq!(Bundles::refused("struct Pipe { out q: Bit = false }\nmodule Top(p: Pipe) { p.q = true; }").first().map(|d| d.0.clone()), Some("E0338".to_string()));
+    // the value is of the field's type
+    assert_eq!(Bundles::refused("struct Pipe { out q: Bit = 3 }\nmodule Top(p: Pipe) { p.q = true; }").first().map(|d| d.0.clone()), Some("E0210".to_string()));
+}

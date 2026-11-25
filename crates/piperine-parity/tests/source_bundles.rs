@@ -219,6 +219,16 @@ fn a_bundle_goes_through_a_template_in_the_view_its_bound_writes() {
 }
 
 #[test]
+fn a_bit_field_with_a_default_is_written_by_commits() {
+    // §7 rule 10, §5.2.8: `Pulser` commits `p.tick` with no initial value at its port: the field's `= false` gives it. `tick` rises at
+    // 5 ns and 15 ns, and the consumer's `ack` is high at both: two records of `ack = 1`.
+    let built = Model::of("fielddefault.msl").built("BeatBench");
+    let seen = built.run(20e-9, 1e-9);
+    let beats = Model::records(&built, &seen, "beat");
+    assert_eq!(beats, vec![vec![("ack".to_string(), 1)]; 2], "{beats:?}");
+}
+
+#[test]
 fn an_array_of_bundles_connects_each_element_field_by_field() {
     // §7 rule 11, rule 14: `lanes[0]` goes to a producer of `true` and `lanes[1]` to one of `false`, each with its own consumer
     // (`b` follows `a`); the whole array goes to the probe, whose `ps[k].b` is the element `k` field by field: it records
