@@ -9,25 +9,12 @@ mod support;
 mod nested;
 
 use nested::{MODELS, READS};
-use piperine_ir::{Constant, Ir, NodeRef, Real};
+use piperine_ir::Ir;
 use support::Elab;
 
 /// The top that reads `reach` below the placement `placement`, with `reads` as its `analog` block.
 fn top(placement: &str, reads: &str) -> String {
     format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ potential(a) +> 1.0; {reads} }}\n")
-}
-
-/// The path of the node each port and signal of an instance is bound to, in the instance's node order.
-fn node_paths(ir: &Ir, path: &str) -> Vec<String> {
-    let instance = ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}"));
-    instance
-        .bindings()
-        .iter()
-        .map(|bound| match bound {
-            NodeRef::Node(id) => ir.node(*id).path().to_string(),
-            other => format!("{other:?}"),
-        })
-        .collect()
 }
 
 #[test]
@@ -46,12 +33,22 @@ fn a_node_is_reached_three_and_four_levels_below_the_reader() {
 #[test]
 fn a_param_and_a_let_over_the_params_read_the_value_the_placement_gives_three_and_four_levels_below() {
     // §8.2.8: `R.k` is the param of the cell the placement writes (`1.0 + j` in generation: 2.0 for `cells[1]`), and `R.twice` the
-    // `let` over it; the instance the read names holds that value
-    for (placement, reach, form) in READS {
-        let ir = Elab::ir(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {reach}.k + {reach}.twice;"))), "Top");
-        let cell = ir.instance_at(&format!("Top.{reach}")).unwrap_or_else(|| panic!("{form}: no cell"));
-        let wanted = if reach.contains("rows") { 2.0 } else { 1.0 };
-        assert_eq!(cell.param(0), Some(&Constant::Real(Real::new(wanted))), "{form}");
+    // `let` over it: the reader lowers the value of the placement, not the module's default 1.0, for each (§8.2.25)
+    for (placement, reach, k, form) in [
+        ("let p = Level3(a);", "p.mid.c0", 1.0, "3 by name, the default"),
+        ("let p = Block { cell: Cell { k: 3.0 } }(a);", "p.bank.c0", 3.0, "3 through templates"),
+        ("let p = Wing { cell: Cell { k: 4.0 } }(a);", "p.block.bank.c0", 4.0, "4 through templates"),
+        ("let p = GWing::<_>(a) { cell: Cell { k: 6.0 } };", "p.block.bank.c0", 6.0, "4 through generic templates"),
+        ("let p = Grid { cell: Cell { k: 5.0 } }(a);", "p.row.cells[1]", 5.0, "3 through a template in generation"),
+        ("let p = GPlane::<_>(a) { cell: Cell { k: 7.0 } };", "p.grid.row.cells[1]", 7.0, "4 through generic templates in generation"),
+        ("let p = Tower(a);", "p.rows.cells[1]", 2.0, "3 by name in generation, `1.0 + j`"),
+        ("let p = Tall(a);", "p.tower.rows.cells[1]", 2.0, "4 by name in generation, `1.0 + j`"),
+    ] {
+        let printed = |item: &str| Elab::ir(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {reach}.{item};"))), "Top").print_structural();
+        // the top's own drive `potential(a) +> 1.0` prints `direct 1.0` once: the read adds one more only at `k = 1.0`
+        let own = usize::from(k == 1.0);
+        assert_eq!(printed("k").matches(&format!("direct {k:?}")).count(), own + 1, "{form}: `{reach}.k` lowers to {k:?}: {}", printed("k"));
+        assert!(printed("twice").contains(&format!("direct ({k:?} * 2.0)")), "{form}: `{reach}.twice` lowers to `{k:?} * 2.0`: {}", printed("twice"));
     }
 }
 
@@ -112,11 +109,11 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_binds_each_port() {
     ] {
         for text in [format!("{MODELS}module Top() {{ {pair} }}"), format!("module Top() {{ {pair} }}{MODELS}")] {
             let ir = Elab::ir(&text, "Top");
-            assert_eq!(node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.q.{reach}"), format!("Top.p.{reach}")], "{pair}");
-            assert_eq!(node_paths(&ir, &format!("Top.q.{path}")), [format!("Top.p.{reach}"), format!("Top.q.{reach}")], "{pair}");
+            assert_eq!(Elab::node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.q.{reach}"), format!("Top.p.{reach}")], "{pair}");
+            assert_eq!(Elab::node_paths(&ir, &format!("Top.q.{path}")), [format!("Top.p.{reach}"), format!("Top.q.{reach}")], "{pair}");
         }
         let ir = Elab::ir(&format!("{MODELS}module Top() {{ {own} }}"), "Top");
-        assert_eq!(node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.p.{reach}"), format!("Top.p.{reach}")], "{own}");
+        assert_eq!(Elab::node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.p.{reach}"), format!("Top.p.{reach}")], "{own}");
     }
 }
 

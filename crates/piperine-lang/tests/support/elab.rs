@@ -27,6 +27,19 @@ impl Elab {
         ir
     }
 
+    /// The path of the node each port and signal of the instance at `path` is bound to, in the instance's node order.
+    pub fn node_paths(ir: &Ir, path: &str) -> Vec<String> {
+        let instance = ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}"));
+        instance
+            .bindings()
+            .iter()
+            .map(|bound| match bound {
+                piperine_ir::NodeRef::Node(id) => ir.node(*id).path().to_string(),
+                other => format!("{other:?}"),
+            })
+            .collect()
+    }
+
     pub fn codes(diagnostics: &[DesignDiagnostic]) -> Vec<String> {
         diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect()
     }

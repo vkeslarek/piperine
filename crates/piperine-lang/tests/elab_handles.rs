@@ -261,8 +261,8 @@ fn a_placement_binds_the_node_of_a_child_written_after_it() {
     let forward = Elab::ir(&format!("{modules}module Top() {{ signal x: Electrical; let p = D2(x); let q = D2(p.sn); }}"), "Top");
     let reverse = Elab::ir(&format!("{modules}module Top() {{ signal x: Electrical; let q = D2(p.sn); let p = D2(x); }}"), "Top");
     for ir in [&forward, &reverse] {
-        assert_eq!(NodePaths::of(ir, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
-        assert_eq!(NodePaths::of(ir, "Top.p"), ["Top.x", "Top.p.sn"]);
+        assert_eq!(Elab::node_paths(ir, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
+        assert_eq!(Elab::node_paths(ir, "Top.p"), ["Top.x", "Top.p.sn"]);
     }
 }
 
@@ -272,20 +272,20 @@ fn a_cycle_of_node_connections_binds_each_port_to_the_node_it_names() {
     // ring of three each bind every port to the storage node it names
     let modules = "module D2(a: Electrical) { pub signal sn: Electrical; }\nanalog for D2 { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }\n";
     let pair = Elab::ir(&format!("{modules}module Top() {{ let p = D2(q.sn); let q = D2(p.sn); }}"), "Top");
-    assert_eq!(NodePaths::of(&pair, "Top.p"), ["Top.q.sn", "Top.p.sn"]);
-    assert_eq!(NodePaths::of(&pair, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
+    assert_eq!(Elab::node_paths(&pair, "Top.p"), ["Top.q.sn", "Top.p.sn"]);
+    assert_eq!(Elab::node_paths(&pair, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
     let own = Elab::ir(&format!("{modules}module Top() {{ let p = D2(p.sn); }}"), "Top");
-    assert_eq!(NodePaths::of(&own, "Top.p"), ["Top.p.sn", "Top.p.sn"]);
+    assert_eq!(Elab::node_paths(&own, "Top.p"), ["Top.p.sn", "Top.p.sn"]);
     let ring = Elab::ir(&format!("{modules}module Top() {{ let p = D2(r.sn); let q = D2(p.sn); let r = D2(q.sn); }}"), "Top");
-    assert_eq!(NodePaths::of(&ring, "Top.p"), ["Top.r.sn", "Top.p.sn"]);
-    assert_eq!(NodePaths::of(&ring, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
-    assert_eq!(NodePaths::of(&ring, "Top.r"), ["Top.q.sn", "Top.r.sn"]);
+    assert_eq!(Elab::node_paths(&ring, "Top.p"), ["Top.r.sn", "Top.p.sn"]);
+    assert_eq!(Elab::node_paths(&ring, "Top.q"), ["Top.p.sn", "Top.q.sn"]);
+    assert_eq!(Elab::node_paths(&ring, "Top.r"), ["Top.q.sn", "Top.r.sn"]);
     // through a child of a child (`b.c0.sn`), written before the bank and fed back into the bank itself
     let banks = format!("{modules}module Bank(a: Electrical) {{ pub let c0 = D2(a); }}\n");
     let later = Elab::ir(&format!("{banks}module Top() {{ signal x: Electrical; let q = D2(b.c0.sn); let b = Bank(x); }}"), "Top");
-    assert_eq!(NodePaths::of(&later, "Top.q"), ["Top.b.c0.sn", "Top.q.sn"]);
+    assert_eq!(Elab::node_paths(&later, "Top.q"), ["Top.b.c0.sn", "Top.q.sn"]);
     let fed_back = Elab::ir(&format!("{banks}module Top() {{ let b = Bank(b.c0.sn); }}"), "Top");
-    assert_eq!(NodePaths::of(&fed_back, "Top.b.c0"), ["Top.b.c0.sn", "Top.b.c0.sn"]);
+    assert_eq!(Elab::node_paths(&fed_back, "Top.b.c0"), ["Top.b.c0.sn", "Top.b.c0.sn"]);
 }
 
 #[test]
@@ -297,30 +297,13 @@ fn a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port() {
                    module Row<C: Fn(Electrical)>(a: Electrical) { cell: C; for j in 0..2 { pub let cells = cell(a); } }\n\
                    module Plain(a: Electrical) { pub let c0 = Dram(a); }\nmodule Deep(a: Electrical) { pub let mid = Plain(a); }\n";
     let pair = Elab::ir(&format!("{modules}module Top() {{ let p = Bank::<_>(q.c0.sn) {{ cell: Dram {{ }} }}; let q = Bank::<_>(p.c0.sn) {{ cell: Dram {{ }} }}; }}"), "Top");
-    assert_eq!(NodePaths::of(&pair, "Top.p.c0"), ["Top.q.c0.sn", "Top.p.c0.sn"]);
-    assert_eq!(NodePaths::of(&pair, "Top.q.c0"), ["Top.p.c0.sn", "Top.q.c0.sn"]);
+    assert_eq!(Elab::node_paths(&pair, "Top.p.c0"), ["Top.q.c0.sn", "Top.p.c0.sn"]);
+    assert_eq!(Elab::node_paths(&pair, "Top.q.c0"), ["Top.p.c0.sn", "Top.q.c0.sn"]);
     let own = Elab::ir(&format!("{modules}module Top() {{ let p = Bank::<_>(p.c0.sn) {{ cell: Dram {{ }} }}; }}"), "Top");
-    assert_eq!(NodePaths::of(&own, "Top.p.c0"), ["Top.p.c0.sn", "Top.p.c0.sn"]);
+    assert_eq!(Elab::node_paths(&own, "Top.p.c0"), ["Top.p.c0.sn", "Top.p.c0.sn"]);
     let row = Elab::ir(&format!("{modules}module Top() {{ let p = Row::<_>(q.cells[1].sn) {{ cell: Dram {{ }} }}; let q = Row::<_>(p.cells[0].sn) {{ cell: Dram {{ }} }}; }}"), "Top");
-    assert_eq!(NodePaths::of(&row, "Top.p.cells[0]"), ["Top.q.cells[1].sn", "Top.p.cells[0].sn"]);
-    assert_eq!(NodePaths::of(&row, "Top.q.cells[1]"), ["Top.p.cells[0].sn", "Top.q.cells[1].sn"]);
-}
-
-/// The path of the node each port and signal of an instance is bound to, in the instance's node order.
-struct NodePaths;
-
-impl NodePaths {
-    fn of(ir: &piperine_ir::Ir, path: &str) -> Vec<String> {
-        let instance = ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}"));
-        instance
-            .bindings()
-            .iter()
-            .map(|bound| match bound {
-                piperine_ir::NodeRef::Node(id) => ir.node(*id).path().to_string(),
-                other => format!("{other:?}"),
-            })
-            .collect()
-    }
+    assert_eq!(Elab::node_paths(&row, "Top.p.cells[0]"), ["Top.q.cells[1].sn", "Top.p.cells[0].sn"]);
+    assert_eq!(Elab::node_paths(&row, "Top.q.cells[1]"), ["Top.p.cells[0].sn", "Top.q.cells[1].sn"]);
 }
 
 #[test]
