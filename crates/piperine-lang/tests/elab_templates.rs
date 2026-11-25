@@ -524,6 +524,40 @@ fn an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_
     assert!(printed.contains("(1.0 * 2.0)") && printed.contains("(1.0 * 4.0)"), "{printed}");
 }
 
+#[test]
+fn an_array_of_templates_written_as_a_repeat_is_that_many_equal_templates() {
+    // §1.5 (an array repeat `[e; N]` is `N` copies of `e`) with §8.4.1: `[Scale { r: 7.0 }; N]` holds `N` equal templates, as a `let`,
+    // as a param default, as a `const` given to a param, as an override and with a length a generation `for` walks; the result of
+    // every element is `x * r` of the repeated template
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let outer = "module Outer(x: f64) -> f64 { n: f64 = 7.0; fs: [Scale; 2] = [Scale { r: n }; 2]; fs[1](x) }\n";
+    let (x, r) = (1.0, 7.0);
+    for top in [
+        "module Top() { signal y: Bit<f64>; let fs = [Scale { r: 7.0 }; 2]; let a = fs[1](1.0); y = a; }",
+        "module Top() { fs: [Scale; 2] = [Scale { r: 7.0 }; 2]; signal y: Bit<f64>; let a = fs[1](1.0); y = a; }",
+        "module Top() { signal y: Bit<f64>; let a = Outer(1.0); y = a; }",
+        "const SEVENS: [Scale; 2] = [Scale { r: 7.0 }; 2];\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { n: 2.0, fs: SEVENS }; y = a; }",
+        "module Top() { signal y: Bit<f64>; let a = Outer(1.0) { fs: [Scale { r: 7.0 }; 2] }; y = a; }",
+    ] {
+        let printed = Elab::ir(&format!("{scale}{outer}{top}"), "Top").print_structural();
+        let result = format!("drive y = ({x:?} * {r:?})");
+        assert!(printed.contains(&result), "{top}: wants `{result}` in\n{printed}");
+    }
+    // the default reads the frame's `n`: an override of `n` is the template every element repeats
+    let printed = Elab::ir(&format!("{scale}{outer}module Top() {{ signal y: Bit<f64>; let a = Outer(1.0) {{ n: 4.0 }}; y = a; }}"), "Top").print_structural();
+    assert!(printed.contains(&format!("drive y = ({x:?} * {:?})", 4.0)), "{printed}");
+    let length = 3;
+    let printed = Elab::ir(&format!("{scale}module Top() {{ signal y: [Bit<f64>; {length}]; let fs = [Scale {{ r: 2.0 }}; {length}]; for k in 0..{length} {{ let s = fs[k](1.0); y[k] = s; }} }}"), "Top").print_structural();
+    for k in 0..length {
+        assert!(printed.contains(&format!("drive y[{k}] = ({x:?} * {:?})", 2.0)), "element {k}:\n{printed}");
+    }
+    // an index past the repeat's length is the panic of §1 rule 11, naming the length the repeat gives
+    let past = format!("{scale}module Top() {{ signal y: Bit<f64>; let fs = [Scale {{ r: 7.0 }}; 2]; let a = fs[2](1.0); y = a; }}");
+    let refused = Elab::run(&past, "Top").expect_err("an index past the repeat");
+    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    assert!(refused[0].diagnostic.message.contains("the element 2 of an array of 2 templates"), "{}", refused[0].diagnostic.message);
+}
+
 /// A module placing the elements of its param `pair` (an array of templates of `Cell`) at the written index 1 and at every index of a generation `for`.
 const PAIR_TOP: &str = "module Top() { pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; signal x: Electrical; let c1 = pair[1](x); for k in 0..2 { let g = pair[k](x); } }";
 

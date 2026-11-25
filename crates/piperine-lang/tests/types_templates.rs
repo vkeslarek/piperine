@@ -428,5 +428,12 @@ fn a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placemen
     let wrong_in_result = TemplateSource::new(&format!(
         "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ }}, Cell {{ }}]; fs[1](x) }}\nmodule Top() {{ signal y: Bit<f64>; y = Outer(1.0); }}\n"
     ));
-    assert_eq!(wrong_in_result.codes(), ["E0180"], "an element of another module in a module with a result");
+    assert_eq!(wrong_in_result.codes(), ["E0180"], "an element of another module in a module with a result");    // an array repeat of a template is an array of templates of its module (§1.5): as a default, and as a `let` placed through
+    let repeated = TemplateSource::new(&format!(
+        "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ r: 7.0 }}; 2]; fs[1](x) }}\n\
+         module Top() {{ signal y: Bit<f64>; let gs = [Scale {{ r: 2.0 }}; 3]; let a = Outer(1.0); let b = gs[2](1.0); y = a + b; }}\n"
+    ));
+    assert!(repeated.codes().is_empty(), "{:?}: {}", repeated.codes(), repeated.message());
+    let repeated_wrong = TemplateSource::new("module Top() { pair: [Cell; 2] = [Sizing { size: 1.0 }; 2]; }\n");
+    assert_eq!(repeated_wrong.codes(), ["E0180"], "a repeat of another module");
 }

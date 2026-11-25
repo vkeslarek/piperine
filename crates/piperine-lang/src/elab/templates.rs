@@ -156,8 +156,10 @@ impl Elaboration<'_, '_> {
         let array = self.peel_parens(array);
         match self.design.expr_node(array).kind.clone() {
             ExprKind::Array(items) => Some(TemplateItems::Written(items)),
+            // `[T { .. }; N]`: `N` equal templates; the length is a const expression the checker leaves untyped (§3.8.3), so it folds
+            // as an array length does (over the const arguments and the frame's params)
             ExprKind::ArrayRepeat { elem, len } => {
-                let Ok(Constant::Int(count)) = self.consts.value(len, &Bindings::new()) else { return None };
+                let count = self.consts.integer(len)?;
                 Some(TemplateItems::Written(vec![elem; usize::try_from(count).ok()?]))
             }
             ExprKind::Path(path) => match self.design.path_node(path).segments.last().map(|s| s.res) {
