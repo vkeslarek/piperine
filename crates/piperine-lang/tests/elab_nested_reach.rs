@@ -146,3 +146,28 @@ fn a_drive_of_a_resolved_carrier_of_a_cell_three_levels_down_is_held_beside_the_
     assert!(net.contains("resolved by Top.p.mid.c0.line$resolve of bool drives (Top.p.mid.c0.line$drive0, Top.p.mid.c0.line$drive1)"), "{net}");
     assert!(net.contains("held by (Top#0, Top.p.mid.c0#0)"), "{net}");
 }
+
+#[test]
+fn a_reach_refused_for_its_cause_reports_that_cause_once() {
+    // GAPS L94, L95: a read through a module that declares a node in generation, and through a hoisted module that holds a placement,
+    // is one `P0001` naming the cause, with no second diagnostic after it
+    for (src, cause) in [
+        (
+            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let mid = Level2(a); }}\n{}", top("let p = GenNode(a);", "potential(o) +> v(p.mid.c0.sn);")),
+            "a node declared in generation of a module a parent reads through",
+        ),
+        (
+            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let c0 = Cell(a); }}\n{}", top("let p = GenNode(a);", "potential(o) +> v(p.c0.sn);")),
+            "a node declared in generation of a module a parent reads through",
+        ),
+        (
+            format!("{MODELS}module HW(x: f64) -> f64 {{ signal n: Electrical; pub let w = Level2(n); x }}\n{}", top("let h = HW(1.0);", "potential(o) +> v(h.w.c0.sn);")),
+            "a hoisted module that holds a placement of a module that is not hoisted",
+        ),
+    ] {
+        let found = Elab::run(&src, "Top").expect_err("the read is refused");
+        let messages: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(messages[0].starts_with("P0001") && messages[0].contains(cause), "{messages:?}");
+    }
+}

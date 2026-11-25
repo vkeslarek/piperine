@@ -52,7 +52,8 @@ impl Elaboration<'_, '_> {
         let terminal = self.frame_node(frame, item);
         if terminal.is_none() {
             let span = self.design.expr_node(expr).span;
-            self.unsupported(scope.file, span, "a name of a child that is not one of its nodes, as a node");
+            // a module that declares a node in generation was refused by its count (`declares_in_generation`)
+            self.unsupported_after_no_refusal(scope.file, span, "a name of a child that is not one of its nodes, as a node");
         }
         terminal
     }
@@ -218,21 +219,23 @@ impl Elaboration<'_, '_> {
     /// frame `scope` reads.
     fn make_placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
         let call = key.call;
-        // a frame below a reach frame reads the params the placement bound to it; a hoisted frame has no body of its own to reach into
+        // a frame below a reach frame reads the params the placement bound to it; a hoisted frame has no body of its own to reach into.
+        // A hoisted module that holds a placement was refused when it was hoisted (`hoist.rs`), so a read through it adds no second
+        // diagnostic for the same cause
         let (keys, child) = if scope.frame == 0 {
             (scope.keys.clone(), self.child_index(&key))
         } else if self.frames[scope.frame].is_reached() {
             (self.frame_bindings(scope.frame), None)
         } else {
-            self.unsupported(scope.file, span, "a field of a child of a child");
+            self.unsupported_after_no_refusal(scope.file, span, "a field of a child of a child");
             return None;
         };
         let Some(module) = self.placed_module(call, &keys) else {
-            self.unsupported(scope.file, span, "a field of a child of a child");
+            self.unsupported_after_no_refusal(scope.file, span, "a field of a child of a child");
             return None;
         };
         if scope.frame == 0 && child.is_none() {
-            self.unsupported(scope.file, span, "a field of a child of a child");
+            self.unsupported_after_no_refusal(scope.file, span, "a field of a child of a child");
             return None;
         }
         let name = format!("{}{}", self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone()), key.subscripts());

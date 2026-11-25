@@ -187,6 +187,12 @@ Proof: run elabnested | test a_drive_of_a_resolved_carrier_of_a_cell_three_level
 **C21** - The same from source: the net holds the AND of the cell's drive and the top's (NR-02, AC 5)
 Proof: run sourcenested | test a_parent_drives_a_resolved_carrier_of_a_cell_three_levels_down ... ok
 
+**C22** - A read through generic templates (`C: Fn(Electrical)` handed from one wrapper to the next) runs at depth three and four, by template and in generation, and reads the values Rust computes (NR-01, AC 2; NR-02, AC 4)
+Proof: run sourcenested | test a_cell_through_generic_templates_three_and_four_levels_down_reads_its_node_lets_carrier_and_params ... ok
+
+**C23** - A reach refused for its cause (a node declared in generation, a hoisted module that holds a placement) reports that cause once, with no cascade (GAPS L94, L95)
+Proof: run elabnested | test a_reach_refused_for_its_cause_reports_that_cause_once ... ok
+
 ---
 
 ## Handoff

@@ -322,6 +322,14 @@ impl<'d, 't> Elaboration<'d, 't> {
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
     }
+
+    /// [`unsupported`](Self::unsupported) unless the run has refused something already: a read that fails because of a refusal
+    /// reported before it (a child whose own lowering was refused) adds no second diagnostic for the same cause.
+    pub(super) fn unsupported_after_no_refusal(&mut self, file: FileId, span: Span, what: &str) {
+        if self.diagnostics.is_empty() {
+            self.unsupported(file, span, what);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -27,8 +27,8 @@ device author who writes a bank of banks of cells cannot read the cell's storage
 
 | Feature | Reason |
 | ------- | ------ |
-| A read through a hoisted placement (a module with a result or a value input) | it has no body of its own to reach into; unchanged |
-| A node or carrier declared in generation of a module a parent reads through | its count is known to the module's own lowering only; refused by name as at one level (`own_node_total`) |
+| A read through a hoisted placement (a module with a result or a value input) that holds a placement of a module that is not hoisted | it has no body of its own to reach into; unchanged, one `P0001` naming the cause (GAPS L95, owner `spec-closure`) |
+| A node or carrier declared in generation of a module a parent reads through | its count is known to the module's own lowering only; refused by name as at one level (`own_node_total`), one `P0001` (GAPS L94, owner `spec-closure`) |
 
 ## Assumptions & Open Questions
 
@@ -115,7 +115,7 @@ Open questions: none.
 
 **Acceptance Criteria** (NR-05):
 
-1. WHEN the feature is delivered THEN `GAPS.md` SHALL have no row L81 or L82, section 9 SHALL not name them as left, and the counts SHALL be 17 loud.
+1. WHEN the feature is delivered THEN `GAPS.md` SHALL have no row L81 or L82, section 9 SHALL not name them as left, and the counts SHALL be 17 loud (19 with L94 and L95, the two rows the verification found).
 2. WHEN a parent reads through children of children THEN part III §8.2.8 SHALL say that each name of the path is `pub` and the item reads as one level down.
 
 **Independent Test**: `docs.rs` and `spec_text.rs`.
