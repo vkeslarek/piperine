@@ -283,7 +283,7 @@ impl Elaboration<'_, '_> {
                     Some(vec![Disjunct { source: EventSource::At(time), discrete: Vec::new(), continuous: Vec::new(), origin }])
                 }
                 // A module with an `Event` result (`above`, `init`): its result, in its frame.
-                Some(Callee::Module(_)) if self.result_callee(expr).is_some() => {
+                Some(Callee::Module(_)) | None if self.result_callee(expr).is_some() => {
                     let frame = self.frame_of(scope, expr)?;
                     let module = self.frames[frame].module;
                     let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return None };

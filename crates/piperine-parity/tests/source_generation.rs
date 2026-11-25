@@ -314,3 +314,15 @@ fn a_template_carrying_composite_params_runs_through_a_placement() {
     assert_eq!(CompositeParams::changes("gained_name"), vec![(ns, vec![3 * 2])]);
     assert_eq!(CompositeParams::changes("gained_template"), vec![(ns, vec![3 * 8])]);
 }
+
+#[test]
+fn a_module_with_a_result_through_a_callable_bound_param_runs() {
+    // §8.4.4, §8.3.12: `s(a)` with `s: C`, `C: Fn(u8) -> u8` places `Scale` at the params of the template each `Mid` is given: `p` is
+    // `a * 5` and `q` is `a * 7`, with `a` going from 3 to 4 at 1 ns
+    let built = support::build(&GenerationModels::project("callable_result.msl"), "Bench");
+    let seen = built.run(2e-9, 0.5e-9);
+    let ns = 1_000_000;
+    for (net, m) in [("p", 5u8), ("q", 7)] {
+        assert_eq!(support::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
+    }
+}

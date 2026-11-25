@@ -567,7 +567,7 @@ impl Elaboration<'_, '_> {
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
             // A module with a result is hoisted: its result is read where the placement stands.
-            (_, Some(Callee::Module(_))) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
+            (_, Some(Callee::Module(_)) | None) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
             (_, Some(Callee::Module(_))) => {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None

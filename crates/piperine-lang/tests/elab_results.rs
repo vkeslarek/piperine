@@ -409,3 +409,14 @@ fn an_option_param_of_a_hoisted_placement_is_bound_to_its_constant() {
     let whole = "fn sum(a: [Option<f64>; 2]) -> f64 { a[0].unwrap_or(1.0) + a[1].unwrap_or(2.0) }\nmodule Inner(x: f64) -> f64 { c: [Option<f64>; 2] = [Some(1.0), None]; x * sum(c) }\nmodule Top() { signal y: Bit<f64>; let b = Inner(1.0); y = b; }";
     assert!(Elab::ir(whole, "Top").print_structural().contains("sum(([(option(true, 1.0)"), "the array is passed whole to the fn");
 }
+
+#[test]
+fn a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templates_params() {
+    // §8.4.4, §8.3.12: `s(5.0)` with `s: C` and `C: Fn(f64) -> f64` places the module of the template the param holds, a module with a
+    // result, at that template's params: `5.0 * 9.0` for the placement that gives `r` 9, `5.0 * 2.0` for the one that gives 2
+    let src = |r: f64| format!("module Scale(x: f64) -> f64 {{ r: f64 = 1.0; x * r }}\nmodule Mid<C: Fn(f64) -> f64>(in u: Bit<f64>) {{ s: C; signal y: Bit<f64> = 0.0; let a = s(5.0); }}\ndigital<C> for Mid<C> {{ on at(1n) {{ y <- a; }} }}\nmodule Top() {{ signal u: Bit<f64> = 0.0; let m = Mid {{ s: Scale {{ r: {r:?} }} }}(u); }}");
+    for r in [9.0, 2.0] {
+        let printed = Elab::ir(&src(r), "Top").print_structural();
+        assert!(printed.contains(&format!("y <- (5.0 * {r:?})")), "the result is read at the template's `r`:\n{printed}");
+    }
+}
