@@ -304,3 +304,81 @@ fn short_makes_one_node_against_section_eleven() {
         assert!((through_upper - through_lower).abs() < 1e-9 && (through_upper - top / (upper + lower)).abs() < 1e-9, "{rig}: one current: {through_upper} {through_lower}");
     }
 }
+
+
+#[test]
+fn the_water_model_boils_and_vaporizes() {
+    // Part IV §13: the water warms from 293.15 K at `P / (mass * cl)` kelvin per second and starts to boil at 373.15 K; the
+    // heat then vaporizes it for `mass * hv / P` seconds, after which it is vapor. The instants of the two phase changes
+    // are the ones Rust computes from the model's constants (the 1 mW/K leak is 1e-9 of the heater and moves them less
+    // than the tolerance)
+    let (power, mass, cl, hv) = (1e6_f64, 1.0_f64, 4.18e3_f64, 2.26e6_f64);
+    let (ambient, boiling) = (293.15_f64, 373.15_f64);
+    let started = mass * cl * (boiling - ambient) / power;
+    let vaporized = started + mass * hv / power;
+    let records = StdModels::records("water.msl", "Boiler", 3.0, 5e-3);
+    let phases: Vec<(f64, String)> = StdModels::of_stream(&records, "phase")
+        .iter()
+        .map(|record| match record.fields.iter().find(|(field, _)| field == "value") {
+            Some((_, Field::Variant(name))) => (record.time, name.clone()),
+            other => panic!("a phase record holds a variant: {other:?}"),
+        })
+        .collect();
+    let names: Vec<&str> = phases.iter().map(|(_, name)| name.as_str()).collect();
+    assert_eq!(names, ["Liquid", "Boiling", "Vapor"], "{phases:?}");
+    assert!((phases[1].0 - started).abs() < 0.01 * started, "boiling starts at {started}: {phases:?}");
+    assert!((phases[2].0 - vaporized).abs() < 0.01 * vaporized, "vaporized at {vaporized}: {phases:?}");
+}
+
+/// The closed forms of `integrals.msl`, from §22.2.8 and §22.2.9.
+struct Integrals;
+
+impl Integrals {
+    /// The rate of `idt`'s input, in units per second, and its initial condition.
+    const RATE: f64 = 1e6;
+    const INITIAL: f64 = 0.25;
+    /// The rate of `idtmod`'s input and its modulus and offset.
+    const WRAPPED_RATE: f64 = 0.3e6;
+    const MODULUS: f64 = 1.0;
+    const OFFSET: f64 = -0.5;
+    /// The interval of `rst`, in seconds.
+    const RESET: (f64, f64) = (5e-6, 7e-6);
+
+    /// §22.2.8: `ic` plus the integral of a constant.
+    fn plain(at: f64) -> f64 {
+        Self::INITIAL + Self::RATE * at
+    }
+
+    /// §22.2.8 rule on `reset`: the result holds `ic` while `reset` holds and integrates from it after.
+    fn held(at: f64) -> f64 {
+        let (from, to) = Self::RESET;
+        if at < from { Self::plain(at) } else if at < to { Self::INITIAL } else { Self::INITIAL + Self::RATE * (at - to) }
+    }
+
+    /// §22.2.9: the integral wrapped into `[offset, offset + modulus)`.
+    fn wrapped(at: f64) -> f64 {
+        Self::OFFSET + (Self::WRAPPED_RATE * at - Self::OFFSET).rem_euclid(Self::MODULUS)
+    }
+}
+
+#[test]
+fn idt_and_idtmod_integrate_against_section_22() {
+    // §22.2.8 and §22.2.9, read every us half a us past the instant: `idt` of a constant is `ic + x t` (at `State` and at
+    // `Thermal`), a `reset` holds `ic` and the integral resumes from it, and `idtmod` is the same integral wrapped
+    let records = StdModels::records("integrals.msl", "IntegralBench", 12e-6, 25e-9);
+    let read = StdModels::of_stream(&records, "integral");
+    assert!(read.len() >= 11, "one reading per us: {}", read.len());
+    for record in read {
+        let at = record.time;
+        let value = |name: &str| StdModels::real(record, name);
+        assert!((value("plain") - Integrals::plain(at)).abs() < 1e-3, "idt at {at}: {}", value("plain"));
+        assert!((value("hot") - Integrals::plain(at)).abs() < 1e-3, "idt::<Thermal> at {at}: {}", value("hot"));
+        assert!((value("held") - Integrals::held(at)).abs() < 1e-3, "idt with reset at {at}: {}", value("held"));
+        // SPEC_DEVIATION: only the readings before the first wrap are held to §22.2.9. The wrap is a jump of the seated integral
+        // through three microsteps of one instant (rule 3), and the engine's solve does not see the `seat` pulse between them
+        // (GAPS X1), so the wrapped integral keeps growing past `offset + modulus` (generics phase E, Handoff T109).
+        if Integrals::WRAPPED_RATE * at < Integrals::OFFSET + Integrals::MODULUS {
+            assert!((value("wrapped") - Integrals::wrapped(at)).abs() < 1e-3, "idtmod at {at}: {}", value("wrapped"));
+        }
+    }
+}
