@@ -398,7 +398,7 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 �
 
 ### T121: A param declared as an array of templates
 
-**What**: `pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]` is a param (GAPS L89): the checker accepts `Ty::Array` of `Ty::Module` in `types/module.rs::param`; the elaborator treats it as a module param (`is_module_param` and its sites: `classify_module_param_keys`, `lower_param` type `[u32; N]`, `host_override` E0802, `children.rs:414`, `template_through`/`placed_module`) whose value is the array of the template numbers (a composite constant in the keys); `fold_template_element` reads the element of a param from `scope.keys`; a default, an override by a literal, a `const` or a choice, an indexed placement `pair[k](x)` and a generation index run, and every param read by such a value is structural. Coordinator ruling 2026-11-24 (after the proofs): in scope, T119's family. NOT DONE when the Handoff below was written: context budget.
+**What**: `pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]` is a param (GAPS L89): the checker accepts `Ty::Array` of `Ty::Module` in `types/module.rs::param`; the elaborator treats it as a module param (`is_module_param` and its sites: `classify_module_param_keys`, `lower_param` type `[u32; N]`, `host_override` E0802, `children.rs:414`, `template_through`/`placed_module`) whose value is the array of the template numbers (a composite constant in the keys); `fold_template_element` reads the element of a param from `scope.keys`; a default, an override by a literal, a `const` or a choice, an indexed placement `pair[k](x)` and a generation index run, and every param read by such a value is structural. Coordinator ruling 2026-11-24 (after the proofs): in scope, T119's family. Done 2026-11-24.
 **Where**: `crates/piperine-lang/src/types/module.rs`, `crates/piperine-lang/src/elab/{templates,structural,body,children}.rs`
 **Depends on**: T119
 **Reuses**: `fold_template_element`, `template_items`, `Bindings::bind_composite`
@@ -407,9 +407,9 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 �
 
 **Done when**:
 
-- [ ] a checker test, an elab test (default, override by a literal, a `const` and a choice; `pair[k](x)` incl. a generation index; the params it reads are structural) and a source test (`source_generation`) pass
-- [ ] `GAPS.md` drops L89 and `docs.rs` re-pins the counts (1 silent, 2 broken, 18 loud); check C139 is added to the Checks with those tests, and `proofs-e.md` is regenerated last
-- [ ] Gate check passes: Quick
+- [x] a checker test, an elab test (default, override by a literal, a `const` and a choice; `pair[k](x)` incl. a generation index; the params it reads are structural) and a source test (`source_generation`) pass
+- [x] `GAPS.md` drops L89 and `docs.rs` re-pins the counts (1 silent, 2 broken, 18 loud); check C139 is added to the Checks with those tests, and `proofs-e.md` is regenerated last
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -537,6 +537,14 @@ Proof: run srcgenr | test a_template_array_element_placed_in_generation_runs ...
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
 
+**C139** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
+Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
+Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
+Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok
+Proof: run srcgenr | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
+Proof: run apisession | test a_module_typed_param_is_not_set_by_text ... ok
+Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
+
 **C118** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
@@ -562,6 +570,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T110a (2026-11-24):** the array/tuple param, the caller-frame fold (a given value reads the caller's params, loop variables and generic substitution) and `w[k]` in a hoisted frame needed four fixes: `hoisted_params` composite fold, `constant_expr` writing an aggregate out, `hoist_nodes` taking node arrays, and `held_by_loop` unrolling a loop that indexes a node array (`Held::NodeElement`, E0416 when its trip count does not fold).
 **T115 (2026-11-24):** GAPS counts: 1 silent (S9, the wrap of `idtmod`: `fix/idtmod-wrap` is not on `main` yet; when it merges, S9 and the `SPEC_DEVIATION` guard in `idt_and_idtmod_integrate_against_section_22` leave and the counts become 0 silent, 2 broken, 19 loud), 19 loud (L40, L77, L88 closed, L89 found). Book: all 28 `book_*` and `cli book` targets pass; no Book row used a form this phase changed, so none flipped; the two bundles-branch rows (`compiler~79f44db1`, `welcome~28a764f7`) are not on this branch's base and are the merger's to re-pin if T119 makes their example run. Open for the proofs round: none.
 **STOP before T121 (2026-11-24, context budget):** T121 is planned in full above and not started (no code). Sites found by reading: `types/module.rs:93` (the refusal), `elab/templates.rs::is_module_param` and its uses (`body.rs:258` the param's IR type is `UInt(32)` and must be `Array(UInt(32), N)`; `structural.rs:370, 601, 645, 994`; `children.rs:198, 250, 414`; `host_override` E0802), `classify.rs::array_template` already names the module through a `Param`/`Port` of array type, and `fold_template_element` reads only a literal, `let` or `const` array (a param's array must come from `scope.keys`).
+**T121 (2026-11-24):** a param declared `[Cell; 2]` runs. Checker: `types/module.rs::param` takes an array of `Ty::Module`. Elab: `templates.rs` (`template_array_length`, `is_template_param`, `fold_template_array` over a literal, a `let`, a `const`, a param or an `if` choice; the value is an aggregate `[u32; N]` of template numbers in the keys; `fold_template_element` reads a param's element from the bindings); `is_module_param` now excludes an array (its type resolved to the element's module). The keys, the host E0802, the placed param fold and the IR type (`body.rs`) go through `is_template_param`. **Found and fixed on the way:** `sub_scope` (`drives.rs`) dropped `scope.keys`, so a placement through a key param read in a definition (`y[k] = fs[k](a)`) was a `P0001` unbound param; it keeps them now. GAPS: L89 closed, counts 1 silent, 2 broken, 18 loud.
 **Dispatched:** none yet.
 **Walked:** none yet.
 

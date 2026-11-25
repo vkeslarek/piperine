@@ -523,3 +523,75 @@ fn an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_
     let printed = ir.print_structural();
     assert!(printed.contains("(1.0 * 2.0)") && printed.contains("(1.0 * 4.0)"), "{printed}");
 }
+
+/// A module placing the elements of its param `pair` (an array of templates of `Cell`) at the written index 1 and at every index of a generation `for`.
+const PAIR_TOP: &str = "module Top() { pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; signal x: Electrical; let c1 = pair[1](x); for k in 0..2 { let g = pair[k](x); } }";
+
+#[test]
+fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
+    // §8.1, §8.4.4 (GAPS L89): the default array places `pair[1](x)` and every `pair[k](x)` of a generation `for`; an override by a
+    // literal, a `const` and a choice over a param places the elements the override names
+    let cs = |value: f64| Constant::Real(Real::new(value));
+    let ir = Elab::ir(&format!("{CELL}{PAIR_TOP}"), "Top");
+    assert_eq!(Placed::real(&ir, "Top.c1"), cs(2.0));
+    assert_eq!(
+        (Placed::real(&ir, "Top.g[0]"), Placed::real(&ir, "Top.g[1]")),
+        (cs(1.0), cs(2.0))
+    );
+    let top = "module Top() { signal x: Electrical; let m = Mid(x) { pair: PICK }; }";
+    let mid = "module Mid(x: Electrical) { sel: bool = false; pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; let c1 = pair[1](x); for k in 0..2 { let g = pair[k](x); } }";
+    let literal = format!(
+        "{CELL}{mid}\n{}",
+        top.replace("PICK", "[Cell { cs: 5.0 }, Cell { cs: 6.0 }]")
+    );
+    let constant = format!(
+        "{CELL}{mid}\nconst PAIR: [Cell; 2] = [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}];\n{}",
+        top.replace("PICK", "PAIR")
+    );
+    let choice = format!(
+        "{CELL}module Mid(x: Electrical) {{ sel: bool = true; pair: [Cell; 2] = if sel {{ [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}] }} else {{ [Cell {{ }}, Cell {{ }}] }}; let c1 = pair[1](x); for k in 0..2 {{ let g = pair[k](x); }} }}\nmodule Top() {{ signal x: Electrical; let m = Mid(x) {{ sel: true }}; }}"
+    );
+    let elements = format!(
+        "{CELL}{mid}\nmodule Top() {{ signal x: Electrical; let m = Mid(x) {{ pair: [Cell {{ cs: 5.0 }}, if true {{ Cell {{ cs: 6.0 }} }} else {{ Cell {{ }} }}] }}; }}"
+    );
+    for source in [literal, constant, choice, elements] {
+        let ir = Elab::ir(&source, "Top");
+        assert_eq!(Placed::real(&ir, "Top.m.c1"), cs(6.0), "{source}");
+        assert_eq!(
+            (
+                Placed::real(&ir, "Top.m.g[0]"),
+                Placed::real(&ir, "Top.m.g[1]")
+            ),
+            (cs(5.0), cs(6.0)),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn the_params_an_array_of_templates_reads_become_structural() {
+    // §8.4.6: `l` is read by an element of the array a param holds, so each value of `l` is its own body with its own cell
+    let mid = format!(
+        "{CELL}module Mid(x: Electrical) {{ l: f64 = 1.0; pair: [Cell; 2] = [Cell {{ cs: l }}, Cell {{ cs: l * 2.0 }}]; let c1 = pair[1](x); }}\n"
+    );
+    let ir = Elab::ir(
+        &format!(
+            "{mid}module Top() {{ signal x: Electrical; let a = Mid(x) {{ l: 3.0 }}; let b = Mid(x) {{ l: 0.5 }}; }}"
+        ),
+        "Top",
+    );
+    assert_eq!(
+        Placed::real(&ir, "Top.a.c1"),
+        Constant::Real(Real::new(6.0))
+    );
+    assert_eq!(
+        Placed::real(&ir, "Top.b.c1"),
+        Constant::Real(Real::new(1.0))
+    );
+    let bodies = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_ne!(
+        bodies("Top.a"),
+        bodies("Top.b"),
+        "two values of `l`, two bodies"
+    );
+}

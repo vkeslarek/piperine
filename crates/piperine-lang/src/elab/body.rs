@@ -255,7 +255,11 @@ impl Elaboration<'_, '_> {
         let DeclKind::Param(p) = &data.kind else { return None };
         let plan = self.plans_of(module, self.lowering.as_ref().and_then(|key| key.instance.as_ref()))?.iter().find(|plan| plan.decl == param)?.clone();
         // A param of module type holds its template's number (`templates.rs`).
-        let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_param_type(data.file, p.ty)? };
+        let ty = if self.is_module_param(param) {
+            ValueType::UInt(32)
+        } else if let Some(length) = self.template_array_length(param) {
+            ValueType::Array(Box::new(ValueType::UInt(32)), length as u64)
+        } else { self.lower_param_type(data.file, p.ty)? };
         let check = match p.where_ {
             Some(cond) => Some(self.lower_expr(scope, cond)?),
             None => None,

@@ -411,7 +411,7 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             }
-            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
+            let bindings = if self.is_template_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
             match self.fold_param_value(field.value, &bindings) {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child

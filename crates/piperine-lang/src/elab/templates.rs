@@ -5,12 +5,12 @@
 //! they select one body variant (`structural.rs`); a placement through the param (`cell(c)`)
 //! places the template's module with the template's values (`children.rs`).
 
-use piperine_ir::Constant;
+use piperine_ir::{AggregateData, Constant, ValueType};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::instances::ConcreteValue;
-use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StructClass};
+use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind, StructClass};
 use crate::types::Callee;
 
 /// A template folded: the module it names and the value each param of its block gives.
@@ -22,6 +22,14 @@ pub(in crate::elab) struct TemplateValue {
     pub(super) arguments: Vec<ConcreteValue>,
     /// The params the block binds: the param, its folded value and the expression that gave it.
     pub(super) fields: Vec<(DeclId, Constant, ExprId)>,
+}
+
+/// What holds the elements of an array of templates.
+enum TemplateItems {
+    /// The expressions of the elements.
+    Written(Vec<ExprId>),
+    /// The param declared as the array: its elements are in the bindings.
+    Param(DeclId),
 }
 
 /// The templates interned so far, by number.
@@ -56,23 +64,55 @@ impl Elaboration<'_, '_> {
     /// The template at `index` of the array of templates `array`, folded (`Constant::Int` of its number).
     fn fold_template_element(&mut self, expr: ExprId, array: ExprId, index: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let unsupported = |what: &str| ConstFault::Unsupported { expr, what: what.to_string() };
-        let items = self.template_items(array, 0).ok_or_else(|| unsupported("an array of templates that is not written out, held by a `let` or a `const`"))?;
+        let items = self.template_items(array, 0).ok_or_else(|| unsupported("an array of templates that is not written out, held by a `let`, a `const` or a `param`"))?;
         let Constant::Int(at) = self.consts.value(index, bindings)? else { return Err(unsupported("an index that is not an integer")) };
-        let item = usize::try_from(at).ok().and_then(|at| items.get(at)).copied().ok_or_else(|| ConstFault::Panic { expr, what: format!("the element {at} of an array of {} templates (§1 rule 11)", items.len()) })?;
-        self.fold_param_value(item, bindings)
+        let length = match &items {
+            TemplateItems::Written(items) => items.len(),
+            TemplateItems::Param(param) => self.template_array_length(*param).unwrap_or(0),
+        };
+        let at = usize::try_from(at).ok().filter(|at| *at < length).ok_or_else(|| ConstFault::Panic { expr, what: format!("the element {at} of an array of {length} templates (§1 rule 11)") })?;
+        match items {
+            TemplateItems::Written(items) => self.fold_param_value(items[at], bindings),
+            TemplateItems::Param(param) => self.template_numbers(expr, param, bindings).map(|numbers| numbers[at]),
+        }
     }
 
-    /// The expressions of the elements of the array of templates `array`: an array written out, or held by a `let` or a `const`.
-    fn template_items(&mut self, array: ExprId, depth: usize) -> Option<Vec<ExprId>> {
+    /// The number of the template each element of the array param `param` holds, as `bindings` binds it.
+    fn template_numbers(&self, expr: ExprId, param: DeclId, bindings: &Bindings) -> Result<Vec<Constant>, ConstFault> {
+        let Some(held) = bindings.get(param) else { return Err(ConstFault::UnboundParam { expr, param }) };
+        let Constant::Aggregate(id) = held else { return Err(ConstFault::Unsupported { expr, what: "an array of templates that is not an array".to_string() }) };
+        Ok(self.ir.aggregate_at(id).parts.clone())
+    }
+
+    /// The array of templates `expr` folded: the aggregate of the numbers of its templates, a param's value as it is bound.
+    fn fold_template_array(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        // a choice of arrays folds its condition, then the array of the arm it takes (§8.4.6)
+        if let ExprKind::If { cond, then, else_ } = self.design.expr_node(self.peel_parens(expr)).kind.clone() {
+            let Constant::Bool(taken) = self.consts.value(cond, bindings)? else { return Err(ConstFault::Unsupported { expr, what: "a condition that is not a `bool`".to_string() }) };
+            let arm = if taken { then.stmts.last().and_then(|last| match &self.design.stmt_node(*last).kind { StmtKind::Expr { expr, semi: false } => Some(*expr), _ => None }) } else { else_ };
+            let arm = arm.ok_or_else(|| ConstFault::Unsupported { expr, what: "a choice of arrays of templates with no array in the arm it takes".to_string() })?;
+            return self.fold_template_array(arm, bindings);
+        }
+        let items = self.template_items(expr, 0).ok_or_else(|| ConstFault::Unsupported { expr, what: "an array of templates that is not written out, held by a `let`, a `const` or a `param`".to_string() })?;
+        let numbers = match items {
+            TemplateItems::Param(param) => return bindings.get(param).ok_or(ConstFault::UnboundParam { expr, param }),
+            TemplateItems::Written(items) => items.into_iter().map(|item| self.fold_param_value(item, bindings)).collect::<Result<Vec<_>, _>>()?,
+        };
+        let ty = ValueType::Array(Box::new(ValueType::UInt(32)), numbers.len() as u64);
+        Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty, variant: None, parts: numbers })))
+    }
+
+    /// What holds the elements of the array of templates `array`: an array written out, or held by a `let` or a `const`, else a `param`.
+    fn template_items(&mut self, array: ExprId, depth: usize) -> Option<TemplateItems> {
         if depth > 64 {
             return None;
         }
         let array = self.peel_parens(array);
         match self.design.expr_node(array).kind.clone() {
-            ExprKind::Array(items) => Some(items),
+            ExprKind::Array(items) => Some(TemplateItems::Written(items)),
             ExprKind::ArrayRepeat { elem, len } => {
                 let Ok(Constant::Int(count)) = self.consts.value(len, &Bindings::new()) else { return None };
-                Some(vec![elem; usize::try_from(count).ok()?])
+                Some(TemplateItems::Written(vec![elem; usize::try_from(count).ok()?]))
             }
             ExprKind::Path(path) => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match self.design.decl_data(decl).kind.clone() {
@@ -81,6 +121,7 @@ impl Elaboration<'_, '_> {
                         self.template_items(value, depth + 1)
                     }
                     DeclKind::Const(data) => self.template_items(data.value?, depth + 1),
+                    DeclKind::Param(_) => self.template_array_length(decl).map(|_| TemplateItems::Param(decl)),
                     _ => None,
                 },
                 _ => None,
@@ -89,9 +130,24 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The length of the array of templates `param` is declared as, `None` for a param of any other type.
+    pub(super) fn template_array_length(&self, param: DeclId) -> Option<usize> {
+        let DeclKind::Param(p) = &self.design.decl_data(param).kind else { return None };
+        match self.typed_written(p.ty)? {
+            crate::types::Ty::Array(element, crate::types::Length::Fixed(length)) if matches!(*element, crate::types::Ty::Module(_)) => usize::try_from(length).ok(),
+            _ => None,
+        }
+    }
+
+    /// Whether `param` holds a template or an array of them: it fixes structure (§8.4.6).
+    pub(super) fn is_template_param(&self, param: DeclId) -> bool {
+        self.is_module_param(param) || self.template_array_length(param).is_some()
+    }
+
     /// Whether `param` is declared with a module type, or with a type parameter bounded by `Fn(..)`: its value is a template.
     pub(super) fn is_module_param(&self, param: DeclId) -> bool {
-        matches!(&self.design.decl_data(param).kind, DeclKind::Param(p) if matches!(self.design.type_resolution(p.ty), Resolution::Decl(m) if matches!(self.design.decl_data(m).kind, DeclKind::Module(_)) || crate::types::GenericSignature::is_callable(self.design, m)))
+        self.template_array_length(param).is_none()
+            && matches!(&self.design.decl_data(param).kind, DeclKind::Param(p) if matches!(self.design.type_resolution(p.ty), Resolution::Decl(m) if matches!(self.design.decl_data(m).kind, DeclKind::Module(_)) || crate::types::GenericSignature::is_callable(self.design, m)))
     }
 
     /// The module the placement `call` places: the one the checker names, else (a call of a callable param, `cell(a)` with
@@ -118,6 +174,12 @@ impl Elaboration<'_, '_> {
             return self.fold_template_element(expr, array, index, bindings);
         }
         let ExprKind::Struct { fields, class: StructClass::Template(module), .. } = self.design.expr_node(expr).kind.clone() else {
+            // an array of templates: the numbers of its elements (a param declared `[Cell; 2]`)
+            if let Some(crate::types::Ty::Array(element, _)) = self.typed(expr)
+                && matches!(*element, crate::types::Ty::Module(_))
+            {
+                return self.fold_template_array(expr, bindings);
+            }
             // a value of `T` bound to a param of `Option<T>` is `Some` of it (§3.2.3)
             if self.types.implicit_some(expr) {
                 return self.implicit_some_constant(expr, bindings);

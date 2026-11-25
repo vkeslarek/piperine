@@ -18,6 +18,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn sub_scope(scope: &Scope) -> Scope {
         let mut sub = Scope::new(scope.file);
         sub.params = scope.params.clone();
+        sub.keys = scope.keys.clone();
         sub.frame = scope.frame;
         sub.unrolled = scope.unrolled.clone();
         sub.ordinals = scope.ordinals.clone();

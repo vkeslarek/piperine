@@ -1,0 +1,31 @@
+//! A param declared as an array of templates (generics GN-17, T121, part III §8.1, §8.4.1, §8.4.4): `Bank` places `fs[k](a)` for each
+//! element of its param `fs`, so line `k` is `a * m` of the element; `d` keeps the default; `l`, `c` and `x` override it by a
+//! literal, by a `const` and by a choice of two arrays.
+
+module Scale(x: u8) -> u8 {
+    m: u8 = 1;
+    x * m
+}
+
+const TRIPLE: [Scale; 2] = [Scale { m: 3 }, Scale { m: 7 }];
+
+module Bank(in a: Bit<u8>) {
+    signal y: [Bit<u8>; 2];
+    fs: [Scale; 2] = [Scale { m: 1 }, Scale { m: 2 }];
+    for k in 0..2 {
+        let scaled = fs[k](a);
+        y[k] = scaled;
+    }
+}
+
+module Bench() {
+    signal a: Bit<u8> = 3;
+    let d = Bank(a);
+    let l = Bank(a) { fs: [Scale { m: 5 }, Scale { m: 6 }] };
+    let c = Bank(a) { fs: TRIPLE };
+    let x = Bank(a) { fs: if true { [Scale { m: 9 }, Scale { m: 4 }] } else { TRIPLE } };
+}
+
+digital for Bench {
+    on at(1n) { a <- 4; }
+}

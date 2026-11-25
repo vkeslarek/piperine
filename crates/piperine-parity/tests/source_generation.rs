@@ -275,3 +275,17 @@ fn a_template_array_element_placed_in_generation_runs() {
         assert_eq!(support::transient(&seen, &format!("Bench.y[{k}]")), vec![(ns, vec![4 * m])], "element {k}: a * {m} after `a` becomes 4");
     }
 }
+
+#[test]
+fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
+    // GN-17, GAPS L89 (§8.1, §8.4.1, §8.4.4): `fs[k](a)` of a param `fs: [Scale; 2]` places the element `k` at its own params: line
+    // `k` is `a * m[k]` with the default `m` = 1, 2, the literal `m` = 5, 6 and the `const` `m` = 3, 7 and the choice `m` = 9, 4; `a` goes from 3 to 4 at 1 ns
+    let built = support::build(&GenerationModels::project("template_param_array.msl"), "Bench");
+    let seen = built.run(2e-9, 0.5e-9);
+    let ns = 1_000_000;
+    for (line, multipliers) in [("d", [1u8, 2]), ("l", [5, 6]), ("c", [3, 7]), ("x", [9, 4])] {
+        for (k, m) in multipliers.into_iter().enumerate() {
+            assert_eq!(support::transient(&seen, &format!("Bench.{line}.y[{k}]")), vec![(ns, vec![4 * m])], "line {line} element {k}: a * {m} after `a` becomes 4");
+        }
+    }
+}

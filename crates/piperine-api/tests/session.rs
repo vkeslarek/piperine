@@ -266,6 +266,14 @@ fn a_module_typed_param_is_not_set_by_text() {
         Err(other) => panic!("E0802 from elaboration, found {other}"),
         Ok(_) => panic!("a text value was given to a module-typed param"),
     }
+    // a param declared as an array of templates is bound in the source the same way (generics T121)
+    let pair = "module Top() {\n    pair: [Cell; 2] = [Cell { r: 2k }, Cell { r: 3k }];\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = pair[1](a);\n}\n";
+    let overrides = Overrides { params: vec![("Top.pair".to_string(), 1.0)], ..flags("op", "interp", Some("Top")) };
+    match open(&format!("{devices}\n{pair}"), &overrides, &unused()) {
+        Err(Failure::Diagnostics { found, .. }) => assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0802"], "{found:?}"),
+        Err(other) => panic!("E0802 from elaboration, found {other}"),
+        Ok(_) => panic!("a text value was given to a param of an array of templates"),
+    }
 }
 
 /// A sink that keeps nothing: the statistics test reads the table.

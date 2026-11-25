@@ -400,3 +400,22 @@ fn an_array_of_templates_of_one_module_checks_and_places_its_element() {
     let mixed = TemplateSource::new("module Top() { signal x: E; let fs = [Cell { }, Sizing { size: 1.0 }]; }\n");
     assert_eq!(mixed.codes(), ["E0180"], "two modules in one array");
 }
+
+#[test]
+fn a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement() {
+    // §8.1, §8.4.1, §8.4.4 (GAPS L89): `pair: [Cell; 2] = [..]` is a param whose elements are templates of `Cell`; `pair[k](x)` places
+    // the module of an element; a default of the wrong module is `E0180`, a default of another length a mismatch
+    let ok = TemplateSource::new(
+        "module Top() { pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]; signal x: E; let c = pair[1](x); for k in 0..2 { let d = pair[k](x); } }\n",
+    );
+    assert!(ok.codes().is_empty(), "{:?}: {}", ok.codes(), ok.message());
+    let wrong = TemplateSource::new(
+        "module Top() { pair: [Cell; 2] = [Cell { }, Sizing { size: 1.0 }]; }\n",
+    );
+    assert_eq!(wrong.codes(), ["E0180"], "an element of another module");
+    let short = TemplateSource::new("module Top() { pair: [Cell; 2] = [Cell { }]; }\n");
+    assert!(
+        !short.codes().is_empty(),
+        "a default of one element for two"
+    );
+}

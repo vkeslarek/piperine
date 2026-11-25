@@ -732,3 +732,11 @@ Proof: run srcgenr | test a_template_array_element_placed_in_generation_runs ...
 **C138** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
+
+**C139** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
+Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
+Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
+Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok
+Proof: run srcgenr | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
+Proof: run apisession | test a_module_typed_param_is_not_set_by_text ... ok
+Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
