@@ -1,0 +1,32 @@
+//! `since` and `MinPulse` (§22.1.8, §22.5.7): `d` changes at the instants the table of `source_stdlib_generic.rs` lists; the
+//! expected readings are computed there by Rust from those instants.
+
+// `d` commits its first value at (0, 0), rises at 3 ns and falls at 8 ns. `age` is read at each change (before the change is
+// recorded, §22.1.8 rule 2) and at 2, 5 and 9 ns.
+module SinceBench() {
+    signal d: Bit = false;
+    let age = since(d);
+}
+digital for SinceBench {
+    on d.changed() { emit!("at_change", value = age); }
+    on at(2n) { emit!("age", value = age); }
+    on at(3n) { d <- true; }
+    on at(5n) { emit!("age", value = age); }
+    on at(8n) { d <- false; }
+    on at(9n) { emit!("age", value = age); }
+}
+
+// `d` commits its first value at (0, 0) and then changes at the instants of the table in the test, against a minimum of 1.5 ns.
+module PulseBench() {
+    signal d: Bit = false;
+    let guard = MinPulse(d) { w: 1.5n };
+}
+digital for PulseBench {
+    on at(2n) { d <- true; }
+    on at(3n) { d <- false; }
+    on at(10n) { d <- true; }
+    on at(11n) { d <- false; }
+    on at(15n) { d <- true; }
+    on at(19n) { d <- false; }
+    on at(20n) { d <- true; }
+}

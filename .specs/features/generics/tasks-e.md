@@ -166,8 +166,8 @@ T109 → T110 → T111 → T112 → T113 → T114 → T115
 
 **Done when**:
 
-- [ ] `since_reads_the_time_from_the_last_change` and `min_pulse_fails_exactly_for_a_narrow_pulse` pass under `**Run srcstd**`
-- [ ] Gate check passes: Quick
+- [x] `since_reads_the_time_from_the_last_change` and `min_pulse_fails_exactly_for_a_narrow_pulse` pass under `**Run srcstd**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -445,6 +445,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **Settled mid-build:** T103 (2026-11-24): phase D (b60dcd9c6) and `analog-operators` (MD-82: L43-L45, L47, L49, L60, L72 closed; `delay` and `noise` and the noise analysis on `main`) are both on `main`; the merge of origin/main was a fast-forward and the Build line is green. Every L58 generics-group item exists in `crates/piperine-lang/std/` (`analog.msl`: `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`; `monitor.msl`: `Stable`, `Hold`, `Setup`, `MinPulse`, `inertial`; `values.msl`: `since`; `carriers.msl`: `Short`); findings on which fail at run time are appended per task. GAPS L88 (arrays of templates) is owned by phase E: added as T119 (after T118). Gate policy of the user (2026-11-24): per task the Build line and touched crates/targets only; no full workspace suite. Planning (2026-11-23): design-e.md DE3, DE4; DE1 to DE3 answered by the user 2026-11-23 (design-e.md).
 **Amended (2026-11-24, coordinator, phase C round 5 finding 18):** T118 (generation in a hoisted module's body, GAPS L77) and check C135 join phase 22, after T112; the task was phase C's leftover (`tasks-c.md` Handoff, round 4 fix).
 **T104 finding (2026-11-24):** `std` under the model check surfaced four stdlib errors, fixed in `std/` and mirrored in `docs/spec/part_vii_stdlib.md` and the preformat fixtures: (1) `zi_zp/zd/np` and `laplace_zp/zd/np` placed `zi_nd`/`laplace_nd` with no way to infer `N`/`D` (E0181): now `::<{ N + 1 }, D>` etc. (a coefficient array of `poly_q`/`poly_s` is one longer than its roots); (2) `laplace_nd` summed `pos(w[k])` inside a closure, which reads a carrier outside a handle (E0450, §3 rule 7): the output is now a node `y: State` driven in the `analog` block by a `for` sum (an extra algebraic row, same value); (3) `TribufDelayed` placed `inertial` without `T` (E0181): `inertial::<Driven>`. `std_library.rs::calls_named` strips a turbofish from the callee text before comparing (same assertion). T110/T111 must run these against closed forms.
+**T106 finding:** design-e.md's table says `since` is `inf` "before the first change"; part VII §22.1.8 (rules 2-3 and its table) makes the first commit at (0, 0) a change, so a read after (0, 0) is `now - 0` and only a reaction on that first change reads `inf`. The tests follow the spec text; the oracle (`Section22`) is written from it. `MinPulse` therefore also checks at (0, 0) (width `inf`, passes).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
