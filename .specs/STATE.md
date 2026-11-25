@@ -1891,7 +1891,7 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    as the pair of its halves. A loop that indexes an array of nodes or calls `delay` unrolls like one that contributes. An array
    of module templates (`[A {}, A { r: 2.0 }]`, `fs[k](x)`) is an array of the elaboration's template numbers. `inertial` needs a
    `Default` type (`bool` and the integers have none, §3.3.4); `since` reads `inf` only for a reaction on the first change. AFK
-   defaults of 2026-11-24, pending user review: `inertial` at two enums, the oracle of `since` as the spec text.
+   defaults of 2026-11-24 (**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu"): `inertial` at two enums, the oracle of `since` as the spec text.
 
 
 ### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input
