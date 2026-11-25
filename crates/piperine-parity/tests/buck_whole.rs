@@ -25,8 +25,6 @@ mod support;
 use mixed::{Built, Seen, rise};
 use support::{HIGH, LOW, build, series};
 
-/// One nanosecond in ticks.
-const NS: i64 = 1_000_000;
 /// 10 switching periods of 2 us (SPEC §2: 500 kHz).
 const STOP: f64 = 20e-6;
 

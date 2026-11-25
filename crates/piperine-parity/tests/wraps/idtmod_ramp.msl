@@ -1,0 +1,21 @@
+//! The stdlib `idtmod` (Part VII §22.2.9) of a constant, wrapped into [-0.5, 0.5): `v(up)` integrates
+//! 0.3 MV/s from 0 and wraps over the top (the first wrap at 1.667 us, then one every 3.333 us);
+//! `v(down)` integrates -0.4 MV/s from an `ic` of 2.3, which starts it at 0.3 inside the range, and
+//! wraps under the bottom (at 2 us, then one every 2.5 us). The test computes both sawtooths in Rust.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module IdtmodRamp() {
+    signal up: Electrical;
+    signal down: Electrical;
+    let up_load = Resistor { r: 1k }(up, gnd);
+    let down_load = Resistor { r: 1k }(down, gnd);
+}
+analog for IdtmodRamp {
+    v(up) +> idtmod(0.3M, Some(0.0), 1.0, Some(-0.5));
+    v(down) +> idtmod(-0.4M, Some(2.3), 1.0, Some(-0.5));
+}

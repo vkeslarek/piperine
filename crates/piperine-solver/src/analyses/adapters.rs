@@ -215,6 +215,30 @@ impl DigitalSide {
         Ok(boundary)
     }
 
+    /// The values an instant passed through (`Outcome::passing`) as the slots they are. The copy
+    /// does not take them: they reach the analog side for the zero-width solve only.
+    /// An array net gives one per window an analog function reads.
+    fn passing_slots(&self, nets: Vec<(NetId, Vec<u8>)>) -> Result<Vec<Boundary>> {
+        let mut passing = Vec::new();
+        for (net, whole) in nets {
+            for slot in &self.net_slots[&net] {
+                passing.push(Boundary { slot: *slot, bytes: self.slot_of_bytes(*slot as usize, &whole)? });
+            }
+        }
+        Ok(passing)
+    }
+
+    /// Adds to `boundary` each slot that `passing` moves away from the copy and the instant left
+    /// where it began (a pulse): after the zero-width solve, the analog side takes the copy's bytes back.
+    fn restore_passed(&self, passing: &[Boundary], boundary: &mut Vec<Boundary>) {
+        for passed in passing {
+            let kept = &self.copy[passed.slot as usize];
+            if passed.bytes != *kept && !boundary.iter().any(|b| b.slot == passed.slot) {
+                boundary.push(Boundary { slot: passed.slot, bytes: kept.clone() });
+            }
+        }
+    }
+
     fn time(&self, tick: DigitalTick) -> f64 {
         tick.0 as f64 * self.digital.plan().resolution.seconds_per_tick
     }
@@ -272,10 +296,13 @@ impl DiscreteSide for DigitalSide {
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
         let microsteps = self.microsteps;
         let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| instant_error(e, microsteps))?;
-        let boundary = self.changed_slots(out.boundary)?;
+        // read against the copy as it stood before the instant, so it is taken first
+        let passing = self.passing_slots(out.passing)?;
+        let mut boundary = self.changed_slots(out.boundary)?;
+        self.restore_passed(&passing, &mut boundary);
         let host_events = out.host_events.iter().map(|n| n.0).collect();
         let settle_boundary = self.changed_slots(out.settle_boundary)?;
-        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events, settle_boundary })
+        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events, settle_boundary, passing })
     }
 
     fn land_settle_commits(&mut self, tick: Tick) {
@@ -439,6 +466,10 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
         unreachable!("an operating point takes no step")
     }
 
+    fn zero_width(&mut self) -> Result<Option<Accepted>> {
+        unreachable!("an operating point reads no passed value (an equilibrium holds no state)")
+    }
+
     fn equilibrium(&mut self) -> Result<Accepted> {
         let x = self.dc.equilibrium(self.solution.is_none())?;
         let amb = self.dc.system.ambient();
@@ -516,6 +547,10 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn accept(&mut self) -> Result<Accepted> {
         self.tran.device_accept(&mut self.run)
+    }
+
+    fn zero_width(&mut self) -> Result<Option<Accepted>> {
+        self.tran.device_zero_width(&mut self.run)
     }
 
     fn equilibrium(&mut self) -> Result<Accepted> {

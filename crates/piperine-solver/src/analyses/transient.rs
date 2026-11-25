@@ -1838,6 +1838,45 @@ impl TransientSolver<'_> {
         self.plan.stepper_mut().resume(&undo.stepper);
     }
 
+    /// The zero-width solve of docs/spec §15.2 rule 4 at the last accepted time `t`, on the discrete
+    /// values delivered since: one backward-Euler solve from the solution at `t` over
+    /// `ZERO_WIDTH_TICKS` of a tick, a width no tick tells from zero, with the time kept at `t`.
+    /// Each `ddt` state is held to within that width times its derivative, so no integrand gains
+    /// area, and a constraint the delivered values force (an `idt` held at its `ic`) moves its
+    /// state there, the sum over each cut it closes conserved as in the step that reads a jump.
+    /// The solution replaces the recorded one at `t` and is the history the next step starts
+    /// from, which reads a jump. `None`: Newton did not converge.
+    pub(crate) fn device_zero_width(
+        &mut self,
+        run: &mut DeviceRun,
+    ) -> crate::core::result::Result<Option<crate::protocol::Accepted>> {
+        let time = run.st.origin + run.st.current_time;
+        self.system.phase = TrBdf2Phase::Trapezoidal;
+        self.system.h = Self::ZERO_WIDTH_TICKS * run.spt / TrBdf2::GAMMA;
+        self.system.prev_h = 0.0;
+        self.system.jump = JumpPosition::Reads;
+        self.system.time = time;
+        let (policy, tolerances) = (self.policy.clone(), self.system.context.tolerances.clone());
+        let solved = self.solver.solve_with_strategy(&mut self.system, self.plan.newton(), &tolerances, &policy);
+        if solved.is_err() || self.system.take_callback_error().is_err() {
+            return Ok(None);
+        }
+        if run.steps.last().is_some_and(|step| step.time() == time) {
+            run.steps.pop();
+        }
+        let snapshot = self.snapshot(time);
+        self.record_step(&mut run.steps, time, snapshot);
+        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
+        let amb = Ambient { time, ..self.system.ambient() };
+        let (accepted, cap) = crate::analyses::adapters::accepted(self.device_bound(), &x, amb)?;
+        run.cap = cap;
+        run.st.sets_just_applied = true;
+        Ok(Some(accepted))
+    }
+
+    /// The width of a zero-width solve, in ticks.
+    const ZERO_WIDTH_TICKS: f64 = 1e-6;
+
     /// The analog copy takes the boundary; after a jump the next step starts
     /// first-order (`prev_h = 0`) and is sized and tested by the
     /// jump rule (§15.2 rule 6), as after a scheduled set; after a host write it is also

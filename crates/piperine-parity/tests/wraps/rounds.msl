@@ -1,0 +1,32 @@
+//! Two rounds of reading at one instant (docs/spec §15.2 rule 4), from source: `idtmod` of
+//! 0.3 MV/s wraps over the top at 1.667 us and then every 3.333 us. At each wrap the bench's own
+//! `cross(ph - 0.5)` fires with idtmod's, so round 1 counts `level` up once (and idtmod's `seat`
+//! pulses); the zero-width solve that seats the phase makes `cross(-0.25 - ph)`, whose reaction
+//! counts `level` up once more in round 2. `level` is read by the analog side through `v(count)`.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Rounds() {
+    signal level: Bit<f64> = 0.0;
+    signal phase: Electrical;
+    signal count: Electrical;
+    let phase_load = Resistor { r: 1k }(phase, gnd);
+    let count_load = Resistor { r: 1k }(count, gnd);
+    let ph = idtmod(0.3M, Some(0.0), 1.0, Some(-0.5));
+}
+analog for Rounds {
+    v(phase) +> ph;
+    v(count) +> level;
+}
+digital for Rounds {
+    on cross(ph - 0.5) {
+        level <- level + 1.0;
+    }
+    on cross(-0.25 - ph) {
+        level <- level + 1.0;
+    }
+}

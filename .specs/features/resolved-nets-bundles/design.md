@@ -8,7 +8,7 @@ Companion of `.specs/features/resolved-nets/design.md`; its D2 and D20 put both 
 `feature/resolved-nets`.
 
 **Amended**: 2026-11-22 - the explicit-unknowns model (MD-78, spec amendment A6). The section below rules over every older sentence of this file.
-**Amended**: 2026-11-24 - arrays of bundles are a struct of arrays (D12, AFK default, pending user review).
+**Amended**: 2026-11-24 - arrays of bundles are a struct of arrays (D12). **Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu".
 
 ---
 
@@ -40,7 +40,7 @@ integrity check (`Design::check`) knows the table, and every rule of §5 applies
 
 ## Amendment of 2026-11-24: an array of bundles is a struct of arrays (D12, taken at T23)
 
-**AFK default 2026-11-24, pending user review** (coordinator ruling). D11 planned the leaves of an array of bundles once at the
+**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu" (coordinator ruling of 2026-11-24, taken as an AFK default). D11 planned the leaves of an array of bundles once at the
 declaration, one group per element (`rx[0].valid` .. `rx[n-1].valid`), so a length that is no written integer (`[Lane; N]`, a
 const generic or a module param, `N + 1`) could not be planned and was a named `P0001`. Taken instead, for every length, the
 written one included (one way, no special case): an array of bundles gets **one leaf per field, typed as the array of the
@@ -202,7 +202,7 @@ previsto, parando só depois da revisão no item 13".
 | D8 | An observer view of a bundle with a resolved field | the resolved field (its nature implements `Resolve`, amendment) is drivable in every view, the observer's included (§7 rule 4: fields without a direction are the same in every view) | §5.2.2 any module that sees it may drive |
 | D9 | Gates (amendment) | per task: the `**Build**` line and the tests of the crates it touched; the full root suite, the integrated suites, parity and the twins once at the end of each batch, never elsewhere (user, 2026-11-21: "Quero que aplique o dos gates mais leves apenas"; 2026-11-22: "Suite completa é só no fim dos lotes e ponto final!"); the buck only in a task whose `Done when` says "with the buck" (MD-77) | the user's gate policy |
 | D10 | When B2 starts (amendment) | once `explicit-unknowns` phase A is on `main` (`composite-values` A–B already is): the fixtures need `E0187`'s rule before they are rewritten once | `explicit-unknowns` design "`resolved-nets-bundles`", T5 |
-| D12 | How an array of bundles is laid out (amendment of 2026-11-24, T23) | struct of arrays: one leaf per field, the array of the field's type with the owner's lengths; `tx[k].a` is element `k` of `tx.a` (AFK default 2026-11-24, pending user review) | one path for every length; reuses arrays of carriers |
+| D12 | How an array of bundles is laid out (amendment of 2026-11-24, T23) | struct of arrays: one leaf per field, the array of the field's type with the owner's lengths; `tx[k].a` is element `k` of `tx.a` (**Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu") | one path for every length; reuses arrays of carriers |
 
 ## Tech Decisions
 

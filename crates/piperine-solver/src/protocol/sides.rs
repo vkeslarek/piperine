@@ -97,6 +97,13 @@ pub struct Outcome {
     /// solve that arrives at the next time point reads them (§15 S2). Not yet applied on the
     /// discrete side, so no `boundary` entry repeats them.
     pub settle_boundary: Vec<Boundary>,
+    /// When a value the analog side reads passed within a transient instant, held at the end of
+    /// one microstep and lost at a later one (a pulse, docs/spec §15.2 rule 4): the values the
+    /// zero-width solve at the instant reads, each one the instant changed at the first value it
+    /// passed through, or at its value after the instant. Each part of an instant a host waiter
+    /// suspends reports the whole instant so far. The instant's settle phase has not run
+    /// then, whatever its mode: the owner runs it after that solve. Empty otherwise.
+    pub passing: Vec<Boundary>,
 }
 
 impl Outcome {
@@ -324,6 +331,13 @@ pub trait AnalogSide {
     fn equilibrium(&mut self) -> Result<Accepted>;
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
+    /// Solves once more at the time of the last accepted solution, on the discrete values delivered
+    /// since (docs/spec §15.2 rule 4): a backward-Euler step of width ε = 1e-6 tick from that
+    /// solution, its time kept there. Every `ddt` state moves by at most ε times its derivative,
+    /// far below any tolerance, so no integrand gains area a tolerance sees, and what the delivered
+    /// values force takes effect. The solution
+    /// replaces the accepted one at that time; the next step reads a jump. `None`: it did not converge.
+    fn zero_width(&mut self) -> Result<Option<Accepted>>;
     /// Takes back the last `accept` and puts the side back as `mark` found it, so the same step
     /// can be attempted again after a delivery (§15.2 rule 4). A side whose `accept` keeps nothing
     /// beyond what `restore` undoes needs no more than the default.
