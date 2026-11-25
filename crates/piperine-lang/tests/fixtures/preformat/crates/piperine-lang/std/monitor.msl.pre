@@ -87,7 +87,7 @@ digital<T> for inertial<T> {
 pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {
   ton: f64 = 100p;
   toff: f64 = 300p;
-  y = inertial(
+  y = inertial::<Driven>(
     if oe {
       Driven::strong(d)
     } else {

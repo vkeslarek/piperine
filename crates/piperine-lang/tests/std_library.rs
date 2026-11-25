@@ -200,7 +200,7 @@ fn bit_rise_resolves_into_std_values() {
 fn calls_named<'d>(design: &'d Design, decl: piperine_lang::pom::Decl<'d>, name: &str) -> Vec<piperine_lang::pom::Expr<'d>> {
     decl.exprs()
         .into_iter()
-        .filter(|e| matches!(e.kind(), ExprKind::Call { callee, .. } if design.expr(*callee).text() == name))
+        .filter(|e| matches!(e.kind(), ExprKind::Call { callee, .. } if design.expr(*callee).text().split("::<").next() == Some(name)))
         .collect()
 }
 
