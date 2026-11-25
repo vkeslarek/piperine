@@ -1,12 +1,14 @@
 # Generics verification (phase E, T103 to T121)
 
-**Verdict**: FAIL (round 2 at 8459a102c: findings 1 to 7 are closed and reprobed, 48 proofs pass, no panic is reachable; one major and three minor findings, 8 to 11: a param declared as an array of templates is refused at a module with a result, with a message that does not name it, and three loud refusals of this phase's forms have no `GAPS.md` row)
+**Verdict**: PASS (round 3 at 34bfb7b26: findings 1 to 11 are closed and reprobed; 50 proofs pass; no new finding)
+**Round 2 verdict**: FAIL (findings 8 to 11)
+**Round 3**: re-verification at 34bfb7b26 (fixes 0c087e434, 322149ffa, 852d20afa, d1e1d9ed4, 004805e03; merge 07569dcf1 of origin/main 902f83ae1); `proofs-e.md` rerun at 34bfb7b26: 50 pass, 0 fail, tree clean, build (zero warnings) and hygiene pass
 **Round 1 verdict**: FAIL (findings 1 to 7)
 **Round 2**: re-verification at 8459a102c (fixes 8bc8129be, 1f99f55f4, 57b9b47cb, 430fb4eb4, 22b4b560e, 7ae5977e5, 91eee5f9d, 1c8b3b4e7); `proofs-e.md` rerun at 8459a102c: 48 pass, 0 fail, tree clean, build (zero warnings) and hygiene pass
-**Proofs**: `proofs-e.md` at 8459a102c (48 pass, 0 fail, tree clean, build with zero warnings and hygiene pass); round 1 at 53ce664fb (39 pass)
+**Proofs**: `proofs-e.md` at 34bfb7b26 (50 pass, 0 fail, tree clean, build with zero warnings and hygiene pass); round 2 at 8459a102c (48 pass), round 1 at 53ce664fb (39 pass)
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-25, branch `feature/generics` at 53ce664fb (= origin/feature/generics; phase E diff `9e77e9229..HEAD`, 9e77e9229 being T103's merge of `main`)
 **Method**: `tasks-e.md` copied as `checks.md`/`tasks.md` (with `spec.md`) into a scratch feature dir (`.specs/features/generics-e/`, deleted) and `check_proofs.py generics-e` run from the worktree root; own probes in throwaway targets `crates/piperine-lang/tests/zz_verifier_probe.rs`, `crates/piperine-parity/tests/zz_verifier_probe.rs` and `tests/stdlib_generic/zz_probe.msl` (deleted, never committed).
-**Gate policy**: rounds 1 and 2 are FAIL, so no final full suite ran and origin/main was not merged.
+**Gate policy**: rounds 1 and 2 were FAIL, so no final suite ran then. Round 3 is PASS: origin/main (26ee4ed25) is merged and the one final full suite runs (section Round 3)
 **Coordinator rulings accepted**: the 492-site `P0001` sweep belongs to `spec-closure`; L81, L82 (nested reach of three levels or more) and L83 to L87 are owned gaps outside this phase. **Approved** lines quoting "Essas pendencias, pode decidir tu" (2026-11-25) are legitimate.
 
 ## Judged areas
@@ -108,4 +110,20 @@ Findings 1 to 7 reprobed at 8459a102c (throwaway targets, deleted):
 | 9 | Minor | An array of templates written as a repeat, `[Scale { r: 7.0 }; 2]`, is refused although the code claims to fold it, and no row owns the refusal | probe: `let fs = [Scale { r: 7.0 }; 2]; fs[1](1.0)` and `fs: [Scale; 2] = [Scale { r: 7.0 }; 2]`: `P0001` "an array of templates that is not written out, held by a `let`, a `const` or a `param`"; `elab/templates.rs` `template_items` has an `ExprKind::ArrayRepeat` arm and `pom/resolve/classify.rs` `array_template` another, so the repeat is meant to run | the message says the array "is not written out", which a repeat is; a reader of the code sees the arm and believes it runs | make the repeat fold (its length folds with no bindings today and fails) with a test, or drop the dead arms and add a `GAPS.md` row || 322149ffa (fix round 2) |
 | 10 | Minor | A module with a result placed through a generic `Fn(..) -> R` param of a module that is itself hoisted is refused unnamed, unowned | probe: `module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; s(x) }` placed `Outer(1.0) { s: Scale { r: 7.0 } }`: `P0001` "a call the type checker did not resolve is not supported yet"; finding 5's fix (430fb4eb4) runs the same placement in a module without a result | the sibling of finding 5 one level down; the message names neither the bound nor the template | run it (the hoisted frame's keys hold the template) or refuse it naming the form, with a row and an owner || 852d20afa (fix round 2) |
 | 11 | Minor | Two param forms this phase's hoisted fold reaches stay `P0001` without a `GAPS.md` row | probes: `c: Option<Option<f64>> = Some(None)` is "this form of an `Option` value is not supported yet" (pinned in `elab_unlowered.rs:190`); `c: str = "hi"` is "param of type `str` is not supported yet" (pinned in `elab_entry.rs:163` as the generic unsupported example). Both pre-date phase E and refuse in a module without a result too | the coordinator asked that these be owned; under the ruling that the 492-site `P0001` sweep is `spec-closure`'s they may be covered by that sweep, but no row says so | add one `GAPS.md` row per form (or one row naming both) with `spec-closure` as owner || 004805e03 (fix round 2) |
+
+## Round 3 (34bfb7b26)
+
+Reprobed at 34bfb7b26 (throwaway targets, deleted):
+
+- **8** closed (0c087e434): a param `fs: [Scale; 2]` of a module with a result runs by default (`3.0`), by a literal (`7.0`), by a `const` (`4.0`), by a choice over a param (`9.0`), forwarded from the caller's own array param (`u * 11.0`), indexed by a generation `for` (`u * 5.0`, `u * 6.0`), and two placements with different values keep their own (`7.0`, `3.0`).
+- **9** closed (322149ffa): `[Scale { r: 7.0 }; 2]` runs as a `let` and as a param default; with a `const` length and a param length (`n: usize = 3`); `[Cell { cs: 4.0 }; 2]` placed in generation gives two `Cell`s at `cs = 4.0`; `fs[2]` of a repeat of 2 is `E0104` naming the element.
+- **10** closed (852d20afa): `Outer<C: Fn(f64) -> f64>(x) -> f64 { s: C; s(x) }` gives `1.0 * 7.0`, and inside its own generation `u * 7.0` per element.
+- **The `types/substitution.rs` sibling (forwarding a caller's generic parameter to a `Fn`-bounded one, all modules)**: the new `Ty::Param` exemption only skips the "template parameter" `P0001`; the argument then goes through `BoundCheck::satisfies`, which compares the caller parameter's own bounds. Forwarding `D: Fn(f64) -> f64` to `Inner<C: Fn(f64) -> f64>` runs (`7.0`); forwarding `D: Fn(f64) -> f64` to `C: Fn(Electrical)`, `D: Fn(Electrical)` to `C: Fn(f64) -> f64`, and `T: Repr` to either is `E0187` "`T` does not satisfy the bound `Fn` of `C`", at elaboration and in the whole-model check of an unplaced generic module (`Types::check_model`); the same `Fn(Electrical)` forwarded checks clean. Holds.
+- **The `P0004` path (d1e1d9ed4)**: `internal_error` pushes a diagnostic and never removes one (no `truncate`/`retain`/`clear` of `diagnostics` in `elab/`); `Elaboration::run` returns `Err(self.diagnostics)` whenever any is present, before `ir.finish`, so the `Expr::Int(0)` stand-in never reaches an `Ir` or a backend. The unit test drives the arm directly. Holds; no program found that reaches it.
+- **11** closed (004805e03): `GAPS.md` L92 (`Option<Option<T>>` param) and L93 (`str` param), owner `spec-closure`.
+- **Merge 07569dcf1** (bundles): `lower_carriers` keeps the frame's generated carriers and expands bundle leaves (`module_items`), both sides intact; the hoisted-generation and bundle proofs pass. The Book's `P0001` example moved to a `str` param (L93): `compiler~79f44db1` asserts the exact message, `welcome~777e5270` is the rewritten sentence (`docs/book/content.html` says it), and the welcome test also runs an array of templates. Counts 0 silent, 2 broken, 19 loud.
+
+### Findings (round 3)
+
+None - probed the four round-2 forms and their neighbours (default, literal, `const`, choice, forwarded, generation index, repeat lengths and bounds), the substitution sibling at elaboration and in the model check, and the `P0004` path's reach to the `Ir`.
 
