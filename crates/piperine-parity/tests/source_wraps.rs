@@ -200,3 +200,59 @@ fn a_change_made_after_a_zero_width_solve_is_read_once_at_its_value() {
     assert_eq!(statistics.zero_width_for(ZeroWidthCause::PassedValue), 3, "one per wrap, for the seat");
     assert_eq!(statistics.zero_width_for(ZeroWidthCause::CrossingChange), 3, "one per wrap, for round 2's count");
 }
+
+/// A bench of `wraps/` with cells on elements of an array net, run to 10 ns with a step cap of 0.5 ns.
+struct ElementBench;
+
+impl ElementBench {
+    /// The time and each named node's value at every accepted step (the zero-width solve's included), and the
+    /// zero-width solves the run made for a passed value.
+    fn run(file: &str, top: &str, nodes: &[&str]) -> (Vec<(f64, Vec<f64>)>, u64) {
+        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps").join(file);
+        let built = build(&Project::new(&path), top);
+        let (_, result) = built.run_with(10e-9, 0.5e-9);
+        let solves = result.statistics().zero_width_for(ZeroWidthCause::PassedValue);
+        let ids: Vec<NodeIdentifier> = nodes
+            .iter()
+            .map(|name| NodeIdentifier::Anonymous(built.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("no node `{name}`")).id().index()))
+            .collect();
+        let points = result.iter().map(|point| (point.time(), ids.iter().map(|id| point.get_node(id).expect("a node voltage")).collect())).collect();
+        (points, solves)
+    }
+
+    /// `v(p)` of a `Cell` whose gate is `gate`: 1 mA through 1 kOhm or 2 kOhm.
+    fn cell(gate: bool) -> f64 {
+        1e-3 * if gate { 1e3 } else { 2e3 }
+    }
+
+    /// Asserts that every point holds `expected(time)`, node by node, and that exactly one point is at 2 ns.
+    fn assert_points(points: &[(f64, Vec<f64>)], expected: impl Fn(f64) -> Vec<f64>) {
+        assert_eq!(points.iter().filter(|(time, _)| (time - 2e-9).abs() < 1e-15).count(), 1, "one solution at 2 ns, the zero-width solve's");
+        for (time, values) in points {
+            let wanted = expected(*time);
+            assert!(values.iter().zip(&wanted).all(|(v, w)| (v - w).abs() < 1e-9), "at {time:e} s: {values:?}, wanted {wanted:?}");
+        }
+    }
+}
+
+#[test]
+fn a_pulse_of_an_element_the_analog_side_reads_is_read_by_a_zero_width_solve() {
+    // §15.2 rule 4 on an element of an array net (part II §5.1.8): `gates[1]` is high for one microstep at 2 ns. The
+    // run passes the instant, and the one zero-width solve, the solution at 2 ns, reads the high element: `v(a)` is the
+    // high-gate value there and the low-gate value at every other step
+    let (points, solves) = ElementBench::run("element_pulse.msl", "ElementPulse", &["a"]);
+    assert_eq!(solves, 1, "one zero-width solve, for the element's passed high");
+    ElementBench::assert_points(&points, |time| vec![ElementBench::cell((time - 2e-9).abs() < 1e-15)]);
+}
+
+#[test]
+fn an_element_that_changes_beside_a_scalar_pulse_is_read_at_its_value() {
+    // §15.2 rule 4: at 2 ns `g` pulses and `gates[1]` rises to stay. The zero-width solve at 2 ns reads both high; after
+    // it `v(a)` is back at the low-gate value and `v(b)` stays at the high-gate value; before it both are low-gate
+    let (points, solves) = ElementBench::run("element_beside.msl", "ElementBeside", &["a", "b"]);
+    assert_eq!(solves, 1, "one zero-width solve, for `g`'s passed high");
+    ElementBench::assert_points(&points, |time| {
+        let (at, after) = ((time - 2e-9).abs() < 1e-15, time > 2e-9 + 1e-15);
+        vec![ElementBench::cell(at), ElementBench::cell(at || after)]
+    });
+}

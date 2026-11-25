@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::net::NetId;
+use crate::net::{NetId, NetSpec};
 use crate::store::Store;
 
 /// What the analog-read nets held during one run of the microstep loop.
@@ -21,8 +21,8 @@ pub struct PassingValues {
 }
 
 impl PassingValues {
-    /// Notes that the analog-read `net` changed at the end of a microstep, to `value`: a value it
-    /// already held in this instant is lost, and the first one lost is kept.
+    /// Notes that the analog-read `net` changed at the end of a microstep, to `value` (an array net's
+    /// windows): a value it already held in this instant is lost, and the first one lost is kept.
     pub(crate) fn changed(&mut self, net: NetId, value: &[u8]) {
         if let Some(lost) = self.held.insert(net, value.to_vec()) {
             self.passed.entry(net).or_insert(lost);
@@ -44,8 +44,9 @@ impl PassingValues {
 
     /// The state the zero-width solve at the instant reads: every analog-read net the instant changed,
     /// at the first value it passed through when it passed through one, and at its value as the
-    /// store holds it otherwise. Empty when no net passed through a value.
-    pub(crate) fn read_state(&self, store: &Store) -> Vec<(NetId, Vec<u8>)> {
+    /// store holds it otherwise; an array net as the analog side reads it, its windows (`specs`). Empty when no net passed
+    /// through a value.
+    pub(crate) fn read_state(&self, store: &Store, specs: &[NetSpec]) -> Vec<(NetId, Vec<u8>)> {
         if self.is_empty() {
             return Vec::new();
         }
@@ -53,7 +54,7 @@ impl PassingValues {
             .keys()
             .map(|net| match self.passed.get(net) {
                 Some(value) => (*net, value.clone()),
-                None => (*net, store.value(*net).to_vec()),
+                None => (*net, store.analog_value(*net, &specs[net.0 as usize])),
             })
             .collect()
     }

@@ -237,6 +237,15 @@ impl Store {
         }
     }
 
+    /// Whether the bytes [`Store::analog_value`] gives changed in this microstep: an element of one of an array net's windows
+    /// changed (an element outside them is no change the analog side sees), or a scalar net changed.
+    pub fn analog_changed(&self, net: NetId, spec: &NetSpec) -> bool {
+        match self.arrays.contains_key(&net.0) {
+            true => spec.analog_windows.iter().any(|&(first, length)| (first..first + length).any(|element| self.element_changed(net, element))),
+            false => self.changed(net),
+        }
+    }
+
     /// Writes `bytes` at byte `offset` of `net`'s whole elements into `packed`, the bytes [`Store::analog_value`] gave: into every
     /// window that holds those bytes (an array net's windows may overlap), or at `offset` of a scalar net.
     pub fn patch_analog(&self, net: NetId, spec: &NetSpec, offset: u64, bytes: &[u8], packed: &mut [u8]) {

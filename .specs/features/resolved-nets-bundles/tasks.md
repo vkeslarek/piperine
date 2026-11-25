@@ -25,6 +25,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 **Run msl_parser**: `cargo test -p piperine-lang --test msl_parser`
+**Run digitalinstant**: `cargo test -p piperine-digital-solver --test instant`
+**Run sourcewraps**: `cargo test -p piperine-parity --test source_wraps`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
@@ -778,6 +780,11 @@ Proof: run elabbundles | test an_in_field_default_is_the_initial_value_of_the_co
 Proof: run sourcebundles | test a_bit_field_with_a_default_is_written_by_commits ... ok
 Proof: run sourcebundles | test a_consumer_commits_a_bit_field_its_flip_view_drives_from_the_field_default ... ok
 
+**C45** - A value an element of an array net passes within one instant reaches the analog side as the net's analog windows: the engine records the windows with the element's passed value (an element outside every window passes nothing), and a transient whose element pulses, or changes beside a scalar pulse, runs and its zero-width solve reads the element's passed value (§15.2 rule 4, part II §5.1.8; verification M1)
+Proof: run digitalinstant | test a_pulse_of_an_element_of_an_array_net_is_passing_as_its_windows ... ok
+Proof: run sourcewraps | test a_pulse_of_an_element_the_analog_side_reads_is_read_by_a_zero_width_solve ... ok
+Proof: run sourcewraps | test an_element_that_changes_beside_a_scalar_pulse_is_read_at_its_value ... ok
+
 ---
 
 ## Handoff
@@ -796,6 +803,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Settled T21 (2026-11-24):** `origin/main` merged (e9fefe239). The merge needed one real fix: generics D's `Fn(P)` bound path lowered a bundle input (`C: Fn(Cell)`) as a value type (`P0001`), so a bundle input is named (`bounds.rs::callable_type`, `module_bounds.rs`) and the argument of a placement through the bound, a carrier or a literal of the struct, is checked (`bundle.rs::connect_bundle_input`); E.6 `Slice` and F.3 `MemoryBank` check clean (`std_galleries` `REMAINING_REFUSALS` is empty). Book: natures#8 and natures~52790298 (harness: a `Producer` and a `Consumer` that give `b.valid`/`d.ready` a value through initial-valued signals, `Slice::<Logic<4>>`, two transfers of `0101`), modules#10 with #11 (the bank of 64 x 32 cells, bit lines 1 V behind 1k, a cell's analog behavior added by the harness; the cell conduction does not read `c.wl`: an analog read of a digital element of an array net fails to bind, not a bundle gap), cheatsheet#8 run; GAPS L25 closed (counts 20 loud, section 9 II section 7 95 %, section 11 rows removed, `gaps_no_longer_lists_bundles`); `code_owners.tsv` had no row left. The compiler chapter's P0001 example (`compiler~79f44db1`) and the welcome sentence (now `welcome~28a764f7`) use an array of module templates (L88).
 **Settled fix round 1 (2026-11-24):** `origin/main` (7cf35a4f7) merged (df72502a1); F1 271f33816, F2 and F4 8a7abe6cf, F3 74b31a963 (the field default, spec part II 7 rule 10; **Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu"). An `Fn(P)` bound carries the view of its input, so an observer or flipped template is E0360 at the bound. `NameMap::window_bytes` treats an empty seed as no bytes. The sparse test bound is 30 s (2 s alone). Gates: piperine-lang, solver, digital-solver (all targets), api, parity source_bundles/natures/nets/carrier_arrays/aggregates/templates/generic_modules/modules/resolved, Book targets, `piperine-cli --test docs`: green.
 **Settled fix round 2 (2026-11-25):** R1 closed by the coordinator's ruling (extends the §7 rule 10 field default; **Approved**: 2026-11-25 - user: "Essas pendencias, pode decidir tu"): a struct field's initial value starts the carrier on the side that drives it, so `in ready: Bit = false` is the `flip` consumer's start and a bundle signal's leaf takes either direction's; E0261 stays for a value `struct` field, a nested bundle field (its own fields carry theirs) and an undirected field. The E0187 help names the field with its written direction (`field `in d``). Check C44 added.
+**Settled fix round 3 (2026-11-25):** M1 - the passed-value record (from main's idtmod fix) stores an array net as its analog windows (`Store::analog_value`) in `instant.rs` and `PassingValues::read_state`, and records a change only when an element of a window changed (`Store::analog_changed`). The other `Store::value` uses are digital-side reads of scalar nets (observations, pin fills, relax) or the host's `net` read, not analog-read paths. Check C45 added.
 **Dispatched:** none
 **Walked:** none
 
