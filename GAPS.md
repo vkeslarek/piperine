@@ -356,14 +356,10 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
-| values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type), then its `flip`; the definitions through its members raise no cascade; the generic module `Slice` runs |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
 | modules#10 | L25 | `resolved-nets-bundles` | `MemoryBank`: the `Cell` struct with carrier fields (bundle) is `P0001` (`struct` item used as a type) and so is its literal `Cell { wl: wl[r], bl: bl[c] }`; the generic module, the generation `for` of its body, the arrays of carriers, the `Fn` bound and the placement through the template `cell` run |
-| modules#16 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |
 | cheatsheet#8 | L25 | `resolved-nets-bundles` | the struct `Cell` with carrier fields is `P0001` (bundle) and so is its literal; `cell: C;`, the placements through a template or a function and the `Fn` bound run |
-| cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

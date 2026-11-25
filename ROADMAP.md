@@ -79,7 +79,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `gradients` | Adjoint gradients (H8, `E0807`–`E0809`) | spec |
 | `cli-packages` | Packages from the command line (H10) | spec |
 | `conformance` | The galleries and conformance on the compiled backend (U1, U2, U4, U6, U8, U9) | spec |
-| `foreign-models` | Foreign and OSDI models, linking (L12, L33) | spec |
+| `foreign-models` | Foreign and OSDI models, linking (L12, L33); writes its own Book chapter and listings | spec |
 | `multi-rate` | Digital edges that do not cut analog steps (V12) | delivered by `transient-performance` (landings only where something observable happens: `59be2e5c`; no instant at an idle step: `c8569a22`) |
 | `surrogate-models` | Averaged or surrogate models for long runs (V13) | spec; later (user) |
 | `periodic-small-signal` | Small-signal analyses over the periodic steady state (V16) | spec |

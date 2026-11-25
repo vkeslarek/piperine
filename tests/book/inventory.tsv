@@ -89,7 +89,6 @@ block	values#18	cf6cf170a04f408d	run	piperine/book_values::the_monitor_file_runs
 block	values#19	4bcc7aec0a6efc87	shown	-	-	-
 block	values#20	78f7a9917b6c0c29	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare
 block	values#21	1c36af9fee8a108e	run	piperine/book_values::analog_reads_a_digital_carrier_directly	-	-
-block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
 block	natures#2	3d0da9268a0e2cbc	run	piperine/book_natures::signals_of_every_family_run	-	-
 block	natures#3	bc658ea2dad63ed4	run	piperine/book_natures::the_alarm_prints_three_records_of_the_line	-	-
@@ -113,8 +112,7 @@ block	modules#12	7d514f590b39e281	run	piperine/book_modules::a_function_that_ret
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	bf8415c910606f11	run	piperine/book_modules::the_swappable_mosfet_listing_runs	-	-
 block	modules#15	2ca276483c741b1f	fragment	modules#14	-	-
-block	modules#16	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
-block	modules#17	f5ddcb63aa594437	run	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	-
+block	modules#16	f5ddcb63aa594437	run	piperine/book_modules::the_multiplicity_listing_runs_as_four_in_parallel	-	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
 block	analog#2	5bbb7c8746c8b33b	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
 block	analog#3	6395ae5e780ffca4	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
@@ -267,12 +265,11 @@ block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_ca
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
 block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book_cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
 block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_only_for_its_bundle	L25	-
-block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
-block	cheatsheet#10	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
-block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
-block	cheatsheet#12	7b3f0b719a47144e	shown	-	-	-
-block	cheatsheet#13	1fbd01e9a89541fd	shown	-	-	-
-block	cheatsheet#14	8a42da6d8e9cc4f1	shown	-	-	-
+block	cheatsheet#9	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
+block	cheatsheet#10	6aa7d49559ddcad2	shown	-	-	-
+block	cheatsheet#11	7b3f0b719a47144e	shown	-	-	-
+block	cheatsheet#12	1fbd01e9a89541fd	shown	-	-	-
+block	cheatsheet#13	8a42da6d8e9cc4f1	shown	-	-	-
 claim	welcome~58ff8428	58ff8428acc3b471	holds	piperine/book_welcome::si_suffixes_are_f64_and_a_plain_number_is_an_integer	-	1k is 103 and 1n is 10−9.
 claim	welcome~bc2a836b	bc2a836b135b01f9	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	Step has no ports and no behavior of its own. signal vin: Electrical; declares a node. let r1 = Resistor(vin, vout) { r: 1k }; places a resistor: the call connects the ports in order, and the braces bind params by name. gnd is the reference node, available everywhere.
 claim	welcome~72129ad3	72129ad3e0b569f8	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	A check that passes is not printed unless you ask for it, which is why the run above shows only the trip record.
@@ -365,7 +362,6 @@ claim	values~64ee881d	64ee881dd4832356	holds	piperine/book_values::e0604_a_field
 claim	values~64ee8d1d	64ee8d1dd4832bd5	holds	piperine/book_values::e0601_an_emit_in_a_module_body_is_misplaced_output	-	E0601
 claim	values~399bbd1d	399bbd1dbbf84a3c	holds	piperine/book_values::e0112_a_carried_type_needs_repr	-	E0112
 claim	values~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_values::e0350_a_fn_cannot_hold_ddt	-	E0350
-claim	values~3998361d	3998361dbbf52f00	unraised	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	E0123
 claim	values~2648fe25	2648fe25559ad3bb	prose	-	-	Since that is the only sharing there is, it has a strict rule for change: what a signal holds changes only when a block drives it, with <- in a reaction or +> in an analog block, at the moment the simulator gives that statement.
 claim	values~ef061060	ef0610606942e208	prose	-	-	Reading a signal gives a value, a copy of what it holds at that moment.
 claim	natures~b91f6505	b91f650573b09f15	prose	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
