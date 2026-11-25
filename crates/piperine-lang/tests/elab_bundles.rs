@@ -279,3 +279,20 @@ fn a_node_field_of_an_array_of_bundles_is_one_array_of_nodes() {
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(top.children()[1].nodes, [piperine_ir::Terminal::Node(1), piperine_ir::Terminal::Node(3)], "load 1 is `d[1].p` and `d[1].n`");
 }
+
+#[test]
+fn a_template_placed_through_a_bound_has_the_bundle_in_the_bounds_view() {
+    // §8.4.5, §7 rules 3 to 5: through `Fn(flip Pipe)` the cell is a consumer: it reads `q` and drives `d`, and the bank gives it `s`
+    // and takes `r`; through `Fn(Pipe)` the cell is a producer, the roles reversed. The leaves of the cell are named by path.
+    let src = "struct Pipe { out q: Bit<u8>, in d: Bit<u8> }\n\
+               module Drv(p: Pipe) { p.q = p.d + 1; }\n\
+               module Snk(p: flip Pipe) { p.d = p.q + 2; }\n\
+               module Up<C: Fn(Pipe)>() { cell: C; signal s: Bit<u8>; signal r: Bit<u8> = 0; let one = cell(Pipe { q: s, d: r }); }\n\
+               module Down<C: Fn(flip Pipe)>() { cell: C; signal s: Bit<u8> = 1; signal r: Bit<u8>; let one = cell(Pipe { q: s, d: r }); }\n\
+               module Top() { let up = Up { cell: Drv {} }(); let down = Down { cell: Snk {} }(); }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    let roles = |body: &str| read.carriers(body).into_iter().filter(|c| c.0.starts_with("p.")).collect::<Vec<_>>();
+    assert_eq!(roles("Drv"), [("p.q".to_string(), CarrierRole::Out), ("p.d".to_string(), CarrierRole::In)]);
+    assert_eq!(roles("Snk"), [("p.q".to_string(), CarrierRole::In), ("p.d".to_string(), CarrierRole::Out)]);
+}

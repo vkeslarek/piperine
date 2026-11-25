@@ -34,6 +34,15 @@ impl BundleView {
         }
     }
 
+    /// The view with the article a message needs.
+    pub fn article(self) -> &'static str {
+        match self {
+            BundleView::Producer => "a producer",
+            BundleView::Consumer => "a consumer (`flip`)",
+            BundleView::Observer => "an observer (`in`)",
+        }
+    }
+
     /// The view of a field written `flip T`, or of the type of a port written `flip`: producer and consumer swap,
     /// an observer stays one (§7 rule 5).
     pub fn flipped(self) -> BundleView {
@@ -311,6 +320,24 @@ impl Design {
         match self.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if matches!(&self.decl_data(decl).kind, DeclKind::Struct(s) if s.bundle == Some(true)) => Some(decl),
             _ => None,
+        }
+    }
+
+    /// The direction the field at `path` (`valid`, `inner.x`) of the bundle `struct` `bundle` has under `view`, a nested bundle field
+    /// written `flip` reversing the view below it (§7 rules 3 to 5); `None` for a field with no direction, or that is not there.
+    pub(crate) fn direction_at(&self, bundle: DeclId, view: BundleView, path: &str) -> Option<Dir> {
+        let (head, rest) = match path.split_once('.') {
+            Some((head, rest)) => (head, Some(rest)),
+            None => (path, None),
+        };
+        let field = self.decl_data(bundle).children.iter().copied().find(|child| self.decl_data(*child).name.as_ref().is_some_and(|name| name.text == head))?;
+        let DeclKind::Field(data) = &self.decl_data(field).kind else { return None };
+        match rest {
+            None => view.field_direction(data.dir),
+            Some(rest) => {
+                let inner = if matches!(self.type_node(data.ty).kind, TypeKind::Flip(_)) { view.flipped() } else { view };
+                self.direction_at(self.bundle_struct_of_type(data.ty)?, inner, rest)
+            }
         }
     }
 

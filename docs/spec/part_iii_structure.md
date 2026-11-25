@@ -626,7 +626,11 @@ Its type is `Name`. Calling it with connections places an instance.
 - **§8.4.5** The bound `C: Fn(P)` holds for every module whose port list has the types and
   directions `P`, in order. Port names do not matter. A value of type `C` is a template of such a
   module. A bound may combine a trait and `Fn(P)`, `N: Mosfet + Fn(Electrical, Electrical)`:
-  only a module that declares `impl Mosfet for` it fits (`E0187` otherwise).
+  only a module that declares `impl Mosfet for` it fits (`E0187` otherwise). An input that is a
+  bundle carries its view (§7 rules 3 to 5): `Fn(Pipe)` asks for a module that has the bundle as a
+  producer, `Fn(flip Pipe)` as a consumer, and the body that places the template drives and reads
+  the fields by that view. A module whose port takes the bundle in another view (`flip`, `in`) is
+  `E0360` naming the port.
 - **§8.4.6** A template-valued expression is evaluated at elaboration. It **MUST** be a const
   expression over params and constants. Every param it reads is structural (§8.1.2), and so is a
   param of template type.

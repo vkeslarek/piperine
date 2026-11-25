@@ -3,7 +3,7 @@
 //! that does not is `E0360` naming the first port that differs.
 
 use crate::msl::Span;
-use crate::pom::{DeclKind, FileId, TypeId};
+use crate::pom::{BundleView, DeclId, DeclKind, FileId, TypeId};
 
 use super::check::Checker;
 use super::{Nominal, Substitution, Ty};
@@ -20,15 +20,13 @@ impl Checker<'_> {
     /// module are read under the arguments its template names (`S<Electrical>`, §8.4.3).
     pub(super) fn first_differing_port(&mut self, template: &Nominal, inputs: &[TypeId]) -> Option<PortDifference> {
         let module = template.decl;
-        // an input that is a bundle (`Fn(Cell)`) is named, as a port of that bundle is
-        let outer = std::mem::replace(&mut self.naming_bundle, true);
-        let wanted: Vec<Option<Ty>> = inputs.iter().map(|input| self.lower_type(*input)).collect();
-        self.naming_bundle = outer;
+        let wanted: Vec<Option<Ty>> = inputs.iter().map(|input| self.bound_input_type(*input)).collect();
         let mut arguments = Substitution::new();
         for (parameter, argument) in self.generic_signature(module).parameters().iter().zip(&template.arguments) {
             arguments.bind(parameter.decl, argument.clone());
         }
         let found: Vec<Ty> = self.module_port_types(module)?.iter().map(|port| arguments.apply(port)).collect();
+        let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Port(_))).collect();
         let names: Vec<String> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
             DeclKind::Port(_) => Some(self.design.decl_data(*child).name.as_ref().map_or_else(String::new, |name| name.text.clone())),
             _ => None,
@@ -37,13 +35,30 @@ impl Checker<'_> {
             match wanted.get(position) {
                 // a bound input that does not lower was refused where it is written
                 Some(None) => return None,
-                Some(Some(want)) if want == have => {}
+                Some(Some(want)) if want == have => {
+                    // a bundle is placed in the view the bound writes: the template's own view of its port must be that one (§7 rules 3 to 5)
+                    if let Some(difference) = self.view_difference(ports[position], name, inputs[position]) {
+                        return Some(difference);
+                    }
+                }
                 Some(Some(want)) => return Some(PortDifference { what: format!("its port `{name}` has type `{}`, and `Fn` wants `{}` at position {}", have.name(self.design), want.name(self.design), position + 1) }),
                 None => return Some(PortDifference { what: format!("its port `{name}` has no input in `Fn` at position {}", position + 1) }),
             }
         }
         let missing = wanted.get(found.len())?.as_ref()?;
         Some(PortDifference { what: format!("it has no port at position {}, and `Fn` wants `{}`", found.len() + 1, missing.name(self.design)) })
+    }
+
+    /// The difference between the view the bundle port `port` of a module takes its bundle in and the view the bound input `input`
+    /// writes (`Fn(Pipe)` a producer, `Fn(flip Pipe)` a consumer): placing the module through the bound would otherwise drive an input
+    /// or leave an output with no driver. `None` for a port that is no bundle, or that has the bound's view.
+    fn view_difference(&self, port: DeclId, name: &str, input: TypeId) -> Option<PortDifference> {
+        if !self.design.is_bundle_owner(port) {
+            return None;
+        }
+        let DeclKind::Port(data) = &self.design.decl_data(port).kind else { return None };
+        let (have, want) = (BundleView::of_port(self.design, data.dir, data.ty), BundleView::of_port(self.design, None, input));
+        (have != want).then(|| PortDifference { what: format!("its port `{name}` takes the bundle as {}, and `Fn` wants it as {} (§7 rules 3 to 5)", have.article(), want.article()) })
     }
 
     /// `E0360` for the template's module against the bound `Fn(inputs)` of `parameter`, `false` after it. A module that fits is `true`.

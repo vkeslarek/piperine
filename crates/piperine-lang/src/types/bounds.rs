@@ -7,7 +7,7 @@
 //! instantiation.
 
 use crate::msl::Span;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericParamData, Resolution, TypeId};
+use crate::pom::{Arg, BundleView, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericParamData, Resolution, TypeId, TypeKind};
 
 use super::check::Checker;
 use super::derives::DerivedTrait;
@@ -114,13 +114,22 @@ impl Checker<'_> {
         })
     }
 
+    /// The type of one input of an `Fn` bound: a bundle input (`Fn(Cell)`, `Fn(flip Cell)`) is named by its `struct`, as a port of that
+    /// bundle is; the view is the bound's own, read with [`Checker::callable_views`].
+    pub(super) fn bound_input_type(&mut self, input: TypeId) -> Option<Ty> {
+        if matches!(self.design.type_node(input).kind, TypeKind::Flip(_)) {
+            return self.bundle_type(input);
+        }
+        let outer = std::mem::replace(&mut self.naming_bundle, true);
+        let lowered = self.lower_type(input);
+        self.naming_bundle = outer;
+        lowered
+    }
+
     /// The function type `Fn(inputs) -> output` a callable bound writes, `None` when a type in it
     /// is refused (the refusal is reported where the bound is read).
     pub(super) fn callable_type(&mut self, inputs: &[TypeId], output: Option<TypeId>) -> Option<Ty> {
-        // an input that is a bundle (`Fn(Cell)`) is named, as a port of that bundle is
-        let outer = std::mem::replace(&mut self.naming_bundle, true);
-        let inputs: Option<Vec<Ty>> = inputs.iter().map(|input| self.lower_type(*input)).collect();
-        self.naming_bundle = outer;
+        let inputs: Option<Vec<Ty>> = inputs.iter().map(|input| self.bound_input_type(*input)).collect();
         let output = match output {
             Some(output) => self.lower_type(output)?,
             None => Ty::Unit,
@@ -169,7 +178,8 @@ impl Checker<'_> {
         }
         if matches!(self.design.decl_data(parameter).kind, DeclKind::Param(_)) {
             let Some(Ty::Fn(params, result)) = self.module_param_callable(parameter) else { return None };
-            self.connect_through_bound(expr, &params, args)?;
+            let views = self.callable_views(parameter);
+            self.connect_through_bound(expr, &params, &views, args)?;
             return Some(*result);
         }
         self.local_call(expr, parameter, args)
@@ -178,7 +188,7 @@ impl Checker<'_> {
     /// The connections of a placement through a template param bounded by `Fn(P)` (§8.4.5): a node input takes what a port of
     /// that nature takes at a placement, a node of a compatible nature or `gnd` (§8.1.10, `connect`); any other input is an
     /// argument of its type. `None` after an arity mismatch.
-    fn connect_through_bound(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
+    fn connect_through_bound(&mut self, expr: ExprId, params: &[Ty], views: &[BundleView], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         if args.len() != params.len() {
@@ -191,7 +201,7 @@ impl Checker<'_> {
                     let Some(found) = self.infer(arg.value) else { continue };
                     self.connect(arg.value, &format!("the node input {} of the `Fn` bound", position + 1), ty, &found);
                 }
-                _ if self.is_bundle_type(ty) => self.connect_bundle_input(arg.value, ty, position),
+                _ if self.is_bundle_type(ty) => self.connect_bundle_input(arg.value, ty, views.get(position).copied().unwrap_or(BundleView::Producer), position),
                 _ => self.check_argument(arg.value, ty),
             }
         }
@@ -200,11 +210,25 @@ impl Checker<'_> {
 
     /// The function type a type parameter's `Fn(A) -> R` bound gives its values, `None` without one.
     pub(super) fn callable_of(&mut self, param: DeclId) -> Option<Ty> {
-        let (inputs, output) = self.bounds_of(param).into_iter().find_map(|bound| match bound {
+        let (inputs, output) = self.callable_bound(param)?;
+        self.callable_type(&inputs, output)
+    }
+
+    /// The inputs and the result an `Fn(A) -> R` bound of the type parameter `param` writes.
+    fn callable_bound(&self, param: DeclId) -> Option<(Vec<TypeId>, Option<TypeId>)> {
+        self.bounds_of(param).into_iter().find_map(|bound| match bound {
             Bound::Callable { inputs, output } => Some((inputs, output)),
             _ => None,
-        })?;
-        self.callable_type(&inputs, output)
+        })
+    }
+
+    /// The view each input of the `Fn` bound of the template param `param` takes a bundle in (`Fn(Pipe)` a producer, `Fn(flip Pipe)`
+    /// a consumer, §7 rules 3 to 5), in order.
+    fn callable_views(&mut self, param: DeclId) -> Vec<BundleView> {
+        let DeclKind::Param(data) = &self.design.decl_data(param).kind else { return Vec::new() };
+        let Some(Ty::Param(parameter)) = self.lower_type(data.ty) else { return Vec::new() };
+        let inputs = self.callable_bound(parameter).map(|(inputs, _)| inputs).unwrap_or_default();
+        inputs.iter().map(|input| BundleView::of_port(self.design, None, *input)).collect()
     }
 
     /// The type parameter a path owner names (`T` of `T::WIDTH`), when it is one.

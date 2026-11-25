@@ -281,3 +281,56 @@ fn an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it() {
     assert!(missing[0].starts_with("`lanes[1].a` has no initial value"), "{missing:?}");
 }
 
+
+/// A bundle with both directions, a template bounded over it and a placement of each view through the bound.
+struct Templates;
+
+impl Templates {
+    /// `Pipe`, its three views as modules, and `Bank<C: Fn(Pipe)>` that places the template over a bundle literal.
+    const BANK: &'static str = "struct Pipe { out q: Bit<u8>, in d: Bit<u8> }\n\
+        module Drv(p: Pipe) { p.q = p.d + 1; }\n\
+        module Snk(p: flip Pipe) { p.d = p.q + 2; }\n\
+        module Obs(in p: Pipe) { signal t: Bit<u8>; t = p.q; }\n\
+        module Bank<C: Fn(Pipe)>(in d: Bit<u8>) { cell: C; signal s: Bit<u8>; let one = cell(Pipe { q: s, d: d }); }\n";
+
+    /// `Bank` of the bound `Fn(flip Pipe)`: the bank gives the cell what it reads and takes what it drives.
+    const FLIPPED_BANK: &'static str = "module FlippedBank<C: Fn(flip Pipe)>(out r: Bit<u8>) { cell: C; signal s: Bit<u8> = 1; let one = cell(Pipe { q: s, d: r }); }\n";
+
+    /// The code and message of each diagnostic of the placement `place` in `Top`.
+    fn placing(prelude: &str, place: &str) -> Vec<(String, String)> {
+        let src = format!("{prelude}module Top() {{ signal d: Bit<u8> = 5; {place} }}");
+        let design = Bundles::design(&src);
+        Types::check(&design, "Top").err().map(|found| Bundles::summary(&found)).unwrap_or_default()
+    }
+}
+
+#[test]
+fn a_template_of_the_bounds_own_view_is_accepted_through_the_bound() {
+    // §8.4.5, §7 rules 3 to 5: `Drv` has `Pipe` as a producer, the view of `Fn(Pipe)`; `Snk` has it as a consumer, the view of `Fn(flip Pipe)`
+    assert_eq!(Templates::placing(Templates::BANK, "let a = Bank { cell: Drv {} }(d);"), []);
+    assert_eq!(Templates::placing(&format!("{}{}", Templates::BANK, Templates::FLIPPED_BANK), "signal r: Bit<u8>; let a = FlippedBank { cell: Snk {} }(r);"), []);
+}
+
+#[test]
+fn a_template_of_another_view_than_the_bound_is_e0360_naming_the_port() {
+    // §7 rules 3 to 5: through `Fn(Pipe)` the bank drives `q` and reads `d`; `Snk` drives `d`, which is the bank's `in d`, and `Obs`
+    // drives nothing, which leaves `s` with no driver. Placed directly both are refused (E0314, E0187), so the bound refuses them too.
+    for (module, view) in [("Snk", "a consumer"), ("Obs", "an observer")] {
+        let found = Templates::placing(Templates::BANK, &format!("let a = Bank {{ cell: {module} {{}} }}(d);"));
+        assert_eq!(found.len(), 1, "{module}: {found:?}");
+        assert_eq!(found[0].0, "E0360", "{module}: {found:?}");
+        assert!(found[0].1.contains("`p`") && found[0].1.contains(view) && found[0].1.contains("wants it as a producer"), "{module}: {found:?}");
+    }
+    let found = Templates::placing(&format!("{}{}", Templates::BANK, Templates::FLIPPED_BANK), "signal r: Bit<u8>; let a = FlippedBank { cell: Drv {} }(r);");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].0 == "E0360" && found[0].1.contains("takes the bundle as a producer") && found[0].1.contains("wants it as a consumer"), "{found:?}");
+}
+
+#[test]
+fn a_literal_given_through_a_flipped_bound_is_handed_over_by_the_bounds_view() {
+    // §7 rule 5: through `Fn(flip Pipe)` the cell drives `d` and reads `q`, so the bank may not hand over its `in` port `d` as the cell's
+    // output (`E0314`, as placing `Snk` directly), and `s` is read by the cell, so the bank holds its driver
+    let found = Templates::placing("struct Pipe { out q: Bit<u8>, in d: Bit<u8> }\nmodule Bank<C: Fn(flip Pipe)>(in d: Bit<u8>) { cell: C; signal s: Bit<u8> = 1; let one = cell(Pipe { q: s, d: d }); }\nmodule Snk(p: flip Pipe) { p.d = p.q + 2; }\n", "let a = Bank { cell: Snk {} }(d);");
+    assert!(found.iter().any(|(code, _)| code == "E0314"), "{found:?}");
+    assert!(!found.iter().any(|(code, _)| code == "E0223"), "`s` is the bank's, the cell reads it: {found:?}");
+}

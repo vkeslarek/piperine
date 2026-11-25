@@ -9,7 +9,7 @@ use super::nature_rules::NatureRules;
 use super::Ty;
 use crate::msl::ast::Dir;
 use crate::msl::Span;
-use crate::pom::{BundleLeaf, BundlePlace, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
+use crate::pom::{BundleLeaf, BundleView, BundlePlace, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
 
 impl Checker<'_> {
     /// The argument `arg` of a placement at the bundle port `port`: a bundle carrier of the port's `struct`, or a literal.
@@ -46,8 +46,9 @@ impl Checker<'_> {
     }
 
     /// The argument `arg` of a placement through a template at a bundle input `ty` of its `Fn` bound (§8.4.5): a bundle carrier of
-    /// that `struct`, or a literal of it whose fields are carriers or nodes of the fields' natures.
-    pub(super) fn connect_bundle_input(&mut self, arg: ExprId, ty: &Ty, position: usize) {
+    /// that `struct` in the bound's view `view`, or a literal of it whose fields are carriers or nodes of the fields' natures; a field the
+    /// template drives is handed over by the view, not by the direction the `struct` writes.
+    pub(super) fn connect_bundle_input(&mut self, arg: ExprId, ty: &Ty, view: BundleView, position: usize) {
         let (file, span) = (self.file_of_expr(arg), self.design.expr_node(arg).span);
         let Ty::Struct(nominal) = ty else { return };
         let wanted = Some(nominal.decl);
@@ -58,19 +59,37 @@ impl Checker<'_> {
                 return;
             }
             for field in &fields {
-                self.connect_input_field(nominal.decl, field, file);
+                self.connect_input_field(nominal.decl, view, field, file);
             }
             return;
         }
         match self.bundle_carrier(arg) {
-            Some(source) if self.bundle_struct_of(source.decl) == wanted && self.design.element_levels(source.decl) == source.elements.len() => self.element_indexes(&source),
+            Some(source) if self.bundle_struct_of(source.decl) == wanted && self.design.element_levels(source.decl) == source.elements.len() => {
+                self.element_indexes(&source);
+                self.hand_over_fields(&source, nominal.decl, view, arg, file, span);
+            }
             Some(_) => self.coded(file, "E0251", span, format!("a bundle of another type or shape is connected to the input {} of `{}` (§7 rule 14)", position + 1, self.struct_name(wanted)), "bundle of another type"),
             None => self.coded(file, "E0264", span, "a bundle input takes a bundle carrier or a literal of the bundle (§7 rule 8)".to_string(), "not a bundle"),
         }
     }
 
+    /// The fields of the bundle `source` that `view` makes the template's to drive are handed to it, as a placement hands them to
+    /// the `out` ports of the module it names.
+    fn hand_over_fields(&mut self, source: &BundlePlace, bundle: DeclId, view: BundleView, place: ExprId, file: FileId, span: Span) {
+        for leaf in self.design.bundle_leaves(source.decl).to_vec() {
+            if leaf.nested || self.design.direction_at(bundle, view, &leaf.path) != Some(Dir::Out) {
+                continue;
+            }
+            if !matches!(self.leaf_type(leaf.decl).as_ref().map(Ty::innermost), Some(Ty::Carrier { .. })) {
+                continue;
+            }
+            let element = self.element_of_indexes(leaf.decl, &source.elements);
+            self.hand_over_element(leaf.decl, element, place, span, file);
+        }
+    }
+
     /// One field of a literal given to the input of an `Fn` bound: a carrier or a node of the field's nature, else `E0263`.
-    fn connect_input_field(&mut self, owner: DeclId, field: &FieldInit, file: FileId) {
+    fn connect_input_field(&mut self, owner: DeclId, view: BundleView, field: &FieldInit, file: FileId) {
         let declared = self.design.decl_data(owner).children.iter().copied().find(|child| self.design.decl_data(*child).name.as_ref().is_some_and(|name| name.text == field.name.text));
         let Some(declared) = declared else { return };
         let DeclKind::Field(data) = self.design.decl_data(declared).kind.clone() else { return };
@@ -87,7 +106,7 @@ impl Checker<'_> {
             return;
         }
         if let Some((decl, Ty::Carrier { .. })) = given
-            && data.dir == Some(Dir::Out)
+            && view.field_direction(data.dir) == Some(Dir::Out)
         {
             self.hand_over(decl, field.value, self.design.expr_node(field.value).span, file);
         }
