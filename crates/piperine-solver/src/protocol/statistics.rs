@@ -1,5 +1,6 @@
 //! How a transient's accepted steps were spent: the protocol's own count of what ended each step
-//! (`StepEnd`), the instants it ran and the steps it retook toward a crossing. The analog side
+//! (`StepEnd`), the instants it ran, the steps it retook toward a crossing and the zero-width
+//! solves it made (`ZeroWidthCause`). The analog side
 //! keeps its own counts (`SolverStats`); this module counts what only the protocol knows.
 
 use std::collections::HashMap;
@@ -49,12 +50,22 @@ pub enum InstantCause {
     Scheduled,
 }
 
+/// Why the protocol made a zero-width solve at a time point (docs/spec §15.2 rule 4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ZeroWidthCause {
+    /// A value `analog` reads passed through within the instant.
+    PassedValue,
+    /// After a zero-width solve, a crossing it made ran reactions that changed what `analog` reads.
+    CrossingChange,
+}
+
 /// The protocol's count of a transient's steps.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StepStatistics {
     ends: HashMap<StepEnd, u64>,
     instants: HashMap<InstantCause, u64>,
     retaken: u64,
+    zero_width: HashMap<ZeroWidthCause, u64>,
 }
 
 impl StepStatistics {
@@ -71,6 +82,21 @@ impl StepStatistics {
     /// Counts one step retaken toward a located crossing.
     pub fn record_retake(&mut self) {
         self.retaken += 1;
+    }
+
+    /// Counts one zero-width solve made for `cause`.
+    pub fn record_zero_width(&mut self, cause: ZeroWidthCause) {
+        *self.zero_width.entry(cause).or_insert(0) += 1;
+    }
+
+    /// The zero-width solves made for `cause`.
+    pub fn zero_width_for(&self, cause: ZeroWidthCause) -> u64 {
+        self.zero_width.get(&cause).copied().unwrap_or(0)
+    }
+
+    /// The zero-width solves made, whatever their cause.
+    pub fn zero_width_solves(&self) -> u64 {
+        self.zero_width.values().sum()
     }
 
     /// The accepted steps: each is counted under exactly one end.
@@ -155,7 +181,15 @@ mod tests {
         statistics.record_instant(InstantCause::Scheduled);
         statistics.record_instant(InstantCause::Crossing);
         statistics.record_retake();
+        statistics.record_zero_width(ZeroWidthCause::PassedValue);
+        statistics.record_zero_width(ZeroWidthCause::PassedValue);
+        statistics.record_zero_width(ZeroWidthCause::CrossingChange);
         assert_eq!((statistics.instants_run(), statistics.retaken(), statistics.accepted()), (2, 1, 0));
+        assert_eq!(
+            (statistics.zero_width_for(ZeroWidthCause::PassedValue), statistics.zero_width_for(ZeroWidthCause::CrossingChange)),
+            (2, 1)
+        );
+        assert_eq!(statistics.zero_width_solves(), 3);
         assert_eq!((statistics.instants_for(InstantCause::Scheduled), statistics.instants_for(InstantCause::Crossing)), (1, 1));
     }
 }

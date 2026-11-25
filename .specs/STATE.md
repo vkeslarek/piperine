@@ -1940,6 +1940,35 @@ merges second). It extends MD-78 (unknown is explicit) and the POM rule (MD-44):
    listing whose top has `in Bit` ports runs inside a bench that gives them one. The code is right; the listing is not edited.
 7. **Closed:** `GAPS.md` L21, L22 and L23; the §11 rows natures#2, natures#3, digital#16 to digital#20, core-std#6.
 
+### MD-84: a value passed through within an instant is read by a zero-width solve at it
+
+`fix/idtmod-wrap` (2026-11-24; **AFK default, pending user review**; a collision of the number at merge is renumbered by
+whoever merges second). Found by `generics` phase E (T109): `idtmod` never wrapped, a silent wrong result.
+
+1. **Root cause.** The owner delivered to the analog side only what an instant left behind (`Outcome::boundary`, each
+   analog-read net at its value after the loop, filtered against the analog copy). `idtmod`'s `seat` rises at `(t, n+1)` and
+   falls at `(t, n+2)`, so it ends where it began and never reached the solve: `idt`'s `reset` never held, `base` was ignored
+   and the integral grew past `offset + modulus`. The spec agreed with the code (§15.2 "the step that reads the first reads
+   them all") and disagreed with §22.2.9 rule 3; the class is every analog read of a carrier that pulses within an instant.
+2. **Rule (§15.2 rule 4, amended).** A carrier or param `analog` reads that holds a value at the end of one microstep of a
+   transient time point and loses it later in that instant (host suspensions included) has passed through it. A
+   **zero-width solve** at `t` reads every change of the loop, each passing carrier at the first value it passed through:
+   a backward-Euler step of width ε = 10⁻⁶ tick, so every `ddt` state moves by at most ε times its derivative, far below
+   any tolerance, and no integrand gains area a tolerance sees (a zero-width pulse has zero area), and a
+   constraint the values force (`idt`'s `reset`) moves its state there. Its solution replaces the one at `t`; a crossing it
+   makes fires at the next microstep, and what that crossing's reactions pass through or change is read by another
+   zero-width solve (never a retake, which would undo the first; one loop with rule 4's retake, round bound `E0504`). The
+   settle phase runs once after the last solve; the first step after `t` reads what the instant left (a jump). Not in an
+   equilibrium round (no state is carried) nor in a host `set` between runs (nothing is solved). First version retook the
+   step to `t` over its whole width; the coordinator ruled (verification finding 3) that a pulse must gain no area.
+3. **Code.** `piperine-digital-solver` records the passing values on `Digital` for the whole instant (`passing.rs`,
+   `Outcome::passing`) and leaves that instant's settle phase to the owner; `piperine-solver` reads them
+   (`protocol/retake.rs::read_instant`, one loop for retakes and zero-width solves; `AnalogSide::zero_width`;
+   `TransientSolver::device_zero_width`: one backward-Euler solve from the solution at `t` over 1e-6 of a tick, the time
+   kept at `t`), counts them (`StepStatistics::zero_width_for`, `ZeroWidthCause`), and the adapter gives the analog copy
+   back what a pulse took away (`restore_passed`). GAPS X1 closed (its §15 text was already the solve-then-react order; the
+   stale §15.2 note is replaced).
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

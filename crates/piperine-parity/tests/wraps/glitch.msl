@@ -1,0 +1,40 @@
+//! A zero-delay glitch on a carrier `analog` reads (docs/spec §15.2 rule 4): `pulse` rises at 1 us
+//! and falls at the next microstep of the same instant. It drives the input of an `idt` (1 MV/s
+//! while high) and the source of an RC (1 V while high, 1 kOhm, 1 nF). A pulse of zero width has
+//! zero area: neither the integral nor the capacitor moves, whatever the step.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Ideal capacitor.
+module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+}
+analog for Capacitor { i(p, n) +> c * ddt(v(p, n)); }
+
+module Glitch() {
+    signal pulse: Bit = false;
+    signal integral: Electrical;
+    signal source: Electrical;
+    signal charged: Electrical;
+    let integral_load = Resistor { r: 1k }(integral, gnd);
+    let series = Resistor { r: 1k }(source, charged);
+    let hold = Capacitor { c: 1n }(charged, gnd);
+    let level = if pulse { 1.0 } else { 0.0 };
+    let area = idt(1M * level, Some(0.0));
+}
+analog for Glitch {
+    v(integral) +> area;
+    v(source) +> level;
+}
+digital for Glitch {
+    on at(1u) {
+        pulse <- true;
+    }
+    on pulse.rise() {
+        pulse <- false;
+    }
+}

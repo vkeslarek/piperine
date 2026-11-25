@@ -22,16 +22,16 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 18 loud (L1 to L89 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the four `resolved-nets` rows (L21, L22, L23, L71) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, L29, L32, L78, L79 and L80 closed by `generics` phase D, L40, L77, L88 and L89 closed by `generics` phase E, in six tables) plus
-7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
+**Counts.** 0 silent, 2 broken, 18 loud (L1 to L89 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the four `resolved-nets` rows (L21, L22, L23, L71) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, L29, L32, L78, L79 and L80 closed by `generics` phase D, L40, L77, L88 and L89 closed by `generics` phase E, in six tables) plus
+7 backend and diagnostic notes, 8 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S9 (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |
+| §3 Silent (read this first) | none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |
 | §4 Loud | L1–L89 (L40, L77, L88 and L89 closed by `generics` phase E (L88 found by the `generics` phase D round 14 verification; L89, a param of an array of templates, found by its T119 and closed by T121); L83 to L87 found by the `generics` phase D fix round 14, owners `spec-closure` (L83), `generics` (L84), `closures` (L85, with `spec-closure` for its code, and L86) and `params-and-io` (L87); L21, L22, L23 and L71 closed by `resolved-nets`; L82 found by the `generics` phase D fix round 10, owner `spec-closure`; L78, L79 and L80 found by the `generics` phase D verification and fix round 1, L78, L79 and L80 closed by its fix round 2, which found L81, owner `spec-closure`; L76 and L77 found by the `generics` phase C round 4 fix, owners `spec-closure` and `generics` phase E (T118); L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
-| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
+| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X2 (X1 closed by `fix/idtmod-wrap`; X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`, U7 by `analog-operators`) |
@@ -51,7 +51,7 @@ change of the IR or the ABI.
 | backends | IR → Rust → `rustc` → device library: everything the checker accepts. The interpreter is frozen at the M1 analog subset (R1) |
 | analyses from a host | `op`, `dc` (one sweep), `ac`, `transient`; on both backends for the 7 ngspice twins |
 | digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`), scenarios S2 to S10 on the Rust host (`buck_scenarios`) |
-| stdlib that runs | `since`, `idt`, `idtmod` (until its first wrap, S9), `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `MinPulse`, `inertial`, `TribufDelayed`, `Short`, `cast`, `same`, `rise`, `fall`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `normal`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 30 of the 75 names of the §22 index |
+| stdlib that runs | `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `MinPulse`, `inertial`, `TribufDelayed`, `Short`, `cast`, `same`, `rise`, `fall`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `normal`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 30 of the 75 names of the §22 index |
 | command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
 | language server | **does not build**, deferred by the user |
 
@@ -73,10 +73,6 @@ change of the IR or the ABI.
 ---
 
 ## 3. Silent — accepted, then wrong or ignored
-
-### S9. The stdlib `idtmod` does not wrap — size M, owner `spec-closure` (solver, X1)
-
-`idtmod` (§22.2.9) runs and gives the §22.2.9 value until the integral first reaches `offset + modulus`; from there it keeps growing instead of wrapping into `[offset, offset + modulus)`. The digital side is right (`seat` pulses and `base` holds `acc - modulus` at the crossing), but the analog solve does not see the `seat` pulse between the microsteps of that instant (§22.2.9 rule 3 needs a jump solve; X1: "§15 describes a solver that is gone"), so a result is accepted and wrong. Found by `generics` phase E T109; `idt_and_idtmod_integrate_against_section_22` holds `idtmod` to §22.2.9 before the first wrap only (marked `SPEC_DEVIATION`). A fix is on `fix/idtmod-wrap` (the solver retakes the step when an analog-read net passes through a value within an instant); this entry and the guard leave with its merge.
 
 S3, the check of a generic module's body, closed by `generics` phase C (T60 to T71): `Types::check_model` types every generic module once at its definition and a placement of one is typed and lowered per instance.
 
@@ -153,7 +149,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
-| L58 | Stdlib refused with the form it is built on: `AckWithin` (a `u32` param), `limvds` as a function value (L9). The generics group runs since `generics` phase E (one wrap that does not happen: S9) | §22 | by its group |
+| L58 | Stdlib refused with the form it is built on: `AckWithin` (a `u32` param), `limvds` as a function value (L9). The generics group runs since `generics` phase E | §22 | by its group |
 | L59 | the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
 | L62 | a `switch` branch between two floating nodes with an undriven control panics in faer (`attempt to subtract with overflow`, `faer.rs:47`) instead of a named solver error (owner `spec-closure`; found by the `analog-structure` fix round) | §11 (switch branches), §15 | a switch between two floating nodes whose control no source drives | S |
@@ -191,11 +187,6 @@ G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value
 - **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to N
   bits (probe: `1u8 << 9` is 0). A negative amount panics in compiled code (a fault, F-B9).
 - **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals of the buck.
-- **X1 — §15 describes a solver that is gone.** Its notes say the microsteps of `t` run before
-  the solve of `t`, and that the device ABI order (solve, then react) "is adopted: `solver-abi`
-  implements it and rewrites §15 when it changes the code". MD-62 changed the code; §15, §15.2
-  and the rows of C.2 (`run_digital_at`, `predict_step`, `settle_digital`) were not rewritten.
-  Nobody has compared what a reaction at `(t, 0)` reads with what the text says.
 - **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
   `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
   source.
@@ -295,12 +286,12 @@ does not count.
 | IV §10–§11 analog | 80 % | an ideal-step `slew` (L60) |
 | IV §12–§13 digital, events | 70 % | the forms L75 lists; arrays of carriers, element and field commits run (composite-values phase C) |
 | IV §14 core primitives | 85 % | `others`, `include_str!` |
-| V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
+| V §15–§18 execution | 60 % | digital-only runs, error naming |
 | VI §19–§21 output, input, metadata | 45 % | files, host metadata |
-| VII §22 stdlib | 60 % (about 45 of 75 names; `normal` runs, and the generics group since `generics` phase E) | `AckWithin` and `limvds` as a function value (L58), the wrap of `idtmod` (S9); the nets of §22.3 run: `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir` |
+| VII §22 stdlib | 60 % (about 45 of 75 names; `normal` runs, and the generics group since `generics` phase E) | `AckWithin` and `limvds` as a function value (L58); the nets of §22.3 run: `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir` |
 | VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
 | A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
-| C reference implementation | defaults in place | the C.2 text is stale (X1, X2); 1 of the 5 conformance items runs |
+| C reference implementation | defaults in place | the C.2 text is stale (X2); 1 of the 5 conformance items runs |
 | D, E, F galleries | 0 % proven | U4 |
 | H inherited library | 100 % (75 of 75 method rows) | none: H.5 to H.7 run |
 
@@ -342,7 +333,7 @@ E0807 E0808 E0809`
 | Speed | V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
 | Language server | B3 | M, deferred |
-| Documents | X1, X2, H13 | S |
+| Documents | X2, H13 (X1 closed by `fix/idtmod-wrap`) | S |
 
 ---
 
