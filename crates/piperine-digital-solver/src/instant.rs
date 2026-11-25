@@ -192,7 +192,7 @@ impl Digital {
                 out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
                 out.fired = fired.into_iter().collect();
                 out.host_events = host_events;
-                out.passing = self.passing.retake_state(&self.store);
+                out.passing = self.passing.read_state(&self.store);
                 return Ok(Stepped::Done(out));
             }
 
@@ -227,7 +227,7 @@ impl Digital {
         }
         // what the whole instant passed through, every part of it: a value passed through is read
         // by the owner after the instant, and the settle phase follows that reading
-        out.passing = self.passing.retake_state(&self.store);
+        out.passing = self.passing.read_state(&self.store);
         if mode.settle && self.passing.is_empty() {
             let settled = self.settle_phase(at, n, samples, limit, mode)?;
             out.finish |= settled.finish;

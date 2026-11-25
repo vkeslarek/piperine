@@ -16,8 +16,8 @@
 //! Step 5 has two more cases (§15.2 rule 4, `retake`): when the step read a jump, a crossing of
 //! its own fired and the instant changed what analog reads, the step is retaken to t_c with the
 //! change and the retaken solution replaces the first; and when a value analog reads passed
-//! within the instant (a pulse), the step is retaken to t_c on the values passed through, the
-//! instant's settle phase following that step.
+//! within the instant (a pulse), a zero-width solve at t_c reads it, and the instant's settle
+//! phase follows that solve.
 //!
 //! The order of steps 3 and 5 is the user's (solver-completeness context.md,
 //! 2026-11-15: "ABI order: solve, then react"); the jump handling is the kept one.
@@ -455,11 +455,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             };
             // a value passed through within the instant left the settle phase to follow its retake
             let passed = !outcome.passing.is_empty();
-            if unknowns && passed {
+            if unknowns && (passed || jump.wanted(&crossings, &outcome)) {
                 let continued = InstantMode { settle: false, ..mode };
-                outcome = self.retake_passing(&c.analog, tick_c, crossings, outcome, limit, continued).map_err(|e| at(t_c, e))?;
-            } else if unknowns && jump.wanted(&crossings, &outcome) {
-                outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, rounds).map_err(|e| at(t_c, e))?;
+                outcome = self
+                    .read_instant(&c.analog, tick_c, crossings, outcome, jump.reads_jump(), limit, continued)
+                    .map_err(|e| at(t_c, e))?;
             }
             if deferred || (passed && rounds.settle) {
                 // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`

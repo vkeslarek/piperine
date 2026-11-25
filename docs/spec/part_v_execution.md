@@ -98,7 +98,7 @@ produce the result of the following procedure.
       (§8.5).
    4. *Exit test.* Leave the loop when nothing is pending at `(t, n + 1)`. A change made at `t`
       is not read by a solve at `t`: the first step after `t` reads it (§15.2), and a value passed
-      through within the instant is read by the step to `t`, retaken (§15.2 rule 4).
+      through within the instant is read by a zero-width solve at `t` (§15.2 rule 4).
 4. *Settle.* Every reaction on `settle` runs once, reading the final discrete state and the
    solution at `t`. This is the **settle phase**.
 5. *Advance* to the next time point (§17.2). The first step after `t` reads every change made
@@ -255,7 +255,7 @@ it depends on when the change is made:
 
 When several changes occur at one `t`, in successive microsteps, the step that reads the first
 of them reads them all. A value that one of them gives and a later one takes back within the
-instant (a pulse) is not lost: rule 4 retakes the step to `t` with it.
+instant (a pulse) is not lost: a zero-width solve at `t` reads it (rule 4).
 
 **Host `set`.** A `set` due at `t` lands the solver on `t` but is not applied before the step
 that arrives there: that step is tested for truncation error like any other and does not read
@@ -296,24 +296,29 @@ transient step that reads the change, so the set has no solve of its own.
    The instant's microstep numbering goes on across the rounds: a crossing only a retaken solution makes fires at the next microstep of `t`, and the settle phase that follows runs after the last microstep, so its records are stamped `(t, last)` (§19). The instant's settle phase runs once, after its last round, so a retake never runs an
    `on settle` reaction twice at `t`, and the settle commits it holds are the ones the analog side
    is given.
-   **A value passed through within the instant is read by a retake too.** A carrier or a param
-   that `analog` reads **passes through** a value when it holds that value at the end of one
+   **A value passed through within the instant is read by a zero-width solve.** A carrier or a
+   param that `analog` reads **passes through** a value when it holds that value at the end of one
    microstep of `t` (step 3.2) and loses it at a later microstep of `t`, as the high of a pulse
-   that rises and falls within the instant does. The instant does not leave it behind, so the
-   first step after `t` cannot read it. When the microstep loop of a transient time point passes
-   through a value, the step that arrives at `t` is retaken to `t` reading every change the loop
-   made: each carrier or param that passed through a value at the first value it passed through,
-   every other one at its value after the loop. The retaken solution replaces the first; it is
-   exempt from the truncation-error test and restarts the integrator, as above. The reactions
-   that ran are not run again, a crossing only the retaken solution makes fires at the next
-   microstep of `t` and its reactions run there, and a value they pass through retakes again,
-   reading what the earlier rounds passed through with the new values laid over it (the round
-   bound and `E0504` as above). The settle phase runs once, after the last round, and reads the
-   retaken solution. The first step after `t` reads what the instant leaves behind: it reads a
-   jump (rule 6). A state the passed value forces (rule 2: an `idt` whose `reset` pulses holds its
-   `ic` in the retaken step) is carried from the retaken solution. In an operating point, a
-   round solves the equilibrium again (§16), which carries no state, and a value passed through
-   is not solved; a host `set` between two runs, which solves nothing, does not retake either.
+   that rises and falls within the instant does, whatever host waiters suspend the instant
+   between. The instant does not leave it behind, so the first step after `t` cannot read it.
+   When the microstep loop of a transient time point passes through a value, a **zero-width
+   solve** at `t` reads every change the loop made: each carrier or param that passed through a
+   value at the first value it passed through, every other one at its value after the loop. A
+   zero-width solve is a solve at `t` in which no time passes. Every state is carried from the
+   solution at `t` (rule 1), so an integrand gains no area there: a pulse of zero width has zero
+   area, whatever the step that arrived at `t`. A constraint the values force moves its states as
+   in the step that reads a jump (rule 2): an `idt` whose `reset` holds takes its `ic` there.
+   Its solution replaces the solution at `t`, the reactions that ran are not run again, and a
+   crossing only that solution makes fires at the next microstep of `t`. When the reactions of
+   that crossing pass through a value or change a carrier or a param that `analog` reads, another
+   zero-width solve at `t` reads it; a retake of the step would undo the reading before it. The
+   round bound and `E0504` are the retake's. A value passed through is read by a zero-width
+   solve even at a step that read a jump: the change rule 4 would retake the step with is read
+   with it. The settle phase runs once, after the last solve at `t`, and reads its solution. The
+   first step after `t` reads what the instant leaves behind: it reads a jump (rule 6). In an
+   operating point, a round solves the equilibrium again (§16), which carries no state, and a
+   value passed through is not solved; a host `set` between two runs, which solves nothing, makes
+   no zero-width solve either.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
@@ -347,10 +352,13 @@ transient step that reads the change, so the set has no solve of its own.
     (§23.3.2).
 
 > **Resolution (AFK default 2026-11-24, pending user review).** The value passed through within an
-> instant (rule 4) is stated here. Before it the step after `t` read only what the instant left
-> behind, so a pulse that ended where it began never reached `analog`, and `idtmod` (§22.2.9),
-> whose wrap is a pulse of `seat`, never wrapped. The solver runs the order of §15: the step to
-> `t` first, on the left value, then the microsteps of `t` (MD-62).
+> instant and the zero-width solve that reads it (rule 4) are stated here. Before them the step
+> after `t` read only what the instant left behind, so a pulse that ended where it began never
+> reached `analog`, and `idtmod` (§22.2.9), whose wrap is a pulse of `seat`, never wrapped. A
+> retake of the step to `t` would read the pulse too, but over the whole step: an integrand that
+> reads it would gain an area of the step times its value, which depends on the step, where a
+> pulse of zero width has none. The solver runs the order of §15: the step to `t` first, on the
+> left value, then the microsteps of `t` (MD-62).
 
 **Errors**
 

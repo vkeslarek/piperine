@@ -174,13 +174,13 @@ impl DigitalSide {
     }
 
     /// The values an instant passed through (`Outcome::passing`) as the slots they are. The copy
-    /// does not take them: they reach the analog side for the retaken step only.
+    /// does not take them: they reach the analog side for the zero-width solve only.
     fn passing_slots(&self, nets: Vec<(NetId, Vec<u8>)>) -> Vec<Boundary> {
         nets.into_iter().map(|(net, bytes)| Boundary { slot: self.slots[&net], bytes }).collect()
     }
 
     /// Adds to `boundary` each slot that `passing` moves away from the copy and the instant left
-    /// where it began (a pulse): after the retaken step, the analog side takes the copy's bytes back.
+    /// where it began (a pulse): after the zero-width solve, the analog side takes the copy's bytes back.
     fn restore_passed(&self, passing: &[Boundary], boundary: &mut Vec<Boundary>) {
         for passed in passing {
             let kept = &self.copy[passed.slot as usize];
@@ -417,6 +417,10 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
         unreachable!("an operating point takes no step")
     }
 
+    fn zero_width(&mut self) -> Result<Option<Accepted>> {
+        unreachable!("an operating point reads no passed value (an equilibrium holds no state)")
+    }
+
     fn equilibrium(&mut self) -> Result<Accepted> {
         let x = self.dc.equilibrium(self.solution.is_none())?;
         let amb = self.dc.system.ambient();
@@ -494,6 +498,10 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn accept(&mut self) -> Result<Accepted> {
         self.tran.device_accept(&mut self.run)
+    }
+
+    fn zero_width(&mut self) -> Result<Option<Accepted>> {
+        self.tran.device_zero_width(&mut self.run)
     }
 
     fn equilibrium(&mut self) -> Result<Accepted> {

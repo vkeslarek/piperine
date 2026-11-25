@@ -1,8 +1,8 @@
-//! A value `analog` reads that passes within one instant, run from MSL source on the Rust backend:
-//! the stdlib `idtmod` (Part VII §22.2.9) wraps its integral through a `seat` pulse of one
-//! microstep, which the step to the instant must read (§15.2 rule 4). The fixture
-//! `tests/wraps/idtmod_ramp.msl` integrates a constant across several wraps; the expected sawtooth
-//! is computed here in Rust, never read back from the model.
+//! A value `analog` reads that passes within one instant, run from MSL source on the Rust backend
+//! (§15.2 rule 4: a zero-width solve at the instant reads it): the stdlib `idtmod` (Part VII
+//! §22.2.9) wraps its integral through a `seat` pulse of one microstep (`tests/wraps/idtmod_ramp.msl`,
+//! the sawtooth computed here in Rust across several wraps), and a zero-delay glitch into an `idt`
+//! and an RC gains no area at any step (`tests/wraps/glitch.msl`).
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -113,5 +113,47 @@ fn idtmod_wraps_its_integral_into_the_range_at_every_wrap() {
         let (low, high) = values.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
         let (bottom, top) = (Sawtooth::OFFSET, Sawtooth::OFFSET + Sawtooth::MODULUS);
         assert!(low >= bottom - 1e-8 && high <= top + 1e-8, "idtmod {} stays in [{bottom}, {top}]: [{low}, {high}]", sawtooth.node);
+    }
+}
+
+/// The bench of `wraps/glitch.msl`.
+struct GlitchBench;
+
+impl GlitchBench {
+    /// The nodes the glitch drives through an integrand: the `idt` and the RC's capacitor.
+    const NODES: [&'static str; 2] = ["integral", "charged"];
+
+    /// Each node's value at every accepted step after the glitch, over a run to 3 us with the step
+    /// cap `step`.
+    fn after_glitch(step: f64) -> Vec<Vec<f64>> {
+        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps/glitch.msl");
+        let built = build(&Project::new(&path), "Glitch");
+        let (_, result) = built.run_with(3e-6, step);
+        let accepted: Vec<_> = result.iter().filter(|point| point.time() >= 1e-6).collect();
+        let values = Self::NODES
+            .iter()
+            .map(|name| {
+                let path = format!("Glitch.{name}");
+                let node = NodeIdentifier::Anonymous(built.ir.node_at(&path).expect("a node of the bench").id().index());
+                accepted.iter().map(|point| point.get_node(&node).expect("its voltage")).collect()
+            })
+            .collect();
+        values
+    }
+}
+
+#[test]
+fn a_zero_delay_glitch_gains_no_area_at_any_step() {
+    // §15.2 rule 4: the glitch is read by one zero-width solve at 1 us, where no time passes. The
+    // integral of 1 MV/s over no time and the charge 1 V puts on 1 nF through 1 kOhm over no time
+    // are both 0, at a step cap of 50 ns and of 200 ns alike: a retake of the step to 1 us would
+    // have integrated the high over the whole step (0.05 and 0.2 here)
+    for step in [0.05e-6, 0.2e-6] {
+        let values = GlitchBench::after_glitch(step);
+        for (name, node) in GlitchBench::NODES.iter().zip(values) {
+            assert!(!node.is_empty(), "{name} has steps after the glitch");
+            let largest = node.iter().fold(0.0_f64, |most, v| most.max(v.abs()));
+            assert!(largest < 1e-12, "{name} gains no area from the glitch at step {step:e}: {largest:e}");
+        }
     }
 }

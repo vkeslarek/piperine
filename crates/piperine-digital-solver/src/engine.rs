@@ -41,7 +41,7 @@ pub struct Mode {
     pub is_static: bool,
     /// Fire `SETTLE` once the microstep loop is quiet, unless an analog-read net passed through
     /// a value in a transient instant (`Outcome::passing`): the owner then runs the phase after
-    /// it has retaken the step.
+    /// it has read them (a zero-width solve).
     pub settle: bool,
 }
 
@@ -78,10 +78,10 @@ pub struct Outcome {
     pub settle_boundary: Vec<(NetId, Vec<u8>)>,
     /// When an analog-read net held a value at the end of one microstep of a transient instant and
     /// lost it at a later one (a pulse, docs/spec §15.2 rule 4), in any part of the instant up to
-    /// this one (a suspension for the host's waiters keeps the record): the state the owner retakes the
-    /// step to the instant on, each analog-read net the instant changed at the first value it
+    /// this one (a suspension for the host's waiters keeps the record): the state the owner's
+    /// zero-width solve at the instant reads, each analog-read net the instant changed at the first value it
     /// passed through, or at its value after the instant. The settle phase has not run then, even
-    /// under `Mode::settle`: it follows the retake. Empty otherwise, and always in an equilibrium.
+    /// under `Mode::settle`: it follows that solve. Empty otherwise, and always in an equilibrium.
     pub passing: Vec<(NetId, Vec<u8>)>,
 }
 

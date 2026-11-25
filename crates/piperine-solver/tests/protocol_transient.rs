@@ -736,11 +736,12 @@ fn its_devices_pass_the_partials_verifier() {
 }
 
 #[test]
-fn a_value_passed_within_an_instant_retakes_its_step_and_settle_follows() {
+fn a_value_passed_within_an_instant_is_read_by_a_zero_width_solve_and_settle_follows() {
     // docs/spec §15.2 rule 4: the landing's instant passes slot 3 through a high it does not keep
-    // (a pulse) and leaves slot 4 changed. The step to 1 s is retaken on those values (the
-    // retaken solution replaces the first, and the reactions read it), the settle phase runs once
-    // after that step, and the first step after 1 s reads what the instant left: slot 3 back low
+    // (a pulse) and leaves slot 4 changed. The step to 1 s is not retaken: a zero-width solve at
+    // 1 s reads those values (its solution replaces the first, and the settle phase reads it),
+    // the settle phase runs once after it, and the first step after 1 s reads what the instant
+    // left: slot 3 back low
     let (log, mut d, mut a) = sides();
     let kept = Boundary { slot: 4, bytes: vec![2] };
     let high = Boundary { slot: 3, bytes: vec![1] };
@@ -756,7 +757,10 @@ fn a_value_passed_within_an_instant_retakes_its_step_and_settle_follows() {
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(3.0).unwrap();
     let seq = calls(&log, |c| {
-        matches!(c, Call::Deliver(..) | Call::Attempt { .. } | Call::Accept | Call::RunInstant { .. } | Call::AnalogRestore(_))
+        matches!(
+            c,
+            Call::Deliver(..) | Call::Attempt { .. } | Call::Accept | Call::ZeroWidth | Call::RunInstant { .. } | Call::AnalogRestore(_)
+        )
     });
     let settling = InstantMode { is_static: false, settle: true };
     assert_eq!(
@@ -765,12 +769,10 @@ fn a_value_passed_within_an_instant_retakes_its_step_and_settle_follows() {
             Call::Attempt { to: 1.0, landing: true },
             Call::Accept,
             Call::RunInstant { at: 2, samples: vec![0.5], limit: horizon(6, 2), mode: settling },
-            // the retake: back to the step's start, on the values passed through, to the same time
-            Call::AnalogRestore(0),
+            // the zero-width solve at 1 s, on the values passed through: nothing is restored
             Call::Deliver(vec![high, kept.clone()], Restart::Integrator),
-            Call::Attempt { to: 1.0, landing: true },
-            Call::Accept,
-            // the settle phase follows the retaken step and reads its solution
+            Call::ZeroWidth,
+            // the settle phase follows it and reads its solution
             Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(6, 2), mode: settling },
             // what the instant left behind reaches the next step, with the restart of a jump
             Call::Deliver(vec![kept, low], Restart::Integrator),
@@ -779,6 +781,55 @@ fn a_value_passed_within_an_instant_retakes_its_step_and_settle_follows() {
             Call::RunInstant { at: 6, samples: vec![], limit: horizon(6, 6), mode: settling },
         ]
     );
+}
+
+#[test]
+fn a_crossing_the_zero_width_solve_makes_is_read_by_another() {
+    // docs/spec §15.2 rule 4: the zero-width solve at 1 s makes crossing 7; it fires at the next
+    // microstep and its reaction changes slot 5 once. That change is read at 1 s by a second
+    // zero-width solve (never by a retake of the step, which would undo the first), and the
+    // first step after 1 s reads every change of the instant
+    let (log, mut d, mut a) = sides();
+    let kept = Boundary { slot: 4, bytes: vec![2] };
+    let high = Boundary { slot: 3, bytes: vec![1] };
+    let low = Boundary { slot: 3, bytes: vec![0] };
+    let made = Boundary { slot: 5, bytes: vec![1] };
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::AnalogReadChanged });
+    d.instants.push_back(Outcome {
+        boundary: vec![kept.clone(), low.clone()],
+        passing: vec![high.clone(), kept.clone()],
+        ..Outcome::default()
+    });
+    d.instants.push_back(Outcome { boundary: vec![made.clone()], ..Outcome::default() });
+    a.accepts.extend([
+        Accepted { fired: vec![], samples: vec![0.5] },
+        Accepted { fired: vec![7], samples: vec![0.25] },
+        Accepted { fired: vec![7], samples: vec![0.125] },
+    ]);
+    a.proposals.extend([3.0, 3.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(3.0).unwrap();
+    let seq = calls(&log, |c| {
+        matches!(c, Call::Deliver(..) | Call::ZeroWidth | Call::Fire(..) | Call::RunInstant { .. } | Call::AnalogRestore(_))
+    });
+    let settling = InstantMode { is_static: false, settle: true };
+    let continued = InstantMode { is_static: false, settle: false };
+    assert_eq!(
+        seq[..8],
+        [
+            Call::RunInstant { at: 2, samples: vec![0.5], limit: horizon(6, 2), mode: settling },
+            Call::Deliver(vec![high, kept.clone()], Restart::Integrator),
+            Call::ZeroWidth,
+            // the crossing it made fires at the next microstep, and the instant goes on
+            Call::Fire(7, 2),
+            Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(6, 2), mode: continued },
+            // the change of its reaction, read by a second zero-width solve
+            Call::Deliver(vec![made.clone()], Restart::Integrator),
+            Call::ZeroWidth,
+            Call::RunInstant { at: 2, samples: vec![0.125], limit: horizon(6, 2), mode: settling },
+        ]
+    );
+    assert_eq!(seq[8], Call::Deliver(vec![kept, low, made], Restart::Integrator), "every change of the instant");
 }
 
 #[test]

@@ -24,9 +24,13 @@ pub(crate) struct Delayed {
 impl Delayed {
     /// Records the value at an accepted time and drops what no delay up to
     /// `max` can read any more (one point before `t − max` stays, for the
-    /// interpolation).
+    /// interpolation). A value at the time of the last one (a zero-width solve, which replaces
+    /// the solution there) replaces it.
     pub fn push(&mut self, t: f64, v: f64, max: f64) {
-        self.points.push((t, v));
+        match self.points.last_mut() {
+            Some(last) if last.0 == t => last.1 = v,
+            _ => self.points.push((t, v)),
+        }
         let horizon = t - max;
         let before = self.points.iter().take_while(|(s, _)| *s < horizon).count();
         if before > 1 {

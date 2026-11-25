@@ -2,8 +2,8 @@
 //! §15.2 rule 4): a value the net holds at the end of one microstep and loses at a later
 //! microstep of the same instant, such as the high of a one-microstep pulse. The analog side
 //! reads only what an instant leaves behind, so without this record a pulse that ends where it
-//! began would never reach it; the owner instead retakes the step to the instant on the state
-//! `retake_state` builds.
+//! began would never reach it; the owner instead reads, at the instant, the state
+//! `read_state` builds, by a zero-width solve.
 
 use std::collections::BTreeMap;
 
@@ -40,10 +40,10 @@ impl PassingValues {
         self.passed.is_empty()
     }
 
-    /// The state the step to the instant is retaken on: every analog-read net the instant changed,
+    /// The state the zero-width solve at the instant reads: every analog-read net the instant changed,
     /// at the first value it passed through when it passed through one, and at its value as the
     /// store holds it otherwise. Empty when no net passed through a value.
-    pub(crate) fn retake_state(&self, store: &Store) -> Vec<(NetId, Vec<u8>)> {
+    pub(crate) fn read_state(&self, store: &Store) -> Vec<(NetId, Vec<u8>)> {
         if self.is_empty() {
             return Vec::new();
         }

@@ -957,7 +957,7 @@ digital<S> for idtmod<S> {
 | Microstep | Applied | Effect |
 | --- | --- | --- |
 | `n` | — | a `cross` fires; its reaction commits `base` and `seat <- true` |
-| `n + 1` | `base`, `seat` high | `seat` passes through high: the step to the instant is retaken with it, and in that step `idt` forces its node to `base` (§15.2.2, §15.2.4); `seat.rise()` commits `seat <- false` |
+| `n + 1` | `base`, `seat` high | `seat` passes through high: a zero-width solve at the instant reads it, and there `idt` forces its node to `base` (§15.2.2, §15.2.4); `seat.rise()` commits `seat <- false` |
 | `n + 2` | `seat` low | read by the first step after the instant: the integral continues from `base` (§15.2.1) |
 
 4. The seated value lies inside the range. Neither `cross` fires again at that instant.
