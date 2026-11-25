@@ -263,3 +263,15 @@ fn a_hoisted_module_with_generation_runs() {
         assert_eq!(HoistedGeneration::changes(&format!("second.s[{k}]")), vec![(2 * ns, vec![3 * (k + 1)])], "the element {k} of the second frame");
     }
 }
+
+#[test]
+fn a_template_array_element_placed_in_generation_runs() {
+    // GN-17, GAPS L88 (§8.4.1, §8.4.4): `fs[k](a)` in a generation `for` places the element `k` of the array of templates at its
+    // own params: `y[k]` is `a * m[k]` with `m` = 1, 2, 5, and `a` goes from 3 to 4 at 1 ns
+    let built = support::build(&GenerationModels::project("template_array.msl"), "Bench");
+    let seen = built.run(2e-9, 0.5e-9);
+    let ns = 1_000_000;
+    for (k, m) in [1u8, 2, 5].into_iter().enumerate() {
+        assert_eq!(support::transient(&seen, &format!("Bench.y[{k}]")), vec![(ns, vec![4 * m])], "element {k}: a * {m} after `a` becomes 4");
+    }
+}

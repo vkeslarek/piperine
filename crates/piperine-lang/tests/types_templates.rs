@@ -388,3 +388,15 @@ fn every_callee_form_the_grammar_admits_is_called_by_its_value() {
         assert_eq!(source.codes(), codes, "{form}: {}", source.message());
     }
 }
+
+#[test]
+fn an_array_of_templates_of_one_module_checks_and_places_its_element() {
+    // §8.4.1, §8.4.4 (GAPS L88): `[Cell { }, Cell { cs: 2.0 }]` is an array of `Cell` values, `fs[1](x)` places the module of its
+    // element, a `[Cell; 2]` `const` holds one, and an array of two modules is a mismatch (`E0180`)
+    let held = TemplateSource::new("module Top() { signal x: E; let fs = [Cell { }, Cell { cs: 2.0 }]; let c = fs[1](x); }\n");
+    assert!(held.codes().is_empty(), "{:?}", held.codes());
+    let declared = TemplateSource::new("const PAIR: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }];\nmodule Top() { signal x: E; let c = PAIR[0](x); }\n");
+    assert!(declared.codes().is_empty(), "{:?}", declared.codes());
+    let mixed = TemplateSource::new("module Top() { signal x: E; let fs = [Cell { }, Sizing { size: 1.0 }]; }\n");
+    assert_eq!(mixed.codes(), ["E0180"], "two modules in one array");
+}

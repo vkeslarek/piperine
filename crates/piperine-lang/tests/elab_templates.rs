@@ -488,3 +488,38 @@ fn every_callee_form_elaborates_to_what_it_names() {
         Elab::ir(&format!("{head}module Top() {{ n: u8 = 0; signal x: Electrical; {form} signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * b; }}"), "Top");
     }
 }
+
+#[test]
+fn an_array_of_templates_places_the_element_at_an_index() {
+    // §8.4.1, §8.4.4 (GAPS L88): `fs[1](x)` is the placement the element names, by a written index, a `const` index and the
+    // index of a generation `for`: the instance `Cell(x) { cs: 2.0 }` places, one per element in generation
+    let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let c1 = Cell(x) {{ cs: 2.0 }}; }}"), "Top");
+    let written = format!("{CELL}module Top() {{ signal x: Electrical; let fs = [Cell {{ }}, Cell {{ cs: 2.0 }}]; let c1 = fs[1](x); }}");
+    let constant = format!("{CELL}const FS: [Cell; 2] = [Cell {{ }}, Cell {{ cs: 2.0 }}];\nmodule Top() {{ signal x: Electrical; let c1 = FS[1](x); }}");
+    let by_param = format!("{CELL}module Top() {{ pick: usize = 1; signal x: Electrical; let fs = [Cell {{ }}, Cell {{ cs: 2.0 }}]; let c1 = fs[pick](x); }}");
+    for source in [written, constant, by_param] {
+        let ir = Elab::ir(&source, "Top");
+        assert_eq!(Placed::first_param(&ir, "Top.c1"), Placed::first_param(&direct, "Top.c1"), "{source}");
+        assert_eq!(ir.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()), "{source}");
+    }
+    let generated = format!("{CELL}module Top() {{ signal x: Electrical; let fs = [Cell {{ }}, Cell {{ cs: 2.0 }}, Cell {{ cs: 3.0 }}]; for k in 0..3 {{ let c = fs[k](x); }} }}");
+    let ir = Elab::ir(&generated, "Top");
+    for (k, cs) in [1.0, 2.0, 3.0].into_iter().enumerate() {
+        assert_eq!(Placed::real(&ir, &format!("Top.c[{k}]")), Constant::Real(Real::new(cs)), "element {k} of the generated placements");
+    }
+}
+
+#[test]
+fn an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params() {
+    // §8.4.4 with §8.3.12: the result of `fs[k](x)` is the module's result at the element's params, by a written index and by
+    // the index of a generation `for` (`x * r` at `r` of the element)
+    let module = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let written = format!("{module}module Top() {{ signal y: Bit<f64>; let fs = [Scale {{ }}, Scale {{ r: 2.0 }}]; let t = Scale {{ r: 3.0 }}; let a = fs[1](5.0); let b = t(1.0); y = a + b; }}");
+    let ir = Elab::ir(&written, "Top");
+    let printed = ir.print_structural();
+    assert!(printed.contains("(5.0 * 2.0)") && printed.contains("(1.0 * 3.0)"), "{printed}");
+    let generated = format!("{module}module Top() {{ signal y: [Bit<f64>; 2]; let fs = [Scale {{ r: 2.0 }}, Scale {{ r: 4.0 }}]; for k in 0..2 {{ let s = fs[k](1.0); y[k] = s; }} }}");
+    let ir = Elab::ir(&generated, "Top");
+    let printed = ir.print_structural();
+    assert!(printed.contains("(1.0 * 2.0)") && printed.contains("(1.0 * 4.0)"), "{printed}");
+}

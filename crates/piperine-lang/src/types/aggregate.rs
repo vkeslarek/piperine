@@ -141,7 +141,7 @@ impl Checker<'_> {
         if element.is_carrier_element() {
             return Some(Ty::Array(Box::new(element), length));
         }
-        if !element.is_value() {
+        if !element.is_value() && !matches!(element, Ty::Module(_)) {
             self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
             return None;
         }
@@ -376,7 +376,8 @@ impl Checker<'_> {
             (None, _) => {
                 let first = items.iter().copied().find(|i| !self.integer_literal_waits(*i)).unwrap_or(items[0]);
                 let ty = self.infer(first)?;
-                if !ty.is_value() {
+                // an array of templates is a value of the elaboration (§8.4.1, GAPS L88)
+                if !ty.is_value() && !matches!(ty, Ty::Module(_)) {
                     let span = self.design.expr_node(first).span;
                     self.unsupported(file, span, &format!("a `{}` inside an array", ty.name(self.design)));
                     return None;

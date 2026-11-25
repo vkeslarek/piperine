@@ -184,7 +184,7 @@ impl Elaboration<'_, '_> {
     /// templates, whose head folds at elaboration (§8.4.6).
     pub(super) fn has_an_expression_head(&self, call: ExprId) -> bool {
         let ExprKind::Call { callee, class: CallClass::Instance { module: Some(_), via: None }, .. } = &self.design.expr_node(call).kind else { return false };
-        matches!(self.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_))
+        matches!(self.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) | ExprKind::Index { .. })
     }
 
     /// The template a placement through a template value places (§8.4.4, §8.4.9): the value the param of module type holds in the
