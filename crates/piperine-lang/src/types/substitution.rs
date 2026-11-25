@@ -196,7 +196,9 @@ impl Checker<'_> {
     }
 
     /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
-    /// naming the argument and the bound. A template parameter (`C: Fn(..)`, phase D) is `P0001` naming it. `None` after a refusal.
+    /// naming the argument and the bound. A template parameter (`C: Fn(..)`, phase D) takes a template of a module whose ports fit
+    /// (§8.4.5) or a generic parameter of the caller bounded by the same `Fn` (the caller's template, forwarded); any other argument
+    /// of it is `P0001` naming it. `None` after a refusal.
     pub(super) fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
         let item_name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut satisfied = true;
@@ -206,7 +208,7 @@ impl Checker<'_> {
                 if let (Bound::Callable { inputs, .. }, Ty::Module(module)) = (bound, ty) {
                     // §8.4.5: a template of a module whose ports have the types of `P`
                     satisfied &= self.module_fits_callable(module, &parameter.name, inputs, file, span);
-                } else if matches!(bound, Bound::Callable { .. }) {
+                } else if matches!(bound, Bound::Callable { .. }) && !matches!(ty, Ty::Param(_)) {
                     self.unsupported(file, span, &format!("the template parameter `{}` of `{item_name}`, bounded by `Fn`", parameter.name));
                     satisfied = false;
                 } else if !BoundCheck::new(self).satisfies(ty, bound) {

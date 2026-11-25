@@ -73,15 +73,17 @@ impl Elaboration<'_, '_> {
         PlacementKey { call, iteration }
     }
 
-    /// The module with a result that `call` places, if it places one.
+    /// The module with a result that `call` places, if it places one. A call through a callable param reads the template the param
+    /// holds in the frame being lowered (a hoisted module's own `s: C` holds what its placement bound).
     pub(super) fn result_callee(&self, call: ExprId) -> Option<DeclId> {
-        self.placed_module(call, &self.body_keys).filter(|m| matches!(&self.design.decl_data(*m).kind, DeclKind::Module(d) if d.ret.is_some()))
+        self.placed_module(call, self.consts.frame_params()).filter(|m| matches!(&self.design.decl_data(*m).kind, DeclKind::Module(d) if d.ret.is_some()))
     }
 
     /// The module `call` places when that module is hoisted: one with a result or with a value input. A call through a param of
-    /// a generic type bounded by `Fn(..)` (`s(5.0)` with `s: C`) places the module of the template the param holds in the body's keys.
+    /// a generic type bounded by `Fn(..)` (`s(5.0)` with `s: C`) places the module of the template the param holds in the frame
+    /// being lowered.
     pub(super) fn hoisted_callee(&self, call: ExprId) -> Option<DeclId> {
-        self.placed_module(call, &self.body_keys).filter(|m| self.is_hoisted(*m))
+        self.placed_module(call, self.consts.frame_params()).filter(|m| self.is_hoisted(*m))
     }
 
     /// Whether a placement of `module` is hoisted into the body that places it (Appendix C.1.1): it

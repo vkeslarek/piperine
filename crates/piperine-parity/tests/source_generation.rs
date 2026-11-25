@@ -331,7 +331,8 @@ fn a_module_with_a_result_through_a_callable_bound_param_runs() {
     let built = support::build(&GenerationModels::project("callable_result.msl"), "Bench");
     let seen = built.run(2e-9, 0.5e-9);
     let ns = 1_000_000;
-    for (net, m) in [("p", 5u8), ("q", 7)] {
+    // one level down (fix round 2, finding 10): `r` is `Apply`'s own `s(x)` at `m` 3, `w` the template `Twice` forwards to it at `m` 6
+    for (net, m) in [("p", 5u8), ("q", 7), ("r", 3), ("w", 6)] {
         assert_eq!(support::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
     }
 }

@@ -420,3 +420,29 @@ fn a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templa
         assert!(printed.contains(&format!("y <- (5.0 * {r:?})")), "the result is read at the template's `r`:\n{printed}");
     }
 }
+
+#[test]
+fn a_callable_bound_param_of_a_hoisted_module_places_its_template() {
+    // §8.4.4, §8.3.12 one level down: `Outer<C: Fn(f64) -> f64>` has a result itself, so its frame holds `s`; `s(x)` places `Scale` at
+    // the template's `r` as its result, through a `let`, in its generation, in a reaction of a hoisted module with a value input, and
+    // through a second generic module the caller's `t: D` is forwarded to (`D` satisfies `C`'s `Fn(f64) -> f64` by its own bound)
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let (x, r) = (1.0, 7.0);
+    let product = format!("({x:?} * {r:?})");
+    let cases = [
+        ("module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; s(x) }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { s: Scale { r: 7.0 } }; y = a; }", format!("drive y = {product}")),
+        ("module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; let v = s(x); v }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { s: Scale { r: 7.0 } }; y = a; }", format!("drive y = {product}")),
+        ("module Outer<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; signal z: [Bit<f64>; 2]; for k in 0..2 { let v = s(x); z[k] = v; } x }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { s: Scale { r: 7.0 } }; y = a; }", format!("drive a.z[1] = {product}")),
+        ("module Inner<C: Fn(f64) -> f64>(x: f64) -> f64 { s: C; s(x) }\nmodule Outer<D: Fn(f64) -> f64>(x: f64) -> f64 { t: D; Inner(x) { s: t } }\nmodule Top() { signal y: Bit<f64>; let a = Outer(1.0) { t: Scale { r: 7.0 } }; y = a; }", format!("drive y = {product}")),
+        ("module Outer<C: Fn(f64) -> f64>(in u: Bit<f64>) { s: C; signal y: Bit<f64> = 0.0; }\ndigital<C> for Outer<C> { on u.changed() { y <- s(1.0); } }\nmodule Top() { signal u: Bit<f64> = 0.0; let a = Outer(u) { s: Scale { r: 7.0 } }; }", format!("y <- {product}")),
+    ];
+    for (source, wanted) in cases {
+        let printed = Elab::ir(&format!("{scale}{source}"), "Top").print_structural();
+        assert!(printed.contains(&wanted), "{source}: wants `{wanted}` in\n{printed}");
+    }
+    // a forwarded parameter whose own bound is another `Fn` does not satisfy `C`'s: `E0187` naming both
+    let mismatch = format!("{scale}module Add(a: f64, b: f64) -> f64 {{ a + b }}\nmodule Inner<C: Fn(f64) -> f64>(x: f64) -> f64 {{ s: C; s(x) }}\nmodule Outer<D: Fn(f64, f64) -> f64>(x: f64) -> f64 {{ t: D; Inner(x) {{ s: t }} }}\nmodule Top() {{ signal y: Bit<f64>; let a = Outer(1.0) {{ t: Add {{ }} }}; y = a; }}");
+    let refused = Elab::run(&mismatch, "Top").expect_err("a forwarded bound of two inputs");
+    assert_eq!(Elab::codes(&refused), ["E0187"]);
+    assert!(refused[0].diagnostic.message.contains("`D` does not satisfy the bound `Fn` of `C`"), "{}", refused[0].diagnostic.message);
+}

@@ -223,6 +223,12 @@ impl<'d, 't> ConstEval<'d, 't> {
         std::mem::replace(&mut self.frame_params, params)
     }
 
+    /// The module params of the frame being lowered: the body's keys in its own module, the constants a hoisted placement bound
+    /// in its frame (`enter_frame`). A template a callable param holds is read here (`placed_module`).
+    pub(super) fn frame_params(&self) -> &Bindings {
+        &self.frame_params
+    }
+
     /// What the generic parameters of the instance being lowered are replaced by.
     pub(super) fn substitution(&self) -> &crate::types::Substitution {
         &self.substitution
