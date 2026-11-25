@@ -17,6 +17,7 @@ mod support;
 #[path = "source/run.rs"]
 mod run;
 
+use piperine_api::{Field, Record};
 use run::SourceRun;
 
 /// The model files of `tests/nested_reach/`.
@@ -143,4 +144,24 @@ fn a_cycle_of_node_connections_through_a_generation_four_levels_deep_runs_as_har
     for (value, wanted) in seen.iter().zip(&wanted) {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
     }
+}
+
+/// The `seen` records of a bench of `drive.msl`, the value of each as a flag.
+fn seen_flags(top: &str) -> Vec<bool> {
+    let records: Vec<Record> = RUN.records_of("drive.msl", top).into_iter().filter(|record| record.stream == "seen").collect();
+    records
+        .iter()
+        .map(|record| match record.fields.iter().find(|(name, _)| name == "value") {
+            Some((_, Field::Bool(value))) => *value,
+            other => panic!("`value` is a bool: {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_parent_drives_a_resolved_carrier_of_a_cell_three_levels_down() {
+    // §5.2.2, §22.3 (`AndWire`): the cell drives its `line` high, the top drives it low through `p.mid.c0.line`: the net holds the
+    // AND of the two drives, false (the cell's own drive alone leaves it high, `QuietBench`)
+    assert_eq!(seen_flags("DriveBench").last(), Some(&(true && false)), "the top's drive is held beside the cell's");
+    assert_eq!(seen_flags("QuietBench").last(), Some(&true), "the cell's drive alone is high");
 }

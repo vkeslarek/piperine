@@ -181,6 +181,12 @@ Proof: run elabhandles | test a_cycle_of_node_connections_through_any_depth_of_r
 **C19** - The reads of a `pub` param and `let` through a template still print what the parent reads (NR-02, AC 1; regression)
 Proof: run elabtemplates | test a_non_node_item_through_a_template_reads_the_concrete_module ... ok
 
+**C20** - A drive of a resolved carrier of the cell three levels down is held beside the cell's own: the net's resolver takes both drives (NR-02, AC 5)
+Proof: run elabnested | test a_drive_of_a_resolved_carrier_of_a_cell_three_levels_down_is_held_beside_the_cells_own ... ok
+
+**C21** - The same from source: the net holds the AND of the cell's drive and the top's (NR-02, AC 5)
+Proof: run sourcenested | test a_parent_drives_a_resolved_carrier_of_a_cell_three_levels_down ... ok
+
 ---
 
 ## Handoff

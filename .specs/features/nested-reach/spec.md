@@ -29,7 +29,6 @@ device author who writes a bank of banks of cells cannot read the cell's storage
 | ------- | ------ |
 | A read through a hoisted placement (a module with a result or a value input) | it has no body of its own to reach into; unchanged |
 | A node or carrier declared in generation of a module a parent reads through | its count is known to the module's own lowering only; refused by name as at one level (`own_node_total`) |
-| A drive of a carrier of a grandchild (`p.mid.c0.line = v`) | the drive machinery reaches one frame; the read is the feature |
 
 ## Assumptions & Open Questions
 
@@ -72,6 +71,7 @@ Open questions: none.
 2. WHEN a body reads a `pub let` of the cell that reads the solve (`vs = v(sn)`) at depth three or four THEN the system SHALL evaluate it in the reader's context, reaching the nodes it reads.
 3. WHEN a body reads a carrier of the cell (`R.q`) at depth three or four THEN the system SHALL bind a reached carrier of the reader to the cell's net.
 4. WHEN the items above are read from source THEN the run SHALL give the values Rust computes for the cell (`sn`, `vs`, `q`, `k`, `twice`), by name, through templates and in generation.
+5. WHEN a body drives a resolved carrier of the cell (`p.mid.c0.line = v`) at depth three or four THEN the system SHALL hold the drive beside the cell's own, and the net SHALL resolve both.
 
 **Independent Test**: Elaboration tests, and source runs against Rust's own values.
 

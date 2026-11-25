@@ -133,3 +133,16 @@ fn a_missing_or_private_item_is_e0343_three_and_four_levels_below_the_reader() {
         }
     }
 }
+
+#[test]
+fn a_drive_of_a_resolved_carrier_of_a_cell_three_levels_down_is_held_beside_the_cells_own() {
+    // §5.2.2, §8.2.8: `p.mid.c0.line = false` holds a drive of the cell's resolved net: the net's resolver takes two drives, the
+    // top's (`Top#0`) and the cell's own (`Top.p.mid.c0#0`)
+    let src = "nature AndWire { value: bool }\nimpl Resolve<bool> for AndWire { fn resolve<const N: usize>(d: [bool; N]) -> bool { d.iter().fold(true, |acc, x| acc && x) } }\n\
+               module Pin() { pub signal line: AndWire; line = true; }\nmodule Level2() { pub let c0 = Pin(); }\nmodule Level3() { pub let mid = Level2(); }\n\
+               module Top() { let p = Level3(); p.mid.c0.line = false; }";
+    let printed = Elab::ir(src, "Top").print_structural();
+    let net = printed.lines().find(|line| line.starts_with("net Top.p.mid.c0.line:")).expect("the cell's net");
+    assert!(net.contains("resolved by Top.p.mid.c0.line$resolve of bool drives (Top.p.mid.c0.line$drive0, Top.p.mid.c0.line$drive1)"), "{net}");
+    assert!(net.contains("held by (Top#0, Top.p.mid.c0#0)"), "{net}");
+}

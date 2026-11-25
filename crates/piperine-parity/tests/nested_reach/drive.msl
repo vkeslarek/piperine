@@ -1,0 +1,36 @@
+//! A parent drives a resolved carrier of a child of its child (feature `nested-reach`, part III §8.2.8, §5.2.2): `p.mid.c0.line = false`
+//! holds a drive of the cell's net beside the cell's own, and the net resolves both.
+
+/// A net of flags that are all true: the wired AND (§22.3's `AndWire`).
+nature AndWire { value: bool }
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(d: [bool; N]) -> bool {
+        d.iter().fold(true, |acc, x| acc && x)
+    }
+}
+
+/// A cell with a `pub` resolved signal that it drives high itself.
+module Pin() {
+    pub signal line: AndWire;
+    line = true;
+}
+
+module Level2() { pub let c0 = Pin(); }
+module Level3() { pub let mid = Level2(); }
+
+/// The top drives the cell's net three levels down low, and reads what the net resolves to.
+module DriveBench() {
+    let p = Level3();
+    p.mid.c0.line = false;
+}
+digital for DriveBench {
+    on p.mid.c0.line.changed() { emit!("seen", value = p.mid.c0.line); }
+}
+
+/// The same without the top's drive: the cell's own drive alone, high.
+module QuietBench() {
+    let p = Level3();
+}
+digital for QuietBench {
+    on p.mid.c0.line.changed() { emit!("seen", value = p.mid.c0.line); }
+}
