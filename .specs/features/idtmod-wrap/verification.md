@@ -125,3 +125,102 @@ suite did not run.
 | `piperine-solver --test protocol_transient` | green (27) |
 | `piperine-parity --test source_wraps` | green (1) |
 | Full suite (build, workspace tests, parity, buck release, CLI twins) | not run: FAIL |
+
+---
+
+# Round 2 (head `715083c34`): FAIL
+
+Fixes reviewed: `696706482` (F1: the passing record on `Digital` for the whole instant, saved in marks and
+checkpoints, settle phase once), `4f5f181e8` (F2 and F3: a passed value is read by a zero-width solve,
+`AnalogSide::zero_width`, one loop `read_instant`, §15.2 rule 4 rewritten), `715083c34` (F4 and F5: statistics,
+the doc line).
+
+## Status of the round 1 findings
+
+| Finding | Status |
+| --- | --- |
+| F1: a suspension splits the record | **closed.** The record lives on `Digital`, is reset only for a new instant, and is kept in `Mark` and `Checkpoint`. The settle gate uses the record of the whole instant. Two engine tests (`a_pulse_split_by_a_host_suspension_is_still_passing`, `a_part_after_the_pulse_leaves_the_settle_phase_to_the_owner`) cover both of my failure scenarios. |
+| F2: two loops, inconsistent retakes | **closed.** There is one loop, `read_instant`/`read_round`. A retake happens until a zero-width solve has been made, and a zero-width solve after that. The spec states it. |
+| F3: a glitch gains area | **closed.** A zero-width solve replaces the retake. `a_zero_delay_glitch_gains_no_area_at_any_step` checks two step caps, both `< 1e-12`. |
+| F4: statistics | **closed** (`ZeroWidthCause`, `zero_width_for`). |
+| F5: doc line | **closed.** |
+
+## New findings
+
+### R2-1. HIGH: after `reopen`, a single change counts as passing the value already read. A zero-width solve then reads a stale value and the change goes unread at `t`
+
+`crates/piperine-digital-solver/src/passing.rs` (`consume`) clears `passed` but keeps `held`.
+`Digital::reopen` (`engine.rs:432-436`) calls it before every continued round of `read_instant`. Suppose a net
+changed once in round 1 (held at v1, which the retake or the zero-width solve of round 1 read) and changes once
+more, to v2, in the continued round. `PassingValues::changed` then records v1 as passed. Round 2 reports
+`passing = [(net, v1)]` for a net that passed through nothing in that round.
+
+I reproduced this with a temporary engine test, since reverted. A Pulser drives `clk`, a `Dff` with `d = !q`
+toggles `q`, and `q` is read by the analog side. Round 1 is `fire(go)`. Round 2 is `reopen(7, true)` followed by
+`fire(go)`:
+```
+round1 q=[1] boundary=[(q, [1])] passing=[]
+round2 q=[0] boundary=[(q, [0])] passing=[(q, [1])]   <- q changed once; reported as passing v1
+```
+Consequence in `protocol/retake.rs` (`Readings::next`): `passing` takes priority, so the round becomes
+`ZeroWidth([q = 1], PassedValue)`.
+- It re-reads the value already delivered and does not read `q = 0` at `t`.
+- That breaks the rewritten rule 4: "When the reactions of that crossing … change a carrier … another zero-width
+  solve at `t` reads it".
+- It **regresses the jump-case retake already on main**. There, `retake_step` retook the step with the round-2
+  change. Now, for a step that read a jump with a crossing whose reactions change an analog-read net twice over
+  two rounds, the second change reaches the solve only at the next step.
+- The statistics also count it as a `PassedValue` solve.
+- The protocol tests use stub sides, so nothing covers this path at the engine level.
+
+Fix direction: once the owner has read the record, `consume` should forget `held` as well, so only what a later
+round passes through is passed. Add an engine test of a single change after `reopen`, and a multi-round protocol
+case.
+
+### R2-2. LOW: the "zero-width" solve has a finite width, while the spec says no time passes
+
+`device_zero_width` (`crates/piperine-solver/src/analyses/transient.rs:1838-1878`) runs the trapezoidal phase
+with `prev_h = 0` and `JumpPosition::Reads`. That gives `jump_coeffs`, so it is backward Euler over `γh =
+1e-6 tick` (about 1e-21 s at a 1 fs tick). It is an O(W) approximation of the algebraic solve with states held,
+and it touches no device type, so it is not a hidden special case. The stack's own conventions apply: `slew` is
+limited by its rate times W, and the `ddt` history row is replaced through the normal accept.
+
+I stress-tested the conditioning with a temporary MSL bench, since deleted. A 1 mF capacitor at 100 V through
+1 Ω gives a companion conductance of about 1e18. An `idt` with `ic = 1000` and a 1 MV/s integrand gives a unit
+`ddt` of about 1e21. A zero-delay glitch at 1 µs, at step caps of 50 ns and 200 ns: both converged, with one
+zero-width solve each. The states drifted by at most about 1e-15 relative: 1000.0000000000007 and
+100.00000000000009. There was no spike at `t`.
+
+So it is sound in practice. However, the spec text ("a solve at `t` in which no time passes") and
+`AnalogSide::zero_width`'s doc ("with no time passing") overstate what the code does. The code's own doc gives
+the width. Either state the width in §15.2 rule 4, or replace it with an algebraic solve. An algebraic solve is
+not needed for correctness at this conditioning.
+
+### R2-3. INFO: checked and sound
+
+- **`Delayed::push`** (`crates/piperine-analog-solver/src/device/delay.rs:28-33`) replaces a point at the same
+  time. It is reached through `assembly.rs:247` (`accept`) with `amb.time = origin + current_time`, the same
+  expression the normal accept uses, so exact equality holds. Without the replacement there would be two
+  history points at one time, a zero-length interpolation segment.
+- **The `ddt` history** gains a second row at `t`. Only the next step uses it, as its first lookback, and that
+  step reads a jump and uses first-order `jump_coeffs`. By the step after, the duplicate row is beyond the
+  lookbacks it reads.
+- **LTE:** the zero-width solve is not tested for truncation error. The next step reads a jump
+  (`sets_just_applied`), which keeps the jump LTE exemption.
+- **Crossings:** the watches compare against the solution at `t`. A crossing the zero-width solution makes fires
+  at the next microstep, and nothing is located, since the solve is not an attempt.
+- **Operating point:** `EquilibriumSide::zero_width` is unreachable there, because `tracks_passing` is false in
+  a static round.
+- **Performance:** I counted zero-width solves on the closed-loop buck (`LoopBench`) with a temporary test. Over
+  40 µs: 1 solve (PassedValue), 0 CrossingChange, 0 retakes, 11495 accepted steps, 402 instants. Over 200 µs:
+  still 1 solve, against 64481 steps and 1118 instants. The count does not grow with the digital activity.
+- **Determinism:** the record is a `BTreeMap` throughout.
+- **Code rules:** `Reading`, `Round` and `Readings` have methods and doc comments, the names are full words, and
+  `read_instant` is about 35 lines. `read_round` is a two-arm match. No free functions were added.
+
+## Suite (round 2)
+
+| Gate | Result |
+| --- | --- |
+| Targeted runs: the round 1 tests, plus scratch tests for R2-1 (red, the defect) and R2-2 and the buck count (green), all removed afterwards | as above |
+| Full suite | not run: FAIL |
