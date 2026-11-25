@@ -97,6 +97,12 @@ pub struct Outcome {
     /// solve that arrives at the next time point reads them (§15 S2). Not yet applied on the
     /// discrete side, so no `boundary` entry repeats them.
     pub settle_boundary: Vec<Boundary>,
+    /// When a value the analog side reads passed within a transient instant, held at the end of
+    /// one microstep and lost at a later one (a pulse, docs/spec §15.2 rule 4): the values the
+    /// step to the instant is retaken on, each one the instant changed at the first value it
+    /// passed through, or at its value after the instant. The instant's settle phase has not run
+    /// then, whatever its mode: the owner runs it after the retake. Empty otherwise.
+    pub passing: Vec<Boundary>,
 }
 
 impl Outcome {

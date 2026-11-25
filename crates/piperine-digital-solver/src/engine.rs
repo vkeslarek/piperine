@@ -38,7 +38,9 @@ impl Horizon {
 pub struct Mode {
     /// An instant of an equilibrium (`STATIC` reads 1).
     pub is_static: bool,
-    /// Fire `SETTLE` once the microstep loop is quiet.
+    /// Fire `SETTLE` once the microstep loop is quiet, unless an analog-read net passed through
+    /// a value in a transient instant (`Outcome::passing`): the owner then runs the phase after
+    /// it has retaken the step.
     pub settle: bool,
 }
 
@@ -73,6 +75,12 @@ pub struct Outcome {
     /// The nets the analog side reads and the bytes the held settle commits will give them: the
     /// solve that arrives at the next time point reads these (§15 S2).
     pub settle_boundary: Vec<(NetId, Vec<u8>)>,
+    /// When an analog-read net held a value at the end of one microstep of a transient instant and
+    /// lost it at a later one (a pulse, docs/spec §15.2 rule 4): the state the owner retakes the
+    /// step to the instant on, each analog-read net the instant changed at the first value it
+    /// passed through, or at its value after the instant. The settle phase has not run then, even
+    /// under `Mode::settle`: it follows the retake. Empty otherwise, and always in an equilibrium.
+    pub passing: Vec<(NetId, Vec<u8>)>,
 }
 
 /// The engine's state at one point: the store, the queue, how many observations existed, and the

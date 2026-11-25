@@ -3,6 +3,12 @@
 //! same time with the change. One solution per time point: the retaken solution replaces the
 //! first, the reactions that ran are not run again, and a crossing only the retaken solution makes
 //! fires at the next microstep of the instant (its numbering goes on) and may retake again, up to the round bound (`E0504`).
+//!
+//! A value `analog` reads that passes within the instant (held at the end of one microstep and
+//! lost at a later one, as a pulse is) is read the same way: the step is retaken to the instant
+//! on the values passed through (`Outcome::passing`), and what the instant leaves behind is read
+//! by the first step after it. A state forced by a passing value (a `reset` of `idt`, the seat of
+//! `idtmod`'s wrap) is carried from the retaken solution.
 
 use piperine_analog_solver::error::{Error, Result, RunCode, SolverDomain};
 
@@ -100,13 +106,69 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         }
     }
 
-    /// The `E0504` of an instant whose crossings retake the step more often than the round bound.
+    /// Retakes the accepted step to `tick` on the values the instant passed through (`first.passing`),
+    /// and again while the crossings each retaken solution makes run reactions that pass a value.
+    /// Each retake reads the values passed so far, the later ones laid over the earlier. `mode` runs
+    /// the instant those crossings continue, without its settle phase (the caller runs it after).
+    /// Returns the outcome the instant ends with: what every round changed, `passing` emptied, for
+    /// the first step after the instant to read.
+    pub(super) fn retake_passing(
+        &mut self,
+        mark: &A::Mark,
+        tick: Tick,
+        mut fired: Vec<u32>,
+        first: Outcome,
+        limit: Horizon,
+        mode: InstantMode,
+    ) -> Result<Outcome> {
+        let time = self.time(tick);
+        let mut whole = first;
+        let mut passed: Vec<Boundary> = Vec::new();
+        let mut retakes = 0u32;
+        while !whole.passing.is_empty() {
+            retakes += 1;
+            if retakes > self.options.max_rounds {
+                return Err(self.too_many_retakes(time, &passed));
+            }
+            passed.extend(std::mem::take(&mut whole.passing));
+            self.analog.retake(mark);
+            self.analog.deliver(&passed, Restart::Integrator);
+            let attempt = self.analog.attempt(self.offset(tick), true)?;
+            let analog = &mut self.analog;
+            self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
+            if attempt != Attempt::Converged {
+                return Err(self.retake_failed(time, &passed));
+            }
+            let accepted = self.analog.accept()?;
+            let made: Vec<u32> = accepted.fired.iter().copied().filter(|net| !fired.contains(net)).collect();
+            self.samples = accepted.samples;
+            if made.is_empty() {
+                break;
+            }
+            // the crossings fire at the next microstep of `t`, and the instant goes on from there
+            self.discrete.reopen(tick, true);
+            for net in &made {
+                self.discrete.fire(*net, tick)?;
+            }
+            fired.extend(&made);
+            let samples = self.samples.clone();
+            let ran = self.run_whole_instant(tick, &samples, limit, mode)?;
+            whole.finish |= ran.finish;
+            whole.host_param_write |= ran.host_param_write;
+            whole.boundary.extend(ran.boundary);
+            whole.passing = ran.passing;
+        }
+        whole.passing.clear();
+        Ok(whole)
+    }
+
+    /// The `E0504` of an instant whose crossings or passing values retake the step more often than the round bound.
     fn too_many_retakes(&self, time: f64, delivered: &[Boundary]) -> Error {
         Error::run(
             RunCode::E0504,
             SolverDomain::Transient,
             format!(
-                "the crossings of the instant at t = {time:e} s retake its step more than {} times; the nets changed: {}",
+                "the instant at t = {time:e} s retakes its step more than {} times; the nets changed: {}",
                 self.options.max_rounds,
                 self.changed_nets(delivered)
             ),
@@ -120,7 +182,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             RunCode::E0504,
             SolverDomain::Transient,
             format!(
-                "the step retaken at t = {time:e} s, after its crossings changed {}, does not converge",
+                "the step retaken at t = {time:e} s, after its instant changed {}, does not converge",
                 self.changed_nets(delivered)
             ),
         )

@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::landing::{LandingCause, LandingTest};
 use crate::net::{NetId, NetKind};
+use crate::passing::PassingValues;
 use crate::queue::{Instant, Writer};
 use crate::run::{Phase, fire_net, fired_reactions, run_functions, run_reactions, write_element, write_net};
 use crate::tick::Tick;
@@ -123,6 +124,9 @@ impl Digital {
         let mut out = Outcome::default();
         let mut boundary: BTreeSet<NetId> = BTreeSet::new();
         let mut fired: BTreeSet<NetId> = BTreeSet::new();
+        // a transient instant run for the owner records the values its analog-read nets pass through
+        let tracks_passing = !lookahead && !mode.is_static;
+        let mut passing = PassingValues::default();
         // An instant suspended for the host's waiters continues where it stopped.
         let mut n = match self.suspended.take() {
             Some((tick, microstep)) if tick == at && !lookahead => microstep,
@@ -149,6 +153,9 @@ impl Digital {
                 if spec.analog_reads && self.store.changed(id) {
                     boundary.insert(id);
                     analog_now = true;
+                    if tracks_passing {
+                        passing.changed(id, self.store.value(id));
+                    }
                 }
             }
             if lookahead {
@@ -181,6 +188,7 @@ impl Digital {
                 out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
                 out.fired = fired.into_iter().collect();
                 out.host_events = host_events;
+                out.passing = passing.retake_state(&self.store);
                 return Ok(Stepped::Done(out));
             }
 
@@ -213,7 +221,9 @@ impl Digital {
         if !lookahead {
             self.last_run = Some((at, n));
         }
-        if mode.settle {
+        out.passing = passing.retake_state(&self.store);
+        // a value passed through is read by a retaken step, and the settle phase follows that step
+        if mode.settle && out.passing.is_empty() {
             let settled = self.settle_phase(at, n, samples, limit, mode)?;
             out.finish |= settled.finish;
             fired.extend(settled.fired);

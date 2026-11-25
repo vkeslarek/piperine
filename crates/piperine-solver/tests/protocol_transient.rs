@@ -734,3 +734,49 @@ fn an_unsettled_loop_is_e0511_naming_its_drives() {
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("Flipper", FLIPPER.get_or_init(|| module::<Flipper>("Flipper")));
 }
+
+#[test]
+fn a_value_passed_within_an_instant_retakes_its_step_and_settle_follows() {
+    // docs/spec §15.2 rule 4: the landing's instant passes slot 3 through a high it does not keep
+    // (a pulse) and leaves slot 4 changed. The step to 1 s is retaken on those values (the
+    // retaken solution replaces the first, and the reactions read it), the settle phase runs once
+    // after that step, and the first step after 1 s reads what the instant left: slot 3 back low
+    let (log, mut d, mut a) = sides();
+    let kept = Boundary { slot: 4, bytes: vec![2] };
+    let high = Boundary { slot: 3, bytes: vec![1] };
+    let low = Boundary { slot: 3, bytes: vec![0] };
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::AnalogReadChanged });
+    d.instants.push_back(Outcome {
+        boundary: vec![kept.clone(), low.clone()],
+        passing: vec![high.clone(), kept.clone()],
+        ..Outcome::default()
+    });
+    a.accepts.extend([Accepted { fired: vec![], samples: vec![0.5] }, Accepted { fired: vec![], samples: vec![0.25] }]);
+    a.proposals.extend([3.0, 3.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(3.0).unwrap();
+    let seq = calls(&log, |c| {
+        matches!(c, Call::Deliver(..) | Call::Attempt { .. } | Call::Accept | Call::RunInstant { .. } | Call::AnalogRestore(_))
+    });
+    let settling = InstantMode { is_static: false, settle: true };
+    assert_eq!(
+        seq,
+        [
+            Call::Attempt { to: 1.0, landing: true },
+            Call::Accept,
+            Call::RunInstant { at: 2, samples: vec![0.5], limit: horizon(6, 2), mode: settling },
+            // the retake: back to the step's start, on the values passed through, to the same time
+            Call::AnalogRestore(0),
+            Call::Deliver(vec![high, kept.clone()], Restart::Integrator),
+            Call::Attempt { to: 1.0, landing: true },
+            Call::Accept,
+            // the settle phase follows the retaken step and reads its solution
+            Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(6, 2), mode: settling },
+            // what the instant left behind reaches the next step, with the restart of a jump
+            Call::Deliver(vec![kept, low], Restart::Integrator),
+            Call::Attempt { to: 3.0, landing: false },
+            Call::Accept,
+            Call::RunInstant { at: 6, samples: vec![], limit: horizon(6, 6), mode: settling },
+        ]
+    );
+}

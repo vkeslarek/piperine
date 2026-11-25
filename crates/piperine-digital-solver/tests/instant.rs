@@ -696,3 +696,64 @@ fn a_firing_after_a_reopened_instant_is_due_at_the_next_microstep() {
     assert!(seen.contains(&Observation::Fire { net: "cross".into(), at: (Tick(2), 2) }), "{seen:?}");
     assert!(!seen.iter().any(|o| matches!(o, Observation::Fire { at: (_, 0), .. })), "nothing restarts at microstep 0: {seen:?}");
 }
+
+/// A pulser on `seat` (read by the analog side) and a settler on `late`, for the passing values of
+/// an instant.
+struct PulseBench;
+
+impl PulseBench {
+    /// The engine, started and past its first instant; `go` fires the pulse at tick 7.
+    fn engine() -> Digital {
+        let plan = bind_by_name_with(
+            vec![("p", Pulser::handle(), vec![("up", "go"), ("out", "seat")]), ("s", settler(), vec![("out", "late")])],
+            Resolution::default(),
+            |nets| nets.iter_mut().find(|n| n.name == "seat").unwrap().analog_reads = true,
+        )
+        .expect("binds");
+        let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
+        d.start().unwrap();
+        instant(&mut d, Tick(0));
+        d.fire(net(&d, "go"), Tick(7)).unwrap();
+        d
+    }
+}
+
+#[test]
+fn a_pulse_of_a_net_the_analog_side_reads_is_reported_as_passing() {
+    // docs/spec §15.2 rule 4: `seat` is high at the end of microstep 1 and low again at microstep
+    // 2. The instant leaves it where it began, so the high it passed through is reported for the
+    // owner to retake the step on, and the settle phase is left to follow that retake
+    let mut d = PulseBench::engine();
+    let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).expect("the pulse runs");
+    let seat = net(&d, "seat");
+    assert_eq!(d.read(seat), LOW, "the pulse ends where it began");
+    assert_eq!(out.microsteps, 3, "fire, high, low");
+    assert_eq!(out.boundary, [(seat, LOW.to_vec())], "what the instant leaves behind");
+    assert_eq!(out.passing, [(seat, HIGH.to_vec())], "the value it passed through");
+    assert!(!d.holds_settle_commits(), "the settle phase has not run");
+    // in an equilibrium nothing is retaken: nothing passes and the settle phase runs
+    let mut d = PulseBench::engine();
+    let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), Mode { is_static: true, settle: true }).unwrap();
+    assert!(out.passing.is_empty(), "{:?}", out.passing);
+    assert!(d.holds_settle_commits(), "the settle phase ran");
+}
+
+#[test]
+fn a_net_that_changes_once_passes_through_nothing() {
+    // docs/spec §15.2 rule 4: a change the instant keeps is read by the first step after it, and
+    // only that step; the settle phase runs in the instant
+    let plan = bind_by_name_with(
+        vec![("u", setter(), vec![("up", "go"), ("out", "seat")]), ("s", settler(), vec![("out", "late")])],
+        Resolution::default(),
+        |nets| nets.iter_mut().find(|n| n.name == "seat").unwrap().analog_reads = true,
+    )
+    .expect("binds");
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.fire(net(&d, "go"), Tick(7)).unwrap();
+    let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).unwrap();
+    assert_eq!(out.boundary, [(net(&d, "seat"), HIGH.to_vec())]);
+    assert!(out.passing.is_empty(), "{:?}", out.passing);
+    assert!(d.holds_settle_commits(), "the settle phase ran");
+}
