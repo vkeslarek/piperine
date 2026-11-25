@@ -127,3 +127,31 @@ Reprobed at 34bfb7b26 (throwaway targets, deleted):
 
 None - probed the four round-2 forms and their neighbours (default, literal, `const`, choice, forwarded, generation index, repeat lengths and bounds), the substitution sibling at elaboration and in the model check, and the `P0004` path's reach to the `Ir`.
 
+
+### Final full suite (round 3, at db61926ce)
+
+origin/main 26ee4ed25 (the code-clarity findings inventory, one `.specs` file) merged by db61926ce with no conflict. `/var/tmp/piperine-tmp-a` cleared (helpers kept); `PIPERINE_NGSPICE` unset; lane A target dir.
+
+| Step | Result |
+| --- | --- |
+| `cargo build --workspace --exclude piperine-lang-server --all-targets` | ok, 0 warnings |
+| `piperine-abi` | 58 passed, 0 failed |
+| `piperine-analog-solver` | 110 passed, 0 failed |
+| `piperine-api` | 307 passed, 0 failed |
+| `piperine-digital-solver` | 166 passed, 0 failed |
+| `piperine-interp` | 72 passed, 0 failed |
+| `piperine-ir` | 162 passed, 0 failed |
+| `piperine-plan` | 67 passed, 0 failed |
+| `piperine-solver` | 405 passed, 0 failed, 3 ignored (registered doc fences) |
+| `piperine-lang` | 1576 passed, 0 failed |
+| `piperine-numbers` | 22 passed, 0 failed |
+| `piperine-transpile` | 170 passed, 0 failed |
+| `piperine-project` | 53 passed, 0 failed |
+| `piperine-cli` | 209 passed, 0 failed |
+| `piperine` (root) | 422 passed, 0 failed |
+| `piperine-parity -- --nocapture` | 633 passed, 0 failed |
+| seven buck targets, release `-j 1` | 23 passed, 0 failed |
+| `buck_scenarios`, release `-j 1` | 61 passed, 0 failed |
+| `piperine-cli --test twins` | 6 passed, 0 failed |
+
+`/var/tmp/piperine-target-a/release` deleted after the run.
