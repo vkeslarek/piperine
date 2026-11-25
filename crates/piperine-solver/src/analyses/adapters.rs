@@ -81,10 +81,12 @@ pub(crate) type Settled = Rc<RefCell<Option<(Checkpoint, Vec<Vec<u8>>)>>>;
 /// The discrete side: the digital engine, with the slot map of bind.
 pub(crate) struct DigitalSide {
     digital: Digital,
-    /// The analog copy's slot of each net an analog function reads.
-    slots: HashMap<NetId, u32>,
+    /// The analog copy's slots of each net an analog function reads (an array net's windows have one each).
+    net_slots: HashMap<NetId, Vec<u32>>,
     /// The net behind each slot.
     slot_nets: Vec<NetId>,
+    /// The elements `(first, length)` of its array net each slot holds; `None` for a whole net.
+    slot_windows: Vec<Option<(u32, u32)>>,
     /// The bytes of each slot as the analog copy holds them: bind seeded the
     /// copy with each net's `init`, so a boundary is a slot whose bytes differ
     /// from it (the engine's own store starts at zero).
@@ -117,8 +119,16 @@ impl DigitalSide {
         let copy = names
             .slot_nets
             .iter()
-            .map(|n| written(*n).unwrap_or_else(|| digital.plan().nets[n.0 as usize].init.clone()))
+            .enumerate()
+            .map(|(slot, n)| {
+                let whole = written(*n).unwrap_or_else(|| digital.plan().nets[n.0 as usize].init.clone());
+                NameMap::window_bytes(names.slot_windows[slot], &whole, digital.plan().nets[n.0 as usize].size)
+            })
             .collect();
+        let mut net_slots: HashMap<NetId, Vec<u32>> = HashMap::new();
+        for (slot, net) in names.slot_nets.iter().enumerate() {
+            net_slots.entry(*net).or_default().push(slot as u32);
+        }
         let on_start = bound
             .analyses
             .iter()
@@ -127,7 +137,7 @@ impl DigitalSide {
             .chain(bound.temperature.iter().cloned())
             .chain(bound.host_writes.iter().cloned())
             .collect();
-        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start, settled: None, rewound: false, microsteps: bound.microsteps }
+        DigitalSide { digital, net_slots, slot_nets: names.slot_nets.clone(), slot_windows: names.slot_windows.clone(), copy, on_start, settled: None, rewound: false, microsteps: bound.microsteps }
     }
 
     /// Each mark also leaves the settled state in `settled`.
@@ -142,7 +152,7 @@ impl DigitalSide {
 
     /// The engine's checkpoint and every net's bytes in it.
     pub(crate) fn state(&self) -> (Checkpoint, Vec<Vec<u8>>) {
-        let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read(NetId(i as u32)).to_vec()).collect();
+        let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read_dense(NetId(i as u32))).collect();
         (self.digital.checkpoint(), nets)
     }
 
@@ -152,7 +162,7 @@ impl DigitalSide {
         self.digital.restore(checkpoint);
         let mut slots = Vec::with_capacity(self.slot_nets.len());
         for (slot, net) in self.slot_nets.iter().enumerate() {
-            let bytes = nets[net.0 as usize].clone();
+            let bytes = NameMap::window_bytes(self.slot_windows[slot], &nets[net.0 as usize], self.digital.plan().nets[net.0 as usize].size);
             self.copy[slot].clone_from(&bytes);
             slots.push((slot as u32, bytes));
         }
@@ -163,11 +173,14 @@ impl DigitalSide {
     /// they are; the copy takes the new bytes, as the analog side will once they are delivered.
     fn changed_slots(&mut self, nets: Vec<(NetId, Vec<u8>)>) -> Vec<Boundary> {
         let mut boundary = Vec::new();
-        for (net, bytes) in nets {
-            let slot = self.slots[&net];
-            if self.copy[slot as usize] != bytes {
-                self.copy[slot as usize].clone_from(&bytes);
-                boundary.push(Boundary { slot, bytes });
+        for (net, whole) in nets {
+            let size = self.digital.plan().nets[net.0 as usize].size;
+            for slot in self.net_slots[&net].clone() {
+                let bytes = NameMap::window_bytes(self.slot_windows[slot as usize], &whole, size);
+                if self.copy[slot as usize] != bytes {
+                    self.copy[slot as usize].clone_from(&bytes);
+                    boundary.push(Boundary { slot, bytes });
+                }
             }
         }
         boundary
@@ -252,7 +265,7 @@ impl DiscreteSide for DigitalSide {
         if let Some(settled) = &self.settled
             && !self.rewound
         {
-            let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read(NetId(i as u32)).to_vec()).collect();
+            let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read_dense(NetId(i as u32))).collect();
             *settled.borrow_mut() = Some((self.digital.checkpoint(), nets));
         }
         self.rewound = false;

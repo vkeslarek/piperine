@@ -523,3 +523,15 @@ fn a_loop_of_definitions_through_elements_is_e0339_naming_the_elements() {
     // a chain through elements is no loop
     elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
 }
+
+#[test]
+fn an_analog_function_reads_the_carrier_an_element_of_an_array_is_given_to() {
+    // §5.1.8, §3.3.6: a cell whose `analog` behavior reads its gate, given `gates[1]` of an array of carriers, elaborates: the
+    // gate is a read of the cell's pin, which the placement binds to element 1 of the one carrier `gates` (no diagnostic, one
+    // carrier of four elements, the cell's analog function reading it)
+    let src = "module Cell(in gate: Bit, p: Electrical) { }\nanalog for Cell { i(p, gnd) +> v(p) / (if gate { 1k } else { 2k }) - 1m; }\nmodule Top() { signal gates: [Bit; 4] = [false, true, false, true]; signal a: Electrical; let c = Cell(gates[1], a); }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    let carriers = read.carriers("Top");
+    assert_eq!(carriers.iter().filter(|(name, count, _, _)| name == "gates" && *count == Some(4)).count(), 1, "one carrier of four elements: {carriers:?}");
+}

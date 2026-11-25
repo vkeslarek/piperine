@@ -339,6 +339,19 @@ fn an_analog_block_reads_an_element_of_an_array_of_carriers() {
 }
 
 #[test]
+fn an_analog_function_reads_an_element_a_bundle_leaf_element_and_an_array_port() {
+    // §5.1.8, §3.3.6: a cell is `R` to ground with a gate that selects `R = 1k` (high) or `2k` (low) and pulls 1 mA out of its
+    // node, so the node is at `R * 1 mA`: element 1 of `gates` is high and element 2 low, `lanes[2]` high and `lanes[1]` low
+    // (an array of bundles is a struct of arrays: the gate leaf is `[Bit; 3]`), an array port read at its elements 0 and 3, high on both for `up` and not for `down`
+    let rows = RUN.operating_point("gated.msl", "Rows", &["a", "b"]);
+    assert!((rows[0] - 1e3 * 1e-3).abs() < 1e-9 && (rows[1] - 2e3 * 1e-3).abs() < 1e-9, "{rows:?}");
+    let lanes = RUN.operating_point("gated.msl", "Lanes", &["x", "y"]);
+    assert!((lanes[0] - 1e3 * 1e-3).abs() < 1e-9 && (lanes[1] - 2e3 * 1e-3).abs() < 1e-9, "{lanes:?}");
+    let windows = RUN.operating_point("gated.msl", "Windows", &["both", "one"]);
+    assert!((windows[0] - 1e3 * 1e-3).abs() < 1e-9 && (windows[1] - 2e3 * 1e-3).abs() < 1e-9, "{windows:?}");
+}
+
+#[test]
 fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_element() {
     // §5.1.8, §8.2.1: `q = mem[at]` over `[Bit<u8>; 65536]` reads one view of the array (it was one read per element, a
     // build that did not finish): `tick` toggles every ns; a rise moves `at` by 1000 and writes 41 there in the same

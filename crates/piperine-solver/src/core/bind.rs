@@ -113,6 +113,47 @@ pub struct NameMap {
     pub slots: HashMap<NetId, u32>,
     /// The net behind each analog slot.
     pub slot_nets: Vec<NetId>,
+    /// The elements of its array net each analog slot holds, `(first, length)`; `None` for a slot that holds a whole net.
+    pub slot_windows: Vec<Option<(u32, u32)>>,
+    /// Discrete slot of the analog copy of the window `(first, length)` of an array net.
+    pub window_slots: HashMap<(NetId, u32, u32), u32>,
+}
+
+impl NameMap {
+    /// The slot of `net` (the whole net, or a window of an array net) and its bytes within the net's own, created on first use.
+    fn slot_of(&mut self, net: NetId, window: Option<(u32, u32)>) -> u32 {
+        let slot = match window {
+            None => self.slots.get(&net).copied(),
+            Some((first, length)) => self.window_slots.get(&(net, first, length)).copied(),
+        };
+        if let Some(slot) = slot {
+            return slot;
+        }
+        let slot = self.slot_nets.len() as u32;
+        self.slot_nets.push(net);
+        self.slot_windows.push(window);
+        match window {
+            None => self.slots.insert(net, slot),
+            Some((first, length)) => self.window_slots.insert((net, first, length), slot),
+        };
+        slot
+    }
+
+    /// The bytes slot `slot` holds of `net_bytes`, the bytes of its whole net (`size` bytes an element).
+    pub fn slot_bytes(&self, slot: u32, net_bytes: &[u8], size: u32) -> Vec<u8> {
+        Self::window_bytes(self.slot_windows[slot as usize], net_bytes, size)
+    }
+
+    /// The bytes of `window` of `net_bytes`, the bytes of a whole net of `size` bytes an element: all of them for no window. An
+    /// array net's seed of one element's bytes seeds every element.
+    pub fn window_bytes(window: Option<(u32, u32)>, net_bytes: &[u8], size: u32) -> Vec<u8> {
+        let Some((first, length)) = window else { return net_bytes.to_vec() };
+        let size = size as usize;
+        if net_bytes.len() == size {
+            return net_bytes.repeat(length as usize);
+        }
+        net_bytes.get(first as usize * size..(first + length) as usize * size).map(<[u8]>::to_vec).unwrap_or_default()
+    }
 }
 
 /// How many unknowns a run error names before it says how many more.
@@ -786,10 +827,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                 Site::Net(id) => {
                     dbinds.push(Binding::Net(*id));
                     if pin.kind == kind::DISCRETE && analog_read[i][pi] {
-                        let slot = *names.slots.entry(*id).or_insert_with(|| {
-                            names.slot_nets.push(*id);
-                            names.slot_nets.len() as u32 - 1
-                        });
+                        let slot = names.slot_of(*id, None);
                         abinds.push(AnalogBinding::Discrete(slot));
                     } else {
                         abinds.push(AnalogBinding::Absent);
@@ -797,16 +835,18 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                 }
                 Site::ArrayElement { net, element } => {
                     if pin.kind == kind::DISCRETE && analog_read[i][pi] {
-                        return Err(bind_error(&b.path, format!("an analog function reads pin `{}`, on element {element} of an array net", pin.name.as_str())));
+                        abinds.push(AnalogBinding::Discrete(names.slot_of(*net, Some((*element as u32, 1)))));
+                    } else {
+                        abinds.push(AnalogBinding::Absent);
                     }
-                    abinds.push(AnalogBinding::Absent);
                     dbinds.push(Binding::ArrayElement { net: *net, element: *element });
                 }
                 Site::ArrayWindow { net, first, length } => {
                     if pin.kind == kind::DISCRETE && analog_read[i][pi] {
-                        return Err(bind_error(&b.path, format!("an analog function reads pin `{}`, on a window of an array net", pin.name.as_str())));
+                        abinds.push(AnalogBinding::Discrete(names.slot_of(*net, Some((*first as u32, *length as u32)))));
+                    } else {
+                        abinds.push(AnalogBinding::Absent);
                     }
-                    abinds.push(AnalogBinding::Absent);
                     dbinds.push(Binding::ArrayWindow { net: *net, first: *first, length: *length });
                 }
                 Site::Absent => {
@@ -838,7 +878,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         .slot_nets
         .iter()
         .enumerate()
-        .map(|(slot, id)| (slot as u32, nets.specs[id.0 as usize].init.clone()))
+        .map(|(slot, id)| (slot as u32, names.slot_bytes(slot as u32, &nets.specs[id.0 as usize].init, nets.specs[id.0 as usize].size)))
         .collect();
     let analog_plan = AnalogPlan::bind(analog_instances, netlist)?;
     let digital_plan = DigitalPlan::bind(nets.specs, digital_instances, Resolution { seconds_per_tick: resolution })

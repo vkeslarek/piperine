@@ -178,7 +178,7 @@ impl Digital {
             let host_events: Vec<NetId> = self.waited.iter().copied().filter(|w| self.store.fired(*w)).collect();
             if !lookahead && !host_events.is_empty() {
                 self.suspended = Some((at, n + 1));
-                out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
+                out.boundary = boundary.into_iter().map(|n| (n, self.store.dense_value(n))).collect();
                 out.fired = fired.into_iter().collect();
                 out.host_events = host_events;
                 return Ok(Stepped::Done(out));
@@ -220,9 +220,9 @@ impl Digital {
             boundary.extend(settled.boundary);
         }
 
-        out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
+        out.boundary = boundary.into_iter().map(|n| (n, self.store.dense_value(n))).collect();
         out.fired = fired.into_iter().collect();
-        out.settle_boundary = self.settle_commits.boundary(|net| self.plan.nets[net.0 as usize].analog_reads, &self.store);
+        out.settle_boundary = self.settle_commits.boundary(&self.plan.nets, &self.store);
         Ok(Stepped::Done(out))
     }
 

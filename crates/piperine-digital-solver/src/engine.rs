@@ -554,6 +554,11 @@ impl Digital {
         self.store.value(net)
     }
 
+    /// The bytes of `net` as the analog side reads them: an array net's elements one after the other.
+    pub fn read_dense(&self, net: NetId) -> Vec<u8> {
+        self.store.dense_value(net)
+    }
+
     /// The plan this engine runs.
     pub fn plan(&self) -> &DigitalPlan {
         &self.plan

@@ -227,6 +227,15 @@ impl Store {
         self.net(net).value.bytes()
     }
 
+    /// The bytes of `net` as the analog side reads them: a net's value, or every element of an array net one after the other
+    /// (`count` x `size` bytes), so a window of the array is a byte range.
+    pub fn dense_value(&self, net: NetId) -> Vec<u8> {
+        match self.arrays.get(&net.0) {
+            Some(array) => (0..array.count()).flat_map(|element| array.value(element).to_vec()).collect(),
+            None => self.value(net).to_vec(),
+        }
+    }
+
     /// The bytes before the most recent change (`PREVIOUS`); empty for a `QUIET` net.
     pub fn previous(&self, net: NetId) -> &[u8] {
         self.net(net).previous.bytes()

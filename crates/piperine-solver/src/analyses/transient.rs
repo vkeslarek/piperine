@@ -1308,7 +1308,7 @@ impl TransientSolver<'_> {
         // The last step carries the state a later run re-enters from.
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
         let nets = (0..bound.digital.plan().nets.len())
-            .map(|i| bound.digital.read(piperine_digital_solver::net::NetId(i as u32)).to_vec())
+            .map(|i| bound.digital.read_dense(piperine_digital_solver::net::NetId(i as u32)))
             .collect();
         let state = crate::core::result::ReentryState {
             digital: bound.digital.checkpoint(),

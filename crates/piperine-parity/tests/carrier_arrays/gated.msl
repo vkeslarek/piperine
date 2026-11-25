@@ -1,0 +1,44 @@
+//! An `analog` function reads an element of an array of carriers (part II §5.1.8, §3.3.6): a cell is `1k` to ground when its
+//! gate is high and `2k` when it is low, a current of 1 mA is pulled out of its node, so the node sits at 1 V or 2 V. The gate is
+//! an element of an array net, one of an array leaf of a bundle (`lanes.gate`, a struct of arrays), and a whole array given to a port (`gates[0] && gates[3]`).
+
+module Cell(in gate: Bit, p: Electrical) { }
+analog for Cell { i(p, gnd) +> v(p) / (if gate { 1k } else { 2k }) - 1m; }
+
+module Rows() {
+    signal gates: [Bit; 4] = [false, true, false, true];
+    signal a: Electrical;
+    signal b: Electrical;
+    let ca = Cell(gates[1], a);
+    let cb = Cell(gates[2], b);
+}
+
+struct Lane { in gate: Bit }
+
+module LaneCell(lane: Lane, p: Electrical) { }
+analog for LaneCell { i(p, gnd) +> v(p) / (if lane.gate { 1k } else { 2k }) - 1m; }
+
+module Lanes() {
+    signal lanes: [Lane; 3];
+    signal low: Bit = false;
+    signal high: Bit = true;
+    lanes[0].gate = high;
+    lanes[1].gate = low;
+    lanes[2].gate = high;
+    signal x: Electrical;
+    signal y: Electrical;
+    let cx = LaneCell(lanes[2], x);
+    let cy = LaneCell(lanes[1], y);
+}
+
+module Window(in gates: [Bit; 4], p: Electrical) { }
+analog for Window { i(p, gnd) +> v(p) / (if gates[0] && gates[3] { 1k } else { 2k }) - 1m; }
+
+module Windows() {
+    signal up: [Bit; 4] = [true, false, false, true];
+    signal down: [Bit; 4] = [true, true, true, false];
+    signal both: Electrical;
+    signal one: Electrical;
+    let w0 = Window(up, both);
+    let w1 = Window(down, one);
+}

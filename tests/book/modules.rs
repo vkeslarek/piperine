@@ -221,18 +221,23 @@ fn the_memory_bank_of_bundle_cells_runs() {
     // `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a parent's body. The listing declares the cells' ports
     // and no behavior, so the harness adds the analog behavior of a cell (a conduction through `ron` from the bit line to the
     // storage node, a leak and the capacitor) and a driver of each bit line (1 V behind 1k): 64 x 32 cells, each a bundle `Cell`
-    // of the word line `wl[r]` and the bit line `bl[c]`. A cell's storage node follows its bit line
+    // of the word line `wl[r]` and the bit line `bl[c]`. The cell's conduction reads its word line `c.wl`, an element of the
+    // array net `wl` (`ron` when it is high, `rleak` when it is low), and the top raises `wl[0]`: the storage node of a cell
+    // of row 0 follows its bit line, one of row 1 sits between the bit line and ground through two `rleak` (half of it)
     let chapter = Chapter::read();
-    let top = format!("module Top() {{\n    signal wl: [Bit; 64] = [false; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\nanalog for Top {{ for k in 0..32 {{ i(bl[k], gnd) +> (v(bl[k]) - 1.0) / 1k; }} }}\n", chapter.text("modules#11"));
-    let cell = "analog for Dram1T1C {\n    i(c.bl, sn) +> v(c.bl, sn) / ron;\n    i(sn, gnd) +> v(sn) / rleak + ddt(cs * v(sn));\n}\n";
-    let overrides = Overrides { print: ["Top.bl[0]", "Top.bl[31]", "Top.bank.cells[0][0].sn", "Top.bank.cells[63][31].sn"].map(String::from).to_vec(), ..Commands::of_top() };
+    let top = format!("module Top() {{\n    signal wl: [Bit; 64] = [false; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\nanalog for Top {{ for k in 0..32 {{ i(bl[k], gnd) +> (v(bl[k]) - 1.0) / 1k; }} }}\ndigital for Top {{ on at(0n) {{ wl[0] <- true; }} }}\n", chapter.text("modules#11"));
+    let cell = "analog for Dram1T1C {\n    i(c.bl, sn) +> v(c.bl, sn) / (if c.wl { ron } else { rleak });\n    i(sn, gnd) +> v(sn) / rleak + ddt(cs * v(sn));\n}\n";
+    let overrides = Overrides { print: ["Top.bl[0]", "Top.bl[31]", "Top.bank.cells[0][0].sn", "Top.bank.cells[0][31].sn", "Top.bank.cells[1][0].sn", "Top.bank.cells[63][31].sn"].map(String::from).to_vec(), ..Commands::of_top() };
     let ran = chapter.wrapped("bank.msl", "", "modules#10", &format!("{cell}{top}")).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     for line in ["Top.bl[0]", "Top.bl[31]"] {
         // the 64 cells on a line leave it at 1 V less 64 x 1k / (5k + 1T)
         assert!((ran.signal(line) - 1.0).abs() < 1e-6, "{line}: {}", ran.signal(line));
     }
-    for node in ["Top.bank.cells[0][0].sn", "Top.bank.cells[63][31].sn"] {
-        assert!((ran.signal(node) - 1.0).abs() < 1e-6, "{node} follows its bit line: {}", ran.signal(node));
+    for node in ["Top.bank.cells[0][0].sn", "Top.bank.cells[0][31].sn"] {
+        assert!((ran.signal(node) - 1.0).abs() < 1e-6, "{node}, on the raised word line, follows its bit line: {}", ran.signal(node));
+    }
+    for node in ["Top.bank.cells[1][0].sn", "Top.bank.cells[63][31].sn"] {
+        assert!((ran.signal(node) - 0.5).abs() < 1e-6, "{node}, on a low word line, is half its bit line: {}", ran.signal(node));
     }
 }
 
