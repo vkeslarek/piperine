@@ -97,6 +97,15 @@ fn a_cell_three_and_four_levels_down_through_templates_reads_its_node_lets_carri
 }
 
 #[test]
+fn a_cell_through_generic_templates_three_and_four_levels_down_reads_its_node_lets_carrier_and_params() {
+    // §8.4.8: a type parameter (`C: Fn(Electrical)`) of each wrapper handed down to the wrapper below: the cell the template names
+    // (`k = 2`, `k = 3`, and `k = 5` in a generation) is read through `GBlock`, `GWing` and `GPlane`
+    assert_reads("RigGeneric3", 2.0);
+    assert_reads("RigGeneric4", 3.0);
+    assert_reads("RigGenericRow4", 5.0);
+}
+
+#[test]
 fn a_cell_of_a_generation_three_and_four_levels_down_reads_the_iteration_its_index_names() {
     // §8.2.23, §8.4.8: `cells[1]` of a generation reached through a template (`k = 4`, `k = 5`) and by name (`k = 1 + 1`)
     assert_reads("RigRow3", 4.0);

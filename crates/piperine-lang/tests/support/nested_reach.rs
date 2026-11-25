@@ -22,6 +22,12 @@ module Wing(a: Electrical) { cell: Cell; pub let block = Block { cell: cell }(a)
 module Row(a: Electrical) { cell: Cell; for j in 0..2 { pub let cells = cell(a); } }
 module Grid(a: Electrical) { cell: Cell; pub let row = Row { cell: cell }(a); }
 module Plane(a: Electrical) { cell: Cell; pub let grid = Grid { cell: cell }(a); }
+module GBank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }
+module GBlock<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let bank = GBank::<_>(a) { cell: cell }; }
+module GWing<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let block = GBlock::<_>(a) { cell: cell }; }
+module GRow<C: Fn(Electrical)>(a: Electrical) { cell: C; for j in 0..2 { pub let cells = cell(a); } }
+module GGrid<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let row = GRow::<_>(a) { cell: cell }; }
+module GPlane<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let grid = GGrid::<_>(a) { cell: cell }; }
 module Holder(a: Electrical) { make: Bank; pub let b = make(a); }
 module Rows(a: Electrical) { for j in 0..2 { pub let cells = Cell(a) { k: 1.0 + (j as f64) }; } }
 module Tower(a: Electrical) { pub let rows = Rows(a); }
@@ -29,7 +35,7 @@ module Tall(a: Electrical) { pub let tower = Tower(a); }
 ";
 
 /// The placement of each wrapper at the top, with the path from it to the cell, and the number of levels below the reader the cell is.
-pub const READS: [(&str, &str, &str); 9] = [
+pub const READS: [(&str, &str, &str); 12] = [
     ("let p = Level3(a);", "p.mid.c0", "3 by name"),
     ("let p = Level4(a);", "p.top.mid.c0", "4 by name"),
     ("let p = Block { cell: Cell { } }(a);", "p.bank.c0", "3 through templates"),
@@ -37,6 +43,9 @@ pub const READS: [(&str, &str, &str); 9] = [
     ("let p = Wing { cell: Cell { } }(a);", "p.block.bank.c0", "4 through templates"),
     ("let p = Grid { cell: Cell { } }(a);", "p.row.cells[1]", "3 through a template in generation"),
     ("let p = Plane { cell: Cell { } }(a);", "p.grid.row.cells[1]", "4 through a template in generation"),
+    ("let p = GBlock::<_>(a) { cell: Cell { } };", "p.bank.c0", "3 through generic templates"),
+    ("let p = GWing::<_>(a) { cell: Cell { } };", "p.block.bank.c0", "4 through generic templates"),
+    ("let p = GPlane::<_>(a) { cell: Cell { } };", "p.grid.row.cells[1]", "4 through generic templates in generation"),
     ("let p = Tower(a);", "p.rows.cells[1]", "3 by name in generation"),
     ("let p = Tall(a);", "p.tower.rows.cells[1]", "4 by name in generation"),
 ];

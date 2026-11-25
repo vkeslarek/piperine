@@ -104,6 +104,9 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_binds_each_port() {
         ("let p = Level4(q.top.mid.c0.sn); let q = Level4(p.top.mid.c0.sn);", "let p = Level4(p.top.mid.c0.sn);", "top.mid.c0", "top.mid.c0.sn"),
         ("let p = Block { cell: Cell { } }(q.bank.c0.sn); let q = Block { cell: Cell { } }(p.bank.c0.sn);", "let p = Block { cell: Cell { } }(p.bank.c0.sn);", "bank.c0", "bank.c0.sn"),
         ("let p = Wing { cell: Cell { } }(q.block.bank.c0.sn); let q = Wing { cell: Cell { } }(p.block.bank.c0.sn);", "let p = Wing { cell: Cell { } }(p.block.bank.c0.sn);", "block.bank.c0", "block.bank.c0.sn"),
+        ("let p = GBlock::<_>(q.bank.c0.sn) { cell: Cell { } }; let q = GBlock::<_>(p.bank.c0.sn) { cell: Cell { } };", "let p = GBlock::<_>(p.bank.c0.sn) { cell: Cell { } };", "bank.c0", "bank.c0.sn"),
+        ("let p = GWing::<_>(q.block.bank.c0.sn) { cell: Cell { } }; let q = GWing::<_>(p.block.bank.c0.sn) { cell: Cell { } };", "let p = GWing::<_>(p.block.bank.c0.sn) { cell: Cell { } };", "block.bank.c0", "block.bank.c0.sn"),
+        ("let p = GPlane::<_>(q.grid.row.cells[1].sn) { cell: Cell { } }; let q = GPlane::<_>(p.grid.row.cells[1].sn) { cell: Cell { } };", "let p = GPlane::<_>(p.grid.row.cells[1].sn) { cell: Cell { } };", "grid.row.cells[1]", "grid.row.cells[1].sn"),
         ("let p = Grid { cell: Cell { } }(q.row.cells[1].sn); let q = Grid { cell: Cell { } }(p.row.cells[1].sn);", "let p = Grid { cell: Cell { } }(p.row.cells[1].sn);", "row.cells[1]", "row.cells[1].sn"),
         ("let p = Plane { cell: Cell { } }(q.grid.row.cells[1].sn); let q = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);", "let p = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);", "grid.row.cells[1]", "grid.row.cells[1].sn"),
     ] {

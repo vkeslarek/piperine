@@ -21,6 +21,12 @@ module Wing(a: Electrical) { cell: Cell; pub let block = Block { cell: cell }(a)
 module Row(a: Electrical) { cell: Cell; for j in 0..2 { pub let cells = cell(a); } }
 module Grid(a: Electrical) { cell: Cell; pub let row = Row { cell: cell }(a); }
 module Plane(a: Electrical) { cell: Cell; pub let grid = Grid { cell: cell }(a); }
+module GBank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }
+module GBlock<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let bank = GBank::<_>(a) { cell: cell }; }
+module GWing<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let block = GBlock::<_>(a) { cell: cell }; }
+module GRow<C: Fn(Electrical)>(a: Electrical) { cell: C; for j in 0..2 { pub let cells = cell(a); } }
+module GGrid<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let row = GRow::<_>(a) { cell: cell }; }
+module GPlane<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let grid = GGrid::<_>(a) { cell: cell }; }
 module Rows(a: Electrical) { for j in 0..2 { pub let cells = Cell(a) { k: 1.0 + (j as f64) }; } }
 module Tower(a: Electrical) { pub let rows = Rows(a); }
 module Tall(a: Electrical) { pub let tower = Tower(a); }
@@ -167,4 +173,46 @@ module RigPairGeneration4() {
     let p = Plane { cell: Cell { } }(q.grid.row.cells[1].sn);
     let q = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);
     let feed = Feed(p.grid.row.cells[1].sn);
+}
+
+/// Through generic templates (a type parameter placing a generic module), 3 levels: the cell is `p.bank.c0`, at `k = 2`.
+module RigGeneric3() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = GBlock::<_>(a) { cell: Cell { k: 2.0 } };
+}
+analog for RigGeneric3 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.bank.c0.sn);
+    potential(vs_read) +> p.bank.c0.vs;
+    potential(q_read) +> p.bank.c0.q;
+    potential(k_read) +> p.bank.c0.k;
+    potential(twice_read) +> p.bank.c0.twice;
+}
+
+/// Through generic templates, 4 levels: the cell is `p.block.bank.c0`, at `k = 3`.
+module RigGeneric4() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = GWing::<_>(a) { cell: Cell { k: 3.0 } };
+}
+analog for RigGeneric4 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.block.bank.c0.sn);
+    potential(vs_read) +> p.block.bank.c0.vs;
+    potential(q_read) +> p.block.bank.c0.q;
+    potential(k_read) +> p.block.bank.c0.k;
+    potential(twice_read) +> p.block.bank.c0.twice;
+}
+
+/// Through generic templates in generation, 4 levels: the cell is `p.grid.row.cells[1]`, at `k = 5`.
+module RigGenericRow4() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = GPlane::<_>(a) { cell: Cell { k: 5.0 } };
+}
+analog for RigGenericRow4 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.grid.row.cells[1].sn);
+    potential(vs_read) +> p.grid.row.cells[1].vs;
+    potential(q_read) +> p.grid.row.cells[1].q;
+    potential(k_read) +> p.grid.row.cells[1].k;
+    potential(twice_read) +> p.grid.row.cells[1].twice;
 }

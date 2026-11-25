@@ -199,13 +199,25 @@ impl Elaboration<'_, '_> {
     /// The reach frame of the placement `key` bound by the `let` binding `binding`, made the first time: a child of the body when the
     /// frame `scope` reads is the body's own (frame 0), else a child of the child that frame is, below it.
     pub(super) fn placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
-        let call = key.call;
         if let Some(frame) = self.frames[scope.frame].placements.get(&key) {
             return Some(*frame);
         }
         if let Some(frame) = self.reach_frames.get(&(scope.frame, key.clone())) {
             return Some(*frame);
         }
+        // a placement of a reach frame is folded under that frame's generic arguments, not the body's (`GBlock<C>` placing `GBank<C>`)
+        let outer = (scope.frame != 0).then(|| self.consts.set_substitution(self.frames[scope.frame].substitution.clone()));
+        let made = self.make_placement_frame(scope, binding, key, span);
+        if let Some(outer) = outer {
+            self.consts.set_substitution(outer);
+        }
+        made
+    }
+
+    /// The reach frame [`placement_frame`](Self::placement_frame) makes for the placement `key`, folded under the substitution of the
+    /// frame `scope` reads.
+    fn make_placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
+        let call = key.call;
         // a frame below a reach frame reads the params the placement bound to it; a hoisted frame has no body of its own to reach into
         let (keys, child) = if scope.frame == 0 {
             (scope.keys.clone(), self.child_index(&key))

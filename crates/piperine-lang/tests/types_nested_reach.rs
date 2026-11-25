@@ -36,6 +36,11 @@ fn an_item_that_is_not_pub_is_refused_three_and_four_levels_below_the_reader() {
     for (placement, reach, form) in READS {
         let top = format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ v(o) +> {reach}.hidden; }}");
         let codes: Vec<String> = found(&format!("{MODELS}{top}")).into_iter().map(|(code, _)| code).collect();
+        if form.contains("generic") {
+            // a type parameter names no module to the checker: the refusal is the elaborator's (`elab_nested_reach.rs`, C15)
+            assert!(codes.is_empty(), "{form}: the checker defers a read through a type parameter: {codes:?}");
+            continue;
+        }
         assert!(!codes.is_empty() && codes.iter().all(|code| code == "E0343"), "{form}: a read of a private item is E0343: {codes:?}");
     }
 }
@@ -53,6 +58,8 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_types_as_hardware() {
         ("let p = Wing { cell: Cell { } }(p.block.bank.c0.sn);", "4 template own"),
         ("let p = Grid { cell: Cell { } }(q.row.cells[1].sn); let q = Grid { cell: Cell { } }(p.row.cells[0].sn);", "3 generation pair"),
         ("let p = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);", "4 generation own"),
+        ("let p = GBlock::<_>(q.bank.c0.sn) { cell: Cell { } }; let q = GBlock::<_>(p.bank.c0.sn) { cell: Cell { } };", "3 generic template pair"),
+        ("let p = GPlane::<_>(p.grid.row.cells[1].sn) { cell: Cell { } };", "4 generic generation own"),
     ] {
         assert_eq!(found(&format!("{MODELS}module Top() {{ {placement} }}")), Vec::<(String, String)>::new(), "{form}");
     }
