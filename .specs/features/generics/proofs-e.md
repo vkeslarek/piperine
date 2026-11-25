@@ -1,6 +1,6 @@
 # generics-e proofs
 
-**HEAD**: 07569dcf1
+**HEAD**: 34bfb7b26
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 50 pass, 0 fail
@@ -63,20 +63,20 @@
 `Run stdlibrary` - exit 0
 
 ```
-test std_root_comment_names_the_namespaces ... ok
-test root_forms_place_their_coefficient_form ... ok
+test std_has_no_unresolved_member ... ok
 test tgate_places_two_tran ... ok
 test std_root_declares_its_namespaces ... ok
+test std_root_comment_names_the_namespaces ... ok
+test pure_bodies_name_no_primitive ... ok
+test prelude_exports_equal_the_index ... ok
+test root_forms_place_their_coefficient_form ... ok
 test the_index_lists_stay_honest ... ok
 test transient_is_the_kind_and_tran_the_module ... ok
 test no_generics_group_item_is_refused_because_generic ... ok
 
-test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.52s
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.55s
 
-   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-plan)
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-transpile)
-    Finished `test` profile [unoptimized] target(s) in 24.95s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/std_library.rs (/var/tmp/piperine-target-a/debug/deps/std_library-559768631c9dc7e4)
 ```
 
@@ -85,34 +85,33 @@ test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 6 tests
 test an_unplaced_module_calling_ddt_from_a_function_is_e0350 ... ok
-test every_item_kind_of_every_crate_is_checked_unreached ... ok
 test an_unreached_function_with_an_error_fails_the_model_check ... ok
 test an_unreached_item_has_the_code_it_has_when_reached ... ok
+test every_item_kind_of_every_crate_is_checked_unreached ... ok
 test the_standard_library_is_checked_whole_with_no_instantiation ... ok
 test an_unreached_generic_module_with_an_error_fails_the_model_check ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.52s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_model.rs (/var/tmp/piperine-target-a/debug/deps/types_model-0ee2a7ac1b3e9eba)
 ```
 
 `Run srcstd` - exit 0
 
 ```
-test noise_table_gives_the_interpolated_psd ... ok
-test since_reads_the_time_from_the_last_change ... ok
-test min_pulse_fails_exactly_for_a_narrow_pulse ... ok
 test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
+test min_pulse_fails_exactly_for_a_narrow_pulse ... ok
 test idt_and_idtmod_integrate_against_section_22 ... ok
+test since_reads_the_time_from_the_last_change ... ok
+test noise_table_gives_the_interpolated_psd ... ok
 test the_laplace_family_gives_the_closed_form_step_response ... ok
 test the_water_model_boils_and_vaporizes ... ok
 test the_zi_family_follows_its_difference_equation ... ok
 test inertial_delays_and_swallows_short_pulses ... ok
 test setup_hold_and_stable_fail_exactly_on_their_violations ... ok
 
-test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.58s
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.56s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_stdlib_generic.rs (/var/tmp/piperine-target-a/debug/deps/source_stdlib_generic-8b02640865071e8b)
@@ -121,14 +120,14 @@ test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run docs` - exit 0
 
 ```
+test the_instruction_files_say_the_host_crates_build ... ok
+test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
 test the_per_level_feature_is_recorded_as_dropped ... ok
-test abi_md_describes_the_unreleased_contract ... ok
-test state_records_the_observable_landings_and_the_tick_epoch ... ok
-test the_buck_spec_holds_the_bench_bounds ... ok
-test the_roadmap_is_forward_looking ... ok
+test the_scenario_package_states_its_measured_step_count ... ok
 test transient_performance_closes_v12 ... ok
-test state_holds_the_explicit_unknowns_decision ... ok
+test abi_md_describes_the_unreleased_contract ... ok
 test the_generics_check_ids_are_unique_across_its_phases ... ok
+test the_roadmap_is_forward_looking ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 test the_generics_checks_file_holds_every_phase ... ok
 
@@ -141,20 +140,20 @@ test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run elabgenr` - exit 0
 
 ```
-test a_carrier_declared_in_a_generation_for_is_an_array_of_one_element_per_iteration ... ok
 test generated_reactions_are_one_per_iteration_in_source_order ... ok
 test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok
+test a_carrier_declared_in_a_generation_for_is_an_array_of_one_element_per_iteration ... ok
 test a_recursion_by_generation_unrolls ... ok
+test a_let_in_generation_read_outside_its_loops_is_the_array_of_its_values ... ok
 test a_member_of_a_generated_instance_is_read_by_its_iteration_or_its_ordinal ... ok
 test an_untaken_arm_or_an_index_outside_is_e0342 ... ok
 test a_definition_in_generation_is_one_drive_per_iteration_its_arm_takes ... ok
 test generation_for_makes_arrays_and_if_keeps_the_taken_arm ... ok
 test a_generation_recursion_that_does_not_end_is_e0341 ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.02s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.58s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_generation.rs (/var/tmp/piperine-target-a/debug/deps/elab_generation-e77cb8dfe3d92284)
 ```
 
@@ -163,56 +162,56 @@ test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 test generation_in_a_digital_block_runs_from_every_entry ... ok
 test a_template_array_element_placed_in_generation_runs ... ok
-test a_module_with_a_result_through_a_callable_bound_param_runs ... ok
-test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 test generated_instances_run_and_read_by_ordinal ... ok
+test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
+test a_module_with_a_result_through_a_callable_bound_param_runs ... ok
 test a_template_carrying_composite_params_runs_through_a_placement ... ok
 test a_generated_bank_reacts_per_element ... ok
 test a_hoisted_module_with_generation_runs ... ok
 test the_generic_ladder_equals_the_ladder_written_out ... ok
 test carriers_definitions_and_hoisted_placements_in_generation_run ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.45s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.42s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_generation.rs (/var/tmp/piperine-target-a/debug/deps/source_generation-eadf17ef959929ea)
 ```
 
 `Run galleries` - exit 0
 
 ```
+test the_fences_of_the_generic_library_are_checked ... ok
 test a_dirty_gallery_is_reported_by_fence ... ok
 test the_fences_composite_values_lifted_are_checked ... ok
 test the_fences_generics_lifted_are_checked ... ok
 test the_fences_generics_phase_c_lifted_are_checked ... ok
-test the_gate_builds_20_fences ... ok
-test no_gallery_has_an_unresolved_member ... ok
-test every_gallery_passes_check ... ok
 test every_gallery_references_its_std_items ... ok
+test every_gallery_passes_check ... ok
+test no_gallery_has_an_unresolved_member ... ok
+test the_gate_builds_20_fences ... ok
 test every_gallery_builds_with_no_diagnostics ... ok
 
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.53s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.63s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.63s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/std_galleries.rs (/var/tmp/piperine-target-a/debug/deps/std_galleries-a171482597723e6e)
 ```
 
 `Run bookinventory` - exit 0
 
 ```
-test the_gaps_guard_names_a_missing_and_an_extra_row ... ok
-test the_guard_names_a_block_without_a_row_and_a_row_naming_no_test ... ok
-test a_verdict_fits_its_block ... ok
-test refused_rows_and_gaps_section_11_agree ... ok
+test disputed_rows_are_listed_for_the_user ... ok
+test no_row_diverges ... ok
+test every_gaps_row_names_its_owner ... ok
+test no_block_row_is_pending ... ok
+test a_marked_file_joins_its_blocks ... ok
 test every_block_of_the_book_has_one_row ... ok
 test run_rows_name_tests_that_run_their_model ... ok
-test every_listing_that_does_not_run_names_its_gap ... ok
 test every_row_names_an_existing_test ... ok
 test the_book_reads_every_block ... ok
 test the_book_uses_no_removed_name ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
 
     Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-a/debug/deps/book_inventory-4e223d7a754dd3b2)
@@ -221,20 +220,20 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run typesresults` - exit 0
 
 ```
+test a_bare_analog_read_of_a_carrier_has_no_diagnostic ... ok
 test a_continuous_result_read_where_probes_are_not_allowed_is_e0354 ... ok
 test a_placement_has_its_result_type ... ok
 test an_event_result_outside_an_event_position_is_e0354 ... ok
 test a_let_that_reads_itself_is_e0332_or_e0353 ... ok
-test a_placement_in_a_const_context_is_e0352 ... ok
 test trailing_option_inputs_may_be_left_out ... ok
+test a_placement_in_a_const_context_is_e0352 ... ok
 test a_module_with_a_result_is_typed ... ok
 test an_analog_read_of_a_carrier_is_the_value ... ok
 test now_and_analysis_static_are_typed ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.33s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.34s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.57s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_results.rs (/var/tmp/piperine-target-a/debug/deps/types_results-1375aece72e53a01)
 ```
 
@@ -242,10 +241,11 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test a_result_module_gets_no_body_and_no_instance ... ok
+test an_omitted_option_input_reads_as_none ... ok
 test at_now_and_static_lower_to_their_nodes ... ok
-test emit_lowers_to_a_site_with_its_texts ... ok
 test a_placement_is_hoisted_under_its_name ... ok
 test two_placements_are_two_sets_of_carriers ... ok
+test emit_lowers_to_a_site_with_its_texts ... ok
 test value_inputs_are_substituted_at_each_read ... ok
 test the_stdlib_d2a_gives_transition_the_level_of_its_input ... ok
 test a_callable_bound_param_of_a_hoisted_module_places_its_template ... ok
@@ -253,17 +253,17 @@ test an_option_param_of_a_hoisted_placement_is_bound_to_its_constant ... ok
 
 test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.69s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_results.rs (/var/tmp/piperine-target-a/debug/deps/elab_results-a19a765d34caece5)
 ```
 
 `Run elabtemplates` - exit 0
 
 ```
+test two_templates_of_one_generic_module_with_different_arguments_are_two_values ... ok
 test two_templates_with_equal_composite_params_are_one_value ... ok
-test a_bare_module_name_used_as_a_value_places_its_template_with_every_default ... ok
 test a_template_carrying_composite_params_places_with_and_without_a_result ... ok
+test a_bare_module_name_used_as_a_value_places_its_template_with_every_default ... ok
 test the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl ... ok
 test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 test templates_fold_from_consts_functions_and_two_levels_of_params ... ok
@@ -271,50 +271,49 @@ test a_template_placement_is_identical_to_the_written_placement ... ok
 test an_array_of_templates_written_as_a_repeat_is_that_many_equal_templates ... ok
 test every_callee_form_elaborates_to_what_it_names ... ok
 
-test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.75s
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.68s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.64s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_templates.rs (/var/tmp/piperine-target-a/debug/deps/elab_templates-48f7175a2550e82b)
 ```
 
 `Run typestempl` - exit 0
 
 ```
-test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok
-test the_type_of_a_generic_template_carries_its_arguments ... ok
+test a_placement_through_a_template_of_a_nature_generic_module_checks_its_ports ... ok
 test a_placement_through_a_template_or_a_function_types_as_its_module ... ok
+test the_type_of_a_generic_template_carries_its_arguments ... ok
+test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok
 test a_template_leaves_an_option_param_out_as_a_placement_does ... ok
-test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
-test gnd_connects_through_a_callable_bound_as_at_a_placement ... ok
 test a_template_param_value_may_read_the_placing_modules_params ... ok
+test gnd_connects_through_a_callable_bound_as_at_a_placement ... ok
+test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
 test a_bare_module_name_used_as_a_value_is_its_template_with_every_default ... ok
 test every_callee_form_the_grammar_admits_is_called_by_its_value ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.12s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.81s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.54s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_templates.rs (/var/tmp/piperine-target-a/debug/deps/types_templates-71532b19f8b42f57)
 ```
 
 `Run apisession` - exit 0
 
 ```
-test a_structural_params_text_selects_its_variant ... ok
-test a_top_with_discrete_in_ports_starts_them_at_their_initial_values ... ok
-test an_undriven_top_port_without_default_refuses_the_analysis ... ok
-test an_unknown_variant_is_e0802_listing_the_variants ... ok
-test a_structural_param_overrides_before_the_run_and_is_refused_during_it has been running for over 60 seconds
-test a_structural_params_bad_text_is_e0802 has been running for over 60 seconds
-test an_integer_above_2_pow_53_is_set_exactly ... ok
-test params_passed_through_a_wrappers_placement_run ... ok
+test an_integer_param_set_by_text_in_range ... ok
+test an_option_param_set_to_a_value_or_none ... ok
 test a_structural_param_overrides_before_the_run_and_is_refused_during_it ... ok
+test an_undriven_top_port_without_default_refuses_the_analysis ... ok
+test a_structural_params_bad_text_is_e0802 has been running for over 60 seconds
+test an_unknown_variant_is_e0802_listing_the_variants ... ok
 test a_structural_params_bad_text_is_e0802 ... ok
+test params_passed_through_a_wrappers_placement_run ... ok
+test an_integer_above_2_pow_53_is_set_exactly has been running for over 60 seconds
+test an_integer_above_2_pow_53_is_set_exactly ... ok
 
-test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 66.26s
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 66.57s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/session.rs (/var/tmp/piperine-target-a/debug/deps/session-f2eb7230d9ebe161)
 ```
 
@@ -323,34 +322,34 @@ test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 6 tests
 test the_three_op_twins_run_on_both_backends ... ok
-test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_two_backends_print_the_same_bytes ... ok
+test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_sweep_and_transient_twins_run_on_both_backends ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.29s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.30s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/twins.rs (/var/tmp/piperine-target-a/debug/deps/twins-89feed4c96f5a89f)
 ```
 
 `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piper` - exit 0
 
 ```
-test root_targets_match_the_naming_rule ... ok
+test every_ignored_doc_example_is_registered ... ok
 test the_walk_covers_the_three_solver_crates ... ok
+test root_targets_match_the_naming_rule ... ok
 test no_file_scope_lint_suppression ... ok
-test lrm_covers_declarations_are_well_formed ... ok
 test no_ignored_tests ... ok
+test lrm_covers_declarations_are_well_formed ... ok
 test no_dead_architecture_identifiers ... ok
-test no_disabled_test_code ... ok
 test retired_unknown_codes_are_raised_nowhere ... ok
+test no_disabled_test_code ... ok
 test every_unknown_test_has_a_successor ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.90s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.85s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-generics/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.45s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target-a/debug/deps/suite_hygiene-04ba8e96779992cb)
 ```
