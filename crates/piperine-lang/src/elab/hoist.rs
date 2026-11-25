@@ -479,12 +479,14 @@ impl Elaboration<'_, '_> {
         true
     }
 
-    /// The constant a param value `expr` folds to over `read`: a composite (an array of coefficients, a table) is a constant of the
-    /// IR's arena, bound taken apart by `bind_param` (`frame_bindings`).
+    /// The constant a param value `expr` folds to over `read`, as for a placement that keeps its body: a composite (an array of
+    /// coefficients, a table) is a constant of the IR's arena, bound taken apart by `bind_param` (`frame_bindings`); an array of
+    /// templates is the aggregate of their numbers, held as a key of the frame (§8.4.6).
     /// A value the placement gives is written in the caller, so it folds under the caller's generic arguments (`caller`).
     fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, super::consts::ConstFault> {
         let callee = caller.map(|substitution| self.consts.set_substitution(substitution.clone()));
-        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, read) } else { self.consts.value(expr, read) };
+        // the fold of a placement that keeps its body (`fold_param_value`): a template or an array of them is the number(s) it interns
+        let folded = self.fold_param_value(expr, read);
         if let Some(callee) = callee {
             self.consts.set_substitution(callee);
         }

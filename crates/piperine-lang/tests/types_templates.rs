@@ -418,4 +418,15 @@ fn a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placemen
         !short.codes().is_empty(),
         "a default of one element for two"
     );
+    // §8.3.12: the same param in a module with a result, its default and an override of it from the placement
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let with_result = TemplateSource::new(&format!(
+        "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ }}, Scale {{ r: 3.0 }}]; fs[1](x) }}\n\
+         module Top() {{ signal y: Bit<f64>; let a = Outer(1.0); let b = Outer(1.0) {{ fs: [Scale {{ r: 5.0 }}, Scale {{ }}] }}; y = a + b; }}\n"
+    ));
+    assert!(with_result.codes().is_empty(), "{:?}: {}", with_result.codes(), with_result.message());
+    let wrong_in_result = TemplateSource::new(&format!(
+        "{scale}module Outer(x: f64) -> f64 {{ fs: [Scale; 2] = [Scale {{ }}, Cell {{ }}]; fs[1](x) }}\nmodule Top() {{ signal y: Bit<f64>; y = Outer(1.0); }}\n"
+    ));
+    assert_eq!(wrong_in_result.codes(), ["E0180"], "an element of another module in a module with a result");
 }

@@ -565,6 +565,24 @@ fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
             (cs(5.0), cs(6.0)),
             "{source}"
         );
+    }    // §8.3.12: the same param in a module with a result (`Outer` is hoisted, its frame holds the array as a key): the result
+    // `fs[1](x)` is `x * r` of the element, `r` the default's 3.0 or the override's 6.0, by a literal, a `const`, an element chosen
+    // by a param and through a second hoisted level (`Wrap` gives its own param `gs` to `Outer`'s `fs`)
+    let scale = "module Scale(x: f64) -> f64 { r: f64 = 1.0; x * r }\n";
+    let outer = "module Outer(x: f64) -> f64 { k: u32 = 1; fs: [Scale; 2] = [Scale { }, Scale { r: 3.0 }]; fs[k](x) }\n";
+    let wrap = "module Wrap(x: f64) -> f64 { gs: [Scale; 2] = [Scale { r: 5.0 }, Scale { r: 6.0 }]; Outer(x) { fs: gs } }\n";
+    let placed = |placement: &str| format!("{scale}{outer}{wrap}const SIX: [Scale; 2] = [Scale {{ r: 5.0 }}, Scale {{ r: 6.0 }}];\nmodule Top() {{ signal y: Bit<f64>; let a = {placement}; y = a; }}");
+    let x = 2.0;
+    for (placement, r) in [
+        ("Outer(2.0)", 3.0),
+        ("Outer(2.0) { fs: [Scale { r: 5.0 }, Scale { r: 6.0 }] }", 6.0),
+        ("Outer(2.0) { fs: SIX }", 6.0),
+        ("Outer(2.0) { k: 0, fs: SIX }", 5.0),
+        ("Wrap(2.0)", 6.0),
+    ] {
+        let printed = Elab::ir(&placed(placement), "Top").print_structural();
+        let result = format!("drive y = ({x:?} * {r:?})");
+        assert!(printed.contains(&result), "{placement}: wants `{result}` in\n{printed}");
     }
 }
 
