@@ -8,7 +8,7 @@ mod support;
 #[path = "support/nested_reach.rs"]
 mod nested;
 
-use nested::{MODELS, READS};
+use nested::{MIXED_LETS, MODELS, READS};
 use piperine_ir::Ir;
 use piperine_lang::elab::{Elaborator, Overrides};
 use support::Elab;
@@ -249,5 +249,35 @@ fn a_refusal_of_another_cause_hides_no_refusal_of_a_read() {
         assert_eq!(messages.len(), 2, "{reads}: {messages:?}");
         assert!(messages[0].starts_with("P0001") && messages[0].contains(earlier), "{reads}: the earlier cause first: {messages:?}");
         assert!(messages[1].starts_with("P0001") && messages[1].contains(own), "{reads}: the read's own refusal: {messages:?}");
+    }
+}
+
+#[test]
+fn a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_three_and_four_levels_below() {
+    // §8.2.25 (verification finding 10): a `let` of the cell that reads a param and the solve (`deep = k * vs`, `gated = if k > 0.5
+    // { vs } else { 0.0 }`, `gi = g * v(sn)`) is lowered in the reader's context with each param at the value the placement gives,
+    // else the default (`g = 0.5`), never refused: one level below (`p`), three and four by name, through templates and in
+    // generation, and through a type parameter. A form whose hops the text names takes one pass (C25: the type parameter, one pass
+    // for each level below the reader)
+    let models = MODELS.replace("pub let vs = v(sn);", MIXED_LETS);
+    for (placement, reach, k, g, passes) in [
+        ("let p = Cell(a) { k: 2.0, g: 3.0 };", "p", 2.0, 3.0, 1),
+        ("let p = Level3(a);", "p.mid.c0", 1.0, 0.5, 1),
+        ("let p = Level4(a);", "p.top.mid.c0", 1.0, 0.5, 1),
+        ("let p = Block { cell: Cell { k: 3.0, g: 2.0 } }(a);", "p.bank.c0", 3.0, 2.0, 1),
+        ("let p = Wing { cell: Cell { k: 4.0, g: 3.0 } }(a);", "p.block.bank.c0", 4.0, 3.0, 1),
+        ("let p = Grid { cell: Cell { k: 0.25 } }(a);", "p.row.cells[1]", 0.25, 0.5, 1),
+        ("let p = Tower(a);", "p.rows.cells[1]", 2.0, 0.5, 1),
+        ("let p = Tall(a);", "p.tower.rows.cells[1]", 2.0, 0.5, 1),
+        ("let p = GPlane::<_>(a) { cell: Cell { k: 7.0, g: 1.5 } };", "p.grid.row.cells[1]", 7.0, 1.5, 4),
+    ] {
+        for (item, lowered) in [("deep", format!("({k:?} * probe(")), ("gated", format!("if ({k:?} > 0.5) {{ probe(")), ("gi", format!("({g:?} * probe("))] {
+            let design = support::Elab::design(&format!("{models}{}", top(placement, &format!("potential(o) +> {reach}.{item};"))));
+            let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
+            let printed = result.unwrap_or_else(|d| panic!("{reach}.{item}: {d:?}")).print_structural();
+            let read = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{reach}.{item}: the read of `o`: {printed}"));
+            assert!(read.contains(&lowered) && read.contains(&format!("{reach}.sn")), "{reach}.{item} lowers `{lowered}` over the cell's node: {read}");
+            assert_eq!(statistics.passes, passes, "{reach}.{item}");
+        }
     }
 }

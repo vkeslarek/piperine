@@ -202,6 +202,15 @@ Proof: run elabnested | test every_read_whose_hops_the_text_names_is_elaborated_
 **C26** - A read refused for its own cause says so though the run refused something else before it (a sibling read through a module that declares a node in generation, GAPS L94, or a hoisted module that holds a placement, L95): only a read through the refused module is silent after its cause (verification finding 9). The read's own refusal, a node of a hoisted module read through a child (`v(r.h.n)`), is GAPS L96, owner `spec-closure`
 Proof: run elabnested | test a_refusal_of_another_cause_hides_no_refusal_of_a_read ... ok
 
+**C27** - A `let` of the cell over a param and the solve (`deep = k * vs`, `gated = if k > 0.5 { vs } else { 0.0 }`, `gi = g * v(sn)`) one level below the reader and three and four levels below it, by name, through templates, in generation and through a type parameter, is lowered with each param at the value the placement gives, else the default, in one pass (the type parameter at its C25 fallback) (verification finding 10)
+Proof: run elabnested | test a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_three_and_four_levels_below ... ok
+
+**C28** - The same `let`s type with no diagnostic one level below the reader and in every form of `READS` (verification finding 10)
+Proof: run typesnested | test a_let_over_a_param_and_the_solve_types_one_three_and_four_levels_below_the_reader ... ok
+
+**C29** - From source, the same `let`s one level, three by name and through a template, and four in generation (both iterations) read the values Rust computes from the placement's params and the divider (verification finding 10)
+Proof: run sourcenested | test a_let_over_a_param_and_the_solve_one_three_and_four_levels_down_reads_the_placements_params ... ok
+
 ---
 
 ## Handoff

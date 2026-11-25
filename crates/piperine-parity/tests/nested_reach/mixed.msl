@@ -1,0 +1,58 @@
+//! A `let` of a cell that mixes a param and the solve, read one, three and four levels below the reader (part III §8.2.8,
+//! §8.2.25): `deep = k * vs`, `gated = if k > 0.5 { vs } else { 0.0 }` and `gi = g * v(sn)`, by name, through a template and in
+//! generation. The expected values are computed by Rust in `source_nested_reach.rs`.
+
+/// A branch of conductance `k` from `a` to the storage node `sn`, a 1 S leak from it to ground, and the `let`s a parent reads.
+module Mix(a: Electrical) {
+    pub k: f64 = 1.0;
+    pub g: f64 = 0.5;
+    pub signal sn: Electrical;
+    pub let vs = v(sn);
+    pub let deep = k * vs;
+    pub let gated = if k > 0.5 { vs } else { 0.0 };
+    pub let gi = g * v(sn);
+}
+analog for Mix { i(a, sn) +> v(a, sn) * k; i(sn, gnd) +> v(sn, gnd); }
+
+module MixLevel2(a: Electrical) { pub let c0 = Mix(a) { g: 2.0 }; }
+module MixLevel3(a: Electrical) { pub let mid = MixLevel2(a); }
+module MixBank(a: Electrical) { cell: Mix; pub let c0 = cell(a); }
+module MixBlock(a: Electrical) { cell: Mix; pub let bank = MixBank { cell: cell }(a); }
+module MixRows(a: Electrical) { for j in 0..2 { pub let cells = Mix(a) { k: 0.25 + (j as f64), g: 3.0 }; } }
+module MixTower(a: Electrical) { pub let rows = MixRows(a); }
+module MixTall(a: Electrical) { pub let tower = MixTower(a); }
+
+/// One level: the cell is `p`, at `k = 2`, `g = 1.5`.
+module MixRig1() {
+    signal a: Electrical; signal deep_read: Electrical; signal gated_read: Electrical; signal gi_read: Electrical;
+    let p = Mix(a) { k: 2.0, g: 1.5 };
+}
+analog for MixRig1 { potential(a) +> 1.0; potential(deep_read) +> p.deep; potential(gated_read) +> p.gated; potential(gi_read) +> p.gi; }
+
+/// Three levels by name: the cell is `p.mid.c0`, at `k = 1` (the default) and `g = 2` (its placement's).
+module MixRig3() {
+    signal a: Electrical; signal deep_read: Electrical; signal gated_read: Electrical; signal gi_read: Electrical;
+    let p = MixLevel3(a);
+}
+analog for MixRig3 { potential(a) +> 1.0; potential(deep_read) +> p.mid.c0.deep; potential(gated_read) +> p.mid.c0.gated; potential(gi_read) +> p.mid.c0.gi; }
+
+/// Three levels through a template: the cell is `p.bank.c0`, at `k = 0.25`, `g = 4`.
+module MixRigTemplate3() {
+    signal a: Electrical; signal deep_read: Electrical; signal gated_read: Electrical; signal gi_read: Electrical;
+    let p = MixBlock { cell: Mix { k: 0.25, g: 4.0 } }(a);
+}
+analog for MixRigTemplate3 { potential(a) +> 1.0; potential(deep_read) +> p.bank.c0.deep; potential(gated_read) +> p.bank.c0.gated; potential(gi_read) +> p.bank.c0.gi; }
+
+/// Four levels by name in generation: the cell is `p.tower.rows.cells[1]`, at `k = 0.25 + 1`, `g = 3`.
+module MixRigRows4() {
+    signal a: Electrical; signal deep_read: Electrical; signal gated_read: Electrical; signal gi_read: Electrical;
+    let p = MixTall(a);
+}
+analog for MixRigRows4 { potential(a) +> 1.0; potential(deep_read) +> p.tower.rows.cells[1].deep; potential(gated_read) +> p.tower.rows.cells[1].gated; potential(gi_read) +> p.tower.rows.cells[1].gi; }
+
+/// Four levels by name in generation, the other iteration: the cell is `p.tower.rows.cells[0]`, at `k = 0.25`, `g = 3`.
+module MixRigRows4First() {
+    signal a: Electrical; signal deep_read: Electrical; signal gated_read: Electrical; signal gi_read: Electrical;
+    let p = MixTall(a);
+}
+analog for MixRigRows4First { potential(a) +> 1.0; potential(deep_read) +> p.tower.rows.cells[0].deep; potential(gated_read) +> p.tower.rows.cells[0].gated; potential(gi_read) +> p.tower.rows.cells[0].gi; }

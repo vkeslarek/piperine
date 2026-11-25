@@ -252,19 +252,18 @@ impl Elaboration<'_, '_> {
         if child.is_none() {
             frame.placement = Some((binding, key.iteration.clone()));
         }
-        for key in self.keys.of(module) {
-            if let Some(value) = values.get(*key) {
-                frame.params.insert(*key, value);
-            }
-        }
-        // a placement through a template fixes every param of the module with the template, which the body's key fixes (§8.4.8)
-        for (param, value) in self.template_params_of(within, call)? {
-            frame.params.insert(param, value);
-        }
         // an instance of a generic module reads its names under its own arguments
         if self.is_generic_module(module) {
             let instance = self.placement_instance(within, call, module)?;
             frame.substitution = self.instance_substitution(instance.item, &instance.arguments);
+        }
+        // every param of the module is the value the placement (or its template) gives, else its default: what a `let` of the
+        // child read in the parent's context reads (§8.2.25); a key param is the value that selects the child's body variant
+        frame.params = self.reach_frame_params(within, call, module, &frame.substitution)?;
+        for key in self.keys.of(module) {
+            if let Some(value) = values.get(*key) {
+                frame.params.insert(*key, value);
+            }
         }
         self.frames.push(frame);
         let index = self.frames.len() - 1;
@@ -294,20 +293,19 @@ impl Elaboration<'_, '_> {
         within
     }
 
-    /// The value of every param of the module the placement `call` places through a template (`cell(a)`, `C1(a)`), the template's
-    /// block or the module's defaults; none for a placement by name. `None` after a diagnostic.
-    fn template_params_of(&mut self, scope: &Scope, call: ExprId) -> Option<Vec<(DeclId, piperine_ir::Constant)>> {
-        let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return Some(Vec::new()) };
+    /// The value of every param of `module` as the placement `call`, read from `scope`, binds it (`placement_params`): a given value
+    /// folds over the caller's constants and generic arguments, a default over the params before it under the instance's own
+    /// (`substitution`). `None` after a diagnostic.
+    fn reach_frame_params(&mut self, scope: &Scope, call: ExprId, module: DeclId, substitution: &crate::types::Substitution) -> Option<std::collections::BTreeMap<DeclId, piperine_ir::Constant>> {
+        let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return None };
         let Ok(through) = self.template_through(scope, call, &class) else { return None };
-        let Some(template) = through else { return Some(Vec::new()) };
-        let bound = match self.consts.template_bindings(&template) {
-            Ok(bound) => bound,
-            Err(fault) => {
-                self.const_fault(&fault, "a param of a template");
-                return None;
-            }
-        };
-        Some(self.params_of(template.module).into_iter().filter_map(|param| bound.get(param).map(|value| (param, value))).collect())
+        let fields = self.placement_fields(call, module);
+        let caller = scope.keys.overlaid(&scope.unrolled);
+        let span = self.design.expr_node(call).span;
+        let outer = self.consts.set_substitution(substitution.clone());
+        let bound = self.placement_params(module, (&fields, through.as_ref()), (&caller, &outer), scope.file, span);
+        self.consts.set_substitution(outer);
+        bound
     }
 
     /// The nodes of the array of nodes `decl` of the reach frame `frame`, made the first time: one node of the body for each

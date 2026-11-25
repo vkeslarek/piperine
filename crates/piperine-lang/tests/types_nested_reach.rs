@@ -6,7 +6,7 @@
 #[path = "support/nested_reach.rs"]
 mod nested;
 
-use nested::{MODELS, READS};
+use nested::{MIXED_LETS, MODELS, READS};
 use piperine_lang::pom::Design;
 use piperine_lang::types::Types;
 
@@ -27,6 +27,17 @@ fn every_kind_of_item_types_three_and_four_levels_below_the_reader() {
     for (placement, reach, form) in READS {
         let top = format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ v(o) +> v({reach}.sn) + {reach}.k + {reach}.twice + {reach}.vs + {reach}.q; }}");
         assert_eq!(found(&format!("{MODELS}{top}")), Vec::<(String, String)>::new(), "{form}: {reach}");
+    }
+}
+
+#[test]
+fn a_let_over_a_param_and_the_solve_types_one_three_and_four_levels_below_the_reader() {
+    // §8.2.8, §8.2.25 (verification finding 10): `R.deep` (`k * vs`), `R.gated` (`if k > 0.5 { vs } else { 0.0 }`) and `R.gi`
+    // (`g * v(sn)`) type with no diagnostic one level below the reader and in every form three and four levels below it
+    let models = MODELS.replace("pub let vs = v(sn);", MIXED_LETS);
+    for (placement, reach, form) in READS.iter().copied().chain([("let p = Cell(a) { k: 2.0, g: 3.0 };", "p", "1 by name")]) {
+        let top = format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ v(o) +> {reach}.deep + {reach}.gated + {reach}.gi; }}");
+        assert_eq!(found(&format!("{models}{top}")), Vec::<(String, String)>::new(), "{form}: {reach}");
     }
 }
 

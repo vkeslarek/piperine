@@ -34,6 +34,10 @@ module Tower(a: Electrical) { pub let rows = Rows(a); }
 module Tall(a: Electrical) { pub let tower = Tower(a); }
 ";
 
+/// The `let`s a device model mixes a param and the solve in, written in place of the cell's `vs` (`MODELS.replace("pub let vs = v(sn);",
+/// MIXED_LETS)`): `vs` again, a param `g` the placements by name leave at its default, and three `let`s over a param and a node.
+pub const MIXED_LETS: &str = "pub let vs = v(sn); pub g: f64 = 0.5; pub let deep = k * vs; pub let gated = if k > 0.5 { vs } else { 0.0 }; pub let gi = g * v(sn);";
+
 /// The placement of each wrapper at the top, with the path from it to the cell, and the number of levels below the reader the cell is.
 pub const READS: [(&str, &str, &str); 12] = [
     ("let p = Level3(a);", "p.mid.c0", "3 by name"),

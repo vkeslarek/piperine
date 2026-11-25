@@ -298,7 +298,7 @@ impl Elaboration<'_, '_> {
                 return None;
             }
         };
-        let bound = self.hoisted_params(module, (&fields, through.as_ref()), (&caller_values, &outer), file, node.span);
+        let bound = self.placement_params(module, (&fields, through.as_ref()), (&caller_values, &outer), file, node.span);
         self.consts.set_substitution(outer);
         let bound = bound?;
         // a placement written in generation is named by its iteration too: `y[1]`, `idt$0[1]`
@@ -496,10 +496,10 @@ impl Elaboration<'_, '_> {
         folded
     }
 
-    /// The params of a hoisted module, each bound to a constant: the value the placement's param
-    /// block gives, else the default (edge case 5). A required param left out is `E0319`, a false
-    /// `where` `E0317`. `None` after a diagnostic.
-    fn hoisted_params(&mut self, module: DeclId, (fields, template): (&[FieldInit], Option<&super::templates::TemplateValue>), (caller, caller_substitution): (&Bindings, &crate::types::Substitution), file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
+    /// The params of a placed module, each bound to a constant: the value the placement's param block (or its template) gives,
+    /// else the default over the params before it (edge case 5, §8.1.16). What a hoisted frame and a reach frame (`reach.rs`) read
+    /// for a param of their module. A required param left out is `E0319`, a false `where` `E0317`. `None` after a diagnostic.
+    pub(super) fn placement_params(&mut self, module: DeclId, (fields, template): (&[FieldInit], Option<&super::templates::TemplateValue>), (caller, caller_substitution): (&Bindings, &crate::types::Substitution), file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
         let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut bindings = Bindings::new();
         let mut out = std::collections::BTreeMap::new();
@@ -525,7 +525,7 @@ impl Elaboration<'_, '_> {
                 Some(expr) => match self.param_constant(expr, &read, given.is_some().then_some(caller_substitution)) {
                     Ok(value) => value,
                     Err(fault) => {
-                        self.const_fault(&fault, "a param value of a module with a result");
+                        self.const_fault(&fault, "a param value of a placed module");
                         ok = false;
                         continue;
                     }

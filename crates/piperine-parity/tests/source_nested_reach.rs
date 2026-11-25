@@ -146,6 +146,34 @@ fn a_cycle_of_node_connections_through_a_generation_four_levels_deep_runs_as_har
     }
 }
 
+/// The three `let`s of the cell of `mixed.msl` over a param and the solve, at conductance `k`, gain `g`, driven at 1 V: `deep = k vs`,
+/// `gated = vs` when `k > 0.5` else `0`, `gi = g v(sn)`, with `vs = v(sn)` the storage node of the divider (`CellOracle`).
+struct MixOracle {
+    k: f64,
+    g: f64,
+}
+
+impl MixOracle {
+    /// The reads of a rig, in the order of its nodes: `deep`, `gated`, `gi`.
+    fn reads(&self) -> [f64; 3] {
+        let storage = CellOracle { k: self.k, drive: 1.0 }.storage();
+        [self.k * storage, if self.k > 0.5 { storage } else { 0.0 }, self.g * storage]
+    }
+}
+
+#[test]
+fn a_let_over_a_param_and_the_solve_one_three_and_four_levels_down_reads_the_placements_params() {
+    // §8.2.25 (verification finding 10): the reader evaluates the cell's `let` in its own context with each param at the value the
+    // placement gives, else the default: one level (`k = 2`, `g = 1.5`), three by name (`k` the default 1, `g = 2` from the
+    // placement), three through a template (`k = 0.25`, under the threshold, so `gated` is 0), four in generation (`k = 0.25 + j`)
+    for (top, k, g) in [("MixRig1", 2.0, 1.5), ("MixRig3", 1.0, 2.0), ("MixRigTemplate3", 0.25, 4.0), ("MixRigRows4", 1.25, 3.0), ("MixRigRows4First", 0.25, 3.0)] {
+        let seen = RUN.operating_point("mixed.msl", top, &["deep_read", "gated_read", "gi_read"]);
+        for (value, wanted) in seen.iter().zip(MixOracle { k, g }.reads()) {
+            assert!((value - wanted).abs() < TOLERANCE, "{top}: {value} is not {wanted}: {seen:?}");
+        }
+    }
+}
+
 /// The `seen` records of a bench of `drive.msl`, the value of each as a flag.
 fn seen_flags(top: &str) -> Vec<bool> {
     let records: Vec<Record> = RUN.records_of("drive.msl", top).into_iter().filter(|record| record.stream == "seen").collect();
