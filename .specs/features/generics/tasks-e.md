@@ -317,8 +317,8 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 �
 
 **Done when**:
 
-- [ ] `noise_table_gives_the_interpolated_psd` passes under `**Run srcstd**`
-- [ ] Gate check passes: Quick
+- [x] `noise_table_gives_the_interpolated_psd` passes under `**Run srcstd**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

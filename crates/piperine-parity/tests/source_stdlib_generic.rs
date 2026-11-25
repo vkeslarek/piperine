@@ -16,7 +16,10 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use piperine_api::{Field, Record, Streams};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use piperine_api::{Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use support::build;
@@ -486,4 +489,50 @@ fn an_unpaired_zi_pole_is_refused() {
     // §22.2.13: a complex pole without its conjugate fails `conjugate_closed` (E0317)
     let refused = StdModels::project("zi.msl").elaborate("ZiRefused").expect_err("an unpaired pole").to_string();
     assert!(refused.contains("E0317"), "{refused}");
+}
+
+/// A record sink that keeps nothing: the noise test reads the report.
+struct Ignore;
+
+impl RecordSink for Ignore {
+    fn record(&mut self, _: &Record) {}
+}
+
+/// §22.2.15 `1C` over `table`: linear between the samples, constant outside them.
+struct TableModel;
+
+impl TableModel {
+    fn linear_constant(table: &[(f64, f64)], x: f64) -> f64 {
+        if x <= table[0].0 {
+            return table[0].1;
+        }
+        for pair in table.windows(2) {
+            if x <= pair[1].0 {
+                return pair[0].1 + (pair[1].1 - pair[0].1) * (x - pair[0].0) / (pair[1].0 - pair[0].0);
+            }
+        }
+        table[table.len() - 1].1
+    }
+}
+
+#[test]
+fn noise_table_gives_the_interpolated_psd() {
+    // §22.2.3: the source's density is the table through `table_model(freq(), table, "1C")`: the table's value at its own
+    // frequencies, linear between them and constant past the last; into 1 kohm the output density is `r sqrt(psd)`
+    let table = [(1e3, 4e-18), (1e5, 1e-18), (5e5, 3e-18)];
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stdlib_generic/noise_table.msl");
+    let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { top: Some("TableBench".into()), analysis: Some("noise".into()), output: Some("o".into()), from: Some(1e3), to: Some(1e6), per_decade: Some(1), ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let settings = piperine_transpile::Settings { rustc: None, cache: dir.path().to_path_buf() };
+    let mut session = Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}"));
+    session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    let output = session.noise_report().expect("a report").output.clone();
+    let frequencies = [1e3, 1e4, 1e5, 1e6];
+    assert_eq!(output.len(), frequencies.len());
+    for (seen, f) in output.iter().zip(frequencies) {
+        let wanted = 1e3 * TableModel::linear_constant(&table, f).sqrt();
+        assert!((seen - wanted).abs() <= 1e-9 * wanted, "noise_table at {f} Hz: {seen:e}, table {wanted:e}");
+    }
 }
