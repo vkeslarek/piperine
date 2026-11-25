@@ -332,6 +332,13 @@ impl<'a> ValuePrinter<'a> {
     pub fn pin_type(&self, ty: &ValueType) -> Result<String, Error> {
         match ty {
             ValueType::F64 => Ok("f64".to_string()),
+            // an `Option<f64>` or a tuple of reals read from a pin holds the plain `f64` as well
+            ValueType::Option(inner) => Ok(format!("Option<{}>", self.pin_type(inner)?)),
+            ValueType::Tuple(parts) => {
+                let parts = parts.iter().map(|part| self.pin_type(part)).collect::<Result<Vec<_>, Error>>()?;
+                Ok(if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) })
+            }
+            ValueType::Array(element, length) => Ok(format!("[{}; {length}]", self.pin_type(element)?)),
             other => self.rust_type(other, &self.path),
         }
     }
@@ -365,6 +372,9 @@ impl<'a> ValuePrinter<'a> {
     pub(super) fn carrier_value(&self, e: ExprId, variable: String) -> Piece {
         if *self.ir.expr_type(e) == ValueType::F64 && !self.plain {
             Piece::new(format!("R::constant({variable})"), Prec::Atom)
+        } else if matches!(self.ir.expr_type(e), ValueType::Option(inner) if **inner == ValueType::F64) && !self.plain {
+            // an `Option<f64>` carrier (`idtmod`'s `base`): its pin decodes at `f64`, the payload is lifted
+            Piece::new(format!("{variable}.map(R::constant)"), Prec::Atom)
         } else {
             Piece::new(variable, Prec::Atom)
         }
