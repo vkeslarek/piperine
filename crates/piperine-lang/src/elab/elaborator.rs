@@ -45,9 +45,10 @@ impl<'d> Elaborator<'d> {
     pub fn run_with(self, top: &str, overrides: &Overrides) -> Result<Ir, Vec<DesignDiagnostic>> {
         let types = Types::check(self.design, top)?;
         let top_decl = types.reached()[0];
-        // a run that meets a read through a child of a child its tables have no reached slot for says so, and the run is made
-        // again with the slot (`reach_through_templates.rs`): the reads of the design are the demands, found by running it
-        let mut demands = Vec::new();
+        // the reads the text names through children of children are the demands of the first run (`reach_seed.rs`); a run that meets
+        // one its tables lack (a hop through a type-parameter template) says so, and is made again with it
+        // (`reach_through_templates.rs`)
+        let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).static_demands();
         loop {
             let (result, wanted) = Elaboration::new(self.design, &types, overrides.clone(), demands.clone()).run(top_decl);
             if wanted.is_empty() {

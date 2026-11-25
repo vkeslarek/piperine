@@ -8,10 +8,11 @@
 //!   lowers a reached slot for every demand it meets, once for each iteration of the placement it names, right after its own nodes
 //!   and its own carriers (`lower_nested_demands`, `lower_nested_carrier_demands`), so the slot's index is known to the body that
 //!   reads it (`DemandEntry`).
-//! * The demands are what the design reads, found by running it: a hop whose demand the run's tables lack records it
+//! * The demands are what the design reads. The names it writes are found before the first run (`reach_seed.rs`: each hop the checker
+//!   resolved to a placement, and the reads the `let` a path ends on makes through its own children); a hop the text does not name a
+//!   module for (a read through a type-parameter template) is found by running: a hop whose demand the run's tables lack records it
 //!   (`NestedDemands::require`) and the run is made again with it (`Elaborator::run_with`). A read of `a.b.c.x` asks `a`'s module
-//!   for `b.c.x`; that demand, met, asks `b`'s module for `c.x`. The names a `pub let` of the grandchild reads (`pub let vs =
-//!   v(sn)`) are asked the same way when the `let` is lowered, so no name is looked for ahead of the elaboration that reads it.
+//!   for `b.c.x`; that demand, met, asks `b`'s module for `c.x`.
 //! * The reader makes a reach frame for each hop (`reach.rs`), and the slot of a node or carrier of the last is the entry of the
 //!   first hop's module that names it (`Elaboration::nested_slot`).
 
@@ -95,7 +96,7 @@ pub(super) struct DemandEntry {
 
 impl Elaboration<'_, '_> {
     /// Whether the `let` binding `binding` of a module's body is a placement.
-    fn is_placement_binding(&self, binding: DeclId) -> bool {
+    pub(super) fn is_placement_binding(&self, binding: DeclId) -> bool {
         let Some(value) = self.body_let_value(binding) else { return false };
         matches!(&self.design.expr_node(self.peel_parens(value)).kind, ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. })
     }
