@@ -1,0 +1,178 @@
+//! An array of bundles (§7 rule 11, BN-06 AC 4): each element connects field by field, `lanes[k].a` is a carrier.
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// One lane: the producer drives `a`, the consumer drives `b`.
+struct Lane { out a: Bit, in b: Bit }
+
+/// A producer: drives `a` with `level`.
+module Raise(tx: Lane) { level: bool = true; tx.a = level; }
+
+/// A consumer: `b` follows `a`.
+module Echo(rx: flip Lane) { rx.b = rx.a; }
+
+/// Records the `b` of both lanes of a pair of lanes at each rising edge.
+module Probe(in clk: Bit, in ps: [Lane; 2]) { }
+digital for Probe { on clk.rise() { emit!("lanes", first = ps[0].b, second = ps[1].b); } }
+
+/// Two lanes in one array: each element is given to its own producer and consumer, and the whole array to the probe.
+module ArrayBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 2];
+    let clock = Clock(clk);
+    let high = Raise(lanes[0]) { level: true };
+    let low = Raise(lanes[1]) { level: false };
+    let echo_high = Echo(lanes[0]);
+    let echo_low = Echo(lanes[1]);
+    let probe = Probe(clk, lanes);
+}
+
+/// A bundle with an array field: a word line and two bit lines.
+struct Column { in wl: Bit, bl: [Electrical; 2] }
+
+/// Holds its bit lines at 0.25 V and 0.75 V.
+module Pull(c: Column) { }
+analog for Pull { v(c.bl[0]) +> 0.25; v(c.bl[1]) +> 0.75; }
+
+/// Gives a column on to a puller.
+module Pass(c: Column) { let p = Pull(c); }
+
+/// A word line driver that stays low.
+module Hold(out w: Bit = false) { }
+
+/// A column signal whose array field is passed through one level.
+module ColumnBench() {
+    signal column: Column;
+    let h = Hold(column.wl);
+    let pass = Pass(column);
+}
+
+/// Records the `b` of three lanes at each rising edge.
+module Probe3(in clk: Bit, in ps: [Lane; 3]) { }
+digital for Probe3 { on clk.rise() { emit!("loop", first = ps[0].b, second = ps[1].b, third = ps[2].b); } }
+
+/// Three lanes in one array, each given to a producer and a consumer by a generation loop over the element index: the producer of
+/// the middle lane drives `false`, the others `true`.
+module LoopBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    for k in 0..3 {
+        let raise = Raise(lanes[k]) { level: k != 1 };
+        let echo = Echo(lanes[k]);
+    }
+    let probe = Probe3(clk, lanes);
+}
+
+/// A bundle with an array of carriers as a field: two bits one producer drives by index.
+struct Word { out bits: [Bit; 2] }
+
+/// Drives its two bits to 1 and 0.
+module Fill(w: Word) { w.bits[0] = true; w.bits[1] = false; }
+
+/// Passes a word on to a filler.
+module Relay(w: Word) { let fill = Fill(w); }
+
+/// Records the bits of a word at each rising edge.
+module Read(in clk: Bit, in w: Word) { }
+digital for Read { on clk.rise() { emit!("word", low = w.bits[0], high = w.bits[1]); } }
+
+/// A word signal passed through one level to its producer and read by index.
+module WordBench() {
+    signal clk: Bit;
+    signal word: Word;
+    let clock = Clock(clk);
+    let relay = Relay(word);
+    let read = Read(clk, word);
+}
+
+/// A bundle with a field of `W` carriers.
+struct Sized<const W: usize> { out bits: [Bit; W] }
+
+/// Drives the even bits of a sized word high and the odd ones low.
+module Even<const W: usize>(w: Sized<W>) { for k in 0..W { w.bits[k] = k % 2 == 0; } }
+
+/// Records the first three bits of a sized word at each rising edge.
+module Tap<const W: usize>(in clk: Bit, in w: Sized<W>) { }
+digital<W> for Tap<W> { on clk.rise() { emit!("sized", zero = w.bits[0], one = w.bits[1], two = w.bits[2]); } }
+
+/// A word of three bits, driven and read through the parameter of the modules.
+module SizedBench() {
+    signal clk: Bit;
+    signal word: Sized<3>;
+    let clock = Clock(clk);
+    let even = Even::<3>(word);
+    let tap = Tap::<3>(clk, word);
+}
+
+/// `N` producers, one per lane of an array of bundles whose length is the parameter: every lane but lane 1 is driven high.
+module Bank<const N: usize>(ts: [Lane; N]) { for k in 0..N { let raise = Raise(ts[k]) { level: k != 1 }; } }
+
+/// Two lanes given to a bank of `N = 2`, each echoed, the pair recorded.
+module BankBench2() {
+    signal clk: Bit;
+    signal lanes: [Lane; 2];
+    let clock = Clock(clk);
+    let bank = Bank::<2>(lanes);
+    for k in 0..2 { let echo = Echo(lanes[k]); }
+    let probe = Probe(clk, lanes);
+}
+
+/// Three lanes given to a bank of `N = 3`, each echoed, the three recorded.
+module BankBench3() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    let bank = Bank::<3>(lanes);
+    for k in 0..3 { let echo = Echo(lanes[k]); }
+    let probe = Probe3(clk, lanes);
+}
+
+/// Drives the field `a` of each of its `N` lanes by the element index, in a generation loop: only the last lane is high.
+module Direct<const N: usize>(ts: [Lane; N]) { for k in 0..N { ts[k].a = k == N - 1; } }
+
+/// Three lanes driven by their index, each echoed, the three recorded.
+module DirectBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    let direct = Direct::<3>(lanes);
+    for k in 0..3 { let echo = Echo(lanes[k]); }
+    let probe = Probe3(clk, lanes);
+}
+
+/// `N + 1` producers over an array of bundles of that computed length: only lane 0 is driven high.
+module Wide<const N: usize>(ts: [Lane; N + 1]) { for k in 0..N + 1 { let raise = Raise(ts[k]) { level: k == 0 }; } }
+
+/// Three lanes given to a wide bank of `N = 2`, each echoed, the three recorded.
+module WideBench() {
+    signal clk: Bit;
+    signal lanes: [Lane; 3];
+    let clock = Clock(clk);
+    let wide = Wide::<2>(lanes);
+    for k in 0..3 { let echo = Echo(lanes[k]); }
+    let probe = Probe3(clk, lanes);
+}
+
+/// A stream of numbers: the producer offers `data` with `valid`, the consumer answers `ready`.
+struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }
+
+/// Offers `value` on its stream at all times.
+module Offer(tx: Stream<u8>) { value: u8 = 0; tx.valid = true; tx.data = value; }
+
+/// Consumes `N` streams: each lane's `ready` answers its own `valid` (one handshake per lane); at each rising edge it records the
+/// data of the first two lanes and whether both handshakes hold.
+module Sinks<const N: usize>(in clk: Bit, rx: [flip Stream<u8>; N]) { for k in 0..N { rx[k].ready = rx[k].valid; } }
+digital<N> for Sinks<N> { on clk.rise() { emit!("streams", first = rx[0].data, second = rx[1].data, both = rx[0].valid && rx[0].ready && rx[1].valid && rx[1].ready); } }
+
+/// Two streams offered 11 and 22 and consumed by one sink of `N = 2`.
+module StreamBench() {
+    signal clk: Bit;
+    signal streams: [Stream<u8>; 2];
+    let clock = Clock(clk);
+    let low = Offer(streams[0]) { value: 11 };
+    let high = Offer(streams[1]) { value: 22 };
+    let sinks = Sinks::<2>(clk, streams);
+}

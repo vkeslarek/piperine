@@ -1,0 +1,41 @@
+//! A memory cell's word line and bit line as a bundle (§7 rule 8, BN-03 AC 2): a literal gives each named field the carrier or
+//! node it is wired to.
+
+/// A free-running clock of period 10 ns.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// The word line (read by the cell) and the bit line (a node).
+struct Cell { in wl: Bit, bl: Electrical }
+
+/// A cell: holds its bit line at `level` volts and records each change of its word line.
+module Holder(c: Cell) { level: f64 = 0.5; }
+analog for Holder { v(c.bl) +> level; }
+digital for Holder { on c.wl.changed() { emit!("word_line", up = c.wl); } }
+
+/// A word line driver that raises the line at the first rising edge of the clock.
+module Raise(in clk: Bit, out w: Bit = false) { }
+digital for Raise { on clk.rise() { w <- true; } }
+
+/// Gives a cell on to a holder: a bundle port passed as a bundle carrier.
+module Relay(c: Cell) { let h = Holder(c); }
+
+/// A literal wires the cell with the fields in an order of its own.
+module CellBench() {
+    signal clk: Bit;
+    signal w: Bit;
+    signal b: Electrical;
+    let clock = Clock(clk);
+    let raise = Raise(clk, w);
+    let cell = Holder(Cell { bl: b, wl: w });
+}
+
+/// The same cell, given through a module that forwards it.
+module RelayBench() {
+    signal clk: Bit;
+    signal w: Bit;
+    signal b: Electrical;
+    let clock = Clock(clk);
+    let raise = Raise(clk, w);
+    let relay = Relay(Cell { wl: w, bl: b });
+}

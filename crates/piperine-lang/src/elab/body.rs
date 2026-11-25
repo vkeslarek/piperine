@@ -335,7 +335,9 @@ impl Elaboration<'_, '_> {
         let mut children = self.design.decl_data(module).children.clone();
         // the nodes declared in generation are arrays, one element per iteration (`generation.rs`)
         children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
-        let node = |c: &DeclId| self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some();
+        // a bundle port or signal stands for its fields: each leaf is a node or a carrier, the bundle itself neither (`bundles.rs`)
+        let children = self.design.module_items(&children);
+        let node = |c: &DeclId| (self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some()) && !self.design.is_bundle_owner(*c);
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {

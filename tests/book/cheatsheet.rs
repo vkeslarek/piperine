@@ -138,21 +138,18 @@ fn the_debug_prints_card_runs_with_its_analog_trace() {
 }
 
 #[test]
-fn the_template_card_is_refused_only_for_its_bundle() {
-    // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module
-    // generic over the template. The generic module, the `Fn` bound of `C`, the placement through `cell` and `nch(..)(d, g, s, b)`
-    // run (generics phase D); what is left is exactly the bundle (L25, `resolved-nets-bundles`): the struct `Cell` with a carrier
-    // field and its literal `Cell { wl: w, bl: b }`, the argument of the placement
+fn the_template_card_runs() {
+    // cheatsheet#8 (run): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module generic over the
+    // template (generics phase D, and the bundle `Cell` of `resolved-nets-bundles`). The harness gives the module the sheet's
+    // names mean: a `Dram` whose one port is a `Cell` and which holds its bit line at 0.25 V, a `Bsim4` that pulls `d` to its
+    // `vth0` (0.4, what `nch` gives) and grounds `g` and `s`, and a parent that places `Inner` over the template `Dram {}`
     let chapter = Chapter::read();
-    let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit = false;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
-    let after = "}\nmodule Top() { let i = Inner::<Bsim4>(); }\n";
-    let given = Refusal::of(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8");
-    let wanted = [
-        ("P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet"),
-        ("P0001", "struct expression is not supported yet"),
-    ];
-    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the refusals still owed");
-    Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", wanted[0].0, wanted[0].1);
+    let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Dram(c: Cell) { }\nanalog for Dram { i(c.bl, gnd) +> v(c.bl) - 0.25; }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\nanalog for Bsim4 { i(d, gnd) +> v(d) - vth0; i(g, gnd) +> v(g); i(s, gnd) +> v(s); }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit = false;\n    pub signal b: Electrical;\n    pub signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
+    let after = "}\nmodule Top() { let i = Inner::<Dram>() { cell: Dram { } }; }\n";
+    let overrides = Overrides { print: ["Top.i.b", "Top.i.d"].map(String::from).to_vec(), ..Commands::operating_point() };
+    let ran = chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!((ran.signal("Top.i.b") - 0.25).abs() < 1e-9, "the cell holds its bit line: {}", ran.signal("Top.i.b"));
+    assert!((ran.signal("Top.i.d") - 0.4).abs() < 1e-9, "the binned transistor pulls its drain to `vth0`: {}", ran.signal("Top.i.d"));
 }
 
 #[test]

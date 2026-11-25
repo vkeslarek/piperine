@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 
 use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
+use super::bundles::PortBindings;
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
@@ -268,11 +269,15 @@ impl Elaboration<'_, '_> {
         let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);
         let mut ok = true;
-        let mut terminals = Vec::new();
-        let mut carriers = Vec::new();
-        let mut windows = Vec::new();
+        let mut bound = PortBindings { terminals: Vec::new(), carriers: Vec::new(), windows: Vec::new() };
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         for (port, arg) in ports.iter().zip(args) {
+            // a bundle port is given each field in turn (`bundles.rs`)
+            if self.design.is_bundle_owner(*port) {
+                ok &= self.bind_bundle_port(scope, &name, *port, arg.value, &mut bound);
+                continue;
+            }
+            let (terminals, carriers, windows) = (&mut bound.terminals, &mut bound.carriers, &mut bound.windows);
             if self.types.node_array(*port).is_some() {
                 match self.node_array_terminals(scope, arg.value) {
                     Some(nodes) => terminals.extend(nodes),
@@ -306,6 +311,7 @@ impl Elaboration<'_, '_> {
                 None => ok = false,
             }
         }
+        let PortBindings { terminals, carriers, windows } = bound;
         let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
         let templated = match &through {
             Some(template) => match self.template_values(template, instance.as_ref(), file, node.span) {
@@ -362,6 +368,16 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(arg).clone();
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = !self.generated_carrier_levels(scope, arg).is_empty();
+        // a field of a bundle of this module (`column.wl`) is a carrier of its own (`pom/bundles.rs`); a field of an element of an
+        // array of bundles (`lanes[k].a`) is the window of that element of its leaf
+        if let Some(place) = self.bundle_leaf(scope, arg)
+            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&place.decl)).copied()
+        {
+            if place.elements.is_empty() {
+                return Some((index, None));
+            }
+            return self.carrier_window(scope, arg).flatten();
+        }
         if !generated
             && let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)

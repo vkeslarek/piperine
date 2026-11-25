@@ -205,6 +205,8 @@ pub struct StructData {
 pub struct FieldData {
     pub dir: Option<Dir>,
     pub ty: TypeId,
+    /// `= value` of an `in` or `out` field of a bundle: the initial value of the carrier the field becomes on the side that drives it.
+    pub init: Option<ExprId>,
 }
 
 /// `enum E<..> { variants }`; the variants are children after the generics.

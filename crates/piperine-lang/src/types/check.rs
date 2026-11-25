@@ -185,6 +185,8 @@ pub(super) struct Checker<'d> {
     pub(super) declaring: BTreeSet<DeclId>,
     /// The structs and enums that could not be typed: a use is silent, the cause is reported.
     pub(super) broken: BTreeSet<DeclId>,
+    /// Whether a bundle `struct` is being named as the type of a handle (`bundle_handles.rs`), where it is no refusal.
+    pub(super) naming_bundle: bool,
     queued: BTreeSet<DeclId>,
     /// The declarations already checked, so one reached ahead of the queue (`check_ahead`) is not
     /// checked twice.
@@ -260,6 +262,7 @@ impl<'d> Checker<'d> {
             enum_tags: BTreeMap::new(),
             declaring: BTreeSet::new(),
             broken: BTreeSet::new(),
+            naming_bundle: false,
             queued: BTreeSet::new(),
             checked: BTreeSet::new(),
             queue: VecDeque::new(),
@@ -785,6 +788,10 @@ impl<'d> Checker<'d> {
     /// One item of a module body (or of a generation in it) in `phase`.
     fn module_item(&mut self, child: DeclId, phase: ItemPhase) {
         let item = self.design.decl_data(child).clone();
+        // a bundle is no value, carrier or node: its fields are the items (`pom/bundles.rs`)
+        if self.design.is_bundle_owner(child) || self.design.is_bundle_group(child) {
+            return;
+        }
         match (&item.kind, phase) {
             (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
             (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
@@ -829,8 +836,10 @@ impl<'d> Checker<'d> {
         // name of the body is visible in the whole body (§8.2), and a carrier's type is known
         // before anything reads it.
         self.book = DriveBook::default();
+        // each bundle port or signal is followed by the fields it stands for, typed like ports and signals of their own (§7 rule 14)
+        let items = self.design.module_items(&data.children);
         for phase in [ItemPhase::Declarations, ItemPhase::Lets, ItemPhase::Definitions] {
-            for child in data.children.iter().copied() {
+            for child in items.iter().copied() {
                 self.module_item(child, phase);
             }
         }
@@ -857,7 +866,7 @@ impl<'d> Checker<'d> {
             }
         }
         // the carriers declared inside generation are the module's too, one array each (§8.2.23)
-        let carriers = self.generated_items(&data.children);
+        let carriers = self.generated_items(&items);
         self.missing_initial_values(&carriers);
         self.initial_values_under_element_definitions(&carriers);
         self.defer_unfolded_overlaps();

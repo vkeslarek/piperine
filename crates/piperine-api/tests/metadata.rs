@@ -26,9 +26,14 @@ fn settings() -> Settings {
 const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Pair(a: Electrical, b: Electrical) { g: f64 = 1m; }\nanalog for Pair { i(a) +> v(a) * g; i(b) +> v(b) * g; }\nmodule Top() {\n    signal vin: Electrical;\n    signal mid: Electrical;\n    let v1 = Vsource(vin, gnd) { dc: 10.0 };\n    let r1 = Resistor(vin, mid) { r: 1k };\n    let r2 = Resistor(mid, gnd) { r: 3k };\n    let pr = Pair(vin, mid);\n}\n";
 
 fn run(overrides: Overrides) -> Result<Table, Failure> {
+    run_text(DESIGN, overrides)
+}
+
+/// The table of the design `text` run with `overrides`.
+fn run_text(text: &str, overrides: Overrides) -> Result<Table, Failure> {
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
-    std::fs::write(&file, DESIGN).expect("write");
+    std::fs::write(&file, text).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some("rust".into()), top: Some("Top".into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
     let mut session = Session::open(&project, &spec, &settings())?;
@@ -150,4 +155,61 @@ fn metadata_runs_no_analysis() {
     assert!(!before.params.is_empty());
     let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(table.rows.len(), 1);
+}
+
+/// A design with a bundle: a producer holds `valid` high and `data` at 5, and the top declares one `Stream` signal, joins the
+/// producer to it and a consumer that holds `ready` low.
+const STREAM: &str = "struct Stream { out valid: Bit, in ready: Bit, out data: Bit<u8> }\n\
+module Prod(tx: Stream) { tx.valid = true; tx.data = 5; }\n\
+module Cons(rx: flip Stream) { rx.ready = false; }\n\
+module Top() { signal s: Stream; let p = Prod(s); let c = Cons(s); }\n";
+
+#[test]
+fn a_bundle_field_is_named_by_its_dotted_path() {
+    // BN-07 AC 1, §7 rule 12: a field of a bundle is a carrier named by its path under the instance, so `s.valid` prints as
+    // `Top.s.valid`, its value as the carrier holds it, and the top's own bundle port lists one port per field by path
+    let table = run_text(STREAM, op(&["s.valid", "Top.s.data", "s.ready"])).unwrap_or_else(|f| panic!("{f}"));
+    let names: Vec<&Cell> = table.rows.iter().map(|row| &row[0]).collect();
+    assert_eq!(names, [&Cell::Text("Top.s.valid".into()), &Cell::Text("Top.s.data".into()), &Cell::Text("Top.s.ready".into())]);
+    assert_eq!(table.rows[0][1], Cell::Bool(true), "the producer's `valid`");
+    assert_eq!(table.rows[1][1], Cell::Int(5), "the producer's `data`");
+    assert_eq!(table.rows[2][1], Cell::Bool(false), "the consumer's `ready`");
+    // the top of this design is `Prod`, its port `tx`: one entry per field, by path, with the direction the view gives
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, STREAM).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &Overrides { backend: Some("rust".into()), top: Some("Prod".into()), ..op(&[]) }).unwrap_or_else(|f| panic!("{f}"));
+    let ports = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}")).metadata().ports;
+    assert_eq!(
+        ports.iter().map(|p| (p.name.as_str(), p.direction, p.ty.as_str())).collect::<Vec<_>>(),
+        [("tx.valid", "out", "bool"), ("tx.ready", "in", "bool"), ("tx.data", "out", "u8")]
+    );
+}
+
+/// A design with arrays of bundles: two lanes, lane 0 raised and lane 1 lowered, each echoed, and two taps of a node each,
+/// held at 1 V and 2 V.
+const LANES: &str = "struct Lane { out a: Bit, in b: Bit }\n\
+struct Tap { p: Electrical }\n\
+module Raise(tx: Lane) { level: bool = true; tx.a = level; }\n\
+module Echo(rx: flip Lane) { rx.b = rx.a; }\n\
+module Hold(t: Tap) { volts: f64 = 1.0; }\n\
+analog for Hold { v(t.p) +> volts; }\n\
+module Top() { signal lanes: [Lane; 2]; signal taps: [Tap; 2]; let r = Raise(lanes[0]) { level: true }; let q = Raise(lanes[1]) { level: false }; \
+for k in 0..2 { let e = Echo(lanes[k]); } let h = Hold(taps[0]) { volts: 1.0 }; let g = Hold(taps[1]) { volts: 2.0 }; }\n";
+
+#[test]
+fn a_field_of_an_element_of_an_array_of_bundles_is_named_element_first() {
+    // BN-07 AC 1, §7 rules 11 and 12: the field of an element is named as the source writes it, `lanes[1].a`, whether it is a
+    // carrier (the element `1` of the array net `lanes.a`, struct of arrays) or a node (`taps[1].p`), relative or in full
+    let entries = ["lanes[0].a", "Top.lanes[1].a", "lanes[1].b", "taps[1].p", "Top.taps[0].p"];
+    let table = run_text(LANES, op(&entries)).unwrap_or_else(|f| panic!("{f}"));
+    let names: Vec<&Cell> = table.rows.iter().map(|row| &row[0]).collect();
+    let written = ["Top.lanes[0].a", "Top.lanes[1].a", "Top.lanes[1].b", "Top.taps[1].p", "Top.taps[0].p"].map(|name| Cell::Text(name.into()));
+    assert_eq!(names, written.iter().collect::<Vec<_>>());
+    assert_eq!(table.rows[0][1], Cell::Bool(true), "lane 0 is raised");
+    assert_eq!(table.rows[1][1], Cell::Bool(false), "lane 1 is lowered");
+    assert_eq!(table.rows[2][1], Cell::Bool(false), "the echo of lane 1 follows its `a`");
+    assert!((real(&table.rows[3][1]) - 2.0).abs() < 1e-9, "tap 1 is held at 2 V: {:?}", table.rows[3][1]);
+    assert!((real(&table.rows[4][1]) - 1.0).abs() < 1e-9, "tap 0 is held at 1 V: {:?}", table.rows[4][1]);
 }

@@ -20,8 +20,10 @@ pub enum Probe {
     Net { path: String, ty: ValueType },
     /// The value of the discrete net at `path` when it holds an enum, a tuple, an array, a struct or an
     /// `Option`, read by `shape`; with `leaf`, the one leaf of it the entry named (`Top.st.n`,
-    /// `Top.v[2]`), which a column shows alone.
-    Shaped { path: String, shape: CellShape, leaf: Option<String> },
+    /// `Top.v[2]`), which a column shows alone; with `written`, the name the entry wrote for that leaf when it is not the
+    /// net's path and leaf (`Top.lanes[1].a`, a field of an element of an array of bundles, is the leaf `[1]` of the net
+    /// `Top.lanes.a`), which the column is named by.
+    Shaped { path: String, shape: CellShape, leaf: Option<String>, written: Option<String> },
     /// The flow of the instance at `instance`: its first potential branch's.
     Flow { instance: String, branch: BranchIdentifier },
     /// The value of the param `path` (`<instance>.<param>`), of type `ty`, as the run uses it:
@@ -100,6 +102,18 @@ impl Probe {
                 return Err(Failure::Host { code: "E0801", message: format!("`{entry}` is a node the design merges with ground: {why}") });
             }
         }
+        // a field of an element of an array of bundles is the element of the field's array (struct of arrays): `Top.lanes[1].a`
+        // reads `Top.lanes.a[1]` and keeps the name it is written with
+        if let Some(field_first) = Probe::field_first(entry)
+            && let Ok(found) = Probe::resolve(ir, top, &field_first)
+        {
+            let label = found.label();
+            let written = match label.strip_suffix(&field_first) {
+                Some(prefix) => format!("{prefix}{entry}"),
+                None => entry.to_string(),
+            };
+            return Ok(found.written_as(written));
+        }
         if let Some((instance, param)) = entry.rsplit_once('.') {
             for path in full(instance) {
                 let Some(found) = ir.instance_at(&path) else { continue };
@@ -109,6 +123,30 @@ impl Probe {
             }
         }
         Err(Probe::nothing(entry, "no node, net, param or `i(<instance>)` of that path"))
+    }
+
+    /// The struct-of-arrays name of `entry` when it names a field of an element of an array of bundles: the subscripts of the
+    /// element move after the field's path (`Top.lanes[1].a` is `Top.lanes.a[1]`, `Top.tx[1].bits[0]` is `Top.tx.bits[1][0]`).
+    /// `None` when no subscript of `entry` is followed by a field.
+    fn field_first(entry: &str) -> Option<String> {
+        let (base, rest) = entry.split_at(entry.find('[')?);
+        let mut end = 0;
+        while rest[end..].starts_with('[') {
+            end += rest[end..].find(']')? + 1;
+        }
+        let (subscripts, after) = rest.split_at(end);
+        let after = after.strip_prefix('.')?;
+        let (field, tail) = after.split_at(after.find('[').unwrap_or(after.len()));
+        Some(format!("{base}.{field}{subscripts}{tail}"))
+    }
+
+    /// This probe with its column named `written`: a node's path, a net leaf's written name; any other probe as it is.
+    fn written_as(self, written: String) -> Probe {
+        match self {
+            Probe::Node { id, .. } => Probe::Node { path: written, id },
+            Probe::Shaped { path, shape, leaf, .. } => Probe::Shaped { path, shape, leaf, written: Some(written) },
+            other => other,
+        }
     }
 
     /// The probes `entry` names: one, or for the name of an array of nodes (`Top.bl`) one per node, `Top.bl[0]` to
@@ -154,7 +192,7 @@ impl Probe {
     fn of_net(ir: &Ir, ty: &ValueType, path: String, leaf: Option<String>) -> Probe {
         let scalar = matches!(ty, ValueType::Bool | ValueType::F64 | ValueType::UInt(_) | ValueType::Int(_));
         match CellShape::of(ir, ty) {
-            Some(shape) if !scalar => Probe::Shaped { path, shape, leaf },
+            Some(shape) if !scalar => Probe::Shaped { path, shape, leaf, written: None },
             _ => Probe::Net { ty: ir.carried(ty), path },
         }
     }
@@ -218,6 +256,7 @@ impl Probe {
     pub fn label(&self) -> String {
         match self {
             Probe::Node { path, .. } | Probe::Net { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => path.clone(),
+            Probe::Shaped { written: Some(written), .. } => written.clone(),
             Probe::Shaped { path, leaf: None, .. } => path.clone(),
             Probe::Shaped { path, leaf: Some(leaf), .. } => if leaf.starts_with('[') { format!("{path}{leaf}") } else { format!("{path}.{leaf}") },
             Probe::Term { instance, .. } => format!("i({instance})"),
@@ -238,7 +277,7 @@ impl Probe {
                 message: format!("`i({instance})` is a flow term: only an `op` or a `dc` run prints it, at each solution; a step of a transient does not carry it"),
             }),
             Probe::Empty { .. } => Ok(Column::Empty),
-            Probe::Shaped { path, shape, leaf } => {
+            Probe::Shaped { path, shape, leaf, .. } => {
                 let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
                 if bound.digital.plan().nets[at as usize].count > 0 {

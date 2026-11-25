@@ -1,0 +1,70 @@
+//! A valid/ready stream bundle (§7): a producer, a consumer and an observer on one `Stream` signal run three beats.
+
+/// A free-running clock of period 10 ns: it rises at 5 ns, 15 ns, ...
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// One valid/ready stream: the producer drives `valid` and `data`, the consumer drives `ready`.
+struct Stream { out valid: Bit, in ready: Bit, out data: Bit<u8> }
+
+/// The producer: offers the numbers 1, 2 and 3, and moves to the next at each beat.
+module Source(in clk: Bit, tx: Stream) {
+    signal count: Bit<u8> = 0;
+    tx.valid = count < 3;
+    tx.data = count + 1;
+}
+digital for Source {
+    on clk.rise() && tx.valid && tx.ready { count <- count + 1; }
+}
+
+/// The consumer: `ready` toggles at every rising edge, so a beat takes place every second edge, and it
+/// records the data of each beat it takes.
+module Sink(in clk: Bit, rx: flip Stream) {
+    signal open: Bit = false;
+    rx.ready = open;
+}
+digital for Sink {
+    on clk.rise() { open <- !open; }
+    on clk.rise() && rx.valid && rx.ready { emit!("taken", data = rx.data); }
+    on rx.valid.changed() { emit!("valid_changes", valid = rx.valid); }
+}
+
+/// The observer: reads every field, drives none, and records the data at each beat.
+module Monitor(in clk: Bit, in s: Stream) { }
+digital for Monitor {
+    on clk.rise() && s.valid && s.ready { emit!("seen", data = s.data); }
+}
+
+/// A producer, a consumer and an observer on one stream signal.
+module HandshakeBench() {
+    signal clk: Bit;
+    signal s: Stream;
+    let clock = Clock(clk);
+    let producer = Source(clk, s);
+    let consumer = Sink(clk, s);
+    let observer = Monitor(clk, s);
+}
+
+/// The edge of a beat as a function of the bundle: a rising edge of `clk` while `valid` and `ready` are both true (§7 rule 13).
+impl Stream {
+    fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid && self.ready }
+}
+
+/// A consumer written with the bundle's event function: records the data of each beat it takes.
+module BeatSink(in clk: Bit, rx: flip Stream) {
+    signal open: Bit = false;
+    rx.ready = open;
+}
+digital for BeatSink {
+    on clk.rise() { open <- !open; }
+    on rx.beat(clk) { emit!("beats", data = rx.data); }
+}
+
+/// A producer and a consumer that reacts through the bundle's event function.
+module BeatBench() {
+    signal clk: Bit;
+    signal s: Stream;
+    let clock = Clock(clk);
+    let producer = Source(clk, s);
+    let consumer = BeatSink(clk, s);
+}

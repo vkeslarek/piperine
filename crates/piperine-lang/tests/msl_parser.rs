@@ -430,6 +430,24 @@ fn unknown_is_an_ordinary_name() {
 }
 
 #[test]
+fn a_struct_field_takes_an_initial_value_after_its_type() {
+    // §7 rule 10: `out q: Bit = false` is the field default, an expression after the type; a field without one has none
+    let ItemKind::Struct(s) = only_item("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").kind else { panic!() };
+    let Fields::Named(fields) = s.fields else { panic!("named fields") };
+    assert!(matches!(&fields[0].init, Some(Expr { kind: ExprKind::Binary { .. }, .. })), "{:?}", fields[0].init);
+    assert!(fields[1].init.is_none());
+    // an `in` field takes one the same way (the consumer's start)
+    let ItemKind::Struct(s) = only_item("struct Hand { in ready: Bit = true }").kind else { panic!() };
+    let Fields::Named(fields) = s.fields else { panic!("named fields") };
+    assert!(matches!(&fields[0].init, Some(Expr { kind: ExprKind::Lit(_), .. })), "{:?}", fields[0].init);
+    assert!(piperine_lang::msl::print::print(&parse("struct Hand { in ready: Bit = true }").file).contains("in ready: Bit = true"));
+    // the printer writes it back, and reading that gives the same tree
+    let printed = piperine_lang::msl::print::print(&parse("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").file);
+    assert!(printed.contains("out q: Bit<u8> = 1 + 2"), "{printed}");
+    assert!(parse(&printed).diagnostics.is_empty(), "{printed}");
+}
+
+#[test]
 fn inherited_rust_forms_parse_items() {
     // ---- fn ----
     let ItemKind::Fn(f) = only_item("fn windup(u: f64, lo: f64, hi: f64) -> f64 { u.clamp(lo, hi) - u }").kind else { panic!() };

@@ -96,7 +96,7 @@ block	natures#4	3544f7a10903596f	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-
 block	natures#6	7c840f716e6d0201	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
 block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
-block	natures#8	2873c252462bda40	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
+block	natures#8	2873c252462bda40	run	piperine/book_natures::the_stream_bundle_and_its_slice_run	-	-
 block	modules#1	b8d5395ceea2ea36	run	piperine/book_modules::the_ladder_runs_for_an_operating_point_and_a_sweep	-	-
 block	modules#2	88069ff453a25020	run	piperine/book_modules::the_half_reactions_report_each_stage_in_time_order	-	-
 block	modules#3	fd35830b4553e5ac	shown	-	-	-
@@ -106,7 +106,7 @@ block	modules#6	7c3db491e9d50314	run	piperine/book_modules::the_lowpass_module_r
 block	modules#7	785f58bd27638c90	run	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	-
 block	modules#8	f26832ff2564dcd3	run	piperine/book_modules::the_pi_controller_runs_with_its_generic_idt	-	-
 block	modules#9	76ab743eefe57ede	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
-block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_only_for_its_bundle	L25	-
+block	modules#10	6d51419f2d5b4317	run	piperine/book_modules::the_memory_bank_of_bundle_cells_runs	-	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
 block	modules#12	7d514f590b39e281	run	piperine/book_modules::a_function_that_returns_a_template_places_its_result	-	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
@@ -264,7 +264,7 @@ block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_car
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
 block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book_cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
-block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_only_for_its_bundle	L25	-
+block	cheatsheet#8	c2d75bfd6e731da6	run	piperine/book_cheatsheet::the_template_card_runs	-	-
 block	cheatsheet#9	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
 block	cheatsheet#10	6aa7d49559ddcad2	shown	-	-	-
 block	cheatsheet#11	7b3f0b719a47144e	shown	-	-	-
@@ -281,7 +281,7 @@ claim	welcome~e9269920	e9269920165af6c3	prose	-	-	A solver often tries a time st
 claim	welcome~3afc3430	3afc34303f9d001f	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	Its reaction, on at(t0) { fired <- true; }, means "when time reaches t0, set fired".
 claim	welcome~cd0a6683	cd0a6683d2118361	prose	-	-	Everything else writes nothing. let x = expr; only gives an expression a name.
 claim	welcome~6e662db9	6e662db9ee7d0481	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The piperine command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself.
-claim	welcome~e5efe1a9	e5efe1a9872d681b	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: bundles.
+claim	welcome~777e5270	777e5270b62e380f	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: a param of type str, for one.
 claim	welcome~4bc80e1d	4bc80e1dc680d2f3	holds	piperine/book_welcome::e0319_a_param_with_no_default_must_be_bound	-	E0319
 claim	welcome~0808ef8f	0808ef8f1e6f4968	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	Bind it: Resistor(vin, vout) { r: 1k }.
 claim	welcome~4bc8171d	4bc8171dc680e23e	holds	piperine/book_welcome::e0312_a_port_must_be_connected	-	E0312
@@ -370,7 +370,7 @@ claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver"
 claim	natures~eb8db94c	eb8db94ced8b3207	holds	piperine/book_natures::an_out_port_gives_the_initial_value	-	That module also gives the initial value.
 claim	natures~8ebfe866	8ebfe866aadcea4e	holds	piperine/book_natures::a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
 claim	natures~1197ebef	1197ebefd74c762b	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints them:
-claim	natures~52790298	5279029848b66589	refused	natures#8	L25	Directions are written once, from the producer's side, and flip gives the consumer's view.
+claim	natures~52790298	5279029848b66589	holds	piperine/book_natures::the_stream_bundle_and_its_slice_run	-	Directions are written once, from the producer's side, and flip gives the consumer's view.
 claim	natures~5c7f5269	5c7f5269612c5fc2	holds	piperine/book_natures::behavior_crosses_freely_inside_one_module	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
 claim	natures~42ae741d	42ae741dc13997e4	holds	piperine/book_natures::e0220_a_bit_has_one_driver	-	E0220
 claim	natures~42ae761d	42ae761dc1399b4a	holds	piperine/book_natures::e0222_a_module_cannot_drive_its_own_input	-	E0222

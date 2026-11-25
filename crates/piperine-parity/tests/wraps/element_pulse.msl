@@ -1,0 +1,17 @@
+//! A value an element of an array net passes within one instant (docs/spec §15.2 rule 4, part II §5.1.8): `gates[1]`
+//! rises at 2 ns and falls at the next microstep of the same instant. `Cell` sinks 1 mA through 1 kOhm while its gate is
+//! high and 2 kOhm while low, so `v(a)` is 2 V at every step and 1 V in the zero-width solve that reads the high element.
+
+/// Sinks 1 mA into `p` through 1 kOhm (gate high) or 2 kOhm (gate low).
+module Cell(in gate: Bit, p: Electrical) { }
+analog for Cell { i(p, gnd) +> v(p) / (if gate { 1k } else { 2k }) - 1m; }
+
+module ElementPulse() {
+    signal gates: [Bit; 4] = [false, false, false, false];
+    signal a: Electrical;
+    let ca = Cell(gates[1], a);
+}
+digital for ElementPulse {
+    on at(2n) { gates[1] <- true; }
+    on gates[1].rise() { gates[1] <- false; }
+}

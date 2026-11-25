@@ -892,3 +892,22 @@ fn from_json_never_panics_on_a_corrupted_field() {
         .unwrap();
 }
 
+
+#[test]
+fn a_bundle_port_reflects_its_type_and_view() {
+    // BN-07 AC 2, §7 rule 14: the POM mirrors the source: a bundle port is one port with its bundle type and its view, and
+    // the fields it stands for are no ports of the module (nor declarations of the design)
+    let src = "struct Stream { out valid: Bit, in ready: Bit }\nmodule M(tx: Stream, rx: flip Stream, in obs: Stream, k: f64) { signal s: Stream; }\n";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let module = design.module("M").expect("M");
+    let ports = module.ports();
+    assert_eq!(ports.iter().map(|p| p.name().unwrap_or("")).collect::<Vec<_>>(), ["tx", "rx", "obs", "k"], "one port per bundle, as written");
+    let views: Vec<Option<piperine_lang::pom::BundleView>> = ports.iter().map(|p| p.bundle_view()).collect();
+    use piperine_lang::pom::BundleView::{Consumer, Observer, Producer};
+    assert_eq!(views, [Some(Producer), Some(Consumer), Some(Observer), None]);
+    assert_eq!(ports[1].ty().text(), "flip Stream", "the type as written");
+    assert_eq!(ports[0].kind(), piperine_lang::pom::PortKind::Bundle);
+    assert_eq!(module.signals().len(), 1, "the signal is one signal");
+    assert!(design.decls().iter().all(|d| !d.name().is_some_and(|n| n.contains('.'))), "no field declaration shows in the design's declarations");
+}

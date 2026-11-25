@@ -232,8 +232,9 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~e5efe1a9: "Parts of the language beyond that are still refused by name with P0001: bundles." The one item is
-    // `P0001`; a module template (generics phase D, merge of origin/main 66af92aa5) runs, and so do `idt`, the generic modules and generation (a `for`
+    // welcome~777e5270: "Parts of the language beyond that are still refused by name with P0001: a param of type str, for one."
+    // The one item is `P0001` (`GAPS.md` L93; an array of module templates runs since generics phase E, L88 and L89, and bundles since
+    // resolved-nets-bundles, so the sentence no longer lists them); a module template (generics phase D, merge of origin/main 66af92aa5) runs, and so do `idt`, the generic modules and generation (a `for`
     // or an `if` around items, in a body and in a `digital` block), which the sentence no longer lists, run (generics T71,
     // T77, T80), as do the math methods such as
     // `sin`, the `settle` event, `noise` and `delay` (unknown-semantics-events T5 and T22; analog-operators T33 and T34)
@@ -243,8 +244,14 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~e5efe1a9";
-    p0001(row, "struct Pair { in a: Bit, b: Electrical }\nmodule Top() { signal x: Pair; }\n", "`struct` item used as a type: `Pair` has a carrier field, a bundle is not supported yet");
+    let row = "welcome~777e5270";
+    p0001(row, "module Top() { label: str = \"hi\"; }\n", "param of type `str` is not supported yet");
+    // an array of module templates runs since generics phase E: `fs[1](x)` places the element at its params
+    let templates = Model::written("templates.msl", "module A(a: Electrical) { r: f64 = 1.0; }\nanalog for A { i(a, gnd) +> v(a, gnd) / r; }\nmodule Top() { signal x: Electrical; let fs = [A {}, A { r: 2.0 }]; let r1 = fs[1](x); }\n");
+    templates.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: an array of module templates is refused: {:?}", Refusal::of(Err(failure), row)));
+    // a bundle runs: a `struct` of carriers is a port type, driven through its fields
+    let bundled = Model::written("bundled.msl", "struct Pair { out a: Bit }\nmodule Src(p: Pair) { signal s: Bit = false; p.a = s; }\nmodule Top() { signal x: Pair; let k = Src(x); }\n");
+    bundled.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: a bundle is refused: {:?}", Refusal::of(Err(failure), row)));
     // a module template is a value since generics phase D (L32 closed): a `let` of one and its placement run
     let templated = Model::written("templated.msl", "module R(a: Electrical) { r: f64 = 1.0; }\nanalog for R { i(a, gnd) +> v(a, gnd) / r; }\nmodule Top() { signal x: Electrical; let t = R { r: 2.0 }; let r1 = t(x); }\n");
     templated.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: a module template is refused: {failure}"));

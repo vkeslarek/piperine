@@ -339,6 +339,19 @@ fn an_analog_block_reads_an_element_of_an_array_of_carriers() {
 }
 
 #[test]
+fn an_analog_function_reads_an_element_a_bundle_leaf_element_and_an_array_port() {
+    // §5.1.8, §3.3.6: a cell is `R` to ground with a gate that selects `R = 1k` (high) or `2k` (low) and pulls 1 mA out of its
+    // node, so the node is at `R * 1 mA`: element 1 of `gates` is high and element 2 low, `lanes[2]` high and `lanes[1]` low
+    // (an array of bundles is a struct of arrays: the gate leaf is `[Bit; 3]`), an array port read at its elements 0 and 3, high on both for `up` and not for `down`
+    let rows = RUN.operating_point("gated.msl", "Rows", &["a", "b"]);
+    assert!((rows[0] - 1e3 * 1e-3).abs() < 1e-9 && (rows[1] - 2e3 * 1e-3).abs() < 1e-9, "{rows:?}");
+    let lanes = RUN.operating_point("gated.msl", "Lanes", &["x", "y"]);
+    assert!((lanes[0] - 1e3 * 1e-3).abs() < 1e-9 && (lanes[1] - 2e3 * 1e-3).abs() < 1e-9, "{lanes:?}");
+    let windows = RUN.operating_point("gated.msl", "Windows", &["both", "one"]);
+    assert!((windows[0] - 1e3 * 1e-3).abs() < 1e-9 && (windows[1] - 2e3 * 1e-3).abs() < 1e-9, "{windows:?}");
+}
+
+#[test]
 fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_element() {
     // §5.1.8, §8.2.1: `q = mem[at]` over `[Bit<u8>; 65536]` reads one view of the array (it was one read per element, a
     // build that did not finish): `tick` toggles every ns; a rise moves `at` by 1000 and writes 41 there in the same
@@ -351,4 +364,20 @@ fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_elem
     let expected: Vec<(i64, Vec<u8>)> = (1..=4).map(|edge: i64| (edge * ElementReaders::NS, vec![if edge % 2 == 1 { 41 } else { 50 }])).collect();
     assert_eq!(q, expected);
     assert!(started.elapsed() < std::time::Duration::from_secs(120), "built and ran in {:?}", started.elapsed());
+}
+
+#[test]
+fn a_transient_with_an_array_no_analog_function_reads_stays_sparse() {
+    // §5.1.8: `mem` has 2^32 elements and no analog function reads it, so the analog side is given none of it (it would be 4 GiB
+    // of bytes): the transient takes seconds, not minutes (the bound is a fifth of what the dense copy takes). The cell reads `gates[1]`, which rises at 2 ns: the node is at
+    // `2k * 1 mA` = 2 V before and `1k * 1 mA` = 1 V after.
+    let started = std::time::Instant::now();
+    let built = support::build(&RUN.project("sparse.msl"), "Sparse");
+    let node = built.ir.node_at("Sparse.a").expect("the node `a`").id();
+    let (_, result) = built.run_with(6e-9, 0.5e-9);
+    let at = |time: f64| result.iter().rev().find(|step| step.time() <= time).and_then(|step| step.get_node(&piperine_solver::prelude::NodeIdentifier::Anonymous(node.index()))).expect("a point");
+    assert!((at(1e-9) - 2.0).abs() < 1e-6, "before the rise: {}", at(1e-9));
+    assert!((at(5e-9) - 1.0).abs() < 1e-6, "after the rise: {}", at(5e-9));
+    // 2 s alone, 8 s beside a loaded suite; the dense copy of 2^32 elements does not finish in 150 s (2^28 takes 17 s)
+    assert!(started.elapsed() < std::time::Duration::from_secs(30), "built and ran in {:?}", started.elapsed());
 }

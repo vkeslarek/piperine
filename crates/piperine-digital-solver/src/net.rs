@@ -40,6 +40,10 @@ pub struct NetSpec {
     pub init: Vec<u8>,
     /// 0: one carrier. `>= 1`: an array net of this many elements of `size` bytes (abi.md §3.1 P4a).
     pub count: u64,
+    /// An array net the analog side reads: the runs of its elements `(first, length)` the analog copy holds, in the order of the
+    /// copy's slots. The engine hands the analog side those bytes only (`Store::analog_value`); an array net no analog function reads
+    /// has none, and its elements are never copied (sparse storage, §5.1.8).
+    pub analog_windows: Vec<(u64, u64)>,
 }
 
 impl NetSpec {
@@ -59,6 +63,7 @@ impl NetSpec {
             param: false,
             init: Vec::new(),
             count: 0,
+            analog_windows: Vec::new(),
         }
     }
 

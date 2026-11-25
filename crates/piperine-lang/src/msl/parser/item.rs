@@ -275,12 +275,14 @@ fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields
         .then(ident())
         .then_ignore(punct(Punct::Colon))
         .then(h.ty.clone())
-        .map_with(|((((meta, public), dir), name), ty), e| Field {
+        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .map_with(|(((((meta, public), dir), name), ty), init), e| Field {
             meta,
             public: public.is_some(),
             dir,
             name: Some(name),
             ty,
+            init,
             span: Loc(e.span()),
         });
     let named = named_field
@@ -298,6 +300,7 @@ fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields
             dir: None,
             name: None,
             ty,
+            init: None,
             span: Loc(e.span()),
         });
     let tuple = tuple_field

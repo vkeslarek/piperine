@@ -100,6 +100,9 @@ impl<'design> BundleShape<'design> {
     /// Every bundle rule that applies to the declaration `decl`.
     fn check(&self, decl: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
         let data = self.design.decl_data(decl);
+        if matches!(data.kind, DeclKind::Struct(_)) {
+            self.check_field_defaults(decl, out);
+        }
         if let DeclKind::Struct(s) = &data.kind
             && s.bundle == Some(true)
         {
@@ -197,6 +200,23 @@ impl<'design> BundleShape<'design> {
                 _ => continue,
             };
             out.push((file, Diagnostic::new("E0261", message, span, "a misplaced or missing direction")));
+        }
+    }
+
+    /// §7 rule 10, stated for the field: the initial value of a carrier is written at its declaration, and a directed field of a
+    /// bundle is the declaration of the carrier it becomes on the side that drives it (the producer for `out`, the `flip` consumer
+    /// for `in`). So `= value` belongs to an `in` or `out` carrier field of a bundle; on any other field (a field of a value
+    /// `struct`, a nested bundle, a field with no direction) it is `E0261`.
+    fn check_field_defaults(&self, decl: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let data = self.design.decl_data(decl);
+        let bundle = matches!(&data.kind, DeclKind::Struct(s) if s.bundle == Some(true));
+        for (field, written) in self.fields_of(decl) {
+            if written.init.is_none() || (bundle && written.dir.is_some() && self.shape_of(written.ty) == TypeShape::Carrier) {
+                continue;
+            }
+            let (name, span) = self.field_name(field);
+            let message = format!("the field `{name}` has an initial value, which only an `in` or `out` carrier field of a bundle takes: it is the value of the carrier on the side that drives the field (§7 rule 10)");
+            out.push((data.file, Diagnostic::new("E0261", message, span, "an initial value on a field that is no directed carrier")));
         }
     }
 

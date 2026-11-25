@@ -488,6 +488,7 @@ impl<'d> Rebuild<'d> {
                 dir: fd.dir,
                 name: f.name.as_ref().map(ident),
                 ty: self.ty(fd.ty),
+                init: fd.init.map(|init| self.expr(init)),
                 span: loc(f.span),
             }),
             _ => None,

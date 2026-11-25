@@ -578,6 +578,11 @@ impl Digital {
         self.store.value(net)
     }
 
+    /// The bytes of `net` as the analog side reads them: an array net's windows the analog copy holds, one after the other.
+    pub fn read_analog(&self, net: NetId) -> Vec<u8> {
+        self.store.analog_value(net, &self.plan.nets[net.0 as usize])
+    }
+
     /// The plan this engine runs.
     pub fn plan(&self) -> &DigitalPlan {
         &self.plan

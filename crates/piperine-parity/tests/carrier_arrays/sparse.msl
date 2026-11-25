@@ -1,0 +1,19 @@
+//! A transient over an array of 2^32 carriers no analog function reads (part II §5.1.8): the array stays sparse, only the element
+//! the cell reads is copied to the analog side. `gates[1]` rises at 2 ns and the cell is `2k` to ground (a node at 2 V) before and
+//! `1k` (1 V) after, a current of 1 mA being pulled out of its node.
+
+module Cell(in gate: Bit, p: Electrical) { }
+analog for Cell { i(p, gnd) +> v(p) / (if gate { 1k } else { 2k }) - 1m; }
+
+module Sparse() {
+    signal mem: [Bit<u8>; 4294967296] = [7; 4294967296];
+    signal gates: [Bit; 2] = [false, false];
+    signal tick: Bit = false;
+    signal a: Electrical;
+    let cell = Cell(gates[1], a);
+}
+
+digital for Sparse {
+    on tick.changed() { tick <- !tick after 2n; }
+    on tick.rise() { gates[1] <- true; }
+}

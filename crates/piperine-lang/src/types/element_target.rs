@@ -45,6 +45,16 @@ impl Element {
         }
     }
 
+    /// The subscript that names this element for a person (`[2]`, `[2..4]`, row-major flat), empty when it names no constant
+    /// element.
+    pub(super) fn subscript(self) -> String {
+        match self {
+            Element::At(at) => format!("[{at}]"),
+            Element::Run(first, length) => format!("[{first}..{}]", first + length),
+            Element::Whole | Element::Any | Element::Unfolded => String::new(),
+        }
+    }
+
     /// The elements `[first, end)` a constant element or a run covers; `None` for the whole carrier or any element.
     fn span(self) -> Option<(u64, u64)> {
         match self {
@@ -133,6 +143,12 @@ impl Checker<'_> {
                     steps.push(Step::Index(*index));
                     at = *expr;
                 }
+                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`pom/bundles.rs`),
+                // and the element of an array of bundles it is in names the first levels of that leaf (`rx[k].valid`)
+                ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(at).filter(|place| self.design.leaf_owner(place.decl).is_some()) => {
+                    steps.extend(place.elements.iter().rev().map(|index| Step::Index(*index)));
+                    break;
+                }
                 ExprKind::Field { expr, .. } => {
                     steps.push(Step::Field);
                     at = *expr;
@@ -144,8 +160,11 @@ impl Checker<'_> {
         (at, steps)
     }
 
-    /// The port or signal a place is rooted at.
+    /// The port or signal a place is rooted at: a name, or the leaf a field of a bundle stands for.
     fn carrier_root(&self, root: ExprId) -> Option<DeclId> {
+        if let Some(leaf) = self.design.bundle_field(root) {
+            return Some(leaf);
+        }
         let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => Some(decl),
@@ -153,8 +172,8 @@ impl Checker<'_> {
         }
     }
 
-    /// The elements the carrier argument `expr` (`x`, `x[k]`, `x[r]` of a nested array) hands to a port or reads: a
-    /// constant element, a run for a sub-array, any element for an index that does not fold, else the whole carrier.
+    /// The elements the carrier argument `expr` (`x`, `x[k]`, `x[r]` of a nested array, `rx[k].valid`) hands to a port or reads:
+    /// a constant element, a run for a sub-array, any element for an index that does not fold, else the whole carrier.
     pub(super) fn element_named_by(&mut self, expr: ExprId) -> Element {
         let (root, steps) = self.place_steps(expr);
         let Some(decl) = self.carrier_root(root).filter(|_| !steps.is_empty()) else { return Element::Whole };
@@ -163,7 +182,30 @@ impl Checker<'_> {
             DeclKind::Signal(s) => s.ty,
             _ => return Element::Whole,
         };
-        let Some(mut at) = self.port_type(port_ty).map(|declared| self.generated_read(root, decl, declared)) else { return Element::Whole };
+        let Some(declared) = self.port_type(port_ty).map(|declared| self.generated_read(root, decl, declared)) else { return Element::Whole };
+        self.element_reached(declared, &steps)
+    }
+
+    /// The elements of the leaf `decl` the element indexes `indexes` of an array of bundles name (`lanes[k]` given to a bundle
+    /// port reaches the element `k` of each of its leaves, struct of arrays): the whole leaf when there is none.
+    pub(super) fn element_of_indexes(&mut self, decl: DeclId, indexes: &[ExprId]) -> Element {
+        if indexes.is_empty() {
+            return Element::Whole;
+        }
+        let port_ty = match &self.design.decl_data(decl).kind {
+            DeclKind::Port(p) => p.ty,
+            DeclKind::Signal(s) => s.ty,
+            _ => return Element::Whole,
+        };
+        let Some(declared) = self.port_type(port_ty) else { return Element::Whole };
+        let steps: Vec<Step> = indexes.iter().map(|index| Step::Index(*index)).collect();
+        self.element_reached(declared, &steps)
+    }
+
+    /// The elements the index `steps` reach of a carrier declared `declared`: a constant element, a run for a sub-array, any
+    /// element for an index that does not fold, else the whole carrier.
+    fn element_reached(&mut self, declared: Ty, steps: &[Step]) -> Element {
+        let mut at = declared;
         let mut levels = Vec::new();
         while let Ty::Array(element, length) = at {
             levels.push(length);
@@ -172,7 +214,7 @@ impl Checker<'_> {
         if steps.len() > levels.len() {
             return Element::Whole;
         }
-        let indexed = self.element_of(&steps, &levels[..steps.len()]);
+        let indexed = self.element_of(steps, &levels[..steps.len()]);
         let below: Option<u64> = levels[steps.len()..].iter().try_fold(1u64, |size, length| match length {
             Length::Fixed(count) => size.checked_mul(*count),
             _ => None,

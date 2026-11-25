@@ -29,7 +29,7 @@
 //! [`guide`].
 
 pub mod guide;
-mod body;
+mod body; mod bundles;
 mod builtin;
 mod check; mod connections;
 mod crates;
@@ -48,7 +48,7 @@ mod to_ast;
 
 pub use body::*;
 pub use builtin::{BUILTINS, BuiltinId, BuiltinInfo, BuiltinKind, builtin, builtin_member, builtin_method};
-pub use decl::*; pub(crate) use connections::PortArguments;
+pub use decl::*; pub(crate) use connections::PortArguments; pub(crate) use bundles::{BundleLeaf, BundlePlace, ElementNaming}; pub use bundles::BundleView;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use index::{Index, ReferenceId, WriterId};
 pub use crates::{CrateData, CrateGraph, CrateNode, DependencyData, GraphError, is_crate_name};

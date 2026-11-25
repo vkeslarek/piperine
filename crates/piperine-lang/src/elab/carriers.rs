@@ -145,6 +145,8 @@ impl Elaboration<'_, '_> {
         let mut children = self.design.decl_data(module).children.clone();
         // the carriers of the frame's module declared in generation are arrays, one element per iteration (`generation.rs`)
         children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
+        // a bundle port or signal stands for its fields: each leaf is a carrier or a node, the bundle itself neither (`bundles.rs`)
+        let children = self.design.module_items(&children);
         let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
