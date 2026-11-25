@@ -1,9 +1,9 @@
 # resolved-nets-bundles proofs
 
-**HEAD**: 73cef16b
+**HEAD**: 2882e166f
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 10 pass, 31 fail
+**Result**: 64 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -13,39 +13,62 @@
 | C4 | `run pombundles / test a_misplaced_or_missing_field_direction_is_e0261 ... ok` | pass |
 | C5 | `run pombundles / test flip_out_and_nested_directions_are_e0262 ... ok` | pass |
 | C6 | `run pombundles / test a_bundle_declared_as_a_value_is_e0264 ... ok` | pass |
-| C7 | `run typesbundles / test a_producer_drives_out_fields_and_reads_in_fields ... ok` | **fail** |
-| C8 | `run typesbundles / test flip_swaps_every_one_driver_direction_nested_included ... ok` | **fail** |
-| C9 | `run typesbundles / test an_observer_reads_every_one_driver_field ... ok` | **fail** |
-| C10 | `run elabbundles / test two_producers_of_one_field_is_e0220_naming_its_path ... ok` | **fail** |
-| C11 | `run typesbundles / test driving_an_input_field_is_e0222 ... ok` | **fail** |
-| C12 | `run sourcebundles / test a_producer_consumer_and_observer_run_three_beats ... ok` | **fail** |
-| C13 | `run sourcebundles / test a_bundle_carrier_connects_field_by_field ... ok` | **fail** |
-| C14 | `run sourcebundles / test a_cell_literal_connects_each_named_field ... ok` | **fail** |
-| C15 | `run typesbundles / test a_literal_field_of_another_nature_is_e0263 ... ok` | **fail** |
-| C16 | `run typesbundles / test a_literal_outside_a_connection_or_a_bundle_operand_is_e0264 ... ok` | **fail** |
-| C17 | `run sourcebundles / test a_diff_bundle_connects_its_nodes_like_ports ... ok` | **fail** |
-| C18 | `run sourcebundles / test field_commits_definitions_and_methods_follow_section_5 ... ok` | **fail** |
-| C19 | `run typesbundles / test a_carrier_method_on_a_field_applies_to_that_field ... ok` | **fail** |
-| C20 | `run pombundles / test a_carrier_method_on_a_whole_bundle_is_e0211 ... ok` | **no test ran** |
-| C21 | `run typesbundles / test self_on_a_bundle_is_a_read_only_handle ... ok` | **fail** |
-| C22 | `run sourcebundles / test vd_on_a_diff_bundle_gives_the_differential_voltage ... ok` | **fail** |
-| C23 | `run sourcebundles / test beat_fires_on_rising_edges_with_valid_and_ready ... ok` | **fail** |
-| C24 | `run typesbundles / test a_write_through_a_bundle_handle_is_e0133 ... ok` | **fail** |
-| C25 | `run sourcebundles / test nested_bundles_apply_flip_recursively ... ok` | **fail** |
-| C26 | `run sourcebundles / test every_view_may_drive_a_resolved_field ... ok` | **fail** |
-| C27 | `run sourcebundles / test a_generic_bundle_is_instantiated_per_type_argument ... ok` | **fail** |
-| C28 | `run sourcebundles / test an_array_of_bundles_connects_each_element_field_by_field ... ok` | **fail** |
-| C29 | `run apimetadata / test a_bundle_field_is_named_by_its_dotted_path ... ok` | **no test ran** |
-| C30 | `run pomreflect / test a_bundle_port_reflects_its_type_and_view ... ok` | **no test ran** |
-| C31 | `run docs / test gaps_no_longer_lists_bundles ... ok` | **no test ran** |
+| C7 | `run typesbundles / test a_producer_drives_out_fields_and_reads_in_fields ... ok` | pass |
+| C8 | `run typesbundles / test flip_swaps_every_one_driver_direction_nested_included ... ok` | pass |
+| C9 | `run typesbundles / test an_observer_reads_every_one_driver_field ... ok` | pass |
+| C10 | `run elabbundles / test two_producers_of_one_field_is_e0220_naming_its_path ... ok` | pass |
+| C11 | `run typesbundles / test driving_an_input_field_is_e0222 ... ok` | pass |
+| C12 | `run sourcebundles / test a_producer_consumer_and_observer_run_three_beats ... ok` | pass |
+| C13 | `run sourcebundles / test a_bundle_carrier_connects_field_by_field ... ok` | pass |
+| C14 | `run sourcebundles / test a_cell_literal_connects_each_named_field ... ok` | pass |
+| C15 | `run typesbundles / test a_literal_field_of_another_nature_is_e0263 ... ok` | pass |
+| C16 | `run typesbundles / test a_literal_outside_a_connection_or_a_bundle_operand_is_e0264 ... ok` | pass |
+| C17 | `run sourcebundles / test a_diff_bundle_connects_its_nodes_like_ports ... ok` | pass |
+| C18 | `run sourcebundles / test field_commits_definitions_and_methods_follow_section_5 ... ok` | pass |
+| C19 | `run typesbundles / test a_carrier_method_on_a_field_applies_to_that_field ... ok` | pass |
+| C20 | `run pombundles / test a_carrier_method_on_a_whole_bundle_is_e0211 ... ok` | pass |
+| C21 | `run typesbundles / test self_on_a_bundle_is_a_read_only_handle ... ok` | pass |
+| C22 | `run sourcebundles / test vd_on_a_diff_bundle_gives_the_differential_voltage ... ok` | pass |
+| C23 | `run sourcebundles / test beat_fires_on_rising_edges_with_valid_and_ready ... ok` | pass |
+| C24 | `run typesbundles / test a_write_through_a_bundle_handle_is_e0133 ... ok` | pass |
+| C25 | `run sourcebundles / test nested_bundles_apply_flip_recursively ... ok` | pass |
+| C26 | `run sourcebundles / test every_view_may_drive_a_resolved_field ... ok` | pass |
+| C27 | `run sourcebundles / test a_generic_bundle_is_instantiated_per_type_argument ... ok` | pass |
+| C28 | `run sourcebundles / test an_array_of_bundles_connects_each_element_field_by_field ... ok` | pass |
+| C29 | `run apimetadata / test a_bundle_field_is_named_by_its_dotted_path ... ok` | pass |
+| C30 | `run pomreflect / test a_bundle_port_reflects_its_type_and_view ... ok` | pass |
+| C31 | `run docs / test gaps_no_longer_lists_bundles ... ok` | pass |
 | C32 | `run speccodes / test no_owned_code_is_raised ... ok` | pass |
-| C33 | `run typesbundles / test a_bundle_port_is_not_a_value_input ... ok` | **fail** |
-| C34 | `run booknatures / test the_stream_bundle_and_its_slice_run ... ok` | **no test ran** |
+| C33 | `run typesbundles / test a_bundle_port_is_not_a_value_input ... ok` | pass |
+| C34 | `run booknatures / test the_stream_bundle_and_its_slice_run ... ok` | pass |
+| C37 | `run bookmodules / test the_memory_bank_of_bundle_cells_runs ... ok` | pass |
+| C37 | `run bookcheatsheet / test the_template_card_runs ... ok` | pass |
 | C35 | `run bookinventory / test refused_rows_and_gaps_section_11_agree ... ok` | pass |
-| C36 | `run elabbundles / test a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path ... ok` | **fail** |
-| Run typesbundles | `cargo test -p piperine-lang --test types_bundles` | **fail** - exit 101 |
-| Run elabbundles | `cargo test -p piperine-lang --test elab_bundles` | **fail** - exit 101 |
-| Run sourcebundles | `cargo test -p piperine-parity --test source_bundles` | **fail** - exit 101 |
+| C36 | `run elabbundles / test a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path ... ok` | pass |
+| C38 | `run typesbundles / test an_element_index_that_is_a_loop_variable_is_an_element_of_the_array ... ok` | pass |
+| C38 | `run elabbundles / test a_loop_variable_index_folds_to_the_element_of_each_iteration ... ok` | pass |
+| C38 | `run elabbundles / test a_loop_that_gives_one_element_twice_is_e0220_naming_it ... ok` | pass |
+| C38 | `run sourcebundles / test an_element_index_that_is_a_loop_variable_folds_per_iteration ... ok` | pass |
+| C39 | `run typesbundles / test an_array_of_carriers_as_a_field_is_driven_and_read_by_index ... ok` | pass |
+| C39 | `run elabbundles / test an_array_field_of_carriers_binds_whole_and_is_written_by_element ... ok` | pass |
+| C39 | `run sourcebundles / test an_array_of_carriers_as_a_field_is_driven_and_read_by_index ... ok` | pass |
+| C40 | `run typesbundles / test a_constant_parameter_in_an_array_length_of_a_field_is_replaced_by_its_argument ... ok` | pass |
+| C40 | `run elabbundles / test a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_port ... ok` | pass |
+| C40 | `run sourcebundles / test a_constant_parameter_in_an_array_length_of_a_field_gives_its_argument_of_carriers ...` | pass |
+| C41 | `run typesbundles / test an_array_of_bundles_of_a_generic_length_is_typed_per_instance ... ok` | pass |
+| C41 | `run elabbundles / test an_array_of_bundles_of_a_generic_length_has_the_length_of_each_instance ... ok` | pass |
+| C41 | `run elabbundles / test a_computed_length_of_an_array_of_bundles_is_folded_per_instance ... ok` | pass |
+| C41 | `run sourcebundles / test an_array_of_bundles_of_a_generic_length_runs_with_each_length ... ok` | pass |
+| C41 | `run sourcebundles / test a_generation_loop_drives_each_element_of_an_array_of_bundles_by_its_index ... ok` | pass |
+| C41 | `run sourcebundles / test an_array_of_bundles_of_a_computed_length_runs ... ok` | pass |
+| C41 | `run sourcebundles / test an_array_of_flipped_streams_completes_a_handshake_per_lane ... ok` | pass |
+| C42 | `run typesbundles / test two_producers_of_one_element_of_an_array_of_bundles_is_e0220_naming_it ... ok` | pass |
+| C42 | `run typesbundles / test an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it ... ok` | pass |
+| C42 | `run elabbundles / test a_second_producer_of_one_element_in_a_generic_instance_is_e0220_naming_it ... ok` | pass |
+| C42 | `run elabbundles / test an_element_no_iteration_drives_in_a_generic_instance_is_e0187_naming_it ... ok` | pass |
+| C43 | `run apimetadata / test a_field_of_an_element_of_an_array_of_bundles_is_named_element_first ... ok` | pass |
+| C43 | `run elabbundles / test a_node_field_of_an_array_of_bundles_is_one_array_of_nodes ... ok` | pass |
+| C43 | `run elabbundles / test a_loop_variable_index_folds_to_the_element_of_each_iteration ... ok` | pass |
 | Build | `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperin` | pass |
 | Build | `cargo test -p piperine-lang --test suite_hygiene` | pass |
 
@@ -54,189 +77,235 @@
 `Run pombundles` - exit 0
 
 ```
-running 6 tests
-test a_struct_mixing_carrier_and_value_fields_is_e0260 ... ok
+running 7 tests
 test flip_out_and_nested_directions_are_e0262 ... ok
+test a_struct_mixing_carrier_and_value_fields_is_e0260 ... ok
 test a_misplaced_or_missing_field_direction_is_e0261 ... ok
 test one_driver_fields_carry_a_direction_and_no_other_field_does ... ok
 test a_struct_of_carriers_is_a_bundle ... ok
+test a_carrier_method_on_a_whole_bundle_is_e0211 ... ok
 test a_bundle_declared_as_a_value_is_e0264 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.38s
-     Running tests/pom_bundles.rs (/var/tmp/piperine-target-a/debug/deps/pom_bundles-69496b0fdf495fef)
+    Finished `test` profile [unoptimized] target(s) in 0.14s
+     Running tests/pom_bundles.rs (/var/tmp/piperine-target-d/debug/deps/pom_bundles-394d332a0379c3c4)
 ```
 
-`Run typesbundles` - exit 101
+`Run typesbundles` - exit 0
 
 ```
-    suite_hygiene
-    types_analog
-    types_buck
-    types_carriers
-    types_compound
-    types_entry
-    types_events
-    types_integers
-    types_modules
-    types_natures
-    types_results
-    types_structure
-    types_subset
-    types_unknowns
-    types_values
+test an_element_of_an_array_of_bundles_no_producer_drives_is_e0187_naming_it ... ok
+test bundles_of_different_types_do_not_connect ... ok
+test driving_an_input_field_is_e0222 ... ok
+test an_element_index_that_is_a_loop_variable_is_an_element_of_the_array ... ok
+test a_literal_outside_a_connection_or_a_bundle_operand_is_e0264 ... ok
+test a_literal_field_of_another_nature_is_e0263 ... ok
+test self_on_a_bundle_is_a_read_only_handle ... ok
+test an_array_of_bundles_of_a_generic_length_is_typed_per_instance ... ok
+test two_producers_of_one_element_of_an_array_of_bundles_is_e0220_naming_it ... ok
+test flip_swaps_every_one_driver_direction_nested_included ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.24s
+
+    Finished `test` profile [unoptimized] target(s) in 0.14s
+     Running tests/types_bundles.rs (/var/tmp/piperine-target-d/debug/deps/types_bundles-a47d12df74ee9013)
 ```
 
-`Run elabbundles` - exit 101
+`Run elabbundles` - exit 0
 
 ```
-    suite_hygiene
-    types_analog
-    types_buck
-    types_carriers
-    types_compound
-    types_entry
-    types_events
-    types_integers
-    types_modules
-    types_natures
-    types_results
-    types_structure
-    types_subset
-    types_unknowns
-    types_values
+test a_bundle_connection_binds_each_field_by_name ... ok
+test a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path ... ok
+test a_second_producer_of_one_element_in_a_generic_instance_is_e0220_naming_it ... ok
+test a_computed_length_of_an_array_of_bundles_is_folded_per_instance ... ok
+test a_loop_variable_index_folds_to_the_element_of_each_iteration ... ok
+test an_observer_view_adds_no_drive ... ok
+test an_element_no_iteration_drives_in_a_generic_instance_is_e0187_naming_it ... ok
+test an_array_of_bundles_of_a_generic_length_has_the_length_of_each_instance ... ok
+test a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_port ... ok
+test two_producers_of_one_field_is_e0220_naming_its_path ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/elab_bundles.rs (/var/tmp/piperine-target-d/debug/deps/elab_bundles-a444a815002d0bc6)
 ```
 
-`Run sourcebundles` - exit 101
+`Run sourcebundles` - exit 0
 
 ```
-    source_derivative
-    source_environment
-    source_events
-    source_fixes
-    source_host
-    source_limexp
-    source_modules
-    source_natures
-    source_params
-    source_reach
-    source_records
-    source_switch
-    source_time
-    source_unknowns
-    twins
+test a_generic_bundle_is_instantiated_per_type_argument ... ok
+test a_bundle_carrier_connects_field_by_field ... ok
+test vd_on_a_diff_bundle_gives_the_differential_voltage ... ok
+test an_element_index_that_is_a_loop_variable_folds_per_iteration ... ok
+test an_array_of_flipped_streams_completes_a_handshake_per_lane ... ok
+test beat_fires_on_rising_edges_with_valid_and_ready ... ok
+test field_commits_definitions_and_methods_follow_section_5 ... ok
+test an_array_of_bundles_of_a_generic_length_runs_with_each_length ... ok
+test nested_bundles_apply_flip_recursively ... ok
+test every_view_may_drive_a_resolved_field ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.79s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/source_bundles.rs (/var/tmp/piperine-target-d/debug/deps/source_bundles-3539f11f66e6b81d)
 ```
 
 `Run apimetadata` - exit 0
 
 ```
-running 6 tests
+running 8 tests
 test a_flow_of_several_contributions_is_e0801 ... ok
 test metadata_lists_every_param_with_type_value_where_and_structural ... ok
 test metadata_runs_no_analysis ... ok
 test the_flow_of_a_single_flow_contribution_prints ... ok
+test a_field_of_an_element_of_an_array_of_bundles_is_named_element_first ... ok
 test a_param_prints_its_value_in_every_row ... ok
+test a_bundle_field_is_named_by_its_dotted_path ... ok
 test metadata_lists_ports_and_streams ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.07s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.15s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
-     Running tests/metadata.rs (/var/tmp/piperine-target-a/debug/deps/metadata-1de86750d8a04096)
+    Finished `test` profile [unoptimized] target(s) in 0.13s
+     Running tests/metadata.rs (/var/tmp/piperine-target-d/debug/deps/metadata-cfe14844878cb381)
 ```
 
 `Run pomreflect` - exit 0
 
 ```
-test json_is_deterministic ... ok
-test sar_adc_instances_name_their_modules ... ok
-test types_list_their_impls_and_methods ... ok
+test references_in_source_order ... ok
 test writers_are_definitions_and_commits ... ok
+test types_list_their_impls_and_methods ... ok
+test sar_adc_instances_name_their_modules ... ok
 test from_json_reads_back_a_valid_design ... ok
+test json_is_deterministic ... ok
 test from_json_rejects_a_corrupted_design ... ok
 test gallery_signals_are_declared_in_their_module ... ok
 test from_json_never_panics_on_a_corrupted_field ... ok
 test resolution_creates_no_node ... ok
 
-test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.95s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.18s
 
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-resolved-nets/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 1.22s
-     Running tests/pom_reflect.rs (/var/tmp/piperine-target-a/debug/deps/pom_reflect-dd6c6bfb385a2d5b)
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/pom_reflect.rs (/var/tmp/piperine-target-d/debug/deps/pom_reflect-38924400c596ee62)
 ```
 
 `Run docs` - exit 0
 
 ```
-test state_records_the_unknown_semantics_decision ... ok
 test gaps_no_longer_lists_x5_l20_l39_h12 ... ok
-test gaps_drops_what_msl_fixes_closed ... ok
-test the_roadmap_lists_what_the_long_run_leaves ... ok
-test the_roadmap_and_state_record_analog_structure ... ok
-test the_roadmap_and_state_record_msl_fixes ... ok
-test the_roadmap_lists_the_host_follow_ups ... ok
-test the_roadmap_marks_the_cli_item_done ... ok
-test the_roadmap_and_state_record_root_e2e ... ok
+test the_per_level_feature_is_recorded_as_dropped ... ok
+test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
+test the_scenario_package_states_its_measured_step_count ... ok
+test state_records_root_e2e ... ok
+test the_buck_spec_holds_the_bench_bounds ... ok
+test transient_performance_closes_v12 ... ok
+test the_roadmap_is_forward_looking ... ok
+test abi_md_describes_the_unreleased_contract ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 
-test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
-     Running tests/docs.rs (/var/tmp/piperine-target-a/debug/deps/docs-93bbd657b5852db6)
+     Running tests/docs.rs (/var/tmp/piperine-target-d/debug/deps/docs-8e80bcc00dcc90ee)
 ```
 
 `Run speccodes` - exit 0
 
 ```
-running 4 tests
+running 5 tests
 test every_owned_code_names_its_owner_and_construct ... ok
-test every_spec_code_is_raised_or_owned ... ok
-test no_source_spells_p0002 ... ok
 test no_owned_code_is_raised ... ok
+test no_source_spells_p0002 ... ok
+test every_spec_code_is_raised_or_owned ... ok
+test this_features_codes_are_all_raised ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
-     Running tests/spec_codes.rs (/var/tmp/piperine-target-a/debug/deps/spec_codes-86724e06e4c5ed72)
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on shared package cache
+    Finished `test` profile [unoptimized] target(s) in 0.13s
+     Running tests/spec_codes.rs (/var/tmp/piperine-target-d/debug/deps/spec_codes-a942a887390f8334)
 ```
 
 `Run booknatures` - exit 0
 
 ```
-test e0222_a_module_cannot_drive_its_own_input ... ok
 test e0310_a_one_driver_port_needs_a_direction ... ok
-test a_bundle_is_refused_where_the_solver_reaches_it ... ok
-test signals_of_every_family_are_refused_for_the_arrays_and_the_wire ... ok
-test the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled ... ok
 test the_book_shows_the_natures_the_standard_library_gives ... ok
-test behavior_crosses_freely_inside_one_module ... ok
 test a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere ... ok
-test an_out_port_gives_the_initial_value ... ok
+test behavior_crosses_freely_inside_one_module ... ok
 test a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out ... ok
+test an_out_port_gives_the_initial_value ... ok
+test the_stream_bundle_and_its_slice_run ... ok
+test the_pulldown_alarm_prints_the_exercise_answer ... ok
+test the_alarm_prints_three_records_of_the_line ... ok
+test signals_of_every_family_run ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.37s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/book/natures.rs (/var/tmp/piperine-target-d/debug/deps/book_natures-573ee03fdb953ba2)
+```
+
+`Run bookmodules` - exit 0
+
+```
+test e0340_a_generation_range_read_from_a_signal ... ok
+test a_ladder_written_out_runs_an_operating_point_and_a_dc_sweep ... ok
+test the_half_reactions_report_each_stage_in_time_order ... ok
+test e0320_a_block_names_a_param_the_module_does_not_have ... ok
+test the_ladder_runs_for_an_operating_point_and_a_sweep ... ok
+test the_memory_bank_of_bundle_cells_runs ... ok
+test the_pi_controller_runs_with_its_generic_idt ... ok
+test the_switched_capacitor_integrator_is_a_netlist_that_runs ... ok
+test the_multiplicity_listing_runs_as_four_in_parallel ... ok
+test the_swappable_mosfet_listing_runs ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.63s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
-     Running tests/book/natures.rs (/var/tmp/piperine-target-a/debug/deps/book_natures-84da6f1f33ea55da)
+     Running tests/book/modules.rs (/var/tmp/piperine-target-d/debug/deps/book_modules-f54c744dbbe5981c)
+```
+
+`Run bookcheatsheet` - exit 0
+
+```
+test the_nature_card_is_the_standard_librarys ... ok
+test the_analog_card_runs ... ok
+test the_module_card_runs_with_its_value_input_and_its_out_carrier ... ok
+test the_module_card_runs_for_its_const_generic_without_its_value_input ... ok
+test the_body_items_card_runs_with_its_generation ... ok
+test the_template_card_runs ... ok
+test the_debug_prints_card_runs_with_its_analog_trace ... ok
+test the_digital_card_runs ... ok
+test the_files_card_runs ... ok
+test a_name_of_yours_hides_the_library_but_not_the_core ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.19s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/book/cheatsheet.rs (/var/tmp/piperine-target-d/debug/deps/book_cheatsheet-1449ebc6201d4733)
 ```
 
 `Run bookinventory` - exit 0
 
 ```
+test the_guard_names_a_block_without_a_row_and_a_row_naming_no_test ... ok
+test no_block_row_is_pending ... ok
+test the_owner_and_disputed_rules_name_what_they_break ... ok
 test every_block_of_the_book_has_one_row ... ok
-test a_verdict_fits_its_block ... ok
-test disputed_rows_are_listed_for_the_user ... ok
-test a_model_across_blocks_names_one_test ... ok
-test every_gaps_row_names_its_owner ... ok
+test a_marked_file_joins_its_blocks ... ok
+test no_row_diverges ... ok
 test run_rows_name_tests_that_run_their_model ... ok
-test refused_rows_name_tests_that_expect_their_refusal ... ok
-test refused_rows_and_gaps_section_11_agree ... ok
 test every_row_names_an_existing_test ... ok
 test the_book_reads_every_block ... ok
+test the_book_uses_no_removed_name ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
-     Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-a/debug/deps/book_inventory-1a21c47b4e1a6a60)
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-d/debug/deps/book_inventory-4e223d7a754dd3b2)
 ```
