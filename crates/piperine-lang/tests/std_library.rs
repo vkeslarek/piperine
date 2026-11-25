@@ -14,6 +14,12 @@ mod spec_tables;
 
 use spec_tables::{section, table_rows};
 
+#[path = "support/elab.rs"]
+#[allow(dead_code)]
+mod support;
+
+use support::Elab;
+
 fn embedded() -> Design {
     Design::builder().source("top.msl", "").build()
 }
@@ -946,4 +952,70 @@ fn each_generics_group_item_resolves_to_its_std_declaration() {
         assert_eq!(decl.file().name().rsplit('/').next(), Some(file), "`{name}` is declared in {file}");
         assert!(decl.as_module().is_some() || decl.as_function().is_some_and(|f| !f.is_intrinsic()), "`{name}` has a source body");
     }
+}
+
+/// The items of L58's generics group, each placed or called by a source of its own under `Top` (GN-27): the placement is the
+/// source a user writes for the item, over the real standard library.
+struct GenericsGroup;
+
+impl GenericsGroup {
+    /// The head every source shares: a mode enum with a `Default` for `inertial`.
+    const HEAD: &'static str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Run }\nimpl Default for Mode { fn default() -> Mode { Mode::Idle } }\n";
+
+    /// `(item, source)`: the source places the item from `Top`.
+    fn sources() -> Vec<(&'static str, String)> {
+        let top = |items: &str| format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; signal clk: Bit = false; signal d: Bit<u8> = 0; signal m: Bit<Mode> = Mode::Idle; {items} }}\n", Self::HEAD);
+        vec![
+            ("Short", top("let s = Short(a, b);")),
+            ("since", top("let w = since(d);")),
+            ("idt", top("let i = idt(1.0, Some(0.0));")),
+            ("idtmod", top("let i = idtmod(1.0, Some(0.0), 1.0, Some(0.0));")),
+            ("zi_nd", top("let z = zi_nd::<1, 1>(1.0, 1u) { num: [0.5], den: [-0.5] };")),
+            ("zi_np", top("let z = zi_np::<1, 1>(1.0, 1u) { num: [0.5], poles: [(0.5, 0.0)] };")),
+            ("zi_zd", top("let z = zi_zd::<1, 1>(1.0, 1u) { zeros: [(0.5, 0.0)], den: [-0.5] };")),
+            ("zi_zp", top("let z = zi_zp::<1, 1>(1.0, 1u) { zeros: [(0.5, 0.0)], poles: [(0.5, 0.0)] };")),
+            ("laplace_nd", top("let l = laplace_nd::<1, 2>(1.0) { num: [1.0], den: [1.0, 1u] };")),
+            ("laplace_np", top("let l = laplace_np::<1, 1>(1.0) { num: [1.0], poles: [(-1M, 0.0)] };")),
+            ("laplace_zd", top("let l = laplace_zd::<0, 2>(1.0) { zeros: [], den: [1.0, 1u] };")),
+            ("laplace_zp", top("let l = laplace_zp::<0, 1>(1.0) { zeros: [], poles: [(-1M, 0.0)] };")),
+            ("noise_table", format!("{}module Top() {{ signal a: Electrical; }}\nanalog for Top {{ i(a, gnd) +> v(a, gnd) / 1k + noise_table::<2>(\"t\") {{ table: [(1k, 1e-18), (10k, 4e-18)] }}; }}\n", Self::HEAD)),
+            ("Stable", top("let s = Stable(clk, d);")),
+            ("Setup", top("signal viol: Bit; let s = Setup(clk, d, viol) { ts: 1n };")),
+            ("Hold", top("let h = Hold(clk, d) { th: 1n };")),
+            ("MinPulse", top("let p = MinPulse(clk) { w: 1n };")),
+            ("inertial", top("let i = inertial(m, 1n);")),
+            ("cast", format!("{}\ndigital for Top {{ on at(1n) {{ let c = cast::<u8, u8>(d); }} }}\n", top(""))),
+            ("same", format!("{}\ndigital for Top {{ on at(1n) {{ let e = same(d, d); }} }}\n", top(""))),
+        ]
+    }
+}
+
+#[test]
+fn no_generics_group_item_is_refused_because_generic() {
+    // GN-27 AC 1: every item of the group places or is called, and nothing it is refused for names "generic": a form that
+    // is still refused would name its own form (`a_blocked_item_is_refused_naming_its_form`)
+    for (item, source) in GenericsGroup::sources() {
+        let design = Elab::design(&source);
+        assert!(design.diagnostics().is_empty(), "{item}: the source must be clean: {:?}", design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
+        if let Err(found) = piperine_lang::elab::Elaborator::new(&design).run("Top") {
+            let messages: Vec<String> = found.iter().map(|d| d.diagnostic.message.clone()).collect();
+            assert!(messages.iter().all(|message| !message.to_lowercase().contains("generic")), "{item} is refused because it is generic: {messages:?}");
+            panic!("{item} does not elaborate: {messages:?}");
+        }
+    }
+}
+
+#[test]
+fn a_blocked_item_is_refused_naming_its_form() {
+    // GN-27 AC 2 (DE1, L33): a generic module that places an `extern` module is refused naming the `extern` module, never
+    // "generic": the refusal names the form that blocks the item
+    let source = "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module Foreign(a: Electrical) { }\nmodule Wrap<N: Nature>(a: N) { let f = Foreign(a); }\nmodule Top() { signal a: Electrical; let w = Wrap::<Electrical>(a); }\n";
+    let design = Elab::design(source);
+    let refused = match piperine_lang::elab::Elaborator::new(&design).run("Top") {
+        Ok(_) => panic!("an extern module is not placed yet (L33)"),
+        Err(found) => found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>(),
+    };
+    let text = refused.join(" | ");
+    assert!(text.to_lowercase().contains("extern"), "the refusal names the form: {text}");
+    assert!(!text.to_lowercase().contains("generic"), "never `generic`: {text}");
 }

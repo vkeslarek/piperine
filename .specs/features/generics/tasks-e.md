@@ -384,8 +384,8 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T113 → T114 �
 
 **Done when**:
 
-- [ ] `no_generics_group_item_is_refused_because_generic` and `a_blocked_item_is_refused_naming_its_form` pass under `**Run stdlibrary**`
-- [ ] Gate check passes: Quick
+- [x] `no_generics_group_item_is_refused_because_generic` and `a_blocked_item_is_refused_naming_its_form` pass under `**Run stdlibrary**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
