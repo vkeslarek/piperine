@@ -1,6 +1,6 @@
 # Resolved Nets: Bundles verification
 
-**Verdict**: FAIL (round 2, at fa63ecb02: F1, F2 and F4 closed; F3 closed for the producer view only; R1 open, Minor)
+**Verdict**: FAIL (round 3, at ee7a46a43: R1 closed by 75c5406a3; the `main` merge f87c79299 makes a transient fail when an array element the analog side reads changes in an instant where a value is passed through, finding M1, Blocker)
 **Proofs**: `proofs.md` at the commit that follows this file (re-run by `check_proofs.py` after it)
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-24, over `feature/resolved-nets-bundles` at 51bd25e74
 **Scope**: the whole feature (T1 to T23, design D11 and D12), the merge of `main` at e9fefe239 (the `Fn(Cell)` bound fix) and the solver change 9e9312cec. The B1 round (verdict PASS at 73cef16b, finding F0 closed by cf54677e) is kept at the end.
@@ -123,6 +123,30 @@ The §7 rule 10 amendment is a grammar change (a struct field takes `= expr`). I
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
 | **R1. Minor - F3 remains for the consumer view.** A consumer that commits the field its `flip` view makes `out` gets `E0187` whose help names a remedy the language refuses. The commonest case is `rx.ready <- ..` on a `Bit`, a registered `ready`. An `in` field cannot take `= value` (`E0261`), and a bundle port cannot take one either (`E0264`). So a consumer cannot commit a `Bit` field it drives, only define it from an initial-valued signal. No GAPS row or owner names that refusal. | `crates/piperine-lang/src/types/module.rs:702`. Probe: `struct Pipe { out q: Bit = false, in d: Bit }` with `module Snk(p: flip Pipe)` and `on p.q.changed() { p.d <- !p.q; }`, placed as `Snk(Pipe { q: q, d: s })`. The result is `E0187` with the help "write `= value` after the type of the field `d` in its `struct` (a bundle's field default, §7 rule 10)". Writing `in d: Bit = true` gives `E0261` "only an `out` field of a bundle takes" one | Make the help follow the view: for a leaf that is `out` only under `flip`, name the remedy that exists (a definition from an initial-valued signal, or an `Option` field). Add a GAPS row with an owner for "a consumer commits a `Bit` field of a bundle", or put the question to the user together with the pending §7 rule 10 review (for example, `in ready: Bit = false` as the consumer's default). Add a check | 75c5406a3: coordinator ruling, a field's initial value starts the carrier on the side that drives it (`in ready: Bit = false` is the `flip` consumer's start; E0261 stays for value-struct, nested-bundle and undirected fields); the E0187 help names the field with its written direction (`field `in d``); check C44 (`msl_parser`, `pom_bundles`, `types_bundles::a_consumer_commits_the_in_field_its_flip_view_drives_from_the_field_default`, `elab_bundles::an_in_field_default_is_the_initial_value_of_the_consumers_leaf`, `source_bundles::a_consumer_commits_a_bit_field_its_flip_view_drives_from_the_field_default`). §7 rule 10 approved 2026-11-25 ("Essas pendencias, pode decidir tu"). |
+
+## Round 3 (2026-11-25, at ee7a46a43)
+
+These are the commits since round 2:
+
+- 75c5406a3 fixes R1.
+- f87c79299 merges `main` 59b636e11, which brings the idtmod passed-value fix.
+- The `Approved` markers now quote the user's delegation ("Essas pendencias, pode decidir tu", 2026-11-25). I accept them as the user's words.
+
+The `**Build**` line is clean.
+
+What I found when re-running the probes:
+
+- **R1 is closed.** A `flip` consumer that commits `p.d`, with `in d: Bit = true` in the struct, runs (`Top.s`: true, then false at 1 ns). Without the default, the E0187 help now says "after the type of the field `in d` in its `struct`", which is a remedy that now works.
+- **F1 still holds.** `p7` is still E0360.
+- **F3 still holds.** `p11` still runs.
+- **The element and window probe `p1` is unchanged.**
+- **F2 still holds.** The unread `[Bit<u8>; 2^32]` transient takes 0.4 s.
+- **The merge is broken (M1, below).**
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| R1 (round 2) | probe above | 75c5406a3 | 75c5406a3: an `in` field's default starts the `flip` consumer's leaf; the E0187 help names the field as its `struct` writes it (C44) |
+| **M1. Blocker - since the merge f87c79299, a transient fails with an internal error when an array element the analog side reads changes in an instant where any analog-read net passes through a value.** `PassingValues` records an array net with `Store::value`, which is empty for an array net, because its elements live in `SparseArray`. It records the net once at `instant.rs:161` (`self.passing.changed(id, self.store.value(id))`) and again in `passing.rs::read_state` (`store.value(*net)`). `DigitalSide::passing_slots` then cuts the element's window from 0 bytes, and `slot_of_bytes` raises the error. The adapters merge itself is correct: `passing_slots` cuts into window slots. What is wrong is the bytes the engine records for array nets. | `crates/piperine-digital-solver/src/instant.rs:161` and `crates/piperine-digital-solver/src/passing.rs` `read_state`. The probe `p13s` is an ordinary case: `signal g: Bit = false` and `gates: [Bit; 4]` drive `Cell(g, a)` and `Cell(gates[1], b)`, with `on at(2n) { g <- true; gates[1] <- true; }` and `on g.rise() { g <- false; }`, so `g` is a one-microstep pulse. The run fails with: "Transient: at t = 2e-9 s, Digital: internal error: the analog copy's window (elements 1..2) of net `Top.gates` lies outside the 0 bytes the engine delivered". A pulse on the element itself (`p13`: `gates[1] <- true` then `gates[1] <- false` on its rise) fails the same way. At fa63ecb02, before the merge, both probes ran (`p13s`, then without the passed-value record) | record the array net's analog bytes, `store.analog_value(id, spec)` (the windows the analog copy holds), both in `changed` and in `read_state`. Add a check: an element read by analog that pulses within an instant, and an element that changes beside a scalar pulse, run, and the zero-width solve sees the element's passed value | |
 
 ## Round B1 (2026-11-21, verdict PASS at 73cef16b)
 
