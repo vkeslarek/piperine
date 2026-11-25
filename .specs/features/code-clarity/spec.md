@@ -208,8 +208,15 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 | 3 | The method-length limit and the glossary are fixed in design from the inventory's numbers | Yes | n - design decides, the user sees it with the inventory |
 | 4 | CC-11 may amend `docs/spec` to remove special cases; the default for each listed case is removal | Yes | y - user: "Se precisar mudar a spec para deixar conceitos mais simples, pode mudar! [...] Quanto mais excessões dentro da linguagem e flows a gnt cortar, melhor!" |
 | 5 | Builtins are declared in MSL in the prelude, implementation in the core | Yes | y - user: "ter as ESPECIFICAÇÕES das coisas escritas na linguagem mesmo que a implementação fique no core e isso tudo no prelude" |
+| 6 | Q1: delete `piperine-lang-server` and `editors/vscode` now; the `lang-server` feature rebuilds on the POM | Yes | y - user: "Q1. Apaga sim." |
+| 7 | Q3: rename modules (`elab` → `elaboration`, `rt` → `runtime`, `solver/src/core`) and crates (`piperine-interp` → `piperine-interpreter`, …) | Yes | y - user: "Q3. Pode renomear os crates, tá de boa." |
+| 8 | Q12: drop "outside the M1 subset" from the `P0001` text, goldens and Book pins following | Yes | y - user: "Q12. Tirar sim!" |
+| 9 | Q16: no hard method-length limit and no length guard; ~40 lines / 5 parameters is a review guideline ("good sense") | Yes | y - user: "Q16. Bom, não colocaria um hard limit mas sim bom senso limit kkk" |
+| 10 | Q14 (a): `emit!` becomes an ordinary function with a **named variadic parameter**, the general form any `fn` may declare: `pub extern "intrinsic" fn emit<F: Fields>(stream: str, ..fields: F);` — the named arguments of a call form an anonymous record type at compile time (static; no map, no dynamic value), each field's type implements `trait Field: Repr`. Reserved streams become std functions (`check(..)`, `finish(..)`) over `emit`; the compiler's reserved-field table goes; `include_str!` becomes `include_str(..)`, so no `!` form remains. Rules: (1) a named variadic is the last parameter and takes named arguments only; (2) field shorthand `pass` means `pass = pass` | Yes | y - user: "Q14 [...] Eu gosto da opção b. Talvez precisamos de um Map<String, X>? [...] trait VarArgType que é trait impl para todos?" then, on the static-trait design and the two rules: "Fecho e aceito as duas regras!" |
+| 11 | Q14 (b) `Option` as a std enum; (c) named `Range<T>`/`Iterator<T>` std types; (d) arithmetic operator traits deferred to `spec-closure` | Yes | y - user: "Q14. Era o que eu estava imaginando!" |
+| 12 | Q2, Q4-Q11, Q13, Q15, Q17, Q18: the recommendations of `findings.md` §9 | Yes | y - user: "Restante: aceito recomendações." |
 
-**Open questions:** none for now; the Fable inventory may raise some, asked before design.
+**Open questions:** none. The Fable inventory (`findings.md`, 2026-11-25) raised Q1-Q18; all answered by the user on 2026-11-25 (rows 6-12).
 
 ## Success Criteria
 
