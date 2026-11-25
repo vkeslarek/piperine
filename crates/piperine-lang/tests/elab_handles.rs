@@ -304,13 +304,6 @@ fn a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port() {
     let row = Elab::ir(&format!("{modules}module Top() {{ let p = Row::<_>(q.cells[1].sn) {{ cell: Dram {{ }} }}; let q = Row::<_>(p.cells[0].sn) {{ cell: Dram {{ }} }}; }}"), "Top");
     assert_eq!(NodePaths::of(&row, "Top.p.cells[0]"), ["Top.q.cells[1].sn", "Top.p.cells[0].sn"]);
     assert_eq!(NodePaths::of(&row, "Top.q.cells[1]"), ["Top.p.cells[0].sn", "Top.q.cells[1].sn"]);
-    // three levels deep (`p.mid.c0.sn`) the checker types the cycle as it types the forward read, and elaboration refuses both
-    // alike by name, the gap L82: never `E0332`
-    for top in ["module Top() { signal x: Electrical; let p = Deep(x); let q = Dram(p.mid.c0.sn); }", "module Top() { let p = Deep(q.mid.c0.sn); let q = Deep(p.mid.c0.sn); }"] {
-        let diagnostics = Elab::run(&format!("{modules}{top}"), "Top").expect_err("a reach three levels deep is L82");
-        let messages: Vec<String> = diagnostics.iter().map(|d| d.diagnostic.message.clone()).collect();
-        assert!(diagnostics.iter().all(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a field of something that is not a name bound to a placement")), "{top}: {messages:?}");
-    }
 }
 
 /// The path of the node each port and signal of an instance is bound to, in the instance's node order.

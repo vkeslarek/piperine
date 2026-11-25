@@ -117,6 +117,9 @@ pub(super) struct Frame {
     pub(super) noise_sources: BTreeMap<ExprId, u32>,
     /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
     pub(super) child: Option<u32>,
+    /// For a reach frame below another (`reach.rs`), the placement it stands for in the parent reach frame and the ordinals of its
+    /// iteration there: a child of a child, reached through the chain of `parent`s up to the frame of a child of the body.
+    pub(super) placement: Option<(DeclId, Vec<u64>)>,
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
     /// each a constant: what the caller's expressions of its inputs read (`unroll.rs`).
     pub(super) unrolled: Bindings,
@@ -132,9 +135,15 @@ pub(super) struct Frame {
 }
 
 impl Frame {
+    /// Whether the frame names a placed child (`reach.rs`) rather than the body's own module or a hoisted placement: a child of the
+    /// body, or a child of such a child.
+    pub(super) fn is_reached(&self) -> bool {
+        self.child.is_some() || self.placement.is_some()
+    }
+
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new(), generated: super::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: super::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 

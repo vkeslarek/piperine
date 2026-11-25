@@ -45,7 +45,16 @@ impl<'d> Elaborator<'d> {
     pub fn run_with(self, top: &str, overrides: &Overrides) -> Result<Ir, Vec<DesignDiagnostic>> {
         let types = Types::check(self.design, top)?;
         let top_decl = types.reached()[0];
-        Elaboration::new(self.design, &types, overrides.clone()).run(top_decl)
+        // a run that meets a read through a child of a child its tables have no reached slot for says so, and the run is made
+        // again with the slot (`reach_through_templates.rs`): the reads of the design are the demands, found by running it
+        let mut demands = Vec::new();
+        loop {
+            let (result, wanted) = Elaboration::new(self.design, &types, overrides.clone(), demands.clone()).run(top_decl);
+            if wanted.is_empty() {
+                return result;
+            }
+            demands.extend(wanted);
+        }
     }
 }
 
@@ -94,15 +103,12 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
     /// The items of the body being lowered that are written inside generation, and how each unrolls (`generation.rs`).
     pub(super) generated: super::generation::GeneratedItems,
-    /// The reach frame of each child a body reads: by the frame that reads it and the placement.
     /// The values of the key params of the body being lowered: what its initial values fold over.
     pub(super) body_keys: Bindings,
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
+    /// The reach frame of each child a frame reads, by the frame that reads it and the placement (`reach.rs`).
     pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
-    /// The items of a child's child the body being lowered reaches, by the child's frame, the grandchild's `let` and the item
-    /// (`reach_through_templates.rs`).
-    pub(super) nested_nodes: BTreeMap<(usize, DeclId, String, Vec<u64>), piperine_ir::Terminal>,
     /// What the design reads through a child of a child, by module (`reach_through_templates.rs`).
     pub(super) nested_demands: super::reach_through_templates::NestedDemands,
     /// The diverging expressions lowered so far (`exits.rs`).
@@ -124,7 +130,7 @@ pub(super) struct Elaboration<'d, 't> {
 }
 
 impl<'d, 't> Elaboration<'d, 't> {
-    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides) -> Self {
+    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::reach_through_templates::NestedDemand>) -> Self {
         Elaboration {
             design,
             types,
@@ -153,8 +159,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
-            nested_nodes: BTreeMap::new(),
-            nested_demands: super::reach_through_templates::NestedDemands::default(),
+            nested_demands: super::reach_through_templates::NestedDemands::known(demands),
             divergences: Divergences::default(),
             unrolled_names: BTreeMap::new(),
             looped: BTreeMap::new(),
@@ -175,9 +180,17 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
-    fn run(mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
+    /// The run, and the demands it found that its tables did not hold (`reach_through_templates.rs`): when there are any, the
+    /// result is not the run's and the caller runs again with them.
+    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::reach_through_templates::NestedDemand>) {
+        let result = self.elaborate(top);
+        (result, self.nested_demands.into_wanted())
+    }
+
+    /// The passes of one run.
+    fn elaborate(&mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
         if self.refuse_value_inputs(top) {
-            return Err(self.diagnostics);
+            return Err(std::mem::take(&mut self.diagnostics));
         }
         // A module with a result or a value input gets no body: it is hoisted into each body that
         // places it. Its natures are still the IR's before any body.
@@ -220,15 +233,15 @@ impl<'d, 't> Elaboration<'d, 't> {
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 self.sync_wides();
-                let ir = self.ir.finish(instance);
+                let ir = std::mem::replace(&mut self.ir, IrBuilder::new()).finish(instance);
                 self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
                 self.diagnostics.extend(Self::loop_diagnostics(self.design, top, &ir));
                 if !self.diagnostics.is_empty() {
-                    return Err(self.diagnostics);
+                    return Err(std::mem::take(&mut self.diagnostics));
                 }
                 Self::well_formed(self.design, top, ir)
             }
-            _ => Err(self.diagnostics),
+            _ => Err(std::mem::take(&mut self.diagnostics)),
         }
     }
 
@@ -334,7 +347,7 @@ mod tests {
         let design = Design::builder().source("top.msl", "module Top() { }").build();
         let types = Types::check(&design, "Top").expect("a clean model");
         let top = types.reached()[0];
-        let mut elaboration = Elaboration::new(&design, &types, Overrides::default());
+        let mut elaboration = Elaboration::new(&design, &types, Overrides::default(), Vec::new());
         elaboration.frames = vec![Frame::root(top)];
         let pair = elaboration.ir.aggregate(piperine_ir::AggregateData { ty: ValueType::Array(Box::new(ValueType::F64), 2), variant: None, parts: vec![piperine_ir::Constant::Real(piperine_ir::Real::new(1.0)); 2] });
         let origin = piperine_ir::Origin { file: "top.msl".to_string(), line: 1, col: 1 };

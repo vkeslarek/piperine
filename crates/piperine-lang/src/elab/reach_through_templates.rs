@@ -1,130 +1,107 @@
-//! `inst.name` through a child of a child (§8.2.8, §8.4.8): `bank.c0.sn`, where `c0` is a `pub let` of `bank`'s module and its
-//! placement goes through a template-typed param (`cell: C`, `C: Fn(..)`), so the module that owns `sn` is only known once the
-//! template is folded. A body reads the items of its own children, never of a grandchild's, so the child's body carries a reached
-//! node for the item (`NodeRole::Reached`, bound to the grandchild's own when it is placed) and the body that reads it reaches that node.
+//! `inst.name` through children of children, at any depth (§8.2.8, §8.4.8): `bank.c0.sn`, `p.mid.c0.sn`, `a.b.c.d.x`, each child
+//! placed by name, through a template or in generation. A body reads the items of its own children, never of a grandchild's, so
+//! the child's body carries a reached node (or carrier) for the item (`NodeRole::Reached`, bound to the grandchild's own when it
+//! is placed) and the body that reads it reaches that one: a read of `a.b.c.x` is a reach of `a`'s body into `b.c.x`, which is a
+//! reach of `b`'s body into `c.x`, one hop for each name, every hop the same.
 //!
-//! * A **demand** is one `child.item` read through a child (`bank.c0.sn` demands `c0.sn` of the module of `bank`): they are
-//!   found once for the design, in source order, and each body of the module that is the child lowers a reached node for every
-//!   demand its variant can meet (one per iteration of a child placed in generation), right after its own nodes
-//!   (`lower_nested_demands`), so the node's index is known to the reader (`DemandEntry`).
-//! * The reader resolves the item against the concrete module (`E0343` for a missing or non-`pub` one), makes its own reached node
-//!   of the child's node, and binds it to the child's (`nested_terminal`).
+//! * A **demand** is one such hop: the body of `module` reaches `child.path` (the names after the child, the item last). A body
+//!   lowers a reached slot for every demand it meets, once for each iteration of the placement it names, right after its own nodes
+//!   and its own carriers (`lower_nested_demands`, `lower_nested_carrier_demands`), so the slot's index is known to the body that
+//!   reads it (`DemandEntry`).
+//! * The demands are what the design reads, found by running it: a hop whose demand the run's tables lack records it
+//!   (`NestedDemands::require`) and the run is made again with it (`Elaborator::run_with`). A read of `a.b.c.x` asks `a`'s module
+//!   for `b.c.x`; that demand, met, asks `b`'s module for `c.x`. The names a `pub let` of the grandchild reads (`pub let vs =
+//!   v(sn)`) are asked the same way when the `let` is lowered, so no name is looked for ahead of the elaboration that reads it.
+//! * The reader makes a reach frame for each hop (`reach.rs`), and the slot of a node or carrier of the last is the entry of the
+//!   first hop's module that names it (`Elaboration::nested_slot`).
 
-use std::collections::BTreeMap;
+use piperine_ir::Constant;
 
-use piperine_ir::{BodyNode, Constant, NodeRole, Reach, ReachedItem, Terminal};
-
-use super::body::NodePlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
 use super::lower::Scope;
-use crate::msl::Diagnostic;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind};
 
-/// One item `item` of the child `child` (a `let` binding of a module's body) that another body reads as `owner.child.item`.
+/// One hop of a read through children of children: the body of `module` reaches the item at the end of `path` below its child
+/// `child`, a `let` that places a module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct NestedDemand {
+    /// The module whose body holds the child.
+    pub(super) module: DeclId,
     /// The `let` binding of the placement in the module's body.
     pub(super) child: DeclId,
-    /// The name of the item the read names.
-    pub(super) item: String,
+    /// The names below the child: the children of the child it passes through, then the item.
+    pub(super) path: Vec<String>,
 }
 
-/// One reached node a body lowers for a demand: the placement it is made for and the iteration of that placement.
-#[derive(Debug, Clone)]
-pub(super) struct DemandEntry {
-    /// The demand the node answers.
-    pub(super) demand: NestedDemand,
-    /// The placement call of the child.
-    pub(super) call: ExprId,
-    /// The iteration of the generation the placement is written in, `None` outside generation.
-    pub(super) iteration: Option<Iteration>,
-}
-
-/// One read of a demanded item that [`Elaboration::add_nested_node`] answers with a reached node of the body: where the child is
-/// placed, which demand it is, the iteration the read names and the item it resolved to.
-struct NestedRead<'a> {
-    /// The frame of the child (`bank`) the body places.
-    frame: usize,
-    /// The module whose body holds the child the demand names (`bank`'s module).
-    module: DeclId,
-    /// The demanded item of the grandchild.
-    demand: &'a NestedDemand,
-    /// The iteration the read names, one ordinal per generation loop around the grandchild's placement.
-    ordinals: &'a [u64],
-    /// The item of the concrete module the read resolved to.
-    decl: DeclId,
-    /// Where the read is written.
-    span: crate::msl::Span,
-}
-
-/// The demands of the design, by the module whose body holds the child.
+/// The demands a run knows and the ones it found missing.
 #[derive(Debug, Default)]
 pub(super) struct NestedDemands {
-    found: Option<BTreeMap<DeclId, Vec<NestedDemand>>>,
+    /// The demands the run lowers slots for, in the order they were found.
+    known: Vec<NestedDemand>,
+    /// The demands a read met that `known` lacks.
+    wanted: Vec<NestedDemand>,
 }
 
 impl NestedDemands {
-    /// The demands the design makes of `module`, in source order.
-    fn of(&self, module: DeclId) -> &[NestedDemand] {
-        self.found.as_ref().and_then(|all| all.get(&module)).map_or(&[], Vec::as_slice)
+    /// The tables of a run that knows `demands`.
+    pub(super) fn known(demands: Vec<NestedDemand>) -> NestedDemands {
+        NestedDemands { known: demands, wanted: Vec::new() }
+    }
+
+    /// The demands of `module`, in the order they were found.
+    fn of(&self, module: DeclId) -> Vec<NestedDemand> {
+        self.known.iter().filter(|demand| demand.module == module).cloned().collect()
+    }
+
+    /// Records `demand` as wanted unless the run knows it: the run is made again with it.
+    pub(super) fn require(&mut self, demand: NestedDemand) {
+        if !self.known.contains(&demand) && !self.wanted.contains(&demand) {
+            self.wanted.push(demand);
+        }
+    }
+
+    /// The demands the run found missing.
+    pub(super) fn into_wanted(self) -> Vec<NestedDemand> {
+        self.wanted
     }
 }
 
+/// What a reached slot stands for in the body that holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReachedKind {
+    /// A node of the grandchild.
+    Node,
+    /// A carrier of the grandchild.
+    Carrier,
+}
+
+/// One reached slot a body lowers for a demand: the iteration of every placement the path passes through, the kind of the item,
+/// and the frame and item it is made for.
+#[derive(Debug, Clone)]
+pub(super) struct DemandEntry {
+    /// The demand the slot answers.
+    pub(super) demand: NestedDemand,
+    /// The iteration of each placement on the way, outermost first, one ordinal for each generation `for` around it.
+    pub(super) ordinals: Vec<u64>,
+    /// Whether the item is a node or a carrier.
+    pub(super) kind: ReachedKind,
+    /// The reach frame of the module that declares the item.
+    pub(super) frame: usize,
+    /// The item.
+    pub(super) item: DeclId,
+}
+
 impl Elaboration<'_, '_> {
-    /// Finds the demands of the design the first time a body is lowered.
-    pub(super) fn find_demands_once(&mut self) {
-        if self.nested_demands.found.is_none() {
-            let found = self.find_nested_demands();
-            self.nested_demands.found = Some(found);
-        }
-    }
-
-    /// Every read `a.b.x` of the design where `b` is a `let` of the module `a` names: a demand of that module.
-    fn find_nested_demands(&self) -> BTreeMap<DeclId, Vec<NestedDemand>> {
-        let mut found: BTreeMap<DeclId, Vec<NestedDemand>> = BTreeMap::new();
-        for index in 0..self.design.expr_count() {
-            let expr = ExprId(index as u32);
-            if self.typed(expr).is_none() {
-                continue;
-            }
-            let ExprKind::Field { expr: receiver, name, .. } = &self.design.expr_node(expr).kind else { continue };
-            let Some((module, child)) = self.child_of_module(*receiver) else { continue };
-            let demand = NestedDemand { child, item: name.text.clone() };
-            let list = found.entry(module).or_default();
-            if !list.contains(&demand) {
-                list.push(demand);
-            }
-        }
-        found
-    }
-
-    /// The `let` binding and the module whose body holds it, when `receiver` (through parentheses and indexes) is `owner.child` with
-    /// `child` the name of a placement `let`.
-    pub(super) fn child_of_module(&self, receiver: ExprId) -> Option<(DeclId, DeclId)> {
-        let mut at = receiver;
-        loop {
-            match &self.design.expr_node(at).kind {
-                ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => at = *inner,
-                _ => break,
-            }
-        }
-        let ExprKind::Field { res: Resolution::Decl(child), .. } = &self.design.expr_node(at).kind else { return None };
-        let value = self.body_let_value(*child)?;
-        let ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. } = &self.design.expr_node(self.peel_parens(value)).kind else { return None };
-        let mut parent = self.design.decl_data(*child).parent;
-        while let Some(decl) = parent {
-            if matches!(self.design.decl_data(decl).kind, DeclKind::Module(_)) {
-                return Some((decl, *child));
-            }
-            parent = self.design.decl_data(decl).parent;
-        }
-        None
+    /// Whether the `let` binding `binding` of a module's body is a placement.
+    fn is_placement_binding(&self, binding: DeclId) -> bool {
+        let Some(value) = self.body_let_value(binding) else { return false };
+        matches!(&self.design.expr_node(self.peel_parens(value)).kind, ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. })
     }
 
     /// The item named `name` of `module` (a port, a signal, a param or a `let` name, entering generation).
-    fn item_named(&self, module: DeclId, name: &str) -> Option<DeclId> {
+    pub(super) fn item_named(&self, module: DeclId, name: &str) -> Option<DeclId> {
         let mut pending = vec![module];
         while let Some(at) = pending.pop() {
             for child in &self.design.decl_data(at).children {
@@ -155,46 +132,168 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The node item of the concrete module of `demand`'s child under the key params `keys`: the child's placement resolved, its
-    /// module's item of that name when it is a visible port or signal that is a node. `None` for a demand this variant cannot meet.
-    fn met_demand(&self, keys: &Bindings, demand: &NestedDemand) -> Option<DeclId> {
-        let module = self.concrete_module_of(keys, demand)?;
-        let item = self.item_named(module, &demand.item)?;
-        let is_node = matches!(self.design.decl_data(item).kind, DeclKind::Port(_) | DeclKind::Signal(_)) && self.types.carrier(item).is_none();
-        (is_node && self.is_visible_item(item)).then_some(item)
+    /// The item `item` of `concrete` as a parent may read it: `E0343` after the diagnostic of an item that is missing or not `pub`.
+    pub(super) fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
+        let module_name = self.design.decl_data(concrete).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let Some(decl) = self.item_named(concrete, item) else {
+            self.report(scope.file, crate::msl::Diagnostic::new("E0343", format!("no item `{item}` in module `{module_name}`"), span, "no such item"));
+            return None;
+        };
+        if !self.is_visible_item(decl) {
+            self.report(scope.file, crate::msl::Diagnostic::new("E0343", format!("`{item}` is not `pub` in module `{module_name}`"), span, "not `pub`"));
+            return None;
+        }
+        Some(decl)
     }
 
-    /// The module the placement bound to `demand.child` places under the key params `keys`.
-    pub(super) fn concrete_module_of(&self, keys: &Bindings, demand: &NestedDemand) -> Option<DeclId> {
-        let value = self.body_let_value(demand.child)?;
-        self.placed_module(self.peel_parens(value), keys)
+    /// What the item `item` of a module is when a parent reaches it: a node, a carrier, or neither (a param, a `let`, an array).
+    fn reached_kind(&self, item: DeclId) -> Option<ReachedKind> {
+        if !matches!(self.design.decl_data(item).kind, DeclKind::Port(_) | DeclKind::Signal(_)) || self.design.is_bundle_owner(item) || self.types.node_array(item).is_some() {
+            return None;
+        }
+        Some(if self.types.carrier(item).is_some() { ReachedKind::Carrier } else { ReachedKind::Node })
     }
 
-    /// The reached nodes the body of `module` lowers, in order, under the key params `keys` and the generation expanded now
-    /// (`self.generated`): every demand it meets, once for each iteration of the placement it names.
-    fn demand_entries(&self, module: DeclId, keys: &Bindings) -> Vec<DemandEntry> {
+    /// The reached slots the body of `module` lowers, in order, seen from `frame` (the body's own frame 0, or the reach frame of
+    /// an instance of the module): every demand it meets, once for each iteration of the placement it names, and below it one for
+    /// each slot the child's own module lowers for the rest of the path. The generation of `module` is expanded now
+    /// (`self.generated`).
+    pub(super) fn demand_entries(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
         let mut entries = Vec::new();
         for demand in self.nested_demands.of(module) {
-            if self.met_demand(keys, demand).is_none() {
-                continue;
-            }
             let Some(value) = self.body_let_value(demand.child) else { continue };
             let call = self.peel_parens(value);
+            let keys = self.frame_bindings(frame);
+            if self.placed_module(call, &keys).is_none() || self.hoisted_callee(call).is_some() {
+                continue;
+            }
             let owner = self.design.expr_node(call).owner;
             let iterations: Vec<Option<Iteration>> = match self.generated.of(owner) {
                 Some(iterations) => iterations.iter().cloned().map(Some).collect(),
                 None => vec![None],
             };
-            entries.extend(iterations.into_iter().map(|iteration| DemandEntry { demand: demand.clone(), call, iteration }));
+            let span = self.design.expr_node(call).span;
+            for iteration in iterations {
+                let ordinals = iteration.as_ref().map_or_else(Vec::new, |iteration| self.iteration_ordinals(owner, iteration));
+                let Some(child) = self.frame_of_iteration(frame, demand.child, iteration.as_ref(), span) else { continue };
+                entries.extend(self.entries_below(child, &demand, &ordinals));
+            }
         }
         entries
     }
 
-    /// The ordinals of `iteration` in the generation `for`s around the placement `call`, outermost first.
-    fn entry_ordinals(&self, entry: &DemandEntry) -> Vec<u64> {
-        let owner = self.design.expr_node(entry.call).owner;
-        let Some(iteration) = &entry.iteration else { return Vec::new() };
-        self.iteration_ordinals(owner, iteration)
+    /// The entries of `demand` at the reach frame `child` of its child, the child's iteration being `ordinals`: the item itself when
+    /// the path ends, else what the child's own module lowers for the rest of the path.
+    fn entries_below(&mut self, child: usize, demand: &NestedDemand, ordinals: &[u64]) -> Vec<DemandEntry> {
+        let module = self.frames[child].module;
+        let Some(next) = self.item_named(module, &demand.path[0]) else { return Vec::new() };
+        if demand.path.len() == 1 {
+            return match self.reached_kind(next) {
+                Some(kind) => vec![DemandEntry { demand: demand.clone(), ordinals: ordinals.to_vec(), kind, frame: child, item: next }],
+                None => Vec::new(),
+            };
+        }
+        if !self.is_placement_binding(next) {
+            return Vec::new();
+        }
+        let below = NestedDemand { module, child: next, path: demand.path[1..].to_vec() };
+        self.nested_demands.require(below.clone());
+        self.entries_under(child, module)
+            .into_iter()
+            .filter(|entry| entry.demand == below)
+            .map(|entry| DemandEntry { demand: demand.clone(), ordinals: [ordinals, entry.ordinals.as_slice()].concat(), ..entry })
+            .collect()
+    }
+
+    /// The entries the body of `module` lowers in the variant of `frame`: its generation expanded under the frame's keys and
+    /// generic arguments.
+    fn entries_under(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
+        self.with_generation_of(frame, module, |this, _| this.demand_entries(frame, module))
+    }
+
+    /// The reach frame of the placement bound by `binding` in the module of `parent`, for the iteration `iteration` of its generation
+    /// (`None` outside generation).
+    pub(super) fn frame_of_iteration(&mut self, parent: usize, binding: DeclId, iteration: Option<&Iteration>, span: crate::msl::Span) -> Option<usize> {
+        let call = self.peel_parens(self.body_let_value(binding)?);
+        let file = self.design.decl_data(self.design.expr_node(call).owner).file;
+        let mut within = Scope::new(file);
+        within.frame = parent;
+        within.keys = self.frame_bindings(parent);
+        if let Some(iteration) = iteration {
+            for (variable, value) in &iteration.values {
+                within.unrolled.bind(*variable, Constant::Int(*value));
+            }
+            within.ordinals = iteration.ordinals.clone();
+        }
+        let key = self.placement_key(&within, call);
+        self.placement_frame(&within, binding, key, span)
+    }
+
+    /// Gives the body of `module`, being lowered, the reached node of every demand its variant meets, right after its own nodes.
+    pub(super) fn lower_nested_demands(&mut self, scope: &Scope, module: DeclId) {
+        for entry in self.demand_entries(0, module).into_iter().filter(|entry| entry.kind == ReachedKind::Node) {
+            let slot = self.structure.nodes.len() as u32;
+            let made = self.frame_node(entry.frame, entry.item);
+            if made != Some(piperine_ir::Terminal::Node(slot)) {
+                let span = self.design.decl_data(entry.item).span;
+                self.unsupported(scope.file, span, "a node of a child read by its parent that the child's body could not place where the parent expects it");
+            }
+        }
+    }
+
+    /// Gives the body of `module`, being lowered, the reached carrier of every demand its variant meets, right after its own carriers.
+    pub(super) fn lower_nested_carrier_demands(&mut self, scope: &Scope, module: DeclId) {
+        for entry in self.demand_entries(0, module).into_iter().filter(|entry| entry.kind == ReachedKind::Carrier) {
+            let slot = self.structure.carriers.len() as u32;
+            let made = self.frame_carrier(entry.frame, entry.item);
+            if made != Some(slot) {
+                let span = self.design.decl_data(entry.item).span;
+                self.unsupported(scope.file, span, "a carrier of a child read by its parent that the child's body could not place where the parent expects it");
+            }
+        }
+    }
+
+    /// The reach frame at the root of the chain `frame` hangs from (the frame of a child of the body, which has a body of its own), and
+    /// the placements the chain passes through below it, outermost first, each with the ordinals of its iteration. `None` for a frame
+    /// that is no reach frame.
+    fn reach_chain(&self, frame: usize) -> Option<(usize, Vec<(DeclId, Vec<u64>)>)> {
+        let mut steps = Vec::new();
+        let mut at = frame;
+        while self.frames[at].child.is_none() {
+            steps.push(self.frames[at].placement.clone()?);
+            at = self.frames[at].parent?;
+        }
+        steps.reverse();
+        Some((at, steps))
+    }
+
+    /// The index the reached slot of the item `item` of the reach frame `frame` takes in the body of the child that roots its chain,
+    /// and that child's index among the body's children: the slots of its own, plus the entries of its module that precede it. The
+    /// demand is asked for when the run does not know it. `None` for a frame of a child of the body, whose item is the child's own,
+    /// and for a slot the child's module does not lower.
+    pub(super) fn nested_slot(&mut self, frame: usize, item: DeclId, kind: ReachedKind) -> Option<(u32, u32)> {
+        let (root, steps) = self.reach_chain(frame)?;
+        let ((first, _), rest) = steps.split_first()?;
+        let module = self.frames[root].module;
+        let mut path: Vec<String> = rest.iter().map(|(binding, _)| self.design.decl_data(*binding).name.as_ref().map_or_else(String::new, |n| n.text.clone())).collect();
+        path.push(self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone()));
+        let ordinals: Vec<u64> = steps.iter().flat_map(|(_, ordinals)| ordinals.iter().copied()).collect();
+        let demand = NestedDemand { module, child: *first, path };
+        self.nested_demands.require(demand.clone());
+        let entries = self.entries_under(root, module);
+        let position = entries.iter().filter(|entry| entry.kind == kind).position(|entry| entry.demand == demand && entry.ordinals == ordinals)? as u32;
+        let own = match kind {
+            ReachedKind::Node => self.own_node_total(root)?,
+            ReachedKind::Carrier => self.own_carrier_total(root)?,
+        };
+        Some((self.frames[root].child?, own + position))
+    }
+
+    /// The iterations of the generation around the placement owned by `owner` in the module of `frame`, expanded under the frame's
+    /// keys and generic arguments.
+    pub(super) fn iterations_under(&mut self, frame: usize, owner: DeclId) -> Vec<Iteration> {
+        let module = self.frames[frame].module;
+        self.with_generation_of(frame, module, |this, _| this.generated.of(owner).cloned().unwrap_or_default())
     }
 
     /// The ordinals of `iteration` in the generation `for`s around the placement owned by `owner`, outermost first.
@@ -202,91 +301,8 @@ impl Elaboration<'_, '_> {
         self.generation_loops(owner).iter().filter_map(|generation| iteration.ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| u64::from(*ordinal))).collect()
     }
 
-    /// Gives the body of `module`, being lowered, the reached node of every demand its variant meets, right after its own nodes.
-    pub(super) fn lower_nested_demands(&mut self, scope: &mut Scope, module: DeclId) {
-        let keys = self.body_keys.clone();
-        let mut slot = self.structure.nodes.len() as u32;
-        for entry in self.demand_entries(module, &keys) {
-            let Some(item) = self.met_demand(&keys, &entry.demand) else { continue };
-            let span = self.design.expr_node(entry.call).span;
-            let iteration = entry.iteration.clone().unwrap_or_default();
-            for (variable, value) in &iteration.values {
-                scope.unrolled.bind(*variable, Constant::Int(*value));
-            }
-            scope.ordinals = iteration.ordinals.clone();
-            let key = self.placement_key(scope, entry.call);
-            let made = self.placement_frame(scope, entry.demand.child, key, span).and_then(|frame| self.frame_node(frame, item));
-            scope.ordinals.clear();
-            for (variable, _) in &iteration.values {
-                scope.unrolled.unbind(*variable);
-            }
-            if made != Some(Terminal::Node(slot)) {
-                self.unsupported(scope.file, span, "a node of a child read by its parent that the child's body could not place where the parent expects it");
-            }
-            slot += 1;
-        }
-    }
-
-    /// The node `bank.c0.sn` or `bank.cells[r][c].sn` names, as a reached node of the body: the node `bank`'s body reaches into
-    /// its child, itself reached from `bank`. `None` when `expr` is not a read of an item of a child of a child; `Some(None)`
-    /// after a diagnostic.
-    pub(super) fn nested_terminal(&mut self, scope: &Scope, expr: ExprId) -> Option<Option<Terminal>> {
-        let node = self.design.expr_node(expr).clone();
-        let ExprKind::Field { expr: receiver, name, .. } = &node.kind else { return None };
-        let (module, child) = self.child_of_module(*receiver)?;
-        let mut owner = self.peel_parens(*receiver);
-        let mut indexes = Vec::new();
-        while let ExprKind::Index { expr: inner, index } = self.design.expr_node(owner).kind.clone() {
-            indexes.push(index);
-            owner = self.peel_parens(inner);
-        }
-        indexes.reverse();
-        let ExprKind::Field { expr: bank, .. } = self.design.expr_node(owner).kind.clone() else { return None };
-        Some(self.reach_grandchild(scope, bank, (module, child), &name.text, &indexes, node.span))
-    }
-
-    /// The reached node of the body for `item` of the child `child` of the module `module` (the pair), which the child `bank`
-    /// of the body places; `indexes` pick the iteration of a child placed in generation.
-    fn reach_grandchild(&mut self, scope: &Scope, bank: ExprId, (module, child): (DeclId, DeclId), item: &str, indexes: &[ExprId], span: crate::msl::Span) -> Option<Terminal> {
-        let (binding, key) = self.receiver_placement(scope, bank)?;
-        let frame = self.placement_frame(scope, binding, key, span)?;
-        let ordinals = self.fold_ordinals(scope, indexes)?;
-        let cached = (frame, child, item.to_string(), ordinals.clone());
-        if let Some(terminal) = self.nested_nodes.get(&cached) {
-            return Some(*terminal);
-        }
-        let keys = self.frame_bindings(frame);
-        let demand = NestedDemand { child, item: item.to_string() };
-        let Some(concrete) = self.concrete_module_of(&keys, &demand) else {
-            self.unsupported(scope.file, span, "an item of a child whose module is not known");
-            return None;
-        };
-        let decl = self.visible_item_of(scope, concrete, item, span)?;
-        if self.met_demand(&keys, &demand) != Some(decl) {
-            self.unsupported(scope.file, span, "an item of a child's child that is not one of its nodes");
-            return None;
-        }
-        let terminal = self.add_nested_node(scope, &NestedRead { frame, module, demand: &demand, ordinals: &ordinals, decl, span })?;
-        self.nested_nodes.insert(cached, terminal);
-        Some(terminal)
-    }
-
-    /// The item `item` of `concrete` as a parent may read it: `E0343` after the diagnostic of an item that is missing or not `pub`.
-    pub(super) fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
-        let module_name = self.design.decl_data(concrete).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let Some(decl) = self.item_named(concrete, item) else {
-            self.report(scope.file, Diagnostic::new("E0343", format!("no item `{item}` in module `{module_name}`"), span, "no such item"));
-            return None;
-        };
-        if !self.is_visible_item(decl) {
-            self.report(scope.file, Diagnostic::new("E0343", format!("`{item}` is not `pub` in module `{module_name}`"), span, "not `pub`"));
-            return None;
-        }
-        Some(decl)
-    }
-
     /// The ordinals the index expressions `indexes` fold to in the scope: `None` after a diagnostic.
-    fn fold_ordinals(&mut self, scope: &Scope, indexes: &[ExprId]) -> Option<Vec<u64>> {
+    pub(super) fn fold_ordinals(&mut self, scope: &Scope, indexes: &[ExprId]) -> Option<Vec<u64>> {
         let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
         let mut ordinals = Vec::new();
         for index in indexes {
@@ -301,50 +317,6 @@ impl Elaboration<'_, '_> {
         Some(ordinals)
     }
 
-    /// The node of the body that stands for the demanded node of the child of `frame`: its slot in the child's body is the
-    /// first slot after the child's own nodes, plus the entries of the module that precede it. The entries are those of the
-    /// module's generation expanded under the child's own keys, which the module's lowering made in the same order.
-    fn add_nested_node(&mut self, scope: &Scope, read: &NestedRead) -> Option<Terminal> {
-        let NestedRead { frame, module, demand, ordinals, decl, span } = *read;
-        let bank = self.frames[frame].child?;
-        let own = self.own_node_total(frame)?;
-        let entries = self.entries_under(frame, module);
-        let call = entries.iter().find(|e| e.demand == *demand).map(|e| e.call).or_else(|| self.body_let_value(demand.child).map(|v| self.peel_parens(v)))?;
-        let owner = self.design.expr_node(call).owner;
-        let loops = self.generation_loops(owner).len();
-        if ordinals.len() != loops {
-            self.unsupported(scope.file, span, "an item of a child placed in generation, read without naming its iteration: index every loop");
-            return None;
-        }
-        let Some(position) = entries.iter().position(|e| e.demand == *demand && self.entry_ordinals(e) == ordinals) else {
-            let (index, length) = self.first_out_of_range_loop(&entries, demand, ordinals);
-            self.refer_outside_generation(scope.file, span, demand.child, Some((index, length)));
-            return None;
-        };
-        let ty = match &self.design.decl_data(decl).kind {
-            DeclKind::Port(p) => p.ty,
-            DeclKind::Signal(s) => s.ty,
-            _ => return None,
-        };
-        let nature = self.nature_decl_of(ty).and_then(|n| self.nature(n))?;
-        let subscripts: String = ordinals.iter().map(|ordinal| format!("[{ordinal}]")).collect();
-        let name = format!("{}{}{subscripts}.{}", self.frames[frame].prefix, self.design.decl_data(demand.child).name.as_ref().map_or("", |n| n.text.as_str()), demand.item);
-        let origin = self.locator.decl(decl);
-        let spec = BodyNode { name: name.clone(), nature, role: NodeRole::Reached, init: None, origin: origin.clone() };
-        let plan = NodePlan { name, role: NodeRole::Reached, nature, init: None, origin };
-        self.structure.nodes.push((spec, plan));
-        let node = self.structure.nodes.len() as u32 - 1;
-        self.structure.reaches.push(Reach { child: bank, item: ReachedItem::Node { node, child_node: own + position as u32 } });
-        Some(Terminal::Node(node))
-    }
-
-    /// The outermost loop of the placement `demand` names whose ordinal in `ordinals` its iterations do not reach, as that ordinal and
-    /// the number of ordinals the loop has under the loops outside it.
-    fn first_out_of_range_loop(&self, entries: &[DemandEntry], demand: &NestedDemand, ordinals: &[u64]) -> (u64, u64) {
-        let held: Vec<Vec<u64>> = entries.iter().filter(|e| e.demand == *demand).map(|e| self.entry_ordinals(e)).collect();
-        Self::outermost_missing_ordinal(&held, ordinals)
-    }
-
     /// The outermost level of `ordinals` that no row of `held` (the ordinals the iterations of a generation make) reaches under the
     /// levels outside it, as its ordinal and the number of ordinals that level does have there.
     pub(super) fn outermost_missing_ordinal(held: &[Vec<u64>], ordinals: &[u64]) -> (u64, u64) {
@@ -357,19 +329,6 @@ impl Elaboration<'_, '_> {
             }
         }
         (ordinals.last().copied().unwrap_or(0), held.len() as u64)
-    }
-
-    /// The iterations of the generation around the placement owned by `owner` in the module of `frame`, expanded under the frame's
-    /// keys and generic arguments.
-    pub(super) fn iterations_under(&mut self, frame: usize, owner: DeclId) -> Vec<Iteration> {
-        let module = self.frames[frame].module;
-        self.with_generation_of(frame, module, |this, _| this.generated.of(owner).cloned().unwrap_or_default())
-    }
-
-    /// The entries the body of `module` lowers in the variant of `frame`: its generation expanded under the frame's keys and
-    /// generic arguments.
-    fn entries_under(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
-        self.with_generation_of(frame, module, |this, keys| this.demand_entries(module, keys))
     }
 
     /// `read` of the generation of `module` expanded under the keys and generic arguments of `frame`, the state of the body being

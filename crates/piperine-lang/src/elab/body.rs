@@ -198,10 +198,11 @@ impl Elaboration<'_, '_> {
             }
         }
         self.lower_nodes(module);
-        self.lower_nested_demands(&mut scope, module);
+        self.lower_nested_demands(&scope, module);
         let ammeters = self.lower_ammeters(&mut scope, module);
         scope.merged = self.merged_branches(&scope, module);
         self.lower_carriers(0, module);
+        self.lower_nested_carrier_demands(&scope, module);
         self.lower_definitions(&scope);
         self.hoist_placements(&scope);
         scope.addend_lets = self.addend_only_ddt_lets(&scope, module);

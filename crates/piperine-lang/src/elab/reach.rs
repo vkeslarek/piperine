@@ -18,11 +18,13 @@
 use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRole, Origin, Reach, ReachedItem, Terminal, ValueType};
 
 use super::body::NodePlan;
+use super::consts::Bindings;
 use super::carriers::Frame;
 use super::hoist::PlacementKey;
 use super::element_commits::PlaceTarget;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::reach_through_templates::ReachedKind;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 use crate::types::Ty;
 
@@ -33,8 +35,6 @@ impl Elaboration<'_, '_> {
     pub(super) fn index_children(&mut self, module: DeclId) {
         self.child_indices.clear();
         self.reach_frames.clear();
-        self.nested_nodes.clear();
-        self.find_demands_once();
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
         let mut next = 0;
         for call in data.instances.clone() {
@@ -48,9 +48,6 @@ impl Elaboration<'_, '_> {
 
     /// The node a field read `c.mid` names, as a terminal of the body.
     pub(super) fn reached_terminal(&mut self, scope: &Scope, expr: ExprId) -> Option<Terminal> {
-        if let Some(nested) = self.nested_terminal(scope, expr) {
-            return nested;
-        }
         let (frame, item) = self.reached_item(scope, expr)?;
         let terminal = self.frame_node(frame, item);
         if terminal.is_none() {
@@ -69,10 +66,6 @@ impl Elaboration<'_, '_> {
     /// A field read `c.x` as a value: the carrier, the param or the `let` of the child it names.
     pub(super) fn lower_field(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
-        // `bank.c0.cs`: a value of a child's child, a constant of the body (`reach_values.rs`)
-        if let Some(value) = self.nested_value(scope, expr, ty.clone(), origin.clone()) {
-            return value;
-        }
         let (frame, item) = self.reached_item(scope, expr)?;
         let substitution = self.frames[frame].substitution.clone();
         self.read_has_its_type(scope, expr, self.frames[frame].module, item, &substitution)?;
@@ -144,37 +137,67 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, node.span, "a field access that is not an item of a placed module");
             return None;
         };
-        match res {
-            Resolution::Decl(item) => Some((self.child_frame(scope, *receiver)?, *item)),
+        let frame = self.child_frame(scope, *receiver)?;
+        let item = match res {
+            Resolution::Decl(item) => *item,
             // a child placed through a callable param (`let c0 = cell(a)`, `cell: C`): the module is the folded template's (§8.4.8)
-            _ => self.template_item(scope, *receiver, &name.text, node.span),
-        }
-    }
-
-    /// The frame of the child `receiver` is, placed through a callable param, and the item `name` of the module its template names
-    /// (`E0343` for a missing or non-`pub` one). `None` after a diagnostic.
-    fn template_item(&mut self, scope: &Scope, receiver: ExprId, name: &str, span: crate::msl::Span) -> Option<(usize, DeclId)> {
-        let (binding, key) = self.receiver_placement(scope, receiver)?;
-        let Some(module) = self.placed_module(key.call, &scope.keys) else {
-            self.unsupported(scope.file, span, "an item of a child whose module is not known");
-            return None;
+            _ => self.visible_item_of(scope, self.frames[frame].module, &name.text, node.span)?,
         };
-        let item = self.visible_item_of(scope, module, name, span)?;
-        let frame = self.placement_frame(scope, binding, key, span)?;
         Some((frame, item))
     }
 
-    /// The frame that holds the names of the child `receiver` is: a name bound by a body `let` to
-    /// a placement. A hoisted placement has its frame already; any other gets a reach frame, made
-    /// the first time it is read.
+    /// The frame that holds the names of the child `receiver` is: a name bound by a body `let` to a placement, or an item of a
+    /// child that is one, at any depth (`p.mid.c0`, §8.2.8). A hoisted placement has its frame already; any other gets a reach frame,
+    /// made the first time it is read.
     fn child_frame(&mut self, scope: &Scope, receiver: ExprId) -> Option<usize> {
         let span = self.design.expr_node(receiver).span;
-        let (binding, key) = self.receiver_placement(scope, receiver)?;
-        self.placement_frame(scope, binding, key, span)
+        let mut at = self.peel_parens(receiver);
+        let mut indexes = Vec::new();
+        while let ExprKind::Index { expr, index } = self.design.expr_node(at).kind.clone() {
+            indexes.push(index);
+            at = self.peel_parens(expr);
+        }
+        indexes.reverse();
+        let ExprKind::Field { expr: inner, name, res } = self.design.expr_node(at).kind.clone() else {
+            let (binding, key) = self.receiver_placement(scope, receiver)?;
+            return self.placement_frame(scope, binding, key, span);
+        };
+        let parent = self.child_frame(scope, inner)?;
+        let binding = match res {
+            Resolution::Decl(binding) => binding,
+            _ => self.visible_item_of(scope, self.frames[parent].module, &name.text, span)?,
+        };
+        self.nested_child_frame(scope, parent, binding, &indexes, span)
     }
 
-    /// The reach frame of the placement `key` bound by the `let` binding `binding`, made the first time (`reach_through_templates.rs`
-    /// makes one for the placement a child of the body places, to name an item of the child's child).
+    /// The reach frame of the placement the `let` binding `binding` of the module of the reach frame `parent` is, the iteration of its
+    /// generation named by `indexes` (one for each `for` around it). `None` after a diagnostic.
+    fn nested_child_frame(&mut self, scope: &Scope, parent: usize, binding: DeclId, indexes: &[ExprId], span: crate::msl::Span) -> Option<usize> {
+        let Some(call) = self.body_let_value(binding).map(|value| self.peel_parens(value)) else {
+            self.unsupported(scope.file, span, "a field of something that is not a name bound to a placement");
+            return None;
+        };
+        let owner = self.design.expr_node(call).owner;
+        let loops = self.generation_loops(owner).len();
+        if indexes.len() != loops {
+            self.unsupported(scope.file, span, "an item of a child placed in generation, read without naming its iteration: index every loop");
+            return None;
+        }
+        let ordinals = self.fold_ordinals(scope, indexes)?;
+        if loops == 0 {
+            return self.frame_of_iteration(parent, binding, None, span);
+        }
+        let iterations = self.iterations_under(parent, owner);
+        let held: Vec<Vec<u64>> = iterations.iter().map(|iteration| self.iteration_ordinals(owner, iteration)).collect();
+        let Some(at) = held.iter().position(|each| *each == ordinals) else {
+            self.refer_outside_generation(scope.file, span, binding, Some(Self::outermost_missing_ordinal(&held, &ordinals)));
+            return None;
+        };
+        self.frame_of_iteration(parent, binding, Some(&iterations[at]), span)
+    }
+
+    /// The reach frame of the placement `key` bound by the `let` binding `binding`, made the first time: a child of the body when the
+    /// frame `scope` reads is the body's own (frame 0), else a child of the child that frame is, below it.
     pub(super) fn placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
         let call = key.call;
         if let Some(frame) = self.frames[scope.frame].placements.get(&key) {
@@ -183,40 +206,74 @@ impl Elaboration<'_, '_> {
         if let Some(frame) = self.reach_frames.get(&(scope.frame, key.clone())) {
             return Some(*frame);
         }
-        let (Some(module), Some(first), 0) = (self.placed_module(call, &scope.keys), self.child_indices.get(&call).copied(), scope.frame) else {
+        // a frame below a reach frame reads the params the placement bound to it; a hoisted frame has no body of its own to reach into
+        let (keys, child) = if scope.frame == 0 {
+            (scope.keys.clone(), self.child_index(&key))
+        } else if self.frames[scope.frame].is_reached() {
+            (self.frame_bindings(scope.frame), None)
+        } else {
             self.unsupported(scope.file, span, "a field of a child of a child");
             return None;
         };
-        // a placement in generation is one child per iteration, in iteration order (`lower_children`)
-        let owner = self.design.expr_node(call).owner;
-        let child = match self.generated.of(owner) {
-            Some(_) => first + self.iteration_position(owner, &key.iteration)? as u32,
-            None => first,
+        let Some(module) = self.placed_module(call, &keys) else {
+            self.unsupported(scope.file, span, "a field of a child of a child");
+            return None;
         };
+        if scope.frame == 0 && child.is_none() {
+            self.unsupported(scope.file, span, "a field of a child of a child");
+            return None;
+        }
         let name = format!("{}{}", self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone()), key.subscripts());
-        let values = self.placement_key_values(scope, call, module, self.design.expr_node(call).span)?;
+        let nested = (scope.frame != 0).then(|| self.reading_scope(scope, &keys));
+        let within = nested.as_ref().unwrap_or(scope);
+        let values = self.placement_key_values(within, call, module, self.design.expr_node(call).span)?;
         let mut frame = Frame::root(module);
         frame.parent = Some(scope.frame);
         frame.prefix = format!("{}{name}.", self.frames[scope.frame].prefix);
-        frame.child = Some(child);
+        frame.child = child;
+        if child.is_none() {
+            frame.placement = Some((binding, key.iteration.clone()));
+        }
         for key in self.keys.of(module) {
             if let Some(value) = values.get(*key) {
                 frame.params.insert(*key, value);
             }
         }
         // a placement through a template fixes every param of the module with the template, which the body's key fixes (§8.4.8)
-        for (param, value) in self.template_params_of(scope, call)? {
+        for (param, value) in self.template_params_of(within, call)? {
             frame.params.insert(param, value);
         }
         // an instance of a generic module reads its names under its own arguments
         if self.is_generic_module(module) {
-            let instance = self.placement_instance(scope, call, module)?;
+            let instance = self.placement_instance(within, call, module)?;
             frame.substitution = self.instance_substitution(instance.item, &instance.arguments);
         }
         self.frames.push(frame);
         let index = self.frames.len() - 1;
         self.reach_frames.insert((scope.frame, key), index);
         Some(index)
+    }
+
+    /// The index among the body's children of the child the placement `key` makes: the first of its iterations, in generation.
+    fn child_index(&self, key: &PlacementKey) -> Option<u32> {
+        let first = self.child_indices.get(&key.call).copied()?;
+        // a placement in generation is one child per iteration, in iteration order (`lower_children`)
+        let owner = self.design.expr_node(key.call).owner;
+        match self.generated.of(owner) {
+            Some(_) => Some(first + self.iteration_position(owner, &key.iteration)? as u32),
+            None => Some(first),
+        }
+    }
+
+    /// A scope that reads the names of the frame `scope` reads, with its params `keys`: where the arguments of a placement below that
+    /// frame are folded.
+    fn reading_scope(&self, scope: &Scope, keys: &Bindings) -> Scope {
+        let mut within = Scope::new(scope.file);
+        within.frame = scope.frame;
+        within.keys = keys.clone();
+        within.unrolled = scope.unrolled.clone();
+        within.ordinals = scope.ordinals.clone();
+        within
     }
 
     /// The value of every param of the module the placement `call` places through a template (`cell(a)`, `C1(a)`), the template's
@@ -288,25 +345,54 @@ impl Elaboration<'_, '_> {
         None
     }
 
+    /// Whether the module of the reach frame `frame` declares a node or a carrier in generation, which only the module's own
+    /// lowering can count: reported, since no parent can name a slot after it.
+    fn declares_in_generation(&mut self, frame: usize) -> bool {
+        let module = self.frames[frame].module;
+        let data = self.design.decl_data(module).clone();
+        let found = data.children.iter().find(|child| matches!(self.design.decl_data(**child).kind, DeclKind::Generation(_)) && self.declares_node(**child));
+        if let Some(generation) = found {
+            self.unsupported(data.file, self.design.decl_data(*generation).span, "a node declared in generation of a module a parent reads through");
+        }
+        found.is_some()
+    }
+
     /// How many nodes the body of the module of the reach frame `frame` has of its own, before any reached node: its node ports
     /// and node signals, an array counting each element. `None` after a diagnostic when the module declares a node in generation,
     /// whose count only the module's own lowering knows.
     pub(super) fn own_node_total(&mut self, frame: usize) -> Option<u32> {
+        if self.declares_in_generation(frame) {
+            return None;
+        }
         let module = self.frames[frame].module;
-        let data = self.design.decl_data(module).clone();
         let mut total = 0u32;
-        for child in &data.children {
-            match &self.design.decl_data(*child).kind {
-                DeclKind::Generation(_) if self.declares_node(*child) => {
-                    self.unsupported(data.file, self.design.decl_data(*child).span, "a node declared in generation of a module a parent reads through");
-                    return None;
-                }
-                DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(*child).is_none() => total += 1,
-                DeclKind::Port(_) | DeclKind::Signal(_) if self.types.node_array(*child).is_some() => {
-                    let array = self.consts.typed_node_array(*child)?;
+        for child in self.design.decl_data(module).children.clone() {
+            match &self.design.decl_data(child).kind {
+                DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(child).is_none() => total += 1,
+                DeclKind::Port(_) | DeclKind::Signal(_) if self.types.node_array(child).is_some() => {
+                    let array = self.consts.typed_node_array(child)?;
                     total += self.shape_in(&array, frame)?.count() as u32;
                 }
                 _ => {}
+            }
+        }
+        Some(total)
+    }
+
+    /// How many carriers the body of the module of the reach frame `frame` has of its own, before any reached carrier: its discrete
+    /// ports and signals, a bundle counting its fields, an array of carriers one, an array of none no carrier (`lower_carriers`).
+    /// `None` after a diagnostic when the module declares one in generation.
+    pub(super) fn own_carrier_total(&mut self, frame: usize) -> Option<u32> {
+        if self.declares_in_generation(frame) {
+            return None;
+        }
+        let module = self.frames[frame].module;
+        let children = self.design.module_items(&self.design.decl_data(module).children.clone());
+        let mut total = 0u32;
+        for child in children {
+            let carrier = matches!(self.design.decl_data(child).kind, DeclKind::Port(_) | DeclKind::Signal(_)) && self.types.carrier(child).is_some() && self.types.node_array(child).is_none();
+            if carrier && !self.is_empty_array(frame, child) {
+                total += 1;
             }
         }
         Some(total)
@@ -378,7 +464,6 @@ impl Elaboration<'_, '_> {
         if let Some(terminal) = self.frames.get(frame)?.nodes.get(&decl) {
             return Some(*terminal);
         }
-        let child = self.frames[frame].child?;
         let data = self.design.decl_data(decl).clone();
         let ty = match &data.kind {
             DeclKind::Port(p) => p.ty,
@@ -391,11 +476,14 @@ impl Elaboration<'_, '_> {
         let nature = self.nature_decl_of(ty).and_then(|n| self.nature(n))?;
         let name = format!("{}{}", self.frames[frame].prefix, data.name.as_ref().map_or("", |n| n.text.as_str()));
         let origin = self.locator.decl(decl);
+        let (child, child_node) = match self.frames[frame].child {
+            Some(child) => (child, self.own_node_slot(self.frames[frame].module, decl)?),
+            None => self.nested_slot(frame, decl, ReachedKind::Node)?,
+        };
         let spec = BodyNode { name: name.clone(), nature, role: NodeRole::Reached, init: None, origin: origin.clone() };
         let plan = NodePlan { name, role: NodeRole::Reached, nature, init: None, origin };
         self.structure.nodes.push((spec, plan));
         let node = self.structure.nodes.len() as u32 - 1;
-        let child_node = self.own_node_slot(self.frames[frame].module, decl)?;
         self.structure.reaches.push(Reach { child, item: ReachedItem::Node { node, child_node } });
         let terminal = Terminal::Node(node);
         self.frames[frame].nodes.insert(decl, terminal);
@@ -409,13 +497,15 @@ impl Elaboration<'_, '_> {
         if let Some(index) = self.frames.get(frame)?.carriers.get(&decl) {
             return Some(*index);
         }
-        let child = self.frames[frame].child?;
         self.types.carrier(decl)?;
         let ty = self.carried_type(decl)?;
         let name = format!("{}{}", self.frames[frame].prefix, self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()));
+        let (child, child_carrier) = match self.frames[frame].child {
+            Some(child) => (child, self.own_carrier_slot(self.frames[frame].module, decl)?),
+            None => self.nested_slot(frame, decl, ReachedKind::Carrier)?,
+        };
         let carrier = Carrier { name, ty, role: CarrierRole::Reached, init: None, origin: self.locator.decl(decl), count: None };
         let index = self.add_carrier(carrier);
-        let child_carrier = self.own_carrier_slot(self.frames[frame].module, decl)?;
         self.structure.reaches.push(Reach { child, item: ReachedItem::Carrier { carrier: index, child_carrier } });
         self.frames[frame].carriers.insert(decl, index);
         Some(index)

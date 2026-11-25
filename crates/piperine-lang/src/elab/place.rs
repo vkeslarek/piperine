@@ -139,8 +139,13 @@ impl Elaboration<'_, '_> {
             self.resolvers.record(ResolvedUse { instance, path: placing.path.clone(), net: nets[resolved.carrier as usize], plan: resolved.clone(), value: carrier.ty.clone(), driven: driven.clone(), host_port });
         }
         stack.push(key);
-        self.place_children(&plan, instance, &placing.path, &bindings, (&nodes, &nets), stack);
+        let reached = self.place_children(&plan, instance, &placing.path, &bindings, (&nodes, &nets), stack);
         stack.pop();
+        // a carrier this instance reaches into a child is that child's net: the parent that reaches it in turn binds to it (§8.2.8)
+        let mut nets = nets;
+        for (carrier, net) in reached {
+            nets[carrier as usize] = net;
+        }
         Some(Placed { instance, nodes, nets, host_ports })
     }
 
@@ -148,20 +153,24 @@ impl Elaboration<'_, '_> {
     /// every node this body reaches into a child (`Th(c0.sn)`, `bank.c0.sn`) is a node already, made with the body's own, so a
     /// child connects to it whether the child that owns it is placed before or after, or is the child itself (§8.3.5: a cycle of
     /// node connections holds an unknown, the node).
-    fn place_children(&mut self, plan: &ModulePlan, instance: InstanceId, path: &str, bindings: &Bindings, (nodes, nets): (&[NodeRef], &[NetId]), stack: &mut Vec<BodyKey>) {
+    fn place_children(&mut self, plan: &ModulePlan, instance: InstanceId, path: &str, bindings: &Bindings, (nodes, nets): (&[NodeRef], &[NetId]), stack: &mut Vec<BodyKey>) -> Vec<(u32, NetId)> {
+        let mut reached = Vec::new();
         for (index, child) in plan.children.iter().enumerate() {
             let parent = Parent { instance, path, nodes, nets, bindings };
             if let Some(placed) = self.place_child(child, &parent, stack) {
-                self.bind_reaches(plan, path, index as u32, instance, &placed, nodes);
+                reached.extend(self.bind_reaches(plan, path, index as u32, instance, &placed, nodes));
             }
         }
+        reached
     }
 
     /// Binds each node and carrier `instance` (at `path`) reads of its child number `child` (`inst.name`, a
     /// `Reach` of the body) to the child instance's own, now that the child is placed. The node `nodes` made for a reached slot
     /// becomes one node with the child's (`IrBuilder::merge_nodes`), so a sibling placed before is connected to it too. A
-    /// reached carrier the body drives is a holder of the child's net: it is recorded with the net it is bound to.
-    fn bind_reaches(&mut self, plan: &ModulePlan, path: &str, child: u32, instance: InstanceId, placed: &Placed, nodes: &[NodeRef]) {
+    /// reached carrier the body drives is a holder of the child's net: it is recorded with the net it is bound to. The reached
+    /// carriers bound are returned with their nets.
+    fn bind_reaches(&mut self, plan: &ModulePlan, path: &str, child: u32, instance: InstanceId, placed: &Placed, nodes: &[NodeRef]) -> Vec<(u32, NetId)> {
+        let mut reached = Vec::new();
         for reach in plan.reaches.iter().filter(|r| r.child == child) {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
@@ -176,10 +185,12 @@ impl Elaboration<'_, '_> {
                     if let Some(own) = placed.nets.get(child_carrier as usize) {
                         self.ir.bind_reached_net(instance, carrier, *own);
                         self.record_reached_drive(plan, path, instance, carrier, *own);
+                        reached.push((carrier, *own));
                     }
                 }
             }
         }
+        reached
     }
 
     /// Remembers the reached carrier `carrier` of `instance` when the body drives it: it is a resolved carrier bound to `net`.

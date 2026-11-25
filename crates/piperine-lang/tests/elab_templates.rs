@@ -212,7 +212,7 @@ fn a_non_node_item_through_a_template_reads_the_concrete_module() {
         ("i(p, gnd) +> c0.cs * c0.twice;", "", "b0.flow +> direct (2.0 * (2.0 * 2.0))"),
         ("let g = c0.cs; i(p, gnd) +> -g;", "", "let g = 2.0"),
         ("if c0.cs > 1.0 { i(p, gnd) +> 1.0; }", "", "if (2.0 > 1.0)"),
-        ("", "analog for Top { i(q, gnd) +> bank.c0.cs + bank.c0.twice; }", "b0.flow +> direct (2.0 + 4.0)"),
+        ("", "analog for Top { i(q, gnd) +> bank.c0.cs + bank.c0.twice; }", "b0.flow +> direct (2.0 + (2.0 * 2.0))"),
     ] {
         let printed_ir = Elab::ir(&bank(items, extra), "Top").print_structural();
         assert!(printed_ir.contains(printed), "{items}{extra}: {printed_ir}");

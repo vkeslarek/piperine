@@ -449,7 +449,7 @@ impl Elaboration<'_, '_> {
         let mut frame = 1;
         while frame < self.frames.len() {
             // A reach frame (`reach.rs`) names a placed child, whose `analog` block is its own body's.
-            if self.frames[frame].child.is_some() {
+            if self.frames[frame].is_reached() {
                 frame += 1;
                 continue;
             }
