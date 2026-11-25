@@ -8,7 +8,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 ---
 
-**Status**: In Progress
+**Status**: Implemented
 **Approved**: 2026-11-25 - user: "write `.specs/features/nested-reach/{spec,tasks}.md` (criteria in EARS, one check per criterion with its proof test), then execute." (the delegation names the form of the tasks, the gates and the commit rule; the gate policy is the user's standing one: no full suite)
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run typesnested**: `cargo test -p piperine-lang --test types_nested_reach`
@@ -101,7 +101,7 @@ T1 → T2 → T3
 **Commit**: `test(parity): the reach through children of children runs from source`
 
 ---
-### T3: The records
+### T3: The records (done)
 
 **What**: The rows L81 and L82 leave `GAPS.md` (counts 17 loud), `docs.rs` pins them, and §8.2.8 says each name of the path is `pub` (with its guard in `spec_text.rs`).
 **Where**: `GAPS.md`
@@ -111,9 +111,9 @@ T1 → T2 → T3
 
 **Done when**:
 
-- [ ] `gaps_drops_the_reach_rows_nested_reach_closed` passes under `**Run docs**` and the other pins of the counts hold
-- [ ] `section_8_2_8_reads_through_children_of_children_at_any_depth` passes under `**Run spectext**`
-- [ ] Gate check passes: Full
+- [x] `gaps_drops_the_reach_rows_nested_reach_closed` passes under `**Run docs**` and the other pins of the counts hold
+- [x] `section_8_2_8_reads_through_children_of_children_at_any_depth` passes under `**Run spectext**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -356,7 +356,9 @@ a result that does.
   a public carrier, a public param or a public named expression, probe a public node, and attach its
   own branches to a public node. A parent never writes a child's drive and never contributes to a
   child's branch. Without `pub`, an item is invisible to other models. The host observes everything
-  (§21).
+  (§21). The same read goes through the children of a child, at any depth (`p.mid.c0.sn`,
+  `bank.cells[1].c0.q`): each name of the path **MUST** be `pub` in its module, and the item at its
+  end reads as it does one level down, a `pub let` in the reader's context.
 
 > **Resolution.** §8.2.23 indexes generated arrays by iteration ordinal, not by the loop value:
 > `for k in 2..5` makes elements 0 to 2. F.3 reads `bank.cells[3][5]` this way.

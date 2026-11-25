@@ -2691,3 +2691,12 @@ fn rule_2_orders_the_drives_of_one_instance_by_carrier_declaration() {
         assert!(resolution.contains(needle), "§4 orders the drives of one instance by its carriers' declaration ({needle}): {resolution}");
     }
 }
+
+#[test]
+fn section_8_2_8_reads_through_children_of_children_at_any_depth() {
+    // nested-reach NR-01 (MD-57): `inst.name` reaches the items of a child of a child, at any depth, each name `pub`
+    let text = one_line(&spec("part_iii_structure.md"));
+    for fact in ["The same read goes through the children of a child, at any depth (`p.mid.c0.sn`, `bank.cells[1].c0.q`)", "each name of the path **MUST** be `pub` in its module"] {
+        assert!(text.contains(fact), "§8.2.8 lacks \"{fact}\"");
+    }
+}
