@@ -780,3 +780,35 @@ fn a_value_passed_within_an_instant_retakes_its_step_and_settle_follows() {
         ]
     );
 }
+
+#[test]
+fn a_pulse_across_a_host_suspension_is_read_once_with_one_settle_phase() {
+    // docs/spec §15.2 rule 4: a host waiter suspends the landing's instant after its first part;
+    // each part reports what the whole instant passed through so far, so the owner reads the last
+    // part's record (not the parts joined), and the settle phase runs once, after the reading
+    let (log, mut d, mut a) = sides();
+    let kept = Boundary { slot: 4, bytes: vec![2] };
+    let high = Boundary { slot: 3, bytes: vec![1] };
+    let low = Boundary { slot: 3, bytes: vec![0] };
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::AnalogReadChanged });
+    d.instants.push_back(Outcome { host_events: vec![5], passing: vec![high.clone()], ..Outcome::default() });
+    d.instants.push_back(Outcome {
+        boundary: vec![kept.clone(), low.clone()],
+        passing: vec![high.clone(), kept.clone()],
+        ..Outcome::default()
+    });
+    a.accepts.extend([Accepted { fired: vec![], samples: vec![0.5] }, Accepted { fired: vec![], samples: vec![0.25] }]);
+    a.proposals.extend([3.0, 3.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.on_event(5, Box::new(|_| {}));
+    p.transient(3.0).unwrap();
+    let delivered = calls(&log, |c| matches!(c, Call::Deliver(..)));
+    assert_eq!(
+        delivered,
+        [Call::Deliver(vec![high, kept.clone()], Restart::Integrator), Call::Deliver(vec![kept, low], Restart::Integrator)],
+        "the whole instant's record is read once, then what the instant left"
+    );
+    let settling = InstantMode { is_static: false, settle: true };
+    let settles = calls(&log, |c| matches!(c, Call::RunInstant { at: 2, mode, .. } if *mode == settling));
+    assert_eq!(settles.len(), 3, "the two parts, run with the settle phase the side leaves to the owner, and the phase itself once");
+}

@@ -124,7 +124,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let part = self.discrete.run_instant(at, samples, limit, mode)?;
             whole.boundary.extend(part.boundary);
             whole.settle_boundary.extend(part.settle_boundary);
-            whole.passing.extend(part.passing);
+            // each part reports what the instant passed through so far: the last part's is the whole
+            whole.passing = part.passing;
             whole.host_param_write |= part.host_param_write;
             whole.finish |= part.finish;
             if part.host_events.is_empty() {

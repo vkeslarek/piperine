@@ -757,3 +757,75 @@ fn a_net_that_changes_once_passes_through_nothing() {
     assert!(out.passing.is_empty(), "{:?}", out.passing);
     assert!(d.holds_settle_commits(), "the settle phase ran");
 }
+
+/// Two pulsers whose instant a host waiter suspends, for the passing record of a whole instant.
+struct SuspendedPulse;
+
+impl SuspendedPulse {
+    /// `p` pulses `seat` (read by the analog side) from `go`, `q` pulses `seat2` from `go2`, and a
+    /// settler holds a commit when the settle phase runs. `q_up` is the net `q` rises from.
+    fn engine(q_up: &str) -> Digital {
+        let plan = bind_by_name_with(
+            vec![
+                ("p", Pulser::handle(), vec![("up", "go"), ("out", "seat")]),
+                ("q", Pulser::handle(), vec![("up", q_up), ("out", "seat2")]),
+                ("s", settler(), vec![("out", "late")]),
+            ],
+            Resolution::default(),
+            |nets| nets.iter_mut().find(|n| n.name == "seat").unwrap().analog_reads = true,
+        )
+        .expect("binds");
+        let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
+        d.start().unwrap();
+        instant(&mut d, Tick(0));
+        d
+    }
+
+    /// Runs one part of the instant at tick 7.
+    fn part(d: &mut Digital) -> piperine_digital_solver::engine::Outcome {
+        d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).expect("the part runs")
+    }
+}
+
+#[test]
+fn a_pulse_split_by_a_host_suspension_is_still_passing() {
+    // docs/spec §15.2 rule 4: the host waits on `go` and `go2`. The instant stops after microstep 0
+    // (go fired), the host fires `go2` there, and it stops again after microstep 1, where `seat` is
+    // high; `seat` falls in the third part. The record spans the parts, so the last one reports the
+    // high it passed through, and the settle phase is left to the owner
+    let mut d = SuspendedPulse::engine("go2");
+    let (go, go2, seat) = (net(&d, "go"), net(&d, "go2"), net(&d, "seat"));
+    d.wait(go);
+    d.wait(go2);
+    d.fire(go, Tick(7)).unwrap();
+    let first = SuspendedPulse::part(&mut d);
+    assert_eq!((first.host_events.clone(), first.passing.clone()), (vec![go], vec![]), "suspended after go");
+    d.fire(go2, Tick(7)).unwrap();
+    let second = SuspendedPulse::part(&mut d);
+    assert_eq!(second.host_events, [go2], "suspended after go2");
+    assert_eq!(second.boundary, [(seat, HIGH.to_vec())], "seat is high at the end of microstep 1");
+    let third = SuspendedPulse::part(&mut d);
+    assert!(third.host_events.is_empty());
+    assert_eq!(third.boundary, [(seat, LOW.to_vec())], "seat falls in the last part");
+    assert_eq!(third.passing, [(seat, HIGH.to_vec())], "the high it passed through, across the suspension");
+    assert!(!d.holds_settle_commits(), "the settle phase has not run in any part");
+}
+
+#[test]
+fn a_part_after_the_pulse_leaves_the_settle_phase_to_the_owner() {
+    // docs/spec §15.2 rule 4 ("the settle phase runs once"): `seat` rises and falls in the first
+    // part, which stops after microstep 2 for the host's waiter on `q.rise`; the second part passes
+    // nothing of its own. It still reports the pulse of the instant and does not run the settle
+    // phase, which the owner runs once after reading it
+    let mut d = SuspendedPulse::engine("p.rise");
+    let (go, seat) = (net(&d, "go"), net(&d, "seat"));
+    d.wait(net(&d, "q.rise"));
+    d.fire(go, Tick(7)).unwrap();
+    let first = SuspendedPulse::part(&mut d);
+    assert_eq!(first.host_events, [net(&d, "q.rise")], "suspended after microstep 2");
+    assert_eq!(first.passing, [(seat, HIGH.to_vec())], "seat rose and fell in the first part");
+    let second = SuspendedPulse::part(&mut d);
+    assert!(second.host_events.is_empty());
+    assert_eq!(second.passing, [(seat, HIGH.to_vec())], "the instant's pulse, reported by its last part");
+    assert!(!d.holds_settle_commits(), "the settle phase did not run in the instant");
+}

@@ -100,7 +100,8 @@ pub struct Outcome {
     /// When a value the analog side reads passed within a transient instant, held at the end of
     /// one microstep and lost at a later one (a pulse, docs/spec §15.2 rule 4): the values the
     /// step to the instant is retaken on, each one the instant changed at the first value it
-    /// passed through, or at its value after the instant. The instant's settle phase has not run
+    /// passed through, or at its value after the instant. Each part of an instant a host waiter
+    /// suspends reports the whole instant so far. The instant's settle phase has not run
     /// then, whatever its mode: the owner runs it after the retake. Empty otherwise.
     pub passing: Vec<Boundary>,
 }

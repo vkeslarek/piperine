@@ -4,6 +4,7 @@
 
 use crate::net::{NetId, NetKind};
 use crate::observe::{Obs, Observation};
+use crate::passing::PassingValues;
 use piperine_abi::raw::pin_flag;
 
 use crate::plan::{Binding, DigitalPlan, NetWriter};
@@ -76,7 +77,8 @@ pub struct Outcome {
     /// solve that arrives at the next time point reads these (§15 S2).
     pub settle_boundary: Vec<(NetId, Vec<u8>)>,
     /// When an analog-read net held a value at the end of one microstep of a transient instant and
-    /// lost it at a later one (a pulse, docs/spec §15.2 rule 4): the state the owner retakes the
+    /// lost it at a later one (a pulse, docs/spec §15.2 rule 4), in any part of the instant up to
+    /// this one (a suspension for the host's waiters keeps the record): the state the owner retakes the
     /// step to the instant on, each analog-read net the instant changed at the first value it
     /// passed through, or at its value after the instant. The settle phase has not run then, even
     /// under `Mode::settle`: it follows the retake. Empty otherwise, and always in an equilibrium.
@@ -95,6 +97,8 @@ pub struct Checkpoint {
     call: u32,
     running: bool,
     suspended: Option<(Tick, u32)>,
+    /// What the analog-read nets passed through in the instant it was taken in.
+    passing: PassingValues,
     /// The settle commits held when it was taken: a restore brings them back, so a rejected step
     /// keeps them for the retried time point and a landing it made is taken back (§15 S5).
     settle_commits: SettleCommits,
@@ -113,6 +117,8 @@ pub struct Mark {
     call: u32,
     running: bool,
     suspended: Option<(Tick, u32)>,
+    /// What the analog-read nets passed through in the instant it was taken in.
+    passing: PassingValues,
     /// The settle commits held when it was taken: a restore brings them back, so a rejected step
     /// keeps them for the retried time point and a landing it made is taken back (§15 S5).
     settle_commits: SettleCommits,
@@ -147,6 +153,10 @@ pub struct Digital {
     pub(crate) waited: Vec<NetId>,
     /// An instant suspended for the host's waiters: its tick and the microstep it continues at.
     pub(crate) suspended: Option<(Tick, u32)>,
+    /// What the analog-read nets have passed through in the instant being run, over all its parts:
+    /// a suspension for the host's waiters keeps it, a new instant starts it again, and a `reopen`
+    /// keeps only what the nets hold (the owner has read what they passed through).
+    pub(crate) passing: PassingValues,
     /// The instant the last `run_instant` ran to its end and the last microstep it ran, for `reopen`.
     pub(crate) last_run: Option<(Tick, u32)>,
     /// `GMIN` and `SOURCE_SCALE` as reactions and discrete functions read them.
@@ -181,6 +191,7 @@ impl Digital {
             running: false,
             waited: Vec::new(),
             suspended: None,
+            passing: PassingValues::default(),
             last_run: None,
             continuation: (0.0, 1.0),
             checkpoints_taken: std::sync::atomic::AtomicU64::new(0),
@@ -421,6 +432,7 @@ impl Digital {
             && tick == at
         {
             self.suspended = Some((at, if next_microstep { last + 1 } else { last }));
+            self.passing.consume();
         }
     }
 
@@ -447,6 +459,7 @@ impl Digital {
             call: self.call,
             running: self.running,
             suspended: self.suspended,
+            passing: self.passing.clone(),
             settle_commits: self.settle_commits.clone(),
         }
     }
@@ -463,6 +476,7 @@ impl Digital {
             call: self.call,
             running: self.running,
             suspended: self.suspended,
+            passing: self.passing.clone(),
             settle_commits: self.settle_commits.clone(),
         }
     }
@@ -478,6 +492,7 @@ impl Digital {
         self.call = mark.call;
         self.running = mark.running;
         self.suspended = mark.suspended;
+        self.passing = mark.passing.clone();
         self.settle_commits = mark.settle_commits.clone();
     }
 
@@ -510,6 +525,7 @@ impl Digital {
         self.call = cp.call;
         self.running = cp.running;
         self.suspended = cp.suspended;
+        self.passing = cp.passing.clone();
         self.settle_commits = cp.settle_commits.clone();
     }
 

@@ -11,8 +11,8 @@ use crate::net::NetId;
 use crate::store::Store;
 
 /// What the analog-read nets held during one run of the microstep loop.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct PassingValues {
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PassingValues {
     /// Each analog-read net that changed in the instant, with the value it held after its last
     /// change so far.
     held: BTreeMap<NetId, Vec<u8>>,
@@ -27,6 +27,12 @@ impl PassingValues {
         if let Some(lost) = self.held.insert(net, value.to_vec()) {
             self.passed.entry(net).or_insert(lost);
         }
+    }
+
+    /// Forgets the values passed through, which the owner has read, and keeps what each net holds:
+    /// a value it loses from now on passes through again (`Digital::reopen`).
+    pub(crate) fn consume(&mut self) {
+        self.passed.clear();
     }
 
     /// Whether no analog-read net passed through a value.
