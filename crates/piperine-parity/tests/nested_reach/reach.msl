@@ -1,0 +1,170 @@
+//! Items of a cell read three and four levels below the reader (part III §8.2.8, §8.4.8): a node, a `let` over the solve, a carrier,
+//! a param and a `let` over the params, by name, through templates and in generation. The expected values are computed by Rust in
+//! `source_nested_reach.rs`.
+
+/// A branch of conductance `k` from `a` to the storage node `sn`, a 1 S leak from it to ground, and what a parent reads of it.
+module Cell(a: Electrical) {
+    pub k: f64 = 1.0;
+    pub let twice = k * 2.0;
+    pub signal sn: Electrical;
+    pub let vs = v(sn);
+    pub signal q: Bit<f64> = 2.5;
+}
+analog for Cell { i(a, sn) +> v(a, sn) * k; i(sn, gnd) +> v(sn, gnd); }
+
+module Level2(a: Electrical) { pub let c0 = Cell(a); }
+module Level3(a: Electrical) { pub let mid = Level2(a); }
+module Level4(a: Electrical) { pub let top = Level3(a); }
+module Bank(a: Electrical) { cell: Cell; pub let c0 = cell(a); }
+module Block(a: Electrical) { cell: Cell; pub let bank = Bank { cell: cell }(a); }
+module Wing(a: Electrical) { cell: Cell; pub let block = Block { cell: cell }(a); }
+module Row(a: Electrical) { cell: Cell; for j in 0..2 { pub let cells = cell(a); } }
+module Grid(a: Electrical) { cell: Cell; pub let row = Row { cell: cell }(a); }
+module Plane(a: Electrical) { cell: Cell; pub let grid = Grid { cell: cell }(a); }
+module Rows(a: Electrical) { for j in 0..2 { pub let cells = Cell(a) { k: 1.0 + (j as f64) }; } }
+module Tower(a: Electrical) { pub let rows = Rows(a); }
+module Tall(a: Electrical) { pub let tower = Tower(a); }
+
+/// Feeds `amps` into its node.
+module Feed(a: Electrical) { amps: f64 = 1.0; }
+analog for Feed { i(a, gnd) +> -amps; }
+
+/// Level3 by name: the cell is `p.mid.c0`, at `k = 1`.
+module RigName3() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Level3(a);
+}
+analog for RigName3 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.mid.c0.sn);
+    potential(vs_read) +> p.mid.c0.vs;
+    potential(q_read) +> p.mid.c0.q;
+    potential(k_read) +> p.mid.c0.k;
+    potential(twice_read) +> p.mid.c0.twice;
+}
+
+/// Level4 by name: the cell is `p.top.mid.c0`, at `k = 1`.
+module RigName4() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Level4(a);
+}
+analog for RigName4 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.top.mid.c0.sn);
+    potential(vs_read) +> p.top.mid.c0.vs;
+    potential(q_read) +> p.top.mid.c0.q;
+    potential(k_read) +> p.top.mid.c0.k;
+    potential(twice_read) +> p.top.mid.c0.twice;
+}
+
+/// Through templates, 3 levels: the cell is `p.bank.c0`, at `k = 2`.
+module RigTemplate3() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Block { cell: Cell { k: 2.0 } }(a);
+}
+analog for RigTemplate3 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.bank.c0.sn);
+    potential(vs_read) +> p.bank.c0.vs;
+    potential(q_read) +> p.bank.c0.q;
+    potential(k_read) +> p.bank.c0.k;
+    potential(twice_read) +> p.bank.c0.twice;
+}
+
+/// Through templates, 4 levels: the cell is `p.block.bank.c0`, at `k = 3`.
+module RigTemplate4() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Wing { cell: Cell { k: 3.0 } }(a);
+}
+analog for RigTemplate4 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.block.bank.c0.sn);
+    potential(vs_read) +> p.block.bank.c0.vs;
+    potential(q_read) +> p.block.bank.c0.q;
+    potential(k_read) +> p.block.bank.c0.k;
+    potential(twice_read) +> p.block.bank.c0.twice;
+}
+
+/// A template in generation, 3 levels: the cell is `p.row.cells[1]`, at `k = 4`.
+module RigRow3() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Grid { cell: Cell { k: 4.0 } }(a);
+}
+analog for RigRow3 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.row.cells[1].sn);
+    potential(vs_read) +> p.row.cells[1].vs;
+    potential(q_read) +> p.row.cells[1].q;
+    potential(k_read) +> p.row.cells[1].k;
+    potential(twice_read) +> p.row.cells[1].twice;
+}
+
+/// A template in generation, 4 levels: the cell is `p.grid.row.cells[1]`, at `k = 5`.
+module RigRow4() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Plane { cell: Cell { k: 5.0 } }(a);
+}
+analog for RigRow4 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.grid.row.cells[1].sn);
+    potential(vs_read) +> p.grid.row.cells[1].vs;
+    potential(q_read) +> p.grid.row.cells[1].q;
+    potential(k_read) +> p.grid.row.cells[1].k;
+    potential(twice_read) +> p.grid.row.cells[1].twice;
+}
+
+/// A cell by name in generation, 3 levels: the cell is `p.rows.cells[1]`, at `k = 1 + 1`.
+module RigRows3() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Tower(a);
+}
+analog for RigRows3 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.rows.cells[1].sn);
+    potential(vs_read) +> p.rows.cells[1].vs;
+    potential(q_read) +> p.rows.cells[1].q;
+    potential(k_read) +> p.rows.cells[1].k;
+    potential(twice_read) +> p.rows.cells[1].twice;
+}
+
+/// A cell by name in generation, 4 levels: the cell is `p.tower.rows.cells[1]`, at `k = 1 + 1`.
+module RigRows4() {
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal q_read: Electrical; signal k_read: Electrical; signal twice_read: Electrical;
+    let p = Tall(a);
+}
+analog for RigRows4 {
+    potential(a) +> 1.0;
+    potential(sn_read) +> v(p.tower.rows.cells[1].sn);
+    potential(vs_read) +> p.tower.rows.cells[1].vs;
+    potential(q_read) +> p.tower.rows.cells[1].q;
+    potential(k_read) +> p.tower.rows.cells[1].k;
+    potential(twice_read) +> p.tower.rows.cells[1].twice;
+}
+
+/// Two wrappers, each wired to the other's cell node three levels down, fed 1 A at `p.mid.c0.sn`.
+module RigPair3() {
+    let p = Level3(q.mid.c0.sn);
+    let q = Level3(p.mid.c0.sn);
+    let feed = Feed(p.mid.c0.sn);
+}
+
+/// A wrapper wired to its own cell's node four levels down, fed 1 A there.
+module RigOwn4() {
+    let p = Level4(p.top.mid.c0.sn);
+    let feed = Feed(p.top.mid.c0.sn);
+}
+
+/// Two wrappers through templates, four levels down, each wired to the other's cell node, fed 1 A at `p.block.bank.c0.sn`.
+module RigPair4() {
+    let p = Wing { cell: Cell { } }(q.block.bank.c0.sn);
+    let q = Wing { cell: Cell { } }(p.block.bank.c0.sn);
+    let feed = Feed(p.block.bank.c0.sn);
+}
+
+/// Two wrappers through templates and a generation, four levels down, each wired to the other's second cell's node, fed 1 A at
+/// `p.grid.row.cells[1].sn`; each wrapper has two cells, `cells[0]` and `cells[1]`, on the node it is wired to.
+module RigPairGeneration4() {
+    let p = Plane { cell: Cell { } }(q.grid.row.cells[1].sn);
+    let q = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);
+    let feed = Feed(p.grid.row.cells[1].sn);
+}

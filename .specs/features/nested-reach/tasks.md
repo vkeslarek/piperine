@@ -82,7 +82,7 @@ T1 → T2 → T3
 **Commit**: `feat(elab): inst.name reads through children of children at any depth`
 
 ---
-### T2: Source runs of the reach
+### T2: Source runs of the reach (done)
 
 **What**: The models of `tests/nested_reach/reach.msl` and `source_nested_reach.rs`: a cell read at depth three and four by name, through templates and in generation, and cycles of connections, against the values Rust computes.
 **Where**: `crates/piperine-parity/tests/source_nested_reach.rs`
@@ -92,8 +92,8 @@ T1 → T2 → T3
 
 **Done when**:
 
-- [ ] The tests of `**Run sourcenested**` pass
-- [ ] Gate check passes: Quick
+- [x] The tests of `**Run sourcenested**` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
