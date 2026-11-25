@@ -636,3 +636,20 @@ fn two_templates_with_equal_composite_params_are_one_value() {
     let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
     assert_ne!(body("Top.a"), body("Top.b"));
 }
+
+#[test]
+fn equal_arrays_of_templates_share_one_body_keyed_by_value() {
+    // §8.4 (two equal templates are one value), §8.4.6: the param `pair` is structural, and its body is keyed by what the array holds, so two
+    // placements with equal arrays (the default, and a literal equal to it) are one body, a different array is another, and the body's
+    // name shows the templates, never the arena id of the aggregate
+    let mid = format!("{CELL}module Mid(x: Electrical) {{ pair: [Cell; 2] = [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}]; let c1 = pair[1](x); }}\n");
+    let ir = Elab::ir(&format!("{mid}module Top() {{ signal x: Electrical; let a = Mid(x); let b = Mid(x) {{ pair: [Cell {{ cs: 5.0 }}, Cell {{ cs: 6.0 }}] }}; let c = Mid(x) {{ pair: [Cell {{ cs: 5.0 }}, Cell {{ cs: 7.0 }}] }}; }}"), "Top");
+    let bodies = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
+    assert_eq!(bodies("Top.a"), bodies("Top.b"), "equal arrays, one body");
+    assert_ne!(bodies("Top.a"), bodies("Top.c"), "different arrays, two bodies");
+    for path in ["Top.a", "Top.b", "Top.c"] {
+        assert!(!bodies(path).unwrap_or_default().contains("agg"), "{path}: the body name shows the value, not an arena id");
+    }
+    assert_eq!(Placed::real(&ir, "Top.a.c1"), Constant::Real(Real::new(6.0)));
+    assert_eq!(Placed::real(&ir, "Top.c.c1"), Constant::Real(Real::new(7.0)));
+}

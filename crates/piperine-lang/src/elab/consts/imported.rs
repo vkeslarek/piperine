@@ -53,6 +53,30 @@ impl Elaboration<'_, '_> {
         ConstTree::Composite { kind, parts }
     }
 
+    /// The text that tells the value `value` of a key param apart from every other, by what it holds: a composite is written out
+    /// by its parts, so two equal composites (two equal arrays of templates) have one text and select one body variant, where the
+    /// arena id of the aggregate (`agg2`) would give each its own.
+    pub(in crate::elab) fn key_text(&self, value: Constant) -> String {
+        Self::tree_text(&self.imported_tree(value))
+    }
+
+    /// `tree` written out: a scalar as its value, a composite as its parts in the brackets of its kind.
+    fn tree_text(tree: &ConstTree) -> String {
+        let (kind, parts) = match tree {
+            ConstTree::Scalar(value) => return value.to_string(),
+            ConstTree::Composite { kind, parts } => (kind, parts),
+        };
+        let written = parts.iter().map(Self::tree_text).collect::<Vec<_>>().join(",");
+        match kind {
+            CompositeKind::Tuple => format!("({written})"),
+            CompositeKind::Array => format!("[{written}]"),
+            CompositeKind::Struct => format!("{{{written}}}"),
+            CompositeKind::Option => format!("option({written})"),
+            CompositeKind::Variant(position) => format!("v{position}({written})"),
+            CompositeKind::Range { .. } => format!("range({written})"),
+        }
+    }
+
     /// A read of the composite `const` `decl` in value code: its tree written out as the expression
     /// that builds the value (a tuple, an array, a struct or a variant of constants). `None` after
     /// a diagnostic.

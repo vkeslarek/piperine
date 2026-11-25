@@ -685,7 +685,7 @@ impl Elaboration<'_, '_> {
 
     /// The key of the body `module` gets when its params hold `values`. `None` when a key param has no value in `values`.
     pub(super) fn body_key(&self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<BodyKey> {
-        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| value.to_string())).collect::<Option<Vec<_>>>()?;
+        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| self.key_text(value))).collect::<Option<Vec<_>>>()?;
         Some(BodyKey { module, instance: instance.cloned(), values: texts })
     }
 
