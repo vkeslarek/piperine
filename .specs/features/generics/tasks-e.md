@@ -396,6 +396,28 @@ T109 → T110a → T110 → T111 → T112 → T118 → T119 → T120 → T113 �
 
 ---
 
+### T121: A param declared as an array of templates
+
+**What**: `pair: [Cell; 2] = [Cell { }, Cell { cs: 2.0 }]` is a param (GAPS L89): the checker accepts `Ty::Array` of `Ty::Module` in `types/module.rs::param`; the elaborator treats it as a module param (`is_module_param` and its sites: `classify_module_param_keys`, `lower_param` type `[u32; N]`, `host_override` E0802, `children.rs:414`, `template_through`/`placed_module`) whose value is the array of the template numbers (a composite constant in the keys); `fold_template_element` reads the element of a param from `scope.keys`; a default, an override by a literal, a `const` or a choice, an indexed placement `pair[k](x)` and a generation index run, and every param read by such a value is structural. Coordinator ruling 2026-11-24 (after the proofs): in scope, T119's family. NOT DONE when the Handoff below was written: context budget.
+**Where**: `crates/piperine-lang/src/types/module.rs`, `crates/piperine-lang/src/elab/{templates,structural,body,children}.rs`
+**Depends on**: T119
+**Reuses**: `fold_template_element`, `template_items`, `Bindings::bind_composite`
+**Requirement**: GN-17 (AC 1)
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] a checker test, an elab test (default, override by a literal, a `const` and a choice; `pair[k](x)` incl. a generation index; the params it reads are structural) and a source test (`source_generation`) pass
+- [ ] `GAPS.md` drops L89 and `docs.rs` re-pins the counts (1 silent, 2 broken, 18 loud); check C139 is added to the Checks with those tests, and `proofs-e.md` is regenerated last
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(lang): a param declared as an array of templates`
+
+---
+
 ### T113: No item is refused because it is generic
 
 **What**: `std_library.rs` walks L58's generics group (`Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`, `MinPulse`) placing or calling each and asserts no refusal names "generic"; an item refused for another form names that form (none of the group is expected to be blocked once DE1 holds, so the test proves the rule on a dependency crate's generic module that places an `extern` module, L33: refused naming `extern` module, never "generic") and `GAPS.md` lists it under that form's id; GN-27's list in `spec.md` no longer names `merge` (struck at planning, DE2).
@@ -539,6 +561,7 @@ The phase's live state, written as it happens - a compaction gives no warning.
 **T119 (2026-11-24):** `[A {}, A { r: 2.0 }]` and `fs[k](x)` run for a `let`, a `const` and a generation index: the checker takes `Ty::Module` as an array element (`types/aggregate.rs`), the classifier names the module through an element (`array_template`, `callee_class`), `fold_template_element` folds array and index (`elab/templates.rs`). Found on the way, a **silent wrong result** fixed: a module with a result placed through a template value (`let t = Scale { r: 3.0 }; t(1.0)`) ignored the template's params and used the defaults; `hoist()` now takes them from `template_through`. Still refused (loud, to be recorded in T115 as new row L91, owner `generics`): a `param` declared `[Cell; 2]` (`param of type [module Cell; 2] is not supported yet`).
 **T110a (2026-11-24):** the array/tuple param, the caller-frame fold (a given value reads the caller's params, loop variables and generic substitution) and `w[k]` in a hoisted frame needed four fixes: `hoisted_params` composite fold, `constant_expr` writing an aggregate out, `hoist_nodes` taking node arrays, and `held_by_loop` unrolling a loop that indexes a node array (`Held::NodeElement`, E0416 when its trip count does not fold).
 **T115 (2026-11-24):** GAPS counts: 1 silent (S9, the wrap of `idtmod`: `fix/idtmod-wrap` is not on `main` yet; when it merges, S9 and the `SPEC_DEVIATION` guard in `idt_and_idtmod_integrate_against_section_22` leave and the counts become 0 silent, 2 broken, 19 loud), 19 loud (L40, L77, L88 closed, L89 found). Book: all 28 `book_*` and `cli book` targets pass; no Book row used a form this phase changed, so none flipped; the two bundles-branch rows (`compiler~79f44db1`, `welcome~28a764f7`) are not on this branch's base and are the merger's to re-pin if T119 makes their example run. Open for the proofs round: none.
+**STOP before T121 (2026-11-24, context budget):** T121 is planned in full above and not started (no code). Sites found by reading: `types/module.rs:93` (the refusal), `elab/templates.rs::is_module_param` and its uses (`body.rs:258` the param's IR type is `UInt(32)` and must be `Array(UInt(32), N)`; `structural.rs:370, 601, 645, 994`; `children.rs:198, 250, 414`; `host_override` E0802), `classify.rs::array_template` already names the module through a `Param`/`Port` of array type, and `fold_template_element` reads only a literal, `let` or `const` array (a param's array must come from `scope.keys`).
 **Dispatched:** none yet.
 **Walked:** none yet.
 
