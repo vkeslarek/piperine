@@ -183,23 +183,17 @@ fn a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_powe
 }
 
 #[test]
-fn a_bundle_is_refused_where_the_solver_reaches_it() {
-    // natures#8 (refused): the Stream bundle and the Slice of the Book; natures~52790298 "Directions are
-    // written once, from the producer's side, and flip gives the consumer's view" (refused with it). The generic
-    // module `Slice` runs (T71), so what is left is the bundle `Stream` alone (L25, `resolved-nets-bundles`): the `struct`
-    // with carrier fields, its `flip` and the definitions through its members, in this order. The harness gives the
-    // signals a type with a `Default` (`Slice<T: Repr + Default>`, §3.3.4)
+fn the_stream_bundle_and_its_slice_run() {
+    // natures#8 (run): the Stream bundle and the Slice of the Book; natures~52790298 "Directions are written once, from the
+    // producer's side, and flip gives the consumer's view" (holds with it). The harness is a producer that drives `valid` and
+    // `data` of a `Stream` and reads `ready`, and a consumer (`flip Stream`) that drives `ready`: the slice sits between them
+    // and one transfer crosses it on the clock edge `rx.beat(clk)` names
     let chapter = Chapter::read();
-    let placing = "module Top(in clk: Bit) { signal b: Stream<Option<u8>>; signal d: Stream<Option<u8>>; let s = Slice::<Option<u8>>(clk, b, d); }\n";
-    let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    // (T6 to T19: the bundle, its `flip`, its generic fields and its function type and elaborate; what is left is the harness: the
-    // signal `b` is driven by no module on `valid` and `d` on `ready`, and a `Bit` has no `Default` (§3.3.4); T21 gives them a value)
-    let wanted = [
-        ("E0187", "`b.valid` has no initial value and its type `bool` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)"),
-        ("E0187", "`d.ready` has no initial value and its type `bool` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)"),
-    ];
-    assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the harness's refusals, with no cascade from the bundle");
-    Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8", wanted[0].0, wanted[0].1);
+    let harness = "module Producer(in clk: Bit, tx: Stream<Logic<4>>) {\n    signal go: Bit = true;\n    signal word: Bit<Logic<4>> = Logic::<4> { binary: 15, value: 5 };\n    tx.valid = go;\n    tx.data = word;\n}\nmodule Consumer(in clk: Bit, rx: flip Stream<Logic<4>>) {\n    signal ok: Bit = true;\n    rx.ready = ok;\n}\ndigital for Consumer { on rx.beat(clk) { emit!(\"beat\", level = rx.data.value); } }\nmodule Top() {\n    signal clk: Bit = false;\n    signal b: Stream<Logic<4>>;\n    signal d: Stream<Logic<4>>;\n    let p = Producer(clk, b);\n    let s = Slice::<Logic<4>>(clk, b, d);\n    let c = Consumer(clk, d);\n}\ndigital for Top { on at(1u) { clk <- true; } on at(2u) { clk <- false; } on at(3u) { clk <- true; } on at(4u) { clk <- false; } on at(5u) { clk <- true; } }\n";
+    let ran = chapter.wrapped("bundle.msl", "", "natures#8", harness).run(Faulty::transient_of_top(6e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
+    // the first edge (1u) loads the slice; the edges at 3u and 5u are the two transfers the consumer sees, the word `0101` each
+    let beats: Vec<(f64, Vec<(String, Field)>)> = ran.stream("beat").iter().map(|record| (record.time, record.fields.clone())).collect();
+    assert_eq!(beats, [(3e-6, vec![("level".to_string(), Field::Int(5))]), (5e-6, vec![("level".to_string(), Field::Int(5))])], "two transfers cross the slice");
 }
 
 #[test]
