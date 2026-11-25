@@ -8,7 +8,7 @@ module TcResistor(p: Electrical, n: Electrical) {
     r: f64 where r > 0.0;
     tc1: f64 = 0.0;
 }
-analog for TcResistor { i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - 300.15))); }
+analog for TcResistor { i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature().unwrap_or(AMBIENT_TEMPERATURE) - 300.15))); }
 
 module TempRes() {
     signal vin: Electrical;

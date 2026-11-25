@@ -409,7 +409,7 @@ fn structural_text_is_the_tree_with_types() {
     // what its form implies.
     let diode = Cases::all().into_iter().find(|c| c.name == "diode").expect("diode").ir.print_structural();
     for line in [
-        "    let nvt = (n * vt())",
+        "    let nvt = (n * vt(if temperature_given() { temperature() } else { 300.15 }))",
         "    let vcrit = (nvt * ln((nvt / (sqrt(2.0) * is))))",
         "    let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, nvt, vcrit), seed vcrit)",
         "    let id = (is * (exp((vd / nvt)) - 1.0))",

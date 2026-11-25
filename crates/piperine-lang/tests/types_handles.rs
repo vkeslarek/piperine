@@ -188,3 +188,269 @@ fn a_carrier_generic_over_its_value_type_is_a_handle() {
     let src = "fn earlier<T: Repr>(a: Bit<T>) -> T { a.prev() }\nmodule Top() { signal c: Bit<u8> = 0; signal d: Bit<u8> = 1; }\ndigital for Top { on c.changed() { d <- earlier(c); } }\n";
     assert_eq!(HandleSources::found(src), []);
 }
+
+#[test]
+fn a_let_bound_to_a_node_keeps_its_nature_for_a_probe() {
+    // §6 rule 4, §8.2.8, §8.4.8: `let y = x; v(y)` probes `x` by the access of its nature, as `v(x)` does, in a plain module, through a
+    // child placed by name and through a template; the flow access of the nature names its flow (`i(y, gnd)` as a target)
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for src in [
+        "module Top() { signal x: Electrical; signal p: Electrical; }\nanalog for Top { let y = x; i(p, gnd) +> v(y) - 1.0; i(y, gnd) +> v(y); }".to_string(),
+        format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; }}\nanalog for Top {{ let y = c0.sn; i(p, gnd) +> v(y); }}"),
+        format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v(y); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
+    ] {
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+    }
+}
+
+#[test]
+fn a_let_bound_to_a_node_is_a_contribution_target() {
+    // §6 rule 4, §11: `v(y) +> 1.0` with `let y = x;` contributes to `x` as `v(x) +> 1.0` does, in a plain module and through a
+    // template
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for src in [
+        "module Top() { signal x: Electrical; }\nanalog for Top { let y = x; v(y) +> 1.0; }".to_string(),
+        format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); }}\nanalog<C> for Bank<C> {{ let y = c0.sn; v(y) +> 1.0; }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
+    ] {
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+    }
+}
+
+#[test]
+fn an_access_a_let_bound_nodes_nature_lacks_is_refused_as_for_the_node() {
+    // §6 rule 4, §6 rule 10, §11 rule 11: through `let y = t;` the access is judged on `t`'s nature as it is for `t` named
+    // directly: `v(y)` on `Thermal` is `E0206`, and `i(y) +> ..` on a nature without `flow` is `E0413`
+    let signal_flow = "nature Th { potential: Te { access: te, units: \"K\", abstol: 1u } }\n";
+    for (direct, alias, code) in [
+        ("i(p, gnd) +> v(t);", "let y = t; i(p, gnd) +> v(y);", "E0206"),
+        ("i(s) +> 1.0;", "let y = s; i(y) +> 1.0;", "E0413"),
+    ] {
+        for statement in [direct, alias] {
+            let src = format!("{signal_flow}module Top() {{ signal t: Thermal; signal s: Th; signal p: Electrical; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(p); }}");
+            let mut codes: Vec<String> = HandleSources::found(&src).into_iter().map(|(code, _)| code).collect();
+            codes.dedup();
+            assert_eq!(codes, [code], "{statement}");
+        }
+    }
+}
+
+#[test]
+fn parentheses_around_a_node_argument_name_the_node() {
+    // §1.5 (a parenthesized expression is the expression), §6 rule 4: `v((x))`, `v((y))`, `v((c0.sn))` and `v((q)) +> ..` probe and
+    // contribute as without the parentheses, in a plain module and through a template
+    let child = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n";
+    for src in [
+        format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; signal q: Electrical; }}\nanalog for Top {{ let y = x; i(p, gnd) +> v((x)) + v((y)) + v((c0.sn)) + v((x), (p)); v((q)) +> 1.0; }}"),
+        format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v((c0.sn)) + v((y)); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
+    ] {
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+    }
+}
+
+#[test]
+fn a_node_chosen_by_the_run_is_e0133() {
+    // §1.4.7 (user decision of 2026-11-24): an `if` or a `match` whose result is a node and whose choice reads a probe, a primitive
+    // of the run or a variable whose value depends on the run chooses hardware at run time: `E0133` alone, naming the form and
+    // what it reads
+    for (statement, form) in [
+        ("let y = if v(x) > 0.5 { x } else { p };", "an `if`"),
+        ("let c = v(x) > 0.0; let y = if c { x } else { p };", "an `if`"),
+        ("let c = 1.0; c = v(x); let y = if c > 0.5 { x } else { p };", "an `if`"),
+        ("let y = { let s = v(x) > 0.0; if s { x } else { p } };", "an `if`"),
+        ("let y = match n { 0 if v(x) > 0.0 => x, _ => p };", "a `match`"),
+        ("let y = if now() > 1.0 { x } else { p };", "an `if`"),
+    ] {
+        let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(y); }}");
+        let found = HandleSources::found(&src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{statement}: {found:?}");
+        assert!(found[0].1.starts_with(&format!("{form} whose result is a node chooses it by")), "{statement}: {found:?}");
+    }
+}
+
+#[test]
+fn a_cycle_of_node_connections_through_any_depth_of_reach_is_hardware() {
+    // §8.2.14, §8.3.5 (finding 27): a node reached two or more levels deep (`p.c0.sn` through a template, `p.cells[1].sn` of a
+    // generation, `p.mid.c0.sn` three levels deep) is a connection too: the cross pair and the self-connection type; a value
+    // read the same way (`p.c0.cs` at a value input) reads the open `let` itself, `E0332`
+    let modules = "module Dram(a: Electrical) { pub cs: f64 = 1.0; pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); i(sn, gnd) +> v(sn, gnd); }\n\
+                   module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }\n\
+                   module Row<C: Fn(Electrical)>(a: Electrical) { cell: C; for j in 0..2 { pub let cells = cell(a); } }\n\
+                   module Plain(a: Electrical) { pub let c0 = Dram(a); }\nmodule Deep(a: Electrical) { pub let mid = Plain(a); }\n\
+                   module VBank<C: Fn(Electrical)>(a: Electrical, g: f64) { cell: C; pub let c0 = cell(a); }\nanalog<C> for VBank<C> { i(a, gnd) +> v(a, gnd) * g; }\n";
+    for top in [
+        "module Top() { let p = Bank::<_>(q.c0.sn) { cell: Dram { } }; let q = Bank::<_>(p.c0.sn) { cell: Dram { } }; }",
+        "module Top() { let p = Bank::<_>(p.c0.sn) { cell: Dram { } }; }",
+        "module Top() { let p = Row::<_>(q.cells[1].sn) { cell: Dram { } }; let q = Row::<_>(p.cells[0].sn) { cell: Dram { } }; }",
+        "module Top() { let p = Row::<_>(p.cells[1].sn) { cell: Dram { } }; }",
+        "module Top() { let p = Deep(q.mid.c0.sn); let q = Deep(p.mid.c0.sn); }",
+        "module Top() { let p = Deep(p.mid.c0.sn); }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+    let value = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; let p = VBank::<_>(x, p.c0.cs) {{ cell: Dram {{ }} }}; }}"));
+    assert_eq!(value.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{value:?}");
+    assert!(value[0].1.contains("the `let` `p` reads its own name"), "{value:?}");
+}
+
+#[test]
+fn a_let_assigned_only_values_of_elaboration_chooses_a_node() {
+    // §1.4.7 (coordinator ruling, finding 26): a `let` is a constant when its initializer, every value assigned to it and every
+    // condition around those fold at elaboration, so a choice by it is typed as the node; an assigned value or a condition
+    // around an assignment that reads the run is `E0133` alone, naming the read
+    let module = "module Top() { signal x: Electrical; signal p: Electrical; k: f64 = 1.0; sel: bool = false; }";
+    for statement in [
+        "let s = sel; s = !sel;",
+        "let s = sel; if k > 0.5 { s = !s; }",
+        "let s = sel; for j in 0..3 { s = !s; }",
+        "let s = sel; let w = v(x); s = !s;",
+        "let s = true; s = sel; s = !s;",
+        "let s = sel; let c = { s = !s; s };",
+    ] {
+        let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{statement}");
+    }
+    for (statement, read) in [
+        ("let s = sel; s = v(x) > 0.5;", "it reads a probe"),
+        ("let s = sel; if v(x) > 0.5 { s = !s; }", "it reads a probe in a condition around an assignment"),
+        ("let s = sel; for j in 0..3 { if v(x) > 0.0 { break; } s = !s; }", "it reads a probe in a condition around an assignment"),
+        ("let s = sel; s = now() > 1.0;", "it reads `now()`"),
+        ("let t = v(x) > 0.5; let s = sel; s = t;", "it reads the variable `t`, whose value depends on the run: it reads a probe"),
+    ] {
+        let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
+        let found = HandleSources::found(&src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{statement}: {found:?}");
+        assert!(found[0].1.contains(&format!("by the variable `s`, whose value depends on the run: {read}")), "{statement}: {found:?}");
+    }
+}
+
+#[test]
+fn a_node_chosen_at_elaboration_is_typed_as_the_node() {
+    // §1.4.7 (user decision of 2026-11-24): a choice over params, constants, generation indexes and `let`s of those names the node
+    // it folds to, whatever statements its arms hold: `if` and `match` over a param, a block, `gnd` in an arm, a `let` of a param,
+    // at a probe, a target, a placement and an `Fn` bound
+    let modules = "module R(a: Electrical, b: Electrical) { }\nanalog for R { i(a, b) +> v(a, b); }\n\
+                   module H<C: Fn(Electrical, Electrical)>(a: Electrical) { cell: C; signal b: Electrical; k: f64 = 1.0; let c = cell(a, if k > 0.5 { b } else { gnd }); }\n";
+    for (body, analog) in [
+        ("", "i(p, gnd) +> v(if k > 0.5 { x } else { p });"),
+        ("", "let y = match n { 0 => x, _ => p }; i(p, gnd) +> v(y);"),
+        ("", "let y = { x }; i(p, gnd) +> v(y);"),
+        ("", "v(if k > 0.5 { x } else { p }) +> 1.0;"),
+        ("", "let y = if sel { let z = 1.0; x } else { p }; i(p, gnd) +> v(y);"),
+        ("", "let y = if sel { x } else { let z = 1.0; p }; i(p, gnd) +> v(y);"),
+        ("", "let y = match sel { true => { let z = 1.0; x }, false => p }; i(p, gnd) +> v(y);"),
+        ("", "let y = { let s = sel; if s { x } else { p } }; i(p, gnd) +> v(y);"),
+        ("", "let c = k * 2.0; let y = if c > 0.5 { x } else { p }; i(p, gnd) +> v(y);"),
+        ("let r = R(x, if k > 0.5 { p } else { gnd });", ""),
+        ("for j in 0..2 { let rr = R(x, if j == 0 { p } else { gnd }); }", ""),
+        ("let h = H::<_>(x) { cell: R { } };", ""),
+    ] {
+        let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; sel: bool = false; {body} }}\nanalog for Top {{ {analog} }}");
+        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{body}{analog}");
+    }
+}
+
+#[test]
+fn a_node_chosen_at_a_node_argument_is_e0133_alone() {
+    // §1.4.7: an `if` written straight at a node argument (a probe read, a contribution target of either access, inside
+    // parentheses, as the second node, a placement's or an `Fn` bound's connection) is `E0133` and nothing else
+    let modules = "module R(a: Electrical, b: Electrical) { }\nanalog for R { i(a, b) +> v(a, b); }\n\
+                   module H<C: Fn(Electrical, Electrical)>(a: Electrical) { cell: C; signal b: Electrical; let c = cell(a, if v(a) > 0.0 { a } else { b }); }\n";
+    let choose = "if v(p) > 0.0 { x } else { p }";
+    for (body, analog) in [
+        ("", format!("i(p, gnd) +> v({choose});")),
+        ("", format!("v({choose}) +> 1.0;")),
+        ("", format!("i({choose}) +> 1.0;")),
+        ("", format!("i(p, gnd) +> v(({choose}));")),
+        ("", format!("i(p, gnd) +> v(x, {choose});")),
+        ("", format!("i(p, gnd) +> potential({choose});")),
+        ("let r = R(x, if v(x) > 0.0 { x } else { p });", String::new()),
+        ("let h = H::<_>(x) { cell: R { } };", String::new()),
+    ] {
+        let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; {body} }}\nanalog for Top {{ {analog} }}");
+        let found = HandleSources::found(&src);
+        assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{body}{analog}: {found:?}");
+    }
+}
+
+#[test]
+fn a_node_of_a_child_is_a_connection() {
+    // §8.2.8, §8.1.10: a child's node, named directly or through a template, is connected to another placement like any node
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\n";
+    for top in [
+        "module Top() { signal x: Electrical; let c0 = Dram(x); let th = Th(c0.sn); }",
+        "module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); let th = Th(c0.sn); }\nmodule Top() { signal x: Electrical; let b = Bank::<_>(x) { cell: Dram { } }; }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+}
+
+#[test]
+fn a_module_body_is_typed_in_any_order() {
+    // §8.2 ("its items appear in any order; every name is visible in the whole body"): a `let` read before it is written is
+    // typed where it is read, a placement, a node of a child and a value alike; two `let`s that read each other's values at the
+    // value inputs of placements without a result read themselves, `E0332` (§8.2.16), and so do two value `let`s
+    let modules = "module Dram(a: Electrical) { pub signal sn: Electrical; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\nmodule Th(a: Electrical) { }\nanalog for Th { i(a, gnd) +> v(a, gnd); }\nmodule Gain(a: Electrical, g: f64) { pub k: f64 = 1.0; }\nanalog for Gain { i(a, gnd) +> v(a, gnd) * g * k; }\n";
+    for top in [
+        "module Top() { signal x: Electrical; let th = Th(c0.sn); let c0 = Dram(x); }",
+        "module Top() { let a = b * 2.0; let b = k + 1.0; k: f64 = 1.0; signal p: Electrical; }\nanalog for Top { i(p, gnd) +> v(p) * a; }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+    let through_placements = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; let p = Gain(x, q.k); let q = Gain(x, p.k); }}"));
+    assert_eq!(through_placements.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{through_placements:?}");
+    assert!(through_placements[0].1.contains("reads its own name through other `let`s"), "{through_placements:?}");
+    let values = HandleSources::found(&format!("{modules}module Top() {{ let a = b + 1.0; let b = a * 2.0; signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * a; }}"));
+    assert_eq!(values.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{values:?}");
+}
+
+#[test]
+fn every_site_reads_a_body_let_written_later_as_one_written_before() {
+    // §8.2 (finding 33, the class "a body `let` read before its text position"): every site where a name resolves to a module-body
+    // `let` goes through one on-demand typing (`Checker::binding_type`), so the body written in either order gives the same
+    // diagnostics. Each row: the site that reads `q`, the `let` of `q`, the codes both orders give.
+    let modules = "module R(a: Electrical) { r: f64 = 1.0; }\nanalog for R { i(a, gnd) +> v(a, gnd) / r; }\n\
+                   module Dram(a: Electrical) { pub signal sn: Electrical; pub k: f64 = 1.0; }\nanalog for Dram { i(a, gnd) +> v(a, gnd); }\n\
+                   fn twice(y: f64) -> f64 { y * 2.0 }\n";
+    let sites: [(&str, &str, &str, &[&str]); 16] = [
+        ("callee, a closure", "let b = q(1.0);", "let q = |y: f64| y * 2.0;", &[]),
+        ("callee, a value", "let b = q(1.0);", "let q = 2.0;", &["E0180"]),
+        ("callee, an instance", "let b = q(x);", "let q = R(x);", &["E0333"]),
+        ("callee, a template", "let b = q(x);", "let q = R { r: 2.0 };", &[]),
+        ("callee, a function value", "let b = q(1.0);", "let q = twice;", &[]),
+        ("operand", "let b = q + 1.0;", "let q = 2.0;", &[]),
+        ("argument", "let b = twice(q);", "let q = 2.0;", &[]),
+        ("`as` operand", "let b = q as i32;", "let q = 2.0;", &[]),
+        ("condition", "let b = if q > 1.0 { 1.0 } else { 0.0 };", "let q = 2.0;", &[]),
+        ("method receiver", "let b = q.abs();", "let q = -2.0;", &[]),
+        ("index base", "let b = q[1];", "let q = [1.0, 2.0];", &[]),
+        ("field receiver, a node", "let b = R(q.sn);", "let q = Dram(x);", &[]),
+        ("field receiver, a param", "let b = q.k * 2.0;", "let q = Dram(x);", &[]),
+        ("connection", "let b = R(q);", "let q = x;", &[]),
+        ("template head through a choice", "let b = q(x);", "let q = if true { R { r: 2.0 } } else { R { r: 3.0 } };", &[]),
+        ("parameter value", "let b = R(x) { r: q };", "let q = 2.0;", &[]),
+    ];
+    for (site, read, written, codes) in sites {
+        let forward = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; {written} {read} }}"));
+        let reverse = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; {read} {written} }}"));
+        assert_eq!(forward.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), codes, "{site}, forward: {forward:?}");
+        assert_eq!(reverse, forward, "{site}: the reverse order gives what the forward order gives");
+    }
+}
+
+#[test]
+fn a_cycle_of_node_connections_is_hardware() {
+    // §8.2.14, §8.3.5 (coordinator ruling, finding 25): a node of an instance read at a connection is hardware, not a value, so
+    // a cycle of such connections holds an unknown (the node) and types: a cross-coupled pair, an instance wired to its own node,
+    // a ring of three, and the pair whose first placement reads the node of the second (finding 24)
+    let modules = "module D2(a: Electrical) { pub signal sn: Electrical; }\nanalog for D2 { i(a, sn) +> v(a, sn); i(sn, gnd) +> v(sn, gnd); }\n";
+    for top in [
+        "module Top() { let p = D2(q.sn); let q = D2(p.sn); }",
+        "module Top() { let p = D2(p.sn); }",
+        "module Top() { let p = D2(r.sn); let q = D2(p.sn); let r = D2(q.sn); }",
+        "module Top() { signal x: Electrical; let q = D2(p.sn); let p = D2(x); }",
+        "module Top() { let p = D2((q.sn)); let q = D2((p.sn)); }",
+        "module Bank(a: Electrical) { pub let c0 = D2(a); }\nmodule Top() { let b = Bank(b.c0.sn); }",
+    ] {
+        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+    }
+}

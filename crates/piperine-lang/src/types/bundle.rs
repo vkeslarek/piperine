@@ -45,6 +45,54 @@ impl Checker<'_> {
         self.connect_fields(&source, port, "", arg, file, span);
     }
 
+    /// The argument `arg` of a placement through a template at a bundle input `ty` of its `Fn` bound (§8.4.5): a bundle carrier of
+    /// that `struct`, or a literal of it whose fields are carriers or nodes of the fields' natures.
+    pub(super) fn connect_bundle_input(&mut self, arg: ExprId, ty: &Ty, position: usize) {
+        let (file, span) = (self.file_of_expr(arg), self.design.expr_node(arg).span);
+        let Ty::Struct(nominal) = ty else { return };
+        let wanted = Some(nominal.decl);
+        if let ExprKind::Struct { fields, class: StructClass::BundleLiteral, path } = self.design.expr_node(self.unparenthesized(arg)).kind.clone() {
+            if self.literal_names(path) != wanted {
+                let message = format!("a literal of `{}` is connected to the input {} of `{}` (§7 rule 8)", self.struct_name(self.literal_names(path)), position + 1, self.struct_name(wanted));
+                self.coded(file, "E0251", span, message, "bundle of another type");
+                return;
+            }
+            for field in &fields {
+                self.connect_input_field(nominal.decl, field, file);
+            }
+            return;
+        }
+        match self.bundle_carrier(arg) {
+            Some(source) if self.bundle_struct_of(source.decl) == wanted && self.design.element_levels(source.decl) == source.elements.len() => self.element_indexes(&source),
+            Some(_) => self.coded(file, "E0251", span, format!("a bundle of another type or shape is connected to the input {} of `{}` (§7 rule 14)", position + 1, self.struct_name(wanted)), "bundle of another type"),
+            None => self.coded(file, "E0264", span, "a bundle input takes a bundle carrier or a literal of the bundle (§7 rule 8)".to_string(), "not a bundle"),
+        }
+    }
+
+    /// One field of a literal given to the input of an `Fn` bound: a carrier or a node of the field's nature, else `E0263`.
+    fn connect_input_field(&mut self, owner: DeclId, field: &FieldInit, file: FileId) {
+        let declared = self.design.decl_data(owner).children.iter().copied().find(|child| self.design.decl_data(*child).name.as_ref().is_some_and(|name| name.text == field.name.text));
+        let Some(declared) = declared else { return };
+        let DeclKind::Field(data) = self.design.decl_data(declared).kind.clone() else { return };
+        let Some(expected) = self.port_type(data.ty) else { return };
+        let given = self.declared_port(field.value);
+        let fits = match (&expected, given.as_ref().map(|(_, ty)| ty)) {
+            (Ty::Node(wanted), Some(Ty::Node(found))) => NatureRules::compatible(self.design, *wanted, *found),
+            (wanted, Some(found)) => wanted == found,
+            (_, None) => false,
+        };
+        if !fits {
+            self.literal_field_mismatch(file, field, &field.name.text, &format!("a carrier or node of `{}`", expected.name(self.design)));
+            self.infer(field.value);
+            return;
+        }
+        if let Some((decl, Ty::Carrier { .. })) = given
+            && data.dir == Some(Dir::Out)
+        {
+            self.hand_over(decl, field.value, self.design.expr_node(field.value).span, file);
+        }
+    }
+
     /// Every field of the bundle `port` at `prefix` joined to the field of the same name of the bundle (or element of an array of
     /// bundles) `source`.
     fn connect_fields(&mut self, source: &BundlePlace, port: DeclId, prefix: &str, place: ExprId, file: FileId, span: Span) {

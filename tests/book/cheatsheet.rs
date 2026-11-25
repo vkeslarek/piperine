@@ -1,7 +1,7 @@
 //! Scope: chapter 16 of the Book, "Cheat sheet" (feature `root-e2e`, RE-02 and RE-03): the natures, the
 //! analog block and the module with its params and signals as the sheet writes them (the first two run
 //! or are refused with the form they show), the body items, the digital block, the debug prints, the
-//! templates, the extern module and the file items (each refused today, asserted refused with its
+//! templates and the file items (each refused today, asserted refused with its
 //! diagnostics), and the sentence on what hides what, run through `piperine::`. Each test opens with the
 //! inventory ids it holds, from `tests/book/inventory.tsv`.
 
@@ -138,43 +138,32 @@ fn the_debug_prints_card_runs_with_its_analog_trace() {
 }
 
 #[test]
-fn the_template_card_is_refused_for_its_template_and_bundle() {
+fn the_template_card_is_refused_only_for_its_bundle() {
     // cheatsheet#8 (refused): `cell: C;`, `cell(Cell { wl: w, bl: b })` and `nch(0.13u, 2u)(d, g, s, b)` in a module
-    // generic over the template. The generic module runs (T71); what is left is exactly: the struct `Cell` with a carrier
-    // field, a bundle (L25, `resolved-nets-bundles`), the two placements through a template value or a function and the
-    // `Fn` bound of `C` the module `Bsim4` is checked against (L32, phase D)
+    // generic over the template. The generic module, the `Fn` bound of `C`, the placement through `cell` and `nch(..)(d, g, s, b)`
+    // run (generics phase D); what is left is exactly the bundle (L25, `resolved-nets-bundles`): the struct `Cell` with a carrier
+    // field and its literal `Cell { wl: w, bl: b }`, the argument of the placement
     let chapter = Chapter::read();
     let before = "struct Cell { in wl: Bit, bl: Electrical }\nmodule Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; w: f64 = 1u; vth0: f64 = 0.4; }\npub fn nch(l: f64, w: f64) -> Bsim4 { Bsim4 { l: l, w: w, vth0: 0.4 } }\nmodule Inner<C: Fn(Cell)>() {\n    signal w: Bit = false;\n    signal b: Electrical;\n    signal d: Electrical;\n    signal g: Electrical;\n    signal s: Electrical;\n";
     let after = "}\nmodule Top() { let i = Inner::<Bsim4>(); }\n";
     let given = Refusal::of(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8");
     let wanted = [
         ("P0001", "`struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet"),
-        ("P0001", "placement through a template value or a function is not supported yet"),
-        ("P0001", "placement through a template value or a function is not supported yet"),
-        ("P0001", "the template parameter `C` of `Inner`, bounded by `Fn` is not supported yet"),
+        ("P0001", "struct expression is not supported yet"),
     ];
     assert_eq!(given, wanted.map(|(code, message)| (code.to_string(), message.to_string())), "exactly the refusals still owed");
     Refusal::expect(chapter.wrapped("templates.msl", before, "cheatsheet#8", after).run(Commands::operating_point()), "cheatsheet#8", wanted[0].0, wanted[0].1);
 }
 
 #[test]
-fn the_extern_card_is_refused() {
-    // cheatsheet#9 (refused): `#[link("bsim4.osdi", model = "bsim4")] extern "osdi" module Bsim4(..)`, placed:
-    // an `extern` module is `P0001` (L33)
-    let chapter = Chapter::read();
-    let after = "module Top() { signal d: Electrical; signal g: Electrical; signal s: Electrical; signal b: Electrical; let m = Bsim4(d, g, s, b); }\n";
-    Refusal::expect(chapter.wrapped("foreign.msl", "", "cheatsheet#9", after).run(Commands::operating_point()), "cheatsheet#9", "P0001", "`extern` module is not supported yet");
-}
-
-#[test]
 fn the_files_card_runs() {
-    // cheatsheet#10 (run, L57 closed by params-and-io): `mod logic;`, two `use` lines, `const IV: [(f64, f64); 64] =
+    // cheatsheet#9 (run, L57 closed by params-and-io): `mod logic;`, two `use` lines, `const IV: [(f64, f64); 64] =
     // parse_table(include_str!("iv.tbl"));` and `emit!("log", ..)` among the items. The `emit!` is a statement among the
     // items, so the file as the sheet writes it is `E0601` (§19 rule 10); without that last line, in a package that has the
     // files and the dependency it names, and a top that reads the table (the checker reaches only what the top reaches),
     // the card runs: `parse_table` reads `iv.tbl` and `table_model` reads it
     let chapter = Chapter::read();
-    let card = chapter.text("cheatsheet#10");
+    let card = chapter.text("cheatsheet#9");
     let (items, statement) = card.rsplit_once('\n').expect("the card has several lines");
     assert!(statement.starts_with("emit!("), "the last line of the card is the `emit!`: {statement}");
     let manifest = "[package]\nname = \"adc\"\nversion = \"0.1.0\"\n\n[dependencies]\nutil = { path = \"deps/util\" }\n\n[run.op]\nanalysis = \"op\"\ntop = \"Top\"\n";
@@ -187,7 +176,7 @@ fn the_files_card_runs() {
             .with_source("src/logic.msl", "pub module Sar() {}\n")
             .with_source("src/iv.tbl", &(0..64).map(|row| format!("{} {}\n", row, row)).collect::<String>())
     };
-    let whole = Refusal::of(package(format!("{card}\nmodule Top() {{ }}\n")).run(Overrides::default()), "cheatsheet#10");
+    let whole = Refusal::of(package(format!("{card}\nmodule Top() {{ }}\n")).run(Overrides::default()), "cheatsheet#9");
     assert!(whole.iter().any(|(code, message)| code == "E0601" && message == "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)"), "{whole:?}");
     let reading = "module Top() { signal a: Electrical; }\nanalog for Top { i(a) +> table_model(v(a), IV, \"3L\"); }\n";
     let items_only = package(format!("{items}\n{reading}"));

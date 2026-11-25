@@ -192,17 +192,18 @@ impl CircuitInstance {
     pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::core::result::Result<()> {
         if self.is_set_up { return Ok(()); }
         if let Some(bound) = self.abi.as_mut() {
-            bound.set_temperature(ctx.tolerances.temperature);
+            bound.set_temperature(ctx.tolerances.temperature, ctx.tolerances.temperature_given);
         }
         self.is_set_up = true;
         Ok(())
     }
 
     /// Sets the run temperature (ABI-20): the `TEMPERATURE` global holds `t`
-    /// from the next analysis on, and a device that reads it recomputes.
+    /// from the next analysis on, `TEMPERATURE_GIVEN` says the run set it, and a
+    /// device that reads them recomputes.
     pub fn set_temperature(&mut self, t: f64) {
         if let Some(bound) = self.abi.as_mut() {
-            bound.set_temperature(t);
+            bound.set_temperature(t, true);
         }
     }
 

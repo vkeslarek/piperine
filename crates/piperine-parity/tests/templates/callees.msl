@@ -1,0 +1,96 @@
+//! Every callee form Part III's `callee` production admits, and a body `let` read before its text position (verification findings
+//! 33 and 34). The expected values are computed by Rust in `source_templates.rs`.
+
+/// One cell: its storage node follows the bit line scaled by `cs`.
+module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; }
+analog for Dram { potential(sn) +> cs * v(a); }
+
+fn twice(y: f64) -> f64 { y * 2.0 }
+fn doubler() -> fn(f64) -> f64 { twice }
+fn scaler(k: f64) -> fn(f64) -> f64 { |y| y * k }
+
+module RigCallees() {
+    signal a: Electrical;
+    let early = q(0.25);
+    let q = |y: f64| y * 3.0;
+    let literal = (|y: f64| y * 2.0)(0.25);
+    let named = (twice)(0.2);
+    let returned = doubler()(0.3);
+    let scaled = scaler(4.0)(0.35);
+    let chosen = (if true { Dram { cs: 4.0 } } else { Dram { cs: 1.0 } })(a);
+    let matched = (match 1 { 0 => Dram { cs: 1.0 }, _ => Dram { cs: 5.0 } })(a);
+    let blocked = ({ Dram { cs: 6.0 } })(a);
+    signal l1: Electrical;
+    signal l2: Electrical;
+    signal l3: Electrical;
+    signal l4: Electrical;
+    signal l5: Electrical;
+    signal s1: Electrical;
+    signal s2: Electrical;
+    signal s3: Electrical;
+}
+analog for RigCallees {
+    potential(a) +> 0.5;
+    potential(l1) +> early;
+    potential(l2) +> literal;
+    potential(l3) +> returned;
+    potential(l4) +> named;
+    potential(l5) +> scaled;
+    potential(s1) +> v(chosen.sn);
+    potential(s2) +> v(matched.sn);
+    potential(s3) +> v(blocked.sn);
+}
+
+/// A module's bare name used as a value is its template with every default (§8.4.1 amendment, finding 35): held by a
+/// `let`, as a parenthesized head, as a function's result and beside the placement it matches.
+module Tall(a: Electrical) { cs: f64 = 3.0; pub signal sn: Electrical; }
+analog for Tall { potential(sn) +> cs * v(a); }
+fn tall() -> Tall { Tall }
+module RigBare() {
+    signal a: Electrical;
+    let held = Tall;
+    let through_let = held(a);
+    let headed = (Tall)(a);
+    let returned = tall()(a);
+    let direct = Tall(a);
+    signal t1: Electrical;
+    signal t2: Electrical;
+    signal t3: Electrical;
+    signal t4: Electrical;
+}
+analog for RigBare {
+    potential(a) +> 0.5;
+    potential(t1) +> v(through_let.sn);
+    potential(t2) +> v(headed.sn);
+    potential(t3) +> v(returned.sn);
+    potential(t4) +> v(direct.sn);
+}
+
+/// A template param value over the placing module's params (§8.4.6, finding 36): a literal over a param, a binning function over
+/// the parent's length and a choice over a param, in the top module and in a placed `Binned` whose params its parent binds.
+module Plain(a: Electrical) { cell: Dram; pub let c0 = cell(a); }
+fn sized(cs: f64) -> Dram { Dram { cs: cs } }
+fn bin(l: f64) -> Dram { if l < 1.0 { Dram { cs: 7.0 } } else { Dram { cs: 9.0 } } }
+module Binned(a: Electrical) {
+    l: f64 = 1.0;
+    sel: bool = false;
+    let p = Plain(a) { cell: if sel { bin(l) } else { Dram { cs: l * 10.0 } } };
+    pub signal o: Electrical;
+}
+analog for Binned { potential(o) +> v(p.c0.sn); }
+module RigParamTemplates() {
+    l: f64 = 2.0;
+    signal a: Electrical;
+    let b1 = Plain(a) { cell: Dram { cs: l } };
+    let b2 = Plain(a) { cell: sized(l * 2.0) };
+    let short = Binned(a) { l: 0.5, sel: true };
+    let long = Binned(a) { l: 3.0, sel: true };
+    let scaled = Binned(a) { l: 0.5 };
+    signal t1: Electrical;
+    signal t2: Electrical;
+}
+analog for RigParamTemplates {
+    potential(a) +> 0.5;
+    potential(t1) +> v(b1.c0.sn);
+    potential(t2) +> v(b2.c0.sn);
+}

@@ -4,9 +4,10 @@
 //! `simparam("x").unwrap_or(1.0)`). It lowers to `Expr::SessionParameter`, one `SessionParameter`
 //! per name per body, wherever a run-time value is read, definitions and selectors included
 //! (§14.4.1). `name` is a literal found after inlining; anything else is `P0001` naming it.
-//! `lower_session_pair` gives the two halves (`is`, `value`) an `Option` operation reads.
+//! `lower_session_pair` gives the two halves (`is`, `value`) an `Option` operation reads. `temperature()` is the same
+//! kind of read over two environment cells (`lower_temperature`).
 
-use piperine_ir::{Expr, ExprId as LoweredExpr, LevelPart, Origin, SessionParameter, ValueType};
+use piperine_ir::{Env, Expr, ExprId as LoweredExpr, LevelPart, Origin, SessionParameter, ValueType};
 
 use super::compound::Pair;
 use super::elaborator::Elaboration;
@@ -41,5 +42,22 @@ impl Elaboration<'_, '_> {
         let packed = self.lower_simparam(scope, &args, origin.clone())?;
         let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, ValueType::F64, origin);
         Some(Pair { is, val, literal: None })
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// `temperature()` read as a value: the `Option<f64>` of the run's temperature, `Some(kelvin)` when the run set it
+    /// (`temp`) and `None` otherwise (§8.5.2). It packs the two environment reads of `lower_temperature_pair`.
+    pub(super) fn lower_temperature(&mut self, origin: Origin) -> LoweredExpr {
+        let pair = self.lower_temperature_pair(origin.clone());
+        self.emit(Expr::OptionPack { is: pair.is, value: pair.val }, ValueType::Option(Box::new(ValueType::F64)), origin)
+    }
+
+    /// The two halves an `Option` operation reads of a `temperature()` call: whether the run set its temperature, and
+    /// the run's temperature in kelvin (the solver's default, 300.15 K, when it did not).
+    pub(super) fn lower_temperature_pair(&mut self, origin: Origin) -> Pair {
+        let is = self.emit(Expr::Env(Env::TemperatureGiven), ValueType::Bool, origin.clone());
+        let val = self.emit(Expr::Env(Env::Temperature), ValueType::F64, origin);
+        Pair { is, val, literal: None }
     }
 }

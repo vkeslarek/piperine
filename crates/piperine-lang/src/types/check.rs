@@ -96,6 +96,9 @@ pub(super) struct Checker<'d> {
     /// The bindings of the module-body `let`s whose values are being typed, each with its value (a
     /// read of one is a feedback, `Checker::self_read`).
     pub(super) lets_open: BTreeMap<DeclId, ExprId>,
+    /// The `let`s of module bodies already typed: a `let` is typed where it is first read, whatever its place in the body
+    /// (§8.2: the items of a body appear in any order), and once.
+    pub(super) lets_typed: BTreeSet<DeclId>,
     /// The placements whose arguments are being typed, innermost last: the module, or `None` for
     /// a core module.
     pub(super) placing: Vec<Option<DeclId>>,
@@ -116,6 +119,25 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
+    /// The reads of an item of a child only a folded template names (`reach.rs`), typed as a node until a context wants a value
+    /// of them (`template_items.rs`).
+    pub(super) template_reads: BTreeSet<ExprId>,
+    /// The reads through a template made through an instance whose `let` was being typed, to that `let`: a node connection, and
+    /// a read of the `let` itself when a context wants a value of it (§8.2.16).
+    pub(super) open_template_reads: BTreeMap<ExprId, DeclId>,
+    /// The `let`s with no type bound to a read through a template, by binding: the first use that wants a value types them.
+    pub(super) template_locals: BTreeMap<DeclId, ExprId>,
+    /// The type each read through a template was given by its context, which the elaborator checks the concrete item against.
+    pub(super) template_items: BTreeMap<ExprId, Ty>,
+    /// The role of each access name the resolver left ambiguous (`v` of `v(y)`, `y` a `let`), read from the node its probe names.
+    pub(super) access_roles: BTreeMap<ExprId, crate::pom::QuantityRole>,
+    /// The `if`s, `match`es and blocks refused for choosing a node (`E0133`, `handles.rs`): an operand that is one is no second
+    /// diagnostic.
+    pub(super) chosen_nodes: BTreeSet<ExprId>,
+    /// The `if`s and `match`es whose result is a node, judged once the whole design is typed (`judge_node_choices`).
+    pub(super) node_choices: Vec<ExprId>,
+    /// The initializer of each `let` with a name, which says whether the name's value depends on the run.
+    pub(super) let_values: BTreeMap<DeclId, ExprId>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
     /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
@@ -201,6 +223,7 @@ impl<'d> Checker<'d> {
             book: DriveBook::default(),
             records: Records::default(),
             lets_open: BTreeMap::new(),
+            lets_typed: BTreeSet::new(),
             placing: Vec::new(),
             differentiated: 0,
             owner: None,
@@ -209,6 +232,14 @@ impl<'d> Checker<'d> {
             in_guard: false,
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
+            template_reads: BTreeSet::new(),
+            open_template_reads: BTreeMap::new(),
+            template_locals: BTreeMap::new(),
+            template_items: BTreeMap::new(),
+            access_roles: BTreeMap::new(),
+            chosen_nodes: BTreeSet::new(),
+            node_choices: Vec::new(),
+            let_values: BTreeMap::new(),
             handles: BTreeSet::new(),
             bound_substitution: None,
             bound_arguments: BTreeMap::new(),
@@ -250,6 +281,8 @@ impl<'d> Checker<'d> {
         self.check_attributes();
         self.reach(top);
         self.drain();
+        self.report_unread_template_locals();
+        self.judge_node_choices();
         if !self.diagnostics.is_empty() {
             return Err(self.sorted_diagnostics());
         }
@@ -259,7 +292,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls, carrier_drive_impls: self.carrier_drive_impls, resolve_tables: self.resolve_tables })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, deferred_coverage: self.deferred_coverage, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, template_items: self.template_items, access_roles: self.access_roles, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned(), drive_impls: self.drive_impls, carrier_drive_impls: self.carrier_drive_impls, resolve_tables: self.resolve_tables })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -376,6 +409,12 @@ impl<'d> Checker<'d> {
         self.design.decl_data(self.design.expr_node(expr).owner).file
     }
 
+    /// How many diagnostics the check has reported so far: a form compares the count before and after typing a part to know
+    /// whether that part was refused.
+    pub(super) fn reported(&self) -> usize {
+        self.diagnostics.len()
+    }
+
     /// `P0001`: a construct outside the M1 subset, named.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
@@ -400,6 +439,9 @@ impl<'d> Checker<'d> {
 
     /// A mismatch under the code of the rule that was broken.
     pub(super) fn mismatch_coded(&mut self, file: FileId, span: Span, code: &'static str, expected: &str, found: &str) {
+        if self.untyped_template_read(file, span, found) {
+            return;
+        }
         self.report(file, Diagnostic::new(code, format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
     }
 
@@ -459,8 +501,10 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
-                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
-                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_none() => Some(Ty::Module(d)),
+                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it; a generic one's names its
+                // arguments, `G<2>` (§8.4.3)
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_module_type(*path, d, file, node.span),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) => self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span).then(|| Ty::module(d)),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));
@@ -752,7 +796,7 @@ impl<'d> Checker<'d> {
             (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
             (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
             (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
-            (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(child, &l.clone()),
+            (DeclKind::Let(_), ItemPhase::Lets) => self.type_module_let(child),
             (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
             (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
             (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}

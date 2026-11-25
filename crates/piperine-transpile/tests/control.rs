@@ -237,6 +237,58 @@ impl Functions {
         Alone::finish(b)
     }
 
+    /// Functions whose result is a function value (§1.5.10): a named function, a capturing
+    /// closure, and a closure capturing two function values.
+    fn returned_function_library() -> Ir {
+        let function = ValueType::Fn(vec![ValueType::F64], Box::new(ValueType::F64));
+        let mut b = IrBuilder::new();
+
+        // control.msl:140  fn twice(y: f64) -> f64 { y * 2.0 }
+        let locals = vec![Functions::local("y", ValueType::F64, false)];
+        let mut x = Dx::new(&mut b, FILE, 141, 5);
+        let (y, two) = (x.local(0, ValueType::F64), x.real(2.0));
+        let body = x.bin(BinaryOp::Mul, y, two, ValueType::F64);
+        let twice = Functions::define(&mut b, "twice", 140, locals, 1, ValueType::F64, body);
+
+        // control.msl:150  fn doubler() -> fn(f64) -> f64 { twice }
+        let body = Functions::control(&mut b, Expr::FunctionRef(twice), function.clone(), 151);
+        let doubler = Functions::define(&mut b, "doubler", 150, Vec::new(), 0, function.clone(), body);
+
+        // control.msl:160  fn scaler(k: f64) -> fn(f64) -> f64 { |y| y * k }
+        let locals = vec![Functions::local("k", ValueType::F64, false), Functions::local("y", ValueType::F64, false)];
+        let mut x = Dx::new(&mut b, FILE, 161, 5);
+        let (y, k) = (x.local(1, ValueType::F64), x.local(0, ValueType::F64));
+        let product = x.bin(BinaryOp::Mul, y, k, ValueType::F64);
+        let body = Functions::control(&mut b, Expr::Closure { params: vec![1], body: product }, function.clone(), 161);
+        let scaler = Functions::define(&mut b, "scaler", 160, locals, 1, function.clone(), body);
+
+        // control.msl:170  fn compose(f: fn(f64) -> f64, g: fn(f64) -> f64) -> fn(f64) -> f64 { |y| f(g(y)) }
+        let locals = vec![Functions::local("f", function.clone(), false), Functions::local("g", function.clone(), false), Functions::local("y", ValueType::F64, false)];
+        let mut x = Dx::new(&mut b, FILE, 171, 5);
+        let (f, g, y) = (x.local(0, function.clone()), x.local(1, function.clone()), x.local(2, ValueType::F64));
+        let inner = Functions::control(&mut b, Expr::CallValue { callee: g, args: vec![y] }, ValueType::F64, 171);
+        let outer = Functions::control(&mut b, Expr::CallValue { callee: f, args: vec![inner] }, ValueType::F64, 171);
+        let body = Functions::control(&mut b, Expr::Closure { params: vec![2], body: outer }, function.clone(), 171);
+        let compose = Functions::define(&mut b, "compose", 170, locals, 2, function.clone(), body);
+
+        // control.msl:180  fn demo(x: f64) -> f64 { let s = scaler(3.0); compose(s, doubler())(x) + s(x) }
+        let locals = vec![Functions::local("x", ValueType::F64, false), Functions::local("s", function.clone(), false)];
+        let mut x = Dx::new(&mut b, FILE, 181, 5);
+        let three = x.real(3.0);
+        let made = x.call(scaler, vec![three], function.clone());
+        let let_s = x.let_(1, made);
+        let (s, doubled) = (x.local(1, function.clone()), x.call(doubler, Vec::new(), function.clone()));
+        let composed = x.call(compose, vec![s, doubled], function.clone());
+        let (input, s_again, input_again) = (x.local(0, ValueType::F64), x.local(1, function.clone()), x.local(0, ValueType::F64));
+        let first = Functions::control(&mut b, Expr::CallValue { callee: composed, args: vec![input] }, ValueType::F64, 182);
+        let second = Functions::control(&mut b, Expr::CallValue { callee: s_again, args: vec![input_again] }, ValueType::F64, 182);
+        let mut x = Dx::new(&mut b, FILE, 182, 5);
+        let total = x.bin(BinaryOp::Add, first, second, ValueType::F64);
+        let body = x.block(vec![let_s], Some(total), ValueType::F64);
+        Functions::define(&mut b, "demo", 180, locals, 1, ValueType::F64, body);
+        Alone::finish(b)
+    }
+
     /// The printed text of every function of `ir`, in the order they were added.
     fn printed(ir: &Ir) -> Vec<String> {
         ir.functions().map(|f| ValuePrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{e}"))).collect()
@@ -493,9 +545,10 @@ fn function_values_and_recursion_compile_and_run() {
     let text = functions.join("\n");
     assert!(text.contains("fn fact(n: rt::UInt<16>, depth_: rt::Depth) -> rt::UInt<16> {"), "{text}");
     assert!(text.contains("fact(n - rt::UInt::<16>::new(1), depth_.deeper(\"fact\"))"), "{text}");
-    assert!(text.contains("fn twice(f: &dyn Fn(rt::UInt<16>) -> rt::UInt<16>, x: rt::UInt<16>) -> rt::UInt<16> {"), "{text}");
-    assert!(text.contains("let add: &dyn Fn(rt::UInt<16>) -> rt::UInt<16> = &move |y| y + x;"), "{text}");
-    assert!(text.contains("&move |arg0_| fact(arg0_, rt::Depth::root())"), "{text}");
+    assert!(text.contains("fn twice(f: std::rc::Rc<dyn Fn(rt::UInt<16>) -> rt::UInt<16>>, x: rt::UInt<16>) -> rt::UInt<16> {"), "{text}");
+    assert!(text.contains("let add: std::rc::Rc<dyn Fn(rt::UInt<16>) -> rt::UInt<16>> = std::rc::Rc::new(move |y| y + x);"), "{text}");
+    assert!(text.contains("twice(add.clone(), rt::UInt::<16>::new(1))"), "{text}");
+    assert!(text.contains("std::rc::Rc::new(move |arg0_| fact(arg0_, rt::Depth::root()))"), "{text}");
 
     let mut main = String::from("fn main() {\n");
     let mut expected = Vec::new();
@@ -505,6 +558,35 @@ fn function_values_and_recursion_compile_and_run() {
         main += &format!("    println!(\"demo {n} {{}}\", demo(rt::UInt::<16>::new({n})).get());\n");
         // twice(add, 1) is 1 + x + x; twice(fact, 3) is fact(fact(3))
         expected.push(format!("demo {n} {}", (1 + 2 * n).wrapping_add(RustReference::fact(RustReference::fact(3)))));
+    }
+    main += "}\n";
+    let out = Probe::run(&functions, &main);
+    assert_eq!(out.lines().collect::<Vec<_>>(), expected.iter().map(String::as_str).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_function_value_returned_by_a_function_compiles_and_runs() {
+    // §1.5.10, §1.5.14: a function's result is a function value, a named function or a closure
+    // capturing a real or two function values; every function value is one owned `Rc<dyn Fn>`,
+    // so the function is generic over the real its function type holds, and a captured function
+    // value is cloned before the `move` closure takes it
+    let ir = Functions::returned_function_library();
+    let functions = Functions::printed(&ir);
+    let text = functions.join("\n");
+    assert!(text.contains("fn doubler<R: Real>() -> std::rc::Rc<dyn Fn(R) -> R> {\n    std::rc::Rc::new(twice::<R>)\n}"), "{text}");
+    assert!(text.contains("fn scaler<R: Real>(k: R) -> std::rc::Rc<dyn Fn(R) -> R> {\n    std::rc::Rc::new(move |y| y * k)\n}"), "{text}");
+    assert!(text.contains("let f = f.clone();\n        let g = g.clone();\n        std::rc::Rc::new(move |y| f(g(y)))"), "{text}");
+    assert!(text.contains("compose(s.clone(), doubler::<R>())(x) + s(x)"), "{text}");
+
+    let mut main = String::from("fn main() {\n");
+    let mut expected = Vec::new();
+    main += "    println!(\"doubler {}\", doubler::<f64>()(1.0));\n";
+    expected.push(format!("doubler {}", 2.0));
+    main += "    println!(\"scaler {}\", scaler::<f64>(4.0)(0.5));\n";
+    expected.push(format!("scaler {}", 4.0 * 0.5));
+    for v in [0.0f64, 1.5, -2.0] {
+        main += &format!("    println!(\"demo {v} {{}}\", demo::<f64>({v:?}));\n");
+        expected.push(format!("demo {v} {}", 3.0 * (2.0 * v) + 3.0 * v));
     }
     main += "}\n";
     let out = Probe::run(&functions, &main);

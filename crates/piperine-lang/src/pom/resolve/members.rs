@@ -96,7 +96,7 @@ pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
             }
         }
         if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
-            let (res, error) = reader.field(*recv, &name.text);
+            let (res, error) = reader.field(*recv, &name.text, design.expr_node(expr).owner);
             out.res.push((expr, res));
             if let Some((module, missing)) = error {
                 let owner = design.expr_node(expr).owner;
@@ -187,11 +187,11 @@ impl Reader<'_> {
     /// The member `name` of the receiver expression: what it names, and the
     /// module whose item it is when the item is not `pub` or does not exist
     /// (`true`): both are `E0343` (§8.4.8).
-    fn field(&self, recv: ExprId, name: &str) -> (Resolution, Option<(DeclId, bool)>) {
+    fn field(&self, recv: ExprId, name: &str, owner: DeclId) -> (Resolution, Option<(DeclId, bool)>) {
         let deferred = (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), None);
         match self.receiver(recv) {
             Recv::Instance(module) => match self.member_of(module, name) {
-                Some(item) if self.visible(item) => (Resolution::Decl(item), None),
+                Some(item) if self.visible(item) || self.written_in_impl_of(owner, module) => (Resolution::Decl(item), None),
                 Some(item) => (Resolution::Decl(item), Some((module, false))),
                 None => (Resolution::Unresolved, Some((module, true))),
             },
@@ -202,6 +202,19 @@ impl Reader<'_> {
             // The fields of a carrier come from its value type, which needs inference.
             Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => deferred,
         }
+    }
+
+    /// Whether the code of `owner` is written in an `impl` on the module type `module` (§3.1.4): `self.vth0` reads a param the
+    /// module declares without `pub`, which is the module's own business.
+    fn written_in_impl_of(&self, owner: DeclId, module: DeclId) -> bool {
+        let mut at = Some(owner);
+        while let Some(decl) = at {
+            if let DeclKind::Impl(data) = &self.design.decl_data(decl).kind {
+                return self.design.type_resolution(data.self_ty) == Resolution::Decl(module);
+            }
+            at = self.design.decl_data(decl).parent;
+        }
+        false
     }
 
     /// The method `name` of the receiver: the carrier built-ins, then the

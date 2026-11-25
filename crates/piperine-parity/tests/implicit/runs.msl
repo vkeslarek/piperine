@@ -1,0 +1,73 @@
+//! The models of `source_implicit.rs` (generics phase D, GN-24 to GN-26): a resistor that combines its own `m` with the
+//! run's multiplicity, a source, a fixed resistor, and the three ways a model may use the run's temperature.
+
+module Source(p: Electrical) {}
+analog for Source { v(p, gnd) +> 1.0; }
+
+/// A resistor whose own `m` wins over the run's multiplicity, which wins over the default of 1.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 = 1k;
+    m: Option<f64>;
+}
+analog for Resistor {
+    let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);
+    i(p, n) +> count * v(p, n) / r;
+}
+
+/// A resistor that reads nothing of the run.
+module Fixed(p: Electrical, n: Electrical) {
+    r: f64 = 1k;
+}
+analog for Fixed { i(p, n) +> v(p, n) / r; }
+
+/// One volt over a `Resistor` with its own `m: Some(4.0)` and a `Fixed` one kilo-ohm: `o` is the divider.
+module OwnMultiplicity() {
+    signal vin: Electrical;
+    signal o: Electrical;
+    let s = Source(vin);
+    let top = Resistor { m: Some(4.0) }(vin, o);
+    let bottom = Fixed(o, gnd);
+}
+
+/// The same divider with no `m` bound: the run's multiplicity, else 1.
+module RunMultiplicity() {
+    signal vin: Electrical;
+    signal o: Electrical;
+    let s = Source(vin);
+    let top = Resistor(vin, o);
+    let bottom = Fixed(o, gnd);
+}
+
+/// Two `Resistor`s with no `m` in one run: both read the run's multiplicity (one value per run).
+module TwoResistors() {
+    signal vin: Electrical;
+    signal o: Electrical;
+    let s = Source(vin);
+    let top = Resistor(vin, o);
+    let bottom = Resistor(o, gnd);
+    let extra = Fixed(o, gnd);
+}
+
+/// `multiplicity()` where a param default is evaluated: a const context.
+module DefaultReadsMultiplicity() {
+    k: f64 = multiplicity().unwrap_or(1.0);
+    signal o: Electrical;
+}
+
+/// The temperature used all along: the node holds it in millikelvin.
+module AllAlong() { signal o: Electrical; }
+analog for AllAlong { v(o, gnd) +> temperature().unwrap_or(AMBIENT_TEMPERATURE) / 1000.0; }
+
+/// The temperature used as the initial state of an integrator, which then integrates nothing.
+module InitialState() { signal o: Electrical; }
+analog for InitialState { v(o, gnd) +> idt(0.0, temperature().unwrap_or(AMBIENT_TEMPERATURE) / 1000.0); }
+
+/// The temperature ignored.
+module Ignored() { signal o: Electrical; }
+analog for Ignored { v(o, gnd) +> 1.0; }
+
+/// `-1` stands for a setting the run left out: `temperature()` and `10 * multiplicity()` each read `None` as `-1`.
+module Absent() { signal o: Electrical; }
+analog for Absent {
+    v(o, gnd) +> temperature().unwrap_or(-1.0) + 10.0 * multiplicity().unwrap_or(-1.0);
+}

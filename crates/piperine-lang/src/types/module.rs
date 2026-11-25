@@ -85,6 +85,8 @@ impl Checker<'_> {
             plain if self.is_param_type(&plain) => Some(plain),
             // a param of a type parameter (`reset: T`, §8.1.15): typed under the parameter's bounds
             Ty::Param(parameter) if self.is_value_type_parameter(parameter) => Some(Ty::Param(parameter)),
+            // a param of a type parameter bound by `Fn(P)` (`cell: C`, §8.4.1) holds a template of a module that fits `P`
+            Ty::Param(parameter) if self.callable_of(parameter).is_some() => Some(Ty::Param(parameter)),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -154,6 +156,43 @@ impl Checker<'_> {
         self.within(Context::Const, |this| this.check_as(init, &value, "E0210"));
     }
 
+    /// Types the `let` item `decl` of a module body once: in the body's order, or earlier where a read of its name needs its
+    /// type (§8.2: the items of a body appear in any order, and every name is visible in the whole body).
+    pub(super) fn type_module_let(&mut self, decl: DeclId) {
+        if !self.lets_typed.insert(decl) {
+            return;
+        }
+        let DeclKind::Let(data) = self.design.decl_data(decl).kind.clone() else { return };
+        // typed as the body types it, whatever position reads it first (a param default, a `where`)
+        self.within(super::check::Context::Module, |this| this.module_let(decl, &data));
+    }
+
+    /// The type of the local `binding`, the one entry every read of a local goes through: a module-body `let` read before its
+    /// text position is typed here first (§8.2: the items of a body appear in any order), so no site depends on text order.
+    pub(super) fn binding_type(&mut self, binding: DeclId) -> Option<Ty> {
+        self.type_module_let_read(binding);
+        self.locals.get(&binding).cloned()
+    }
+
+    /// Types the module-body `let` that binds `binding` when a read of it comes before it in the body (§8.2: items appear in any
+    /// order); nothing for a binding typed already, one being typed (a self read, §8.2.16) or any other name.
+    pub(super) fn type_module_let_read(&mut self, binding: DeclId) {
+        if !self.locals.contains_key(&binding)
+            && !self.lets_open.contains_key(&binding)
+            && let Some(item) = self.untyped_module_let(binding)
+        {
+            self.type_module_let(item);
+        }
+    }
+
+    /// The `let` item of a module body that binds `binding` and is not typed yet, outside generation (generation types its own).
+    pub(super) fn untyped_module_let(&self, binding: DeclId) -> Option<DeclId> {
+        let item = self.design.decl_data(binding).parent?;
+        let DeclKind::Let(_) = self.design.decl_data(item).kind else { return None };
+        let owner = self.design.decl_data(item).parent?;
+        (matches!(self.design.decl_data(owner).kind, DeclKind::Module(_)) && !self.lets_typed.contains(&item)).then_some(item)
+    }
+
     /// `let x = value;` in a module body: the binding takes the type of the value (a placement
     /// gives it the placed module).
     pub(super) fn module_let(&mut self, decl: DeclId, data: &LetData) {
@@ -169,8 +208,15 @@ impl Checker<'_> {
             return;
         };
         self.lets_open.insert(*binding, data.value);
+        let reported = self.reported();
         let ty = self.infer_event_position(data.value);
         self.lets_open.remove(binding);
+        // a template whose value was refused (a choice of two modules, `E0180`) holds no template to place: its reads and
+        // calls add nothing to that diagnostic
+        let ty = match ty {
+            Some(Ty::Module(_)) if self.reported() > reported && !self.binds_an_instance(*binding) => None,
+            other => other,
+        };
         if let Some(closure) = self.closure_expr(data.value) {
             self.closure_locals.insert(*binding, closure);
         }
@@ -213,21 +259,27 @@ impl Checker<'_> {
             return None;
         }
         let callee_node = self.design.expr_node(*callee).clone();
+        let mut through_value = false;
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
-            // `cell(c)` through a param of module type (§8.4.4): the module's ports are connected;
-            // the param block belongs to the template, so one on the placement is `E0361`.
-            ExprKind::Path(_) if self.callee_is_param_of(*callee, module) => {
+            // `cell(c)`, `C1(c)` or `nch(l, w)(c)`: a call through a template value, a param, a `const` or a function's
+            // result of module type (§8.4.4); the module's ports are connected, the param block belongs to the template, so
+            // one on the placement is `E0361`
+            _ if self.callee_is_template_of(*callee, module) => {
                 if params.is_some() {
                     let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                    self.coded(file, "E0361", node.span, format!("a placement through a param of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
+                    self.coded(file, "E0361", node.span, format!("a placement through a template value of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
                 }
+                through_value = true;
                 Vec::new()
             }
+            // the head's value is no template of the module: a value of another type is a mismatch (§1.5); a head that has no
+            // type was refused where it is typed, and the placement adds nothing to that
             _ => {
-                if !self.reads_poisoned(*callee) {
-                    self.unsupported(file, node.span, "placement through a template value or a function");
+                if let Some(found) = self.exprs[callee.index()].clone() {
+                    let message = format!("the head's type `{}` is no template of the module this call places (§8.4.4)", found.name(self.design));
+                    self.coded(file, "E0180", node.span, message, "a placement through a value that is not a template");
                 }
                 for arg in args {
                     self.infer(arg.value);
@@ -235,13 +287,18 @@ impl Checker<'_> {
                 return None;
             }
         };
+        // the arguments of a generic module placed through a template value are the ones its type names, `G<2>` (§8.4.3)
+        let generic = self.design.decl_data(module).generics_span.is_some();
+        let through_template = (generic && through_value).then(|| self.template_substitution(*callee, module));
         // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
         self.placing.push(Some(module));
         // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
         self.callees.insert(expr, Callee::Module(module));
-        self.exprs[callee.index()] = Some(Ty::Module(module));
-        let substitution = if self.design.decl_data(module).generics_span.is_some() {
-            let Some(given) = self.generic_placement(expr, *callee, module, args) else {
+        self.exprs[callee.index()] = Some(Ty::module(module));
+        let substitution = if through_template.is_some() {
+            through_template
+        } else if generic {
+            let Some(given) = self.generic_placement(expr, *callee, module, args, &fields) else {
                 self.placing.pop();
                 self.keep_handed_after_failure(module, args);
                 return None;
@@ -285,20 +342,26 @@ impl Checker<'_> {
     }
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
-    fn reads_poisoned(&self, expr: ExprId) -> bool {
+    pub(super) fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
             _ => false,
         }
     }
 
-    /// Whether `callee` names a param whose declared type is the module `module`.
-    fn callee_is_param_of(&self, callee: ExprId, module: DeclId) -> bool {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
-        match self.design.path_node(*path).segments.last().map(|s| s.res) {
-            Some(Resolution::Decl(d)) => matches!(&self.design.decl_data(d).kind, DeclKind::Param(p) if self.design.type_resolution(p.ty) == Resolution::Decl(module)),
-            _ => false,
+    /// Whether `callee` is a const expression whose value is a template of `module` (§8.4.4, §8.4.6): a param, a `const`, a
+    /// function's result, a template written in place. A callee that reads a port, a signal or a probe is `E0362`.
+    fn callee_is_template_of(&mut self, callee: ExprId, module: DeclId) -> bool {
+        if !matches!(self.infer(callee), Some(Ty::Module(found)) if found.decl == module) {
+            return false;
         }
+        // through the `let`s that hold it (`let t = if sel { .. } else { .. };`): a choice of templates the run makes is no
+        // const expression either
+        if let Some(read) = self.run_read(callee, &mut Vec::new()) {
+            let (file, span) = (self.file_of_expr(callee), self.design.expr_node(callee).span);
+            self.coded(file, "E0362", span, format!("a template is a const expression and this placement's head reads {read} (§8.4.6)"), "not a const expression");
+        }
+        true
     }
 
     fn callee_is(&self, callee: ExprId, module: DeclId) -> bool {
@@ -353,7 +416,8 @@ impl Checker<'_> {
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    self.connect(arg.value, port_decl, &expected, &found);
+                    let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.connect(arg.value, &format!("the node port `{name}`"), &expected, &found);
                 }
                 // a nature parameter of the enclosing generic module, passed on to a placement: a node of that nature, or `gnd`
                 Some(expected) if self.is_nature_parameter(&expected) => {
@@ -375,10 +439,10 @@ impl Checker<'_> {
         }
     }
 
-    /// One node argument to the port `port_decl`: the nature of its port, or `gnd`. A value (an
-    /// expression that is not a node) at a continuous carrier port is `E0315` naming the port:
-    /// only an `in` port takes an expression, and a node port is never one (§8.1.11).
-    fn connect(&mut self, arg: ExprId, port_decl: DeclId, port: &Ty, found: &Ty) {
+    /// One node argument to the port `port` that `where_` names ("the node port `p`"): the nature of its port, or `gnd`
+    /// (§8.1.10). A value (an expression that is not a node) at a continuous carrier port is `E0315` naming the port: only an
+    /// `in` port takes an expression, and a node port is never one (§8.1.11).
+    pub(super) fn connect(&mut self, arg: ExprId, where_: &str, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -395,8 +459,7 @@ impl Checker<'_> {
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
             }
             (Ty::Node(_), _) => {
-                let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                let message = format!("an expression of type {} is connected to the node port `{name}`: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                let message = format!("an expression of type {} is connected to {where_}: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
                 self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
@@ -635,15 +698,6 @@ impl Checker<'_> {
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
         }
-    }
-
-    /// A template `Name { params }` where a value of module type is expected (PI-04): its params
-    /// are checked like a placement's block, and its type is the module it names, so a template
-    /// of another module is a mismatch (`E0180`) naming both.
-    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
-        self.param_block(fields, None);
-        self.exprs[expr.index()] = Some(Ty::Module(module));
-        Some(Ty::Module(module))
     }
 
     /// `{ name: value }` of a placement: each value against the declared type of its param.

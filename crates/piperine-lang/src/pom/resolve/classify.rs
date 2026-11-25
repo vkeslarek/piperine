@@ -174,15 +174,6 @@ pub(super) fn run(design: &Design) -> Classified {
         match &design.decl_data(id).kind {
             DeclKind::Port(_) => out.port_kinds.push((id, port_kind(design, id, &bundles))),
             DeclKind::Struct(_) => out.bundles.push((id, bundles.contains(&id))),
-            DeclKind::Impl(i) => {
-                if let Resolution::Decl(d) = design.type_resolution(i.self_ty) {
-                    if matches!(design.decl_data(d).kind, DeclKind::Module(_)) {
-                        let message = "an `impl` block cannot be written for a module (§3.1.4)".to_string();
-                        let span = design.type_node(i.self_ty).span;
-                        out.diagnostics.push((design.decl_data(id).file, Diagnostic::new("E0130", message, span, "a module")));
-                    }
-                }
-            }
             _ => {}
         }
     }
@@ -394,14 +385,8 @@ fn is_fn_bounded(design: &Design, generic: DeclId) -> bool {
 /// or template binding): an instance when the value is a template.
 fn through_value(design: &Design, value: DeclId, templates: &BTreeMap<ExprId, StructClass>) -> CallClass {
     if let DeclKind::Binding(_) = &design.decl_data(value).kind {
-        // A body `let` whose value is a template written in place.
-        let template = design.decl_data(value).parent.and_then(|p| match &design.decl_data(p).kind {
-            DeclKind::Let(l) => match templates.get(&l.value) {
-                Some(StructClass::Template(m)) => Some(*m),
-                _ => None,
-            },
-            _ => None,
-        });
+        // A body `let` whose value is a template: written in place, or held by another holder (§8.4.1, §8.4.4).
+        let template = let_template(design, value, templates, 0);
         return match template {
             Some(m) => CallClass::Instance { module: Some(m), via: Some(value) },
             None => CallClass::Function,
@@ -415,6 +400,72 @@ fn through_value(design: &Design, value: DeclId, templates: &BTreeMap<ExprId, St
             _ => CallClass::Function,
         },
         _ => CallClass::Function,
+    }
+}
+
+/// The module of the template the body `let` name `binding` is bound to, `None` for any other `let` (a placement names an
+/// instance, not a template). A chain of `let`s deeper than 64 names none.
+fn let_template(design: &Design, binding: DeclId, templates: &BTreeMap<ExprId, StructClass>, depth: usize) -> Option<DeclId> {
+    let parent = design.decl_data(binding).parent?;
+    let DeclKind::Let(data) = &design.decl_data(parent).kind else { return None };
+    template_module(design, data.value, templates, depth + 1)
+}
+
+/// The module of the template `expr` is: one written in place (`Cell { .. }`), a module's bare name (`Cell`, the template
+/// `Cell {}`, §8.4.1 amendment), a `const`, a param or a value input of module type, a `let` bound to one, or the result of a
+/// function that returns a module type; `None` for any other expression.
+fn template_module(design: &Design, expr: ExprId, templates: &BTreeMap<ExprId, StructClass>, depth: usize) -> Option<DeclId> {
+    if depth > 64 {
+        return None;
+    }
+    match &design.expr_node(expr).kind {
+        ExprKind::Paren(inner) => template_module(design, *inner, templates, depth),
+        ExprKind::Struct { .. } => match templates.get(&expr) {
+            Some(StructClass::Template(m)) => Some(*m),
+            _ => None,
+        },
+        ExprKind::Path(_) => match path_res(design, expr) {
+            Resolution::Decl(d) => match &design.decl_data(d).kind {
+                DeclKind::Module(_) => Some(d),
+                DeclKind::Binding(_) => let_template(design, d, templates, depth),
+                DeclKind::Param(_) | DeclKind::Port(_) | DeclKind::Const(_) => match design.type_resolution(design.declared_type(d)?) {
+                    Resolution::Decl(m) if matches!(design.decl_data(m).kind, DeclKind::Module(_)) => Some(m),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        },
+        ExprKind::Call { callee, .. } => match path_res(design, *callee) {
+            Resolution::Decl(f) => match &design.decl_data(f).kind {
+                DeclKind::Fn(data) => match design.type_resolution(data.ret?) {
+                    Resolution::Decl(m) if matches!(design.decl_data(m).kind, DeclKind::Module(_)) => Some(m),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        },
+        // a choice of templates of one module (§8.4.6: folded at elaboration; the checker refuses one the run makes, `E0362`)
+        ExprKind::If { then, else_, .. } => {
+            let chosen = block_template(design, then, templates, depth + 1)?;
+            (template_module(design, (*else_)?, templates, depth + 1)? == chosen).then_some(chosen)
+        }
+        ExprKind::Match { arms, .. } => {
+            let mut modules = arms.iter().map(|arm| template_module(design, arm.body, templates, depth + 1));
+            let chosen = modules.next()??;
+            modules.all(|module| module == Some(chosen)).then_some(chosen)
+        }
+        ExprKind::Block(block) => block_template(design, block, templates, depth + 1),
+        _ => None,
+    }
+}
+
+/// The module of the template the block `block` results in: its last statement, an expression with no `;`.
+fn block_template(design: &Design, block: &super::super::body::BlockNode, templates: &BTreeMap<ExprId, StructClass>, depth: usize) -> Option<DeclId> {
+    match &design.stmt_node(*block.stmts.last()?).kind {
+        StmtKind::Expr { expr, semi: false } => template_module(design, *expr, templates, depth),
+        _ => None,
     }
 }
 
@@ -461,6 +512,12 @@ fn callee_class(design: &Design, callee: ExprId, templates: &BTreeMap<ExprId, St
                 _ => (CallClass::Function, None),
             },
             _ => (CallClass::Function, None),
+        },
+        // `(if c { R { .. } } else { R { .. } })(connections)`, `(match ..)(..)`, `({ .. })(..)`: a choice of templates of one module
+        // written as the head (§8.4.6), placed through no declaration; any other expression is a value called by its type
+        ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) => match template_module(design, callee, templates, 0) {
+            Some(m) => (CallClass::Instance { module: Some(m), via: None }, Some(m)),
+            None => (CallClass::Function, None),
         },
         _ => (CallClass::Function, None),
     }

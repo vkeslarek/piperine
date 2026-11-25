@@ -39,7 +39,7 @@ impl Checker<'_> {
         let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return None };
         match m.ret {
             Some(ret) => self.lower_type(ret),
-            None => Some(Ty::Module(module)),
+            None => Some(Ty::module(module)),
         }
     }
 
@@ -48,12 +48,24 @@ impl Checker<'_> {
     pub(super) fn instance_as_value(&mut self, file: FileId, span: Span, instance: DeclId, module: DeclId) -> Option<Ty> {
         let has_result = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some());
         if has_result {
-            return Some(Ty::Module(module));
+            return Some(Ty::module(module));
         }
         let name = self.design.decl_data(instance).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("the instance `{name}` has no result: a module without a result is not a value (§8.2.14)");
         self.coded(file, "E0333", span, message, "an instance without a result used as a value");
         None
+    }
+
+    /// Whether the `let` name `binding` names an instance: its `let`'s value (through parentheses) is a placement of a module
+    /// (§8.2.14), not a template (§8.4.1).
+    pub(super) fn binds_an_instance(&self, binding: DeclId) -> bool {
+        let Some(parent) = self.design.decl_data(binding).parent else { return false };
+        let DeclKind::Let(data) = &self.design.decl_data(parent).kind else { return false };
+        let mut value = data.value;
+        while let ExprKind::Paren(inner) = &self.design.expr_node(value).kind {
+            value = *inner;
+        }
+        matches!(self.callees.get(&value), Some(Callee::Module(_)))
     }
 
     /// `E0354` (§8.3.10): the name `binding` of a continuous result (a `let`, or a placement's
@@ -141,11 +153,22 @@ impl Checker<'_> {
             self.coded(file, "E0353", span, message, "a cycle with no unknown");
         } else if let Some(ty) = self.feedback_type(binding) {
             return Some(ty);
+        } else if self.placing.iter().all(|placed| placed.is_some_and(|module| !self.has_result(module))) {
+            // through placements of modules with no result there is no instance value to feed back (§8.3.5): the `let`s read each
+            // other's values (`let p = D(x) { k: q.k }; let q = D(x) { k: p.k };`); a node connection is no such read (`reach.rs`)
+            let cycle = self.cycle_names(&name);
+            let message = format!("the `let` `{name}` reads its own name through other `let`s, {cycle}, and no module on the way has a result to feed back (§8.2.16)");
+            self.coded(file, "E0332", span, message, "a `let` that reads itself");
         } else {
             self.unsupported(file, span, &format!("the feedback of `{name}` through an instance whose value is not a placement of a module with a result"));
         }
         self.poisoned.insert(binding);
         None
+    }
+
+    /// Whether `module` declares a result (`-> T`), the value an instance of it feeds back (§8.3.5).
+    fn has_result(&self, module: DeclId) -> bool {
+        matches!(&self.design.decl_data(module).kind, DeclKind::Module(data) if data.ret.is_some())
     }
 
     /// The names of the cycle `let` -> the placed modules -> `let`, as `y -> twice -> y`.

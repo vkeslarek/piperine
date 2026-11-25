@@ -49,6 +49,14 @@ impl Checker<'_> {
                 self.exprs[expr.index()] = Some(expected.clone());
                 return;
             }
+            // An item read through a template takes the value type the context wants (§8.4.8, `template_items.rs`).
+            if self.template_read_of(expr).is_some() && expected.is_value() {
+                self.infer(expr);
+                if self.fix_template_read(expr, expected) {
+                    self.exprs[expr.index()] = Some(expected.clone());
+                    return;
+                }
+            }
             // Where the expected type flows into the parts of the expression: the value of a
             // block or of the arms of an `if` is where a mismatch is reported.
             let found = match &node.kind {
@@ -78,8 +86,10 @@ impl Checker<'_> {
                 ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
                 ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
-                // `Name { params }` where a module type is expected: a template value (PI-04).
-                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
+                // `Name { params }` where a module type is expected: a template value (PI-04); a module's bare name is
+                // `Name {}` (§8.4.1 amendment)
+                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields, Some(expected)),
+                ExprKind::Path(_) if matches!(expected, Ty::Module(_)) && let Some(module) = self.bare_module(expr) => self.template_value(expr, module, &[], Some(expected)),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -183,6 +193,7 @@ impl Checker<'_> {
             if ty == Some(Ty::Event) && !in_event_position {
                 ty = Some(self.event_out_of_place(expr));
             }
+            self.record_node_choice(expr, ty.as_ref());
             self.exprs[expr.index()] = ty.clone();
             ty
         })
@@ -210,6 +221,11 @@ impl Checker<'_> {
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() || t.is_other_float() => Some(t),
                     Some(Ty::F64) | None => Some(Ty::F64),
+                    // `-c0.cs`: the minus of an item read through a template is an `f64`, as the M1 operators are
+                    Some(_) if self.template_read_of(*operand).is_some() => {
+                        self.check(*operand, &Ty::F64);
+                        Some(Ty::F64)
+                    }
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::F64, &other);
@@ -260,10 +276,7 @@ impl Checker<'_> {
             ExprKind::IncludeStr(_) => self.include_str(expr),
             // a bundle literal is read only as a connection (`bundle.rs`), never as a value (§7 rules 8, 9)
             ExprKind::Struct { class: StructClass::BundleLiteral, .. } => self.literal_outside_connection(expr),
-            ExprKind::Struct { class: StructClass::Template(_), .. } => {
-                self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
-                None
-            }
+                        ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields, None),
             other => {
                 self.unsupported(file, node.span, Unsupported::expr(other));
                 None
@@ -387,6 +400,12 @@ impl Checker<'_> {
                 self.require_trait(file, span, &t, DerivedTrait::PartialOrd);
                 Some(t)
             }
+            // both operands read through a template: the M1 operators are `f64`
+            _ if self.template_read_of(first).is_some() => {
+                self.check(first, &Ty::F64);
+                self.check(second, &Ty::F64);
+                None
+            }
             found => {
                 if let Some(found) = found
                     && found != Ty::F64
@@ -403,7 +422,12 @@ impl Checker<'_> {
 
     /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
     /// two operands of one type are typed.
-    pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+    pub(super) fn literal_last(&mut self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+        // an item read through a template takes its type from the other operand, as a bare literal does (§8.4.8)
+        let (lhs_read, rhs_read) = (self.template_read_of(lhs).is_some(), self.template_read_of(rhs).is_some());
+        if lhs_read != rhs_read {
+            return if lhs_read { (rhs, lhs) } else { (lhs, rhs) };
+        }
         let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
         // a bare float literal takes the type of the other operand (`2.0 * b` with `b: f16`), unless that operand is a bare integer
         // literal: `1 + 1.0` is typed from the float, so the integer literal is the one that does not convert
@@ -428,6 +452,11 @@ impl Checker<'_> {
     /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
         let target = self.lower_type(ty);
+        // `c0.n as f64`: `as` gives its result a type, never its operand (§1.4.5), so an item read through a template there has
+        // no type the checker can give (§8.4.8, `E0181`)
+        if self.untyped_template_operand(operand) {
+            return target;
+        }
         let source = self.infer(operand);
         let target = target?;
         let numeric = |t: &Ty| t.is_numeric();
@@ -617,6 +646,7 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
+                        let whole = self.binding_type(decl);
                         if let Some(read) = self.handle_read(decl) {
                             // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
                             if self.is_bundle_type(&read) && !self.design.is_method_receiver(expr) && !self.design.is_field_base(expr) {
@@ -624,7 +654,7 @@ impl Checker<'_> {
                             }
                             return Some(read);
                         }
-                        let local = self.locals.get(&decl).cloned().map(|whole| self.generated_local(expr, decl, whole));
+                        let local = whole.map(|whole| self.generated_local(expr, decl, whole));
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
                         self.open_literals.remove(&decl);
                         if self.read_before_assignment(file, node.span, decl) {
@@ -638,11 +668,16 @@ impl Checker<'_> {
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
-                        if local.is_none() && self.continuous_result_in_const(file, node.span, decl) {
+                        // a continuous `let` read where no probe may be written, typed or not yet (§8.3.10)
+                        if self.continuous_result_in_const(file, node.span, decl) {
                             return None;
                         }
-                        if let Some(Ty::Module(module)) = &local {
-                            return self.instance_as_value(file, node.span, decl, *module);
+                        // a `let` of a placement names an instance (§8.2.14); one of a template holds a value of the module's
+                        // type, read and placed as a `const` or a param template is (§8.4.1, §8.4.4)
+                        if let Some(Ty::Module(module)) = &local
+                            && self.binds_an_instance(decl)
+                        {
+                            return self.instance_as_value(file, node.span, decl, module.decl);
                         }
                         if local.is_none() && !self.poisoned.contains(&decl) {
                             let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
@@ -653,6 +688,8 @@ impl Checker<'_> {
                     DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
+                    // §8.4.1 amendment: a module's name is the template `Name {}`, every param at its default
+                    DeclKind::Module(_) => self.template_value(expr, decl, &[], None),
                     other => {
                         self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
                         None
@@ -791,10 +828,14 @@ impl Checker<'_> {
         if let Some(closure) = init.and_then(|i| self.closure_expr(i)) {
             self.closure_locals.insert(*binding, closure);
         }
+        if let Some(init) = init {
+            self.let_values.insert(*binding, init);
+        }
         match bound {
             Some(t) => {
                 if let (None, Some(init)) = (ty, init) {
                     self.wait_for_use(*binding, init);
+                    self.wait_for_template_use(*binding, init);
                 }
                 self.locals.insert(*binding, t);
             }

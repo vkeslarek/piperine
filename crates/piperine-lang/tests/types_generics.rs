@@ -457,23 +457,26 @@ fn phase_d_and_e_forms_stay_p0001_by_name() {
     let generation = "module Top() { signal o: Electrical; for k in 0..2 { let r = 1; } }\n";
     assert!(!LaterPhases::refuses(generation, "generation"), "{:?}", LaterPhases::found(generation));
     let template = "module Cell(a: Electrical) {}\nmodule Top() { signal a: Electrical; let c = Cell { }; }\n";
-    assert!(LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
+    // a template is a value from generics T84 on (GN-21): it is no longer refused
+    assert!(!LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
     let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
-    assert!(LaterPhases::refuses(through, "placement through a template value or a function"), "{:?}", LaterPhases::found(through));
-    // a template parameter (`C: Fn(..)`, phase D, GN-21): given as an argument or left to inference, it is `P0001` naming the
-    // parameter, never `E0187` (a bound it does not satisfy) or `E0181` (cannot infer)
+    // a placement through a value input of module type is refused by the input's type alone: the phase-C message
+    // "placement through a template value or a function" is gone (finding 35), and no cascade follows the refusal
+    assert!(LaterPhases::refuses(through, "value input port of type"), "{:?}", LaterPhases::found(through));
+    assert_eq!(LaterPhases::found(through).len(), 1, "{:?}", LaterPhases::found(through));
+    // a template parameter (`C: Fn(..)`, GN-23): a module whose ports differ from `P` is `E0360` (T88), and one left to inference is `E0181`
     let bound = "module Cell(a: Electrical) {}\nmodule Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner::<Cell>(); }\n";
-    assert!(LaterPhases::refuses(bound, "the template parameter `C` of `Inner`, bounded by `Fn`"), "{:?}", LaterPhases::found(bound));
-    assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "P0001"), "{:?}", LaterPhases::found(bound));
+    assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "E0360"), "{:?}", LaterPhases::found(bound));
+    assert_eq!(LaterPhases::found(bound).len(), 1, "{:?}", LaterPhases::found(bound));
     let open = "module Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner(); }\n";
-    assert!(LaterPhases::refuses(open, "the template parameter `C` of `Inner`, bounded by `Fn`"), "{:?}", LaterPhases::found(open));
-    assert!(LaterPhases::found(open).iter().all(|(code, _)| code == "P0001"), "{:?}", LaterPhases::found(open));
+    assert!(LaterPhases::found(open).iter().all(|(code, _)| code == "E0181"), "{:?}", LaterPhases::found(open));
+    assert_eq!(LaterPhases::found(open).len(), 1, "{:?}", LaterPhases::found(open));
 }
 
 #[test]
-fn m_and_dtemp_bound_in_a_param_block_stay_refused_until_phase_d() {
-    // GN-26 (phase D, with `params-and-io`): binding `m` or `dtemp` is `E0320` today, `no param`, the one refusal that
-    // names the form; it must not run as anything else until `m` and `dtemp` are implicit params
+fn m_and_dtemp_bound_in_a_param_block_are_e0320_like_any_unknown_param() {
+    // GN-25 AC 3 (phase D): `m` and `dtemp` are ordinary names, so binding one the module does not declare is `E0320`,
+    // `no param`, as for any unknown param
     let src = "module Resistor(a: Electrical, b: Electrical) { r: f64 = 1k; }\nmodule Top() { signal a: Electrical; let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 }; }\n";
     let found = LaterPhases::found(src);
     assert!(found.iter().any(|(code, message)| code == "E0320" && message == "no param `m` in `Resistor`"), "{found:?}");

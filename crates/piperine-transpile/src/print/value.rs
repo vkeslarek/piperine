@@ -409,7 +409,7 @@ impl<'a> ValuePrinter<'a> {
         }
         let envs = Self::env_reads(ir, function);
         for env in &envs {
-            let ty = if matches!(env, Env::Static | Env::Analysis(_)) { "bool" } else { "R" };
+            let ty = if matches!(env, Env::Static | Env::Analysis(_) | Env::TemperatureGiven) { "bool" } else { "R" };
             params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
         // a function on a call cycle carries its depth (Q5 (b)); one that is not keeps its text
@@ -458,7 +458,7 @@ impl<'a> ValuePrinter<'a> {
         let real = |ty: &ValueType| items.holds_real(ty);
         f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
             || real(f.ret())
-            || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
+            || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_) | Env::TemperatureGiven))
             || Self::computes_real_value(ir, function)
     }
 
@@ -559,6 +559,7 @@ impl<'a> ValuePrinter<'a> {
             Env::Time => "time_",
             Env::Static => "is_static_",
             Env::Freq => "freq_",
+            Env::TemperatureGiven => "temperature_given_",
             Env::Analysis(AnalysisKind::Dc) => "is_dc_",
             Env::Analysis(AnalysisKind::Transient) => "is_transient_",
             Env::Analysis(AnalysisKind::Ac) => "is_ac_",
@@ -744,7 +745,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::Int(v) => atom(format!("{}::new({v})", self.integer_path(self.ir.expr_type(e), e)?)),
             Expr::FloatBits(_) | Expr::Wide(_) => self.number_literal(e),
             Expr::Local(i) => match self.locals.get(*i as usize) {
-                Some(name) => atom(name.clone()),
+                Some(name) => atom(Self::local_value(name, self.ir.expr_type(e))),
                 None => Err(self.unsupported(e, "a local out of range")),
             },
             Expr::Param(i) => match self.params.get(*i as usize) {
@@ -805,8 +806,8 @@ impl<'a> ValuePrinter<'a> {
             }
             Expr::Table { x, table, control } => self.table_piece(*x, table, control, false),
             Expr::TableSlope { x, table, control } => self.table_piece(*x, table, control, true),
-            // a closure is a function value, which is the reference `&dyn Fn` takes
-            Expr::Closure { .. } => Ok(Piece::new(format!("&{}", self.closure(e)?), Prec::Unary)),
+            // a closure is a function value, the `Rc<dyn Fn>` every function value is
+            Expr::Closure { .. } => self.closure_value(e),
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
             Expr::Derivative(k) => match self.analog.as_ref().and_then(|r| r.derivatives.get(*k as usize)) {
                 Some(name) => atom(self.read(name)),
@@ -865,7 +866,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// The closure `e` as the closure itself: `move |a, b| body`, which captures by value
-    /// (§1.5.14). A `limit` function is this text; as a value it is the reference to it.
+    /// (§1.5.14). A `limit` function is this text; as a value it is in an `Rc` (`closure_value`).
     pub fn closure(&self, e: ExprId) -> Result<String, Error> {
         let Expr::Closure { params, body } = self.ir.expr(e) else {
             return Err(self.unsupported(e, "a form that is not a closure"));
@@ -1121,7 +1122,7 @@ impl<'a> ValuePrinter<'a> {
                 } else {
                     "let"
                 };
-                // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
+                // a function value has no type of its own to infer: the local is the `Rc<dyn Fn>` it holds
                 let annotation = match self.local_types.get(*local as usize) {
                     Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),
                     _ => String::new(),
@@ -1345,12 +1346,11 @@ mod tests {
     #[test]
     fn a_function_prints_as_a_generic_fn() {
         let ir = library();
-        // std/analog.msl:10: `pub fn vt() -> f64 { K_B * temperature() / Q }`, the constants
-        // folded; `temperature()` becomes the trailing param `temperature_`
+        // std/analog.msl:10: `pub fn vt(t: f64) -> f64 { K_B * t / Q }`, the constants folded
         let vt = "\
 // fn vt @ analog.msl:10:1
-fn vt<R: Real>(temperature_: R) -> R {
-    R::constant(1.380649e-23) * temperature_ / R::constant(1.602176634e-19)
+fn vt<R: Real>(t: R) -> R {
+    R::constant(1.380649e-23) * t / R::constant(1.602176634e-19)
 }
 ";
         assert_eq!(function(&ir, "vt"), vt);

@@ -200,6 +200,159 @@ impl Checker<'_> {
         }
     }
 
+    /// Records `expr`, of the type `ty`, when it is an `if` or a `match` whose result is a node: a choice of hardware, judged once
+    /// the whole design is typed (`judge_node_choices`), when every assignment is known. It is typed as the node meanwhile.
+    pub(super) fn record_node_choice(&mut self, expr: ExprId, ty: Option<&Ty>) {
+        if matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) && matches!(self.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. }) {
+            self.node_choices.push(expr);
+        }
+    }
+
+    /// `E0133` for every recorded choice of a node whose value depends on the run (§1.4.7, user decision of 2026-11-24): its
+    /// condition, scrutinee or a guard reads a probe, a port, a signal, a core primitive of the run, or a variable whose value
+    /// does. A choice over params, constants, generation indexes and `let`s of those is made at elaboration.
+    pub(super) fn judge_node_choices(&mut self) {
+        for expr in std::mem::take(&mut self.node_choices) {
+            let (form, read) = match self.design.expr_node(expr).kind.clone() {
+                ExprKind::If { cond, .. } => ("an `if`", self.run_read(cond, &mut Vec::new())),
+                ExprKind::Match { scrutinee, arms } => {
+                    let guards = arms.iter().filter_map(|arm| arm.guard).find_map(|guard| self.run_read(guard, &mut Vec::new()));
+                    ("a `match`", self.run_read(scrutinee, &mut Vec::new()).or(guards))
+                }
+                _ => continue,
+            };
+            let Some(read) = read else { continue };
+            let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+            let message = format!(
+                "{form} whose result is a node chooses it by {read}: a node is hardware, chosen at elaboration or named (§1.4.7)"
+            );
+            self.coded(file, "E0133", span, message, "a node chosen at run time");
+            self.chosen_nodes.insert(expr);
+        }
+    }
+
+    /// What `expr` reads whose value depends on the run: a probe, a port or a signal (`runtime_read`), a core primitive of the
+    /// run (`now()`, `temperature()`, §14), or a variable whose value does (`run_variable`); `followed` holds the variables judged
+    /// already, each once. `None` for an expression over params, constants, generation indexes and
+    /// `let`s of those; the elaborator folds it, and a call that reads the run inside a function is refused there with the same
+    /// code.
+    pub(super) fn run_read(&self, expr: ExprId, followed: &mut Vec<DeclId>) -> Option<String> {
+        if let Some(read) = self.runtime_read(expr) {
+            return Some(read);
+        }
+        let node = self.design.expr_node(expr);
+        match &node.kind {
+            ExprKind::Call { callee, .. } if let Some(primitive) = self.run_primitive(*callee) => Some(format!("`{primitive}()`")),
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) => self.run_variable(decl, followed).map(|read| {
+                    format!("the variable `{}`, whose value depends on the run: it reads {read}", self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()))
+                }),
+                _ => None,
+            },
+            kind => crate::pom::expr_children(kind, self.design).into_iter().find_map(|child| self.run_read(child, followed)),
+        }
+    }
+
+    /// The name of the core primitive the callee `callee` names (`now`), a value only the run gives (§14).
+    fn run_primitive(&self, callee: ExprId) -> Option<String> {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Builtin(id)) if super::catalogue::Core::signature(id).is_some() => Some(id.name()),
+            _ => None,
+        }
+    }
+
+    /// What makes the value of the variable `decl` depend on the run, `None` when nothing does: a function parameter, a binding
+    /// with no initializer known here (a pattern, a loop's variable), an initializer, an assigned value or a condition around an
+    /// assignment that reads the run, or an assignment in a closure (coordinator ruling, finding 26: a `let` is a constant when its
+    /// initializer, every value assigned to it and every condition around those fold at elaboration). A generation index is no
+    /// variable of the run; a chain of `let`s deeper than 64 is taken as the run's.
+    fn run_variable(&self, decl: DeclId, followed: &mut Vec<DeclId>) -> Option<String> {
+        match &self.design.decl_data(decl).kind {
+            DeclKind::FnParam(_) => Some("a parameter its caller binds".to_string()),
+            DeclKind::Binding(_) => {
+                let parent = self.design.decl_data(decl).parent;
+                if parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Generation(_))) || followed.contains(&decl) {
+                    return None;
+                }
+                if followed.len() >= 64 {
+                    return Some("a chain of `let`s deeper than 64".to_string());
+                }
+                let body_value = parent.and_then(|parent| match &self.design.decl_data(parent).kind {
+                    DeclKind::Let(data) => Some(data.value),
+                    _ => None,
+                });
+                let Some(init) = self.let_values.get(&decl).copied().or(body_value) else {
+                    return Some("a value only a pattern or a loop binds".to_string());
+                };
+                // judged once: a variable met again is being judged or was found to depend on nothing of the run (one that does
+                // ends the search), so following it again adds nothing and the judgement ends
+                followed.push(decl);
+                self.run_read(init, followed).or_else(|| self.places.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)))
+            }
+            _ => None,
+        }
+    }
+
+    /// What makes the assignment `write` of `decl` depend on the run: an assignment in a closure, the value it writes, or a condition
+    /// around it inside the body that declares `decl` (an `if`, a `match`, a loop's condition or range, and every condition inside
+    /// a loop around it, which may end the loop early).
+    fn write_reads_the_run(&self, decl: DeclId, write: super::assign::Write, followed: &mut Vec<DeclId>) -> Option<String> {
+        if write.in_closure {
+            return Some("an assignment inside a closure".to_string());
+        }
+        if let Some(read) = self.run_read(write.value, followed) {
+            return Some(read);
+        }
+        let at = self.design.expr_node(write.assignment).clone();
+        let declared = self.design.decl_data(decl).span;
+        let around = |span: Span| span.start <= at.span.start && at.span.end <= span.end && !(span.start <= declared.start && declared.end <= span.end);
+        let mut conditions = Vec::new();
+        for index in 0..self.design.expr_count() as u32 {
+            let node = self.design.expr_node(ExprId(index));
+            if node.owner != at.owner || !around(node.span) {
+                continue;
+            }
+            match &node.kind {
+                ExprKind::While { .. } | ExprKind::Loop { .. } | ExprKind::For { .. } => conditions.extend(self.conditions_within(at.owner, node.span)),
+                _ => conditions.extend(self.conditions_of(&node.kind)),
+            }
+        }
+        conditions.into_iter().find_map(|condition| self.run_read(condition, followed)).map(|read| format!("{read} in a condition around an assignment"))
+    }
+
+    /// The conditions an expression of kind `kind` decides by: an `if`'s, a `match`'s scrutinee and guards, a `while`'s, a `for`'s
+    /// range.
+    fn conditions_of(&self, kind: &ExprKind) -> Vec<ExprId> {
+        match kind {
+            ExprKind::If { cond, .. } | ExprKind::While { cond, .. } => vec![*cond],
+            ExprKind::For { iter, .. } => vec![*iter],
+            ExprKind::Match { scrutinee, arms } => std::iter::once(*scrutinee).chain(arms.iter().filter_map(|arm| arm.guard)).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Every condition of an expression of `owner` written within `span`.
+    fn conditions_within(&self, owner: DeclId, span: Span) -> Vec<ExprId> {
+        (0..self.design.expr_count() as u32)
+            .map(ExprId)
+            .filter(|expr| {
+                let node = self.design.expr_node(*expr);
+                node.owner == owner && span.start <= node.span.start && node.span.end <= span.end
+            })
+            .flat_map(|expr| self.conditions_of(&self.design.expr_node(expr).kind))
+            .collect()
+    }
+
+    /// Whether the node operand `operand` was refused already: a node chosen by an expression (through parentheses), or a `let`
+    /// whose value was refused.
+    pub(super) fn operand_refused(&self, operand: ExprId) -> bool {
+        match &self.design.expr_node(operand).kind {
+            ExprKind::Paren(inner) => self.operand_refused(*inner),
+            _ => self.chosen_nodes.contains(&operand) || self.reads_poisoned(operand),
+        }
+    }
+
     /// `E0133` for a function whose result type is a handle (a node or a carrier of a nature).
     pub(super) fn check_handle_result(&mut self, function: DeclId, ret: Option<&Ty>) {
         let Some(ret) = ret.filter(|ty| Self::is_handle_type(ty)) else { return };

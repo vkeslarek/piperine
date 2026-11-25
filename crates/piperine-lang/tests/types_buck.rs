@@ -35,7 +35,7 @@ const ROWS: &[Row] = &[
     // `delay`, `noise`, `ddx` and `simparam` left this table when analog-operators T22 and T23 typed them (`types_analog_operators`).
     // `bound_step`, `freq()` and `analysis(Dc | Transient | Ac | Noise)` left this table when
     // FIX-09 to FIX-11 typed them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
-    Row { construct: "a template", source: "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }", names: "module template" },
+    // a template left this table when generics T84 typed it as a value (`types_templates::a_template_is_a_value_of_its_modules_type`).
     Row { construct: "an extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: Electrical) { }\nmodule Top(a: Electrical) { let x = X(a); }", names: "`extern` module" },
 ];
 

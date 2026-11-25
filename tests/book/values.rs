@@ -22,7 +22,6 @@ use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::{Model, Ran};
-use support::refusal::Refusal;
 
 /// A number as the Book prints it: the printed digits are the resolution of the comparison.
 struct Printed;
@@ -368,18 +367,4 @@ fn e0350_a_fn_cannot_hold_ddt() {
     // values~4bd60d1d: "E0350 fn slope(x: f64) -> f64 { ddt(x) }": ddt is an instance with memory
     let faulty = Faulty::elaborating("values~4bd60d1d", "fn slope(x: f64) -> f64 { ddt(x) }\nmodule Top() { }\nanalog for Top { let y = slope(1.0); }\n", "Top");
     assert_eq!(faulty.first("E0350").message, "`ddt` is a core module and cannot be placed in a `fn` or a closure");
-}
-
-#[test]
-fn an_extern_function_is_refused_with_or_without_its_derivative() {
-    // values#22 (refused): `#[derivative(erfcx_dx)] extern "C" fn erfcx` and its derivative; values~3998361d
-    // (unraised): "E0123 extern \"C\" fn erfcx(x: f64) -> f64; called in analog: Add #[derivative]". No
-    // source raises E0123 (GAPS.md section 10): an `extern` function is `P0001` (L12), with the
-    // derivative the Book asks for or without. When it runs this test fails and the rows move
-    let chapter = Chapter::read();
-    let analog = "module Top() { signal p: Electrical; }\nanalog for Top { v(p) +> erfcx(1.0); }\n";
-    let overrides = || Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() };
-    Refusal::expect(chapter.wrapped("foreign.msl", "", "values#22", analog).run(overrides()), "values#22", "P0001", "`extern` function is not supported yet");
-    let bare = Refusal::of(Model::written("bare.msl", &format!("extern \"C\" fn erfcx(x: f64) -> f64;\n{analog}")).run(overrides()), "values~3998361d");
-    assert!(bare.iter().all(|(code, _)| code != "E0123") && bare.contains(&("P0001".to_string(), "`extern` function is not supported yet".to_string())), "no E0123: {bare:?}");
 }

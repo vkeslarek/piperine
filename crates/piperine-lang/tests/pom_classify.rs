@@ -347,11 +347,10 @@ module Top(tpl: Cell, a: Electrical) {
 }
 
 #[test]
-fn impl_on_module_is_e0130() {
+fn impl_on_module_is_no_classifier_error() {
+    // §3.1.4 (generics phase D): a module type takes `impl`s, so the classifier reports nothing for one (`E0130` left the spec)
     let design = with_prelude("module M() {}\nstruct S {}\nimpl M { pub fn f(self) {} }\nimpl S { pub fn g(self) {} }\n");
-    let errors = with_code(&design, "E0130");
-    assert_eq!(errors.len(), 1, "{:?}", design.diagnostics());
-    assert_eq!(primary_text(&design, errors[0]), "M");
+    assert!(with_code(&design, "E0130").is_empty(), "{:?}", design.diagnostics());
 }
 
 #[test]

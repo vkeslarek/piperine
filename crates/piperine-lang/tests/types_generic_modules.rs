@@ -52,14 +52,13 @@ fn a_generic_module_body_is_checked_once_at_its_definition() {
 #[test]
 fn a_param_of_a_type_parameter_is_typed_under_its_bounds() {
     // GN-13 AC 1 (§8.1.15): `reset: T` is a value of the module's type parameter, its default and `where` checked
-    // over it; a param of a template type (`C: Fn(Cell)`) stays `P0001` naming it (phase D)
+    // over it; a param of a template type (`C: Fn(f64)`) holds a template since generics T88 (GN-23)
     let clean = "module Dff<T: Repr + Default>(in d: Bit<T>) { reset: T = T::default(); }\n";
     assert_eq!(GenericModuleCheck::pairs(clean), vec![], "a param of T with a default over T");
     let wrong = "module Dff<T: Repr + Default>(in d: Bit<T>) { reset: T = true; }\n";
     assert!(GenericModuleCheck::codes(wrong).iter().any(|code| code == "E0432" || code == "E0180"), "{:?}", GenericModuleCheck::pairs(wrong));
     let template = "module Host<C: Fn(f64)>(x: f64) { cell: C; }\n";
-    let found = GenericModuleCheck::pairs(template);
-    assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("param of type `C`")), "{found:?}");
+    assert_eq!(GenericModuleCheck::pairs(template), vec![], "a param of a template type is typed");
 }
 
 #[test]

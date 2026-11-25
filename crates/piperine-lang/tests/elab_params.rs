@@ -110,7 +110,7 @@ fn a_param_read_with_no_binding_is_not_constant() {
 fn an_environment_function_is_dynamic() {
     // A placement's param block is not a const context for the type checker, so `temperature()`
     // reaches the evaluator, which reports it as needing a run.
-    let design = Elab::design("module Leaf() { x: f64 = 1.0; }\nmodule Top() { let l = Leaf { x: temperature() }(); }");
+    let design = Elab::design("module Leaf() { x: f64 = 1.0; }\nmodule Top() { let l = Leaf { x: temperature().unwrap_or(1.0) }(); }");
     assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
     let types = Types::check(&design, "Top").expect("the source is in the subset");
     let top = design.module("Top").expect("Top");
@@ -173,7 +173,7 @@ fn a_false_where_is_e0317_with_the_path() {
 fn a_bound_value_that_is_not_constant_is_refused() {
     // A value that reads a param of the parent is lowered from msl-digital T32 on (DIG-09 AC 11);
     // the case still refused in its place is a form the constant evaluator does not fold.
-    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: (2.0).sin() }(); let b = Leaf { r: temperature() }(); }";
+    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: (2.0).sin() }(); let b = Leaf { r: temperature().unwrap_or(1.0) }(); }";
     let err = Elab::run(src, "Top").expect_err("neither value is constant");
     assert_eq!(Elab::codes(&err), ["P0001", "E0321"]);
     let text = |i: usize| &src[err[i].diagnostic.span().start..err[i].diagnostic.span().end];
@@ -328,5 +328,35 @@ fn an_option_param_bound_over_the_parents_param_reads_some_of_it() {
         let params: Vec<Constant> = ir.instance_at("Top.m.l").expect("the child").params().iter().copied().collect();
         let wanted = if binding.contains("2.0") { 6.0 } else { 3.0 };
         assert_eq!(Placed::aggregate(&ir, &params[0]), (None, vec![Constant::Real(Real::new(wanted))]), "{binding}");
+    }
+}
+
+#[test]
+fn a_default_that_reads_earlier_params_is_folded_per_instance() {
+    // §8.1.16: `g: f64 = 1.0 / r` folds at each placement over the `r` it takes there; §8.1.2: `r` is structural, since a host
+    // `set` of it would leave `g` stale, and each body states the default its `r` gives
+    let src = "module R(a: Electrical) { r: f64 = 2.0; g: f64 = 1.0 / r; }\nanalog for R { i(a, gnd) +> v(a, gnd) * g; }\n\
+               module Top() { signal x: Electrical; let bound = R(x) { r: 4.0 }; let defaulted = R(x); let given = R(x) { g: 3.0 }; }";
+    let ir = Elab::ir(src, "Top");
+    let values = |path: &str| ir.instance_at(path).expect("the instance").params().iter().map(|c| c.to_string()).collect::<Vec<_>>();
+    assert_eq!(values("Top.bound"), ["4.0".to_string(), (1.0_f64 / 4.0).to_string()], "`g` reads the bound `r`");
+    assert_eq!(values("Top.defaulted"), ["2.0".to_string(), (1.0_f64 / 2.0).to_string()], "`g` reads the default of `r`");
+    assert_eq!(values("Top.given"), ["2.0", "3.0"], "a given `g` is the value given");
+    let body = ir.instance_at("Top.bound").expect("the instance").body();
+    assert!(body.params()[0].structural, "`r` is structural");
+    assert_eq!(body.params()[1].default, Some(Constant::Real(Real::new(1.0 / 4.0))), "the body's default of `g` reads its own `r`");
+    // the top's own params are bound the same way
+    let ir = Elab::ir("module R(a: Electrical) { r: f64 = 2.0; g: f64 = 1.0 / r; }\nanalog for R { i(a, gnd) +> v(a, gnd) * g; }", "R");
+    assert_eq!(ir.instance_at("R").expect("the top").params()[1], Constant::Real(Real::new(1.0 / 2.0)));
+}
+
+#[test]
+fn a_default_that_reads_itself_or_a_later_param_is_e0321() {
+    // §8.1.16: a default reads only the params declared before it
+    for (params, read) in [("g: f64 = 1.0 / r; r: f64 = 2.0;", "r"), ("g: f64 = g * 2.0;", "g")] {
+        let src = format!("module R(a: Electrical) {{ {params} }}\nanalog for R {{ i(a, gnd) +> v(a, gnd) * g; }}\nmodule Top() {{ signal x: Electrical; let one = R(x); }}");
+        let err = Elab::run(&src, "Top").expect_err("the default reads a param not declared before it");
+        assert_eq!(Elab::codes(&err), ["E0321"], "{params}");
+        assert!(err[0].diagnostic.message.contains(&format!("it reads `{read}`, which is not declared before this param")), "{params}: {}", err[0].diagnostic.message);
     }
 }

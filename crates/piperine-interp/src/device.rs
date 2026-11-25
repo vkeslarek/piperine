@@ -89,6 +89,11 @@ impl Interpreted {
                 Source::Time => None,
                 // `freq()` and `analysis(..)`: not a frame cell; the walk refuses the read by name.
                 Source::Freq | Source::Analysis(_) | Source::Fired(_) => None,
+                // whether the run set its temperature: a flag of the frame, read as a bool
+                Source::TemperatureGiven => {
+                    frame.temperature_given = Some(cx.bool(i));
+                    None
+                }
                 // the tick length of a reaction: no body with a reaction runs here (R1)
                 // the settle pin of a `settle` event: refused by name (§13 rule 17)
                 Source::Settle => None,

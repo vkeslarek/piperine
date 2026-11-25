@@ -69,6 +69,7 @@ impl Substitution {
             Ty::Carrier { nature, value } => Ty::Carrier { nature: self.replaced_nature(*nature), value: Box::new(self.apply(value)) },
             Ty::Struct(nominal) => Ty::Struct(self.apply_nominal(nominal)),
             Ty::Enum(nominal) => Ty::Enum(self.apply_nominal(nominal)),
+            Ty::Module(nominal) => Ty::Module(self.apply_nominal(nominal)),
             Ty::Array(element, length) => Ty::Array(Box::new(self.apply(element)), self.apply_length(length)),
             Ty::Range { element, iterable } => Ty::Range { element: Box::new(self.apply(element)), iterable: *iterable },
             Ty::Iterator { element, reversible } => Ty::Iterator { element: Box::new(self.apply(element)), reversible: *reversible },
@@ -79,7 +80,7 @@ impl Substitution {
             },
             // the node of a nature parameter an enclosing generic passed on (`Tran::<W>` inside `Tgate<W>`) follows the parameter
             Ty::Node(nature) => Ty::Node(self.replaced_nature(*nature)),
-            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
+            Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::Unit | Ty::AnyNode | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
         }
     }
 
@@ -153,6 +154,25 @@ impl Checker<'_> {
     /// its list held to §3.8, the arguments counted (`E0187`), each lowered by the kind of its
     /// parameter, an omitted one taken from the default (§3.8.7). `None` when one is refused.
     pub(super) fn generic_nominal(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
+        let arguments = self.written_arguments(path, decl, file, span)?;
+        // the declaration is typed over its own parameters once, for every use (fields, derives, E0186)
+        let declared = if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
+        declared?;
+        self.arguments_have_repr(decl, &arguments, file, span)?;
+        let nominal = Nominal { decl, arguments };
+        Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
+    }
+
+    /// The type `G<2>` of a template of the generic module `decl` written at `path` (§8.4.3): its arguments, a left-out one its
+    /// default, each satisfying its bounds. `None` after a diagnostic (`E0187` for the wrong number of arguments).
+    pub(super) fn generic_module_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
+        let arguments = self.written_arguments(path, decl, file, span)?;
+        Some(Ty::Module(Nominal { decl, arguments }))
+    }
+
+    /// The generic arguments of the generic item `decl` written at `path`, a left-out one its default, each satisfying its bounds
+    /// (§3.8.7). `None` after a diagnostic (`E0187` for the wrong number of arguments).
+    fn written_arguments(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Vec<GenericValue>> {
         let signature = self.generic_signature(decl);
         let nodes = match self.design.path_node(path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
@@ -172,12 +192,7 @@ impl Checker<'_> {
             arguments.push(value);
         }
         self.arguments_satisfy_bounds(&signature, &arguments, decl, file, span)?;
-        // the declaration is typed over its own parameters once, for every use (fields, derives, E0186)
-        let declared = if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
-        declared?;
-        self.arguments_have_repr(decl, &arguments, file, span)?;
-        let nominal = Nominal { decl, arguments };
-        Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
+        Some(arguments)
     }
 
     /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
@@ -188,7 +203,10 @@ impl Checker<'_> {
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {
             let GenericValue::Type(ty) = argument else { continue };
             for bound in &parameter.bounds {
-                if matches!(bound, Bound::Callable { .. }) {
+                if let (Bound::Callable { inputs, .. }, Ty::Module(module)) = (bound, ty) {
+                    // §8.4.5: a template of a module whose ports have the types of `P`
+                    satisfied &= self.module_fits_callable(module, &parameter.name, inputs, file, span);
+                } else if matches!(bound, Bound::Callable { .. }) {
                     self.unsupported(file, span, &format!("the template parameter `{}` of `{item_name}`, bounded by `Fn`", parameter.name));
                     satisfied = false;
                 } else if !BoundCheck::new(self).satisfies(ty, bound) {

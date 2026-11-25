@@ -127,6 +127,10 @@ impl Bias {
         if c.kind == cell::INPUT && c.part == part::AGE {
             return vec![age];
         }
+        if c.kind == cell::PIN && shape.pins.get(c.index as usize).is_some_and(|pin| pin.name.as_str() == "temperature_given") {
+            // the run set its temperature: the flag is one byte, not an `f64`
+            return vec![1];
+        }
         let value = match c.kind {
             cell::PIN => {
                 let pin = shape.pins.get(c.index as usize).expect("a pin of the shape");
@@ -274,8 +278,11 @@ fn a_non_finite_value_is_written_as_is() {
     let shape = interp.shape();
     let k = shape.functions.iter().position(|f| f.name.as_str() == "terms").expect("a terms function");
     let reads = |vd: f64, is: f64| -> Vec<Vec<u8>> {
-        // terms reads [vd, is, n, cj0, temperature, GMIN]
-        [vd, is, 1.0, 1e-12, 300.0, 1e-12].iter().map(|v| v.to_le_bytes().to_vec()).collect()
+        // terms reads [vd, is, n, cj0, temperature, temperature given, GMIN]; the run set its temperature
+        let mut reads: Vec<Vec<u8>> = [vd, is, 1.0, 1e-12, 300.0].iter().map(|v| v.to_le_bytes().to_vec()).collect();
+        reads.push(vec![1u8]);
+        reads.push(1e-12_f64.to_le_bytes().to_vec());
+        reads
     };
     for (what, input) in [("overflow", reads(100.0, 1e-14)), ("NaN param", reads(0.5, f64::NAN))] {
         let want = Written::eval(&interp, k as u32, &input, None).unwrap_or_else(|e| panic!("interpreter {what}: a non-finite value is no fault: {e}"));
@@ -435,7 +442,8 @@ impl Names {
         let (nvt, vcrit, vd, id) = (0u32, 1u32, 2u32, 3u32);
         let mut e = Ex::new(b, Self::FILE, 20, 5);
         let p = e.param(n);
-        let call = e.call(vt, vec![]);
+        let kelvin = e.env(Env::Temperature);
+        let call = e.call(vt, vec![kelvin]);
         let init = e.binary(BinaryOp::Mul, p, call);
         let let_nvt = e.b.stmt(Stmt::Let { local: nvt, init });
         let (l, l2, two) = (e.local(nvt), e.local(nvt), e.real(2.0));

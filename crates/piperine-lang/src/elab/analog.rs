@@ -172,7 +172,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_core(&mut self, scope: &mut Scope, expr: ExprId, id: BuiltinId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         match id.info().name {
-            "temperature" => Some(self.emit(Expr::Env(Env::Temperature), ty, origin)),
+            "temperature" => Some(self.lower_temperature(origin)),
             "gmin" => Some(self.emit(Expr::Env(Env::Gmin), ty, origin)),
             "source_scale" => Some(self.emit(Expr::Env(Env::SourceScale), ty, origin)),
             "now" => Some(self.emit(Expr::Env(Env::Time), ty, origin)),
@@ -352,8 +352,13 @@ impl Elaboration<'_, '_> {
         Some(true)
     }
 
-    /// A node argument: a port or signal of the body, or ground.
+    /// A node argument: a port or signal of the body, or ground; parentheses around it name the same node (`v((x))`).
     pub(super) fn lower_terminal(&mut self, scope: &Scope, arg: ExprId) -> Option<Terminal> {
+        let arg = self.peel_parens(arg);
+        // `if k > 0.5 { x } else { p }`: the node the choice folds to at elaboration (`node_choice.rs`)
+        if let Some(chosen) = self.chosen_node(scope, arg) {
+            return self.lower_terminal(scope, chosen?);
+        }
         let node = self.design.expr_node(arg).clone();
         let file = self.design.decl_data(node.owner).file;
         if let ExprKind::Field { .. } = &node.kind {

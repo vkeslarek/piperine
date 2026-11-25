@@ -5,7 +5,7 @@
 //! carrier are not. An assignment to anything that is not a place, and a read of a local before
 //! it is assigned, are `E0183`, naming the target.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::msl::Span;
 use crate::pom::{BinOp, BindingOrigin, DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
@@ -26,6 +26,19 @@ pub(super) struct Places {
     closures: Vec<Span>,
     /// The locals some assignment of the body writes: the elaborator makes exactly these assignable.
     assigned: BTreeSet<DeclId>,
+    /// Each assignment of each local, in the order they were typed: what decides whether its value depends on the run (§1.4.7).
+    writes: BTreeMap<DeclId, Vec<Write>>,
+}
+
+/// One assignment of a local.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Write {
+    /// The assignment expression, `place = value` or `place op= value`.
+    pub(super) assignment: ExprId,
+    /// The value it writes.
+    pub(super) value: ExprId,
+    /// Whether it is written inside a closure, which may run any number of times.
+    pub(super) in_closure: bool,
 }
 
 impl Places {
@@ -45,9 +58,16 @@ impl Places {
         self.closures.iter().any(|closure| closure.start <= at.start && at.end <= closure.end && !(closure.start <= declared.start && declared.end <= closure.end))
     }
 
-    /// Records that a body assigns `local`.
-    fn record(&mut self, local: DeclId) {
+    /// Records that a body assigns `local` the value `value` at the assignment `assignment`.
+    fn record(&mut self, local: DeclId, assignment: ExprId, value: ExprId) {
         self.assigned.insert(local);
+        let in_closure = !self.closures.is_empty();
+        self.writes.entry(local).or_default().push(Write { assignment, value, in_closure });
+    }
+
+    /// The assignments of `local`, in the order they were typed.
+    pub(super) fn writes_of(&self, local: DeclId) -> &[Write] {
+        self.writes.get(&local).map_or(&[], Vec::as_slice)
     }
 
     /// The locals the checked bodies assign.
@@ -104,7 +124,7 @@ impl Checker<'_> {
         }
         if let Some(root) = target {
             self.flow.assigned.assign(root.local);
-            self.places.record(root.local);
+            self.places.record(root.local, expr, rhs);
         }
         Some(Ty::Unit)
     }

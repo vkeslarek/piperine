@@ -385,7 +385,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | GN-01, GN-02, GN-03, GN-04, GN-05 |
 | L4 (part) | generic enums (and generic structs) | GN-06 |
 | L8 | `impl` on a nature; a function that takes a carrier or a node and probes it | GN-10, GN-11, GN-12 |
-| L29 | `m` and `dtemp`: binding and reading (closed by the run settings `temperature()` and the stdlib `multiplicity()` over `simparam`, user decision 2026-11-23, amended the same day) | GN-24, GN-25, GN-26 as amended |
+| L29 | `m` and `dtemp`: binding and reading (delivered, phase D batch B16, T94 to T102; closed by the run settings `temperature()` and the stdlib `multiplicity()` over `simparam`, user decision 2026-11-23, amended the same day) | GN-24, GN-25, GN-26 as amended |
 | L30 | generic modules, const generics, `Short<N>` and the stdlib modules on them | GN-13, GN-14, GN-15, GN-16 |
 | L31 | generation `for` and `if` in a body and in a `digital` block | GN-17, GN-18, GN-19, GN-20 |
 | L32 | templates, placement through a template or a function, `Fn(P)` bounds | GN-21, GN-22, GN-23 |
@@ -419,12 +419,12 @@ The forms each item is expected to need beyond this feature, from its source in 
 | GN-18 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-19 | P1: generic modules and generation (C) | - | Delivered (phase C) |
 | GN-20 | P1: generic modules and generation (C) | - | Delivered (phase C) |
-| GN-21 | P1: templates and implicit params (D) | - | Pending |
-| GN-22 | P1: templates and implicit params (D) | - | Pending |
-| GN-23 | P1: templates and implicit params (D) | - | Pending |
-| GN-24 | P1: templates and implicit params (D) | - | Pending |
-| GN-25 | P1: templates and implicit params (D) | - | Pending |
-| GN-26 | P1: templates and implicit params (D) | - | Pending |
+| GN-21 | P1: templates and implicit params (D) | - | Delivered (phase D): templates of generic modules too (§8.4.3), except the type `Name<G>` carrying its arguments (L79) |
+| GN-22 | P1: templates and implicit params (D) | - | Delivered (phase D) |
+| GN-23 | P1: templates and implicit params (D) | - | Delivered (phase D): `inst.name` reads nodes through a template, in the placing module and from its parent; a non-node item is refused by name (L78) |
+| GN-24 | P1: templates and implicit params (D) | - | Delivered (phase D) |
+| GN-25 | P1: templates and implicit params (D) | - | Delivered (phase D) |
+| GN-26 | P1: templates and implicit params (D) | - | Delivered (phase D) |
 | GN-27 | P2: the stdlib built on generics (E) | - | Pending |
 | GN-28 | P2: the stdlib built on generics (E) | - | Pending |
 | GN-29 | P1: every phase keeps the rest intact | - | Pending |

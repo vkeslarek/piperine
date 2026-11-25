@@ -1875,6 +1875,15 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    word `encode` gives for the folded initializer (design D18).
 5. **`check`.** `piperine check` types every item of every non-std crate; an unreached generic module is typed once at its definition (S3 closed, phase C).
 6. **Generic modules and generation (phase C).** A module instance is monomorphized per `BodyKey` (module, instance, key params): a param read by a generic argument, a generation range or a generation condition is structural, folded per body key, and `E0341` is a module placed again with the same key. Generation (`for`, `if`) in a module body or a `digital` block is unrolled at elaboration into one child, node or reaction per iteration (`elab/generation.rs`, `GeneratedItems`), the POM keeping the loop as written; an array of generated placements is `Ty::Array(Ty::Module(m), Length)`. The interim gate (`UnfinishedForms`) that held these forms back was deleted at T80.
+7. **Templates and run settings (phase D).** A template is an elaboration value from a param, a `const`, a function or a
+   module `impl`; a module type takes trait and inherent impls of pure functions over its params. No instance has implicit
+   params: the run sets a temperature and a `multiplicity` session parameter, `temperature()` (core) and the stdlib
+   `multiplicity()` (over `simparam`) return them as `Option<f64>`, and the model decides how to use them (user decision
+   2026-11-23). `temperature().unwrap_or(AMBIENT_TEMPERATURE)` is the ordinary `Option` method over the pair the lowering reads
+   (`temperature_given()` selects between `temperature()` and the constant, no peephole and no special case), so the twin
+   goldens and the diode pins moved by one read while every number stayed; `Env::TemperatureGiven` and the ABI `GLOBAL TEMPERATURE_GIVEN` pin (in place, `MINOR` 0) carry the
+   other uses. A function that reads a session parameter is inlined where it stands.
+
 
 ### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input
 

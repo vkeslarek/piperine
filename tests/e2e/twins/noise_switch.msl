@@ -11,7 +11,7 @@ pub module NoisyResistor(p: Electrical, n: Electrical) {
     r: f64 where r > 0.0;
 }
 analog for NoisyResistor {
-    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature().unwrap_or(AMBIENT_TEMPERATURE) / r, "thermal");
 }
 
 /// A resistive switch: `ron` ohm while the control `v(cp, cn)` is above `vt`, `roff` below, with the
@@ -23,7 +23,7 @@ pub module Switch(p: Electrical, n: Electrical, cp: Electrical, cn: Electrical) 
 }
 analog for Switch {
     let r = if v(cp, cn) > vt { ron } else { roff };
-    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature().unwrap_or(AMBIENT_TEMPERATURE) / r, "thermal");
 }
 
 module NoiseSwitch() {

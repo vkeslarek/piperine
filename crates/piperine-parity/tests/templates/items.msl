@@ -1,0 +1,93 @@
+//! Items of a child placed through a template read as values (part III §8.4.8): `Bank` reads the param `cs` and the `pub let`
+//! `twice` of the cell its template names, and the rig reads them again through `bank.c0.cs` and a generated `bank.cells[1].cs`.
+//! The expected values are computed by Rust in `source_templates.rs`.
+
+/// One cell with a public capacitance and a value derived from it.
+module Dram(a: Electrical) { pub cs: f64 = 1.0; pub let twice = cs * 2.0; }
+analog for Dram { i(a, gnd) +> v(a, gnd) * cs; }
+
+/// The bank drives `level` with the cell's own `cs` plus `twice`.
+module Bank<C: Fn(Electrical), const ROWS: usize>(a: Electrical, level: Electrical) {
+    cell: C;
+    pub let c0 = cell(a);
+    for r in 0..ROWS { pub let cells = cell(a); }
+}
+analog<C, ROWS> for Bank<C, ROWS> { potential(level) +> c0.cs + c0.twice; }
+
+module RigItems() {
+    signal a: Electrical;
+    signal level: Electrical;
+    let bank = Bank::<_, 2>(a, level) { cell: Dram { cs: 3.0 } };
+    signal own: Electrical;
+    signal row: Electrical;
+}
+analog for RigItems {
+    potential(own) +> bank.c0.cs;
+    potential(row) +> bank.cells[1].cs * 10.0;
+}
+
+/// A cell whose storage node follows its line, read through a `let` bound to the node (§6 rule 4).
+module Store(a: Electrical) { pub signal sn: Electrical; }
+analog for Store { potential(sn) +> 2.0 * v(a); }
+
+/// The holder drives `level` from `c0.sn` through `let y = c0.sn;`, the cell placed through a template.
+module Holder<C: Fn(Electrical)>(a: Electrical, level: Electrical) { cell: C; let c0 = cell(a); }
+analog<C> for Holder<C> { let y = c0.sn; potential(level) +> v(y) + 1.0; }
+
+module RigAlias() {
+    signal a: Electrical;
+    signal level: Electrical;
+    signal mirror: Electrical;
+    let holder = Holder::<_>(a, level) { cell: Store { } };
+    let near = Store(a);
+}
+analog for RigAlias {
+    potential(a) +> 0.5;
+    let y = near.sn;
+    let z = a;
+    potential(mirror) +> v(y) + v(z);
+}
+
+/// A cell whose storage node only leaks: a holder sets its potential through a `let` (§6 rule 4).
+module Leaky(a: Electrical) { pub signal sn: Electrical; }
+analog for Leaky { i(sn, gnd) +> v(sn, gnd); }
+
+/// The setter drives `c0.sn` through `let y = c0.sn; v(y) +> 0.3;`, the cell placed through a template.
+module Setter<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); }
+analog<C> for Setter<C> { let y = c0.sn; v(y) +> 0.3; }
+
+module RigAliasTarget() {
+    signal a: Electrical;
+    signal held: Electrical;
+    let setter = Setter::<_>(a) { cell: Leaky { } };
+}
+analog for RigAliasTarget {
+    potential(a) +> 0.5;
+    let y = held;
+    v(y) +> 0.7;
+}
+
+/// A current source pushing `amps` into its node.
+module Push(a: Electrical) { amps: f64 = 0.5; }
+analog for Push { i(a, gnd) +> -amps; }
+
+/// The bank connects a source to the storage node of the cell its template places (§8.2.8: a child's node is the parent's).
+module Feeder<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c0 = cell(a); let feed = Push(c0.sn); }
+
+module RigFeed() {
+    signal a: Electrical;
+    let feeder = Feeder::<_>(a) { cell: Leaky { } };
+    let near = Leaky(a);
+    let feed = Push(near.sn) { amps: 0.25 };
+}
+analog for RigFeed { potential(a) +> 0.5; }
+
+/// `RigFeed` with its body written in reverse (§8.2: the items of a body appear in any order).
+module RigFeedReverse() {
+    let feed = Push(near.sn) { amps: amps };
+    let amps = 0.125 * 2.0;
+    let near = Leaky(a);
+    let feeder = Feeder::<_>(a) { cell: Leaky { } };
+    signal a: Electrical;
+}
+analog for RigFeedReverse { potential(a) +> 0.5; }

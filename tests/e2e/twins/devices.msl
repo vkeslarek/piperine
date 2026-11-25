@@ -34,7 +34,7 @@ pub module Diode(a: Electrical, k: Electrical) {
     cj0: f64 = 0.0 where cj0 >= 0.0;
 }
 analog for Diode {
-    let nvt   = n * vt();
+    let nvt   = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     let id    = is * ((vd / nvt).exp() - 1.0);
@@ -49,7 +49,7 @@ pub module DiodeTt(a: Electrical, k: Electrical) {
     tt: f64 = 0.0 where tt >= 0.0;
 }
 analog for DiodeTt {
-    let nvt   = n * vt();
+    let nvt   = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE));
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     let id    = is * ((vd / nvt).exp() - 1.0);

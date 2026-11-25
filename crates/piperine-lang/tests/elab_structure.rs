@@ -376,7 +376,7 @@ fn an_override_of_a_key_param_lowers_its_variant() {
 fn the_section_18_diode_type_checks_with_its_option_param() {
     // AS-05 AC 3 and 4 (Q2), params-and-io PI-03 (GAPS L28 closed): the section 18 `Diode` as the spec writes it has
     // `rs: Option<f64>`, an `Option` param, and a `match` over it in `analog`; it type checks and elaborates.
-    let src = "module Diode(a: Electrical, k: Electrical) {\n    is: f64 = 1e-14 where is > 0.0;\n    rs: Option<f64>;\n    signal ai: Electrical;\n}\nanalog for Diode {\n    match rs {\n        Some(r) => { i(a, ai) +> v(a, ai) / r; }\n        None    => { v(a, ai) +> 0.0; }\n    }\n    i(ai, k) +> is * (v(ai, k) / vt()).exp();\n}\nmodule Top() { signal s: Electrical; let d = Diode { rs: Some(100.0) }(s, gnd); }";
+    let src = "module Diode(a: Electrical, k: Electrical) {\n    is: f64 = 1e-14 where is > 0.0;\n    rs: Option<f64>;\n    signal ai: Electrical;\n}\nanalog for Diode {\n    match rs {\n        Some(r) => { i(a, ai) +> v(a, ai) / r; }\n        None    => { v(a, ai) +> 0.0; }\n    }\n    i(ai, k) +> is * (v(ai, k) / vt(300.15)).exp();\n}\nmodule Top() { signal s: Electrical; let d = Diode { rs: Some(100.0) }(s, gnd); }";
     Elab::ir(src, "Top");
 }
 
@@ -495,7 +495,7 @@ fn a_param_value_let_may_read_another_let() {
 fn a_param_value_let_that_reads_a_probe_is_e0321() {
     // AS-12 AC 3 (§8.1.19): a `let` used as a param value that reads a probe, a carrier or the environment
     // has no value at elaboration: `E0321` at the use, naming the `let`.
-    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k;", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
+    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature().unwrap_or(1.0);", "a call that is not a function"), ("let p = k;", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
         let lag = "module Lag(x: f64) -> f64 { signal y: State; potential(y) }\nanalog for Lag { flow(y) +> ddt(potential(y)) + potential(y) - x; }\n";
         let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64> = 0.0; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
         let err = Elab::run(&src, "Top").expect_err("the value has no constant");

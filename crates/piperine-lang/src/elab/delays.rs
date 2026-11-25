@@ -50,7 +50,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether the lowered expression `expr` is constant during an analysis (§14.4.1): it reads
-    /// only literals, params, the temperature, the kind of analysis and session parameters.
+    /// only literals, params, the temperature (and whether the run set it), the kind of analysis and session parameters.
     pub(super) fn constant_during_an_analysis(&self, expr: LoweredExpr) -> bool {
         let mut open = vec![expr];
         let mut seen = std::collections::HashSet::new();
@@ -60,7 +60,7 @@ impl Elaboration<'_, '_> {
             }
             let Some(kind) = self.ir.expr_kind(e) else { return false };
             match kind {
-                Expr::Real(_) | Expr::Bool(_) | Expr::Int(_) | Expr::Unit | Expr::Param(_) | Expr::SessionParameter { .. } | Expr::Env(Env::Temperature | Env::Analysis(_)) => {}
+                Expr::Real(_) | Expr::Bool(_) | Expr::Int(_) | Expr::Unit | Expr::Param(_) | Expr::SessionParameter { .. } | Expr::Env(Env::Temperature | Env::TemperatureGiven | Env::Analysis(_)) => {}
                 Expr::Probe { .. } | Expr::Flow { .. } | Expr::Env(_) | Expr::Carrier(_) | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Stim { .. } | Expr::Limit { .. } | Expr::Local(_) => return false,
                 _ => {}
             }

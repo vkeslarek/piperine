@@ -38,7 +38,7 @@ impl Bistable {
     /// A tight tolerance, so a closed form is held to far less than the temperature's effect.
     const TIGHT: f64 = 1e-12;
 
-    const SOURCE: &'static str = "pub module Source(p: Electrical, n: Electrical) { dc: f64 = 0.0; }\nanalog for Source { v(p, n) +> dc + ac_stim(1.0); }\npub module Tcr(p: Electrical, n: Electrical) { r: f64 where r > 0.0; tc: f64 = 0.01; }\nanalog for Tcr { i(p, n) +> v(p, n) / (r * (1.0 + tc * (temperature() - 300.15))); }\npub module Cap(p: Electrical, n: Electrical) { c: f64 = 1u; }\nanalog for Cap { i(p, n) +> ddt(c * v(p, n)); }\npub module Cubic(p: Electrical, n: Electrical) {}\nanalog for Cubic { i(p, n) +> v(p, n) * v(p, n) * v(p, n) - 4.0 * v(p, n); }\n";
+    const SOURCE: &'static str = "pub module Source(p: Electrical, n: Electrical) { dc: f64 = 0.0; }\nanalog for Source { v(p, n) +> dc + ac_stim(1.0); }\npub module Tcr(p: Electrical, n: Electrical) { r: f64 where r > 0.0; tc: f64 = 0.01; }\nanalog for Tcr { i(p, n) +> v(p, n) / (r * (1.0 + tc * (temperature().unwrap_or(AMBIENT_TEMPERATURE) - 300.15))); }\npub module Cap(p: Electrical, n: Electrical) { c: f64 = 1u; }\nanalog for Cap { i(p, n) +> ddt(c * v(p, n)); }\npub module Cubic(p: Electrical, n: Electrical) {}\nanalog for Cubic { i(p, n) +> v(p, n) * v(p, n) * v(p, n) - 4.0 * v(p, n); }\n";
 
     fn text() -> String {
         format!(

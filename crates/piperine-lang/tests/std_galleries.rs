@@ -473,15 +473,9 @@ fn the_fences_generics_lifted_are_checked() {
     assert_eq!(held, EXPECTED_HELD, "the fences that write phase A forms are held");
 }
 
-/// The only refusals of the seven fences that write a generic module, each with its owner: E.6's `Slice` (a generic bundle,
-/// `flip Stream<T>`, its fields typed with the port's `T`, `resolved-nets-bundles` T17 and T19) checks clean, and F.3's `MemoryBank`
-/// still names the bundle `Cell` through its template parameter. F.3's template parameter `C: Fn(..)` and the placement through it are
-/// phase D, L32 (`generics`). The generic modules themselves check, and the non-generic bundles (`Cell`) type.
-const REMAINING_REFUSALS: [&str; 3] = [
-    "F.3 as `Dram`: P0001: the template parameter `C` of `MemoryBank`, bounded by `Fn` is not supported yet",
-    "F.3 as `MemoryBank`: P0001: `struct` item used as a type: `Cell` has a carrier field, a bundle is not supported yet",
-    "F.3 as `MemoryBank`: P0001: placement through a template value or a function is not supported yet",
-];
+/// The refusals of the seven fences that write a generic module: none. E.6's `Slice` (a generic bundle, `flip Stream<T>`) and F.3's
+/// `MemoryBank` (the bundle `Cell`, its literal through the template `C: Fn(Cell)`) check clean (`resolved-nets-bundles`, GAPS L25).
+const REMAINING_REFUSALS: [&str; 0] = [];
 
 /// What a gallery fence writes of the forms `generics` phase C lifted: a generic module.
 struct GenericModules;
@@ -499,7 +493,7 @@ impl GenericModules {
 #[test]
 fn the_fences_generics_phase_c_lifted_are_checked() {
     // GN-31 AC 2: a gallery fence that writes a generic module (and, in it, a generation `for`) is held to the type checker,
-    // each of its modules as the top: it checks clean, with no diagnostic at all (the generic "not supported yet" included), but for the bundle (L25) and the template parameter (L32), each `P0001` by name and pinned exactly
+    // each of its modules as the top: it checks clean, with no diagnostic at all (the generic "not supported yet" included), but for the bundle (L25) and the bundle literal, each `P0001` by name and pinned exactly
     let mut held = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
     for g in galleries() {
@@ -516,7 +510,7 @@ fn the_fences_generics_phase_c_lifted_are_checked() {
         held.push(g.section);
     }
     assert_eq!(held, ["D.1", "E.1", "E.2", "E.3", "E.6", "F.2", "F.3"], "the fences that write a generic module are held");
-    assert_eq!(refusals, REMAINING_REFUSALS, "every fence checks clean but for the bundle (L25) and the template (L32), pinned exactly");
+    assert_eq!(refusals, REMAINING_REFUSALS, "every fence that writes a generic module checks clean");
 }
 
 /// PI-11 AC 3: each of the 20 gallery fences is the formatter's output for itself, so a reader

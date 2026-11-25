@@ -52,7 +52,7 @@ constructs. The value keywords are the keywords of the value language ([Part I](
    raw form back.
 7. A contextual keyword is an ordinary identifier outside its context. `potential` and `flow`
    are also the names of the generic probes ([§6](part_ii_carriers.md#6-continuous-carriers)).
-8. `gnd`, `Nature`, `m`, `dtemp` and `str` are core names, as are `settle`, `inf`, the
+8. `gnd`, `Nature` and `str` are core names, as are `settle`, `inf`, the
    environment functions and the core primitives of [§14](part_iv_behavior.md#14-core-primitives).
    No core name is a keyword.
 
@@ -97,7 +97,7 @@ applies to (A.4 rule 1). There is no inner form `#![…]`. The recognized attrib
 | `#[derive(…)]` with `Repr` and the traits of [Appendix H](appendix_h_library.md) (H.8) | `struct`, `enum` | [§2](part_i_values.md#2-repr) |
 | `#[repr(uN)]` | `enum` | [§2](part_i_values.md#2-repr) |
 | `#[derivative(f, …)]` | `extern "C" fn` | [§3](part_i_values.md#3-functions) rules 2 and 11 |
-| `#[link(…)]` | `extern` module | [§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules) |
+| `#[link(…)]` | `extern` module | [§8.5](part_iii_structure.md#85-run-settings-and-extern-modules) |
 | `#[doc = "…"]` | any item | A.4: the form a doc comment stands for |
 
 > **Resolution.** An attribute that is not in this table is an error, `#[cfg]` and `#[allow]`

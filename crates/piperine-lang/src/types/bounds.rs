@@ -71,6 +71,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 let wanted = self.checker.callable_type(inputs, *output);
                 match (ty, wanted) {
                     (Ty::Param(param), Some(wanted)) => self.checker.bounds_of(*param).iter().any(|own| matches!(own, Bound::Callable { inputs, output } if self.checker.callable_type(inputs, *output).as_ref() == Some(&wanted))),
+                    (Ty::Module(module), Some(_)) => self.checker.first_differing_port(module, inputs).is_none(),
                     (found, Some(wanted)) => *found == wanted,
                     (_, None) => false,
                 }
@@ -116,7 +117,10 @@ impl Checker<'_> {
     /// The function type `Fn(inputs) -> output` a callable bound writes, `None` when a type in it
     /// is refused (the refusal is reported where the bound is read).
     pub(super) fn callable_type(&mut self, inputs: &[TypeId], output: Option<TypeId>) -> Option<Ty> {
+        // an input that is a bundle (`Fn(Cell)`) is named, as a port of that bundle is
+        let outer = std::mem::replace(&mut self.naming_bundle, true);
         let inputs: Option<Vec<Ty>> = inputs.iter().map(|input| self.lower_type(*input)).collect();
+        self.naming_bundle = outer;
         let output = match output {
             Some(output) => self.lower_type(output)?,
             None => Ty::Unit,
@@ -127,8 +131,29 @@ impl Checker<'_> {
     /// The function parameter or binding `callee` names when its type is a type parameter bound by `Fn`.
     pub(super) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
         let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return None };
-        let Some(Ty::Param(param)) = self.locals.get(&decl).cloned() else { return None };
+        if matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
+            return self.module_param_callable(decl).map(|_| decl);
+        }
+        let Some(Ty::Param(param)) = self.binding_type(decl) else { return None };
         self.callable_of(param).map(|_| decl)
+    }
+
+    /// Whether `callee` is a param whose type is a type parameter with an `Fn(..)` bound, though the bound did not type (an input
+    /// that failed to lower): the failure is already reported.
+    pub(super) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
+        let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return false };
+        let DeclKind::Param(data) = &self.design.decl_data(decl).kind else { return false };
+        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if super::GenericSignature::is_callable(self.design, parameter))
+    }
+
+    /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
+    /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
+    pub(super) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
+        let DeclKind::Param(data) = &self.design.decl_data(param).kind else { return None };
+        match self.lower_type(data.ty)? {
+            Ty::Param(parameter) => self.callable_of(parameter),
+            _ => None,
+        }
     }
 
     /// A call of a value of a type parameter bounded by `Fn(A) -> R`: its arguments are positional
@@ -142,7 +167,35 @@ impl Checker<'_> {
             }
             return None;
         }
+        if matches!(self.design.decl_data(parameter).kind, DeclKind::Param(_)) {
+            let Some(Ty::Fn(params, result)) = self.module_param_callable(parameter) else { return None };
+            self.connect_through_bound(expr, &params, args)?;
+            return Some(*result);
+        }
         self.local_call(expr, parameter, args)
+    }
+
+    /// The connections of a placement through a template param bounded by `Fn(P)` (§8.4.5): a node input takes what a port of
+    /// that nature takes at a placement, a node of a compatible nature or `gnd` (§8.1.10, `connect`); any other input is an
+    /// argument of its type. `None` after an arity mismatch.
+    fn connect_through_bound(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        if args.len() != params.len() {
+            self.arity_mismatch(file, span, params.len(), args);
+            return None;
+        }
+        for (position, (arg, ty)) in args.iter().zip(params).enumerate() {
+            match ty {
+                Ty::Node(_) => {
+                    let Some(found) = self.infer(arg.value) else { continue };
+                    self.connect(arg.value, &format!("the node input {} of the `Fn` bound", position + 1), ty, &found);
+                }
+                _ if self.is_bundle_type(ty) => self.connect_bundle_input(arg.value, ty, position),
+                _ => self.check_argument(arg.value, ty),
+            }
+        }
+        Some(())
     }
 
     /// The function type a type parameter's `Fn(A) -> R` bound gives its values, `None` without one.

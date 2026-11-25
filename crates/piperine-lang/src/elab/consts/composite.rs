@@ -351,6 +351,10 @@ impl ConstEval<'_, '_> {
     /// `e.name` and `e.0` over a tuple or a struct.
     pub(super) fn field_value(&mut self, expr: ExprId, recv: ExprId, name: &str, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let whole = self.fold(recv, bindings)?;
+        // `self.vth0` of a template: the param it binds, else the module's default (`templates.rs`)
+        if matches!(self.typed(recv), Some(Ty::Module(_))) {
+            return self.template_param(expr, whole, name);
+        }
         let (_, parts) = self.parts_of(expr, whole, "a field read of a value")?;
         let at = self.field_position(recv, name).ok_or(ConstFault::Unsupported { expr, what: "a field the value does not have".to_string() })?;
         parts.get(at).copied().ok_or(ConstFault::Unsupported { expr, what: "a field out of range".to_string() })

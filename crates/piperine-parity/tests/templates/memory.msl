@@ -1,0 +1,46 @@
+//! A bank of cells placed through a template (generics GN-21, GN-23, part III §8.4): `MemoryBank` places `cell` for each
+//! row and column and the rig reads a cell's storage node through `bank.cells[r][c].sn`. The expected values are computed by Rust
+//! in `source_templates.rs`.
+
+/// One cell: its storage node follows the bit line scaled by `cs`.
+module Dram(a: Electrical) { cs: f64 = 1.0; pub signal sn: Electrical; }
+analog for Dram { potential(sn) +> cs * v(a); }
+
+module MemoryBank<C: Fn(Electrical), const ROWS: usize, const COLS: usize>(a: Electrical) {
+    cell: C;
+    for r in 0..ROWS { for c in 0..COLS { pub let cells = cell(a); } }
+}
+
+module Rig() {
+    signal a: Electrical;
+    let bank = MemoryBank::<_, 2, 3>(a) { cell: Dram { cs: 30.0 } };
+    signal first: Electrical;
+    signal last: Electrical;
+}
+analog for Rig {
+    potential(a) +> 0.5;
+    potential(first) +> v(bank.cells[0][0].sn);
+    potential(last) +> v(bank.cells[1][2].sn);
+}
+
+/// Cells placed through templates a body `let` holds (verification findings 29 and 31, §8.4.1, §8.4.6): `big` written in place,
+/// `copy` bound to another `let`, placed before and after their `let`s, and `chosen`, a choice over the param `k`.
+module RigLetTemplates() {
+    signal a: Electrical;
+    let early = copy(a);
+    let big = Dram { cs: 3.0 };
+    let one = big(a);
+    let copy = big;
+    k: f64 = 1.0;
+    let chosen = if k > 0.5 { Dram { cs: 4.0 } } else { big };
+    let three = chosen(a);
+    signal first: Electrical;
+    signal second: Electrical;
+    signal third: Electrical;
+}
+analog for RigLetTemplates {
+    potential(a) +> 0.5;
+    potential(first) +> v(one.sn);
+    potential(second) +> v(early.sn);
+    potential(third) +> v(three.sn);
+}

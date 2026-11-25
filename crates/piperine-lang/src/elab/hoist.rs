@@ -435,8 +435,10 @@ impl Elaboration<'_, '_> {
             let DeclKind::Param(p) = &data.kind else { continue };
             let given = fields.iter().find(|f| f.res == Resolution::Decl(*param)).map(|f| f.value);
             let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            // a given value reads the caller's constants; a default the params before it (§8.1.16)
+            let read = if given.is_some() { Bindings::new() } else { bindings.clone() };
             let value = match given.or(p.default) {
-                Some(expr) => match self.consts.value(expr, &Bindings::new()) {
+                Some(expr) => match self.consts.value(expr, &read) {
                     Ok(value) => value,
                     Err(fault) => {
                         self.const_fault(&fault, "a param value of a module with a result");
@@ -445,7 +447,7 @@ impl Elaboration<'_, '_> {
                     }
                 },
                 // an `Option` param left out is the absent case (§3.2.10), as for a placement that keeps its body
-                None if let Some(absent) = self.absent_option(p.ty) => absent,
+                None if let Some(absent) = self.absent_option(p) => absent,
                 None => {
                     self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
                     ok = false;

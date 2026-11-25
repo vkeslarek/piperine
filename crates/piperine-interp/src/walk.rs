@@ -46,6 +46,8 @@ pub(crate) struct Frame {
     pub temperature: Option<Dual>,
     pub gmin: Option<Dual>,
     pub source_scale: Option<Dual>,
+    /// Whether the run set its temperature (`temperature()` is `Some`): a flag, not a number.
+    pub temperature_given: Option<bool>,
 }
 
 impl Frame {
@@ -485,6 +487,9 @@ impl<'a> Walk<'a> {
     fn read_form(&self, id: ExprId) -> Option<Value> {
         let analog = self.analog.as_ref()?;
         let f = &analog.frame;
+        if let Expr::Env(piperine_ir::Env::TemperatureGiven) = self.ir.expr(id) {
+            return Some(f.temperature_given.map_or(Value::Unread, Value::Bool));
+        }
         let read = match self.ir.expr(id) {
             Expr::Probe { plus, minus } => f.probe(*plus, *minus),
             Expr::Env(env) => Frame::read(Some(match env {
@@ -493,7 +498,7 @@ impl<'a> Walk<'a> {
                 piperine_ir::Env::SourceScale => &f.source_scale,
                 // Not a frame cell: `eval` faults on it (`UNEXECUTED`), and `Interpreter::new`
                 // rejects a body that holds one.
-                piperine_ir::Env::Time | piperine_ir::Env::Static | piperine_ir::Env::Freq | piperine_ir::Env::Analysis(_) => return None,
+                piperine_ir::Env::Time | piperine_ir::Env::Static | piperine_ir::Env::Freq | piperine_ir::Env::Analysis(_) | piperine_ir::Env::TemperatureGiven => return None,
             })),
             // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
             // the site function's, not evaluated here.

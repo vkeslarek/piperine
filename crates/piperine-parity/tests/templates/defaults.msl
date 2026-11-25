@@ -1,0 +1,59 @@
+//! Param defaults that read earlier params (part III §8.1.16): `Conductance` derives `g` from `r`, and `GainPair` takes its
+//! `level` from the template param `fet` through the trait half of `N: Mosfet + Fn(..)`. The expected values are computed by
+//! Rust in `source_templates.rs`.
+
+trait Mosfet { fn gain(self) -> f64; }
+
+module Square(g: Electrical, d: Electrical) { k: f64 = 1.0; }
+analog for Square { potential(d) +> k * v(g) * v(g); }
+impl Mosfet for Square { fn gain(self) -> f64 { self.k * 2.0 } }
+
+/// A conductance whose default `g` is the reciprocal of the `r` the placement binds.
+module Conductance(p: Electrical, n: Electrical) {
+    r: f64 = 1.0;
+    g: f64 = 1.0 / r;
+}
+analog for Conductance { i(p, n) +> v(p, n) * g; }
+
+/// A divider of two conductances, each placed with its own `r` only.
+module RigDivider() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let upper = Conductance(top, mid) { r: 1.0 };
+    let lower = Conductance(mid, gnd) { r: 3.0 };
+}
+analog for RigDivider { potential(top) +> 1.0; }
+
+/// The pair drives `s` with `level`, whose default is the model's own `gain()`.
+module GainPair<N: Mosfet + Fn(Electrical, Electrical)>(g: Electrical, d: Electrical, s: Electrical) {
+    fet: N;
+    level: f64 = fet.gain();
+    let left = fet(g, d);
+}
+analog<N> for GainPair<N> { potential(s) +> level; }
+
+module RigGain() {
+    signal g: Electrical;
+    signal d: Electrical;
+    signal s: Electrical;
+    let pair = GainPair::<_>(g, d, s) { fet: Square { k: 3.0 } };
+}
+analog for RigGain { potential(g) +> 0.5; }
+
+/// A conductance `g` taken `m` times, `m` an `Option` with no default (§8.1.17): a template may leave it out.
+module Scaled(p: Electrical, n: Electrical) {
+    g: f64 = 1.0;
+    m: Option<f64>;
+}
+analog for Scaled { i(p, n) +> v(p, n) * g * m.unwrap_or(DEFAULT_MULTIPLICITY); }
+
+const UNIT: Scaled = Scaled { g: 1.0 };
+
+/// The upper leg through the `const` that leaves `m` out (one conductance), the lower one bound three times.
+module RigOptional() {
+    signal top: Electrical;
+    signal mid: Electrical;
+    let upper = UNIT(top, mid);
+    let lower = Scaled { g: 1.0, m: 3.0 }(mid, gnd);
+}
+analog for RigOptional { potential(top) +> 1.0; }

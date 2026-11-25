@@ -163,11 +163,23 @@ fn a_louder_second_diode_clips_the_negative_half_higher() {
 }
 
 #[test]
+fn the_temperature_listings_run_with_the_ambient_fallback() {
+    // the chapter's listings read `temperature().unwrap_or(AMBIENT_TEMPERATURE)` (generics phase D, GN-25 AC 2): a node
+    // driven to it reads the ambient 300.15 K when the run sets no temperature, and the run's kelvin when it does
+    let source = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> temperature().unwrap_or(AMBIENT_TEMPERATURE); }\n";
+    let unset = Model::written("temperature.msl", source).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    // the operating point stops Newton within `reltol * |x| + vntol` of the value (0.3 K at 300 K)
+    assert!((unset.signal("Top.a") - 300.15).abs() < 0.5, "no `temp`: 27 C, ngspice's default: {}", unset.signal("Top.a"));
+    let hot = Model::written("temperature.msl", source).run(Overrides { temp: Some(75.0), ..Faulty::operating_point_of("Top") }).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!((hot.signal("Top.a") - 348.15).abs() < 0.5, "`temp` 75: 348.15 K: {}", hot.signal("Top.a"));
+}
+
+#[test]
 fn the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature() {
-    // analog~36d33f2a: "let nvt = n * vt(); A let inside analog is a local of this iteration. vt() is the
-    // thermal voltage kT/q at the simulation temperature, about 25.9 mV at the default 300.15 K": a node
-    // driven to `1.0 * vt()` reads 25.86 mV
-    let source = "module Top() { signal a: Electrical; }\nanalog for Top { let nvt = 1.0 * vt(); v(a) +> nvt; }\n";
+    // analog~1466dc01: "let nvt = n * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE)); A let inside analog is a local of this
+    // iteration. vt(t) is the thermal voltage kT/q at the temperature t you pass, about 25.9 mV at the default 300.15 K": a node
+    // driven to `1.0 * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE))` reads 25.86 mV
+    let source = "module Top() { signal a: Electrical; }\nanalog for Top { let nvt = 1.0 * vt(temperature().unwrap_or(AMBIENT_TEMPERATURE)); v(a) +> nvt; }\n";
     let ran = Model::written("vt.msl", source).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
     Printed::holds("2.586493e-2", ran.signal("Top.a"), "kT/q at 300.15 K");
     assert!((ran.signal("Top.a") - 25.9e-3).abs() < 0.1e-3, "about 25.9 mV");

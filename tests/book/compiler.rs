@@ -173,11 +173,12 @@ fn a_compiler_code_says_what_the_chapter_says() {
     // (`P0002`, a value of the wrong type, is gone: a mismatch is `E0180` of chapter 11, PI-06.)
     // compiler~79f44fb1 "P0003": the top module asked for does not exist. (compiler~79f44ab1 "P0004" is
     // a bug of Piperine no source raises: a `prose` row.)
-    // a module template as a value (`R { r: 2.0 }` bound by a `let`, §8.4) is one such form: `generics` phase D runs it (L32);
-    // the example was a generic module until phase C ran those
-    let template = "module R() { r: f64 = 1.0; }\nmodule Top() { let t = R { r: 2.0 }; }\n";
-    let given = Refusal::of(Model::written("m.msl", template).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
-    assert!(given.iter().any(|(code, message)| code == "P0001" && message.contains("module template") && message.contains("not supported yet")), "P0001 names the construct it cannot run: {given:?}");
+    // the example is a bundle, a `struct` whose field is a carrier (L25, `resolved-nets-bundles`), valid MSL the compiler refuses by name; an `extern`
+    // module was the example until the Book left `foreign-models` to its own feature, a module template
+    // as a value (`R { r: 2.0 }`, §8.4) was one until `generics` phase D ran it, and a generic module until phase C
+    let bundle = "struct Cell { in wl: Bit }\nmodule Top() { signal w: Bit = false; let c = Cell { wl: w }; }\n";
+    let given = Refusal::of(Model::written("m.msl", bundle).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
+    assert!(given.iter().any(|(code, message)| code == "P0001" && message.contains("struct expression") && message.contains("not supported yet")), "P0001 names the construct it cannot run: {given:?}");
     Refusal::expect(Model::written("m.msl", "module Top() { }\n").run(Faulty::operating_point_of("Nope")), "compiler~79f44fb1", "P0003", "`Nope` is not a module of the root crate");
 }
 

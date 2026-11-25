@@ -105,7 +105,7 @@ fn ddt_ac_stim_and_environment_are_f64() {
     let t = local_types(
         "",
         "let d = ddt(v(a)); let d2 = ddt(v(a), 1e-6); let s = ac_stim(1.0); let s2 = ac_stim(1.0, 0.5); \
-         let tk = temperature(); let g = gmin(); let sc = source_scale();",
+         let tk = temperature().unwrap_or(1.0); let g = gmin(); let sc = source_scale();",
         &["d", "d2", "s", "s2", "tk", "g", "sc"],
     );
     assert!(t.iter().all(|t| *t == Ty::F64), "{t:?}");
@@ -163,7 +163,7 @@ fn a_core_primitive_in_a_fn_is_e0450() {
     assert_eq!(snippet(&src, &d[0]), "ddt(new)");
 
     // The environment is allowed everywhere.
-    let src = source("fn vt() -> f64 { temperature() * gmin() }", "let y = vt();");
+    let src = source("fn vt() -> f64 { temperature().unwrap_or(1.0) * gmin() }", "let y = vt();");
     let design = design_of(&src);
     Types::check(&design, "Top").expect("environment functions in a fn");
 }
@@ -171,7 +171,7 @@ fn a_core_primitive_in_a_fn_is_e0450() {
 #[test]
 fn the_std_vt_checks_clean() {
     // `vt` reads `temperature()` (the core table) and the constants `K_B` and `Q`.
-    let design = Design::builder().source("top.msl", "use std::analog::vt;\nmodule Top() { }\nanalog for Top { let x = vt(); }").build();
+    let design = Design::builder().source("top.msl", "use std::analog::vt;\nmodule Top() { }\nanalog for Top { let x = vt(300.15); }").build();
     assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
     let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     let reached: Vec<&str> = types.reached().iter().filter_map(|d| design.decl_data(*d).name.as_ref().map(|n| n.text.as_str())).collect();

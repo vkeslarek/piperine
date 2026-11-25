@@ -1,0 +1,19 @@
+//! Binning (generics GN-22, part III §8.4.7): `nch` picks the params of a `Bsim` from the length it is given, the caller places the
+//! result. The expected values are computed by Rust in `source_templates.rs`.
+
+module Bsim(d: Electrical) { vth0: f64 = 0.4; }
+analog for Bsim { potential(d) +> vth0; }
+
+pub fn nch(l: f64) -> Bsim {
+    let vth0 = if l < 0.18u { 0.42 } else if l < 1u { 0.45 } else { 0.47 };
+    Bsim { vth0: vth0 }
+}
+
+module Rig() {
+    signal short: Electrical;
+    signal middle: Electrical;
+    signal long: Electrical;
+    let m1 = nch(0.13u)(short);
+    let m2 = nch(0.5u)(middle);
+    let m3 = nch(2u)(long);
+}
