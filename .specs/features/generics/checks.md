@@ -727,7 +727,7 @@ Proof: run elabtemplates | test a_template_carrying_composite_params_places_with
 Proof: run elabtemplates | test two_templates_with_equal_composite_params_are_one_value ... ok
 Proof: run srcgenr | test a_template_carrying_composite_params_runs_through_a_placement ... ok
 
-**C153** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params. (GN-17, AC 1; T119, GAPS L88)
+**C153** - An array of module templates places the element a written, constant or generation index names, and a module with a result placed through a template takes the template's params; an array repeat of a template (`[Scale { r: 7.0 }; 2]`) is that many equal templates, and a callable param of a module that is itself hoisted places its template, forwarded to a second generic module too. (GN-17, AC 1; T119, GAPS L88; fix round 2, findings 9 and 10)
 Proof: run elabtemplates | test an_array_of_templates_places_the_element_at_an_index ... ok
 Proof: run elabtemplates | test an_array_of_templates_of_a_module_with_a_result_gives_each_read_its_elements_params ... ok
 Proof: run typestempl | test an_array_of_templates_of_one_module_checks_and_places_its_element ... ok
@@ -736,12 +736,14 @@ Proof: run elabtemplates | test equal_arrays_of_templates_share_one_body_keyed_b
 Proof: run elabresults | test a_module_with_a_result_placed_through_a_callable_bound_param_takes_the_templates_params ... ok
 Proof: run srcgenr | test a_module_with_a_result_through_a_callable_bound_param_runs ... ok
 Proof: run elabtemplates | test a_template_param_of_a_module_with_a_result_places_the_templates_params ... ok
+Proof: run elabtemplates | test an_array_of_templates_written_as_a_repeat_is_that_many_equal_templates ... ok
+Proof: run elabresults | test a_callable_bound_param_of_a_hoisted_module_places_its_template ... ok
 
 **C154** - An `Option` result of a module placed in a body is read in a reaction as the pair of its halves, and `inertial` runs at `Option<u8>`. (GN-28, AC 1; T120, GAPS L89 as found by T108)
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
 
-**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802). (GN-17, AC 1; T121, GAPS L89)
+**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802); all of it in a module without a result and in one with a result (§8.3.12, its frame holds the array as a key). (GN-17, AC 1; T121, GAPS L89; fix round 2, finding 8)
 Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
 Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok
