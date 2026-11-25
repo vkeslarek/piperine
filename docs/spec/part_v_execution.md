@@ -97,7 +97,8 @@ produce the result of the following procedure.
       at `(t, n + 1)`, or later under T2. An `extern "cosim"` module runs here as one reaction
       (§8.5).
    4. *Exit test.* Leave the loop when nothing is pending at `(t, n + 1)`. A change made at `t`
-      is not read by a solve at `t`: the first step after `t` reads it (§15.2).
+      is not read by a solve at `t`: the first step after `t` reads it (§15.2), and a value passed
+      through within the instant is read by the step to `t`, retaken (§15.2 rule 4).
 4. *Settle.* Every reaction on `settle` runs once, reading the final discrete state and the
    solution at `t`. This is the **settle phase**.
 5. *Advance* to the next time point (§17.2). The first step after `t` reads every change made
@@ -253,7 +254,8 @@ it depends on when the change is made:
   restarts of the paragraph below.
 
 When several changes occur at one `t`, in successive microsteps, the step that reads the first
-of them reads them all.
+of them reads them all. A value that one of them gives and a later one takes back within the
+instant (a pulse) is not lost: rule 4 retakes the step to `t` with it.
 
 **Host `set`.** A `set` due at `t` lands the solver on `t` but is not applied before the step
 that arrives there: that step is tested for truncation error like any other and does not read
@@ -294,6 +296,24 @@ transient step that reads the change, so the set has no solve of its own.
    The instant's microstep numbering goes on across the rounds: a crossing only a retaken solution makes fires at the next microstep of `t`, and the settle phase that follows runs after the last microstep, so its records are stamped `(t, last)` (§19). The instant's settle phase runs once, after its last round, so a retake never runs an
    `on settle` reaction twice at `t`, and the settle commits it holds are the ones the analog side
    is given.
+   **A value passed through within the instant is read by a retake too.** A carrier or a param
+   that `analog` reads **passes through** a value when it holds that value at the end of one
+   microstep of `t` (step 3.2) and loses it at a later microstep of `t`, as the high of a pulse
+   that rises and falls within the instant does. The instant does not leave it behind, so the
+   first step after `t` cannot read it. When the microstep loop of a transient time point passes
+   through a value, the step that arrives at `t` is retaken to `t` reading every change the loop
+   made: each carrier or param that passed through a value at the first value it passed through,
+   every other one at its value after the loop. The retaken solution replaces the first; it is
+   exempt from the truncation-error test and restarts the integrator, as above. The reactions
+   that ran are not run again, a crossing only the retaken solution makes fires at the next
+   microstep of `t` and its reactions run there, and a value they pass through retakes again,
+   reading what the earlier rounds passed through with the new values laid over it (the round
+   bound and `E0504` as above). The settle phase runs once, after the last round, and reads the
+   retaken solution. The first step after `t` reads what the instant leaves behind: it reads a
+   jump (rule 6). A state the passed value forces (rule 2: an `idt` whose `reset` pulses holds its
+   `ic` in the retaken step) is carried from the retaken solution. In an operating point, a
+   round solves the equilibrium again (§16), which carries no state, and a value passed through
+   is not solved; a host `set` between two runs, which solves nothing, does not retake either.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
@@ -326,9 +346,11 @@ transient step that reads the change, so the set has no solve of its own.
 10. Sensitivities across a jump are those of the states carried and of the step that reads it
     (§23.3.2).
 
-> **Note.** This section and §15 describe the present solver, which runs the microsteps of
-> `t` before it solves `t`. The device ABI (`piperine_abi_1`) order, solve at `t` and then
-> react, is adopted: `solver-abi` implements it and rewrites §15 when it changes the code.
+> **Resolution (AFK default 2026-11-24, pending user review).** The value passed through within an
+> instant (rule 4) is stated here. Before it the step after `t` read only what the instant left
+> behind, so a pulse that ended where it began never reached `analog`, and `idtmod` (§22.2.9),
+> whose wrap is a pulse of `seat`, never wrapped. The solver runs the order of §15: the step to
+> `t` first, on the left value, then the microsteps of `t` (MD-62).
 
 **Errors**
 
