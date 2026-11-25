@@ -120,6 +120,9 @@ pub(super) struct Frame {
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
     /// each a constant: what the caller's expressions of its inputs read (`unroll.rs`).
     pub(super) unrolled: Bindings,
+    /// What the generation of the frame's module unrolls into while the frame is not the one being lowered (parked by `enter_frame`;
+    /// `Elaboration::generated` holds the active frame's, `hoist.rs`).
+    pub(super) generated: super::generation::GeneratedItems,
     /// The iteration of the generation `for`s the placement sat in when it was hoisted: what the caller's expressions of
     /// its inputs read of the carriers and `let`s declared in those loops (§8.2.23).
     pub(super) ordinals: Vec<(DeclId, u32)>,
@@ -131,7 +134,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new(), generated: super::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 
@@ -140,10 +143,8 @@ impl Elaboration<'_, '_> {
     /// `frame`: each added to the structure and named in the frame.
     pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
         let mut children = self.design.decl_data(module).children.clone();
-        // the carriers of the body's own module declared in generation are arrays, one element per iteration (`generation.rs`)
-        if frame == 0 {
-            children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
-        }
+        // the carriers of the frame's module declared in generation are arrays, one element per iteration (`generation.rs`)
+        children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
         let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
@@ -153,9 +154,7 @@ impl Elaboration<'_, '_> {
                 self.give_initial_value(frame, decl, held);
                 continue;
             }
-            if frame == 0 {
-                self.generated_items_complete(decl);
-            }
+            self.generated_items_complete(decl);
             if self.is_empty_array(frame, decl) {
                 self.frames[frame].empty_arrays.insert(decl);
                 self.record_empty_array(frame, decl);
@@ -243,7 +242,7 @@ impl Elaboration<'_, '_> {
         let init = init.filter(|_| !self.generated.refused.contains(&decl));
         let init = match init {
             // a carrier declared in generation: its initial value is one element's, folded for each iteration (§8.2.23)
-            Some(expr) if frame == 0 && self.generated.of(decl).is_some() => {
+            Some(expr) if self.generated.of(decl).is_some() => {
                 let shape = array.clone()?;
                 Some(self.generated_array_init(decl, expr, &shape, &ty)?)
             }

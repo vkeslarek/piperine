@@ -1,0 +1,27 @@
+//! Generation in the body of a module hoisted into its caller (generics GN-17, T118, part III §8.2.23, §8.3.12): `Triple` has a value
+//! input and a result, and its body unrolls a `for` of three carriers, element `k` defined as `x * (k + 1)`; the result sums the
+//! three, so it is `6 x`. Each placement is a frame of its own and unrolls its own generation.
+
+module Triple(x: u8) -> u8 {
+    for k in 0..3 {
+        signal s: Bit<u8>;
+        s = x * ((k as u8) + 1);
+    }
+    s[0] + s[1] + s[2]
+}
+
+module Bench() {
+    signal a: Bit<u8> = 5;
+    signal b: Bit<u8> = 1;
+    signal y: Bit<u8>;
+    signal z: Bit<u8>;
+    let first = Triple(a);
+    let second = Triple(b);
+    y = first;
+    z = second;
+}
+
+digital for Bench {
+    on at(1n) { a <- 7; }
+    on at(2n) { a <- 2; b <- 3; }
+}

@@ -24,13 +24,10 @@ impl Elaboration<'_, '_> {
         sub
     }
 
-    /// The definitions of `module`, in source order, as drives of the body; read in `scope`. A definition written in
+    /// The definitions of the module of the active frame, in source order, as drives of the body; read in `scope`. A definition written in
     /// generation is one drive per iteration that elaborates it, its loop variables the iteration's constants (§8.2.23).
-    pub(super) fn lower_definitions(&mut self, scope: &Scope, module: DeclId) {
-        let items: Vec<(DeclId, Iteration)> = match scope.frame {
-            0 => self.generated.unrolled().to_vec(),
-            _ => self.design.decl_data(module).children.iter().map(|child| (*child, Iteration::default())).collect(),
-        };
+    pub(super) fn lower_definitions(&mut self, scope: &Scope) {
+        let items: Vec<(DeclId, Iteration)> = self.generated.unrolled().to_vec();
         for (child, iteration) in items {
             let data = self.design.decl_data(child).clone();
             let DeclKind::Definition(definition) = &data.kind else { continue };

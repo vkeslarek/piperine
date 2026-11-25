@@ -202,7 +202,7 @@ impl Elaboration<'_, '_> {
         let ammeters = self.lower_ammeters(&mut scope, module);
         scope.merged = self.merged_branches(&scope, module);
         self.lower_carriers(0, module);
-        self.lower_definitions(&scope, module);
+        self.lower_definitions(&scope);
         self.hoist_placements(&scope);
         scope.addend_lets = self.addend_only_ddt_lets(&scope, module);
         let mut analog = self.lower_analog(&mut scope, module);
@@ -296,16 +296,29 @@ impl Elaboration<'_, '_> {
         bindings
     }
 
+    /// What the generation of the frame `from` unrolled into is parked in it, and that of the frame `to` becomes the active one
+    /// (`Elaboration::generated`): each hoisted frame unrolls the generation of its own module (`hoist.rs`).
+    pub(super) fn switch_generation(&mut self, from: usize, to: usize) {
+        if from == to {
+            return;
+        }
+        self.frames[from].generated = std::mem::take(&mut self.generated);
+        self.generated = std::mem::take(&mut self.frames[to].generated);
+    }
+
     /// Lowers code of `frame` from here on: `scope` reads its names and the types read its params. The state of the
     /// frame left comes back with `leave_frame`.
     pub(super) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
         let params = self.frame_bindings(frame);
         let substitution = self.consts.set_substitution(self.frames[frame].substitution.clone());
-        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params), substitution }
+        let outer = std::mem::replace(&mut scope.frame, frame);
+        self.switch_generation(outer, frame);
+        FrameEntry { outer, params: self.consts.set_frame_params(params), substitution }
     }
 
     /// Back to the frame `entry` left.
     pub(super) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
+        self.switch_generation(scope.frame, entry.outer);
         scope.frame = entry.outer;
         self.consts.set_frame_params(entry.params);
         self.consts.set_substitution(entry.substitution);

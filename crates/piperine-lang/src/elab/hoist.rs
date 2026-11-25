@@ -52,10 +52,7 @@ impl Elaboration<'_, '_> {
     /// The key of the placement `call` read or hoisted in `scope`: the iteration of the generation `for`s around it that the
     /// code being lowered sits in.
     pub(super) fn placement_key(&self, scope: &Scope, call: ExprId) -> PlacementKey {
-        let iteration = match scope.frame {
-            0 => self.implicit_ordinals(self.design.expr_node(call).owner, &scope.ordinals),
-            _ => Vec::new(),
-        };
+        let iteration = self.implicit_ordinals(self.design.expr_node(call).owner, &scope.ordinals);
         PlacementKey { call, iteration }
     }
 
@@ -121,9 +118,9 @@ impl Elaboration<'_, '_> {
             }
             // a placement written in generation is hoisted once for each iteration that elaborates it (§8.2.23)
             let owner = self.design.expr_node(call).owner;
-            let iterations = match (scope.frame, self.generated.of(owner)) {
-                (0, Some(iterations)) => iterations.clone(),
-                _ => vec![Iteration::default()],
+            let iterations = match self.generated.of(owner) {
+                Some(iterations) => iterations.clone(),
+                None => vec![Iteration::default()],
             };
             for iteration in &iterations {
                 let mut inner = Self::sub_scope(scope);
@@ -319,6 +316,25 @@ impl Elaboration<'_, '_> {
     /// The contents of the frame `index` of the placement `call`, lowered under the substitution of its instance.
     fn hoist_frame(&mut self, scope: &Scope, call: ExprId, index: usize, (module, name): (DeclId, &str), ports: &[DeclId], bound: &PortArguments) -> Option<usize> {
         let caller = self.frames[self.frames[index].parent.unwrap_or(0)].substitution.clone();
+        // the generation of the callee's body unrolls under the frame's params; the caller's is parked while the frame is lowered
+        let parent = self.frames[index].parent.unwrap_or(0);
+        self.frames[parent].generated = std::mem::take(&mut self.generated);
+        let keys = self.frame_bindings(index);
+        let outer_keys = std::mem::replace(&mut self.body_keys, keys.clone());
+        let outer_params = self.consts.set_frame_params(keys);
+        self.expand_generation_of(module, index);
+        self.consts.set_frame_params(outer_params);
+        let lowered = self.hoist_contents(scope, call, index, (module, name), ports, bound, &caller);
+        self.body_keys = outer_keys;
+        self.frames[index].generated = std::mem::take(&mut self.generated);
+        self.generated = std::mem::take(&mut self.frames[parent].generated);
+        lowered
+    }
+
+    /// What the frame `index` holds: its nodes, carriers, drives, definitions, placements and reactions.
+    #[allow(clippy::too_many_arguments)]
+    fn hoist_contents(&mut self, scope: &Scope, call: ExprId, index: usize, (module, name): (DeclId, &str), ports: &[DeclId], bound: &PortArguments, caller: &crate::types::Substitution) -> Option<usize> {
+        let caller = caller.clone();
         let gained = self.hoist_nodes(index, module);
         self.record_hoisted(index, module, name, call, gained);
         self.lower_carriers(index, module);
@@ -343,7 +359,7 @@ impl Elaboration<'_, '_> {
         let mut inner = Self::sub_scope(scope);
         inner.frame = index;
         let outer_params = self.consts.set_frame_params(self.frame_bindings(index));
-        self.lower_definitions(&inner, module);
+        self.lower_definitions(&inner);
         self.hoist_placements(&inner);
         self.lower_digital(&mut inner, module);
         self.consts.set_frame_params(outer_params);
@@ -353,7 +369,10 @@ impl Elaboration<'_, '_> {
     /// The node `signal`s of `module` as nodes of the body, named under the frame `frame`: its
     /// terminals are the frame's own. How many nodes the body gained.
     fn hoist_nodes(&mut self, frame: usize, module: DeclId) -> usize {
-        let signals: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && (self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some())).collect();
+        let mut children = self.design.decl_data(module).children.clone();
+        // the nodes declared in generation are arrays, one element per iteration (`generation.rs`)
+        children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
+        let signals: Vec<DeclId> = children.into_iter().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && (self.types.carrier(*c).is_none() || self.types.node_array(*c).is_some())).collect();
         let prefix = self.frames[frame].prefix.clone();
         let mut gained = 0;
         for signal in signals {
@@ -422,10 +441,6 @@ impl Elaboration<'_, '_> {
         };
         if m.instances.iter().any(|c| matches!(self.types.callee(*c), Some(Callee::Module(_))) && self.hoisted_callee(*c).is_none()) {
             return refuse(self, "a placement of a module that is not hoisted");
-        }
-        // the generation of a body is unrolled for the body's own module only (`generation.rs`)
-        if data.children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Generation(_))) {
-            return refuse(self, "generation in its body");
         }
         true
     }

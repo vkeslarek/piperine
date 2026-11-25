@@ -914,7 +914,7 @@ impl Elaboration<'_, '_> {
                     Some(self.emit(Expr::Local(*index), ty, origin))
                 }
                 // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
-                None if scope.frame == 0 && self.body_let_value(decl).is_some() && self.generated.of(self.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
+                None if self.body_let_value(decl).is_some() && self.generated.of(self.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
                 // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
                 None if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;

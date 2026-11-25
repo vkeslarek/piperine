@@ -233,3 +233,33 @@ fn a_hoisted_placement_with_contributions_runs_once_per_iteration() {
     let expected = GenerationModels::divided(1.0 / 6e-3);
     assert!((seen[0] - expected).abs() < 1e-9, "{seen:?} against {expected}");
 }
+
+/// The bench of `tests/generation/hoisted_generation.msl`, run for 3 ns.
+struct HoistedGeneration;
+
+impl HoistedGeneration {
+    /// A nanosecond, in femtoseconds.
+    const NS: i64 = 1_000_000;
+
+    /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
+    fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
+        let built = support::build(&GenerationModels::project("hoisted_generation.msl"), "Bench");
+        let seen = built.run(3e-9, 0.5e-9);
+        support::transient(&seen, &format!("Bench.{name}"))
+    }
+}
+
+#[test]
+fn a_hoisted_module_with_generation_runs() {
+    // GN-17 AC 1 (§8.2.23, §8.3.12): each placement of `Triple` unrolls its own three carriers `s[k] = x * (k + 1)`, and the
+    // result is their sum, `6 x`. `a` is 7 at 1 ns and 2 at 2 ns, `b` is 3 at 2 ns: `y` is `6 a` and `z` is `6 b`, each element
+    // of a frame named under its placement
+    let sum = |x: u8| 6 * x;
+    let ns = HoistedGeneration::NS;
+    assert_eq!(HoistedGeneration::changes("y"), vec![(ns, vec![sum(7)]), (2 * ns, vec![sum(2)])]);
+    assert_eq!(HoistedGeneration::changes("z"), vec![(2 * ns, vec![sum(3)])], "the second placement follows `b` alone");
+    for k in 0..3u8 {
+        assert_eq!(HoistedGeneration::changes(&format!("first.s[{k}]")), vec![(ns, vec![7 * (k + 1)]), (2 * ns, vec![2 * (k + 1)])], "the element {k} of the first frame");
+        assert_eq!(HoistedGeneration::changes(&format!("second.s[{k}]")), vec![(2 * ns, vec![3 * (k + 1)])], "the element {k} of the second frame");
+    }
+}
