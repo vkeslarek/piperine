@@ -310,3 +310,21 @@ fn a_given_value_over_a_param_of_the_reader_is_read_in_place_one_and_three_level
     }
 }
 
+#[test]
+fn a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_reach() {
+    // §8.1.16 (verification finding 12): a false `where` (`E0317`) or a required param left out (`E0319`) is the placement's own
+    // diagnostic, reported once: the reach frame that reads the child (one level and three levels below) reports nothing again
+    let models = "module W(a: Electrical) { r: f64 = 1.0 where r > 0.0; pub signal sn: Electrical; }\nanalog for W { i(a, sn) +> v(a, sn) * r; }\n\
+                  module WR(a: Electrical) { r: f64; pub signal sn: Electrical; }\nanalog for WR { i(a, sn) +> v(a, sn) * r; }\n\
+                  module WL2(a: Electrical) { pub let c0 = W(a) { r: -1.0 }; }\nmodule WL3(a: Electrical) { pub let mid = WL2(a); }\n\
+                  module WRL2(a: Electrical) { pub let c0 = WR(a); }\nmodule WRL3(a: Electrical) { pub let mid = WRL2(a); }\n";
+    for (placement, read, code) in [
+        ("let p = W(a) { r: -1.0 };", "v(p.sn)", "E0317"),
+        ("let p = WL3(a);", "v(p.mid.c0.sn)", "E0317"),
+        ("let p = WR(a);", "v(p.sn)", "E0319"),
+        ("let p = WRL3(a);", "v(p.mid.c0.sn)", "E0319"),
+    ] {
+        let found = Elab::run(&format!("{models}{}", top(placement, &format!("potential(o) +> {read};"))), "Top").expect_err("the placement is refused");
+        assert_eq!(Elab::codes(&found), [code], "`{read}` under `{placement}`: {:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+    }
+}

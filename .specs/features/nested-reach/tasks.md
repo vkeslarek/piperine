@@ -217,6 +217,9 @@ Proof: run elabnested | test a_given_value_over_a_param_of_the_reader_is_read_in
 **C31** - From source, the same reads one and three levels below read the values Rust computes from the reader's `m` (verification finding 11)
 Proof: run sourcenested | test a_given_value_over_a_param_of_the_reader_one_and_three_levels_down_reads_the_cell_it_sets ... ok
 
+**C32** - A placement with a false `where` (`E0317`) or a required param left out (`E0319`), read through one level and three levels below the reader, is one diagnostic: the reach frame's fold reports nothing the placement reports (verification finding 12)
+Proof: run elabnested | test a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_reach ... ok
+
 ---
 
 ## Handoff
