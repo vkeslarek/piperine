@@ -6,6 +6,7 @@
 module Mix(a: Electrical) {
     pub k: f64 = 1.0;
     pub g: f64 = 0.5;
+    pub let twice = k * 2.0;
     pub signal sn: Electrical;
     pub let vs = v(sn);
     pub let deep = k * vs;
@@ -100,3 +101,11 @@ module MixLoopRig3() {
     let p = MixLoopTower(a) { m4: m };
 }
 analog for MixLoopRig3 { potential(a) +> 1.0; potential(sn_read) +> v(p.rows.cells[1].sn); potential(vs_read) +> p.rows.cells[1].vs; potential(deep_read) +> p.rows.cells[1].deep; potential(first_read) +> v(p.rows.cells[0].sn); }
+
+/// The params of the same cells read three levels down: `cells[1].k = 1.75`, `cells[1].twice = 3.5`, `cells[0].k = 0.75`.
+module MixLoopRigParams3() {
+    m: f64 = 1.5;
+    signal a: Electrical; signal k_read: Electrical; signal twice_read: Electrical; signal first_k_read: Electrical;
+    let p = MixLoopTower(a) { m4: m };
+}
+analog for MixLoopRigParams3 { potential(a) +> 1.0; potential(k_read) +> p.rows.cells[1].k; potential(twice_read) +> p.rows.cells[1].twice; potential(first_k_read) +> p.rows.cells[0].k; }

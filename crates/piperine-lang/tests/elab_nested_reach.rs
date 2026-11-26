@@ -352,3 +352,21 @@ fn a_placement_in_generation_reads_a_param_of_its_module_and_the_loop_variable()
         assert!(line.contains(lowered) && line.contains("p.rows.cells[1].sn"), "`{read}` lowers `{lowered}` over the cell's node: {line}");
     }
 }
+
+#[test]
+fn a_param_in_generation_over_a_param_and_the_loop_variable_reads_through_three_levels() {
+    // §8.2.8, §8.2.23: `R.k` and `R.twice` of a cell whose `k` the placement gives over a param of its module and the loop
+    // variable (`k: m3 + (j as f64)`): the loop variable is a constant of the iteration, so the params the value reads are the
+    // module's own (`m3`, then `m4`, then the reader's `m = 1.5`), each fixed by its placement, and the reader reads each
+    // iteration's `k` (`cells[1]`: 0.75 + 1, `cells[0]`: 0.75)
+    let models = format!(
+        "{MODELS}module GRows(a: Electrical) {{ m3: f64 = 1.0; for j in 0..2 {{ pub let cells = Cell(a) {{ k: m3 + (j as f64) }}; }} }}\n\
+         module GTower(a: Electrical) {{ m4: f64 = 1.0; pub let rows = GRows(a) {{ m3: m4 * 0.5 }}; }}\n"
+    );
+    for (read, lowered) in [("p.rows.cells[1].k", "direct 1.75"), ("p.rows.cells[1].twice", "direct (1.75 * 2.0)"), ("p.rows.cells[0].k", "direct 0.75"), ("p.rows.cells[0].twice", "direct (0.75 * 2.0)")] {
+        let src = format!("{models}module Top() {{ m: f64 = 1.5; signal a: Electrical; signal o: Electrical; let p = GTower(a) {{ m4: m }}; }}\nanalog for Top {{ potential(a) +> 1.0; potential(o) +> {read}; }}\n");
+        let printed = Elab::ir(&src, "Top").print_structural();
+        let line = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{read}: the read of `o`: {printed}"));
+        assert!(line.ends_with(lowered), "`{read}` lowers `{lowered}`: {line}");
+    }
+}

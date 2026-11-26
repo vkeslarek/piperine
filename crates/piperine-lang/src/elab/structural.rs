@@ -166,6 +166,8 @@ impl<'a, 'd> ParamReads<'a, 'd> {
                         true
                     }
                     DeclKind::Const(_) | DeclKind::Variant(_) => true,
+                    // the variable of a generation `for` is a constant of each iteration (§8.2.23), no param of the body
+                    DeclKind::Binding(binding) if binding.origin == crate::pom::BindingOrigin::GenFor => true,
                     DeclKind::Port(_) => self.collect_input(decl, depth, params),
                     _ => false,
                 },

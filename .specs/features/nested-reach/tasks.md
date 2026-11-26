@@ -226,6 +226,12 @@ Proof: run elabnested | test a_placement_in_generation_reads_a_param_of_its_modu
 **C34** - From source, the same cells run at `k = m * 0.5 + j` in each iteration, the values Rust computes
 Proof: run sourcenested | test a_cell_in_generation_whose_param_reads_a_param_and_the_loop_variable_runs_at_each_iteration ... ok
 
+**C35** - `R.k` and `R.twice` of a cell in generation whose `k` reads a param of its module and the loop variable (`k: m3 + (j as f64)`), three levels below the reader, read each iteration's value: the loop variable is a constant of the iteration, so the params the value reads are fixed by their placements (it was refused, "the value of a param that fixes structure that reads a param")
+Proof: run elabnested | test a_param_in_generation_over_a_param_and_the_loop_variable_reads_through_three_levels ... ok
+
+**C36** - From source, the same reads give `cells[1].k = m * 0.5 + 1`, its `twice`, and `cells[0].k = m * 0.5`, the values Rust computes
+Proof: run sourcenested | test the_params_of_a_cell_in_generation_over_a_param_and_the_loop_variable_read_three_levels_down ... ok
+
 ---
 
 ## Handoff

@@ -202,6 +202,18 @@ fn a_cell_in_generation_whose_param_reads_a_param_and_the_loop_variable_runs_at_
     }
 }
 
+#[test]
+fn the_params_of_a_cell_in_generation_over_a_param_and_the_loop_variable_read_three_levels_down() {
+    // §8.2.8, §8.2.23: `k: m3 + (j as f64)` with `m3 = m * 0.5`, `m = 1.5`: the reader reads `cells[1].k = 0.75 + 1`, its
+    // `twice = 2 k`, and `cells[0].k = 0.75`
+    let m = 1.5;
+    let (k1, k0) = (m * 0.5 + 1.0, m * 0.5);
+    let seen = RUN.operating_point("mixed.msl", "MixLoopRigParams3", &["k_read", "twice_read", "first_k_read"]);
+    for (value, wanted) in seen.iter().zip([k1, 2.0 * k1, k0]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}
+
 /// The `seen` records of a bench of `drive.msl`, the value of each as a flag.
 fn seen_flags(top: &str) -> Vec<bool> {
     let records: Vec<Record> = RUN.records_of("drive.msl", top).into_iter().filter(|record| record.stream == "seen").collect();
