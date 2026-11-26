@@ -211,6 +211,12 @@ Proof: run typesnested | test a_let_over_a_param_and_the_solve_types_one_three_a
 **C29** - From source, the same `let`s one level, three by name and through a template, and four in generation (both iterations) read the values Rust computes from the placement's params and the divider (verification finding 10)
 Proof: run sourcenested | test a_let_over_a_param_and_the_solve_one_three_and_four_levels_down_reads_the_placements_params ... ok
 
+**C30** - A placement that gives the child a param over a param of the reader that is not a key (`Cell(a) { k: m * 2.0 }`) keeps its reach one level below the reader and three below it (by name with the param handed down, in generation): `v(R.sn)` and `R.vs` read the cell's node, `R.deep` reads `k` as the reader's own expression, in one pass (verification finding 11)
+Proof: run elabnested | test a_given_value_over_a_param_of_the_reader_is_read_in_place_one_and_three_levels_below ... ok
+
+**C31** - From source, the same reads one and three levels below read the values Rust computes from the reader's `m` (verification finding 11)
+Proof: run sourcenested | test a_given_value_over_a_param_of_the_reader_one_and_three_levels_down_reads_the_cell_it_sets ... ok
+
 ---
 
 ## Handoff

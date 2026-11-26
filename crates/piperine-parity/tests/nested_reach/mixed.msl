@@ -56,3 +56,34 @@ module MixRigRows4First() {
     let p = MixTall(a);
 }
 analog for MixRigRows4First { potential(a) +> 1.0; potential(deep_read) +> p.tower.rows.cells[0].deep; potential(gated_read) +> p.tower.rows.cells[0].gated; potential(gi_read) +> p.tower.rows.cells[0].gi; }
+
+/// A cell whose `k` the placement gives over a param of a wrapper (`k: g2 * 2.0`), and the wrappers that hand the reader's `m` down
+/// to it, three levels below by name and in generation.
+module MixParamLevel2(a: Electrical) { g2: f64 = 1.0; pub let c0 = Mix(a) { k: g2 * 2.0 }; }
+module MixParamLevel3(a: Electrical) { m3: f64 = 1.0; pub let mid = MixParamLevel2(a) { g2: m3 }; }
+module MixParamRows(a: Electrical) { m3: f64 = 1.0; for j in 0..2 { pub let cells = Mix(a) { k: m3 * 2.0 }; } }
+module MixParamTower(a: Electrical) { m4: f64 = 1.0; pub let rows = MixParamRows(a) { m3: m4 * 0.5 }; }
+
+/// One level, `k` over the reader's own param: the cell is `c`, at `k = m * 2 = 3`.
+module MixParamRig1() {
+    m: f64 = 1.5;
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal deep_read: Electrical;
+    let c = Mix(a) { k: m * 2.0 };
+}
+analog for MixParamRig1 { potential(a) +> 1.0; potential(sn_read) +> v(c.sn); potential(vs_read) +> c.vs; potential(deep_read) +> c.deep; }
+
+/// Three levels by name, `m` handed down: the cell is `p.mid.c0`, at `k = m * 2 = 3`.
+module MixParamRig3() {
+    m: f64 = 1.5;
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal deep_read: Electrical;
+    let p = MixParamLevel3(a) { m3: m };
+}
+analog for MixParamRig3 { potential(a) +> 1.0; potential(sn_read) +> v(p.mid.c0.sn); potential(vs_read) +> p.mid.c0.vs; potential(deep_read) +> p.mid.c0.deep; }
+
+/// Three levels in generation, `m` handed down: the cell is `p.rows.cells[1]`, at `k = m * 0.5 * 2 = 1.5`.
+module MixParamRigRows3() {
+    m: f64 = 1.5;
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal deep_read: Electrical;
+    let p = MixParamTower(a) { m4: m };
+}
+analog for MixParamRigRows3 { potential(a) +> 1.0; potential(sn_read) +> v(p.rows.cells[1].sn); potential(vs_read) +> p.rows.cells[1].vs; potential(deep_read) +> p.rows.cells[1].deep; }

@@ -100,8 +100,12 @@ pub(super) struct Frame {
     /// The arrays of carriers declared with length 0 (§1.2.3): no carrier of the body, since no element exists to hold
     /// (`carrier_arrays.rs`). Every element of one is out of range, and read whole it is the empty array.
     pub(super) empty_arrays: BTreeSet<DeclId>,
-    /// A hoisted module's params, bound to constants by the placement or their defaults.
+    /// The params of a hoisted module or of a reach frame's, bound to constants by the placement or their defaults
+    /// (`placement_params.rs`).
     pub(super) params: BTreeMap<DeclId, Constant>,
+    /// The params of a reach frame's module whose value does not fold (a value over a param of the reader that is not a key): the
+    /// expression each is read as, where a `let` of the child reads it (`placement_params.rs`).
+    pub(super) deferred_params: BTreeMap<DeclId, super::placement_params::DeferredParam>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
     /// `None` for a trailing `Option` input left out.
     pub(super) inputs: BTreeMap<DeclId, Option<ExprId>>,
@@ -143,7 +147,7 @@ impl Frame {
 
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: super::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), deferred_params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: super::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 

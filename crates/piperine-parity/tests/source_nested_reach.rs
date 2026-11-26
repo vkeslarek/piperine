@@ -174,6 +174,21 @@ fn a_let_over_a_param_and_the_solve_one_three_and_four_levels_down_reads_the_pla
     }
 }
 
+#[test]
+fn a_given_value_over_a_param_of_the_reader_one_and_three_levels_down_reads_the_cell_it_sets() {
+    // §8.2.25 (verification finding 11): the reader's `m = 1.5` sets the cell's `k` through the placement (`k: m * 2.0`, one level;
+    // handed down through each wrapper's param three levels by name, and halved on the way in generation): the reader reads the
+    // cell's node `sn`, `vs = v(sn)` and `deep = k vs` of the divider at that `k`
+    let m = 1.5;
+    for (top, k) in [("MixParamRig1", m * 2.0), ("MixParamRig3", m * 2.0), ("MixParamRigRows3", m * 0.5 * 2.0)] {
+        let storage = CellOracle { k, drive: 1.0 }.storage();
+        let seen = RUN.operating_point("mixed.msl", top, &["sn_read", "vs_read", "deep_read"]);
+        for (value, wanted) in seen.iter().zip([storage, storage, k * storage]) {
+            assert!((value - wanted).abs() < TOLERANCE, "{top}: {value} is not {wanted}: {seen:?}");
+        }
+    }
+}
+
 /// The `seen` records of a bench of `drive.msl`, the value of each as a flag.
 fn seen_flags(top: &str) -> Vec<bool> {
     let records: Vec<Record> = RUN.records_of("drive.msl", top).into_iter().filter(|record| record.stream == "seen").collect();

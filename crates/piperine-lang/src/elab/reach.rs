@@ -24,6 +24,7 @@ use super::hoist::PlacementKey;
 use super::element_commits::PlaceTarget;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::placement_params::{PlacementParams, PlacementSite};
 use super::reach_through_templates::ReachedKind;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 use crate::types::Ty;
@@ -73,6 +74,13 @@ impl Elaboration<'_, '_> {
         match self.design.decl_data(item).kind.clone() {
             DeclKind::Param(_) => match self.frames[frame].params.get(&item).copied() {
                 Some(value) => Some(self.constant_expr(value, ty, origin)),
+                // a param whose given value does not fold is read in place (`placement_params.rs`)
+                None if self.frames[frame].deferred_params.contains_key(&item) => {
+                    let entry = self.enter_frame(scope, frame);
+                    let lowered = self.lower_deferred_param(scope, item);
+                    self.leave_frame(scope, entry);
+                    lowered
+                }
                 None => {
                     self.unsupported(scope.file, span, "a param of a child that no placement value fixes");
                     None
@@ -258,8 +266,14 @@ impl Elaboration<'_, '_> {
             frame.substitution = self.instance_substitution(instance.item, &instance.arguments);
         }
         // every param of the module is the value the placement (or its template) gives, else its default: what a `let` of the
-        // child read in the parent's context reads (§8.2.25); a key param is the value that selects the child's body variant
-        frame.params = self.reach_frame_params(within, call, module, &frame.substitution)?;
+        // child read in the parent's context reads (§8.2.25); one that does not fold is read in place, and what is wrong with the
+        // placement is the placement's own diagnostic, not the frame's. A key param is the value that selects the child's body variant
+        let folded = self.reach_frame_params(within, call, module, &frame.substitution)?;
+        frame.params = folded.values;
+        frame.deferred_params = folded.deferred;
+        // a value deferred to the caller reads the loop variables and the iteration the placement sits in
+        frame.unrolled = within.unrolled.clone();
+        frame.ordinals = within.ordinals.clone();
         for key in self.keys.of(module) {
             if let Some(value) = values.get(*key) {
                 frame.params.insert(*key, value);
@@ -293,19 +307,20 @@ impl Elaboration<'_, '_> {
         within
     }
 
-    /// The value of every param of `module` as the placement `call`, read from `scope`, binds it (`placement_params`): a given value
-    /// folds over the caller's constants and generic arguments, a default over the params before it under the instance's own
-    /// (`substitution`). `None` after a diagnostic.
-    fn reach_frame_params(&mut self, scope: &Scope, call: ExprId, module: DeclId, substitution: &crate::types::Substitution) -> Option<std::collections::BTreeMap<DeclId, piperine_ir::Constant>> {
+    /// The params of `module` as the placement `call`, read from `scope`, binds them (`placement_params.rs`), reporting nothing: a
+    /// given value folds over the caller's constants (every param of the reading frame that folds, its loop variables) and generic
+    /// arguments, a default over the params before it under the instance's own (`substitution`). `None` when the placement is
+    /// written through a template that does not fold.
+    fn reach_frame_params(&mut self, scope: &Scope, call: ExprId, module: DeclId, substitution: &crate::types::Substitution) -> Option<PlacementParams> {
         let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return None };
         let Ok(through) = self.template_through(scope, call, &class) else { return None };
         let fields = self.placement_fields(call, module);
         let caller = scope.keys.overlaid(&scope.unrolled);
-        let span = self.design.expr_node(call).span;
         let outer = self.consts.set_substitution(substitution.clone());
-        let bound = self.placement_params(module, (&fields, through.as_ref()), (&caller, &outer), scope.file, span);
+        let site = PlacementSite { fields: &fields, template: through.as_ref(), caller: &caller, caller_substitution: &outer };
+        let folded = self.fold_placement_params(module, &site);
         self.consts.set_substitution(outer);
-        bound
+        Some(folded)
     }
 
     /// The nodes of the array of nodes `decl` of the reach frame `frame`, made the first time: one node of the body for each

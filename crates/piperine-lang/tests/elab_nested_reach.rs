@@ -281,3 +281,32 @@ fn a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_thre
         }
     }
 }
+
+#[test]
+fn a_given_value_over_a_param_of_the_reader_is_read_in_place_one_and_three_levels_below() {
+    // §8.2.25 (verification finding 11): a placement that gives a param a value over a param of the reader that is not a key
+    // (`Cell(a) { k: m * 2.0 }`, the reader's `m` a param the host may set) keeps its reach: `v(R.sn)` and `R.vs` read the cell's
+    // node, and `R.deep` (`k * vs`) reads `k` as the reader's own expression, lowered where the value is written: one level below,
+    // three by name with `m` handed down through each wrapper's param, and three in generation. One pass each
+    let models = format!(
+        "{}module RL2(a: Electrical) {{ g2: f64 = 1.0; pub let c0 = Cell(a) {{ k: g2 * 2.0 }}; }}\nmodule RL3(a: Electrical) {{ m3: f64 = 1.0; pub let mid = RL2(a) {{ g2: m3 }}; }}\n\
+         module RRows(a: Electrical) {{ m3: f64 = 1.0; for j in 0..2 {{ pub let cells = Cell(a) {{ k: m3 * 2.0 }}; }} }}\nmodule RTower(a: Electrical) {{ m4: f64 = 1.0; pub let rows = RRows(a) {{ m3: m4 * 0.5 }}; }}\n",
+        MODELS.replace("pub let vs = v(sn);", MIXED_LETS)
+    );
+    for (placement, reach, k) in [
+        ("let c = Cell(a) { k: m * 2.0 };", "c", "(m * 2.0)"),
+        ("let p = RL3(a) { m3: m };", "p.mid.c0", "(m * 2.0)"),
+        ("let p = RTower(a) { m4: m };", "p.rows.cells[1]", "((m * 0.5) * 2.0)"),
+    ] {
+        for (read, lowered) in [(format!("v({reach}.sn)"), "probe(".to_string()), (format!("{reach}.vs"), "probe(".to_string()), (format!("{reach}.deep"), format!("({k} * probe("))] {
+            let src = format!("{models}module Top() {{ m: f64 = 1.5; signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ potential(a) +> 1.0; potential(o) +> {read}; }}\n");
+            let design = support::Elab::design(&src);
+            let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
+            let printed = result.unwrap_or_else(|d| panic!("`{read}` under `{placement}`: {d:?}")).print_structural();
+            let line = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{read}: the read of `o`: {printed}"));
+            assert!(line.contains(&lowered) && line.contains(&format!("{reach}.sn")), "`{read}` lowers `{lowered}` over the cell's node: {line}");
+            assert_eq!(statistics.passes, 1, "{read}");
+        }
+    }
+}
+

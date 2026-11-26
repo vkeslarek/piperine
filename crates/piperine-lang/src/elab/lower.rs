@@ -883,6 +883,8 @@ impl Elaboration<'_, '_> {
                 (Some(index), _) if scope.frame == 0 => Some(self.emit(Expr::Param(*index), ty, origin)),
                 // A param of a hoisted module is the constant its placement bound (`hoist.rs`).
                 (_, Some(value)) => Some(self.constant_expr(value, ty, origin)),
+                // a param of a reach frame whose given value does not fold is read in place (`placement_params.rs`)
+                _ if scope.frame != 0 && self.frames.get(scope.frame).is_some_and(|frame| frame.deferred_params.contains_key(&decl)) => self.lower_deferred_param(scope, decl),
                 _ => {
                     self.unsupported(scope.file, node.span, "a param of another module");
                     None

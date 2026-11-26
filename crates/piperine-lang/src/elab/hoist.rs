@@ -26,8 +26,9 @@ use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
 use super::lower::Scope;
+use super::placement_params::PlacementSite;
 use crate::msl::Diagnostic;
-use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, PortArguments, Resolution, StructClass};
+use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, PortArguments, StructClass};
 use crate::types::Callee;
 
 /// A hoisted placement as the frame that writes it knows it: the call, and the ordinals of the iteration of the generation
@@ -298,7 +299,8 @@ impl Elaboration<'_, '_> {
                 return None;
             }
         };
-        let bound = self.placement_params(module, (&fields, through.as_ref()), (&caller_values, &outer), file, node.span);
+        let site = PlacementSite { fields: &fields, template: through.as_ref(), caller: &caller_values, caller_substitution: &outer };
+        let bound = self.placement_params(module, &site, file, node.span);
         self.consts.set_substitution(outer);
         let bound = bound?;
         // a placement written in generation is named by its iteration too: `y[1]`, `idt$0[1]`
@@ -486,7 +488,7 @@ impl Elaboration<'_, '_> {
     /// coefficients, a table) is a constant of the IR's arena, bound taken apart by `bind_param` (`frame_bindings`); an array of
     /// templates is the aggregate of their numbers, held as a key of the frame (§8.4.6).
     /// A value the placement gives is written in the caller, so it folds under the caller's generic arguments (`caller`).
-    fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, super::consts::ConstFault> {
+    pub(super) fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, super::consts::ConstFault> {
         let callee = caller.map(|substitution| self.consts.set_substitution(substitution.clone()));
         // the fold of a placement that keeps its body (`fold_param_value`): a template or an array of them is the number(s) it interns
         let folded = self.fold_param_value(expr, read);
@@ -494,63 +496,5 @@ impl Elaboration<'_, '_> {
             self.consts.set_substitution(callee);
         }
         folded
-    }
-
-    /// The params of a placed module, each bound to a constant: the value the placement's param block (or its template) gives,
-    /// else the default over the params before it (edge case 5, §8.1.16). What a hoisted frame and a reach frame (`reach.rs`) read
-    /// for a param of their module. A required param left out is `E0319`, a false `where` `E0317`. `None` after a diagnostic.
-    pub(super) fn placement_params(&mut self, module: DeclId, (fields, template): (&[FieldInit], Option<&super::templates::TemplateValue>), (caller, caller_substitution): (&Bindings, &crate::types::Substitution), file: crate::pom::FileId, span: crate::msl::Span) -> Option<std::collections::BTreeMap<DeclId, Constant>> {
-        let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
-        let mut bindings = Bindings::new();
-        let mut out = std::collections::BTreeMap::new();
-        let mut ok = true;
-        let template_values = match template.map(|template| self.template_constants(template)).transpose() {
-            Ok(values) => values.unwrap_or_default(),
-            Err(fault) => {
-                self.const_fault(&fault, "a param value of a template");
-                return None;
-            }
-        };
-        for param in &params {
-            let data = self.design.decl_data(*param).clone();
-            let DeclKind::Param(p) = &data.kind else { continue };
-            let folded = template_values.iter().find(|(bound, _, _)| bound == param).map(|(_, value, _)| *value);
-            let given = fields.iter().find(|f| f.res == Resolution::Decl(*param)).map(|f| f.value).filter(|_| template.is_none());
-            let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            // a given value reads the caller's constants (its params, its loop variables); a default the params before it (§8.1.16)
-            let read = if given.is_some() { caller.clone() } else { bindings.clone() };
-            let value = match given.or(p.default) {
-                // a template folded the value already
-                _ if let Some(folded) = folded => folded,
-                Some(expr) => match self.param_constant(expr, &read, given.is_some().then_some(caller_substitution)) {
-                    Ok(value) => value,
-                    Err(fault) => {
-                        self.const_fault(&fault, "a param value of a placed module");
-                        ok = false;
-                        continue;
-                    }
-                },
-                // an `Option` param left out is the absent case (§3.2.10), as for a placement that keeps its body
-                None if let Some(absent) = self.absent_option(p) => absent,
-                None => {
-                    self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
-                    ok = false;
-                    continue;
-                }
-            };
-            self.bind_param(&mut bindings, *param, value);
-            out.insert(*param, value);
-        }
-        for param in &params {
-            let data = self.design.decl_data(*param).clone();
-            let DeclKind::Param(p) = &data.kind else { continue };
-            let Some(cond) = p.where_ else { continue };
-            if let Ok(Constant::Bool(false)) = self.consts.value(cond, &bindings) {
-                let name = data.name.as_ref().map_or("", |n| n.text.as_str());
-                self.report(file, Diagnostic::new("E0317", format!("the `where` of the param `{name}` is false for this placement"), span, "`where` is false"));
-                ok = false;
-            }
-        }
-        ok.then_some(out)
     }
 }
