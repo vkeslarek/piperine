@@ -1,8 +1,8 @@
 # Nested Reach verification
 
-**Verdict**: FAIL (round 3, at bf43b1b18)
-**Round**: 3
-**Proofs**: `proofs.md` at bf43b1b18 (`check_proofs.py` rerun by the Verifier: 28 pass, 0 fail; `validate_tasks.py` 0 errors). Round 2 was at 1c69c6df2 (25 pass), round 1 at 13c4c1357 (21 pass).
+**Verdict**: FAIL (round 4, at 11c0c6b8f)
+**Round**: 4
+**Proofs**: `proofs.md` at 11c0c6b8f (`check_proofs.py` rerun by the Verifier: 31 pass, 0 fail; `validate_tasks.py` 0 errors). Round 3 was at bf43b1b18 (28 pass), round 2 at 1c69c6df2 (25 pass), round 1 at 13c4c1357 (21 pass).
 **Verifier**: independent sub-agent (author != verifier), Opus
 
 ## Checks
@@ -35,6 +35,9 @@
 | C24 | `elab_nested_reach.rs` `a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_one_pass` | yes - `statistics.passes == 1` and the reached `sn`, nine forms x `vs`, `vs2` |
 | C25 | `elab_nested_reach.rs` `every_read_whose_hops_the_text_names_is_elaborated_in_one_pass` | yes - exact pass count for 12 forms x 5 items and six cycles; the fallback pinned at its exact count (the depth) |
 | C26 | `elab_nested_reach.rs` `a_refusal_of_another_cause_hides_no_refusal_of_a_read` | yes - exactly two diagnostics, the earlier cause then the read's own, three shapes |
+| C27 | `elab_nested_reach.rs` `a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_three_and_four_levels_below` | yes - fails on the pre-fix `reach.rs`/`hoist.rs` (b8c52a28e hunks restored locally, then put back): the read is refused |
+| C28 | `types_nested_reach.rs` `a_let_over_a_param_and_the_solve_types_one_three_and_four_levels_below_the_reader` | yes - a checker claim, which held before the fix too (the refusal was at elaboration) |
+| C29 | `source_nested_reach.rs` `a_let_over_a_param_and_the_solve_one_three_and_four_levels_down_reads_the_placements_params` | yes - fails on the pre-fix hunks (the compile is refused) |
 
 ## What was probed (throwaway tests, not committed)
 
@@ -135,4 +138,27 @@ own (C26). No special case beyond the two causes it names.
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| 10. **Medium** - a `pub let` of the cell that reads the solve **and** a param the placement does not fix as a key (`pub let deep3 = k * vs`, or `if k > 0.5 { vs } else { 0.0 }`) is refused `P0001` "a param of another module" at every depth (`p.mid.c0.deep3`, `p.top.mid.c0.deep2`, `p.tower.rows.cells[0].deep2`) and at one level (`p.deep3`). That is the L81 form - "a `pub let` of a child's child that reads more than its params" - which `GAPS.md` now lists as closed, and a reachable `P0001` no row owns. `vs` alone, `twice` alone and `p.twice + p.k` run; device models mix the two (`pub let i = g * v(sn)`). | `lower.rs:882-889`: `DeclKind::Param` in a frame other than 0 is read only from `frames[frame].params`, which `placement_frame` fills with the module's key params and a template's params (`reach.rs`), so a plain non-key param of a placement by name is missing | give a reach frame every param of the placed module (the placement's value, else the default over the params before it, as the deleted `grandchild_params` folded), and pin `k * vs` and the `if` form at one, three and four levels; or, if deferred, a GAPS row with an owner and narrow the L81 closure in `GAPS.md` and NR-02 || 3c96146ce - C27, C28, C29 (every param of the placed module on the reach frame, `placement_params`) |
+| 10. **Medium** - a `pub let` of the cell that reads the solve **and** a param the placement does not fix as a key (`pub let deep3 = k * vs`, or `if k > 0.5 { vs } else { 0.0 }`) is refused `P0001` "a param of another module" at every depth (`p.mid.c0.deep3`, `p.top.mid.c0.deep2`, `p.tower.rows.cells[0].deep2`) and at one level (`p.deep3`). That is the L81 form - "a `pub let` of a child's child that reads more than its params" - which `GAPS.md` now lists as closed, and a reachable `P0001` no row owns. `vs` alone, `twice` alone and `p.twice + p.k` run; device models mix the two (`pub let i = g * v(sn)`). | `lower.rs:882-889`: `DeclKind::Param` in a frame other than 0 is read only from `frames[frame].params`, which `placement_frame` fills with the module's key params and a template's params (`reach.rs`), so a plain non-key param of a placement by name is missing | give a reach frame every param of the placed module (the placement's value, else the default over the params before it, as the deleted `grandchild_params` folded), and pin `k * vs` and the `if` form at one, three and four levels; or, if deferred, a GAPS row with an owner and narrow the L81 closure in `GAPS.md` and NR-02 | 3c96146ce - C27, C28, C29 (every param of the placed module on the reach frame, `placement_params`) |
+
+## Round 4 (at 11c0c6b8f)
+
+C27 and C29 were run with the `reach.rs` and `hoist.rs` hunks of 3c96146ce reverted to b8c52a28e, then restored: both fail, so they
+hold finding 10. Hoisted placements keep their behaviour: `hoisted_params` became `placement_params` with one fault text changed
+("a param value of a placed module", pinned by no test or golden), and `elab_control`, `elab_generation`, `elab_results`,
+`elab_operators`, `elab_params` and `elab_generics` pass.
+
+The fix gives every reach frame, including a frame one level below the reader, every param of the placed module, folded eagerly
+when the frame is made. A frame is made for any field read of a child, even when it reads only a node, so the folding happens on
+reads that never needed a param:
+
+| Read (throwaway probe, same source at both commits) | b8c52a28e | 11c0c6b8f |
+| --- | --- | --- |
+| `v(c.sn)`, `c = Cell(a) { k: m * 2.0 }`, `m` a param of the reader (not a key) | runs | `P0001` "a param value of a placed module that reads a param" |
+| `c.vs`, same placement | runs | the same `P0001` |
+| `v(p.sn)`, `p = W(a) { r: -1.0 }`, `r` with `where r > 0.0` | one `E0317` | two `E0317` (the reach frame's, then the placement's) |
+| `v(p.sn)`, `p = W(a)`, `r` required | one `E0319` | two `E0319` |
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| 11. **High** - regression of the one-level reach: a read of a child's node or `let` (`v(c.sn)`, `c.vs`) is refused when the placement gives a param a value over a param of the reader that is not a key (`let c = Cell(a) { k: m * 2.0 }` in a module with `m: f64 = 1.0`). It ran before 3c96146ce and at the merge base; it is the most common shape of a parameterised child. No check covers a given value over the reader's own params. | `reach.rs:262` `frame.params = self.reach_frame_params(..)?` folds every param when the frame is made, with `caller = scope.keys.overlaid(&scope.unrolled)` (`reach.rs:299-308`), which holds only key params; the fold fault `UnboundParam` is reported (`diagnose.rs:55`) and the `?` drops the frame | fold a reach frame's non-key params without refusing: leave out a param whose given value does not fold, and refuse only a read that lowers that param in that frame (the named refusal at `lower.rs`), or bind it as the reader's own param expression; pin `v(c.sn)`, `c.vs` and `c.deep` with `k: m * 2.0` at one and three levels | |
+| 12. **Low** - a read through a placement with a false `where` or a missing required param reports `E0317`/`E0319` twice, once for the reach frame and once for the placement. | `placement_params` reports the fault for the reach frame (`reach.rs:299-308` -> `hoist.rs` `placement_params`), and `place.rs` reports it again for the placement | fold a reach frame's params without reporting what the placement itself reports (a silent fold, or skip the `where`/required checks for a reach frame), and pin one diagnostic for each | |
