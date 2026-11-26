@@ -272,7 +272,8 @@ impl Elaboration<'_, '_> {
         for (index, value, expr) in &child.given {
             let value = match value {
                 Some(value) => *value,
-                None => match self.fold_param_value(*expr, parent.bindings) {
+                // a value written in generation reads the iteration's loop variables beside the parent's params
+                None => match self.fold_param_value(*expr, &parent.bindings.overlaid(&child.unrolled)) {
                     Ok(value) => value,
                     Err(fault) => {
                         self.const_fault(&fault, "a param value");

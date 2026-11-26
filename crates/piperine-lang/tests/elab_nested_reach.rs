@@ -328,3 +328,27 @@ fn a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_
         assert_eq!(Elab::codes(&found), [code], "`{read}` under `{placement}`: {:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn a_placement_in_generation_reads_a_param_of_its_module_and_the_loop_variable() {
+    // §8.2.23, §8.1.16: a param value written in generation over a param of the module that holds it (not a key) and the loop
+    // variable (`k: m3 + (j as f64)`) is each instance's own constant: the module's param at the value its placement gives
+    // (`m3 = m4 * 0.5`, `m4 = m = 1.5`) and the iteration's `j`. A read three levels below the reader of the cell's node, `vs` and
+    // `deep = k * vs` reads that same `k` in place, the loop variable of its iteration included
+    let models = format!(
+        "{}module GRows(a: Electrical) {{ m3: f64 = 1.0; for j in 0..2 {{ pub let cells = Cell(a) {{ k: m3 + (j as f64) }}; }} }}\n\
+         module GTower(a: Electrical) {{ m4: f64 = 1.0; pub let rows = GRows(a) {{ m3: m4 * 0.5 }}; }}\n",
+        MODELS.replace("pub let vs = v(sn);", MIXED_LETS)
+    );
+    let top = |read: &str| format!("{models}module Top() {{ m: f64 = 1.5; signal a: Electrical; signal o: Electrical; let p = GTower(a) {{ m4: m }}; }}\nanalog for Top {{ potential(a) +> 1.0; potential(o) +> {read}; }}\n");
+    let ir = Elab::ir(&top("1.0"), "Top");
+    for (iteration, k) in [(0, 1.5 * 0.5), (1, 1.5 * 0.5 + 1.0)] {
+        let cell = ir.instance_at(&format!("Top.p.rows.cells[{iteration}]")).unwrap_or_else(|| panic!("cells[{iteration}] is placed"));
+        assert_eq!(cell.param(0), Some(&piperine_ir::Constant::Real(piperine_ir::Real::new(k))), "cells[{iteration}].k is m3 + j");
+    }
+    for (read, lowered) in [("v(p.rows.cells[1].sn)", "probe("), ("p.rows.cells[1].vs", "probe("), ("p.rows.cells[1].deep", "(((m * 0.5) + (1i32 as f64)) * probe(")] {
+        let printed = Elab::ir(&top(read), "Top").print_structural();
+        let line = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{read}: the read of `o`: {printed}"));
+        assert!(line.contains(lowered) && line.contains("p.rows.cells[1].sn"), "`{read}` lowers `{lowered}` over the cell's node: {line}");
+    }
+}

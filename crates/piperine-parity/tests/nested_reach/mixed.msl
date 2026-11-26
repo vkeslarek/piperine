@@ -87,3 +87,16 @@ module MixParamRigRows3() {
     let p = MixParamTower(a) { m4: m };
 }
 analog for MixParamRigRows3 { potential(a) +> 1.0; potential(sn_read) +> v(p.rows.cells[1].sn); potential(vs_read) +> p.rows.cells[1].vs; potential(deep_read) +> p.rows.cells[1].deep; }
+
+/// A cell placed in generation whose `k` reads a param of its module and the loop variable (`k: m3 + (j as f64)`), the module's
+/// param handed down from the reader's `m`.
+module MixLoopRows(a: Electrical) { m3: f64 = 1.0; for j in 0..2 { pub let cells = Mix(a) { k: m3 + (j as f64) }; } }
+module MixLoopTower(a: Electrical) { m4: f64 = 1.0; pub let rows = MixLoopRows(a) { m3: m4 * 0.5 }; }
+
+/// Three levels in generation: the cell is `p.rows.cells[1]`, at `k = m * 0.5 + 1 = 1.75`; `cells[0]` is at `k = 0.75`.
+module MixLoopRig3() {
+    m: f64 = 1.5;
+    signal a: Electrical; signal sn_read: Electrical; signal vs_read: Electrical; signal deep_read: Electrical; signal first_read: Electrical;
+    let p = MixLoopTower(a) { m4: m };
+}
+analog for MixLoopRig3 { potential(a) +> 1.0; potential(sn_read) +> v(p.rows.cells[1].sn); potential(vs_read) +> p.rows.cells[1].vs; potential(deep_read) +> p.rows.cells[1].deep; potential(first_read) +> v(p.rows.cells[0].sn); }

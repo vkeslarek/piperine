@@ -220,6 +220,12 @@ Proof: run sourcenested | test a_given_value_over_a_param_of_the_reader_one_and_
 **C32** - A placement with a false `where` (`E0317`) or a required param left out (`E0319`), read through one level and three levels below the reader, is one diagnostic: the reach frame's fold reports nothing the placement reports (verification finding 12)
 Proof: run elabnested | test a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_reach ... ok
 
+**C33** - A placement in generation whose param value reads a param of its module that is not a key and the loop variable (`k: m3 + (j as f64)`) gives each instance its own constant, and a read of the cell's node, `vs` and `deep` three levels below the reader reads that `k` in place (found by the fix round 4: it was refused, "it reads a name with no value yet")
+Proof: run elabnested | test a_placement_in_generation_reads_a_param_of_its_module_and_the_loop_variable ... ok
+
+**C34** - From source, the same cells run at `k = m * 0.5 + j` in each iteration, the values Rust computes
+Proof: run sourcenested | test a_cell_in_generation_whose_param_reads_a_param_and_the_loop_variable_runs_at_each_iteration ... ok
+
 ---
 
 ## Handoff

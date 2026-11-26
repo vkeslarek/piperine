@@ -38,6 +38,9 @@ pub(super) struct ChildPlan {
     pub(super) given: Vec<(u32, Option<Constant>, ExprId)>,
     /// The call expression of the placement.
     pub(super) call: ExprId,
+    /// The loop variables of the generation the placement is written in, each the iteration's constant: what a value of `given`
+    /// that reads the parent's params reads besides them (`k: m + (j as f64)`).
+    pub(super) unrolled: Bindings,
 }
 
 impl Elaboration<'_, '_> {
@@ -358,7 +361,7 @@ impl Elaboration<'_, '_> {
         if windows.iter().any(Option::is_some) {
             self.structure.child_windows.push((index, windows));
         }
-        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call }))
+        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call, unrolled: scope.unrolled.clone() }))
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement
