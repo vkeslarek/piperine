@@ -224,5 +224,5 @@ Proof: run elabnested | test a_placement_with_a_false_where_or_a_missing_param_i
 
 ## Handoff
 
-**Settled mid-build:** the reach, spec and tests are written together; the design decision (demands found from the text before the first pass, `reach_seed.rs`, and by running the elaboration again only for a hop through a type-parameter template) is in `reach_through_templates.rs`'s module doc.
+**Settled mid-build:** the reach, spec and tests are written together; the design decision (demands found from the text before the first pass, `reach/seed.rs`, and by running the elaboration again only for a hop through a type-parameter template) is in `reach/demands.rs`'s module doc.
 **Dispatched:** none

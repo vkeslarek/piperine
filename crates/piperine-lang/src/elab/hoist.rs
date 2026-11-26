@@ -26,7 +26,7 @@ use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
 use super::lower::Scope;
-use super::placement_params::PlacementSite;
+use super::reach::placement_params::PlacementSite;
 use crate::msl::Diagnostic;
 use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, PortArguments, StructClass};
 use crate::types::Callee;
@@ -450,7 +450,7 @@ impl Elaboration<'_, '_> {
         // A frame the lowering of an earlier frame hoists lazily joins the walk.
         let mut frame = 1;
         while frame < self.frames.len() {
-            // A reach frame (`reach.rs`) names a placed child, whose `analog` block is its own body's.
+            // A reach frame (`reach/fields.rs`) names a placed child, whose `analog` block is its own body's.
             if self.frames[frame].is_reached() {
                 frame += 1;
                 continue;

@@ -64,7 +64,7 @@ pub(super) struct Structure {
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
     pub(super) child_params: Vec<(u32, u32, ChildValue)>,
-    /// The `pub` nodes and carriers of children the body reads (`reach.rs`).
+    /// The `pub` nodes and carriers of children the body reads (`reach/fields.rs`).
     pub(super) reaches: Vec<Reach>,
     /// The `p.inflow()` ammeters of the body (`inflow.rs`).
     pub(super) inflows: Vec<piperine_ir::Inflow>,
@@ -101,11 +101,11 @@ pub(super) struct Frame {
     /// (`carrier_arrays.rs`). Every element of one is out of range, and read whole it is the empty array.
     pub(super) empty_arrays: BTreeSet<DeclId>,
     /// The params of a hoisted module or of a reach frame's, bound to constants by the placement or their defaults
-    /// (`placement_params.rs`).
+    /// (`reach/placement_params.rs`).
     pub(super) params: BTreeMap<DeclId, Constant>,
     /// The params of a reach frame's module whose value does not fold (a value over a param of the reader that is not a key): the
-    /// expression each is read as, where a `let` of the child reads it (`placement_params.rs`).
-    pub(super) deferred_params: BTreeMap<DeclId, super::placement_params::DeferredParam>,
+    /// expression each is read as, where a `let` of the child reads it (`reach/placement_params.rs`).
+    pub(super) deferred_params: BTreeMap<DeclId, super::reach::placement_params::DeferredParam>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
     /// `None` for a trailing `Option` input left out.
     pub(super) inputs: BTreeMap<DeclId, Option<ExprId>>,
@@ -119,9 +119,9 @@ pub(super) struct Frame {
     pub(super) delays: BTreeMap<ExprId, u32>,
     /// The noise source of each `noise` call read in the frame (`noise.rs`): one call, one source.
     pub(super) noise_sources: BTreeMap<ExprId, u32>,
-    /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
+    /// For a reach frame (`reach/fields.rs`), the index of the child it stands for in the body's children.
     pub(super) child: Option<u32>,
-    /// For a reach frame below another (`reach.rs`), the placement it stands for in the parent reach frame and the ordinals of its
+    /// For a reach frame below another (`reach/fields.rs`), the placement it stands for in the parent reach frame and the ordinals of its
     /// iteration there: a child of a child, reached through the chain of `parent`s up to the frame of a child of the body.
     pub(super) placement: Option<(DeclId, Vec<u64>)>,
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
@@ -139,7 +139,7 @@ pub(super) struct Frame {
 }
 
 impl Frame {
-    /// Whether the frame names a placed child (`reach.rs`) rather than the body's own module or a hoisted placement: a child of the
+    /// Whether the frame names a placed child (`reach/fields.rs`) rather than the body's own module or a hoisted placement: a child of the
     /// body, or a child of such a child.
     pub(super) fn is_reached(&self) -> bool {
         self.child.is_some() || self.placement.is_some()

@@ -17,15 +17,15 @@
 
 use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRole, Origin, Reach, ReachedItem, Terminal, ValueType};
 
-use super::body::NodePlan;
-use super::consts::Bindings;
-use super::carriers::Frame;
-use super::hoist::PlacementKey;
-use super::element_commits::PlaceTarget;
-use super::elaborator::Elaboration;
-use super::lower::Scope;
+use crate::elab::body::NodePlan;
+use crate::elab::consts::Bindings;
+use crate::elab::carriers::Frame;
+use crate::elab::hoist::PlacementKey;
+use crate::elab::element_commits::PlaceTarget;
+use crate::elab::elaborator::Elaboration;
+use crate::elab::lower::Scope;
 use super::placement_params::{PlacementParams, PlacementSite};
-use super::reach_through_templates::ReachedKind;
+use super::demands::ReachedKind;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 use crate::types::Ty;
 
@@ -33,7 +33,7 @@ impl Elaboration<'_, '_> {
     /// The index each placement that is not hoisted takes in the body's children (`Child` order,
     /// the order `lower_children` follows), and a clean table of reach frames, for the body of
     /// `module` about to be lowered.
-    pub(super) fn index_children(&mut self, module: DeclId) {
+    pub(in crate::elab) fn index_children(&mut self, module: DeclId) {
         self.child_indices.clear();
         self.reach_frames.clear();
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
@@ -48,7 +48,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The node a field read `c.mid` names, as a terminal of the body.
-    pub(super) fn reached_terminal(&mut self, scope: &Scope, expr: ExprId) -> Option<Terminal> {
+    pub(in crate::elab) fn reached_terminal(&mut self, scope: &Scope, expr: ExprId) -> Option<Terminal> {
         let (frame, item) = self.reached_item(scope, expr)?;
         let terminal = self.frame_node(frame, item);
         if terminal.is_none() {
@@ -60,13 +60,13 @@ impl Elaboration<'_, '_> {
     }
 
     /// The carrier a field read `c.state` names, as a carrier of the body.
-    pub(super) fn reached_carrier(&mut self, scope: &Scope, expr: ExprId) -> Option<u32> {
+    pub(in crate::elab) fn reached_carrier(&mut self, scope: &Scope, expr: ExprId) -> Option<u32> {
         let (frame, item) = self.reached_item(scope, expr)?;
         self.frame_carrier(frame, item)
     }
 
     /// A field read `c.x` as a value: the carrier, the param or the `let` of the child it names.
-    pub(super) fn lower_field(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_field(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         let (frame, item) = self.reached_item(scope, expr)?;
         let substitution = self.frames[frame].substitution.clone();
@@ -74,7 +74,7 @@ impl Elaboration<'_, '_> {
         match self.design.decl_data(item).kind.clone() {
             DeclKind::Param(_) => match self.frames[frame].params.get(&item).copied() {
                 Some(value) => Some(self.constant_expr(value, ty, origin)),
-                // a param whose given value does not fold is read in place (`placement_params.rs`)
+                // a param whose given value does not fold is read in place (`reach/placement_params.rs`)
                 None if self.frames[frame].deferred_params.contains_key(&item) => {
                     let entry = self.enter_frame(scope, frame);
                     let lowered = self.lower_deferred_param(scope, item);
@@ -106,7 +106,7 @@ impl Elaboration<'_, '_> {
     /// A read through a template (`c0.cs`, §8.4.8) was given its type by its context (`Types::template_item`): the concrete item
     /// `item` of `module`, its type under `substitution`, has it, or the read is `E0180` naming both, an error of this
     /// instantiation (§3 rule 9).
-    pub(super) fn read_has_its_type(&mut self, scope: &Scope, expr: ExprId, module: DeclId, item: DeclId, substitution: &crate::types::Substitution) -> Option<()> {
+    pub(in crate::elab) fn read_has_its_type(&mut self, scope: &Scope, expr: ExprId, module: DeclId, item: DeclId, substitution: &crate::types::Substitution) -> Option<()> {
         let Some(wanted) = self.types.template_item(expr).cloned() else { return Some(()) };
         let declared = match &self.design.decl_data(item).kind {
             DeclKind::Param(param) => self.typed_written(param.ty),
@@ -131,7 +131,7 @@ impl Elaboration<'_, '_> {
 
     /// The frame of the child a field read `c.x` names and the item `x` of it. `None` after a
     /// diagnostic.
-    pub(super) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
+    pub(in crate::elab) fn reached_item(&mut self, scope: &Scope, expr: ExprId) -> Option<(usize, DeclId)> {
         // a field of a bundle port or signal is the carrier or node its leaf stands for, in this module's own frame (§7 rule 12)
         if let Some(place) = self.bundle_leaf(scope, expr) {
             // a field of an element of an array of bundles is one element of its leaf: the element forms read it (`elements.rs`)
@@ -207,7 +207,7 @@ impl Elaboration<'_, '_> {
 
     /// The reach frame of the placement `key` bound by the `let` binding `binding`, made the first time: a child of the body when the
     /// frame `scope` reads is the body's own (frame 0), else a child of the child that frame is, below it.
-    pub(super) fn placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
+    pub(in crate::elab) fn placement_frame(&mut self, scope: &Scope, binding: DeclId, key: PlacementKey, span: crate::msl::Span) -> Option<usize> {
         if let Some(frame) = self.frames[scope.frame].placements.get(&key) {
             return Some(*frame);
         }
@@ -307,7 +307,7 @@ impl Elaboration<'_, '_> {
         within
     }
 
-    /// The params of `module` as the placement `call`, read from `scope`, binds them (`placement_params.rs`), reporting nothing: a
+    /// The params of `module` as the placement `call`, read from `scope`, binds them (`reach/placement_params.rs`), reporting nothing: a
     /// given value folds over the caller's constants (every param of the reading frame that folds, its loop variables) and generic
     /// arguments, a default over the params before it under the instance's own (`substitution`). `None` when the placement is
     /// written through a template that does not fold.
@@ -326,7 +326,7 @@ impl Elaboration<'_, '_> {
     /// The nodes of the array of nodes `decl` of the reach frame `frame`, made the first time: one node of the body for each
     /// element, named by the child's path, each bound to the child's own once it is placed. `false` when `decl` is no array
     /// of nodes of a child (a diagnostic was reported when its length does not fold).
-    pub(super) fn reach_node_array(&mut self, frame: usize, decl: DeclId) -> bool {
+    pub(in crate::elab) fn reach_node_array(&mut self, frame: usize, decl: DeclId) -> bool {
         if self.frames[frame].node_shapes.contains_key(&decl) {
             return true;
         }
@@ -392,7 +392,7 @@ impl Elaboration<'_, '_> {
     /// How many nodes the body of the module of the reach frame `frame` has of its own, before any reached node: its node ports
     /// and node signals, an array counting each element. `None` after a diagnostic when the module declares a node in generation,
     /// whose count only the module's own lowering knows.
-    pub(super) fn own_node_total(&mut self, frame: usize) -> Option<u32> {
+    pub(in crate::elab) fn own_node_total(&mut self, frame: usize) -> Option<u32> {
         if self.declares_in_generation(frame) {
             return None;
         }
@@ -414,7 +414,7 @@ impl Elaboration<'_, '_> {
     /// How many carriers the body of the module of the reach frame `frame` has of its own, before any reached carrier: its discrete
     /// ports and signals, a bundle counting its fields, an array of carriers one, an array of none no carrier (`lower_carriers`).
     /// `None` after a diagnostic when the module declares one in generation.
-    pub(super) fn own_carrier_total(&mut self, frame: usize) -> Option<u32> {
+    pub(in crate::elab) fn own_carrier_total(&mut self, frame: usize) -> Option<u32> {
         if self.declares_in_generation(frame) {
             return None;
         }
@@ -443,7 +443,7 @@ impl Elaboration<'_, '_> {
     /// a placement written in generation the name is the iteration's instance, and each index outside them names one by
     /// its ordinal (§8.2.23). `None` after a diagnostic: a receiver that is no such name, an index that does not fold
     /// (`E0188`), an instance the generation never made (`E0342`), or a part of a nested array of instances.
-    pub(super) fn receiver_placement(&mut self, scope: &Scope, receiver: ExprId) -> Option<(DeclId, PlacementKey)> {
+    pub(in crate::elab) fn receiver_placement(&mut self, scope: &Scope, receiver: ExprId) -> Option<(DeclId, PlacementKey)> {
         let span = self.design.expr_node(receiver).span;
         let mut at = self.peel_parens(receiver);
         let mut indexes = Vec::new();
@@ -492,7 +492,7 @@ impl Elaboration<'_, '_> {
 
     /// The terminal of the body that the node `decl` of the frame `frame` is: the frame's own, or,
     /// in a reach frame, the node of the body that stands for the child's (made the first time).
-    pub(super) fn frame_node(&mut self, frame: usize, decl: DeclId) -> Option<Terminal> {
+    pub(in crate::elab) fn frame_node(&mut self, frame: usize, decl: DeclId) -> Option<Terminal> {
         if let Some(terminal) = self.frames.get(frame)?.nodes.get(&decl) {
             return Some(*terminal);
         }
@@ -525,7 +525,7 @@ impl Elaboration<'_, '_> {
     /// The carrier of the body that the carrier `decl` of the frame `frame` is: the frame's own,
     /// or, in a reach frame, the carrier of the body that stands for the child's (made the first
     /// time).
-    pub(super) fn frame_carrier(&mut self, frame: usize, decl: DeclId) -> Option<u32> {
+    pub(in crate::elab) fn frame_carrier(&mut self, frame: usize, decl: DeclId) -> Option<u32> {
         if let Some(index) = self.frames.get(frame)?.carriers.get(&decl) {
             return Some(*index);
         }
@@ -546,7 +546,7 @@ impl Elaboration<'_, '_> {
     /// The carrier of the body a drive `c.line = v` or a commit `c.line <- v` of the child's `pub` resolved signal `decl` writes:
     /// the reached carrier of `frame`, made a resolved carrier of the body (`CarrierRole::Resolved`) so the body holds a drive of
     /// the child's net, bound to it once the child is placed (`place.rs`). `None` after a diagnostic.
-    pub(super) fn drivable_reached_carrier(&mut self, frame: usize, decl: DeclId) -> Option<u32> {
+    pub(in crate::elab) fn drivable_reached_carrier(&mut self, frame: usize, decl: DeclId) -> Option<u32> {
         let index = self.frame_carrier(frame, decl)?;
         if matches!(self.structure.carriers[index as usize].role, CarrierRole::Resolved { .. }) {
             return Some(index);
@@ -568,7 +568,7 @@ impl Elaboration<'_, '_> {
 
     /// The place `place` when it is `inst.name`, a resolved carrier of a placed child, lowered as a target of a drive: `None`
     /// when it is any other place, `Some(None)` after a diagnostic.
-    pub(super) fn reached_place_target(&mut self, scope: &Scope, place: ExprId) -> Option<Option<PlaceTarget>> {
+    pub(in crate::elab) fn reached_place_target(&mut self, scope: &Scope, place: ExprId) -> Option<Option<PlaceTarget>> {
         let node = self.design.expr_node(self.peel_parens(place)).clone();
         let ExprKind::Field { res: Resolution::Decl(item), .. } = &node.kind else { return None };
         if !matches!(self.design.decl_data(*item).kind, DeclKind::Port(_) | DeclKind::Signal(_)) || self.types.carrier(*item).is_none() {
@@ -608,7 +608,7 @@ impl Elaboration<'_, '_> {
 
     /// The params of other modules that a field read `c.e` of a `pub let` makes key params: the
     /// ones the `let`'s value reads, which the reach frame must hold as constants.
-    pub(super) fn params_read_through_reaches(&self) -> Vec<(DeclId, DeclId)> {
+    pub(in crate::elab) fn params_read_through_reaches(&self) -> Vec<(DeclId, DeclId)> {
         let mut found = Vec::new();
         for index in 0..self.design.expr_count() {
             let expr = ExprId(index as u32);
@@ -620,7 +620,7 @@ impl Elaboration<'_, '_> {
             match &self.design.decl_data(*item).kind {
                 DeclKind::Param(_) => found.push((module, *item)),
                 DeclKind::Binding(_) => {
-                    if let Some(params) = self.body_let_value(*item).and_then(|value| super::structural::ParamReads::new(self.design, self.types).of(value)) {
+                    if let Some(params) = self.body_let_value(*item).and_then(|value| crate::elab::structural::ParamReads::new(self.design, self.types).of(value)) {
                         found.extend(params.into_iter().map(|p| (module, p)));
                     }
                 }

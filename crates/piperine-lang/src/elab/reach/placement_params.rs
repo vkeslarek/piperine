@@ -1,6 +1,6 @@
 //! The params a placement binds in its module (§8.1.16, edge case 5): the value the placement's param block (or its template) gives,
 //! else the default over the params before it. One fold serves the two frames that read a placed module's params outside its own
-//! body: a hoisted frame (`hoist.rs`), whose params must all fold, and a reach frame (`reach.rs`), which reads a child's `let`s in
+//! body: a hoisted frame (`hoist.rs`), whose params must all fold, and a reach frame (`reach/fields.rs`), which reads a child's `let`s in
 //! the parent's context (§8.2.25).
 //!
 //! The fold reports nothing itself: it returns what it folded, what it could not (`DeferredParam`), and what is wrong with the
@@ -12,16 +12,16 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{Constant, ExprId as LoweredExpr};
 
-use super::consts::{Bindings, ConstFault};
-use super::elaborator::Elaboration;
-use super::lower::Scope;
+use crate::elab::consts::{Bindings, ConstFault};
+use crate::elab::elaborator::Elaboration;
+use crate::elab::lower::Scope;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution};
 use crate::types::Substitution;
 
 /// A param of a placed module whose value does not fold to a constant: the expression it is read as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DeferredParam {
+pub(in crate::elab) enum DeferredParam {
     /// The value the placement gives, written in the caller: lowered in the frame of the caller.
     Given(ExprId),
     /// The default of the param, over a param before it that did not fold: lowered in the frame of the placed module.
@@ -30,7 +30,7 @@ pub(super) enum DeferredParam {
 
 /// What is wrong with the params a placement binds, in the order the fold met it.
 #[derive(Debug, Clone)]
-pub(super) enum ParamFault {
+pub(in crate::elab) enum ParamFault {
     /// A given value or a default that does not fold to a constant, and what was being folded.
     NotFolded(ConstFault, &'static str),
     /// A required param the placement leaves out, by name (`E0319`).
@@ -41,31 +41,31 @@ pub(super) enum ParamFault {
 
 /// The params a placement binds in its module.
 #[derive(Debug, Clone, Default)]
-pub(super) struct PlacementParams {
+pub(in crate::elab) struct PlacementParams {
     /// The params that fold, each to its constant.
-    pub(super) values: BTreeMap<DeclId, Constant>,
+    pub(in crate::elab) values: BTreeMap<DeclId, Constant>,
     /// The params that do not fold, each to the expression it is read as.
-    pub(super) deferred: BTreeMap<DeclId, DeferredParam>,
+    pub(in crate::elab) deferred: BTreeMap<DeclId, DeferredParam>,
     /// What is wrong with the placement.
-    pub(super) faults: Vec<ParamFault>,
+    pub(in crate::elab) faults: Vec<ParamFault>,
 }
 
 /// Where a placement is written: the param block (or the template) it gives its module, and the constants and generic arguments of
 /// the caller its given values fold over.
-pub(super) struct PlacementSite<'a> {
+pub(in crate::elab) struct PlacementSite<'a> {
     /// The fields of the placement's param block.
-    pub(super) fields: &'a [FieldInit],
+    pub(in crate::elab) fields: &'a [FieldInit],
     /// The template the placement is written through, which fixes every param.
-    pub(super) template: Option<&'a super::templates::TemplateValue>,
+    pub(in crate::elab) template: Option<&'a crate::elab::templates::TemplateValue>,
     /// The caller's constants: its params that fold, its loop variables.
-    pub(super) caller: &'a Bindings,
+    pub(in crate::elab) caller: &'a Bindings,
     /// The caller's generic arguments.
-    pub(super) caller_substitution: &'a Substitution,
+    pub(in crate::elab) caller_substitution: &'a Substitution,
 }
 
 impl Elaboration<'_, '_> {
     /// The params a placement of `module` at `site` binds, reporting nothing (see the module documentation).
-    pub(super) fn fold_placement_params(&mut self, module: DeclId, site: &PlacementSite) -> PlacementParams {
+    pub(in crate::elab) fn fold_placement_params(&mut self, module: DeclId, site: &PlacementSite) -> PlacementParams {
         let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut bindings = Bindings::new();
         let mut folded = PlacementParams::default();
@@ -121,7 +121,7 @@ impl Elaboration<'_, '_> {
 
     /// The params of a placed module that must all fold (a hoisted frame's): each fault reported (`E0319`, `E0317`, the fold's own),
     /// at `span` of `file`. `None` after a diagnostic.
-    pub(super) fn placement_params(&mut self, module: DeclId, site: &PlacementSite, file: FileId, span: Span) -> Option<BTreeMap<DeclId, Constant>> {
+    pub(in crate::elab) fn placement_params(&mut self, module: DeclId, site: &PlacementSite, file: FileId, span: Span) -> Option<BTreeMap<DeclId, Constant>> {
         let folded = self.fold_placement_params(module, site);
         for fault in &folded.faults {
             match fault {
@@ -135,7 +135,7 @@ impl Elaboration<'_, '_> {
 
     /// The param `decl` of the frame `scope.frame` that its placement left to be read in place (`DeferredParam`): the given value
     /// lowered in the caller's frame, the default in the frame itself. `None` for a param the frame does not defer.
-    pub(super) fn lower_deferred_param(&mut self, scope: &mut Scope, decl: DeclId) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_deferred_param(&mut self, scope: &mut Scope, decl: DeclId) -> Option<LoweredExpr> {
         match self.frames.get(scope.frame)?.deferred_params.get(&decl).copied()? {
             DeferredParam::Given(expr) => self.in_caller(scope, |this, scope| this.lower_expr(scope, expr)),
             DeferredParam::Default(expr) => self.lower_expr(scope, expr),

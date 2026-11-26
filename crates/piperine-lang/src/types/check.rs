@@ -119,7 +119,7 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
-    /// The reads of an item of a child only a folded template names (`reach.rs`), typed as a node until a context wants a value
+    /// The reads of an item of a child only a folded template names (`reach/fields.rs`), typed as a node until a context wants a value
     /// of them (`template_items.rs`).
     pub(super) template_reads: BTreeSet<ExprId>,
     /// The reads through a template made through an instance whose `let` was being typed, to that `let`: a node connection, and
@@ -342,7 +342,7 @@ impl<'d> Checker<'d> {
     }
 
     /// Check `module` now, out of queue order, when it is not checked yet: a read of a child's
-    /// `let` needs the type of its value (`reach.rs`). The state of the declaration being checked
+    /// `let` needs the type of its value (`reach/fields.rs`). The state of the declaration being checked
     /// is set aside and restored; a module already checked (or being checked) is left alone.
     pub(super) fn check_ahead(&mut self, module: DeclId) {
         if self.checked.contains(&module) {

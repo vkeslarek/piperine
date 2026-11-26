@@ -54,9 +54,9 @@ impl<'d> Elaborator<'d> {
             Err(diagnostics) => return (Err(diagnostics), statistics),
         };
         let top_decl = types.reached()[0];
-        // the reads the text names through children of children are the demands of the first run (`reach_seed.rs`); a run that meets
+        // the reads the text names through children of children are the demands of the first run (`reach/seed.rs`); a run that meets
         // one its tables lack (a hop through a type-parameter template) says so, and is made again with it
-        // (`reach_through_templates.rs`)
+        // (`reach/demands.rs`)
         let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).static_demands();
         loop {
             let (result, wanted) = Elaboration::new(self.design, &types, overrides.clone(), demands.clone()).run(top_decl);
@@ -73,7 +73,7 @@ impl<'d> Elaborator<'d> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RunStatistics {
     /// How many times the design was elaborated: one, plus one for each run that met a read through a child of a child its tables
-    /// lacked (a hop through a type-parameter template, `reach_through_templates.rs`); zero when the type check refused the design.
+    /// lacked (a hop through a type-parameter template, `reach/demands.rs`); zero when the type check refused the design.
     pub passes: usize,
 }
 
@@ -118,7 +118,7 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) structure: Structure,
     /// The frames of the body being lowered: frame 0 is its own module.
     pub(super) frames: Vec<Frame>,
-    /// The index each placement of the body being lowered takes among its children (`reach.rs`).
+    /// The index each placement of the body being lowered takes among its children (`reach/fields.rs`).
     pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
     /// The items of the body being lowered that are written inside generation, and how each unrolls (`generation.rs`).
     pub(super) generated: super::generation::GeneratedItems,
@@ -126,12 +126,12 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) body_keys: Bindings,
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
-    /// The reach frame of each child a frame reads, by the frame that reads it and the placement (`reach.rs`).
+    /// The reach frame of each child a frame reads, by the frame that reads it and the placement (`reach/fields.rs`).
     pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
-    /// What the design reads through a child of a child, by module (`reach_through_templates.rs`).
-    pub(super) nested_demands: super::reach_through_templates::NestedDemands,
+    /// What the design reads through a child of a child, by module (`reach/demands.rs`).
+    pub(super) nested_demands: super::reach::demands::NestedDemands,
     /// The modules refused for a cause of their own that a read through them meets: one that declares a node in generation
-    /// (`reach.rs`), a hoisted one that holds a placement (`hoist.rs`). A read through one of them adds no second diagnostic.
+    /// (`reach/fields.rs`), a hoisted one that holds a placement (`hoist.rs`). A read through one of them adds no second diagnostic.
     pub(super) refused_modules: std::collections::BTreeSet<DeclId>,
     /// The diverging expressions lowered so far (`exits.rs`).
     pub(super) divergences: Divergences,
@@ -152,7 +152,7 @@ pub(super) struct Elaboration<'d, 't> {
 }
 
 impl<'d, 't> Elaboration<'d, 't> {
-    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::reach_through_templates::NestedDemand>) -> Self {
+    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::reach::demands::NestedDemand>) -> Self {
         Elaboration {
             design,
             types,
@@ -181,7 +181,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
-            nested_demands: super::reach_through_templates::NestedDemands::known(demands),
+            nested_demands: super::reach::demands::NestedDemands::known(demands),
             refused_modules: std::collections::BTreeSet::new(),
             divergences: Divergences::default(),
             unrolled_names: BTreeMap::new(),
@@ -203,9 +203,9 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
-    /// The run, and the demands it found that its tables did not hold (`reach_through_templates.rs`): when there are any, the
+    /// The run, and the demands it found that its tables did not hold (`reach/demands.rs`): when there are any, the
     /// result is not the run's and the caller runs again with them.
-    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::reach_through_templates::NestedDemand>) {
+    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::reach::demands::NestedDemand>) {
         let result = self.elaborate(top);
         (result, self.nested_demands.into_wanted())
     }

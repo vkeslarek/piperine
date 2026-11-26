@@ -8,37 +8,37 @@
 //!   lowers a reached slot for every demand it meets, once for each iteration of the placement it names, right after its own nodes
 //!   and its own carriers (`lower_nested_demands`, `lower_nested_carrier_demands`), so the slot's index is known to the body that
 //!   reads it (`DemandEntry`).
-//! * The demands are what the design reads. The names it writes are found before the first run (`reach_seed.rs`: each hop the checker
+//! * The demands are what the design reads. The names it writes are found before the first run (`reach/seed.rs`: each hop the checker
 //!   resolved to a placement, and the reads the `let` a path ends on makes through its own children); a hop the text does not name a
 //!   module for (a read through a type-parameter template) is found by running: a hop whose demand the run's tables lack records it
 //!   (`NestedDemands::require`) and the run is made again with it (`Elaborator::run_with`). A read of `a.b.c.x` asks `a`'s module
 //!   for `b.c.x`; that demand, met, asks `b`'s module for `c.x`.
-//! * The reader makes a reach frame for each hop (`reach.rs`), and the slot of a node or carrier of the last is the entry of the
+//! * The reader makes a reach frame for each hop (`reach/fields.rs`), and the slot of a node or carrier of the last is the entry of the
 //!   first hop's module that names it (`Elaboration::nested_slot`).
 
 use piperine_ir::Constant;
 
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
-use super::generation::Iteration;
-use super::lower::Scope;
+use crate::elab::consts::Bindings;
+use crate::elab::elaborator::Elaboration;
+use crate::elab::generation::Iteration;
+use crate::elab::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind};
 
 /// One hop of a read through children of children: the body of `module` reaches the item at the end of `path` below its child
 /// `child`, a `let` that places a module.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct NestedDemand {
+pub(in crate::elab) struct NestedDemand {
     /// The module whose body holds the child.
-    pub(super) module: DeclId,
+    pub(in crate::elab) module: DeclId,
     /// The `let` binding of the placement in the module's body.
-    pub(super) child: DeclId,
+    pub(in crate::elab) child: DeclId,
     /// The names below the child: the children of the child it passes through, then the item.
-    pub(super) path: Vec<String>,
+    pub(in crate::elab) path: Vec<String>,
 }
 
 /// The demands a run knows and the ones it found missing.
 #[derive(Debug, Default)]
-pub(super) struct NestedDemands {
+pub(in crate::elab) struct NestedDemands {
     /// The demands the run lowers slots for, in the order they were found.
     known: Vec<NestedDemand>,
     /// The demands a read met that `known` lacks.
@@ -47,7 +47,7 @@ pub(super) struct NestedDemands {
 
 impl NestedDemands {
     /// The tables of a run that knows `demands`.
-    pub(super) fn known(demands: Vec<NestedDemand>) -> NestedDemands {
+    pub(in crate::elab) fn known(demands: Vec<NestedDemand>) -> NestedDemands {
         NestedDemands { known: demands, wanted: Vec::new() }
     }
 
@@ -57,21 +57,21 @@ impl NestedDemands {
     }
 
     /// Records `demand` as wanted unless the run knows it: the run is made again with it.
-    pub(super) fn require(&mut self, demand: NestedDemand) {
+    pub(in crate::elab) fn require(&mut self, demand: NestedDemand) {
         if !self.known.contains(&demand) && !self.wanted.contains(&demand) {
             self.wanted.push(demand);
         }
     }
 
     /// The demands the run found missing.
-    pub(super) fn into_wanted(self) -> Vec<NestedDemand> {
+    pub(in crate::elab) fn into_wanted(self) -> Vec<NestedDemand> {
         self.wanted
     }
 }
 
 /// What a reached slot stands for in the body that holds it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ReachedKind {
+pub(in crate::elab) enum ReachedKind {
     /// A node of the grandchild.
     Node,
     /// A carrier of the grandchild.
@@ -81,28 +81,28 @@ pub(super) enum ReachedKind {
 /// One reached slot a body lowers for a demand: the iteration of every placement the path passes through, the kind of the item,
 /// and the frame and item it is made for.
 #[derive(Debug, Clone)]
-pub(super) struct DemandEntry {
+pub(in crate::elab) struct DemandEntry {
     /// The demand the slot answers.
-    pub(super) demand: NestedDemand,
+    pub(in crate::elab) demand: NestedDemand,
     /// The iteration of each placement on the way, outermost first, one ordinal for each generation `for` around it.
-    pub(super) ordinals: Vec<u64>,
+    pub(in crate::elab) ordinals: Vec<u64>,
     /// Whether the item is a node or a carrier.
-    pub(super) kind: ReachedKind,
+    pub(in crate::elab) kind: ReachedKind,
     /// The reach frame of the module that declares the item.
-    pub(super) frame: usize,
+    pub(in crate::elab) frame: usize,
     /// The item.
-    pub(super) item: DeclId,
+    pub(in crate::elab) item: DeclId,
 }
 
 impl Elaboration<'_, '_> {
     /// Whether the `let` binding `binding` of a module's body is a placement.
-    pub(super) fn is_placement_binding(&self, binding: DeclId) -> bool {
+    pub(in crate::elab) fn is_placement_binding(&self, binding: DeclId) -> bool {
         let Some(value) = self.body_let_value(binding) else { return false };
         matches!(&self.design.expr_node(self.peel_parens(value)).kind, ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. })
     }
 
     /// The item named `name` of `module` (a port, a signal, a param or a `let` name, entering generation).
-    pub(super) fn item_named(&self, module: DeclId, name: &str) -> Option<DeclId> {
+    pub(in crate::elab) fn item_named(&self, module: DeclId, name: &str) -> Option<DeclId> {
         let mut pending = vec![module];
         while let Some(at) = pending.pop() {
             for child in &self.design.decl_data(at).children {
@@ -134,7 +134,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The item `item` of `concrete` as a parent may read it: `E0343` after the diagnostic of an item that is missing or not `pub`.
-    pub(super) fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
+    pub(in crate::elab) fn visible_item_of(&mut self, scope: &Scope, concrete: DeclId, item: &str, span: crate::msl::Span) -> Option<DeclId> {
         let module_name = self.design.decl_data(concrete).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(decl) = self.item_named(concrete, item) else {
             self.report(scope.file, crate::msl::Diagnostic::new("E0343", format!("no item `{item}` in module `{module_name}`"), span, "no such item"));
@@ -159,7 +159,7 @@ impl Elaboration<'_, '_> {
     /// an instance of the module): every demand it meets, once for each iteration of the placement it names, and below it one for
     /// each slot the child's own module lowers for the rest of the path. The generation of `module` is expanded now
     /// (`self.generated`).
-    pub(super) fn demand_entries(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
+    pub(in crate::elab) fn demand_entries(&mut self, frame: usize, module: DeclId) -> Vec<DemandEntry> {
         let mut entries = Vec::new();
         for demand in self.nested_demands.of(module) {
             let Some(value) = self.body_let_value(demand.child) else { continue };
@@ -214,7 +214,7 @@ impl Elaboration<'_, '_> {
 
     /// The reach frame of the placement bound by `binding` in the module of `parent`, for the iteration `iteration` of its generation
     /// (`None` outside generation).
-    pub(super) fn frame_of_iteration(&mut self, parent: usize, binding: DeclId, iteration: Option<&Iteration>, span: crate::msl::Span) -> Option<usize> {
+    pub(in crate::elab) fn frame_of_iteration(&mut self, parent: usize, binding: DeclId, iteration: Option<&Iteration>, span: crate::msl::Span) -> Option<usize> {
         let call = self.peel_parens(self.body_let_value(binding)?);
         let file = self.design.decl_data(self.design.expr_node(call).owner).file;
         let mut within = Scope::new(file);
@@ -231,7 +231,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Gives the body of `module`, being lowered, the reached node of every demand its variant meets, right after its own nodes.
-    pub(super) fn lower_nested_demands(&mut self, scope: &Scope, module: DeclId) {
+    pub(in crate::elab) fn lower_nested_demands(&mut self, scope: &Scope, module: DeclId) {
         for entry in self.demand_entries(0, module).into_iter().filter(|entry| entry.kind == ReachedKind::Node) {
             let slot = self.structure.nodes.len() as u32;
             let made = self.frame_node(entry.frame, entry.item);
@@ -243,7 +243,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Gives the body of `module`, being lowered, the reached carrier of every demand its variant meets, right after its own carriers.
-    pub(super) fn lower_nested_carrier_demands(&mut self, scope: &Scope, module: DeclId) {
+    pub(in crate::elab) fn lower_nested_carrier_demands(&mut self, scope: &Scope, module: DeclId) {
         for entry in self.demand_entries(0, module).into_iter().filter(|entry| entry.kind == ReachedKind::Carrier) {
             let slot = self.structure.carriers.len() as u32;
             let made = self.frame_carrier(entry.frame, entry.item);
@@ -272,7 +272,7 @@ impl Elaboration<'_, '_> {
     /// and that child's index among the body's children: the slots of its own, plus the entries of its module that precede it. The
     /// demand is asked for when the run does not know it. `None` for a frame of a child of the body, whose item is the child's own,
     /// and for a slot the child's module does not lower.
-    pub(super) fn nested_slot(&mut self, frame: usize, item: DeclId, kind: ReachedKind) -> Option<(u32, u32)> {
+    pub(in crate::elab) fn nested_slot(&mut self, frame: usize, item: DeclId, kind: ReachedKind) -> Option<(u32, u32)> {
         let (root, steps) = self.reach_chain(frame)?;
         let ((first, _), rest) = steps.split_first()?;
         let module = self.frames[root].module;
@@ -292,18 +292,18 @@ impl Elaboration<'_, '_> {
 
     /// The iterations of the generation around the placement owned by `owner` in the module of `frame`, expanded under the frame's
     /// keys and generic arguments.
-    pub(super) fn iterations_under(&mut self, frame: usize, owner: DeclId) -> Vec<Iteration> {
+    pub(in crate::elab) fn iterations_under(&mut self, frame: usize, owner: DeclId) -> Vec<Iteration> {
         let module = self.frames[frame].module;
         self.with_generation_of(frame, module, |this, _| this.generated.of(owner).cloned().unwrap_or_default())
     }
 
     /// The ordinals of `iteration` in the generation `for`s around the placement owned by `owner`, outermost first.
-    pub(super) fn iteration_ordinals(&self, owner: DeclId, iteration: &Iteration) -> Vec<u64> {
+    pub(in crate::elab) fn iteration_ordinals(&self, owner: DeclId, iteration: &Iteration) -> Vec<u64> {
         self.generation_loops(owner).iter().filter_map(|generation| iteration.ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| u64::from(*ordinal))).collect()
     }
 
     /// The ordinals the index expressions `indexes` fold to in the scope: `None` after a diagnostic.
-    pub(super) fn fold_ordinals(&mut self, scope: &Scope, indexes: &[ExprId]) -> Option<Vec<u64>> {
+    pub(in crate::elab) fn fold_ordinals(&mut self, scope: &Scope, indexes: &[ExprId]) -> Option<Vec<u64>> {
         let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
         let mut ordinals = Vec::new();
         for index in indexes {
@@ -320,7 +320,7 @@ impl Elaboration<'_, '_> {
 
     /// The outermost level of `ordinals` that no row of `held` (the ordinals the iterations of a generation make) reaches under the
     /// levels outside it, as its ordinal and the number of ordinals that level does have there.
-    pub(super) fn outermost_missing_ordinal(held: &[Vec<u64>], ordinals: &[u64]) -> (u64, u64) {
+    pub(in crate::elab) fn outermost_missing_ordinal(held: &[Vec<u64>], ordinals: &[u64]) -> (u64, u64) {
         for level in 0..ordinals.len() {
             let mut reached: Vec<u64> = held.iter().filter(|each| each[..level] == ordinals[..level]).map(|each| each[level]).collect();
             reached.sort_unstable();

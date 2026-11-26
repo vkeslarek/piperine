@@ -155,7 +155,7 @@ impl Checker<'_> {
             return Some(ty);
         } else if self.placing.iter().all(|placed| placed.is_some_and(|module| !self.has_result(module))) {
             // through placements of modules with no result there is no instance value to feed back (§8.3.5): the `let`s read each
-            // other's values (`let p = D(x) { k: q.k }; let q = D(x) { k: p.k };`); a node connection is no such read (`reach.rs`)
+            // other's values (`let p = D(x) { k: q.k }; let q = D(x) { k: p.k };`); a node connection is no such read (`reach/fields.rs`)
             let cycle = self.cycle_names(&name);
             let message = format!("the `let` `{name}` reads its own name through other `let`s, {cycle}, and no module on the way has a result to feed back (§8.2.16)");
             self.coded(file, "E0332", span, message, "a `let` that reads itself");

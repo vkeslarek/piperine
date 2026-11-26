@@ -1,4 +1,4 @@
-//! The demands of a design that its text names (`reach_through_templates.rs`), found before the first run so that a read through
+//! The demands of a design that its text names (`reach/demands.rs`), found before the first run so that a read through
 //! children of children costs one pass, not one for each name of the path.
 //!
 //! A read `p.h1.h2.x` names a placement `p` of the reader, then one name for each hop and the item `x`. Each hop whose name the
@@ -13,9 +13,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
-use super::reach_through_templates::NestedDemand;
+use crate::elab::consts::Bindings;
+use crate::elab::elaborator::Elaboration;
+use super::demands::NestedDemand;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 /// How many `let`s a chain is followed through: a chain longer than any design writes stops there.
@@ -53,7 +53,7 @@ struct ReadChain {
 
 impl Elaboration<'_, '_> {
     /// The demands the text of the design names, in the order of its reads, without duplicates.
-    pub(super) fn static_demands(&self) -> Vec<NestedDemand> {
+    pub(in crate::elab) fn static_demands(&self) -> Vec<NestedDemand> {
         let chains = self.outermost_chains();
         let mut reads = DesignReads { names: self.plain_reads(), ..DesignReads::default() };
         for chain in &chains {
