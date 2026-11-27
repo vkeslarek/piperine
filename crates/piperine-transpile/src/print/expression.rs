@@ -1,5 +1,7 @@
-//! `ValuePrinter`: the value forms of the IR as Rust expressions, and an IR function as a Rust
-//! `fn` generic over `Real`.
+//! `ExpressionPrinter`: the value forms of the IR as Rust expressions, and an IR function as a
+//! Rust `fn` generic over `Real`. A block's statements print through the owner's
+//! `StatementPrinter` (`print/statement.rs`), and a record write (a trace, an `emit!`, a commit)
+//! through its `RecordPrinter` (`print/record.rs`).
 //!
 //! A real is `R::constant(v)`; arithmetic is Rust's operators on `R`; a comparison of reals
 //! compares their values (`a.value() > b.value()`, a literal operand plain), as the
@@ -19,24 +21,28 @@
 //! decoded to; in the digital printers a real is a plain `f64`, in an `analog` block and in an IR
 //! function it is `R`.
 
+pub mod aggregate;
+pub mod carrier_array;
+pub mod control;
+pub mod resolve;
+pub mod widths;
+
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
-use piperine_ir::{Addend, AnalysisKind,
-    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream, TypeData,
-    QuantityRole, Terminal, UnaryOp, ValueType,
+use piperine_ir::{AnalysisKind,
+    BinaryOp, Body, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, StmtId, TypeData,
+    Terminal, UnaryOp, ValueType,
 };
 
-use piperine_plan::{RecordLayout, StatementPlan};
-
 use crate::Error;
-use crate::print::carrier_array::{CarrierFacts, ElementRead};
-use crate::print::widths::NumberTypes;
-use crate::print::{ContributionSums, Text, TypeItems};
+use crate::print::expression::carrier_array::{CarrierFacts, ElementRead};
+use crate::print::expression::widths::NumberTypes;
+use crate::print::{ContributionSums, RecordPrinter, StatementPrinter, Text, TypeItems};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Prec {
+pub(crate) enum Prec {
     /// An `if`, a block or a closure: parenthesized wherever it is an operand.
     Low,
     Or,
@@ -53,79 +59,59 @@ pub(super) enum Prec {
 }
 
 /// A printed expression and how strongly it binds.
-pub(super) struct Piece {
-    pub(super) text: String,
-    pub(super) prec: Prec,
+pub(crate) struct Piece {
+    pub(crate) text: String,
+    pub(crate) prec: Prec,
 }
 
 impl Piece {
-    pub(super) fn new(text: String, prec: Prec) -> Piece {
+    /// The printed `text`, binding as strongly as `prec`.
+    pub(crate) fn new(text: String, prec: Prec) -> Piece {
         Piece { text, prec }
     }
 
     /// The text, parenthesized when it binds weaker than `at_least`.
-    pub(super) fn at(self, at_least: Prec) -> String {
+    pub(crate) fn at(self, at_least: Prec) -> String {
         if self.prec < at_least { format!("({})", self.text) } else { self.text }
     }
 }
 
 /// Prints the value code of one owner: a function, a body's `analog` block, or the code of a
-/// drive, an event or a reaction.
+/// drive, an event or a reaction. Its statements print through `statements`, its record writes
+/// through `records`.
 #[derive(Debug)]
-pub struct ValuePrinter<'a> {
-    pub(super) ir: &'a Ir,
+pub struct ExpressionPrinter<'a> {
+    pub(crate) ir: &'a Ir,
     /// The owner's IR path, prefixed to an expression's id in an error: `fn pnjlim`.
-    pub(super) path: String,
+    pub(crate) path: String,
     /// The printed name of each local of the owner, by index.
     locals: Vec<String>,
-    /// The type of each local of the owner, by index.
-    pub(super) local_types: Vec<ValueType>,
-    /// Whether each local of the owner was declared `let mut`, by index: only that local prints
-    /// `let mut` and is the target of an assignment (§1.5.12).
-    pub(super) mutable: Vec<bool>,
-    /// Whether each local of the owner is a temporary the elaborator made (its IR name holds a `$`, which no
-    /// written identifier can), by index: such a local may go unread (a `match` temporary whose arm binds nothing).
-    synthesized: Vec<bool>,
     /// The result type of the function being printed; `None` for any other owner. A `return`
     /// lifts its value to it.
-    pub(super) returns: Option<ValueType>,
+    returns: Option<ValueType>,
     /// The function being printed; `None` for any other owner. A call it makes to a function on a
     /// call cycle with it passes a deeper `rt::Depth`.
-    pub(super) function: Option<FunctionId>,
+    function: Option<FunctionId>,
     /// How many loops' bodies are being printed: a `break` or `continue` is Rust's, outside a loop it is refused.
-    pub(super) loops: Cell<u32>,
+    loops: Cell<u32>,
     /// The printed name of each param of the owner's body, by index; empty for a function.
     params: Vec<String>,
-    /// The type each carrier of the owner's body holds, by index; empty for a function.
-    carriers: Vec<ValueType>,
     /// What the printer knows of each carrier of the owner's body, by index (arrays of carriers); empty for a function.
-    pub(super) facts: Vec<CarrierFacts>,
-    /// The record streams of the owner's body, by index; empty for a function.
-    streams: Vec<Stream>,
-    /// The stream each trace site of the owner's body writes, by site; empty for a function.
-    traces: Vec<u32>,
+    pub(crate) facts: Vec<CarrierFacts>,
     /// The owner's origin: where an error with no expression of its own points.
-    pub(super) origin: Origin,
+    pub(crate) origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
-    pub(super) analog: Option<Reads>,
-    /// The accumulators a contribution adds to, in the structured form of an `analog` block
-    /// (`ContributionSums`); `None` where a contribution has no lowering.
-    sums: Option<ContributionSums>,
+    analog: Option<Reads>,
     /// A real is a plain `f64` (the digital printers) rather than `R` (an `analog` block, an IR
     /// function).
-    pub(super) plain: bool,
-    /// Whether a commit has a place to go: the code of a reaction.
-    pub(super) commits: bool,
-    /// The carrier and `min_after` of each commit printed so far, in printing order: the order
-    /// of the reaction's statements in the shape.
-    committed: RefCell<Vec<StatementPlan>>,
-    /// Whether the code printed so far holds an `emit!` on the stream `sim` that sets `finish`:
-    /// the reaction then asks its `Commits` for the flow (`Commits::finish`, `Commits::flow`;
-    /// msl-fixes FIX-01, §19 Resolution).
-    finishes: Cell<bool>,
+    pub(crate) plain: bool,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
+    /// The printer of the owner's statements.
+    statements: StatementPrinter,
+    /// The printer of the owner's record writes: its traces, `emit!`s and commits.
+    records: RecordPrinter,
 }
 
 /// The variables an `analog` block's read forms print as: a probe as the difference of its
@@ -164,124 +150,98 @@ pub struct Reads {
     pub driving: Vec<String>,
 }
 
-impl<'a> ValuePrinter<'a> {
+impl<'a> ExpressionPrinter<'a> {
     /// The printer of `function`'s code.
-    pub fn of_function(ir: &'a Ir, function: FunctionId) -> ValuePrinter<'a> {
+    pub fn of_function(ir: &'a Ir, function: FunctionId) -> ExpressionPrinter<'a> {
         let f = ir.function(function);
         let (path, origin) = (format!("fn {}", f.name()), f.origin().clone());
-        ValuePrinter {
+        ExpressionPrinter {
             ir,
             path,
             locals: Self::names(f.locals(), &[]),
-            local_types: f.locals().iter().map(|l| l.ty.clone()).collect(),
-            mutable: f.locals().iter().map(|l| l.mutable).collect(),
-            synthesized: f.locals().iter().map(Self::is_synthesized).collect(),
             returns: Some(f.ret().clone()),
             function: Some(function),
             loops: Cell::new(0),
             params: Vec::new(),
-            carriers: Vec::new(),
             facts: Vec::new(),
-            streams: Vec::new(),
-            traces: Vec::new(),
             origin,
             analog: None,
-            sums: None,
             plain: false,
-            commits: false,
-            committed: RefCell::new(Vec::new()),
-            finishes: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
+            statements: StatementPrinter::of_locals(f.locals()),
+            records: RecordPrinter::of_function(),
         }
     }
 
     /// The printer of a type item's field types: a real is `R`, the item's own generic parameter, or
     /// a plain `f64` for the impls written for the item at `f64` (`plain`).
-    pub fn of_type(ir: &'a Ir, data: &TypeData, plain: bool) -> ValuePrinter<'a> {
-        ValuePrinter {
+    pub fn of_type(ir: &'a Ir, data: &TypeData, plain: bool) -> ExpressionPrinter<'a> {
+        ExpressionPrinter {
             ir,
             path: format!("type {}", data.path),
             locals: Vec::new(),
-            local_types: Vec::new(),
-            mutable: Vec::new(),
-            synthesized: Vec::new(),
             returns: None,
             function: None,
             loops: Cell::new(0),
             params: Vec::new(),
-            carriers: Vec::new(),
             facts: Vec::new(),
-            streams: Vec::new(),
-            traces: Vec::new(),
             origin: data.origin.clone(),
             analog: None,
-            sums: None,
             plain,
-            commits: false,
-            committed: RefCell::new(Vec::new()),
-            finishes: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
+            statements: StatementPrinter::of_locals(&[]),
+            records: RecordPrinter::of_function(),
         }
     }
 
     /// The printer of the code of the body named `body`, with its locals and params: its
     /// `analog` block, where a real is `R` and there is no `?`.
-    pub fn of_body(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
+    pub fn of_body(ir: &'a Ir, body: Body<'a>) -> ExpressionPrinter<'a> {
         let params: Vec<String> = body.params().iter().map(|p: &Param| Text::ident(&p.name)).collect();
         let (path, origin) = (format!("body {}", body.name()), body.origin().clone());
         let reserved = Self::reserved(&body, &params);
-        ValuePrinter {
+        ExpressionPrinter {
             ir,
             path,
             locals: Self::names(body.locals(), &reserved),
-            local_types: body.locals().iter().map(|l| l.ty.clone()).collect(),
-            mutable: body.locals().iter().map(|l| l.mutable).collect(),
-            synthesized: body.locals().iter().map(Self::is_synthesized).collect(),
             returns: None,
             function: None,
             loops: Cell::new(0),
             params,
-            carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
             facts: CarrierFacts::of_body(body),
-            streams: body.streams().to_vec(),
-            traces: body.traces().iter().map(|t| t.stream).collect(),
             origin,
             analog: None,
-            sums: None,
             plain: false,
-            commits: false,
-            committed: RefCell::new(Vec::new()),
-            finishes: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
+            statements: StatementPrinter::of_locals(body.locals()),
+            records: RecordPrinter::of_body(body),
         }
     }
 
     /// The printer of the code of a drive or an event of `body`: its locals are the body's, a
     /// real is a plain `f64`.
-    pub fn of_digital(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
-        ValuePrinter { plain: true, ..Self::of_body(ir, body) }
+    pub fn of_digital(ir: &'a Ir, body: Body<'a>) -> ExpressionPrinter<'a> {
+        ExpressionPrinter { plain: true, ..Self::of_body(ir, body) }
     }
 
     /// The printer of an expression a placement gives a child's param (`ChildValue::Expr`): over
     /// the params of `body`, plain reals.
-    pub fn of_placement(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
+    pub fn of_placement(ir: &'a Ir, body: Body<'a>) -> ExpressionPrinter<'a> {
         Self::of_digital(ir, body)
     }
 
     /// The printer of reaction `k` of `body`: its own locals, plain reals, and commits.
-    pub fn of_reaction(ir: &'a Ir, body: Body<'a>, k: usize) -> ValuePrinter<'a> {
+    pub fn of_reaction(ir: &'a Ir, body: Body<'a>, k: usize) -> ExpressionPrinter<'a> {
         let base = Self::of_digital(ir, body);
         let Some(reaction) = body.reactions().get(k) else { return base };
         let params: Vec<String> = body.params().iter().map(|p: &Param| Text::ident(&p.name)).collect();
         let reserved = Self::reserved(&body, &params);
-        ValuePrinter {
+        ExpressionPrinter {
             path: format!("body {} reaction {k}", body.name()),
             locals: Self::names(&reaction.locals, &reserved),
-            local_types: reaction.locals.iter().map(|l| l.ty.clone()).collect(),
-            mutable: reaction.locals.iter().map(|l| l.mutable).collect(),
-            synthesized: reaction.locals.iter().map(Self::is_synthesized).collect(),
             origin: reaction.origin.clone(),
-            commits: true,
+            statements: StatementPrinter::of_locals(&reaction.locals),
+            records: base.records.committing(),
             ..base
         }
     }
@@ -297,23 +257,24 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// This printer with the analog read forms printing as `reads` names them.
-    pub fn with_reads(self, reads: Reads) -> ValuePrinter<'a> {
-        ValuePrinter { analog: Some(reads), ..self }
+    pub fn with_reads(self, reads: Reads) -> ExpressionPrinter<'a> {
+        ExpressionPrinter { analog: Some(reads), ..self }
     }
 
     /// This printer with a contribution printing as an addition to the accumulators `sums` names.
-    pub fn with_contribution_sums(self, sums: ContributionSums) -> ValuePrinter<'a> {
-        ValuePrinter { sums: Some(sums), ..self }
+    pub fn with_contribution_sums(self, sums: ContributionSums) -> ExpressionPrinter<'a> {
+        let statements = self.statements.with_contribution_sums(sums);
+        ExpressionPrinter { statements, ..self }
     }
 
-    /// The carrier and `min_after` of each commit printed so far, in printing order.
-    pub fn committed(&self) -> Vec<StatementPlan> {
-        self.committed.borrow().clone()
+    /// The printer of the owner's record writes: what the code printed so far commits and whether it finishes.
+    pub fn records(&self) -> &RecordPrinter {
+        &self.records
     }
 
-    /// Whether the code printed so far ends the analysis: an `emit!` on `sim` with a `finish` field.
-    pub fn finishes(&self) -> bool {
-        self.finishes.get()
+    /// Statement `s` of the owner, printed by its `StatementPrinter`.
+    pub fn stmt(&self, s: StmtId) -> Result<String, Error> {
+        self.statements.statement(self, s)
     }
 
     /// Whether the code printed so far reads the variable `name` (a param, node, carrier or
@@ -392,6 +353,7 @@ impl<'a> ValuePrinter<'a> {
         Some(self.probe_piece(plus, minus)?.text)
     }
 
+    /// The probe `plus − minus` as a piece; `None` outside an `analog` block or for a terminal of its own.
     fn probe_piece(&self, plus: Terminal, minus: Terminal) -> Option<Piece> {
         let reads = self.analog.as_ref()?;
         let ground = if self.plain { "0.0" } else { "R::constant(0.0)" };
@@ -719,6 +681,7 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
+    /// The refusal of `form` at expression `e`: its path is the owner's and `e`'s id, its origin `e`'s.
     pub(super) fn unsupported(&self, e: ExprId, form: &str) -> Error {
         Error::Unsupported {
             form: form.to_string(),
@@ -740,6 +703,7 @@ impl<'a> ValuePrinter<'a> {
         ))
     }
 
+    /// `e` as a printed piece: one arm per form of `Expr`.
     pub(super) fn piece(&self, e: ExprId) -> Result<Piece, Error> {
         let atom = |text: String| Ok(Piece::new(text, Prec::Atom));
         match self.ir.expr(e) {
@@ -1002,6 +966,7 @@ impl<'a> ValuePrinter<'a> {
         })
     }
 
+    /// `lhs op rhs`, each operand parenthesized as the operator's strength asks.
     fn binary(&self, e: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
         let real = *self.ir.expr_type(lhs) == ValueType::F64 && !self.plain;
         let (symbol, prec) = self.operator(e, op, real)?;
@@ -1031,6 +996,7 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
+    /// The strength one step above `prec`: what the right operand of a left-associative operator needs.
     pub(super) fn stronger(prec: Prec) -> Prec {
         match prec {
             Prec::Low => Prec::Or,
@@ -1103,223 +1069,6 @@ impl<'a> ValuePrinter<'a> {
         Ok(lines.join("\n"))
     }
 
-    /// Whether `local` is a temporary of the elaborator rather than a name the author wrote.
-    fn is_synthesized(local: &Local) -> bool {
-        local.name.contains('$')
-    }
-
-    /// `e` as a statement: an `if` closes with its brace; anything else takes a `;`.
-    pub(super) fn expression_statement(&self, e: ExprId) -> Result<String, Error> {
-        let piece = self.piece(e)?;
-        let block = matches!(self.ir.expr(e), Expr::If { .. }) && *self.ir.expr_type(e) == ValueType::Unit && piece.prec == Prec::Low;
-        Ok(if block { piece.text } else { format!("{};", piece.text) })
-    }
-
-    /// `let name = init;`, `expr;`, or a commit.
-    pub fn stmt(&self, s: StmtId) -> Result<String, Error> {
-        match self.ir.stmt(s) {
-            Stmt::Let { local, init } => {
-                let Some(name) = self.locals.get(*local as usize) else {
-                    return Err(self.unsupported(*init, "a let of a local out of range"));
-                };
-                let init = self.expr(*init)?;
-                // a deferred `let x;` starts at a placeholder its first assignment overwrites
-                // a temporary the elaborator makes for a `match` (`match$0.val`) is unread when its arm binds nothing (`Some(_)`)
-                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) {
-                    "#[allow(unused_assignments, unused_variables)] let mut"
-                } else if self.synthesized.get(*local as usize).copied().unwrap_or(false) {
-                    "#[allow(unused_variables)] let"
-                } else {
-                    "let"
-                };
-                // a function value has no type of its own to infer: the local is the `Rc<dyn Fn>` it holds
-                let annotation = match self.local_types.get(*local as usize) {
-                    Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),
-                    _ => String::new(),
-                };
-                Ok(format!("{keyword} {name}{annotation} = {init};"))
-            }
-            Stmt::Expr(e) => self.expression_statement(*e),
-            Stmt::Contribute { branch, quantity, addends } => match &self.sums {
-                Some(sums) => self.contribution(sums, *branch, *quantity, addends),
-                None => Err(Error::Unsupported {
-                    form: "contribution".into(),
-                    path: format!("{} s{}", self.path, s.index()),
-                    origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
-                }),
-            },
-            Stmt::Assign { place, op, value } => self.assign(place, *op, *value),
-            Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
-            Stmt::Trace { site, fields } => self.trace(s, *site, fields),
-            Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
-            Stmt::Commit { carrier, value, after, target } => {
-                if !self.commits {
-                    return Err(Error::Unsupported {
-                        form: "commit".into(),
-                        path: format!("{} s{}", self.path, s.index()),
-                        origin: self.ir.expr_origin(*value).clone(),
-                    });
-                }
-                if self.carriers.get(*carrier as usize).is_none() {
-                    return Err(self.unsupported(*value, "a commit to a carrier out of range"));
-                }
-                let statement = self.commit_statement(*value, *carrier, *after, target.as_ref())?;
-                let value = self.expr(*value)?;
-                let after = match after {
-                    Some(a) => self.expr(*a)?,
-                    None => "0.0".to_string(),
-                };
-                let index = {
-                    let mut done = self.committed.borrow_mut();
-                    done.push(statement);
-                    done.len() - 1
-                };
-                if value.contains("commits_") || after.contains("commits_") {
-                    // a value that emits (a block that holds an `emit!`) borrows `commits_`
-                    // mutably: as an argument of `commits_.commit(..)` it would borrow it twice.
-                    // The arguments are evaluated first, in the order they print
-                    let (value, after) = (Self::indent(&value), Self::indent(&after));
-                    let call = self.commit_call(index, *carrier, target.as_ref(), "value_", "after_")?;
-                    return Ok(format!("{{\n    let value_ =\n{value};\n    let after_ =\n{after};\n    {call}\n}}"));
-                }
-                self.commit_call(index, *carrier, target.as_ref(), &value, &after)
-            }
-        }
-    }
-
-    /// A contribution of the structured form (`ContributionSums`): each addend added to its
-    /// branch's sum, then the flag of its quantity set when the branch has one. An arm not taken
-    /// never runs this, so it adds nothing (§11 rule 4).
-    fn contribution(&self, sums: &ContributionSums, branch: u32, quantity: QuantityRole, addends: &[Addend]) -> Result<String, Error> {
-        let mut lines = Vec::with_capacity(addends.len() + 2);
-        if let Some(first) = addends.first() {
-            lines.push(sums.comment(branch, quantity, self.ir.expr_origin(first.value)));
-        }
-        for addend in addends {
-            let sum = sums.sum(branch, quantity, addend.operator);
-            let value = if addend.negated { self.negated(addend.value)? } else { self.right_of_add(addend.value)? };
-            lines.push(format!("{sum} = {sum} + {value};"));
-        }
-        lines.extend(sums.flag(branch, quantity).map(|flag| format!("{flag} = true;")));
-        Ok(lines.join("\n"))
-    }
-
-    /// A trace (`emit!` in `analog`, §19 rule 4): the record of its stream, its `BOOL` presence byte
-    /// set and each value field written where the layout puts it, stored in the `traces_` buffer of
-    /// the site; `terms` copies the buffer to the site's `TRACE` watch. A statement that does not
-    /// execute leaves the buffer empty, which is the empty record (abi.md A5). The text fields stay
-    /// in the IR.
-    fn trace(&self, s: StmtId, site: u32, fields: &[EmitField]) -> Result<String, Error> {
-        let origin = fields
-            .iter()
-            .find_map(|f| match f {
-                EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
-                EmitField::Text { .. } => None,
-            })
-            .unwrap_or_else(|| self.origin.clone());
-        let unsupported = |form: &str| Error::Unsupported { form: form.to_string(), path: format!("{} s{}", self.path, s.index()), origin: origin.clone() };
-        let Some(declared) = self.traces.get(site as usize).and_then(|stream| self.streams.get(*stream as usize)) else {
-            return Err(unsupported("a trace of a site the body does not have"));
-        };
-        let Some(layout) = RecordLayout::in_ir(self.ir, declared) else {
-            return Err(unsupported(&format!("a trace to stream `{}`, whose fields no pin holds", declared.name)));
-        };
-        let start = layout.trace_start();
-        let mut writes = Vec::new();
-        let mut texts = Vec::new();
-        for f in fields {
-            match f {
-                EmitField::Value { field, value } => {
-                    let (Some((offset, _)), Some(field_type)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
-                        return Err(unsupported(&format!("a trace of field {field} of stream `{}`, out of range", declared.name)));
-                    };
-                    let mut text = self.expr(*value)?;
-                    // a real is an `R` in a generic block: its value is what the record holds
-                    if field_type.ty == ValueType::F64 && !self.plain {
-                        text = format!("({text}).value()");
-                    }
-                    writes.push(format!("rt::Carried::write_pin({text}, &mut record_[{}..]); // {}", start + offset, field_type.name));
-                }
-                EmitField::Text { name, text } => texts.push(format!("{name} = {text:?}")),
-            }
-        }
-        let note = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
-        let mut lines = vec![format!("// trace to stream `{}` @ {}:{}:{}{note}", declared.name, origin.file, origin.line, origin.col)];
-        lines.push(format!("let mut record_ = [0u8; {}];", layout.trace_size()));
-        lines.push("record_[0] = 1;".to_string());
-        lines.extend(writes);
-        lines.push(format!("{}[{site}] = Some(record_.to_vec());", Self::TRACES));
-        Ok(lines.join("\n"))
-    }
-
-    /// The name of the buffer `terms_block` fills with the records of its trace sites.
-    pub const TRACES: &'static str = "traces_";
-
-    /// An emit site (msl-digital A4): the record's bytes in its stream's layout (`RecordLayout`),
-    /// all zero first so a field the site leaves out has its zero (abi.md C5), each value
-    /// field written where the layout puts it, and the record committed through the site's
-    /// statement. The text fields stay in the IR (`Body::record_site`): a comment names them.
-    fn emit(&self, s: StmtId, stream: u32, fields: &[EmitField]) -> Result<String, Error> {
-        let origin = fields
-            .iter()
-            .find_map(|f| match f {
-                EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
-                EmitField::Text { .. } => None,
-            })
-            .unwrap_or_else(|| self.origin.clone());
-        let unsupported = |form: &str| Error::Unsupported { form: form.to_string(), path: format!("{} s{}", self.path, s.index()), origin: origin.clone() };
-        if !self.commits {
-            return Err(unsupported("emit! outside a reaction"));
-        }
-        let Some(declared) = self.streams.get(stream as usize) else {
-            return Err(unsupported("emit! to a stream out of range"));
-        };
-        let Some(layout) = RecordLayout::in_ir(self.ir, declared) else {
-            return Err(unsupported(&format!("emit! to stream `{}`, whose fields no pin holds", declared.name)));
-        };
-        let stream_name = declared.name.as_str();
-        let mut evaluated = Vec::new();
-        let mut writes = Vec::new();
-        let mut texts = Vec::new();
-        for f in fields {
-            match f {
-                EmitField::Value { field, value } => {
-                    let (Some((offset, _)), Some(declared)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
-                        return Err(unsupported(&format!("emit! of field {field} of stream `{}`, out of range", declared.name)));
-                    };
-                    let mut value = self.expr(*value)?;
-                    if value.contains("commits_") {
-                        // a value that emits is evaluated before the record's own `commits_`
-                        // calls, so that two never borrow it at once
-                        let name = format!("field{field}_");
-                        evaluated.push(format!("let {name} =\n{};", Self::indent(&value)));
-                        value = name;
-                    }
-                    writes.push(format!("rt::Carried::write_pin({value}, &mut record_[{offset}..]); // {}", declared.name));
-                    if declared.name == "finish" && stream_name == "sim" {
-                        writes.push(format!("commits_.finish({value});"));
-                        self.finishes.set(true);
-                    }
-                }
-                EmitField::Text { name, text } => texts.push(format!("{name} = {text:?}")),
-            }
-        }
-        let index = {
-            let mut done = self.committed.borrow_mut();
-            done.push(StatementPlan::record(stream));
-            done.len() - 1
-        };
-        let text = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
-        let mut lines = vec![format!("// emit! to stream `{}` @ {}:{}:{}{text}", declared.name, origin.file, origin.line, origin.col)];
-        lines.extend(evaluated);
-        // a stream with no value field writes nothing into its zero bytes
-        let binding = if writes.is_empty() { "let" } else { "let mut" };
-        lines.push(format!("{binding} record_ = [0u8; {}];", layout.size));
-        lines.extend(writes);
-        lines.push(format!("commits_.record({index}, &record_);"));
-        Ok(lines.join("\n"))
-    }
-
     /// Every line of `text` four spaces deeper; empty lines stay empty.
     pub(super) fn indent(text: &str) -> String {
         text.lines().map(|l| if l.is_empty() { String::new() } else { format!("    {l}") }).collect::<Vec<_>>().join("\n")
@@ -1332,7 +1081,7 @@ mod tests {
         BinaryOp, Expr, ExprId, FunctionId, FunctionSpec, Ir, IrBuilder, Local, Method, Origin, Stmt, UnaryOp, ValueType,
     };
 
-    use super::ValuePrinter;
+    use super::ExpressionPrinter;
     use crate::Error;
     use crate::alone::Alone;
     use crate::devices::Devices;
@@ -1350,7 +1099,7 @@ mod tests {
 
     fn function(ir: &Ir, name: &str) -> String {
         let f = ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no fn {name}"));
-        ValuePrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{name}: {e}"))
+        ExpressionPrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{name}: {e}"))
     }
 
     #[test]
@@ -1422,7 +1171,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         // `i(p, n) +> v(p, n) / r`: the probe `v(p, n)` (devices.msl:8) has no value lowering
         let (resistor, value) = contributed(&ir, "Resistor");
         let Expr::Binary { lhs: probe, .. } = ir.expr(value) else { panic!("v(p, n) / r") };
-        let err = ValuePrinter::of_body(&ir, resistor).expr(value).expect_err("a probe is not a value form");
+        let err = ExpressionPrinter::of_body(&ir, resistor).expr(value).expect_err("a probe is not a value form");
         assert_eq!(
             err,
             Error::Unsupported { form: "probe".into(), path: format!("body Resistor e{}", probe.index()), origin: at(8, 32) }
@@ -1431,7 +1180,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         // `v(p, n) +> dc * source_scale() + ac_stim(ac)`: the stimulus (devices.msl:21) neither
         let (vsource, value) = contributed(&ir, "Vsource");
         let Expr::Binary { rhs: stim, .. } = ir.expr(value) else { panic!("dc * source_scale() + ac_stim(ac)") };
-        let err = ValuePrinter::of_body(&ir, vsource).expr(value).expect_err("ac_stim is not a value form");
+        let err = ExpressionPrinter::of_body(&ir, vsource).expr(value).expect_err("ac_stim is not a value form");
         assert_eq!(
             err,
             Error::Unsupported { form: "ac_stim".into(), path: format!("body Vsource e{}", stim.index()), origin: at(21, 30) }
@@ -1624,7 +1373,7 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
             let f = defined(&mut b, "wide", &[("x", ty.clone())], ValueType::Bool, |x| x.boolean(true));
             let ir = Alone::finish_unchecked(b);
             assert_eq!(
-                ValuePrinter::function(&ir, f),
+                ExpressionPrinter::function(&ir, f),
                 Err(Error::Unsupported {
                     form: format!("the type {name}, whose width is outside 1..=4294967295"),
                     path: "fn wide param x".into(),

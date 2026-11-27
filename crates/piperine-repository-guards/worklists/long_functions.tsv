@@ -120,6 +120,5 @@ crates/piperine-transpile/src/print/site.rs::AnalogPrinter::cap	-
 crates/piperine-transpile/src/print/site.rs::AnalogPrinter::stim	-
 crates/piperine-transpile/src/print/types.rs::TypeItems::enum_carried	-
 crates/piperine-transpile/src/print/types.rs::TypeItems::item	-
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::piece	-
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::stmt	-
+crates/piperine-transpile/src/print/expression.rs::ExpressionPrinter::piece	kept: one arm per variant
 crates/piperine-transpile/src/shape_check.rs::ShapeCheck::entries	-

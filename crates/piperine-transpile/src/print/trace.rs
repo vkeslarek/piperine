@@ -2,7 +2,7 @@
 //!
 //! An `emit!` in `analog` is a `Stmt::Trace` that stands where the block writes it. `terms_block`
 //! takes a buffer `traces_` with one slot per site; the statement fills its slot with the record
-//! (`ValuePrinter` prints it: a `BOOL` presence byte set, each value field where the watch's
+//! (`RecordPrinter` prints it: a `BOOL` presence byte set, each value field where the watch's
 //! layout puts it) wherever it executes, and `terms` copies each filled slot into the site's
 //! `TRACE` watch. A slot left empty is the empty record (abi.md A5), which the solver does not
 //! deliver. A trace changes no row, so the terms are what they would be without it.
@@ -11,7 +11,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use piperine_ir::{Body, Expr, ExprId, Ir, Stmt, StmtId};
 
-use crate::print::ValuePrinter;
+use crate::print::{ExpressionPrinter, RecordPrinter};
 
 /// Finds and names the trace sites of one body.
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl TracePrinter {
                         stmts.extend(inner);
                         exprs.extend(value);
                     }
-                    other => ValuePrinter::children(ir, other, &mut exprs),
+                    other => ExpressionPrinter::children(ir, other, &mut exprs),
                 }
             }
         }
@@ -52,6 +52,6 @@ impl TracePrinter {
 
     /// The parameter of `terms_block` that holds the trace buffer, typed for `count` sites.
     pub fn parameter(count: usize) -> String {
-        format!("{}: &mut [Option<Vec<u8>>; {count}]", ValuePrinter::TRACES)
+        format!("{}: &mut [Option<Vec<u8>>; {count}]", RecordPrinter::TRACES)
     }
 }

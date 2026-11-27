@@ -26,13 +26,13 @@ use piperine_ir::{Env, EventSource};
 use piperine_plan::{ReactionMode, ReactionPlan, Source, StatementPlan};
 
 use crate::Error;
-use crate::print::{DigitalPrinter, Text, ValuePrinter};
+use crate::print::{DigitalPrinter, Text, ExpressionPrinter};
 
 /// What printing the body of one reaction gives: the printer that numbered its reads and commits,
 /// the statement lines, and where the reaction was written.
 struct ReactionLines<'a> {
     /// The printer of the body's values, which holds the reads and commits the lines made.
-    values: ValuePrinter<'a>,
+    values: ExpressionPrinter<'a>,
     /// The statement lines, in order.
     lines: Vec<String>,
     /// The source position of the reaction, the drive or the event.
@@ -65,7 +65,7 @@ impl<'a> DigitalPrinter<'a> {
         let forced = Self::forced_sources(plan);
         let mut binds = self.binds(&values, "cx_", &plan.reads, &forced)?;
         // `freq()` read through a function: no `FREQ` cell in a reaction, the value is 0 (§14.4.4)
-        let freq = ValuePrinter::env_name(Env::Freq);
+        let freq = ExpressionPrinter::env_name(Env::Freq);
         if values.uses(freq) {
             binds.push(format!("let {freq} = 0.0;"));
         }
@@ -79,16 +79,16 @@ impl<'a> DigitalPrinter<'a> {
             }
             t.comment(&format!("{} of body {}: the commits are made here and flushed after the last statement", name, self.body.name()), &origin);
             // every use of `Commits` but a bare `flush` takes `&mut self`
-            let mutable = !committed.is_empty() || values.finishes();
+            let mutable = !committed.is_empty() || values.records().finishes();
             t.line(&format!("let {}commits_ = rt::Commits::new();", if mutable { "mut " } else { "" }));
             for line in &lines {
                 t.line(line);
             }
-            if values.finishes() {
+            if values.records().finishes() {
                 t.line("let flow_ = commits_.flow();");
             }
             t.line("commits_.flush(cx_)?;");
-            t.line(if values.finishes() { "Ok(flow_)" } else { "Ok(Flow::Continue)" });
+            t.line(if values.records().finishes() { "Ok(flow_)" } else { "Ok(Flow::Continue)" });
         });
         t.line("}");
         let mut text = t.finish();
@@ -111,7 +111,7 @@ impl<'a> DigitalPrinter<'a> {
         let Some(reaction) = self.body.reactions().get(r as usize) else {
             return Err(self.reaction_unsupported(&format!("reaction {r}")));
         };
-        let values = ValuePrinter::of_reaction(self.ir, self.body, r as usize).with_reads(self.reads());
+        let values = ExpressionPrinter::of_reaction(self.ir, self.body, r as usize).with_reads(self.reads());
         let mut lines = Vec::with_capacity(reaction.stmts.len());
         for s in &reaction.stmts {
             lines.push(values.stmt(*s)?);
@@ -125,7 +125,7 @@ impl<'a> DigitalPrinter<'a> {
         let Some(drive) = self.body.drives().get(d as usize) else {
             return Err(self.reaction_unsupported(&format!("drive {d}")));
         };
-        let values = ValuePrinter::of_digital(self.ir, self.body).with_reads(self.reads());
+        let values = ExpressionPrinter::of_digital(self.ir, self.body).with_reads(self.reads());
         let delay = match drive.after {
             Some(after) => values.expr(after)?,
             None => return Err(self.reaction_unsupported(&format!("drive {d} without an `after`"))),
@@ -143,7 +143,7 @@ impl<'a> DigitalPrinter<'a> {
         let EventSource::At(time) = event.source else {
             return Err(self.reaction_unsupported(&format!("event {e} as a timer")));
         };
-        let values = ValuePrinter::of_digital(self.ir, self.body).with_reads(self.reads());
+        let values = ExpressionPrinter::of_digital(self.ir, self.body).with_reads(self.reads());
         let at = values.expr(time)?;
         // the time is compared with the instant's own `TIME` (abi.md §4.2)
         let now = self.names.read_name(Source::Time);
@@ -151,9 +151,9 @@ impl<'a> DigitalPrinter<'a> {
     }
 
     /// The statements `plan`'s reaction commits through, as the printer numbered them.
-    fn committed(&self, plan: &ReactionPlan, values: &ValuePrinter<'_>) -> Vec<StatementPlan> {
+    fn committed(&self, plan: &ReactionPlan, values: &ExpressionPrinter<'_>) -> Vec<StatementPlan> {
         match plan.mode {
-            ReactionMode::Reaction(_) => values.committed(),
+            ReactionMode::Reaction(_) => values.records().committed(),
             ReactionMode::Delayed(d) => {
                 let drive = self.body.drives().get(d as usize);
                 vec![StatementPlan::commit(self.ir, drive.map_or(u32::MAX, |x| x.carrier), drive.and_then(|x| x.after))]

@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use piperine_ir::{Derives, FieldsForm, FunctionId, Ir, ReprForm, TypeData, TypeId, TypeKind, ValueType, VariantData};
 
 use crate::Error;
-use crate::print::{RealLift, Text, ValuePrinter};
+use crate::print::{RealLift, Text, ExpressionPrinter};
 
 /// Prints the type arena of one design.
 #[derive(Debug)]
@@ -120,7 +120,7 @@ impl<'a> TypeItems<'a> {
     fn item(&self, id: TypeId) -> Result<String, Error> {
         let data = self.ir.type_data(id);
         let generic = if self.holds_real(&Self::as_value(self.ir, id)) { "<R>" } else { "" };
-        let fields = ValuePrinter::of_type(self.ir, data, false);
+        let fields = ExpressionPrinter::of_type(self.ir, data, false);
         let mut t = Text::new();
         let kind = if matches!(data.kind, TypeKind::Struct { .. }) { "a struct" } else { "an enum" };
         t.line(&format!("/// MSL `{}`, {kind}, written at {}:{}:{}.", data.path, data.origin.file, data.origin.line, data.origin.col));
@@ -176,7 +176,7 @@ impl<'a> TypeItems<'a> {
         } else if self.optional.contains(&id.index()) && !(data.derives.default && matches!(data.kind, TypeKind::Struct { .. })) {
             // `None` unpacks to the default of the payload (`Option::unwrap_or_default`)
             text.push('\n');
-            text.push_str(&self.default_impl(id, &ValuePrinter::of_type(self.ir, data, true))?);
+            text.push_str(&self.default_impl(id, &ExpressionPrinter::of_type(self.ir, data, true))?);
         }
         Ok(text)
     }
@@ -194,7 +194,7 @@ impl<'a> TypeItems<'a> {
     }
 
     /// The printed name and Rust type of each field.
-    fn fields(&self, printer: &ValuePrinter<'_>, data: &TypeData, list: &[(String, ValueType)]) -> Result<Vec<(String, String)>, Error> {
+    fn fields(&self, printer: &ExpressionPrinter<'_>, data: &TypeData, list: &[(String, ValueType)]) -> Result<Vec<(String, String)>, Error> {
         list.iter()
             .map(|(name, ty)| {
                 let printed = if name.chars().all(|c| c.is_ascii_digit()) { name.clone() } else { Text::ident(name) };
@@ -257,7 +257,7 @@ impl TypeItems<'_> {
         if !(derives.clone && derives.copy && derives.partial_eq) {
             return Err(Error::Unsupported { form: format!("the type {}, which derives Repr without Clone, Copy and PartialEq", data.path), path: format!("type {}", data.path), origin: data.origin.clone() });
         }
-        let printer = ValuePrinter::of_type(self.ir, data, true);
+        let printer = ExpressionPrinter::of_type(self.ir, data, true);
         let head = self.head(id);
         let mut t = Text::new();
         t.line(&format!("/// MSL `{}` as a carried value: its bytes and levels follow section 2 of the language.", data.path));
@@ -282,7 +282,7 @@ impl TypeItems<'_> {
     }
 
     /// The constructor of fields at `f64`: pieces of `Name { a: x, b: y }`, `Name(x, y)` or `Name`.
-    fn shape(&self, printer: &ValuePrinter<'_>, data: &TypeData, name: String, form: FieldsForm, fields: &[(String, ValueType)]) -> Result<Shape, Error> {
+    fn shape(&self, printer: &ExpressionPrinter<'_>, data: &TypeData, name: String, form: FieldsForm, fields: &[(String, ValueType)]) -> Result<Shape, Error> {
         let types = fields.iter().map(|(field, ty)| printer.rust_type(ty, &format!("type {} field {field}", data.path))).collect::<Result<Vec<_>, _>>()?;
         let labels: Vec<String> = fields.iter().map(|(field, _)| Self::label(field)).collect();
         let bound: Vec<String> = (0..fields.len()).map(|k| Text::generated(&format!("field{k}"))).collect();
@@ -325,10 +325,10 @@ impl TypeItems<'_> {
         let bytes = Self::tag_bytes(width);
         let call = |function: FunctionId, argument: &str| -> Result<String, Error> {
             let callee = self.ir.function(function);
-            if !ValuePrinter::env_reads(self.ir, function).is_empty() {
+            if !ExpressionPrinter::env_reads(self.ir, function).is_empty() {
                 return Err(unsupported(format!("the function {}, which reads the environment, in the hand-written Repr of {}", callee.name(), data.path)));
             }
-            let generic = if ValuePrinter::is_generic(self.ir, function) { "::<f64>" } else { "" };
+            let generic = if ExpressionPrinter::is_generic(self.ir, function) { "::<f64>" } else { "" };
             Ok(format!("{}{generic}({argument})", Text::ident(callee.name())))
         };
         let (encoded, decoded) = (call(encode, "self")?, call(decode, "levels")?);
@@ -373,7 +373,7 @@ impl TypeItems<'_> {
     }
 
     /// The associated items of a struct's `Carried`: the fields concatenated, the first lowest.
-    fn struct_carried(&self, t: &mut Text, printer: &ValuePrinter<'_>, id: TypeId, form: FieldsForm, fields: &[(String, ValueType)]) -> Result<(), Error> {
+    fn struct_carried(&self, t: &mut Text, printer: &ExpressionPrinter<'_>, id: TypeId, form: FieldsForm, fields: &[(String, ValueType)]) -> Result<(), Error> {
         let data = self.ir.type_data(id);
         let head = self.head(id);
         let shape = self.shape(printer, data, self.name(id).to_string(), form, fields)?;
@@ -414,7 +414,7 @@ impl TypeItems<'_> {
     }
 
     /// The associated items of an enum's `Carried`: the tag, then the widest payload.
-    fn enum_carried(&self, t: &mut Text, printer: &ValuePrinter<'_>, id: TypeId, tag_levels: u32, variants: &[VariantData]) -> Result<(), Error> {
+    fn enum_carried(&self, t: &mut Text, printer: &ExpressionPrinter<'_>, id: TypeId, tag_levels: u32, variants: &[VariantData]) -> Result<(), Error> {
         let data = self.ir.type_data(id);
         let head = self.head(id);
         let tag_bytes = Self::tag_bytes(tag_levels);
@@ -523,7 +523,7 @@ impl TypeItems<'_> {
 
     /// `impl Default` for a type that does not derive one: every field its default; an enum is its
     /// first variant (an unknown value is the default, and an enum has none of its own, H.8 rule 4).
-    fn default_impl(&self, id: TypeId, printer: &ValuePrinter<'_>) -> Result<String, Error> {
+    fn default_impl(&self, id: TypeId, printer: &ExpressionPrinter<'_>) -> Result<String, Error> {
         let data = self.ir.type_data(id);
         let generic = self.holds_real(&Self::as_value(self.ir, id));
         let (impl_head, ty) = if generic { ("impl<R: Default> Default".to_string(), format!("{}<R>", self.name(id))) } else { ("impl Default".to_string(), self.name(id).to_string()) };

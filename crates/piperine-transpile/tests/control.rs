@@ -22,7 +22,7 @@ use piperine_abi::caller::{Commit, Handle};
 use piperine_abi::raw::{Module, cell, status};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Expr, ExprId, FunctionId, FunctionSpec, Ir, IrBuilder, Local, Origin, Place, Stmt, StmtId, ValueType};
 use piperine_plan::Modules;
-use piperine_transpile::print::ValuePrinter;
+use piperine_transpile::print::ExpressionPrinter;
 use piperine_transpile::{Compiled, Settings, Transpiler};
 use probe::Probe;
 
@@ -291,7 +291,7 @@ impl Functions {
 
     /// The printed text of every function of `ir`, in the order they were added.
     fn printed(ir: &Ir) -> Vec<String> {
-        ir.functions().map(|f| ValuePrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{e}"))).collect()
+        ir.functions().map(|f| ExpressionPrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{e}"))).collect()
     }
 }
 

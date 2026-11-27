@@ -14,7 +14,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use piperine_ir::{Body, BranchKind, Expr, ExprId, Ir, Operator, Origin, QuantityRole, StmtId, Terminal};
 
-use crate::print::{Text, ValuePrinter};
+use crate::print::{Text, ExpressionPrinter};
 
 /// What a branch receives in the `analog` block.
 #[derive(Clone, Copy, Debug, Default)]
@@ -121,7 +121,7 @@ impl ContributionSums {
                         stmts.extend(inner);
                         exprs.extend(value);
                     }
-                    other => ValuePrinter::children(ir, other, &mut exprs),
+                    other => ExpressionPrinter::children(ir, other, &mut exprs),
                 }
             }
         }

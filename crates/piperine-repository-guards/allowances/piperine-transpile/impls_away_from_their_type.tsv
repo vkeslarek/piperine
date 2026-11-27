@@ -1,9 +1,4 @@
-crates/piperine-transpile/src/print/aggregate.rs::ValuePrinter	1
-crates/piperine-transpile/src/print/carrier_array.rs::ValuePrinter	1
-crates/piperine-transpile/src/print/control.rs::ValuePrinter	1
 crates/piperine-transpile/src/print/cross.rs::DigitalPrinter	1
 crates/piperine-transpile/src/print/limit.rs::AnalogPrinter	1
 crates/piperine-transpile/src/print/reaction.rs::DigitalPrinter	1
-crates/piperine-transpile/src/print/resolve.rs::ValuePrinter	1
 crates/piperine-transpile/src/print/site.rs::AnalogPrinter	1
-crates/piperine-transpile/src/print/widths.rs::ValuePrinter	1

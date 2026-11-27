@@ -21,7 +21,7 @@ use piperine_plan::{Mode, Source, Target};
 
 use crate::Error;
 use crate::print::site::Guard;
-use crate::print::{AnalogPrinter, Text, ValuePrinter};
+use crate::print::{AnalogPrinter, Text, ExpressionPrinter};
 
 /// Where a `limit` site sits: its top-level statement and its three arguments.
 struct Site {
@@ -58,7 +58,7 @@ impl<'a> AnalogPrinter<'a> {
             while let Some(e) = exprs.pop() {
                 match self.ir.expr(e) {
                     Expr::Limit { site, x, f, seed } if *site == k => return Some(Site { stmt, x: *x, f: *f, seed: *seed }),
-                    other => ValuePrinter::children(self.ir, other, &mut exprs),
+                    other => ExpressionPrinter::children(self.ir, other, &mut exprs),
                 }
             }
         }

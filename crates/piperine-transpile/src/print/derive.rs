@@ -15,7 +15,7 @@ use piperine_ir::Ir;
 use piperine_plan::{Binding, DerivePlan, PinLayout};
 
 use crate::Error;
-use crate::print::{Text, ValuePrinter};
+use crate::print::{Text, ExpressionPrinter};
 
 /// The symbol the export has: the suffix is the version of this contract, as `piperine_abi_1`'s is
 /// the ABI major.
@@ -75,7 +75,7 @@ impl DerivePrinter {
         let Some(parent) = parent else {
             return Err(Error::Unsupported { form: "a derived param whose parent is no instance".into(), path: binding.child.clone(), origin: ir.top().body().origin().clone() });
         };
-        let printer = ValuePrinter::of_placement(ir, parent);
+        let printer = ExpressionPrinter::of_placement(ir, parent);
         let value = printer.expr(binding.expr)?;
         let params = Text::generated("params");
         let at = parent.origin();
@@ -87,7 +87,7 @@ impl DerivePrinter {
             let name = Text::ident(&p.name);
             if printer.uses(&name) {
                 let rust = printer.pin_type(&p.ty)?;
-                lets.push(format!("let {name} = {};", ValuePrinter::pin_value(&rust, &format!("&{params}[{offset}..{}]", offset + size))));
+                lets.push(format!("let {name} = {};", ExpressionPrinter::pin_value(&rust, &format!("&{params}[{offset}..{}]", offset + size))));
             }
             offset += size;
         }

@@ -17,7 +17,7 @@ mod probe;
 use alone::Alone;
 use digital::{Dx, Ty};
 use piperine_ir::{BinaryOp, Derives, Expr, ExprId, FieldsForm, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Place, Projection, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
-use piperine_transpile::print::{TypeItems, ValuePrinter};
+use piperine_transpile::print::{TypeItems, ExpressionPrinter};
 use probe::Probe;
 
 const FILE: &str = "aggregates.msl";
@@ -71,7 +71,7 @@ impl Fixtures {
     /// The type items of `ir` and the text of each of its functions: what a program is built from.
     fn texts(ir: &Ir) -> Vec<String> {
         let mut texts = TypeItems::new(ir).items().unwrap_or_else(|e| panic!("{e}"));
-        texts.extend(ir.functions().map(|f| ValuePrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
+        texts.extend(ir.functions().map(|f| ExpressionPrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
         texts
     }
 }
@@ -273,7 +273,7 @@ fn aggregate_expressions_compile_and_run() {
     // derives allow; each is compared with the same Rust.
     let ir = Library::ir();
     let mut texts = TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"));
-    texts.extend(ir.functions().map(|f| ValuePrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
+    texts.extend(ir.functions().map(|f| ExpressionPrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
     let text = texts.join("\n");
     for line in [
         "rt::Index::at(&a, i.get() as i128, \"aggregates.msl:10:1\")",

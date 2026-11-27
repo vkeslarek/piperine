@@ -22,12 +22,6 @@ crates/piperine-transpile/src/print/shape.rs::ShapePrinter::new	1
 crates/piperine-transpile/src/print/shape.rs::ShapePrinter::pin_name	1
 crates/piperine-transpile/src/print/site.rs::AnalogPrinter::block_args	1
 crates/piperine-transpile/src/print/text.rs::Text::new	1
-crates/piperine-transpile/src/print/value.rs::Piece::new	1
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::binary	1
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::piece	1
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::probe_piece	1
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::stronger	1
-crates/piperine-transpile/src/print/value.rs::ValuePrinter::unsupported	1
 crates/piperine-transpile/src/rt/int.rs::Int::max	1
 crates/piperine-transpile/src/rt/int.rs::Int::min	1
 crates/piperine-transpile/src/rt/int.rs::UInt::max	1

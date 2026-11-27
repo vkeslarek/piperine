@@ -12,7 +12,7 @@ use piperine_ir::EventSource;
 use piperine_plan::Mode;
 
 use crate::Error;
-use crate::print::{DigitalPrinter, Text, ValuePrinter};
+use crate::print::{DigitalPrinter, Text, ExpressionPrinter};
 
 impl<'a> DigitalPrinter<'a> {
     /// Function `k` of the plan, which runs `Mode::Cross`: the watch's value and its partials.
@@ -35,7 +35,7 @@ impl<'a> DigitalPrinter<'a> {
             return Err(unsupported(format!("event {e} as a cross watch")));
         };
         // the expression is code over reals: generic, like an `analog` block
-        let values = ValuePrinter::of_body(self.ir, self.body).with_reads(self.reads());
+        let values = ExpressionPrinter::of_body(self.ir, self.body).with_reads(self.reads());
         let expr = values.expr(crossed)?;
         let reads: Vec<(usize, _)> =
             f.reads.iter().copied().enumerate().filter(|(_, s)| values.uses(&self.names.read_name(*s))).collect();

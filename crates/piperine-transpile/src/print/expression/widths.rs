@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use piperine_ir::{Expr, ExprId, Ir, TypeKind, ValueType};
 
-use super::value::{Piece, Prec, ValuePrinter};
+use crate::print::expression::{ExpressionPrinter, Piece, Prec};
 use crate::error::Error;
 
 /// The Rust spelling of the number-width types.
@@ -85,10 +85,10 @@ impl NumberClass {
     }
 }
 
-impl ValuePrinter<'_> {
+impl ExpressionPrinter<'_> {
     /// Whether `ty` is one of the number widths this file prints: `f32`, `f16`, `f128` or an
     /// integer over 64 bits.
-    pub(super) fn is_number_width(ty: &ValueType) -> bool {
+    pub(crate) fn is_number_width(ty: &ValueType) -> bool {
         ty.is_other_float() || ty.is_wide_integer()
     }
 

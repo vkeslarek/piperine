@@ -13,8 +13,8 @@ use piperine_ir::{Body, EventSource, Ir, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target};
 
 use crate::Error;
-use crate::print::value::Reads;
-use crate::print::{AnalogPrinter, Text, ValuePrinter};
+use crate::print::expression::Reads;
+use crate::print::{AnalogPrinter, Text, ExpressionPrinter};
 
 /// Prints the discrete functions of one body from its plan.
 #[derive(Debug)]
@@ -31,7 +31,7 @@ impl<'a> DigitalPrinter<'a> {
         DigitalPrinter { ir: body.ir(), body, plan, names: AnalogPrinter::new(body, plan) }
     }
 
-    /// The reads of `ValuePrinter`s of this body: nodes and carriers by their variables.
+    /// The reads of `ExpressionPrinter`s of this body: nodes and carriers by their variables.
     pub(crate) fn reads(&self) -> Reads {
         Reads {
             nodes: self.body.nodes().iter().map(|n| Text::ident(&n.name)).collect(),
@@ -46,7 +46,7 @@ impl<'a> DigitalPrinter<'a> {
             param_previous: (0..self.body.params().len() as u32).map(|p| self.names.read_name(Source::ParamPrevious(p))).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
             others: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "others")).collect(),
-            driving: (0..self.body.carriers().len() as u32).map(|c| ValuePrinter::driving_name(self.body, c)).collect(),
+            driving: (0..self.body.carriers().len() as u32).map(|c| ExpressionPrinter::driving_name(self.body, c)).collect(),
         }
     }
 
@@ -94,18 +94,18 @@ impl<'a> DigitalPrinter<'a> {
     /// The `let` that binds read `i` of a function (or reaction) from its lens `cx`: a carrier's
     /// pin decoded into its value, a `CHANGED` byte as a `bool`, a real as an `f64`.
     /// `None` for a read no discrete code has.
-    pub(crate) fn bind(&self, values: &ValuePrinter<'_>, cx: &str, i: usize, s: Source) -> Result<Option<String>, Error> {
+    pub(crate) fn bind(&self, values: &ExpressionPrinter<'_>, cx: &str, i: usize, s: Source) -> Result<Option<String>, Error> {
         let name = self.names.read_name(s);
         let carrier_of_drive = |k: u32| self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
         let pin = |ty: &ValueType| -> Result<String, Error> {
-            Ok(format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))))
+            Ok(format!("let {name} = {};", ExpressionPrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))))
         };
         Ok(Some(match s {
             // a previous value is in the carrier's own layout (abi.md §4.1)
             // the drive input of a resolver also binds whether the drive is present: the byte after the value (abi.md §9 D1)
             Source::Carrier(c) if self.body.resolve_drive_carriers().contains(&c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => {
-                    let driving = ValuePrinter::driving_name(self.body, c);
+                    let driving = ExpressionPrinter::driving_name(self.body, c);
                     let rust = values.pin_type(&carrier.ty)?;
                     format!("{} let {driving} = <{rust} as rt::Carried>::is_driving({cx}.bytes({i}));", pin(&carrier.ty)?)
                 }
@@ -136,12 +136,12 @@ impl<'a> DigitalPrinter<'a> {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
                     let rust = values.type_of(ty)?;
-                    format!("let {name} = {};", ValuePrinter::pin_value(&rust, &format!("{cx}.bytes({i})")))
+                    format!("let {name} = {};", ExpressionPrinter::pin_value(&rust, &format!("{cx}.bytes({i})")))
                 }
                 // an `f32`, `f16`, `f128` or an integer wider than 64 bits is its own bytes
-                Some(ty) if ValuePrinter::is_number_width(ty) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
+                Some(ty) if ExpressionPrinter::is_number_width(ty) => format!("let {name} = {};", ExpressionPrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 // a composite param is the bytes of a composite pin
-                Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
+                Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ExpressionPrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
@@ -165,7 +165,7 @@ impl<'a> DigitalPrinter<'a> {
 
     /// The `let` lines binding the reads of `f` its code uses (`values` printed them) or in
     /// `forced`, in the plan's read order.
-    pub(crate) fn binds(&self, values: &ValuePrinter<'_>, cx: &str, reads: &[Source], forced: &[Source]) -> Result<Vec<String>, Error> {
+    pub(crate) fn binds(&self, values: &ExpressionPrinter<'_>, cx: &str, reads: &[Source], forced: &[Source]) -> Result<Vec<String>, Error> {
         let mut lines = Vec::new();
         for (i, s) in reads.iter().enumerate() {
             if !values.uses(&self.names.read_name(*s)) && !forced.contains(s) {
@@ -202,7 +202,7 @@ impl<'a> DigitalPrinter<'a> {
         let Some(carrier) = self.body.carriers().get(drive.carrier as usize) else {
             return Err(self.unsupported(&format!("a drive of carrier {}", drive.carrier)));
         };
-        let values = ValuePrinter::of_digital(self.ir, self.body).with_reads(self.reads());
+        let values = ExpressionPrinter::of_digital(self.ir, self.body).with_reads(self.reads());
         let value = values.expr(drive.value)?;
         let mut t = Text::new();
         self.header(&mut t, k, f);
@@ -234,7 +234,7 @@ impl<'a> DigitalPrinter<'a> {
         let Some(f) = self.plan.functions().get(k) else {
             return Err(self.unsupported(&format!("function {k} as an event")));
         };
-        let values = ValuePrinter::of_digital(self.ir, self.body).with_reads(self.reads());
+        let values = ExpressionPrinter::of_digital(self.ir, self.body).with_reads(self.reads());
         // what fired it, and its guard
         let (fired, guard, origin, what) = match f.mode {
             Mode::Event(e) => {

@@ -10,7 +10,7 @@ use piperine_ir::{EventSource, Expr, ExprId, Origin, Stmt};
 use piperine_plan::{FunctionPlan, Mode, Source, Target};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, Text, ValuePrinter};
+use crate::print::{AnalogPrinter, Text, ExpressionPrinter};
 
 /// The condition under which a `limit` or `bound_step` site runs (analog-structure AS-06): the
 /// site's `enabled` or `when`, lowered standalone, which the site's function evaluates first.
@@ -57,7 +57,7 @@ impl<'a> AnalogPrinter<'a> {
             while let Some(e) = exprs.pop() {
                 match self.ir.expr(e) {
                     Expr::Stim { site, mag, phase } if *site == k => return Some((stmt, *mag, *phase)),
-                    other => ValuePrinter::children(self.ir, other, &mut exprs),
+                    other => ExpressionPrinter::children(self.ir, other, &mut exprs),
                 }
             }
         }

@@ -26,7 +26,7 @@ use piperine_ir::{Addend, Branch, BranchKind, BodyId, BodyNode, BodySpec, Instan
 use piperine_transpile::{Settings, Transpiler};
 use std::sync::Arc;
 use piperine_ir::{Derives, Expr, FieldsForm, FunctionSpec, GenericInstance, Ir, IrBuilder, Local, Origin, ReprForm, TypeData, TypeId, TypeKind, ValueType, VariantData};
-use piperine_transpile::print::{TypeItems, ValuePrinter};
+use piperine_transpile::print::{TypeItems, ExpressionPrinter};
 use probe::Probe;
 
 const FILE: &str = "generics.msl";
@@ -75,7 +75,7 @@ fn instance_names_compile_and_nested_arguments_spell_apart() {
     // arguments nest differently are two Rust items, and the functions run
     let ir = Instances::design();
     let mut texts = TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"));
-    texts.extend(ir.functions().map(|f| ValuePrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
+    texts.extend(ir.functions().map(|f| ExpressionPrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
     let text = texts.join("\n");
     for name in ["PairGu8E", "PairGPairGu8ECu8E", "PairGPairGu8Cu8EE", "swap_gu8_e", "swap_gpair_gu8_e_e"] {
         assert!(text.contains(name), "the text names `{name}`:\n{text}");
@@ -157,7 +157,7 @@ fn a_hand_written_repr_round_trips_and_none_is_returned_to_the_caller() {
     // pin's `decode`, which cannot fail, give the type's default, as an enum does for a bad tag
     let ir = OneHot::design();
     let mut texts = TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"));
-    texts.extend(ir.functions().map(|f| ValuePrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
+    texts.extend(ir.functions().map(|f| ExpressionPrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
     let main = "\
 fn main() {
     use rt::pin::{Carried, LevelWords};

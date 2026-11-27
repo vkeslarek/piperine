@@ -5,7 +5,7 @@
 
 use crate::Error;
 use crate::print::TypeItems;
-use crate::print::widths::NumberTypes;
+use crate::print::expression::widths::NumberTypes;
 use piperine_ir::{FieldsForm, Ir, TypeId, TypeKind, ValueType};
 
 /// Prints the lift of the types a design's composite params hold.

@@ -9,10 +9,10 @@
 use piperine_ir::{ExprId, FunctionId, ValueType};
 
 use crate::Error;
-use crate::print::value::{Piece, Prec};
-use crate::print::{AnalogPrinter, ValuePrinter};
+use crate::print::expression::{Piece, Prec};
+use crate::print::{AnalogPrinter, ExpressionPrinter};
 
-impl ValuePrinter<'_> {
+impl ExpressionPrinter<'_> {
     /// The variable holding whether the drive net read by carrier `c` of `body` holds a drive present.
     pub(crate) fn driving_name(body: piperine_ir::Body<'_>, c: u32) -> String {
         AnalogPrinter::carrier_part(body, c, "driving")

@@ -1,16 +1,17 @@
 //! The aggregate forms of the IR as Rust (composite-values CV-13, CV-20): construction of tuples,
 //! arrays, structs and enum variants; field and element reads; `len`; variant tests and
-//! fields; `Option` packing; `default`; the comparison of aggregates; and assignment through field
-//! and index projections. Each is plain Rust over the items of `print/types.rs`. An index outside
-//! its length is a panic naming the index and where it was written (`rt::Index`, §1.5.25).
+//! fields; `Option` packing; `default`; and the comparison of aggregates. An assignment through
+//! field and index projections is a statement (`print/statement.rs`). Each is plain Rust over the
+//! items of `print/types.rs`. An index outside its length is a panic naming the index and where it
+//! was written (`rt::Index`, §1.5.25).
 
-use piperine_ir::{BinaryOp, Expr, ExprId, LevelPart, Place, Projection, TypeId, TypeKind, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId, LevelPart, TypeId, TypeKind, ValueType};
 
 use crate::Error;
-use crate::print::value::{Piece, Prec};
-use crate::print::{Text, TypeItems, ValuePrinter};
+use crate::print::expression::{Piece, Prec};
+use crate::print::{Text, TypeItems, ExpressionPrinter};
 
-impl ValuePrinter<'_> {
+impl ExpressionPrinter<'_> {
     /// The Rust of the aggregate form `e`.
     pub(super) fn aggregate(&self, e: ExprId) -> Result<Piece, Error> {
         let atom = |text: String| Ok(Piece::new(text, Prec::Atom));
@@ -75,12 +76,12 @@ impl ValuePrinter<'_> {
     }
 
     /// `where` an access was written: `file:line:col`, what a panic names.
-    fn site(&self, e: ExprId) -> String {
+    pub(crate) fn site(&self, e: ExprId) -> String {
         self.ir.expr_origin(e).to_string()
     }
 
     /// The printed label of field `index` of a struct or a tuple: its name, or its number.
-    fn field_name(&self, ty: &ValueType, index: u32) -> Option<String> {
+    pub(crate) fn field_name(&self, ty: &ValueType, index: u32) -> Option<String> {
         match ty {
             ValueType::Tuple(parts) => ((index as usize) < parts.len()).then(|| index.to_string()),
             ValueType::Struct(id) => match &self.ir.type_data(*id).kind {
@@ -148,7 +149,7 @@ impl ValuePrinter<'_> {
     }
 
     /// An index as a Rust `i128`: the integer's value, whatever its width and sign.
-    pub(super) fn index_value(&self, index: ExprId) -> Result<String, Error> {
+    pub(crate) fn index_value(&self, index: ExprId) -> Result<String, Error> {
         Ok(format!("{}.get() as i128", self.operand(index)?))
     }
 
@@ -176,43 +177,5 @@ impl ValuePrinter<'_> {
             _ => return Err(self.unsupported(e, "an operator that does not apply to aggregates")),
         };
         Ok(Piece::new(format!("{} {symbol} {}", self.piece(lhs)?.at(Prec::Unary), self.piece(rhs)?.at(Prec::Unary)), Prec::Compare))
-    }
-
-    /// `place = value;` or `place op= value;` where the place has projections: Rust's place
-    /// expression, each index checked.
-    pub(super) fn assign_through(&self, place: &Place, op: Option<BinaryOp>, value: ExprId) -> Result<String, Error> {
-        let (Some(name), Some(local_ty)) = (self.local(place.local), self.local_types.get(place.local as usize)) else {
-            return Err(self.unsupported(value, "an assignment to a local out of range"));
-        };
-        let (mut target, mut ty) = (name.to_string(), local_ty.clone());
-        for step in &place.path {
-            match step {
-                Projection::Field(k) => {
-                    let label = self.field_name(&ty, *k).ok_or_else(|| self.unsupported(value, "an assignment to a field that does not exist"))?;
-                    let next = self.field_type(&ty, *k).ok_or_else(|| self.unsupported(value, "an assignment to a field that does not exist"))?;
-                    target = format!("{target}.{label}");
-                    ty = next;
-                }
-                Projection::Index(index) => {
-                    let ValueType::Array(element, _) = &ty else { return Err(self.unsupported(value, "an assignment to an element of a value that is not an array")) };
-                    let site = self.site(value);
-                    target = format!("{target}[rt::Index::of({}, {target}.len(), {site:?})]", self.index_value(*index)?);
-                    ty = (**element).clone();
-                }
-            }
-        }
-        self.assign_to(&target, &ty, op, value)
-    }
-
-    /// The type of field `index` of a struct or a tuple type.
-    fn field_type(&self, ty: &ValueType, index: u32) -> Option<ValueType> {
-        match ty {
-            ValueType::Tuple(parts) => parts.get(index as usize).cloned(),
-            ValueType::Struct(id) => match &self.ir.type_data(*id).kind {
-                TypeKind::Struct { fields, .. } => fields.get(index as usize).map(|(_, ty)| ty.clone()),
-                TypeKind::Enum { .. } => None,
-            },
-            _ => None,
-        }
     }
 }

@@ -9,12 +9,11 @@
 //! declares over exactly those levels (`StatementPlan::range`), so the value is printed as the field's own type.
 
 use piperine_abi::raw::part;
-use piperine_ir::{Body, CarrierRole, CommitTarget, Expr, ExprId, ValueType};
-use piperine_plan::{StatementPlan, Target};
+use piperine_ir::{Body, CarrierRole, Expr, ExprId, ValueType};
 
 use crate::Error;
-use crate::print::value::{Piece, Prec};
-use crate::print::{Text, ValuePrinter};
+use crate::print::expression::{Piece, Prec};
+use crate::print::{Text, ExpressionPrinter};
 
 /// The variables the reads of an array carrier bind, named once for the plan's reads and for the code that uses them.
 pub struct ElementNames;
@@ -37,7 +36,7 @@ impl ElementNames {
     }
 }
 
-/// What the value printer knows of one carrier of its body.
+/// What the expression printer knows of one carrier of its body.
 #[derive(Clone, Debug)]
 pub struct CarrierFacts {
     /// The carrier's printed name.
@@ -93,7 +92,7 @@ impl ElementRead {
     }
 }
 
-impl ValuePrinter<'_> {
+impl ExpressionPrinter<'_> {
     /// The facts of carrier `carrier`, or the refusal naming the expression `e`.
     fn carrier_facts(&self, e: ExprId, carrier: u32) -> Result<&CarrierFacts, Error> {
         match self.facts.get(carrier as usize) {
@@ -131,31 +130,5 @@ impl ValuePrinter<'_> {
             return Err(self.unsupported(e, "a whole read of a carrier that is no array"));
         };
         Ok(Piece::new(format!("*{}.whole::<{count}>()", self.read(&ElementNames::whole(&facts.name))), Prec::Unary))
-    }
-
-    /// The statement a commit of `carrier` through `target` goes through: the whole pin, one element, or the range of
-    /// a field (what `piperine-plan` declares for the same commit).
-    pub(super) fn commit_statement(&self, e: ExprId, carrier: u32, after: Option<ExprId>, target: Option<&CommitTarget>) -> Result<StatementPlan, Error> {
-        let Some(held) = self.facts.get(carrier as usize) else {
-            return Err(self.unsupported(e, "a commit to a carrier out of range"));
-        };
-        let path = target.map_or(&[][..], |t| t.path.as_slice());
-        let statement = StatementPlan::commit_through(self.ir, carrier, &held.ty, held.count, after, path);
-        // a commit of a resolved carrier writes its drive pin
-        Ok(if held.resolved { StatementPlan { target: Target::ResolvedDrive(carrier), ..statement } } else { statement })
-    }
-
-    /// The call that makes a commit through statement number `index`: an element commit names the element, checked
-    /// against the count (CV-25 AC 5), every other commit goes through the statement's range.
-    pub(super) fn commit_call(&self, index: usize, carrier: u32, target: Option<&CommitTarget>, value: &str, after: &str) -> Result<String, Error> {
-        match target.and_then(|t| t.element) {
-            Some(element) => {
-                let facts = &self.facts[carrier as usize];
-                let count = facts.count.unwrap_or(0);
-                Ok(format!("commits_.commit_element({index}, {}, {count}, {:?}, {value}, {after});", self.index_value(element)?, facts.path))
-            }
-            None if self.facts[carrier as usize].resolved => Ok(format!("commits_.commit_drive({index}, {value}, {after});")),
-            None => Ok(format!("commits_.commit({index}, {value}, {after});")),
-        }
     }
 }

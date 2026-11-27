@@ -9,10 +9,10 @@ crates/piperine-transpile/src/print/site.rs::phased	1
 crates/piperine-transpile/src/print/site.rs::printed	1
 crates/piperine-transpile/src/print/text.rs::round_trips_shortest	1
 crates/piperine-transpile/src/print/text.rs::significant	1
-crates/piperine-transpile/src/print/value.rs::contributed	1
-crates/piperine-transpile/src/print/value.rs::defined	1
-crates/piperine-transpile/src/print/value.rs::function	1
-crates/piperine-transpile/src/print/value.rs::library	1
+crates/piperine-transpile/src/print/expression.rs::contributed	1
+crates/piperine-transpile/src/print/expression.rs::defined	1
+crates/piperine-transpile/src/print/expression.rs::function	1
+crates/piperine-transpile/src/print/expression.rs::library	1
 crates/piperine-transpile/src/rt/commits.rs::react_with	1
 crates/piperine-transpile/src/rt/control.rs::message	1
 crates/piperine-transpile/src/rt/int.rs::panic_of	1

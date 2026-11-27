@@ -6,8 +6,8 @@ crates/piperine-transpile/src/error.rs::Error	1
 crates/piperine-transpile/src/print/contribution.rs::Received	1
 crates/piperine-transpile/src/print/limit.rs::Site	1
 crates/piperine-transpile/src/print/types.rs::Shape	1
-crates/piperine-transpile/src/print/value.rs::Piece	1
-crates/piperine-transpile/src/print/value.rs::Reads	1
+crates/piperine-transpile/src/print/expression.rs::Piece	1
+crates/piperine-transpile/src/print/expression.rs::Reads	1
 crates/piperine-transpile/src/rt/commits.rs::Entry	1
 crates/piperine-transpile/src/rt/control.rs::Depth	1
 crates/piperine-transpile/src/rt/control.rs::Index	1

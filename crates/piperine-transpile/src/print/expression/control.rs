@@ -1,52 +1,19 @@
-//! Mutation, loops and exits of the IR as Rust (composite-values CV-01 to CV-03; design "Control
-//! flow: known decisions print plain Rust").
+//! Loops, exits and function values of the IR as Rust (composite-values CV-01 to CV-07; design
+//! "Control flow: known decisions print plain Rust"); an assignment is a statement
+//! (`print/statement.rs`).
 //!
-//! Where every decision is known the text is plain Rust: `let mut`, `x = e;`, `x = x + e;`,
-//! `loop`, `while`, `for`, `break`, `continue`, `return`, each loop counted by an `rt::Trips` so
-//! that a loop of more than 2^24 iterations is a panic, not a hang (Q5 (b), §1 rule 11). The
-//! methods are `ValuePrinter`'s: `value.rs` only dispatches to them.
+//! Where every decision is known the text is plain Rust: `loop`, `while`, `for`, `break`,
+//! `continue`, `return`, each loop counted by an `rt::Trips` so that a loop of more than 2^24
+//! iterations is a panic, not a hang (Q5 (b), §1 rule 11). The methods are
+//! `ExpressionPrinter`'s: `print/expression.rs` only dispatches to them.
 
-use piperine_ir::{BinaryOp, Expr, ExprId, FunctionId, Place, StmtId, ValueType};
+use piperine_ir::{Expr, ExprId, FunctionId, StmtId, ValueType};
 
 use crate::Error;
-use crate::print::value::{Piece, Prec, ValuePrinter};
+use crate::print::expression::{ExpressionPrinter, Piece, Prec};
 use crate::print::Text;
 
-impl<'a> ValuePrinter<'a> {
-    /// `place = value;`, or `place = place op value;` for `place op= value;`: the `rt` integers,
-    /// `Real` has the operators but no `op=` forms (§1.5.12).
-    pub(super) fn assign(&self, place: &Place, op: Option<BinaryOp>, value: ExprId) -> Result<String, Error> {
-        if !place.path.is_empty() {
-            return self.assign_through(place, op, value);
-        }
-        let (Some(name), Some(ty)) = (self.local(place.local), self.local_types.get(place.local as usize)) else {
-            return Err(self.unsupported(value, "an assignment to a local out of range"));
-        };
-        self.assign_to(name, ty, op, value)
-    }
-
-    /// `target = value;` or `target = target op value;`, `target` a Rust place of type `ty`.
-    pub(super) fn assign_to(&self, name: &str, ty: &ValueType, op: Option<BinaryOp>, value: ExprId) -> Result<String, Error> {
-        let Some(op) = op else {
-            // a temporary an inlined `Option` call assigns may never be read (`f().is_some()`): an
-            // attribute on an assignment is unstable, on a block statement it is not
-            return Ok(format!("#[allow(unused_assignments)] {{ {name} = {}; }}", self.expr(value)?));
-        };
-        let real = *ty == ValueType::F64 && !self.plain;
-        let (symbol, prec) = self.operator(value, op, real)?;
-        if matches!(prec, Prec::Compare | Prec::And | Prec::Or) {
-            return Err(self.unsupported(value, &format!("`{op:?}=`: only an arithmetic or bit operator has a compound assignment")));
-        }
-        let right = self.piece(value)?;
-        let right = match prec {
-            Prec::BitAnd | Prec::BitOr | Prec::BitXor | Prec::Shift => right.at(Prec::Unary),
-            _ => right.at(Self::stronger(prec)),
-        };
-        // the last assignment of a loop may never be read: an attribute on an assignment is
-        // unstable, on a block statement it is not
-        Ok(format!("#[allow(unused_assignments)] {{ {name} = {name} {symbol} {right}; }}"))
-    }
-
+impl<'a> ExpressionPrinter<'a> {
     /// A loop, `loop`, `while` or `for`: plain Rust counted by an `rt::Trips`.
     pub(super) fn loop_expr(&self, e: ExprId) -> Result<Piece, Error> {
         match self.ir.expr(e) {
@@ -151,7 +118,7 @@ impl<'a> ValuePrinter<'a> {
     /// The Rust type of a function value: `std::rc::Rc<dyn Fn(A, B) -> R>`, one owned
     /// representation for every function value (a param, a local, a result, a capture), so that a
     /// function can return one, a capturing closure included (§1.5.10, §1.5.14). A read clones it
-    /// (`ValuePrinter::local_value`), as a function value is copied.
+    /// (`ExpressionPrinter::local_value`), as a function value is copied.
     pub(super) fn function_type(&self, params: &[ValueType], ret: &ValueType, path: &str) -> Result<String, Error> {
         let mut printed = Vec::with_capacity(params.len());
         for p in params {

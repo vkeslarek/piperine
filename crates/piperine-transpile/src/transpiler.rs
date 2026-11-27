@@ -83,7 +83,7 @@ impl Transpiler {
     /// `real.rs` alone.
     pub fn loops(&self) -> bool {
         self.ir.expressions().any(|e| matches!(e, Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. }))
-            || self.ir.functions().any(|f| print::ValuePrinter::is_recursive(&self.ir, f.id()))
+            || self.ir.functions().any(|f| print::ExpressionPrinter::is_recursive(&self.ir, f.id()))
     }
 
     /// Whether a param of the design holds a type the pin carries beyond `f64` and `bool`: an
@@ -116,7 +116,7 @@ impl Transpiler {
     /// generated code compiles the embedded numeric library (`rt/numbers/*.rs`) and `rt/widths.rs`: `f32` computes
     /// as Rust's own `f32`, but its pin bytes (`Carried`) and its `as` (`Convert`) live in that runtime.
     pub fn number_widths(&self) -> bool {
-        crate::print::widths::NumberTypes::used_by(&self.ir)
+        crate::print::expression::widths::NumberTypes::used_by(&self.ir)
     }
 
     /// Whether the design holds a `table_model`, whose generated code builds an `rt::TableModel`.

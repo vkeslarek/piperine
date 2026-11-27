@@ -16,7 +16,7 @@ use std::process::Command;
 use alone::Alone;
 use digital::Dx;
 use piperine_ir::{BinaryOp, Expr, ExprId, FunctionSpec, Ir, IrBuilder, Local, MathFn, Method, Origin, UnaryOp, ValueType, WideData};
-use piperine_transpile::print::ValuePrinter;
+use piperine_transpile::print::ExpressionPrinter;
 use piperine_transpile::rt::int::{Int, UInt};
 use piperine_transpile::rt::numbers::half::Float16;
 use piperine_transpile::rt::numbers::quad::Float128;
@@ -339,7 +339,7 @@ impl Library {
     /// The printed text of every function, and the `main` that runs the calls.
     fn program(self) -> (Vec<String>, String, Vec<String>) {
         let ir: Ir = Alone::finish(self.builder);
-        let texts = ir.functions().map(|f| ValuePrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))).collect();
+        let texts = ir.functions().map(|f| ExpressionPrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))).collect();
         (texts, format!("fn main() {{\n{}\n}}", self.main.join("\n")), self.expected)
     }
 

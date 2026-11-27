@@ -2,7 +2,7 @@
 //! source looks like").
 //!
 //! The file holds a header, `pub mod rt;` (the runtime source), the imports the text names and
-//! nothing more, every IR function a running body reaches (`ValuePrinter::function`), one `pub
+//! nothing more, every IR function a running body reaches (`ExpressionPrinter::function`), one `pub
 //! mod` per body that runs, and `piperine_abi_1`. A body's module holds one unit struct; its
 //! `impl` holds the shape (the plan's, printed by `ShapePrinter`, built once) and one Rust
 //! function per function of the shape (`AnalogPrinter`); its `Device` impl gives every instance
@@ -20,7 +20,7 @@ use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
 use piperine_plan::{BodyPlan, DerivePlan, Mode};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, DelayPrinter, DerivativePrinter, NoisePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, TypeItems, ValuePrinter};
+use crate::print::{AnalogPrinter, DelayPrinter, DerivativePrinter, NoisePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, TypeItems, ExpressionPrinter};
 
 /// Prints a design.
 #[derive(Debug)]
@@ -55,9 +55,9 @@ impl LibraryPrinter {
         }
         let mut function_texts = Vec::new();
         for f in &functions {
-            function_texts.push(ValuePrinter::function(ir, *f)?);
+            function_texts.push(ExpressionPrinter::function(ir, *f)?);
         }
-        if functions.iter().any(|f| ValuePrinter::is_generic(ir, *f)) {
+        if functions.iter().any(|f| ExpressionPrinter::is_generic(ir, *f)) {
             uses.insert("rt::Real");
         }
 
@@ -408,7 +408,7 @@ impl LibraryPrinter {
                         }
                     }
                 }
-                other => ValuePrinter::children(ir, other, &mut exprs),
+                other => ExpressionPrinter::children(ir, other, &mut exprs),
             }
         }
         ir.functions().filter(|f| found.contains(&f.id().index())).map(|f| f.id()).collect()

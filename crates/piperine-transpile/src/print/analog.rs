@@ -24,11 +24,11 @@ use piperine_ir::{Body, BranchKind, Env, Expr, ExprId, Ir, Operator, QuantityRol
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 
 use crate::Error;
-use crate::print::carrier_array::ElementNames;
-use crate::print::value::Reads;
+use crate::print::expression::carrier_array::ElementNames;
+use crate::print::expression::Reads;
 use crate::print::delay::DelayStates;
 use crate::print::derivative::States;
-use crate::print::{ContributionSums, DelayPrinter, DerivativePrinter, TracePrinter, RealLift, Text, TypeItems, ValuePrinter};
+use crate::print::{ContributionSums, DelayPrinter, DerivativePrinter, TracePrinter, RealLift, Text, TypeItems, ExpressionPrinter, RecordPrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -36,7 +36,7 @@ pub struct AnalogPrinter<'a> {
     pub(crate) ir: &'a Ir,
     pub(crate) body: Body<'a>,
     pub(crate) plan: &'a BodyPlan,
-    pub(crate) values: ValuePrinter<'a>,
+    pub(crate) values: ExpressionPrinter<'a>,
     /// The accumulators of the structured form of `terms_block`; `None` for a body whose
     /// contributions are all top-level statements and that has no switch branch.
     pub(crate) sums: Option<ContributionSums>,
@@ -65,10 +65,10 @@ impl<'a> AnalogPrinter<'a> {
             param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
             others: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "others")).collect(),
-            driving: (0..body.carriers().len() as u32).map(|c| ValuePrinter::driving_name(body, c)).collect(),
+            driving: (0..body.carriers().len() as u32).map(|c| ExpressionPrinter::driving_name(body, c)).collect(),
         };
         let sums = ContributionSums::needed(body).then(|| ContributionSums::of(body));
-        let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
+        let values = ExpressionPrinter::of_body(body.ir(), body).with_reads(reads);
         let values = match &sums {
             Some(sums) => values.with_contribution_sums(sums.clone()),
             None => values,
@@ -76,8 +76,8 @@ impl<'a> AnalogPrinter<'a> {
         AnalogPrinter { ir: body.ir(), body, plan, values, sums }
     }
 
-    /// The value printer of the body, its analog reads named.
-    pub fn values(&self) -> &ValuePrinter<'a> {
+    /// The expression printer of the body, its analog reads named.
+    pub fn values(&self) -> &ExpressionPrinter<'a> {
         &self.values
     }
 
@@ -119,18 +119,18 @@ impl<'a> AnalogPrinter<'a> {
             }
             Source::Crossed(k) => Text::generated(&format!("cross{k}_changed")),
             Source::Timer(k) => Text::generated(&format!("at{k}_changed")),
-            Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
-            Source::TemperatureGiven => ValuePrinter::env_name(Env::TemperatureGiven).to_string(),
-            Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
-            Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
+            Source::Temperature => ExpressionPrinter::env_name(Env::Temperature).to_string(),
+            Source::TemperatureGiven => ExpressionPrinter::env_name(Env::TemperatureGiven).to_string(),
+            Source::Gmin => ExpressionPrinter::env_name(Env::Gmin).to_string(),
+            Source::SourceScale => ExpressionPrinter::env_name(Env::SourceScale).to_string(),
             Source::LimitLast(k) => site(self.body.limits(), k, "last"),
             Source::LimitAge(k) => site(self.body.limits(), k, "age"),
             Source::Static => Text::generated("is_static"),
             Source::Time => Text::generated("time"),
             Source::Fired(k) => Text::generated(&format!("event{k}_fired")),
             Source::Settle => Text::generated("settle_changed"),
-            Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
-            Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
+            Source::Freq => ExpressionPrinter::env_name(Env::Freq).to_string(),
+            Source::Analysis(kind) => ExpressionPrinter::env_name(Env::Analysis(kind)).to_string(),
             Source::Whole(c) => ElementNames::whole(&self.carrier_ident(c)),
             Source::Element(c, element, part) => ElementNames::element(&self.carrier_ident(c), element, part),
         }
@@ -300,11 +300,11 @@ impl<'a> AnalogPrinter<'a> {
                     }
                 }
                 Expr::Call { function, args } => {
-                    sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source));
+                    sources.extend(ExpressionPrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source));
                     stack.extend(args);
                 }
                 // a function used as a value reads the environment its closure passes on
-                Expr::FunctionRef(function) => sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source)),
+                Expr::FunctionRef(function) => sources.extend(ExpressionPrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source)),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack.push(*expr),
                 Expr::Unwrap { is, value, .. } => stack.extend([*is, *value]),
                 Expr::Same { a, b } => stack.extend([*a, *b]),
@@ -430,19 +430,19 @@ impl<'a> AnalogPrinter<'a> {
             Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
-                    format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})")))
+                    format!("let {name} = {};", ExpressionPrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})")))
                 }
                 // an `f32`, `f16`, `f128` or an integer wider than 64 bits is its own bytes
-                Some(ty) if ValuePrinter::is_number_width(ty) => format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
+                Some(ty) if ExpressionPrinter::is_number_width(ty) => format!("let {name} = {};", ExpressionPrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 // a composite param is the bytes of a composite pin, and a unit enum param its tag's
                 Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => {
                     let concrete = RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty);
-                    format!("let {name} = {};", ValuePrinter::pin_value(&concrete, &format!("{cx}.bytes({i})")))
+                    format!("let {name} = {};", ExpressionPrinter::pin_value(&concrete, &format!("{cx}.bytes({i})")))
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::Carrier(c) | Source::Others(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
-                Some(carrier) => format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(&carrier.ty)?, &format!("{cx}.bytes({i})"))),
+                Some(carrier) => format!("let {name} = {};", ExpressionPrinter::pin_value(&self.values.pin_type(&carrier.ty)?, &format!("{cx}.bytes({i})"))),
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
@@ -722,7 +722,7 @@ impl<'a> AnalogPrinter<'a> {
                 // the trace buffer: the evaluation at the iterate fills it, the one at 0 only
                 // gives the slopes and its records are dropped
                 if !self.body.traces().is_empty() {
-                    args.push(if zero { "&mut Default::default()".to_string() } else { format!("&mut {}", ValuePrinter::TRACES) });
+                    args.push(if zero { "&mut Default::default()".to_string() } else { format!("&mut {}", RecordPrinter::TRACES) });
                 }
                 let call = if named {
                     // no argument carries the block's number type: name it
@@ -733,7 +733,7 @@ impl<'a> AnalogPrinter<'a> {
                 if fallible { format!("{call}?") } else { call }
             };
             if !self.body.traces().is_empty() {
-                t.line(&format!("let mut {}: [Option<Vec<u8>>; {}] = Default::default();", ValuePrinter::TRACES, self.body.traces().len()));
+                t.line(&format!("let mut {}: [Option<Vec<u8>>; {}] = Default::default();", RecordPrinter::TRACES, self.body.traces().len()));
             }
             if at_iterate {
                 t.line("// the evaluation at the iterate");
@@ -765,7 +765,7 @@ impl<'a> AnalogPrinter<'a> {
                     }
                     if let Target::Trace(k) = f.writes[w] {
                         // a record the block wrote is the watch's bytes; none is the empty record
-                        t.line(&format!("if let Some(record_) = &{}[{k}] {{ cx_.out_bytes({w}).copy_from_slice(record_); }}", ValuePrinter::TRACES));
+                        t.line(&format!("if let Some(record_) = &{}[{k}] {{ cx_.out_bytes({w}).copy_from_slice(record_); }}", RecordPrinter::TRACES));
                     }
                 }
             }

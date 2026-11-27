@@ -1,7 +1,7 @@
 //! `NoisePrinter`: the noise sources of a body (analog-operators, design mechanism 3).
 //!
 //! A source is the `NOISE` input `noise:<k>`. Every read of its result is a read of the input's
-//! `VALUE` (`ValuePrinter` prints the variable `noise<k>_input_`; a reaction or a guard prints
+//! `VALUE` (`ExpressionPrinter` prints the variable `noise<k>_input_`; a reaction or a guard prints
 //! `0.0`, the value at every accepted solution). The function `noise:<k>` writes the input's
 //! `PSD` from the source's density, a block over the cone the density reads (it may read
 //! `freq()`: the assembly runs it only in a noise sweep, so `k / freq().powf(e)` is never

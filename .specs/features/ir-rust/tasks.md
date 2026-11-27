@@ -1259,7 +1259,7 @@ Proof: run golden | test each_function_is_a_generic_fn_and_each_body_a_device_mo
 Proof: run golden | test transpiling_twice_gives_the_same_bytes ... ok
 
 **C4** - A form with no lowering gives no source and an error with the form, its IR path and its origin. (RS-01, AC 4; T5)
-Proof: run lib | test print::value::tests::an_unsupported_form_is_named_with_path_and_origin ... ok
+Proof: run lib | test print::expression::tests::an_unsupported_form_is_named_with_path_and_origin ... ok
 
 **C5** - An `Ir` that fails `check()` gives no source and the check's entries. (RS-01, AC 5; T2)
 Proof: run reject | test an_ir_that_fails_check_gives_no_source ... ok
@@ -1450,7 +1450,7 @@ Proof: run lib | test rt::int::tests::a_float_cast_saturates_and_nan_is_zero ...
 Proof: run lib | test rt::int::tests::a_shift_by_the_width_or_more_is_the_truncated_result ... ok
 
 **C67** - `UInt<65>`, `Float<16>` and `Float<128>` give no source and an error naming the type and its path. (RS-10, AC 5; T37) Proven for `UInt<65>`, `Int<65>` and `UInt<0>` only: the IR has no `Float<16>` or `Float<128>` (its one real is `f64`), so no `Ir` holds one and the transpiler cannot be the place that refuses it; that half belongs to msl-digital's lowering of MSL into IR, with its own check there (GAPS.md §4; verification F-B8).
-Proof: run lib | test print::value::tests::a_type_rust_lacks_is_refused_by_name ... ok
+Proof: run lib | test print::expression::tests::a_type_rust_lacks_is_refused_by_name ... ok
 
 **C68** - Arithmetic, a comparison or a cast with an unknown operand is unknown. (RS-11, AC 1; T36)
 Proof: run lib | test rt::flag::tests::an_unknown_operand_gives_an_unknown_result ... ok

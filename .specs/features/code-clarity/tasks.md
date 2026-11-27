@@ -1636,8 +1636,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The transpile goldens are byte-identical
-- [ ] Gate check passes: Golden
+- [x] The transpile goldens are byte-identical
+- [x] Gate check passes: Golden
+- [x] Test calls edited because a `pub` fn changed owner: `ValuePrinter::function` is `ExpressionPrinter::function` in `crates/piperine-transpile/tests/{aggregates,control,generics,number_widths}.rs` (the import and each call); the file's own unit tests moved with it to `print/expression.rs` (`use super::ExpressionPrinter`), and the two proofs of `ir-rust` that name them (C4, C67) and their rows in `uncited_tests.tsv` follow the module path
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
