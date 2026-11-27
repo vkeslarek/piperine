@@ -8,12 +8,10 @@ use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{BinaryOp, BodyId, Carrier, CarrierRole, CommitTarget, Constant, Event, EventSource, Expr, IrBuilder, Stmt, ValueType};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 
 use digital::{Buck, Dx, ValueAliases};
-use mixed::Built;
+use mixed::BuiltDesign;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 const F: &str = "ram.msl";
@@ -83,7 +81,7 @@ fn element_reads_and_commits_compile_and_run() {
     w.place("osc", osc, vec![Constant::Real(piperine_ir::Real::new(200e6))], &[("clk", BIT)]);
     let ram = Fixture::ram(&mut w.b);
     w.place("ram", ram, vec![], &[("clk", BIT), ("mem", ValueAliases::u(8)), ("k", ValueAliases::u(8)), ("q", ValueAliases::u(8)), ("hit", BIT)]);
-    let seen = Built::new(w.finish()).run(10e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(10e-9, 1e-9);
     // §12.1.1 and CV-25: at the first rising edge (2.5 ns) `mem[k] <- 9` commits element 2, the commit lands at the
     // next microstep of the same instant, and the element event `mem[2].changed()` then fires the reaction that
     // copies `mem[2]` (a constant element read, 9) to `q`

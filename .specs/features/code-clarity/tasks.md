@@ -1796,8 +1796,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 5 targets; every test keeps its name; the goldens are untouched
-- [ ] Plan lowered to 5; Gate check passes: Ledger
+- [x] 5 targets; every test keeps its name; the goldens are untouched
+- [x] Plan lowered to 5; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

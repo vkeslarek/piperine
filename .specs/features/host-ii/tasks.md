@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run solverhost**: `cargo test -p piperine-solver --test host host_writes::`
 **Run baseline**: `cargo test -p piperine-solver --test parity_baseline`
 **Run planlib**: `cargo test -p piperine-plan --lib`
-**Run transpile**: `cargo test -p piperine-transpile --test derive`
+**Run transpile**: `cargo test -p piperine-transpile --test print derive::`
 **Run paritylib**: `cargo test -p piperine-parity --lib`
 **Run deviation**: `cargo test -p piperine-parity --test deviation`
 **Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_grid --test parity_corpus`

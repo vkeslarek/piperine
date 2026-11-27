@@ -12,14 +12,12 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 
 use piperine_ir_fixtures::digital;
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 use devices::Devices;
 use digital::{Buck, Dx, ValueAliases};
-use mixed::Built;
+use mixed::BuiltDesign;
 
 const BIT: ValueType = ValueType::Bool;
 /// A true and a false `Bit`: `{ v @0 }` (abi.md §3.1).
@@ -61,7 +59,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
         );
     }
     // 1.4 us: the first conversion ends at 1.0 us and the second sample is not reached
-    let seen = Built::new(w.finish()).run(1.4e-6, 1e-8);
+    let seen = BuiltDesign::new(w.finish()).run(1.4e-6, 1e-8);
     let sample = 500 * NS;
     assert_eq!(seen.transient("sample")[0], (sample, HIGH.to_vec()), "the strobe rises at 0.5 us");
     for (i, v) in volts.iter().enumerate() {
@@ -152,7 +150,7 @@ fn the_comparator_trips_at_its_thresholds() {
     let a2d = Buck::comparator(&mut w.b);
     w.place_with("cmp", a2d, &["x"], vec![real(0.6), real(50e-3)], &[("d", BIT)]);
     // 8.9 us: the gate rises at 3 us, falls at 6 us and rises again at 9 us
-    let seen = Built::new(w.finish()).run(8.9e-6, 1e-8);
+    let seen = BuiltDesign::new(w.finish()).run(8.9e-6, 1e-8);
     let gate = seen.transient("gate");
     assert_eq!(gate, vec![(3000 * NS, HIGH.to_vec()), (6000 * NS, LOW.to_vec())]);
     let (on, off) = (3e-6, Some(6e-6));
@@ -207,7 +205,7 @@ fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     w.place_with("sw", switch, &["vs", "x"], vec![real(NETWORK.ron), real(NETWORK.roff)], &[("gate", BIT)]);
     w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
     w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
-    let built = Built::new(w.finish());
+    let built = BuiltDesign::new(w.finish());
     let x = NodeIdentifier::Anonymous(built.ir.node_at("Top.x").expect("a node x").id().index());
     // 8.9 us: the oscillator rises again at 9 us. The step is capped at 10 ns, the harness's own
     // policy: the first step after the jump is at most a tenth of the last step and of the gap to

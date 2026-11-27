@@ -4,9 +4,7 @@
 //! Rust's own `f32` arithmetic evaluated in the test and `piperine-numbers` called in the test.
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/alone.rs"]
-mod alone;
+use piperine_ir_fixtures::alone;
 
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 use std::process::Command;

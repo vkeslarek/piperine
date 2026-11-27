@@ -16,8 +16,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run iragg**: `cargo test -p piperine-ir --test model aggregates::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run rt**: `cargo test -p piperine-transpile --lib rt::`
-**Run tctl**: `cargo test -p piperine-transpile --test control`
-**Run tagg**: `cargo test -p piperine-transpile --test aggregates`
+**Run tctl**: `cargo test -p piperine-transpile --test print control::`
+**Run tagg**: `cargo test -p piperine-transpile --test print aggregates::`
 **Run typesctl**: `cargo test -p piperine-lang --test types_control`
 **Run typesagg**: `cargo test -p piperine-lang --test types_aggregates`
 **Run elabctl**: `cargo test -p piperine-lang --test elab_control`

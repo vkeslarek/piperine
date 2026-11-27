@@ -8,12 +8,8 @@
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Expr, FunctionSpec, IrBuilder, Local, ValueType};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/alone.rs"]
-mod alone;
-#[allow(dead_code)]
-#[path = "support/compiled.rs"]
-mod compiled;
+use piperine_ir_fixtures::alone;
+use crate::compiled;
 
 use alone::Alone;
 use compiled::{Bytes, Device};

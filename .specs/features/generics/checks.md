@@ -11,7 +11,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
-**Run tgen**: `cargo test -p piperine-transpile --test generics`
+**Run tgen**: `cargo test -p piperine-transpile --test print generics::`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srchandles**: `cargo test -p piperine-parity --test source_handles`
@@ -48,7 +48,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run typesimplicit**: `cargo test -p piperine-lang --test types_implicit`
 **Run elabtempl**: `cargo test -p piperine-lang --test elab_templates`
 **Run elabimplicit**: `cargo test -p piperine-lang --test elab_implicit`
-**Run tcontrol**: `cargo test -p piperine-transpile --test control`
+**Run tcontrol**: `cargo test -p piperine-transpile --test print control::`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_params`

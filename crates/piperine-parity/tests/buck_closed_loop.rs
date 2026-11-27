@@ -16,9 +16,7 @@ use piperine_solver::prelude::{NodeIdentifier, Solver, TransientAnalysisOptions}
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
@@ -71,7 +69,7 @@ struct Kept {
     checks: Vec<(i64, Vec<u8>, Vec<(String, String)>)>,
 }
 
-struct Keep {
+struct SeenSink {
     ir: std::sync::Arc<piperine_ir::Ir>,
     kept: Rc<RefCell<Kept>>,
 }
@@ -80,7 +78,7 @@ fn ticks(seconds: f64) -> i64 {
     (seconds * 1e15).round() as i64
 }
 
-impl Sink for Keep {
+impl Sink for SeenSink {
     fn observe(&mut self, o: &Observation) {
         let mut kept = self.kept.borrow_mut();
         match &o.kind {
@@ -115,7 +113,7 @@ fn outcome() -> &'static Outcome {
         // only the last 20 periods are read as analog values: earlier steps are not kept (each
         // kept step holds every unknown; the whole run would hold hundreds of thousands)
         options.record_from = STOP - 20.0 * PERIOD;
-        let sink = Keep { ir: built.ir.clone(), kept: kept.clone() };
+        let sink = SeenSink { ir: built.ir.clone(), kept: kept.clone() };
         let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(Box::new(sink)).build();
         let start = std::time::Instant::now();
         let result = solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("the closed loop does not run: {e}"));

@@ -7,9 +7,6 @@
 use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]

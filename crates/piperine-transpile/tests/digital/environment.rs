@@ -11,12 +11,10 @@ use piperine_ir::{BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, IrB
 use piperine_solver::prelude::Context;
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 
 use digital::Buck;
-use mixed::Built;
+use mixed::BuiltDesign;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 const A: &str = "env.msl";
@@ -67,7 +65,7 @@ fn a_compiled_reaction_and_drive_read_the_hosts_temperature_gmin_and_source_scal
         .map(|n| (n, if n == "clk" { ValueType::Bool } else { ValueType::F64 }))
         .collect();
     w.place("amb", body, vec![], &nets);
-    let built = Built::new(w.finish());
+    let built = BuiltDesign::new(w.finish());
     let mut context = Context::default();
     context.tolerances.temperature = KELVIN;
     context.tolerances.gmin = GMIN;

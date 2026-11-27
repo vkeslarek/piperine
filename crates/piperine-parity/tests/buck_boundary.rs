@@ -11,9 +11,7 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;

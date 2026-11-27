@@ -27,8 +27,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run iramend**: `cargo test -p piperine-ir --test model amendments::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planamend**: `cargo test -p piperine-plan --test shape amended_shape::`
-**Run amended**: `cargo test -p piperine-transpile --test amended`
-**Run nets**: `cargo test -p piperine-transpile --test digital_circuit`
+**Run amended**: `cargo test -p piperine-transpile --test digital amended::`
+**Run nets**: `cargo test -p piperine-transpile --test digital digital_circuit::`
 **Run project**: `cargo test -p piperine-parity --test project`
 **Run bcommits**: `cargo test -p piperine-parity --test buck_commits`
 **Run bdpwm**: `cargo test -p piperine-parity --test buck_dpwm`

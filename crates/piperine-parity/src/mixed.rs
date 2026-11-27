@@ -15,9 +15,10 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 #[derive(Clone, Default)]
 pub struct Seen(Rc<RefCell<Vec<Observation>>>);
 
-struct Keep(Seen);
+/// The sink the solver reports to: it appends every observation to what a `Seen` holds.
+struct SeenSink(Seen);
 
-impl Sink for Keep {
+impl Sink for SeenSink {
     fn observe(&mut self, o: &Observation) {
         (self.0).0.borrow_mut().push(o.clone());
     }
@@ -93,14 +94,17 @@ impl Seen {
 }
 
 /// A design compiled once.
-pub struct Built {
+pub struct BuiltDesign {
+    /// The design that was compiled.
     pub ir: Arc<Ir>,
+    /// The compiled library and its circuit.
     pub compiled: Compiled,
     _cache: tempfile::TempDir,
 }
 
-impl Built {
-    pub fn new(ir: Ir) -> Built {
+impl BuiltDesign {
+    /// Compiles `ir` into a cache of its own; a warning in the generated source fails the build.
+    pub fn new(ir: Ir) -> BuiltDesign {
         let ir = Arc::new(ir);
         let cache = tempfile::tempdir().expect("a temp dir");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
@@ -109,7 +113,7 @@ impl Built {
             .compile(&settings)
             .unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(compiled.report().warnings, "", "the generated source compiles with no warning");
-        Built { ir, compiled, _cache: cache }
+        BuiltDesign { ir, compiled, _cache: cache }
     }
 
     /// Runs a transient to `stop` seconds, at most `step` between points, and returns what the
@@ -132,7 +136,7 @@ impl Built {
         let mut solver = Solver::new(circuit)
             .with_context(context)
             .with_tran_opts(options)
-            .with_sink(Box::new(Keep(seen.clone())))
+            .with_sink(Box::new(SeenSink(seen.clone())))
             .build();
         let result = solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
         (seen, result)

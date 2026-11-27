@@ -12,12 +12,10 @@ use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{Constant, Real, ValueType};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 
 use digital::{Buck, ValueAliases};
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use piperine_ir_fixtures::mixed::TopDesign;
 
 const BIT: ValueType = ValueType::Bool;
@@ -39,7 +37,7 @@ fn oscillator() -> TopDesign {
 #[test]
 fn the_oscillator_toggles_every_half_period() {
     let w = oscillator();
-    let seen = Built::new(w.finish()).run(100e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(100e-9, 1e-9);
     // 200 MHz: a period of 5 ns, a toggle every 2.5 ns, from false: true at 2.5 ns, false at
     // 5 ns, ... `k` = 1 to 40 inside 100 ns, and no change at any other instant
     let expected: Vec<(i64, Vec<u8>)> =
@@ -49,7 +47,7 @@ fn the_oscillator_toggles_every_half_period() {
 
 /// The oscillator into `Dpwm`, with `run` true, the duty word 1325, and both current-limit
 /// inputs known false.
-fn dpwm_design() -> Built {
+fn dpwm_design() -> BuiltDesign {
     let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     let dpwm = Buck::dpwm(&mut w.b);
@@ -85,7 +83,7 @@ fn dpwm_design() -> Built {
             ("dpwm.ls_cut", BIT),
         ],
     );
-    Built::new(w.finish())
+    BuiltDesign::new(w.finish())
 }
 
 /// Eight periods and a little: the ninth period's high side would start at the rising edge
@@ -93,7 +91,7 @@ fn dpwm_design() -> Built {
 const STOP: f64 = 17.99e-6;
 
 fn run_once() -> Seen {
-    static BUILT: OnceLock<Mutex<Built>> = OnceLock::new();
+    static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
     let built = BUILT.get_or_init(|| Mutex::new(dpwm_design())).lock().expect("the design is not poisoned");
     built.run(STOP, 1e-8)
 }

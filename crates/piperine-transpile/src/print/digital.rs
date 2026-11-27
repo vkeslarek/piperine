@@ -317,7 +317,7 @@ mod tests {
     use piperine_plan::{BodyPlan, Mode};
 
     use super::DigitalPrinter;
-    use crate::alone::Alone;
+    use piperine_ir_fixtures::alone::Alone;
     use piperine_ir_fixtures::digital::Buck;
 
     /// Every discrete function of the body `make` builds, by its name in the shape.

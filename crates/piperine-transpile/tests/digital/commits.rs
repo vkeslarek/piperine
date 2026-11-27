@@ -10,12 +10,10 @@ use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, IrBuilder, Real, ValueType};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 
 use digital::{Buck, Dx, ValueAliases};
-use mixed::Built;
+use mixed::BuiltDesign;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 const F: &str = "commit.msl";
@@ -63,7 +61,7 @@ fn two_commits_exchange_two_carriers() {
     clock(&mut w);
     let swap = swap(&mut w.b);
     w.place("swap", swap, vec![], &[("clk", BIT), ("a", BIT), ("b", BIT)]);
-    let seen = Built::new(w.finish()).run(10e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(10e-9, 1e-9);
     // §12.1.1: every read sees the values at the start of the microstep and the commits of the
     // microstep apply together, so `a <- b; b <- a;` exchanges them. a = true, b = false at the
     // start; at the first rising edge (2.5 ns) a becomes false and b true; at the second
@@ -99,7 +97,7 @@ fn the_later_statement_wins() {
     clock(&mut w);
     let later = later(&mut w.b);
     w.place("later", later, vec![], &[("clk", BIT), ("x", ValueAliases::u(8))]);
-    let seen = Built::new(w.finish()).run(10e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(10e-9, 1e-9);
     // §12.1.2: commits to one level that apply in the same microstep are ordered by the instant
     // they were made, then by source order; the last one is the value. At 2.5 ns `x` takes 2,
     // and 1 is never seen. At 7.5 ns the same commits leave the value as it is: no change.
@@ -138,7 +136,7 @@ fn two_statements_make_a_pulse() {
     let pulse = pulse(&mut w.b);
     w.place("pulse", pulse, vec![], &[("clk", BIT), ("p", BIT), ("q", BIT)]);
     // 7 ns: the second rising edge (7.5 ns) is not reached
-    let seen = Built::new(w.finish()).run(7e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(7e-9, 1e-9);
     // §12.1.4: `p <- true after t; p <- false after t + w;` holds `p` true from `t` to `t + w`,
     // in either order of the two statements: the reaction runs at 2.5 ns, t = 1 ns, w = 2 ns, so
     // true from 3.5 ns to 5.5 ns.
@@ -190,7 +188,7 @@ fn an_unchanged_commit_fires_nothing() {
     w.place("latch", latch, vec![], &[("clk", BIT), ("q", BIT)]);
     w.place("count", count, vec![], &[("q", BIT), ("n", ValueAliases::u(8))]);
     // 20 ns: rising edges at 2.5, 7.5, 12.5 and 17.5 ns
-    let seen = Built::new(w.finish()).run(20e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(20e-9, 1e-9);
     // §12.1.18: a commit that changes a level fires `changed()` where it applies, and one that
     // leaves the value as it was fires nothing. The latch commits true at four rising edges; it
     // changes `q` only at the first (2.5 ns)

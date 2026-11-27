@@ -13,14 +13,12 @@ use piperine_parity::project::Project;
 use piperine_solver::prelude::{NodeIdentifier, Solver};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::Built;
+use mixed::BuiltDesign;
 use support::build;
 
 /// One microsecond and one nanosecond in ticks (one femtosecond each).
@@ -131,7 +129,7 @@ impl Run {
 /// A model of `tests/events/` compiled once, and the runs made of it.
 struct Scenario {
     /// The model compiled on the transpiled backend.
-    built: Built,
+    built: BuiltDesign,
     /// The decoders of the model's record streams, handed to each run.
     streams: Streams,
 }

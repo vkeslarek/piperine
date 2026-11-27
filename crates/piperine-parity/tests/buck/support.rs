@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
-use crate::mixed::{Built, Seen};
+use piperine_parity::mixed::{BuiltDesign, Seen};
 
 /// A file under `tests/buck/`.
 pub fn fixture(file: &str) -> PathBuf {
@@ -22,9 +22,9 @@ pub fn with_buck(root: &str) -> Project {
 }
 
 /// `top` of `project`, elaborated and compiled once.
-pub fn build(project: &Project, top: &str) -> Built {
+pub fn build(project: &Project, top: &str) -> BuiltDesign {
     let ir = project.elaborate(top).unwrap_or_else(|r| panic!("{r}"));
-    Built::new(ir)
+    BuiltDesign::new(ir)
 }
 
 /// The changes of the net at `path` during the transient: instant in ticks and bytes, in order.

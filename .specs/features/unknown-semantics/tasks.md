@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabunknowns**: `cargo test -p piperine-lang --test elab_unknowns`
 **Run sourceunknowns**: `cargo test -p piperine-parity --test source_unknowns`
 **Run rt**: `cargo test -p piperine-transpile --lib rt::`
-**Run reaction**: `cargo test -p piperine-transpile --test reaction`
+**Run reaction**: `cargo test -p piperine-transpile --test digital reaction::`
 **Run abilayouts**: `cargo test -p piperine-abi --test contract layouts::`
 **Run abicaller**: `cargo test -p piperine-abi --test thunks caller::`
 **Run queue**: `cargo test -p piperine-digital-solver --test engine queue::`

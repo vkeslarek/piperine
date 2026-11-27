@@ -13,15 +13,13 @@ use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use support::{HIGH, LOW, build, series};
 
 /// 10 switching periods of 2 us (SPEC §2: 500 kHz).
@@ -33,7 +31,7 @@ fn project() -> Project {
 }
 
 /// `Buck` compiled and run for 10 periods, `en` not driven.
-fn idle() -> (Built, Seen) {
+fn idle() -> (BuiltDesign, Seen) {
     let built = build(&project(), "Buck");
     let seen = built.run(STOP, 1e-8);
     (built, seen)
@@ -41,7 +39,7 @@ fn idle() -> (Built, Seen) {
 
 #[test]
 fn the_buck_compiles_with_no_warning_and_valid_shapes() {
-    // DIG-15 AC 3: `Built::new` compiles the generated source and asserts `rustc` printed no
+    // DIG-15 AC 3: `BuiltDesign::new` compiles the generated source and asserts `rustc` printed no
     // warning; every body that runs has a shape `piperine_abi::validate` accepts
     let built = build(&project(), "Buck");
     assert_eq!(built.ir.check(), vec![], "the IR passes check()");

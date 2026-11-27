@@ -11,12 +11,10 @@
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, Event, EventSource, IrBuilder, Local, Real, UnaryOp, ValueType};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 
 use digital::{Buck, Dx, ValueAliases};
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use piperine_ir_fixtures::mixed::TopDesign;
 
 const BIT: ValueType = ValueType::Bool;
@@ -115,7 +113,7 @@ fn script_body(b: &mut IrBuilder) -> BodyId {
     body
 }
 
-fn design() -> Built {
+fn design() -> BuiltDesign {
     let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     let script_body = script_body(&mut w.b);
@@ -142,7 +140,7 @@ fn design() -> Built {
             ("pid.e_prev", ValueAliases::i(16)),
         ],
     );
-    Built::new(w.finish())
+    BuiltDesign::new(w.finish())
 }
 
 /// The state of the two bodies after one sample.

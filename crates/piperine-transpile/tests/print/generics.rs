@@ -5,15 +5,9 @@
 
 use piperine_ir_fixtures::digital;
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "support/alone.rs"]
-mod alone;
-#[allow(dead_code)]
-#[path = "support/probe.rs"]
-mod probe;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_ir_fixtures::alone;
+use crate::probe;
+use piperine_parity::mixed;
 
 use alone::Alone;
 use devices::{Devices, Ex};
@@ -261,7 +255,7 @@ impl RunTemperature {
         let mut w = piperine_ir_fixtures::mixed::TopDesign::new();
         let body = Self::body(&mut w.b);
         w.place("reads", body, vec![], &[("given", ValueType::F64), ("kelvin", ValueType::F64)]);
-        let (seen, _) = mixed::Built::new(w.finish()).run_in(context, 2e-9, 1e-9);
+        let (seen, _) = mixed::BuiltDesign::new(w.finish()).run_in(context, 2e-9, 1e-9);
         let last = |name: &str| {
             let bytes = seen.series(name).last().unwrap_or_else(|| panic!("net {name} has a value")).1.clone();
             f64::from_le_bytes(bytes[..8].try_into().expect("eight bytes"))

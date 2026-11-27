@@ -13,9 +13,7 @@ use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
@@ -176,7 +174,7 @@ fn model() -> Vec<Shown> {
 }
 
 /// The bench compiled and run over 2400 rising edges at 5 ns.
-fn run() -> (mixed::Built, Seen) {
+fn run() -> (mixed::BuiltDesign, Seen) {
     let built = build(&project(), "SupervisorBench");
     let seen = built.run(TopDesign::rising_edge(SAMPLES) as f64 * 1e-15 + 1e-9, 1e-8);
     (built, seen)

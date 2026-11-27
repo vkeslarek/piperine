@@ -26,9 +26,7 @@ crates/piperine-parity/tests/buck_closed_loop.rs::vout	1
 crates/piperine-parity/tests/buck_control.rs::deriv	1
 crates/piperine-parity/tests/buck_control.rs::e_prev	1
 crates/piperine-parity/tests/buck_control.rs::integ	1
-crates/piperine-parity/tests/buck_control.rs::the_ramp_and_the_pid_follow_their_difference_equations	1
 crates/piperine-parity/tests/buck_control.rs::the_setpoint_register_takes_known_data_and_saturates	1
-crates/piperine-parity/tests/buck_dpwm.rs::the_dpwm_dithers_keeps_dead_time_and_never_overlaps	1
 crates/piperine-parity/tests/buck_power.rs::the_inductor_follows_the_rl_response	1
 crates/piperine-parity/tests/buck_power.rs::the_power_switch_ramps_its_conductance_in_tsw	1
 crates/piperine-parity/tests/buck_power.rs::x	1

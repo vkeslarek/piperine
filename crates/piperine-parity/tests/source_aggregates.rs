@@ -5,9 +5,7 @@
 //! and tuples, never read back from the model.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;

@@ -10,14 +10,12 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use piperine_parity::project::Project;
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use support::{build, series};
 
 /// One MSL file of `tests/bundles/`.
@@ -34,7 +32,7 @@ impl Model {
     }
 
     /// `top` elaborated and compiled once.
-    fn built(&self, top: &str) -> Built {
+    fn built(&self, top: &str) -> BuiltDesign {
         build(&self.project, top)
     }
 
@@ -46,7 +44,7 @@ impl Model {
     }
 
     /// The integer fields of every record of the stream `name` a run wrote, in order.
-    fn records(built: &Built, seen: &Seen, name: &str) -> Vec<Vec<(String, i128)>> {
+    fn records(built: &BuiltDesign, seen: &Seen, name: &str) -> Vec<Vec<(String, i128)>> {
         let streams = Streams::of(built.ir.clone());
         seen.all()
             .iter()
@@ -67,7 +65,7 @@ impl Model {
     }
 
     /// The `data` of each record of the stream `name`.
-    fn data(built: &Built, seen: &Seen, name: &str) -> Vec<i128> {
+    fn data(built: &BuiltDesign, seen: &Seen, name: &str) -> Vec<i128> {
         Model::records(built, seen, name).into_iter().map(|fields| fields.iter().find(|(field, _)| field == "data").map(|(_, value)| *value).expect("a `data` field")).collect()
     }
 }

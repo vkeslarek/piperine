@@ -15,7 +15,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run irdigital**: `cargo test -p piperine-ir --test model digital::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
-**Run reaction**: `cargo test -p piperine-transpile --test reaction`
+**Run reaction**: `cargo test -p piperine-transpile --test digital reaction::`
 **Run instant**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run checkpoint**: `cargo test -p piperine-digital-solver --test engine checkpoint::`
 **Run prototran**: `cargo test -p piperine-solver --test protocol protocol_transient::`

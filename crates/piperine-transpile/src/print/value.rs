@@ -1334,7 +1334,7 @@ mod tests {
 
     use super::ValuePrinter;
     use crate::Error;
-    use crate::alone::Alone;
+    use piperine_ir_fixtures::alone::Alone;
     use piperine_ir_fixtures::devices::Devices;
     use piperine_ir_fixtures::digital::{Buck, Dx, ValueAliases};
 

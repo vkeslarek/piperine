@@ -20,7 +20,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
-**Run tgen**: `cargo test -p piperine-transpile --test generics`
+**Run tgen**: `cargo test -p piperine-transpile --test print generics::`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srchandles**: `cargo test -p piperine-parity --test source_handles`

@@ -19,7 +19,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run digital**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run irops**: `cargo test -p piperine-ir --test model operators::`
 **Run planops**: `cargo test -p piperine-plan --test shape operators_shape::`
-**Run tops**: `cargo test -p piperine-transpile --test operators`
+**Run tops**: `cargo test -p piperine-transpile --test analog operators::`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run typeops**: `cargo test -p piperine-lang --test types_analog_operators`

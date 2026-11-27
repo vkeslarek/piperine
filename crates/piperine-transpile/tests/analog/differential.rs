@@ -24,9 +24,7 @@ use piperine_transpile::Transpiler;
 use piperine_transpile::print::Text;
 
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "support/both.rs"]
-mod both;
+use crate::both;
 
 use both::{Both, Rng, Written};
 use devices::{Devices, Ex};

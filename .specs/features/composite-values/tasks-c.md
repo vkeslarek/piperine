@@ -19,7 +19,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run irarr**: `cargo test -p piperine-ir --test model carrier_arrays::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planarr**: `cargo test -p piperine-plan --test shape carrier_arrays::`
-**Run tarr**: `cargo test -p piperine-transpile --test carrier_arrays`
+**Run tarr**: `cargo test -p piperine-transpile --test digital carrier_arrays::`
 **Run typesarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
 **Run elabarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
 **Run srcarr**: `cargo test -p piperine-parity --test source_carrier_arrays`

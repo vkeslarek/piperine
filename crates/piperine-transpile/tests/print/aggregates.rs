@@ -5,12 +5,8 @@
 #![cfg(unix)]
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/alone.rs"]
-mod alone;
-#[allow(dead_code)]
-#[path = "support/probe.rs"]
-mod probe;
+use piperine_ir_fixtures::alone;
+use crate::probe;
 
 use alone::Alone;
 use digital::{Dx, ValueAliases};

@@ -8,9 +8,7 @@
 
 use piperine_abi::raw::{Shape, ambient};
 
-#[allow(dead_code)]
-#[path = "support/both.rs"]
-mod both;
+use crate::both;
 
 use both::{Both, Rng, Written};
 

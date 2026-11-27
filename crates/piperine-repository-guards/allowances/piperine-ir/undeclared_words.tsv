@@ -116,7 +116,6 @@ crates/piperine-ir/tests/model/dependencies.rs::deps	1
 crates/piperine-ir/tests/model/dependencies.rs::ex	1
 crates/piperine-ir/tests/model/dependencies.rs::v	1
 crates/piperine-ir/tests/model/digital.rs::adc_code	1
-crates/piperine-ir/tests/model/digital.rs::pid_duty	1
 crates/piperine-ir/tests/model/digital.rs::the_m1_prints_are_unchanged	1
 crates/piperine-ir/tests/model/model.rs::equal_builder_sequences_give_equal_irs	1
 crates/piperine-ir/tests/model/model.rs::expr	1

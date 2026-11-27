@@ -1,5 +1,5 @@
-//! One body, or the whole buck slice, placed in a design as the IR's own tests place them: under
-//! an empty `Top` body, so `check()` has a top instance to hold.
+//! One body, or the whole buck slice, placed in a design as the IR's own tests place them: under an empty
+//! `Top` body, so `check()` has a top instance to hold.
 
 use piperine_ir::{BodyId, BodySpec, InstanceSpec, Ir, IrBuilder, Origin};
 

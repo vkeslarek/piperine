@@ -19,8 +19,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabimplicit**: `cargo test -p piperine-lang --test elab_implicit`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
-**Run tgen**: `cargo test -p piperine-transpile --test generics`
-**Run tcontrol**: `cargo test -p piperine-transpile --test control`
+**Run tgen**: `cargo test -p piperine-transpile --test print generics::`
+**Run tcontrol**: `cargo test -p piperine-transpile --test print control::`
 **Run typesgen**: `cargo test -p piperine-lang --test types_generics`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`

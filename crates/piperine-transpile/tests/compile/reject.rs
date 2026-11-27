@@ -14,9 +14,7 @@ use piperine_transpile::{Error, Transpiler};
 
 use piperine_ir_fixtures::devices;
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/alone.rs"]
-mod alone;
+use piperine_ir_fixtures::alone;
 
 use alone::Alone;
 use devices::Devices;

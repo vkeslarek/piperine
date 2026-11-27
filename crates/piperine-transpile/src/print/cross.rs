@@ -99,7 +99,7 @@ mod tests {
     use piperine_plan::{BodyPlan, Mode};
 
     use super::*;
-    use crate::alone::Alone;
+    use piperine_ir_fixtures::alone::Alone;
     use piperine_ir_fixtures::digital::Buck;
     use crate::print::AnalogPrinter;
 

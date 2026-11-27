@@ -11,9 +11,7 @@ use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use piperine_solver::protocol::ObservationKind;
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
@@ -152,7 +150,7 @@ fn a_cross_over_a_maybe_unknown_carrier_builds() {
 #[test]
 fn absdelta_fires_every_two_tenths_of_a_volt() {
     // FIX-05 AC 2: `v(a)` = 1 V/µs · t; `absdelta(v(a), 0.2)` writes `hit` at 0 (`init()`) and at
-    // 0.2, 0.4, 0.6 and 0.8 µs, each within the solver's default `ttol` (1 ps, `Keep` docs of
+    // 0.2, 0.4, 0.6 and 0.8 µs, each within the solver's default `ttol` (1 ps, `SeenSink` docs of
     // `TransientAnalysisOptions::ttol`) of the exact time.
     let times = record_times("absdelta.msl", "AbsdeltaBench", 0.9e-6, 0.05e-6);
     let exact = [0.0, 0.2e-6, 0.4e-6, 0.6e-6, 0.8e-6];

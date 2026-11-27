@@ -16,12 +16,10 @@ use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use piperine_transpile::{Error, Transpiler};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 
 use digital::{Buck, Dx};
-use mixed::Built;
+use mixed::BuiltDesign;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 const F: &str = "amended.msl";
@@ -96,7 +94,7 @@ fn now_is_the_time_of_the_instant_and_of_the_solve() {
     w.place("stamp", stamp, vec![], &[("clk", BIT), ("t", REAL)]);
     let ramp = source(&mut w.b, "Ramp", |x| env(x, Env::Time));
     w.place_analog("ramp", ramp, &["x"], &[]);
-    let built = Built::new(w.finish());
+    let built = BuiltDesign::new(w.finish());
     let (seen, result) = built.run_with(20e-9, 1e-9);
 
     // part IV §12.1.12: `now()` in a reaction is the time of its instant. abi.md §4.2: `TIME` is
@@ -129,7 +127,7 @@ fn static_is_true_only_in_the_equilibrium() {
         x.if_(stat, one, zero, REAL)
     });
     w.place_analog("level", level, &["x"], &[]);
-    let built = Built::new(w.finish());
+    let built = BuiltDesign::new(w.finish());
     let (seen, result) = built.run_with(6e-9, 1e-9);
 
     // abi.md §4.2: `STATIC` is true in an equilibrium solve and in its instants. The clock's
@@ -198,9 +196,9 @@ fn hoisted_names_print_as_rust_identifiers() {
     let body = hoisted(&mut w.b, "Hoisted", None);
     // every carrier is bound to a net, a signal to the one its instance declares
     w.place("h", body, vec![], &[("clk", BIT), ("h.gate.x", BIT), ("h.above$0.init$0.up", BIT), ("q", BIT)]);
-    // `Built::new` asserts the compiler's standard error is empty: no warning on `gate_dx`,
+    // `BuiltDesign::new` asserts the compiler's standard error is empty: no warning on `gate_dx`,
     // `above_s0_dinit_s0_dup` or `match_s0`
-    let built = Built::new(w.finish());
+    let built = BuiltDesign::new(w.finish());
     let seen = built.run(4e-9, 1e-9);
     // q follows clk through the two hoisted carriers: high from the clock's first rise (2.5 ns)
     assert_eq!(seen.transient("q"), [(5 * NS / 2, HIGH.to_vec())]);
@@ -265,7 +263,7 @@ fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
     let mut w = TopDesign::new();
     let body = timer(&mut w.b, rearm);
     w.place("timer", body, vec![], &[("timer.t0", REAL), ("timer.dt", REAL), ("count", ValueType::UInt(8))]);
-    Built::new(w.finish()).run(40e-9, 1e-9).transient("count")
+    BuiltDesign::new(w.finish()).run(40e-9, 1e-9).transient("count")
 }
 
 #[test]
@@ -336,7 +334,7 @@ fn a_past_time_does_not_fire() {
         let hit = format!("{name}_hit");
         w.place(name, body, vec![], &[("clk", BIT), (&format!("{name}.t"), REAL), (&hit, BIT)]);
     }
-    let seen = Built::new(w.finish()).run(12e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(12e-9, 1e-9);
     // part IV §13: a time before the instant that arms it (0 armed at 5 ns) never fires
     assert_eq!(seen.transient("past_hit"), []);
     // a time equal to the instant fires at its next microstep (abi.md C1: a delay of 0), so
@@ -376,17 +374,17 @@ fn probe(b: &mut IrBuilder, emits: bool) -> BodyId {
 }
 
 /// The probe under the 200 MHz clock, compiled.
-fn probed(emits: bool) -> Built {
+fn probed(emits: bool) -> BuiltDesign {
     let mut w = TopDesign::new();
     clock(&mut w);
     let body = probe(&mut w.b, emits);
     w.place("probe", body, vec![], &[("clk", BIT), ("n", ValueType::UInt(8))]);
-    Built::new(w.finish())
+    BuiltDesign::new(w.finish())
 }
 
 /// The microsteps of each instant the digital side runs through `stop` ticks, from the start of
 /// an analysis, as `(tick, microsteps)`.
-fn microsteps(built: &Built, stop: i64) -> Vec<(i64, u32)> {
+fn microsteps(built: &BuiltDesign, stop: i64) -> Vec<(i64, u32)> {
     use piperine_digital_solver::engine::{Horizon, Mode};
     use piperine_digital_solver::tick::Tick;
     let mut circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
@@ -479,7 +477,7 @@ fn the_inductor_functions_pass_verify_partials() {
     for (name, body, nodes, value) in [("l", inductor, ["a", "b"], 10e-6), ("e", vcvs, ["c", "gnd"], 2.0), ("r", resistor, ["d", "gnd"], 50.0)] {
         w.place_analog(name, body, &nodes, &[value]);
     }
-    let built = Built::new(w.finish());
+    let built = BuiltDesign::new(w.finish());
     // every read of these functions is an `F64` cell (a node, the flow pin, the param): three
     // points, each read its own value, the flow and the param on either side of 0
     let points: [[f64; 4]; 3] = [[0.3, -0.1, 2e-3, 10e-6], [1.2, 0.4, -0.5, 3.0], [-2.0, 0.7, 1.5e-6, -0.25]];
@@ -566,7 +564,7 @@ fn a_previous_value_is_read_in_a_guard_and_in_a_reaction() {
     let body = sequence(&mut w.b);
     let u8 = ValueType::UInt(8);
     w.place("seq", body, vec![], &[("x", u8.clone()), ("p", u8), ("g", BIT)]);
-    let seen = Built::new(w.finish()).run(4e-9, 1e-9);
+    let seen = BuiltDesign::new(w.finish()).run(4e-9, 1e-9);
     // x takes 3 at 1 ns and 5 at 2 ns
     assert_eq!(seen.transient("x"), [(NS, vec![3]), (2 * NS, vec![5])]);
     // part II §5.3.8: the first commit is a change; `prev()` is the value before the most recent

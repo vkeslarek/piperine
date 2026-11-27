@@ -12,9 +12,7 @@ use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
@@ -156,7 +154,7 @@ fn a_gate_change_makes_two_time_points() {
 }
 
 /// The anonymous node `path` of a compiled bench.
-fn node(built: &mixed::Built, path: &str) -> NodeIdentifier {
+fn node(built: &mixed::BuiltDesign, path: &str) -> NodeIdentifier {
     NodeIdentifier::Anonymous(built.ir.node_at(path).unwrap_or_else(|| panic!("a node {path}")).id().index())
 }
 

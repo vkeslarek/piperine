@@ -8,9 +8,6 @@
 use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 
 #[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
-#[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 #[allow(dead_code)]

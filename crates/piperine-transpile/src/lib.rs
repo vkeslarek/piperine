@@ -24,8 +24,3 @@ pub use load::Loaded;
 pub use rustc::Rustc;
 pub use settings::Settings;
 pub use transpiler::Transpiler;
-
-#[cfg(test)]
-#[allow(dead_code)]
-#[path = "../tests/support/alone.rs"]
-mod alone;

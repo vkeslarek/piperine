@@ -14,18 +14,18 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Build**: `cargo build -p piperine-ir -p piperine-interp -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-plan || cargo build -p piperine-plan --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-transpile || cargo build -p piperine-transpile --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run plan**: `cargo test -p piperine-plan --test circuit shared::`
-**Run reject**: `cargo test -p piperine-transpile --test reject`
+**Run reject**: `cargo test -p piperine-transpile --test compile reject::`
 **Run lib**: `cargo test -p piperine-transpile --lib`
 **Run golden**: `cargo test -p piperine-transpile --test golden`
-**Run rustc**: `cargo test -p piperine-transpile --test rustc`
-**Run abisrc**: `cargo test -p piperine-transpile --test abi_source`
-**Run cache**: `cargo test -p piperine-transpile --test cache`
-**Run load**: `cargo test -p piperine-transpile --test load`
-**Run compile**: `cargo test -p piperine-transpile --test compile`
-**Run compiled**: `cargo test -p piperine-transpile --test compiled`
-**Run differential**: `cargo test -p piperine-transpile --test differential`
-**Run residue**: `cargo test -p piperine-transpile --test residue`
-**Run session**: `cargo test -p piperine-transpile --test session`
+**Run rustc**: `cargo test -p piperine-transpile --test compile rustc::`
+**Run abisrc**: `cargo test -p piperine-transpile --test compile abi_source::`
+**Run cache**: `cargo test -p piperine-transpile --test compile cache::`
+**Run load**: `cargo test -p piperine-transpile --test compile load::`
+**Run compile**: `cargo test -p piperine-transpile --test compile compile::`
+**Run compiled**: `cargo test -p piperine-transpile --test compile compiled::`
+**Run differential**: `cargo test -p piperine-transpile --test analog differential::`
+**Run residue**: `cargo test -p piperine-transpile --test analog residue::`
+**Run session**: `cargo test -p piperine-transpile --test compile session::`
 **Run backend**: `cargo test -p piperine-parity --test backend`
 **Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran`
 **Run backends**: `cargo test -p piperine-parity --test backends`
@@ -33,12 +33,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run irdigital**: `cargo test -p piperine-ir --test model digital::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
-**Run reaction**: `cargo test -p piperine-transpile --test reaction`
-**Run environment**: `cargo test -p piperine-transpile --test environment`
-**Run nets**: `cargo test -p piperine-transpile --test digital_circuit`
-**Run commits**: `cargo test -p piperine-transpile --test commits`
-**Run dpwm**: `cargo test -p piperine-transpile --test dpwm`
-**Run pid**: `cargo test -p piperine-transpile --test pid`
+**Run reaction**: `cargo test -p piperine-transpile --test digital reaction::`
+**Run environment**: `cargo test -p piperine-transpile --test digital environment::`
+**Run nets**: `cargo test -p piperine-transpile --test digital digital_circuit::`
+**Run commits**: `cargo test -p piperine-transpile --test digital commits::`
+**Run dpwm**: `cargo test -p piperine-transpile --test digital dpwm::`
+**Run pid**: `cargo test -p piperine-transpile --test digital pid::`
 **Run boundary**: `cargo test -p piperine-parity --test boundary`
 
 Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number with no error or that hold `unsafe`: T3, T7, T8, T15, T26, T27, T31, T33, T35, T39. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` for each crate a command builds before running it.

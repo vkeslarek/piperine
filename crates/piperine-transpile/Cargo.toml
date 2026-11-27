@@ -15,5 +15,6 @@ libloading.workspace = true
 [dev-dependencies]
 piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }
 piperine-interp = { path = "../piperine-interp" }
+piperine-parity = { path = "../piperine-parity" }
 piperine-digital-solver = { path = "../piperine-digital-solver" }
 tempfile.workspace = true

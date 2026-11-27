@@ -13,14 +13,12 @@ use piperine_api::{Cell, Failure, Field, Overrides, Project as HostProject, Reco
 use piperine_transpile::Settings;
 use piperine_parity::project::Project;
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use support::build;
 
 /// A sink that keeps nothing: a run is judged by what it returns.
@@ -71,7 +69,7 @@ impl Model {
     }
 
     /// `top` elaborated and compiled once.
-    fn built(&self, top: &str) -> Built {
+    fn built(&self, top: &str) -> BuiltDesign {
         build(&self.project, top)
     }
 
@@ -86,7 +84,7 @@ impl Model {
     }
 
     /// The `f64` fields of every record of the stream `name` a run wrote, the operating point's first.
-    fn reals(built: &Built, seen: &Seen, name: &str) -> Vec<Vec<(String, f64)>> {
+    fn reals(built: &BuiltDesign, seen: &Seen, name: &str) -> Vec<Vec<(String, f64)>> {
         let streams = Streams::of(built.ir.clone());
         seen.all()
             .iter()

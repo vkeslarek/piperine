@@ -13,9 +13,7 @@ use piperine_transpile::{Settings, Transpiler};
 use std::sync::Arc;
 
 use piperine_ir_fixtures::operators;
-#[allow(dead_code)]
-#[path = "support/compiled.rs"]
-mod compiled;
+use crate::compiled;
 
 use compiled::{Bytes, Device};
 use operators::{Operators, OperatorWrites};

@@ -19,15 +19,13 @@ use piperine_parity::project::Project;
 use piperine_solver::prelude::{Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::Built;
+use mixed::BuiltDesign;
 use support::build;
 
 /// The fixture of this target: `tests/digital/records.msl` as a project of its own.
@@ -78,7 +76,7 @@ impl Sink for Decoder {
 }
 
 /// Runs a transient to `stop` and returns every record decoded.
-fn records(built: &Built, stop: f64) -> Vec<Decoded> {
+fn records(built: &BuiltDesign, stop: f64) -> Vec<Decoded> {
     let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
     let out = Rc::new(RefCell::new(Vec::new()));
     let mut options = TransientAnalysisOptions::new(stop, 1e-9);

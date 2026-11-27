@@ -116,3 +116,5 @@ xor	the exclusive or
 unswept	a refused form no one has yet probed for its owner (spec-closure sweeps it)
 refutable	a pattern that can fail to match a value (`let` without `else` needs an irrefutable one)
 si	the International System of Units (the SI suffix letters of a number literal)
+dpwm	digital pulse-width modulator, the buck slice's duty-cycle generator
+pid	proportional-integral-derivative controller, the buck slice's regulator

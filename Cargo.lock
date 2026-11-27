@@ -1373,6 +1373,7 @@ dependencies = [
  "piperine-interp",
  "piperine-ir",
  "piperine-ir-fixtures",
+ "piperine-parity",
  "piperine-plan",
  "piperine-solver",
  "sha2",

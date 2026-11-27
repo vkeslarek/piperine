@@ -22,7 +22,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run ir**: `cargo test -p piperine-ir --test model digital::`
 **Run abi**: `cargo test -p piperine-abi --test contract layouts::`
 **Run plan**: `cargo test -p piperine-plan --test shape digital_shape::`
-**Run cache**: `cargo test -p piperine-transpile --test cache`
+**Run cache**: `cargo test -p piperine-transpile --test compile cache::`
 **Run abicontract**: `cargo test -p piperine-abi --test contract contract::`
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
 **Run records**: `cargo test -p piperine-api --test records`

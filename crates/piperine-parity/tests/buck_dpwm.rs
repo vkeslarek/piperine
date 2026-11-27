@@ -11,15 +11,13 @@
 use std::sync::{Mutex, OnceLock};
 
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use support::{HIGH, LOW, build, transient, with_buck};
 
 /// One clock count (5 ns) in ticks.
@@ -45,7 +43,7 @@ fn the_oscillator_toggles_every_half_period() {
 const STOP: f64 = 17.99e-6;
 
 fn run_once() -> Seen {
-    static BUILT: OnceLock<Mutex<Built>> = OnceLock::new();
+    static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
     let built =
         BUILT.get_or_init(|| Mutex::new(build(&with_buck("bench.msl"), "DpwmBench"))).lock().expect("the design is not poisoned");
     built.run(STOP, 1e-8)

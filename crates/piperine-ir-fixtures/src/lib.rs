@@ -9,6 +9,7 @@
 //!   expression builder whose every node takes its type from the caller) and `ValueAliases` (the value types of
 //!   the source, by their aliases).
 //! - `mixed`: `TopDesign`, the top instance a hand-built mixed design is placed under.
+//! - `alone`: `Alone`, a body (or the builder's bodies) placed under an empty `Top`, checked.
 //! - `circuits`: the M1 circuits over the device bodies (the divider, a diode behind a source, two RC low-passes).
 //! - `sources`: `RustSources`, the source text of a crate under test, for the static checks over it.
 //! - `operators`: the body `Op(a)` of the analog-operator tests (`Operators`); `structure`: the bodies of the
@@ -16,6 +17,7 @@
 
 #![deny(missing_docs)]
 
+pub mod alone;
 pub mod circuits;
 pub mod devices;
 pub mod digital;

@@ -16,14 +16,12 @@ use piperine_parity::project::Project;
 use piperine_solver::prelude::NodeIdentifier;
 use piperine_transpile::Settings;
 
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use support::build;
 
 /// What a `Line` holds: a level and a strength, in the numbers of `tests/nets/line.msl`.
@@ -59,7 +57,7 @@ struct Levels;
 
 impl Levels {
     /// The `level` fields of the stream `name` of `built`, in the order they were written.
-    fn of(built: &Built, seen: &Seen, name: &str, field: &str) -> Vec<f64> {
+    fn of(built: &BuiltDesign, seen: &Seen, name: &str, field: &str) -> Vec<f64> {
         let streams = Streams::of(built.ir.clone());
         seen.all()
             .iter()
@@ -117,12 +115,12 @@ impl Model {
     }
 
     /// `top` elaborated and compiled once.
-    fn built(&self, top: &str) -> Built {
+    fn built(&self, top: &str) -> BuiltDesign {
         build(&self.project, top)
     }
 
     /// What the stream `line` of `built` says the net held after each change, the first at `(0, 0)`.
-    fn held(built: &Built, seen: &Seen) -> Vec<Held> {
+    fn held(built: &BuiltDesign, seen: &Seen) -> Vec<Held> {
         let streams = Streams::of(built.ir.clone());
         seen.all()
             .iter()
