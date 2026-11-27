@@ -171,9 +171,9 @@ impl NamingRules {
         remaining.split('_').filter(|word| !word.is_empty()).all(|word| glossary.holds(word) || dictionary.holds(word) || NameWords::is_diagnostic_code(word))
     }
 
-    /// No type name is declared twice in product code, in one crate or across crates.
+    /// No type name is declared twice in product code or in a fixtures crate, in one crate or across crates.
     pub fn repeated_type_names(scan: &ItemScan) -> Findings {
-        let types: Vec<&ScannedItem> = scan.items().iter().filter(|item| matches!(item.kind, ScannedKind::Type | ScannedKind::Trait) && item.origin == CodeOrigin::Product).collect();
+        let types: Vec<&ScannedItem> = scan.items().iter().filter(|item| matches!(item.kind, ScannedKind::Type | ScannedKind::Trait) && (item.origin == CodeOrigin::Product || SourceTree::is_fixtures_crate(&item.crate_name))).collect();
         let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
         for item in &types {
             *counts.entry(item.name.as_str()).or_default() += 1;
@@ -189,6 +189,21 @@ impl NamingRules {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_type_declared_twice_in_a_fixtures_crate_is_found_and_in_a_plain_test_file_it_is_not() {
+        let twice = ItemScan::of(&SourceTree::of_sources(&[
+            ("crates/piperine-device-fixtures/src/lib.rs", "pub mod a;\npub mod b;\n"),
+            ("crates/piperine-device-fixtures/src/a.rs", "pub struct Resistor;\n"),
+            ("crates/piperine-device-fixtures/src/b.rs", "pub struct Resistor;\n"),
+        ]));
+        assert_eq!(NamingRules::repeated_type_names(&twice).count(), 2);
+        let tests = ItemScan::of(&SourceTree::of_sources(&[
+            ("crates/demo/tests/a.rs", "struct Resistor;\n"),
+            ("crates/demo/tests/b.rs", "struct Resistor;\n"),
+        ]));
+        assert_eq!(NamingRules::repeated_type_names(&tests).count(), 0);
+    }
 
     #[test]
     fn names_split_on_underscores_case_acronyms_and_digits() {

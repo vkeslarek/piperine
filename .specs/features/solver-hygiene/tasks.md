@@ -16,22 +16,23 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run deviation**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`
 **Run parity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run analogddt**: `cargo test -p piperine-analog-solver --test assembly_ddt`
+**Run analogddt**: `cargo test -p piperine-analog-solver --test assembly assembly_ddt::`
 **Run analoglib**: `cargo test -p piperine-analog-solver --lib`
-**Run reentry**: `cargo test -p piperine-solver --test transient_reentry`
-**Run failure**: `cargo test -p piperine-solver --test failure_rules`
+**Run reentry**: `cargo test -p piperine-solver --test transient transient_reentry::`
+**Run failure**: `cargo test -p piperine-solver --test transient failure_rules::`
 **Run runerrors**: `cargo test -p piperine-parity --test run_errors`
-**Run truncation**: `cargo test -p piperine-solver --test truncation`
-**Run abitran**: `cargo test -p piperine-solver --test abi_tran`
-**Run abidc**: `cargo test -p piperine-solver --test abi_dc`
-**Run protocol**: `cargo test -p piperine-solver --test protocol_transient`
-**Run protocolreal**: `cargo test -p piperine-solver --test protocol_real`
-**Run hostset**: `cargo test -p piperine-solver --test host_set`
+**Run truncation**: `cargo test -p piperine-solver --test transient truncation::`
+**Run abitran**: `cargo test -p piperine-solver --test abi_devices abi_tran::`
+**Run abidc**: `cargo test -p piperine-solver --test abi_devices abi_dc::`
+**Run protocol**: `cargo test -p piperine-solver --test protocol protocol_transient::`
+**Run protocolreal**: `cargo test -p piperine-solver --test protocol protocol_real::`
+**Run hostset**: `cargo test -p piperine-solver --test host host_set::`
 **Run boundary**: `cargo test -p piperine-parity --test boundary`
-**Run abidevices**: `cargo test -p piperine-solver --test abi_devices`
-**Run digital**: `cargo test -p piperine-digital-solver --test checkpoint`
-**Run instant**: `cargo test -p piperine-digital-solver --test instant`
+**Run abidevices**: `cargo test -p piperine-solver --test abi_devices abi_devices::`
+**Run digital**: `cargo test -p piperine-digital-solver --test engine checkpoint::`
+**Run instant**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run partials**: `cargo test -p piperine-device-fixtures --test partials`
 
 The deviation table every numerics commit carries: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`, run before and after the change, both outputs pasted in the commit body.
 
@@ -1187,10 +1188,10 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C60** - Every hand-written device is in a partials check of its own module. (HYG-16, AC 3; T34)
-Proof: run abidevices | test every_hand_written_device_is_in_a_partials_check ... ok
+Proof: run partials | test every_device_of_the_crate_is_in_the_list ... ok
 
 **C61** - A check of another module does not count. (HYG-16, AC 3; T34)
-Proof: run abidevices | test a_check_of_another_module_does_not_count ... ok
+Proof: run partials | test a_check_of_another_module_does_not_count ... ok
 
 **C62** - A rewind equals the checkpoint taken at the mark. (HYG-14, AC 4; T37)
 Proof: run digital | test a_rewind_equals_the_checkpoint_taken_at_the_mark ... ok

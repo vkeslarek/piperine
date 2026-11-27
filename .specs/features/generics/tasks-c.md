@@ -41,7 +41,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typescarrarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
 **Run elabcarrarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
 **Run paritycarrarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
-**Run dag**: `cargo test -p piperine-digital-solver --test dag`
+**Run dag**: `cargo test -p piperine-digital-solver --test plan dag::`
 **Run apicarrarr**: `cargo test -p piperine-api --test carrier_arrays`
 **Run bookcompiler**: `cargo test -p piperine --test book_compiler`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`

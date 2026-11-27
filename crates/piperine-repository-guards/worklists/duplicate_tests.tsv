@@ -26,8 +26,6 @@ e0414_a_branch_that_switches_kind_on_a_probe_is_refused	kept: each Book target t
 e0901_there_is_no_println	kept: each Book target ties a different quoted claim of its own chapter to a run (the claims carry different ids)
 every_fixture_shape_is_valid	kept: each crate validates the shapes of its own fixtures
 isrc_r	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
-its_device_passes_the_partials_verifier	kept: each target verifies the partials of its own device (TwinFlicker, CubicCapacitor)
-its_devices_pass_the_partials_verifier	kept: each of the 27 targets verifies the partials of the devices of its own file
 m_and_dtemp_are_ordinary_names	kept: pom_resolve checks name resolution (E0161), types_implicit checks the placement binding (E0320)
 noise_diode	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
 noise_rc	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay

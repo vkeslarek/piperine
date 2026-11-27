@@ -57,6 +57,7 @@ in the IR or in a separate side table, never in the authored module/instance tre
 | `piperine-cli` | The `piperine` binary, a thin shell over `piperine-api`. |
 | `piperine-project` | `Piperine.toml`, dependencies, lockfile. |
 | `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
+| `piperine-device-fixtures` | Test-only: the hand-written ABI devices the back-end test suites share, one type per device, and `PartialsCheck`. Depends on `piperine-abi` alone. |
 | `piperine-repository-guards` | Test-only: the guards over the repository itself (workspace boundaries, suite hygiene, the proof ledger) and the source scan they share. |
 
 ## Build and test

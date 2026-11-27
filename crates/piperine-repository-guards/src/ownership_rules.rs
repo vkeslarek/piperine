@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::allowance::Findings;
 use crate::item_scan::{ScannedKind, ItemScan, CodeOrigin, ScannedItem};
+use crate::module_declaration::ModuleDeclaration;
+use crate::source_tree::SourceTree;
 
 /// The rules over who owns what.
 pub struct OwnershipRules;
@@ -65,11 +67,35 @@ impl OwnershipRules {
         file.starts_with(module_directory)
     }
 
-    /// No `#[allow]` or `#[expect]` outside the lint list of generated code (which is a string, not an attribute).
+    /// No `#[allow]` or `#[expect]` in product code (which the lint list of generated code, a string, is not).
     pub fn allow_attributes(scan: &ItemScan) -> Findings {
+        Self::allows_of(scan, CodeOrigin::Product)
+    }
+
+    /// No `#[allow]` or `#[expect]` in test code either: a fixture that needs one is shaped wrong.
+    pub fn allow_in_test_code(scan: &ItemScan) -> Findings {
+        Self::allows_of(scan, CodeOrigin::Test)
+    }
+
+    /// The `#[allow]` and `#[expect]` attributes of code of the given origin.
+    fn allows_of(scan: &ItemScan, origin: CodeOrigin) -> Findings {
         let mut findings = Findings::new();
-        for item in scan.of_kind(ScannedKind::LintAttribute).filter(|item| item.name.starts_with("allow(") || item.name.starts_with("expect(")) {
+        let lints = scan.of_kind(ScannedKind::LintAttribute).filter(|item| item.origin == origin);
+        for item in lints.filter(|item| item.name.starts_with("allow(") || item.name.starts_with("expect(")) {
             findings.add(&item.crate_name, Self::file_key(item));
+        }
+        findings
+    }
+
+    /// Test code shares no support file by `#[path = "..."]`: what two targets share is a type of the
+    /// fixtures crate, not a file they both include.
+    pub fn test_support_shared_by_path(tree: &SourceTree) -> Findings {
+        let mut findings = Findings::new();
+        for file in tree.files().iter().filter(|file| file.is_test()) {
+            let Ok(syntax) = file.syntax() else { continue };
+            for declaration in ModuleDeclaration::of_file(syntax).iter().filter(|declaration| declaration.path_attribute.is_some()) {
+                findings.add(file.crate_name(), format!("{}::{}", file.path().display(), declaration.name));
+            }
         }
         findings
     }

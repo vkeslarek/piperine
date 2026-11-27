@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run plan**: `cargo test -p piperine-plan --test structure_shape`
 **Run tstruct**: `cargo test -p piperine-transpile --test structure`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
-**Run watch**: `cargo test -p piperine-analog-solver --test assembly_watch`
+**Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
 **Run frozen**: `cargo test -p piperine-interp --test frozen`
 **Run typestruct**: `cargo test -p piperine-lang --test types_structure`
 **Run elabstruct**: `cargo test -p piperine-lang --test elab_structure`

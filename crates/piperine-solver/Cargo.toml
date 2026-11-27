@@ -20,3 +20,4 @@ piperine-digital-solver = { path = "../piperine-digital-solver" }
 
 [dev-dependencies]
 tempfile.workspace = true
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }

@@ -13,3 +13,6 @@ thiserror.workspace = true
 bimap.workspace = true
 tracing.workspace = true
 
+
+[dev-dependencies]
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }

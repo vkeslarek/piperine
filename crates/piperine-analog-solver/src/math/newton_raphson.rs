@@ -627,30 +627,35 @@ mod tests {
         assert!(run.detail.contains("6 iterations"), "{err}");
     }
 
-    /// One converging solve of a unit diagonal system, with timing on or off.
-    fn solver_after_one_solve(timing: bool) -> Solver {
-        let mut system = Diagonal::new(vec![1.0], |_, _| 1.0);
-        let mut solver = Solver::new(&mut system, 1, 3).expect("a pattern");
-        let policy = Policy {
-            trace: crate::config::TraceFlags { timing, ..Default::default() },
-            ..Policy::default()
-        };
-        solver
-            .solve_with_strategy(&mut system, &NoDamping, &Tolerances::default(), &policy)
-            .expect("the system converges");
-        solver
+    /// Builds the solver the timing tests inspect.
+    struct TimingCases;
+
+    impl TimingCases {
+        /// One converging solve of a unit diagonal system, with timing on or off.
+        fn solver_after_one_solve(timing: bool) -> Solver {
+            let mut system = Diagonal::new(vec![1.0], |_, _| 1.0);
+            let mut solver = Solver::new(&mut system, 1, 3).expect("a pattern");
+            let policy = Policy {
+                trace: crate::config::TraceFlags { timing, ..Default::default() },
+                ..Policy::default()
+            };
+            solver
+                .solve_with_strategy(&mut system, &NoDamping, &Tolerances::default(), &policy)
+                .expect("the system converges");
+            solver
+        }
     }
 
     #[test]
     fn without_timing_a_solve_reads_no_clock() {
-        let solver = solver_after_one_solve(false);
+        let solver = TimingCases::solver_after_one_solve(false);
         assert_eq!(solver.assembly_time_ns(), 0);
         assert_eq!(solver.solve_time_ns(), 0);
     }
 
     #[test]
     fn with_timing_a_solve_reports_both_totals() {
-        let solver = solver_after_one_solve(true);
+        let solver = TimingCases::solver_after_one_solve(true);
         assert!(solver.assembly_time_ns() > 0, "assembly time");
         assert!(solver.solve_time_ns() > 0, "solve time");
     }

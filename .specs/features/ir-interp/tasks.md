@@ -13,7 +13,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/ir-interp/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-interp || cargo build -p piperine-interp --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run factory**: `cargo test -p piperine-abi --test factory`
+**Run factory**: `cargo test -p piperine-abi --test thunks factory::`
 **Run lib**: `cargo test -p piperine-interp --lib`
 **Run shape**: `cargo test -p piperine-interp --test shape`
 **Run terms**: `cargo test -p piperine-interp --test terms`

@@ -198,6 +198,20 @@ mod tests {
     }
 
     #[test]
+    fn a_fixtures_crate_is_test_code_and_a_product_crate_is_not() {
+        assert!(SourceTree::is_fixtures_crate("piperine-device-fixtures"));
+        assert!(SourceTree::is_fixtures_crate("piperine-ir-fixtures"));
+        assert!(!SourceTree::is_fixtures_crate("piperine-fixtures-core"));
+        assert!(!SourceTree::is_fixtures_crate("piperine-solver"));
+        let scan = Scenario::scan_files(&[
+            ("crates/piperine-device-fixtures/src/lib.rs", "struct Shared;\n"),
+            ("crates/piperine-solver/src/lib.rs", "struct Shipped;\n"),
+        ]);
+        assert_eq!(Scenario::find(&scan, ScannedKind::Type, "Shared").origin, CodeOrigin::Test);
+        assert_eq!(Scenario::find(&scan, ScannedKind::Type, "Shipped").origin, CodeOrigin::Product);
+    }
+
+    #[test]
     fn a_cfg_test_module_declaration_marks_the_file_it_reaches() {
         let scan = Scenario::scan_files(&[
             ("crates/demo/src/lib.rs", "#[cfg(test)]\nmod support;\nmod real;\n"),

@@ -1169,6 +1169,9 @@ dependencies = [
 [[package]]
 name = "piperine-abi"
 version = "0.2.0"
+dependencies = [
+ "piperine-device-fixtures",
+]
 
 [[package]]
 name = "piperine-analog-solver"
@@ -1180,6 +1183,7 @@ dependencies = [
  "num-complex",
  "num-traits",
  "piperine-abi",
+ "piperine-device-fixtures",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -1219,10 +1223,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-device-fixtures"
+version = "0.2.0"
+dependencies = [
+ "ndarray",
+ "num-complex",
+ "piperine-abi",
+ "piperine-analog-solver",
+ "piperine-digital-solver",
+ "piperine-solver",
+]
+
+[[package]]
 name = "piperine-digital-solver"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-device-fixtures",
 ]
 
 [[package]]
@@ -1326,6 +1343,7 @@ dependencies = [
  "num-traits",
  "piperine-abi",
  "piperine-analog-solver",
+ "piperine-device-fixtures",
  "piperine-digital-solver",
  "tempfile",
  "thiserror 2.0.18",

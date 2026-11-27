@@ -96,6 +96,7 @@ among
 amount
 amperes
 ampersand
+amplifier
 an
 analog
 analyses
@@ -2988,6 +2989,7 @@ verbose
 verdict
 verdicts
 verification
+verifier
 verify
 version
 versions

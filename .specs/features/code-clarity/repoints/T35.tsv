@@ -1,0 +1,13 @@
+# T35: the eleven abi targets become `contract` and `thunks`, one module per former target.
+# Order matters: the two rows that keep their name come first, so they do not rewrite the filters the others add.
+move piperine-abi/contract piperine-abi/contract::contract
+move piperine-abi/thunks piperine-abi/thunks::thunks
+move piperine-abi/array_pins piperine-abi/contract::array_pins
+move piperine-abi/layouts piperine-abi/contract::layouts
+move piperine-abi/shape piperine-abi/contract::shape
+move piperine-abi/validate piperine-abi/contract::validate
+move piperine-abi/caller piperine-abi/thunks::caller
+move piperine-abi/eval_allocation piperine-abi/thunks::eval_allocation
+move piperine-abi/examples piperine-abi/thunks::examples
+move piperine-abi/factory piperine-abi/thunks::factory
+move piperine-abi/verify piperine-abi/thunks::verify

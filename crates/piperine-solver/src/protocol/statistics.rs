@@ -148,19 +148,24 @@ impl StepStatistics {
 mod tests {
     use super::*;
 
-    fn filled() -> StepStatistics {
-        let mut statistics = StepStatistics::default();
-        for (index, end) in StepEnd::ALL.iter().enumerate() {
-            for _ in 0..=index {
-                statistics.record_end(*end);
+    /// Builds the statistics the tests read.
+    struct StatisticsCases;
+
+    impl StatisticsCases {
+        fn filled() -> StepStatistics {
+            let mut statistics = StepStatistics::default();
+            for (index, end) in StepEnd::ALL.iter().enumerate() {
+                for _ in 0..=index {
+                    statistics.record_end(*end);
+                }
             }
+            statistics
         }
-        statistics
     }
 
     #[test]
     fn the_ends_sum_to_the_accepted_steps() {
-        let statistics = filled();
+        let statistics = StatisticsCases::filled();
         let summed: u64 = StepEnd::ALL.iter().map(|end| statistics.ended(*end)).sum();
         assert_eq!(statistics.accepted(), summed);
         assert_eq!(statistics.accepted(), 55, "1 + 2 + ... + 10");
@@ -169,14 +174,14 @@ mod tests {
 
     #[test]
     fn landings_read_the_landing_ends() {
-        let statistics = filled();
+        let statistics = StatisticsCases::filled();
         assert_eq!(statistics.landings(LandingCause::AnalogReadChanged), 1);
         assert_eq!(statistics.landings(LandingCause::HostWaiter), 5);
     }
 
     #[test]
     fn the_sampling_share_is_continuous_read_landings_over_accepted_steps() {
-        assert_eq!(filled().sampling_share(), 2.0 / 55.0);
+        assert_eq!(StatisticsCases::filled().sampling_share(), 2.0 / 55.0);
         assert_eq!(StepStatistics::default().sampling_share(), 0.0);
     }
 

@@ -41,13 +41,18 @@ mod tests {
     use crate::netlist::{AnalogVariable, NodeIdentifier};
     use std::sync::Arc;
 
-    fn unknown(n: usize, index: usize) -> AnalogReference {
-        AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(n))), index)
+    /// Builds the unknown references the tests stamp.
+    struct ReferenceCases;
+
+    impl ReferenceCases {
+        fn unknown(n: usize, index: usize) -> AnalogReference {
+            AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(n))), index)
+        }
     }
 
     #[test]
     fn a_non_finite_stamp_is_e0507_with_its_row() {
-        let (a, b) = (unknown(1, 3), unknown(2, 5));
+        let (a, b) = (ReferenceCases::unknown(1, 3), ReferenceCases::unknown(2, 5));
         let stamps = vec![
             Stamp::Matrix(a.clone(), a.clone(), 1.0),
             Stamp::Matrix(b.clone(), a.clone(), f64::NAN),

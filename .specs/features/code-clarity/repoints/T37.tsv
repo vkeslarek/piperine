@@ -1,0 +1,18 @@
+# T37: the sixteen digital-solver targets become `engine`, `plan` and `boundary`, one module per former target.
+# Order matters: the row that keeps its name comes first, so it does not rewrite the filters the others add.
+move piperine-digital-solver/boundary piperine-digital-solver/boundary::boundary
+move piperine-digital-solver/store piperine-digital-solver/boundary::store
+move piperine-digital-solver/ticks piperine-digital-solver/boundary::ticks
+move piperine-digital-solver/advance piperine-digital-solver/engine::advance
+move piperine-digital-solver/checkpoint piperine-digital-solver/engine::checkpoint
+move piperine-digital-solver/devices piperine-digital-solver/engine::devices
+move piperine-digital-solver/functions piperine-digital-solver/engine::functions
+move piperine-digital-solver/host piperine-digital-solver/engine::host
+move piperine-digital-solver/instant piperine-digital-solver/engine::instant
+move piperine-digital-solver/queue piperine-digital-solver/engine::queue
+move piperine-digital-solver/reactions piperine-digital-solver/engine::reactions
+move piperine-digital-solver/relax piperine-digital-solver/engine::relax
+move piperine-digital-solver/round1 piperine-digital-solver/engine::round1
+move piperine-digital-solver/array_nets piperine-digital-solver/plan::array_nets
+move piperine-digital-solver/bind piperine-digital-solver/plan::bind
+move piperine-digital-solver/dag piperine-digital-solver/plan::dag

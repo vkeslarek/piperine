@@ -5,3 +5,6 @@ edition.workspace = true
 description = "The Piperine device ABI: the repr(C) contract every device links against"
 
 [dependencies]
+
+[dev-dependencies]
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }

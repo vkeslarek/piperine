@@ -974,6 +974,8 @@ T152 → T153 → T154 → T155
 
 **Deferred**: S21 (the `GND`, `vss` and `VSS` aliases) is deferred to the user: the ground net's public label is `GND` (`core/net.rs`), so removing the alias changes host behaviour. `GroundName` accepts the four names again and `edge_gnd_name_routes_to_ground` keeps its original assertion. (Coordinator decision, user AFK, pending review.)
 
+**S21 decided by the user, 2026-11-27**: "Sim... um gnd só!". The ground reference stays (the solver needs the circuit's zero) and is spelled `gnd` only: the ground net's printed label becomes `gnd`, and `GND`, `vss`, `VSS` stop naming ground and are refused with an error that names the one spelling (never silently a new node). Owned by T83.
+
 ---
 
 ### T30: Dead items leave; test-only items say whom they serve
@@ -1061,8 +1063,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test implements `Device` with `eval` only and its `react` thunk returns `Continue`
-- [ ] Gate check passes: Quick
+- [x] A test implements `Device` with `eval` only and its `react` thunk returns `Continue`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1083,9 +1085,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate builds with `#![deny(missing_docs)]`, no free function and one `PartialsCheck` over every device (`its_devices_pass_the_partials_verifier`, once)
-- [ ] `no_test_support_is_shared_by_path` and `no_allow_in_test_code` pass under `**Run suite**`
-- [ ] Gate check passes: Quick
+- [x] The crate builds with `#![deny(missing_docs)]`, no free function and one `PartialsCheck` over every device (`its_devices_pass_the_partials_verifier`, once)
+- [x] `no_test_support_is_shared_by_path` and `no_allow_in_test_code` pass under `**Run suite**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1106,9 +1108,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 2 targets, each with a `//!` header; every test keeps its name; no `#[path]`, no `#[allow]`, no free helper
-- [ ] `no_crate_has_more_targets_than_its_plan` passes with the plan lowered to 2
-- [ ] Gate check passes: Ledger
+- [x] 2 targets, each with a `//!` header; every test keeps its name; no `#[path]`, no `#[allow]`, no free helper
+- [x] `no_crate_has_more_targets_than_its_plan` passes with the plan lowered to 2
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1129,8 +1131,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
-- [ ] Plan lowered to 3; Gate check passes: Ledger
+- [x] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
+- [x] Plan lowered to 3; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1151,8 +1153,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
-- [ ] Plan lowered to 3; Gate check passes: Ledger
+- [x] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
+- [x] Plan lowered to 3; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1173,8 +1175,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The three targets pass with `--test-threads=1` and with the default
-- [ ] Every other test keeps its name; Gate check passes: Ledger
+- [x] The three targets pass with `--test-threads=1` and with the default
+- [x] Every other test keeps its name; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1195,8 +1197,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 6 targets in the crate; both merged targets pass with `--test-threads=1` and with the default
-- [ ] Plan lowered to 6; Gate check passes: Ledger
+- [x] 7 targets in the crate (`context_init` stays its own: its header requires a fresh process); both merged targets pass with `--test-threads=1` and with the default
+- [x] Plan lowered to 7 (6 plus `context_init`); Gate check passes: Ledger
+- Coordinator amendment (user AFK, pending review): the approved text said 6 targets; `context_init` needs a fresh process, so the target count is 7.
 
 **Tests**: integration
 **Gate**: ledger
@@ -1217,8 +1220,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The four crates have no row in the three allowances
-- [ ] Gate check passes: Quick for the four crates
+- [x] The four crates have no row in the three allowances. Closed in fix round 1 of phase 5: the 36 `test_helper_functions` rows of `#[cfg(test)]` helpers in back-end `src/` (abi `raw.rs` 1, analog-solver 6, solver 29) are gone, each helper being a method of a `Cases` struct of its test module; solver's `analyses/test_devices.rs` now only places the fixtures crate's devices (coordinator decision, user AFK, pending review: lane T edited those `src/` helpers for this round, which breaks the circular wait with lane K)
+- [x] Gate check passes: Quick for the four crates
 
 **Tests**: integration
 **Gate**: quick
@@ -2199,6 +2202,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
+- [ ] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
 - [ ] No free function in the file; `bind`'s row is `split`
 - [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
 
