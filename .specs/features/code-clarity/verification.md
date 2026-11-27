@@ -1223,3 +1223,147 @@ The `?` is not dead code worth deleting. It is the T25-style replacement of an `
   - T55 (lane K, wave 2) edits `lang/src/elab/{place,resolvers}.rs`.
 
   No other lane owns those paths in wave 2, so nothing collides. The table should still name them, or T49's item should move to a P10 task.
+
+## Phase 8 (B5a Owners in ir, plan, transpile, interp, project, api, T53 to T62)
+
+**Verdict**: FAIL (two Medium findings, four Low)
+**Head**: 481df5ac3 on `feature/code-clarity-p8`, base 97d327d58
+**Verifier**: independent sub-agent (Opus; author != verifier). No `proofs.md` exists yet, because `check_proofs.py` runs after T155. This round reran the phase gates itself, one at a time, with target dir `-d`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (all targets) | 117 passed (lib 50, boundaries 20, suite 27, worklists 5, ownership 5, proof_ledger 4, documentation 2, naming 2, structure 2) |
+| `cargo test -p piperine-ir` | 162 passed |
+| `cargo test -p piperine-plan` | 68 passed |
+| `cargo test -p piperine-transpile` (the `golden` target included) | 172 passed |
+| `cargo test -p piperine-interp` | 72 passed |
+| `cargo test -p piperine-project` | 53 passed |
+| `cargo test -p piperine-api` | 307 passed. The first run stopped on a missing `carrier_array_storage` test binary in the shared target dir (removed under it, not a test failure); the rerun is green |
+| `cargo test -p piperine-cli` (the `twins` target included) | 144 passed |
+| `cargo test -p piperine-parity` | 645 passed |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| `cargo test -p piperine-lang`, in full (T55 edited `elab/place.rs` and `elab/resolvers.rs`) | 1 439 passed, 0 failed |
+| CC-09: `git diff 97d327d58..HEAD` over goldens, twins, `docs/`, `examples/`, `.msl`, `tests/` and `crates/piperine-parity` | empty |
+| CC-09: `piperine check` and `piperine run` at the base and the head, 22 scenarios over a copy of `examples/rc` | identical, but for one line: the base printed `compiling run \`op\` (top Step) with rustc` and the head did not. The base ran first, and the head hit its compile cache, whose key is the SHA-256 of the generated source (`transpile/src/transpiler.rs:136`). So the hit itself shows the generated Rust is byte-identical. The scenarios cover `check` and `run` on: the good project (`op` and `step` on both backends); 9 run-request faults (two grids, a negative `reltol`, a foreign key, an unknown analysis, a missing `stop`/`wrt`, a step away from `to`, `temp` below absolute zero, `maxrounds` 0); a bad param path; a manifest with a bad version and an unknown key; two faulty run tables; a bad git `rev`; a type error; an unresolved import |
+
+### Behaviour (CC-09)
+
+- **`Ir::check` order (T53).** The base ran, in one `Checker`: `ids`, `instances`, `resolutions`, `structure`, `paths`, `types`, `type_arena`, `aggregate_constants`, `composite_params`, `code`, `discrete`. The head runs `IdCheck::run` (`references`, `instances`, `resolutions`, `structure`, `paths`), then `TypeCheck::run` (`declared_types`, `type_arena`, `aggregate_constants`, `composite_params`, `code`), then `ClassCheck::run` (the base `discrete`, with the event, derivative-tolerance and commit loops as methods, called in the base order). All three report into one `BrokenInvariants` list (`check.rs:59-66`), so the order of the findings is the base order. I compared base `discrete` with `ClassCheck::run` line by line: the same loops, the same messages, the same order. The ir tests are unedited by T53.
+- **Generated Rust (T58).** No golden, twin or Book file changed. The moved unit tests of `print/value.rs` differ from the base only in the type name (`ValuePrinter` → `ExpressionPrinter`, 5 lines).
+- **`Session` (T61).** The `pub fn` set of `session.rs` plus `session/*.rs` is identical to the base `session.rs`. `open_announced` resolves, refuses and binds in the base order; the backend choice moved to `Session::bind` unchanged. `Session::analysis` dispatches to the eight runners with the same arguments.
+- **The run request (T62).** The `pub`/`pub(crate)` item set of `request.rs` plus `request/*.rs` is identical to the base. `Keys::spec` checks in the base order: `analysis`, the analysis's key list, foreign keys, `check_options` (tolerances, `temp`, whole bounds, `simparam`), then one reader per analysis, each with the base checks in the base order.
+
+### Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| T53: same errors, same order; the file's `long_functions` rows have a verdict | ir targets, unedited; the pass order above | yes. The 7 `check.rs` rows are gone because the functions are now short |
+| T54: printed IR byte-identical | ir text tests, unedited | yes. One verdict is not true (P8-6) |
+| T55: every `model::…` path compiles; 6 of 7 `build.rs` panics typed | the build; ir, interp, plan, transpile targets | yes for the 6 sites. The 7th has no owner (P8-1). The error path has no test (P8-5) |
+| T56: dependency tests unedited; rows have a verdict | ir targets | yes, but the split adds 3 allowance rows (P8-3) |
+| T57: plan tests unedited; `BodyPlan::new`'s row `split` | plan targets | yes. `Digital::functions` stays `-` (P8-2) |
+| T58: goldens byte-identical; the test-path exception | `golden`; a normalised diff | yes |
+| T59: interp tests unedited; crate doc says Q10 | interp targets; `interp/src/lib.rs:6-9` | yes. `Walk::form_name` stays `-` (P8-2) |
+| T60: no free-function row; cli and api follow | ownership guards; a normalised diff | yes. `ProjectRoot` departs from the design's table (P8-4). The `manifest.rs` rows stay `-` (P8-2) |
+| T61: `Session`'s public methods unchanged | the `pub fn` diff above | yes |
+| T62: no free-function row; request tests unedited | ownership guards; `request.rs` tests | yes. `Source::key` stays `-` (P8-2) |
+
+### P8-1 (Medium): the 7th `build.rs` panic has no owner
+
+`crates/piperine-ir/src/build.rs:220-228`, `IrBuilder::body_data`, still panics: `panic!("body id {} out of range ({count} bodies)", ...)`. T55's box says "(open, not owned by a later task) ... reported to the coordinator". The box is honestly unticked.
+
+But Phase 4 round 2 closed P4-3 on the ground that T55 owns all 7 sites, and T26's open box still reads "(deferred to T55)". The deferral now points at a task that hands it on to nobody. No later task names `build.rs`, `body_data` or `BuildError` (`grep -n` over tasks.md: lines 887-907 for T26 and 1572-1573 for T55 only). T152 checks allowances and worklists, not panics.
+
+The reason holds: 23 `body_data(` calls sit behind 22 builder methods (`carrier`, `drive`, `event`, ...), and about 30 callers are in `piperine-lang/src/elab/{carriers,resolvers,body,children}.rs`, which is lane F's code.
+
+**Fix**: give it an owner in lane F's elab phase, for example T96 (`DigitalLowering`, which moves the carriers, drives, events and resolvers files that hold most callers) or T99 (the last elab task), coordinated with lane K for `ir/src/build.rs`. Point T26's and T55's boxes at that task.
+
+### P8-2 (Medium): five long-function rows of this phase's files have no verdict
+
+design.md:412 reads: "each task above gives the rows of its files a verdict, `split` or `kept: <reason>`". At the head these rows of T57/T59/T60/T62 files are still `-` (`worklists/long_functions.tsv`):
+
+| Row | Lines | Task | Recorded |
+| --- | --- | --- | --- |
+| `plan/src/digital/reactions.rs::Digital::functions` | 83 (`:109`) | T57 | "Left open: no owner" |
+| `interp/src/walk/diagnostics.rs::Walk::form_name` | 64 (`:36`) | T59 | commit body only ("moved") |
+| `project/src/manifest.rs::Walk::dependency` | 84 (`:263`) | T60 | nowhere |
+| `project/src/manifest.rs::Walk::package` | 74 (`:349`) | T60 | nowhere |
+| `api/src/request/run_table.rs::Source::key` | 82 (`:56`) | T62 | commit body only ("still over 60 lines, `-`") |
+
+`form_name` is a one-line-arm table of `Expr` names and could be `kept: one arm per variant` today. T152 will refuse any open row at the close, so leaving them pushes the work to the closing task, which has no budget for splits.
+
+Repro: `grep -E "reactions.rs|diagnostics.rs|manifest.rs|run_table.rs" crates/piperine-repository-guards/worklists/long_functions.tsv`.
+
+**Fix**: give each row its verdict in this phase (`split`, or `kept: <reason>`), or name an owner task in its Done-when.
+
+### P8-3 (Low): T56 adds three allowance rows
+
+The `undeclared_words` growth is mostly net-zero, because a name is counted once per declaration per file. I summed every allowance file's counts per name, commit by commit (base 97d327d58 to each task's commit). Every file is flat or lower except one:
+
+- T56 (d2ac33137), `allowances/piperine-ir/undeclared_words.tsv`: `ats` 1→2, `etols` 1→2, `ttols` 1→2.
+
+Those are three new declarations: the fields of the new `EventSources` (`crates/piperine-ir/src/deps/walk/roots.rs:17-23`), which repeat the abbreviations of `BodyDeps` (`deps/results.rs:38-42`). That is new allowance, not a move. Other growth in row count (api 72→77, ir 162→171 in T55) is the same declarations under new file keys, and the sum is unchanged (api 82→82).
+
+The commit body's "a name or field now counted once per file, 20 rows became 28" hides the three new ones.
+
+**Fix**: name the new fields in full words (`time_tolerances`, `error_tolerances`, `times`) and drop the three rows. Leave `BodyDeps` for B9/B10.
+
+### P8-4 (Low): `ProjectRoot` departs from the design's owner table, recorded only in a commit
+
+`data/owners.tsv` is "the owner table of design.md" (tasks.md:419, T6). design.md:405 and T60's text still name `Project`, and T60's tasks.md entry has no note. Only the commit body explains the change.
+
+The reason is sound. `piperine-api/src/project.rs:40` declares `Project`, and `repeated_type_names` refuses a second one.
+
+The rename does not hide a missing owner. `ProjectRoot` holds `find_root` and `load`, which are exactly the two F12 functions (`find_project_root`, `load_project`) the design gave `Project`. `every_owner_of_the_design_exists_and_has_its_methods` passes on it. Only T152 ("`owners.tsv` matches the tree") is meant to reconcile the table, so a task may change it only when it records the departure.
+
+A note, not part of the finding: `Resolver`, `GitCheckout` and `ProjectRoot` are field-less unit structs (`resolver.rs:190`, `git.rs:29`, `lib.rs:20`). The free functions became associated functions of a namespace. That matches the design's owner list but holds no state; `Resolver` could own its `Options`.
+
+**Fix**: amend design.md:405 to `ProjectRoot` with the reason, and add a one-line note to T60.
+
+### P8-5 (Low): `BuildError` has no test of its error path
+
+None of the four variants is constructed by a test. Every test call takes `.unwrap()` on the success path.
+
+Each `Err` arm is read-proven: `resolve_net`, `bind_nets`, `bind_reached_node` and `bind_reached_net` (`build.rs:556-606`) return the variant before any write. `Display` (`build/error.rs:21-30`) prints the base panic texts verbatim. The 5 lang sites route `Err` to `Elaboration::internal_error` (P0004, `elab/elaborator.rs:332`).
+
+No source can reach those arms: the ids come from the same builder. T26's Done-when asked for "a test per crate [that] builds the offending `Ir` through `IrBuilder` and reads the error", and that standard is not met for ir.
+
+**Fix**: one `#[cfg(test)]` unit test in `build.rs` that calls `bind_nets(InstanceId(99), ..)` on an empty builder and asserts `Err(BuildError::InstanceOutOfRange { .. })`, with its `uncited_tests.tsv` row. Or state in T55 that the path is proven by reading only.
+
+### P8-6 (Low): one `kept: one arm per variant` verdict is not true
+
+`crates/piperine-ir/src/print/expression.rs:118` `Printer::stmt` (80 lines) carries `kept: one arm per variant`. Its `Stmt::Trace` (`:163-178`) and `Stmt::Emit` (`:179-196`) arms are 16-line loops with a nested `match`, nearly the same loop twice. design.md:412 accepts "an exhaustive `match` with one-line arms" as a reason, and these arms are not one line.
+
+The other three new `kept` rows (`Printer::expr`, `Printer::form`, `Walk::leaf_value`) are tables of one-line or closure arms, and I accept them. `ExpressionPrinter::piece` (133 lines) is borderline: a few multi-line arms (`Math`, `Block`, `SessionParameter`).
+
+**Fix**: one method for the field list (`fields(next, fields, name_of)`) shared by both arms, or the verdict `split`.
+
+### Test edits, cross-lane edits, ledger
+
+- **Normalised diff of every test edit** (23 files). I removed `.unwrap()`, mapped `ExpressionPrinter`→`ValuePrinter`, `Resolver::resolve`→`resolve`, `ProjectRoot::{find_root,load}`→`{find_project_root,load_project}` and `GitCheckout::normalize_url`→`normalize_url`. What remains is import lines and the `git::` qualifier on three `normalize_url` calls. No assertion, message or setup changed. The type-path exception named for T58 is used in `transpile/tests/{aggregates,control,generics,number_widths}.rs`, and T60's in `project/tests/{git,lock,paths,project}.rs`.
+- **T55 `.unwrap()`s** are in test files only. The count of `unwrap`/`expect` in `src` of ir, plan, transpile, interp, project, api and lang is identical at base and head (0/4/45/24/0/49/18).
+- **T55 cross-lane edits.** `elab/place.rs` has 3 sites and `elab/resolvers.rs` 2. Each is `if let Err(error) = self.ir.<call>(..) { self.internal_error(&error.to_string()); }`, which is a call site only, routed to P0004. They are recorded in T55's Done-when and commit body.
+- **Ledger (T58).** `ir-rust/tasks.md` C4 and C67 now name `print::expression::tests::{an_unsupported_form_is_named_with_path_and_origin,a_type_rust_lacks_is_refused_by_name}`. Both tests exist in `print/expression.rs`'s test module, and `proof_ledger` passes. The two `uncited_tests.tsv` rows moved with the same text. The older `print::value` mentions in `ir-rust/{proofs,verification}.md` and `msl-fixes/*` are historical records.
+
+### Code rules on new code
+
+- **Free functions.** No new free function in `src`: the four `fn` at column 0 of `print/expression.rs:1111-1342` are inside test strings.
+- **Docs.** Every new type and method has a `///`. Fields of the new private structs (`Rules`, `EventSources`, `DriveSources`) and of `BuildError`'s variants do not; the guard does not count fields.
+- **Suppressions and macros.** No `#[allow]` or `#[expect]` attribute. The four `#[allow(...)]` added lines are generated-code strings, moved from `print/value.rs` to `print/statement.rs`. No macro.
+- **Unwraps.** See above.
+- **Extra files.** `plan/src/digital/events.rs` (T57) and `api/src/request/rules.rs` (T62) are named in their commits; both are one concern each.
+- `request/rules.rs:60-61` is a double blank line (cosmetic).
+
+### Round 1 findings
+
+| Finding | Severity | Closed |
+| --- | --- | --- |
+| P8-1 `body_data` panic has no owner | Medium | |
+| P8-2 five long-function rows of the phase's files have no verdict | Medium | |
+| P8-3 T56 adds three `undeclared_words` rows | Low | |
+| P8-4 `ProjectRoot` departs from design.md:405, unrecorded | Low | |
+| P8-5 `BuildError` error path untested | Low | |
+| P8-6 `Printer::stmt` verdict not true | Low | |
