@@ -1,7 +1,6 @@
 //! One body of a hand-built design compiled with `rustc` and called through the device ABI
 //! (`#[path]`-included, never a target itself): the evaluation harness of the printer tests of
 //! `analog-operators`.
-#![allow(dead_code)]
 
 use std::sync::Arc;
 

@@ -11,9 +11,7 @@
 
 use std::path::PathBuf;
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+use piperine_repository_guards::SourceTree;
 
 /// Every crate this feature has removed so far; each task that removes
 /// crates extends this list.
@@ -40,47 +38,16 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-parity",
     "crates/piperine-plan",
     "crates/piperine-project",
+    "crates/piperine-repository-guards",
     "crates/piperine-solver",
     "crates/piperine-transpile",
 ];
 
-/// The root manifest and every `crates/*/Cargo.toml`.
-fn all_manifests() -> Vec<PathBuf> {
-    let root = repo_root();
-    let mut out = vec![root.join("Cargo.toml")];
-    for entry in std::fs::read_dir(root.join("crates")).expect("read crates/") {
-        let manifest = entry.expect("dir entry").path().join("Cargo.toml");
-        if manifest.exists() {
-            out.push(manifest);
-        }
-    }
-    out
-}
-
-/// The text of one `[section]` of a manifest, up to the next section header.
-fn section(manifest: &str, name: &str) -> String {
-    let header = format!("[{name}]");
-    let mut out = String::new();
-    let mut inside = false;
-    for line in manifest.lines() {
-        let t = line.trim();
-        if t.starts_with('[') {
-            inside = t == header;
-            continue;
-        }
-        if inside {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    out
-}
-
 #[test]
 fn solver_manifest_has_no_in_tree_dev_dependency() {
-    let path = repo_root().join("crates/piperine-solver/Cargo.toml");
+    let path = SourceTree::workspace_root().join("crates/piperine-solver/Cargo.toml");
     let manifest = std::fs::read_to_string(&path).expect("read the solver manifest");
-    let dev = section(&manifest, "dev-dependencies");
+    let dev = SourceTree::manifest_section(&manifest, "dev-dependencies");
     assert!(
         !dev.contains("path ="),
         "a dev-dependency points into the tree:\n{dev}"
@@ -96,36 +63,24 @@ fn solver_manifest_has_no_in_tree_dev_dependency() {
 #[test]
 fn retired_crates_are_gone() {
     for name in RETIRED_CRATES {
-        let dir = repo_root().join("crates").join(name);
+        let dir = SourceTree::workspace_root().join("crates").join(name);
         assert!(!dir.exists(), "{} still exists", dir.display());
     }
 }
 
 #[test]
 fn no_manifest_names_a_retired_crate() {
-    for path in all_manifests() {
+    for path in SourceTree::manifest_paths() {
         let text = std::fs::read_to_string(&path).expect("read a manifest");
         for name in RETIRED_CRATES {
             assert!(!text.contains(name), "{} names retired crate {name}", path.display());
         }
     }
-    let root = std::fs::read_to_string(repo_root().join("Cargo.toml")).expect("read the root manifest");
+    let root = std::fs::read_to_string(SourceTree::workspace_root().join("Cargo.toml")).expect("read the root manifest");
     assert!(
         !root.contains("[profile.dev.package.cranelift"),
         "the root manifest keeps a Cranelift profile entry"
     );
-}
-
-/// Every file under `dir`, recursively.
-fn files_under(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir).expect("read a directory") {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            files_under(&path, out);
-        } else {
-            out.push(path);
-        }
-    }
 }
 
 /// The Rust files under the root `tests/` read against the targets the root manifest declares.
@@ -194,9 +149,8 @@ fn a_declared_main_target_accounts_for_its_own_modules_only() {
 
 #[test]
 fn root_tests_hold_no_end_to_end_target() {
-    let tests = repo_root().join("tests");
-    let mut files = Vec::new();
-    files_under(&tests, &mut files);
+    let tests = SourceTree::workspace_root().join("tests");
+    let files = SourceTree::files_under(&tests);
     let ext = |p: &PathBuf, e: &str| p.extension().is_some_and(|x| x == e);
     let vams: Vec<_> = files.iter().filter(|p| ext(p, "vams")).collect();
     assert!(vams.is_empty(), ".vams files remain under tests/: {vams:?}");
@@ -208,12 +162,12 @@ fn root_tests_hold_no_end_to_end_target() {
     // Rust under the root `tests/` is a test target the root manifest declares: a top-level
     // `tests/<name>.rs` (cargo finds it), a `[[test]]` path, or support code of the Book targets
     // under `tests/book/support/`. Anything else is an end-to-end target hiding in a directory.
-    let manifest = std::fs::read_to_string(repo_root().join("Cargo.toml")).expect("read the root manifest");
+    let manifest = std::fs::read_to_string(SourceTree::workspace_root().join("Cargo.toml")).expect("read the root manifest");
     let declared: Vec<PathBuf> = manifest
         .lines()
         .filter_map(|line| line.trim().strip_prefix("path = \""))
         .filter_map(|rest| rest.strip_suffix('"'))
-        .map(|path| repo_root().join(path))
+        .map(|path| SourceTree::workspace_root().join(path))
         .collect();
     let main_sources: Vec<(PathBuf, String)> = declared
         .iter()
@@ -226,8 +180,7 @@ fn root_tests_hold_no_end_to_end_target() {
 
 #[test]
 fn examples_hold_no_vams_or_python() {
-    let mut files = Vec::new();
-    files_under(&repo_root().join("examples"), &mut files);
+    let files = SourceTree::files_under(&SourceTree::workspace_root().join("examples"));
     for path in files {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -238,14 +191,14 @@ fn examples_hold_no_vams_or_python() {
         );
     }
     for kept in ["Piperine.toml", "Piperine.lock"] {
-        assert!(repo_root().join("examples").join(kept).exists(), "examples/{kept} was removed");
+        assert!(SourceTree::workspace_root().join("examples").join(kept).exists(), "examples/{kept} was removed");
     }
 }
 
 #[test]
 fn default_members_are_the_green_crates() {
-    let root = std::fs::read_to_string(repo_root().join("Cargo.toml")).expect("read the root manifest");
-    let workspace = section(&root, "workspace");
+    let root = std::fs::read_to_string(SourceTree::workspace_root().join("Cargo.toml")).expect("read the root manifest");
+    let workspace = SourceTree::manifest_section(&root, "workspace");
     let line = workspace
         .lines()
         .find(|l| l.trim_start().starts_with("default-members"))
@@ -261,7 +214,7 @@ fn default_members_are_the_green_crates() {
 
 #[test]
 fn workflows_name_no_retired_crate() {
-    let dir = repo_root().join(".github/workflows");
+    let dir = SourceTree::workspace_root().join(".github/workflows");
     for entry in std::fs::read_dir(&dir).expect("read .github/workflows") {
         let path = entry.expect("dir entry").path();
         let text = std::fs::read_to_string(&path).expect("read a workflow");
@@ -289,25 +242,41 @@ const KEPT_CRATES: &[&str] = &[
     "piperine-cli",
     "piperine-parity",
     "piperine-plan",
+    "piperine-repository-guards",
     "piperine-transpile",
 ];
 
-/// The crate names in the rows of the table under `## Crates` of `CLAUDE.md` (the first
-/// backticked cell of each row).
-fn claude_table_crates() -> Vec<String> {
-    let text = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
-    let body = text.split("## Crates").nth(1).expect("CLAUDE.md has a `## Crates` section");
-    let section = body.split("\n## ").next().unwrap_or(body);
-    section
-        .lines()
-        .filter(|l| l.starts_with("| `"))
-        .filter_map(|l| l.split('`').nth(1).map(str::to_string))
-        .collect()
+/// Reads the instruction files and the sources for the guards below.
+struct InstructionReading;
+
+impl InstructionReading {
+    /// The crate names in the rows of the table under `## Crates` of `CLAUDE.md` (the first
+    /// backticked cell of each row).
+    pub fn claude_table_crates() -> Vec<String> {
+        let text = std::fs::read_to_string(SourceTree::workspace_root().join("CLAUDE.md")).expect("read CLAUDE.md");
+        let body = text.split("## Crates").nth(1).expect("CLAUDE.md has a `## Crates` section");
+        let section = body.split("\n## ").next().unwrap_or(body);
+        section
+            .lines()
+            .filter(|l| l.starts_with("| `"))
+            .filter_map(|l| l.split('`').nth(1).map(str::to_string))
+            .collect()
+    }
+
+    /// Whether `text` holds `word` as a whole identifier (no identifier character on either side).
+    pub fn names_identifier(text: &str, word: &str) -> bool {
+        let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        text.match_indices(word).any(|(at, _)| {
+            let before = text[..at].chars().next_back().is_none_or(|c| !ident(c));
+            let after = text[at + word.len()..].chars().next().is_none_or(|c| !ident(c));
+            before && after
+        })
+    }
 }
 
 #[test]
 fn instructions_list_the_kept_crates() {
-    let mut table = claude_table_crates();
+    let mut table = InstructionReading::claude_table_crates();
     table.sort();
     let mut kept: Vec<String> = KEPT_CRATES.iter().map(|s| s.to_string()).collect();
     kept.sort();
@@ -316,7 +285,7 @@ fn instructions_list_the_kept_crates() {
 
 #[test]
 fn instructions_have_no_entry_for_a_retired_crate() {
-    let table = claude_table_crates();
+    let table = InstructionReading::claude_table_crates();
     for retired in RETIRED_CRATES.iter().chain(["piperine-signal", "piperine-vams"].iter()) {
         assert!(!table.iter().any(|c| c == retired), "CLAUDE.md still lists retired crate {retired}");
     }
@@ -324,7 +293,7 @@ fn instructions_have_no_entry_for_a_retired_crate() {
 
 #[test]
 fn state_records_the_solver_structure_decision() {
-    let text = std::fs::read_to_string(repo_root().join(".specs/STATE.md")).expect("read STATE.md");
+    let text = std::fs::read_to_string(SourceTree::workspace_root().join(".specs/STATE.md")).expect("read STATE.md");
     let heading = "### MD-60: the solver is three crates; events are the only boundary";
     let body = text.split(heading).nth(1).expect("STATE.md records the decision heading");
     let section = body.split("\n### ").next().unwrap_or(body);
@@ -335,22 +304,24 @@ fn state_records_the_solver_structure_decision() {
 
 #[test]
 fn hygiene_guard_lives_in_piperine_lang() {
-    let root = repo_root();
-    assert!(root.join("crates/piperine-lang/tests/suite_hygiene.rs").is_file());
-    assert!(root.join("crates/piperine-lang/tests/support/sources.rs").is_file());
+    // since `code-clarity` T5 the hygiene guard lives in the guards crate (the test keeps its name)
+    let root = SourceTree::workspace_root();
+    assert!(root.join("crates/piperine-repository-guards/tests/suite/suite_hygiene.rs").is_file());
+    assert!(root.join("crates/piperine-repository-guards/tests/suite/suite_hygiene/sources.rs").is_file());
+    assert!(!root.join("crates/piperine-lang/tests/suite_hygiene.rs").exists());
     assert!(!root.join("tests/suite_hygiene.rs").exists());
     assert!(!root.join("tests/support").exists());
 }
 
 #[test]
 fn instruction_files_and_state_name_the_abi_crate() {
-    let claude = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
+    let claude = std::fs::read_to_string(SourceTree::workspace_root().join("CLAUDE.md")).expect("read CLAUDE.md");
     assert!(claude.contains("piperine-abi"), "CLAUDE.md does not name piperine-abi");
-    let state = std::fs::read_to_string(repo_root().join(".specs/STATE.md")).expect("read .specs/STATE.md");
+    let state = std::fs::read_to_string(SourceTree::workspace_root().join(".specs/STATE.md")).expect("read .specs/STATE.md");
     assert!(state.contains("### MD-61"), ".specs/STATE.md carries no MD-61");
     assert!(state.contains("### MD-62"), ".specs/STATE.md carries no MD-62");
     for file in ["CLAUDE.md", "AGENTS.md"] {
-        let text = std::fs::read_to_string(repo_root().join(file)).expect("read an instruction file");
+        let text = std::fs::read_to_string(SourceTree::workspace_root().join(file)).expect("read an instruction file");
         for gone in ["Element", "ElementCapabilities", "AnalogDevice", "DigitalDevice", "LogicValue", "EventQueue"] {
             assert!(!text.contains(gone), "{file} still names the removed {gone}");
         }
@@ -361,23 +332,12 @@ fn instruction_files_and_state_name_the_abi_crate() {
 fn the_root_package_is_a_re_export_and_nothing_else() {
     // CLI-01 AC 3 (msl-cli T4): the root `src/lib.rs` holds `pub use piperine_api::*;` and no
     // other item; comments and blank lines are not items
-    let root = repo_root().join("src");
-    let mut files = Vec::new();
-    files_under(&root, &mut files);
+    let root = SourceTree::workspace_root().join("src");
+    let files = SourceTree::files_under(&root);
     assert_eq!(files, vec![root.join("lib.rs")], "the root package has one source file");
     let text = std::fs::read_to_string(root.join("lib.rs")).expect("read src/lib.rs");
     let items: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).collect();
     assert_eq!(items, ["pub use piperine_api::*;"], "src/lib.rs");
-}
-
-/// Whether `text` holds `word` as a whole identifier (no identifier character on either side).
-fn names_identifier(text: &str, word: &str) -> bool {
-    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    text.match_indices(word).any(|(at, _)| {
-        let before = text[..at].chars().next_back().is_none_or(|c| !ident(c));
-        let after = text[at + word.len()..].chars().next().is_none_or(|c| !ident(c));
-        before && after
-    })
 }
 
 #[test]
@@ -386,11 +346,11 @@ fn host_crates_name_no_deleted_surface() {
     // Verilog-AMS front end or the deleted `Element` solver interface
     let mut files = Vec::new();
     for krate in ["piperine-api", "piperine-cli"] {
-        let dir = repo_root().join("crates").join(krate);
+        let dir = SourceTree::workspace_root().join("crates").join(krate);
         files.push(dir.join("Cargo.toml"));
         for sub in ["src", "tests"] {
             if dir.join(sub).is_dir() {
-                files_under(&dir.join(sub), &mut files);
+                files.extend(SourceTree::files_under(&dir.join(sub)));
             }
         }
     }
@@ -398,7 +358,7 @@ fn host_crates_name_no_deleted_surface() {
     for path in files.iter().filter(|p| p.extension().is_some_and(|e| e == "rs" || e == "toml")) {
         let text = std::fs::read_to_string(path).expect("read a host source");
         for word in ["parse_and_elaborate", "Element", "piperine_codegen", "piperine_python", "piperine_plugin"] {
-            if names_identifier(&text, word) {
+            if InstructionReading::names_identifier(&text, word) {
                 offences.push(format!("{}: `{word}`", path.display()));
             }
         }

@@ -31,14 +31,12 @@ code-clarity	C22	run srcio names no test a_user_wrapper_over_emit_writes_the_rec
 code-clarity	C22	run srcio names no test emit_writes_the_records_it_wrote_before
 code-clarity	C22	run srcio names no test finish_and_check_are_the_writers_of_the_reserved_streams
 code-clarity	C24	run worklists names no test every_duplicate_of_the_inventory_has_a_verdict
-code-clarity	C25	run suite names no test every_integration_target_declares_its_scope
 code-clarity	C25	run suite names no test no_crate_has_more_targets_than_its_plan
 code-clarity	C26	run ownership names no test no_free_helper_function_in_test_code
 code-clarity	C26	run suite names no test no_allow_in_test_code
 code-clarity	C26	run suite names no test no_test_support_is_shared_by_path
 code-clarity	C28	run suite names no test the_suite_report_has_before_and_after
 code-clarity	C3	run boundaries names no test no_type_of_the_inventory_is_defined_in_two_crates
-code-clarity	C3	run boundaries names no test the_dependency_graph_is_the_documented_one
 code-clarity	C4	run ownership names no test no_free_function_outside_the_language_exceptions
 code-clarity	C5	run ownership names no test every_owner_of_the_design_exists_and_has_its_methods
 code-clarity	C6	run naming names no test every_declared_name_is_words_or_glossary
@@ -51,7 +49,6 @@ code-clarity	C9	run refusals names no test p0001_is_worded_in_one_place
 code-clarity	C9	run refusals names no test the_unswept_count_only_shrinks
 code-clarity	C9	run worklists names no test every_single_implementor_trait_is_removed_or_justified
 code-clarity	Run book	no test target piperine/book
-code-clarity	Run boundaries	no test target piperine-repository-guards/boundaries
 code-clarity	Run documentation	no test target piperine-repository-guards/documentation
 code-clarity	Run naming	no test target piperine-repository-guards/naming
 code-clarity	Run ownership	no test target piperine-repository-guards/ownership
@@ -60,7 +57,6 @@ code-clarity	Run specstructure	no package piperine-language
 code-clarity	Run srcio	no test target piperine-parity/source_io
 code-clarity	Run stddecl	no package piperine-language
 code-clarity	Run structure	no test target piperine-repository-guards/structure
-code-clarity	Run suite	no test target piperine-repository-guards/suite
 code-clarity	Run variadics	no package piperine-language
 code-clarity	Run worklists	no test target piperine-repository-guards/worklists
 composite-values	C108	run srcagg names no test an_unknown_composite_is_refused_by_name

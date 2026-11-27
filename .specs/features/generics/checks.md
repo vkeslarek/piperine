@@ -202,7 +202,7 @@ Proof: run typesgen | test phase_c_d_and_e_forms_stay_p0001_by_name ... ok
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
 **C41** - The build gives no warning on the crates this feature touches, and the hygiene guard passes. (GN-30, AC 2; every phase)
-Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
+Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 
 **C42** - `GAPS.md` narrows S3, then no longer lists L7, the generic-enum part of L4, S3, X6 and L8, and §9 is updated. (GN-31, AC 1; T6, T43, T52)
 Proof: run docs | test gaps_drops_what_generics_phase_a_closed ... ok

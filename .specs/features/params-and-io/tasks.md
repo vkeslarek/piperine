@@ -17,7 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run typescarriers**: `cargo test -p piperine-lang --test types_carriers`
 **Run typesresults**: `cargo test -p piperine-lang --test types_results`
-**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
+**Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run typesstructure**: `cargo test -p piperine-lang --test types_structure`
 **Run elabvalues**: `cargo test -p piperine-lang --test elab_values`
 **Run elabanalog**: `cargo test -p piperine-lang --test elab_analog`

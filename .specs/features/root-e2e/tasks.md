@@ -20,7 +20,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
 **Run paritylib**: `cargo test -p piperine-parity --lib`
-**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
+**Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 

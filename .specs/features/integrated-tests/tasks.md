@@ -12,8 +12,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-21 - user (standing AFK authorization, relayed by the orchestrator): "lança um agent para compor um conjunto de testes integrados. Deixa o buck só como example, para nós mesmos."
 **Build**: `cargo build -p piperine -p piperine-parity -p piperine-api -p piperine-cli -p piperine-lang -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test --no-run -p piperine --test buck_scenarios 2>&1 | (! grep -qE '^(warning|error)')`; `cargo test --no-run -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop 2>&1 | (! grep -qE '^(warning|error)')`; `cargo test --no-run -p piperine-api --test buck_long 2>&1 | (! grep -qE '^(warning|error)')`; `cargo test --no-run -p piperine-cli --test buck 2>&1 | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape`
-**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
-**Run shape**: `cargo test -p piperine-solver --test workspace_shape`
+**Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
+**Run shape**: `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run whole**: `cargo test -p piperine-parity --test buck_whole`
 **Run harness**: `cargo test -p piperine-parity --lib scenario::`
 **Run integrated**: `cargo test -p piperine --test integrated`

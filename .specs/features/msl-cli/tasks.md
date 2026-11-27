@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run manifest**: `cargo test -p piperine-project --test manifest`
 **Run rcpkg**: `cargo test -p piperine-project --test project`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run shape**: `cargo test -p piperine-solver --test workspace_shape`
+**Run shape**: `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run apilib**: `cargo test -p piperine-api --lib`
 **Run project**: `cargo test -p piperine-api --test project`
 **Run session**: `cargo test -p piperine-api --test session`

@@ -1794,7 +1794,7 @@ Proof: run typesagg | test phase_c_and_d_forms_stay_p0001_by_name ... ok
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
 **C94** - The build gives no warning on the crates this feature touches, and the hygiene guard passes. (CV-35, AC 2; every phase)
-Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
+Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 
 **C95** - Phase A forms in a `const`, a `const fn`, a param default, a `where` and a generation range evaluate to their run-time value. (CV-36, AC 1; T27)
 Proof: run elabctl | test phase_a_forms_fold_in_const_contexts ... ok

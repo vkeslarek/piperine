@@ -19,7 +19,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run iragg**: `cargo test -p piperine-ir --test aggregates`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
 **Run stdlib**: `cargo test -p piperine-lang --test std_library`
-**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
+**Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run print**: `cargo test -p piperine-lang --test msl_print`
 **Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`

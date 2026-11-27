@@ -30,7 +30,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run records**: `cargo test -p piperine-api --test records`
 **Run session**: `cargo test -p piperine-api --test session`
 **Run clirun**: `cargo test -p piperine-cli --test run`
-**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
+**Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`

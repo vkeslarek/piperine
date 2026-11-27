@@ -27,34 +27,240 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// T3 (lrm-conformance-wave2): repo_root/rust_sources/collect/
-// integration_targets/root_targets moved to `support::sources` so the LRM
-// section coverage gate (T4) does not copy-paste this walker. Included by
-// direct path (not `mod support;`) so this target does not also pull in
-// `support::ngspice`'s own inline `#[cfg(test)]` module — that would change
-// this target's test count, breaking the "behavior byte-identical" rule.
-#[path = "support/sources.rs"]
+// The walkers every guard below shares live in `suite_hygiene/sources.rs`, a module of this file.
 mod sources;
-use sources::{integration_targets, repo_root, root_targets, rust_sources, RootManifest};
+use piperine_repository_guards::SourceTree;
+use sources::{RootManifest, SourceWalk};
 
-/// Every library source: each crate's `src` tree plus the root package's.
-/// Integration targets are excluded — a lint suppression in a test file hides
-/// nothing that ships.
-fn library_sources() -> Vec<(String, String)> {
-    let sources: Vec<(String, String)> = rust_sources()
-        .into_iter()
-        .filter(|(path, _)| {
-            let parts: Vec<&str> = path.split('/').collect();
-            matches!(parts.as_slice(), ["src", ..] | ["crates", _, "src", ..])
+/// Line-level detectors over source text: what each guard of this target forbids.
+struct SourceLines;
+
+impl SourceLines {
+    /// Whether one source line switches test code off. A file or module compiled
+    /// out of existence is worse than a missing test: it reads as coverage.
+    /// `#![cfg(any())]`, `#[cfg(FALSE)]`, and a commented-out `#[test]` are all the
+    /// same lie.
+    fn is_disabled_marker(line: &str) -> bool {
+        let trimmed = line.trim();
+        trimmed.starts_with("#![cfg(any())]")
+            || trimmed.starts_with("#[cfg(any())]")
+            || trimmed.contains("cfg(FALSE)")
+            || trimmed.contains("cfg(false)")
+            || trimmed.starts_with("// #[test]")
+            || trimmed.starts_with("//#[test]")
+    }
+
+    /// Whether one source line ignores a test.
+    fn is_ignore_attribute(line: &str) -> bool {
+        line.trim_start().starts_with("#[ignore")
+    }
+
+    /// Whether one `//! LRM-COVERS:` line is malformed: not the canonical
+    /// comma-separated list of bare LRM-2-4 section ids
+    /// (`tests/lrm_section_coverage.rs::lrm_sections`'s own id shape — digit
+    /// groups, or a single `A`..`H` letter followed by digit groups, joined by
+    /// `.`). Declaring at all is optional; a line that does declare must be
+    /// parseable by the coverage gate, so `§4.5.3` (a section symbol, not the
+    /// gate's own id spelling), `4.5.3-4.5.5` (a range — the gate has no
+    /// concept of one, every covered id must be named), and an empty list all
+    /// fail here rather than silently scraping as zero declared ids.
+    fn is_malformed_lrm_covers(line: &str) -> bool {
+        let Some(rest) = line.trim_start().strip_prefix("//! LRM-COVERS:") else {
+            return false;
+        };
+        let rest = rest.trim();
+        if rest.is_empty() {
+            return true;
+        }
+        let ids: Vec<&str> = rest.split(',').map(str::trim).collect();
+        if ids.iter().any(|id| id.is_empty()) {
+            return true;
+        }
+        for id in &ids {
+            if id.contains('§') || id.contains('-') || id.contains(char::is_whitespace) {
+                return true;
+            }
+            let segments: Vec<&str> = id.split('.').collect();
+            let Some(first) = segments.first() else { return true };
+            let digit_group = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+            let numbered_head = digit_group(first);
+            let annex_head = first.len() == 1 && matches!(first.chars().next(), Some('A'..='H'));
+            if !(numbered_head || annex_head) {
+                return true;
+            }
+            if segments[1..].iter().any(|seg| !digit_group(seg)) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether one source line switches a lint off for a whole file. A file-scope
+    /// `#![allow(…)]` is invisible from the item it excuses: P6 found twelve of
+    /// them hiding 22 dead items across `piperine-solver` and `piperine-codegen`,
+    /// four of which were traits describing an analysis contract the solver never
+    /// built. An item that truly has no consumer yet says so *at the item*, with a
+    /// one-line reason a reader can check.
+    fn is_file_scope_allow(line: &str) -> bool {
+        line.trim_start().starts_with("#![allow(")
+    }
+
+    /// Which dead identifiers one source line mentions.
+    fn dead_architecture_identifiers_in(line: &str) -> Vec<&'static str> {
+        DEAD_ARCHITECTURE_IDENTIFIERS.into_iter().filter(|id| line.contains(id)).collect()
+    }
+
+    /// The registry of deliberate historical notes: file → (identifier, why it
+    /// survives). Empty today: the rename in MD-40 made every former
+    /// `piperine-ir`-as-dead-architecture mention either live again or stale,
+    /// and the stale ones were reworded. Registry + exhaustiveness (the
+    /// `capabilities_contract.rs` shape): a new note fails until it is recorded,
+    /// and a note that disappears fails just as loudly.
+    fn registered_historical_note(_path: &str) -> Option<(&'static str, &'static str)> {
+        None
+    }
+
+    /// The exemption marker (design D8). It sits **inside** the `mod.rs` it
+    /// excuses, carrying the reason where the debt is, so a reader who opens the
+    /// oversized file learns why before they wonder. The scan counts exemptions and
+    /// the registry below names them: debt stays visible instead of dissolving.
+    fn is_hygiene_exemption(line: &str) -> bool {
+        line.trim_start().starts_with("// hygiene-exempt:")
+    }
+}
+
+/// The `mod.rs` files of the library sources and the registered exceptions to their size limit.
+struct ModRsFiles;
+
+impl ModRsFiles {
+    /// Every `mod.rs` under a crate's `src` tree, as `(path, line count)`.
+    fn mod_rs_files() -> Vec<(String, usize, String)> {
+        let files: Vec<(String, usize, String)> = SourceWalk::library_sources()
+            .into_iter()
+            .filter(|(path, _)| path.ends_with("/mod.rs"))
+            .map(|(path, text)| {
+                let lines = text.lines().count();
+                (path, lines, text)
+            })
+            .collect();
+        // msl-cli T4 deleted the old `piperine-api` (five `mod.rs`), so the floor is 10; the walk
+        // must also reach the three registered oversized files, which a blind walk would miss.
+        assert!(
+            files.len() > 10,
+            "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
+            files.len()
+        );
+        for known in ["crates/piperine-lang/src/pom/resolve/mod.rs", "crates/piperine-lang/src/pom/reflect/mod.rs", "crates/piperine-lang/src/pom/lower/mod.rs"] {
+            assert!(files.iter().any(|(path, _, _)| path == known), "the walk does not reach {known}: this guard is blind");
+        }
+        files
+    }
+
+    /// The registry of `mod.rs` files allowed to exceed the ceiling: path → why the
+    /// split is not this feature's work. Registry + exhaustiveness (the
+    /// `capabilities_contract.rs` shape used by the other guards here): a new
+    /// exemption fails until it is recorded, and an exemption that becomes
+    /// unnecessary fails just as loudly, so the list cannot rot into a blanket.
+    ///
+    /// Two remain — the parse-tree entries left with the PHDL parser (the
+    /// gate was dark from T21 until T37 and could not prune them), and the
+    /// VAMS-era splits (catalog, ast) shrank their `mod.rs` back under the
+    /// ceiling. The in-file `// hygiene-exempt:` line carries the per-file
+    /// reason for the ones that remain.
+    fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
+        Some(match path {
+            // Follow-up (ROADMAP.md, `code-clarity`): refactor these three into named modules.
+            "crates/piperine-lang/src/pom/resolve/mod.rs" => "name-resolution stages; split pending",
+            "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
+            "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",
+            _ => return None,
         })
-        .collect();
-    assert!(
-        sources.len() > 100,
-        "the walk found only {} library sources — the layout moved and the \
-         source-tree guards are blind",
-        sources.len()
-    );
-    sources
+    }
+}
+
+/// The naming rule of the root package's test targets and the checks behind it.
+struct RootTargetRules;
+
+impl RootTargetRules {
+    /// Whether a target reaches the host surface: the root shell's re-export face
+    /// (`piperine::…`, MD-20) or `piperine-api` underneath it.
+    fn proves_host_surface(text: &str) -> bool {
+        text.contains("piperine::") || text.contains("piperine_api::")
+    }
+
+    /// Which workspace crates a target names. A crate counts when the target
+    /// addresses it by path (`piperine_solver::…`) or imports it whole
+    /// (`use piperine_solver;`) — the two ways a target can depend on one.
+    fn workspace_crates_used(text: &str) -> Vec<&'static str> {
+        WORKSPACE_CRATE_IDENTS
+            .into_iter()
+            .filter(|id| text.contains(&format!("{id}::")) || text.contains(&format!("use {id};")))
+            .collect()
+    }
+
+    fn registered_root_exemption(file: &str) -> Option<&'static str> {
+        ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
+    }
+
+    /// Why the offender fails the rule, in the words a reader needs to fix it.
+    fn root_naming_offence(file: &str, text: &str) -> Option<String> {
+        let crates = RootTargetRules::workspace_crates_used(text);
+        if file.starts_with(HOST_TARGET_PREFIX) {
+            if RootTargetRules::proves_host_surface(text) {
+                return None;
+            }
+            return Some(format!(
+                "tests/{file}: named `{HOST_TARGET_PREFIX}*` but never reaches the host \
+                 surface (no `piperine::` or `piperine_api::`) — prove the host API here, \
+                 or rename it to `<feature>.rs`"
+            ));
+        }
+        if RootTargetRules::proves_host_surface(text) || crates.len() >= 2 {
+            return None;
+        }
+        Some(match crates.as_slice() {
+            [only] => format!(
+                "tests/{file}: exercises `{only}` alone — move it to \
+                 `crates/{}/tests/` (MD-28: a target lives in the crate it exercises)",
+                only.replace('_', "-")
+            ),
+            _ => format!(
+                "tests/{file}: reaches no workspace crate and no host surface — root \
+                 `tests/` is for the shell's proofs; say what it proves or move it"
+            ),
+        })
+    }
+}
+
+/// The retired `.phdl` corpus, which must not grow back.
+struct PhdlCorpus;
+
+impl PhdlCorpus {
+    /// Every `.phdl`/`.ppr` file anywhere in the repository (recursive, skipping
+    /// `target`/`.git`) — a plain filesystem walk over every file extension, not
+    /// a `.rs`-source scan like [`rust_sources`]: the files this gate counts are
+    /// PHDL source, not Rust.
+    fn phdl_files() -> Vec<PathBuf> {
+        let root = SourceTree::workspace_root();
+        let mut out = Vec::new();
+        PhdlCorpus::collect_phdl(&root, &mut out);
+        out
+    }
+
+    fn collect_phdl(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            if path.is_dir() {
+                if name != "target" && name != ".git" {
+                    PhdlCorpus::collect_phdl(&path, out);
+                }
+            } else if path.extension().is_some_and(|e| e == "phdl" || e == "ppr") {
+                out.push(path);
+            }
+        }
+    }
 }
 
 /// The library-source walk reaches the three solver crates and `piperine-lang`
@@ -62,7 +268,7 @@ fn library_sources() -> Vec<(String, String)> {
 /// enforces nothing over it.
 #[test]
 fn the_walk_covers_the_three_solver_crates() {
-    let sources = library_sources();
+    let sources = SourceWalk::library_sources();
     for dir in [
         "crates/piperine-solver/src",
         "crates/piperine-analog-solver/src",
@@ -78,25 +284,6 @@ fn the_walk_covers_the_three_solver_crates() {
 
 // ─── 1. No switched-off test code ─────────────────────────────────────────────
 
-/// Whether one source line switches test code off. A file or module compiled
-/// out of existence is worse than a missing test: it reads as coverage.
-/// `#![cfg(any())]`, `#[cfg(FALSE)]`, and a commented-out `#[test]` are all the
-/// same lie.
-fn is_disabled_marker(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("#![cfg(any())]")
-        || trimmed.starts_with("#[cfg(any())]")
-        || trimmed.contains("cfg(FALSE)")
-        || trimmed.contains("cfg(false)")
-        || trimmed.starts_with("// #[test]")
-        || trimmed.starts_with("//#[test]")
-}
-
-/// Whether one source line ignores a test.
-fn is_ignore_attribute(line: &str) -> bool {
-    line.trim_start().starts_with("#[ignore")
-}
-
 /// The detectors are tested against fixtures, not only against a clean tree:
 /// a guard whose tree has no violations passes even when its detector is
 /// broken, so the detector needs its own positive cases (found by P6's
@@ -111,17 +298,17 @@ fn the_detectors_recognise_what_they_forbid() {
         "// #[test]",
         "//#[test]",
     ] {
-        assert!(is_disabled_marker(offender), "must be flagged as disabled code: {offender:?}");
+        assert!(SourceLines::is_disabled_marker(offender), "must be flagged as disabled code: {offender:?}");
     }
     for innocent in ["#[test]", "#[cfg(test)]", "let x = 1; // #[test] in a sentence", ""] {
-        assert!(!is_disabled_marker(innocent), "must not be flagged: {innocent:?}");
+        assert!(!SourceLines::is_disabled_marker(innocent), "must not be flagged: {innocent:?}");
     }
 
     for offender in ["#[ignore]", "  #[ignore = \"flaky\"]"] {
-        assert!(is_ignore_attribute(offender), "must be flagged as ignored: {offender:?}");
+        assert!(SourceLines::is_ignore_attribute(offender), "must be flagged as ignored: {offender:?}");
     }
     for innocent in ["#[test]", "/// #[ignore] in a doc comment", "let ignore = 1;"] {
-        assert!(!is_ignore_attribute(innocent), "must not be flagged: {innocent:?}");
+        assert!(!SourceLines::is_ignore_attribute(innocent), "must not be flagged: {innocent:?}");
     }
 
     for offender in [
@@ -133,7 +320,7 @@ fn the_detectors_recognise_what_they_forbid() {
         "//! LRM-COVERS: 4.5.x",
         "//! LRM-COVERS: Z.1",
     ] {
-        assert!(is_malformed_lrm_covers(offender), "must be flagged as malformed: {offender:?}");
+        assert!(SourceLines::is_malformed_lrm_covers(offender), "must be flagged as malformed: {offender:?}");
     }
     for innocent in [
         "//! LRM-COVERS: 4.5.3",
@@ -143,7 +330,7 @@ fn the_detectors_recognise_what_they_forbid() {
         "// LRM-COVERS: §4.5.3 in a regular comment",
         "",
     ] {
-        assert!(!is_malformed_lrm_covers(innocent), "must not be flagged: {innocent:?}");
+        assert!(!SourceLines::is_malformed_lrm_covers(innocent), "must not be flagged: {innocent:?}");
     }
 
     for offender in [
@@ -151,10 +338,10 @@ fn the_detectors_recognise_what_they_forbid() {
         "  #![allow(unused_imports)]",
         "#![allow(clippy::all)]",
     ] {
-        assert!(is_file_scope_allow(offender), "must be flagged as file-scope: {offender:?}");
+        assert!(SourceLines::is_file_scope_allow(offender), "must be flagged as file-scope: {offender:?}");
     }
     for innocent in ["#[allow(dead_code)]", "    #[allow(dead_code)]", "// #![allow(dead_code)]"] {
-        assert!(!is_file_scope_allow(innocent), "must not be flagged: {innocent:?}");
+        assert!(!SourceLines::is_file_scope_allow(innocent), "must not be flagged: {innocent:?}");
     }
 
     for (offender, expected) in [
@@ -164,7 +351,7 @@ fn the_detectors_recognise_what_they_forbid() {
         ("/// every module's `IrInstance.connections`", "IrInstance"),
     ] {
         assert_eq!(
-            dead_architecture_identifiers_in(offender),
+            SourceLines::dead_architecture_identifiers_in(offender),
             vec![expected],
             "must be flagged as dead architecture: {offender:?}"
         );
@@ -177,51 +364,51 @@ fn the_detectors_recognise_what_they_forbid() {
         "",
     ] {
         assert!(
-            dead_architecture_identifiers_in(innocent).is_empty(),
+            SourceLines::dead_architecture_identifiers_in(innocent).is_empty(),
             "must not be flagged: {innocent:?}"
         );
     }
 
     for offender in ["// hygiene-exempt: the frozen parse tree", "  // hygiene-exempt: x"] {
-        assert!(is_hygiene_exemption(offender), "must be read as an exemption: {offender:?}");
+        assert!(SourceLines::is_hygiene_exemption(offender), "must be read as an exemption: {offender:?}");
     }
     for innocent in ["//! hygiene-exempt: in a doc header", "// hygiene exempt", "// exempt:", ""] {
-        assert!(!is_hygiene_exemption(innocent), "must not be read as an exemption: {innocent:?}");
+        assert!(!SourceLines::is_hygiene_exemption(innocent), "must not be read as an exemption: {innocent:?}");
     }
 
     for reaching in ["use piperine::prelude::*;", "let s = piperine_api::Session::compile(x);"] {
-        assert!(proves_host_surface(reaching), "must count as host surface: {reaching:?}");
+        assert!(RootTargetRules::proves_host_surface(reaching), "must count as host surface: {reaching:?}");
     }
     for not_reaching in ["use piperine_solver::prelude::*;", "// piperine is the shell", ""] {
-        assert!(!proves_host_surface(not_reaching), "must not count as host surface: {not_reaching:?}");
+        assert!(!RootTargetRules::proves_host_surface(not_reaching), "must not count as host surface: {not_reaching:?}");
     }
 
     // `piperine_lang_server` contains `piperine_lang`: matching on `<ident>::`
     // is what keeps one import from counting as two crates.
     assert_eq!(
-        workspace_crates_used("use piperine_lang_server::state::DocumentState;"),
+        RootTargetRules::workspace_crates_used("use piperine_lang_server::state::DocumentState;"),
         vec!["piperine_lang_server"]
     );
     assert_eq!(
-        workspace_crates_used("use piperine_lang;\nuse piperine_solver::prelude::*;"),
+        RootTargetRules::workspace_crates_used("use piperine_lang;\nuse piperine_solver::prelude::*;"),
         vec!["piperine_lang", "piperine_solver"]
     );
-    assert!(workspace_crates_used("use std::fs;").is_empty());
+    assert!(RootTargetRules::workspace_crates_used("use std::fs;").is_empty());
 
     // The rule itself: a `host_*` target must reach the host surface; any other
     // target must reach the shell or two crates; one crate alone is an offence
     // that names the crate to move it to.
-    assert!(root_naming_offence("host_probe.rs", "use piperine::prelude::*;").is_none());
-    assert!(root_naming_offence("host_probe.rs", "use piperine_solver::prelude::*;").is_some());
-    assert!(root_naming_offence("session.rs", "use piperine::prelude::*;").is_none());
+    assert!(RootTargetRules::root_naming_offence("host_probe.rs", "use piperine::prelude::*;").is_none());
+    assert!(RootTargetRules::root_naming_offence("host_probe.rs", "use piperine_solver::prelude::*;").is_some());
+    assert!(RootTargetRules::root_naming_offence("session.rs", "use piperine::prelude::*;").is_none());
     assert!(
-        root_naming_offence(
+        RootTargetRules::root_naming_offence(
             "plugin_parity.rs",
             "use piperine_plugin::host::PluginHost;\nuse piperine_solver::prelude::*;"
         )
         .is_none()
     );
-    let single = root_naming_offence("sens.rs", "use piperine_solver::prelude::Context;")
+    let single = RootTargetRules::root_naming_offence("sens.rs", "use piperine_solver::prelude::Context;")
         .expect("a single-crate root target is an offence");
     assert!(
         single.contains("crates/piperine-solver/tests/"),
@@ -232,9 +419,9 @@ fn the_detectors_recognise_what_they_forbid() {
 #[test]
 fn no_disabled_test_code() {
     let mut offences = Vec::new();
-    for (path, text) in rust_sources() {
+    for (path, text) in SourceWalk::rust_sources() {
         for (index, line) in text.lines().enumerate() {
-            if is_disabled_marker(line) {
+            if SourceLines::is_disabled_marker(line) {
                 offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
@@ -253,9 +440,9 @@ fn no_disabled_test_code() {
 #[test]
 fn no_ignored_tests() {
     let mut offences = Vec::new();
-    for (path, text) in rust_sources() {
+    for (path, text) in SourceWalk::rust_sources() {
         for (index, line) in text.lines().enumerate() {
-            if is_ignore_attribute(line) {
+            if SourceLines::is_ignore_attribute(line) {
                 offences.push(format!("{path}:{}", index + 1));
             }
         }
@@ -294,7 +481,7 @@ fn every_ignored_doc_example_is_registered() {
 
     let mut unregistered = Vec::new();
     let mut seen = Vec::new();
-    for (path, text) in rust_sources() {
+    for (path, text) in SourceWalk::rust_sources() {
         if !text.contains("```ignore") {
             continue;
         }
@@ -321,7 +508,7 @@ fn every_ignored_doc_example_is_registered() {
 #[test]
 fn every_integration_target_declares_its_scope() {
     let mut headerless = Vec::new();
-    for (path, text) in integration_targets() {
+    for (path, text) in SourceWalk::integration_targets() {
         let has_header = text
             .lines()
             .take(5)
@@ -395,7 +582,7 @@ impl OnDemandManifest {
     /// Every on-demand target of the repository's manifests as `(crate directory, target)`; the root
     /// package's directory is `.`.
     fn declared() -> Vec<(String, String)> {
-        let root = repo_root();
+        let root = SourceTree::workspace_root();
         let mut manifests = vec![(".".to_string(), root.join("Cargo.toml"))];
         let mut crate_dirs: Vec<_> = fs::read_dir(root.join("crates"))
             .expect("the crates directory is readable")
@@ -591,52 +778,12 @@ fn the_buck_readme_names_every_on_demand_target() {
     assert_eq!(offences.len(), 1, "the other package's line is missing: {offences:?}");
     assert!(offences[0].contains("-p b"), "{offences:?}");
 
-    let readme = fs::read_to_string(repo_root().join("examples/buck/README.md")).expect("the buck README is readable");
+    let readme = fs::read_to_string(SourceTree::workspace_root().join("examples/buck/README.md")).expect("the buck README is readable");
     let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.undocumented(&readme);
     assert!(offences.is_empty(), "on-demand targets the buck README does not name:\n  {}", offences.join("\n  "));
 }
 
 // ─── 4a. LRM-COVERS declarations are well-formed (T6, lrm-conformance-wave2) ──
-
-/// Whether one `//! LRM-COVERS:` line is malformed: not the canonical
-/// comma-separated list of bare LRM-2-4 section ids
-/// (`tests/lrm_section_coverage.rs::lrm_sections`'s own id shape — digit
-/// groups, or a single `A`..`H` letter followed by digit groups, joined by
-/// `.`). Declaring at all is optional; a line that does declare must be
-/// parseable by the coverage gate, so `§4.5.3` (a section symbol, not the
-/// gate's own id spelling), `4.5.3-4.5.5` (a range — the gate has no
-/// concept of one, every covered id must be named), and an empty list all
-/// fail here rather than silently scraping as zero declared ids.
-fn is_malformed_lrm_covers(line: &str) -> bool {
-    let Some(rest) = line.trim_start().strip_prefix("//! LRM-COVERS:") else {
-        return false;
-    };
-    let rest = rest.trim();
-    if rest.is_empty() {
-        return true;
-    }
-    let ids: Vec<&str> = rest.split(',').map(str::trim).collect();
-    if ids.iter().any(|id| id.is_empty()) {
-        return true;
-    }
-    for id in &ids {
-        if id.contains('§') || id.contains('-') || id.contains(char::is_whitespace) {
-            return true;
-        }
-        let segments: Vec<&str> = id.split('.').collect();
-        let Some(first) = segments.first() else { return true };
-        let digit_group = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
-        let numbered_head = digit_group(first);
-        let annex_head = first.len() == 1 && matches!(first.chars().next(), Some('A'..='H'));
-        if !(numbered_head || annex_head) {
-            return true;
-        }
-        if segments[1..].iter().any(|seg| !digit_group(seg)) {
-            return true;
-        }
-    }
-    false
-}
 
 /// Declaring `LRM-COVERS` is optional (T6's own rule); a declaration that
 /// exists must be well-formed, because `lrm_section_coverage.rs`'s gate
@@ -644,9 +791,9 @@ fn is_malformed_lrm_covers(line: &str) -> bool {
 #[test]
 fn lrm_covers_declarations_are_well_formed() {
     let mut offences = Vec::new();
-    for (path, text) in rust_sources() {
+    for (path, text) in SourceWalk::rust_sources() {
         for (index, line) in text.lines().enumerate() {
-            if is_malformed_lrm_covers(line) {
+            if SourceLines::is_malformed_lrm_covers(line) {
                 offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
@@ -661,22 +808,12 @@ fn lrm_covers_declarations_are_well_formed() {
 
 // ─── 5. No file-scope lint suppression (MD-33) ────────────────────────────────
 
-/// Whether one source line switches a lint off for a whole file. A file-scope
-/// `#![allow(…)]` is invisible from the item it excuses: P6 found twelve of
-/// them hiding 22 dead items across `piperine-solver` and `piperine-codegen`,
-/// four of which were traits describing an analysis contract the solver never
-/// built. An item that truly has no consumer yet says so *at the item*, with a
-/// one-line reason a reader can check.
-fn is_file_scope_allow(line: &str) -> bool {
-    line.trim_start().starts_with("#![allow(")
-}
-
 #[test]
 fn no_file_scope_lint_suppression() {
     let mut offences = Vec::new();
-    for (path, text) in library_sources() {
+    for (path, text) in SourceWalk::rust_sources() {
         for (index, line) in text.lines().enumerate() {
-            if is_file_scope_allow(line) {
+            if SourceLines::is_file_scope_allow(line) {
                 offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
@@ -704,29 +841,14 @@ fn no_file_scope_lint_suppression() {
 const DEAD_ARCHITECTURE_IDENTIFIERS: [&str; 4] =
     ["IrProgram", "IrModule", "IrExpr", "IrInstance"];
 
-/// Which dead identifiers one source line mentions.
-fn dead_architecture_identifiers_in(line: &str) -> Vec<&'static str> {
-    DEAD_ARCHITECTURE_IDENTIFIERS.into_iter().filter(|id| line.contains(id)).collect()
-}
-
-/// The registry of deliberate historical notes: file → (identifier, why it
-/// survives). Empty today: the rename in MD-40 made every former
-/// `piperine-ir`-as-dead-architecture mention either live again or stale,
-/// and the stale ones were reworded. Registry + exhaustiveness (the
-/// `capabilities_contract.rs` shape): a new note fails until it is recorded,
-/// and a note that disappears fails just as loudly.
-fn registered_historical_note(_path: &str) -> Option<(&'static str, &'static str)> {
-    None
-}
-
 #[test]
 fn no_dead_architecture_identifiers() {
     let mut offences = Vec::new();
     let mut notes_seen = Vec::new();
-    for (path, text) in library_sources() {
+    for (path, text) in SourceWalk::library_sources() {
         for (index, line) in text.lines().enumerate() {
-            for id in dead_architecture_identifiers_in(line) {
-                match registered_historical_note(&path) {
+            for id in SourceLines::dead_architecture_identifiers_in(line) {
+                match SourceLines::registered_historical_note(&path) {
                     Some((allowed, _)) if allowed == id => notes_seen.push(path.clone()),
                     _ => offences.push(format!("{path}:{}: `{id}`", index + 1)),
                 }
@@ -763,72 +885,20 @@ fn no_dead_architecture_identifiers() {
 /// a type with an implementation.
 const MOD_RS_MAX_LINES: usize = 60;
 
-/// The exemption marker (design D8). It sits **inside** the `mod.rs` it
-/// excuses, carrying the reason where the debt is, so a reader who opens the
-/// oversized file learns why before they wonder. The scan counts exemptions and
-/// the registry below names them: debt stays visible instead of dissolving.
-fn is_hygiene_exemption(line: &str) -> bool {
-    line.trim_start().starts_with("// hygiene-exempt:")
-}
-
-/// Every `mod.rs` under a crate's `src` tree, as `(path, line count)`.
-fn mod_rs_files() -> Vec<(String, usize, String)> {
-    let files: Vec<(String, usize, String)> = library_sources()
-        .into_iter()
-        .filter(|(path, _)| path.ends_with("/mod.rs"))
-        .map(|(path, text)| {
-            let lines = text.lines().count();
-            (path, lines, text)
-        })
-        .collect();
-    // msl-cli T4 deleted the old `piperine-api` (five `mod.rs`), so the floor is 10; the walk
-    // must also reach the three registered oversized files, which a blind walk would miss.
-    assert!(
-        files.len() > 10,
-        "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
-        files.len()
-    );
-    for known in ["crates/piperine-lang/src/pom/resolve/mod.rs", "crates/piperine-lang/src/pom/reflect/mod.rs", "crates/piperine-lang/src/pom/lower/mod.rs"] {
-        assert!(files.iter().any(|(path, _, _)| path == known), "the walk does not reach {known}: this guard is blind");
-    }
-    files
-}
-
-/// The registry of `mod.rs` files allowed to exceed the ceiling: path → why the
-/// split is not this feature's work. Registry + exhaustiveness (the
-/// `capabilities_contract.rs` shape used by the other guards here): a new
-/// exemption fails until it is recorded, and an exemption that becomes
-/// unnecessary fails just as loudly, so the list cannot rot into a blanket.
-///
-/// Two remain — the parse-tree entries left with the PHDL parser (the
-/// gate was dark from T21 until T37 and could not prune them), and the
-/// VAMS-era splits (catalog, ast) shrank their `mod.rs` back under the
-/// ceiling. The in-file `// hygiene-exempt:` line carries the per-file
-/// reason for the ones that remain.
-fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
-    Some(match path {
-        // Follow-up (ROADMAP.md, `code-clarity`): refactor these three into named modules.
-        "crates/piperine-lang/src/pom/resolve/mod.rs" => "name-resolution stages; split pending",
-        "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
-        "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",
-        _ => return None,
-    })
-}
-
 #[test]
 fn mod_rs_declares_only() {
     let mut offences = Vec::new();
     let mut exempted = Vec::new();
-    for (path, lines, text) in mod_rs_files() {
+    for (path, lines, text) in ModRsFiles::mod_rs_files() {
         if lines <= MOD_RS_MAX_LINES {
             assert!(
-                registered_oversized_mod_rs(&path).is_none(),
+                ModRsFiles::registered_oversized_mod_rs(&path).is_none(),
                 "{path} is {lines} lines — within the {MOD_RS_MAX_LINES}-line ceiling, so its \
                  exemption is stale. Remove the `// hygiene-exempt:` line and its registry entry."
             );
             continue;
         }
-        if text.lines().any(is_hygiene_exemption) && registered_oversized_mod_rs(&path).is_some() {
+        if text.lines().any(SourceLines::is_hygiene_exemption) && ModRsFiles::registered_oversized_mod_rs(&path).is_some() {
             exempted.push(format!("{path} ({lines} lines)"));
         } else {
             offences.push(format!("{path}: {lines} lines (ceiling {MOD_RS_MAX_LINES})"));
@@ -870,22 +940,6 @@ const WORKSPACE_CRATE_IDENTS: [&str; 10] = [
     "piperine_solver",
 ];
 
-/// Whether a target reaches the host surface: the root shell's re-export face
-/// (`piperine::…`, MD-20) or `piperine-api` underneath it.
-fn proves_host_surface(text: &str) -> bool {
-    text.contains("piperine::") || text.contains("piperine_api::")
-}
-
-/// Which workspace crates a target names. A crate counts when the target
-/// addresses it by path (`piperine_solver::…`) or imports it whole
-/// (`use piperine_solver;`) — the two ways a target can depend on one.
-fn workspace_crates_used(text: &str) -> Vec<&'static str> {
-    WORKSPACE_CRATE_IDENTS
-        .into_iter()
-        .filter(|id| text.contains(&format!("{id}::")) || text.contains(&format!("use {id};")))
-        .collect()
-}
-
 /// The registry of root targets that prove neither the host surface nor a
 /// cross-crate seam: file → why it still belongs at the root. Registry +
 /// exhaustiveness (the shape the guards above use): an unregistered offender
@@ -922,46 +976,13 @@ const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 2] = [
     ),
 ];
 
-fn registered_root_exemption(file: &str) -> Option<&'static str> {
-    ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
-}
-
-/// Why the offender fails the rule, in the words a reader needs to fix it.
-fn root_naming_offence(file: &str, text: &str) -> Option<String> {
-    let crates = workspace_crates_used(text);
-    if file.starts_with(HOST_TARGET_PREFIX) {
-        if proves_host_surface(text) {
-            return None;
-        }
-        return Some(format!(
-            "tests/{file}: named `{HOST_TARGET_PREFIX}*` but never reaches the host \
-             surface (no `piperine::` or `piperine_api::`) — prove the host API here, \
-             or rename it to `<feature>.rs`"
-        ));
-    }
-    if proves_host_surface(text) || crates.len() >= 2 {
-        return None;
-    }
-    Some(match crates.as_slice() {
-        [only] => format!(
-            "tests/{file}: exercises `{only}` alone — move it to \
-             `crates/{}/tests/` (MD-28: a target lives in the crate it exercises)",
-            only.replace('_', "-")
-        ),
-        _ => format!(
-            "tests/{file}: reaches no workspace crate and no host surface — root \
-             `tests/` is for the shell's proofs; say what it proves or move it"
-        ),
-    })
-}
-
 #[test]
 fn root_targets_match_the_naming_rule() {
     let mut offences = Vec::new();
     let mut exempted = Vec::new();
-    for (file, text) in root_targets() {
-        let offence = root_naming_offence(&file, &text);
-        match registered_root_exemption(&file) {
+    for (file, text) in SourceWalk::root_targets() {
+        let offence = RootTargetRules::root_naming_offence(&file, &text);
+        match RootTargetRules::registered_root_exemption(&file) {
             Some(_) => {
                 assert!(
                     offence.is_some(),
@@ -1007,36 +1028,10 @@ fn root_targets_match_the_naming_rule() {
 /// No `.phdl`/`.ppr` file may ever exist in this repository again.
 const PHDL_HIGH_WATER_MARK: usize = 0;
 
-/// Every `.phdl`/`.ppr` file anywhere in the repository (recursive, skipping
-/// `target`/`.git`) — a plain filesystem walk over every file extension, not
-/// a `.rs`-source scan like [`rust_sources`]: the files this gate counts are
-/// PHDL source, not Rust.
-fn phdl_files() -> Vec<PathBuf> {
-    let root = repo_root();
-    let mut out = Vec::new();
-    collect_phdl(&root, &mut out);
-    out
-}
-
-fn collect_phdl(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else { return };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name();
-        if path.is_dir() {
-            if name != "target" && name != ".git" {
-                collect_phdl(&path, out);
-            }
-        } else if path.extension().is_some_and(|e| e == "phdl" || e == "ppr") {
-            out.push(path);
-        }
-    }
-}
-
 #[test]
 fn phdl_corpus_does_not_grow() {
-    let root = repo_root();
-    let files = phdl_files();
+    let root = SourceTree::workspace_root();
+    let files = PhdlCorpus::phdl_files();
     let count = files.len();
     assert_eq!(
         count, PHDL_HIGH_WATER_MARK,
@@ -1119,7 +1114,7 @@ impl RemovedForms {
 
     /// Every `.msl` file of `std/`, `examples/` and the `tests/` trees of the crates, recursively.
     fn msl_files() -> Vec<PathBuf> {
-        let root = repo_root();
+        let root = SourceTree::workspace_root();
         let mut files = Vec::new();
         Self::collect(&root.join("examples"), &mut files);
         if let Ok(crates) = fs::read_dir(root.join("crates")) {
@@ -1190,7 +1185,7 @@ impl RemovedUnknownForms {
 
     /// The `.msl` files of std, the examples and every test tree, as `(repo-relative path, text)`.
     fn sources() -> Vec<(String, String)> {
-        let root = repo_root();
+        let root = SourceTree::workspace_root();
         let mut found = Vec::new();
         for base in ["crates/piperine-lang/std", "examples", "tests", "crates"] {
             Self::collect(&root.join(base), &root, &mut found);
@@ -1378,7 +1373,7 @@ fn no_source_uses_a_removed_unknown_form() {
 fn every_unknown_test_has_a_successor() {
     // EU-20 AC 2 (C87): every test of the range that pinned an unknown, a flag, a merge or a known byte is deleted (`source_unknowns.rs` and the others the table lists), and each is named in the table with the test that replaces
     // it; the old name is spelled by no test, the new one is a test of the tree, unless a later task writes it
-    let sources = rust_sources();
+    let sources = SourceWalk::rust_sources();
     let defines = |name: &str| sources.iter().any(|(_, text)| text.contains(&format!("fn {name}(")));
     let mut offences = Vec::new();
     for (old, new, pending) in RemovedUnknownForms::SUCCESSORS {
@@ -1401,7 +1396,7 @@ fn retired_unknown_codes_are_raised_nowhere() {
     // raises: the string literal of a code is how every raise names it.
     let retired = ["E0150", "E0151", "E0906", "E0908"];
     let mut offences = Vec::new();
-    for (path, text) in library_sources() {
+    for (path, text) in SourceWalk::library_sources() {
         for (n, line) in text.lines().enumerate() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("//") {

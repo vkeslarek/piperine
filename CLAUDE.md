@@ -57,6 +57,7 @@ in the IR or in a separate side table, never in the authored module/instance tre
 | `piperine-cli` | The `piperine` binary, a thin shell over `piperine-api`. |
 | `piperine-project` | `Piperine.toml`, dependencies, lockfile. |
 | `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
+| `piperine-repository-guards` | Test-only: the guards over the repository itself (workspace boundaries, suite hygiene, the proof ledger) and the source scan they share. |
 
 ## Build and test
 
@@ -104,7 +105,7 @@ cargo test -p piperine --test integrated      # small mixed-signal designs end t
 - A target lives in the crate it exercises. Root `tests/` holds only the integrated tests:
   `tests/book/` (one target per Book chapter + `inventory.tsv`), `tests/integrated/`,
   `tests/scenarios.rs`, `tests/buck_scenarios.rs`, fixtures in `tests/e2e/`.
-- `crates/piperine-lang/tests/suite_hygiene.rs` guards the suite: no switched-off code, no
+- `crates/piperine-repository-guards/tests/suite/suite_hygiene.rs` guards the suite: no switched-off code, no
   `#[ignore]`, no target without `//!`, no file-scope lint suppression, no dead identifiers.
 - Never weaken an assertion to make a test pass. Re-pins are exact.
 - Frozen corpora: `tests/fixtures*`, the twin goldens. Book/golden numbers may move after a

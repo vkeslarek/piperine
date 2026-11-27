@@ -1,0 +1,20 @@
+# T5: the workspace guards move to the guards crate.
+move piperine-solver/workspace_shape piperine-repository-guards/boundaries::workspace_shape
+move piperine-solver/crate_boundaries piperine-repository-guards/boundaries::crate_boundaries
+move piperine-lang/suite_hygiene piperine-repository-guards/suite::suite_hygiene
+# the proofs of solver-restructure that ran the whole solver package named these tests
+replace piperine-solver/crate_boundaries::analog_sources_name_no_digital_type piperine-repository-guards/boundaries::crate_boundaries::analog_sources_name_no_digital_type
+replace piperine-solver/crate_boundaries::digital_sources_name_no_analog_type piperine-repository-guards/boundaries::crate_boundaries::digital_sources_name_no_analog_type
+replace piperine-solver/crate_boundaries::each_sub_solver_holds_its_modules piperine-repository-guards/boundaries::crate_boundaries::each_sub_solver_holds_its_modules
+replace piperine-solver/crate_boundaries::the_three_solver_crates_exist piperine-repository-guards/boundaries::crate_boundaries::the_three_solver_crates_exist
+replace piperine-solver/workspace_shape::default_members_are_the_green_crates piperine-repository-guards/boundaries::workspace_shape::default_members_are_the_green_crates
+replace piperine-solver/workspace_shape::examples_hold_no_vams_or_python piperine-repository-guards/boundaries::workspace_shape::examples_hold_no_vams_or_python
+replace piperine-solver/workspace_shape::hygiene_guard_lives_in_piperine_lang piperine-repository-guards/boundaries::workspace_shape::hygiene_guard_lives_in_piperine_lang
+replace piperine-solver/workspace_shape::instructions_have_no_entry_for_a_retired_crate piperine-repository-guards/boundaries::workspace_shape::instructions_have_no_entry_for_a_retired_crate
+replace piperine-solver/workspace_shape::instructions_list_the_kept_crates piperine-repository-guards/boundaries::workspace_shape::instructions_list_the_kept_crates
+replace piperine-solver/workspace_shape::no_manifest_names_a_retired_crate piperine-repository-guards/boundaries::workspace_shape::no_manifest_names_a_retired_crate
+replace piperine-solver/workspace_shape::retired_crates_are_gone piperine-repository-guards/boundaries::workspace_shape::retired_crates_are_gone
+replace piperine-solver/workspace_shape::root_tests_hold_no_end_to_end_target piperine-repository-guards/boundaries::workspace_shape::root_tests_hold_no_end_to_end_target
+replace piperine-solver/workspace_shape::solver_manifest_has_no_in_tree_dev_dependency piperine-repository-guards/boundaries::workspace_shape::solver_manifest_has_no_in_tree_dev_dependency
+replace piperine-solver/workspace_shape::state_records_the_solver_structure_decision piperine-repository-guards/boundaries::workspace_shape::state_records_the_solver_structure_decision
+replace piperine-solver/workspace_shape::workflows_name_no_retired_crate piperine-repository-guards/boundaries::workspace_shape::workflows_name_no_retired_crate

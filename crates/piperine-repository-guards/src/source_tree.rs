@@ -169,3 +169,87 @@ impl SourceTree {
         reached
     }
 }
+
+impl SourceTree {
+    /// Every file under `directory`, recursively, in path order. A directory that cannot be read
+    /// is a panic naming it: a guard over a tree that moved must fail, not pass over nothing.
+    pub fn files_under(directory: &Path) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        let entries = std::fs::read_dir(directory).unwrap_or_else(|error| panic!("cannot read {}: {error}", directory.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                found.extend(Self::files_under(&path));
+            } else {
+                found.push(path);
+            }
+        }
+        found.sort();
+        found
+    }
+
+    /// Every `.rs` file under `directory`, recursively, in path order.
+    pub fn rust_files_under(directory: &Path) -> Vec<PathBuf> {
+        Self::files_under(directory).into_iter().filter(|path| path.extension().is_some_and(|extension| extension == "rs")).collect()
+    }
+
+    /// The directory of the crate `name`.
+    pub fn crate_directory(name: &str) -> PathBuf {
+        Self::workspace_root().join("crates").join(name)
+    }
+
+    /// The text of the crate `name`'s `Cargo.toml`.
+    pub fn crate_manifest(name: &str) -> String {
+        std::fs::read_to_string(Self::crate_directory(name).join("Cargo.toml")).unwrap_or_else(|error| panic!("read the manifest of {name}: {error}"))
+    }
+
+    /// The root manifest and every `crates/*/Cargo.toml`.
+    pub fn manifest_paths() -> Vec<PathBuf> {
+        let root = Self::workspace_root();
+        let mut paths = vec![root.join("Cargo.toml")];
+        let entries = std::fs::read_dir(root.join("crates")).unwrap_or_else(|error| panic!("read crates/: {error}"));
+        for entry in entries.flatten() {
+            let manifest = entry.path().join("Cargo.toml");
+            if manifest.exists() {
+                paths.push(manifest);
+            }
+        }
+        paths
+    }
+
+    /// The text of one `[section]` of a manifest, up to the next section header.
+    pub fn manifest_section(manifest: &str, name: &str) -> String {
+        let header = format!("[{name}]");
+        let mut section = String::new();
+        let mut inside = false;
+        for line in manifest.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('[') {
+                inside = trimmed == header;
+                continue;
+            }
+            if inside {
+                section.push_str(line);
+                section.push('\n');
+            }
+        }
+        section
+    }
+}
+
+impl SourceTree {
+    /// The directory of the guards crate itself: where `allowances/` and `data/` live.
+    pub fn guards_directory() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
+    }
+
+    /// The name of every crate directory under `crates/`, sorted, and `piperine` for the root package.
+    pub fn crate_names() -> Vec<String> {
+        let mut names = vec!["piperine".to_string()];
+        if let Ok(entries) = std::fs::read_dir(Self::workspace_root().join("crates")) {
+            names.extend(entries.flatten().filter(|entry| entry.path().join("Cargo.toml").exists()).filter_map(|entry| entry.file_name().to_str().map(str::to_string)));
+        }
+        names.sort();
+        names
+    }
+}

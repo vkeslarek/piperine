@@ -16,7 +16,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run solver**: `cargo test -p piperine-solver`
 **Run analog**: `cargo test -p piperine-analog-solver`
 **Run digital**: `cargo test -p piperine-digital-solver`
-**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
+**Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
+**Run boundaries**: `cargo test -p piperine-repository-guards --test boundaries`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Do not set `CARGO_TARGET_DIR`. Never pass `--workspace` and never run `cargo clean`: five kept crates do not compile (`piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root `piperine` shell) and are expected to stay that way through this feature. Do not push.
 
@@ -702,7 +703,7 @@ T25 → T26 → T27
 ## Checks
 
 **C1** - The solver's manifest lists no workspace crate as a dev-dependency and no `rayon`, `rand_distr` or `piperine-ir` (SR-01, AC 1)
-Proof: run solver | test solver_manifest_has_no_in_tree_dev_dependency ... ok
+Proof: run boundaries | test workspace_shape::solver_manifest_has_no_in_tree_dev_dependency ... ok
 
 **C2** - Every test target of `piperine-solver` builds and every test passes with no other crate of the tree (SR-01, AC 2)
 Proof: `cargo test -p piperine-solver`
@@ -720,25 +721,25 @@ Proof: run solver | test rc_step_reads_one_minus_exp ... ok
 Proof: run solver | test diode_satisfies_its_own_equation ... ok
 
 **C7** - The five retired crate directories do not exist (SR-02, AC 1)
-Proof: run solver | test retired_crates_are_gone ... ok
+Proof: run boundaries | test workspace_shape::retired_crates_are_gone ... ok
 
 **C8** - No `Cargo.toml` names a retired crate and the root manifest has no Cranelift profile entry (SR-02, AC 2)
-Proof: run solver | test no_manifest_names_a_retired_crate ... ok
+Proof: run boundaries | test workspace_shape::no_manifest_names_a_retired_crate ... ok
 
 **C9** - The workspace manifest loads (SR-02, AC 3)
 Proof: `cargo metadata --no-deps --format-version 1 > /dev/null`
 
 **C10** - The root `tests/` holds no `.rs` file and no `.vams`, and keeps the `.cir` oracles (SR-02, AC 4)
-Proof: run solver | test root_tests_hold_no_end_to_end_target ... ok
+Proof: run boundaries | test workspace_shape::root_tests_hold_no_end_to_end_target ... ok
 
 **C11** - `examples/` holds no `.vams`, `.py` or `.png` file and no `requirements.txt` (SR-02, AC 5)
-Proof: run solver | test examples_hold_no_vams_or_python ... ok
+Proof: run boundaries | test workspace_shape::examples_hold_no_vams_or_python ... ok
 
 **C12** - `default-members` is `piperine-lang` plus the three solver crates (SR-02, AC 6)
-Proof: run solver | test default_members_are_the_green_crates ... ok
+Proof: run boundaries | test workspace_shape::default_members_are_the_green_crates ... ok
 
 **C13** - No workflow builds or tests a retired crate, and CI does not pass `--workspace` (SR-02, AC 7)
-Proof: run solver | test workflows_name_no_retired_crate ... ok
+Proof: run boundaries | test workspace_shape::workflows_name_no_retired_crate ... ok
 
 **C14** - No solver source names the distortion analysis, its hooks or its capability flags (SR-03, AC 1)
 Proof: run solver | test disto_is_gone ... ok
@@ -762,7 +763,7 @@ Proof: run solver | test simprobe_is_gone ... ok
 Proof: run solver | test the_scan_catches_a_planted_name ... ok
 
 **C21** - The crates `piperine-solver`, `piperine-analog-solver` and `piperine-digital-solver` exist as workspace members (SR-04, AC 1)
-Proof: run solver | test the_three_solver_crates_exist ... ok
+Proof: run boundaries | test crate_boundaries::the_three_solver_crates_exist ... ok
 
 **C22** - Neither sub-solver manifest lists a workspace crate in any dependency table (SR-04, AC 2)
 Proof: run solver | test sub_solvers_depend_on_no_workspace_crate ... ok
@@ -771,13 +772,13 @@ Proof: run solver | test sub_solvers_depend_on_no_workspace_crate ... ok
 Proof: run solver | test owner_depends_on_both_sub_solvers_only ... ok
 
 **C24** - No source file of the analog crate contains `LogicValue`, `DigitalNet`, `DigitalEvent`, `DigitalState` or `DigitalDevice` (SR-04, AC 4)
-Proof: run solver | test analog_sources_name_no_digital_type ... ok
+Proof: run boundaries | test crate_boundaries::analog_sources_name_no_digital_type ... ok
 
 **C25** - No source file of the digital crate contains `Stamp`, `Netlist`, `AnalogReference`, `Tolerances` or `NewtonRaphsonSolver` (SR-04, AC 5)
-Proof: run solver | test digital_sources_name_no_analog_type ... ok
+Proof: run boundaries | test crate_boundaries::digital_sources_name_no_analog_type ... ok
 
 **C26** - Each sub-solver crate holds the modules the design assigns to it and the owner holds none of them (SR-04, AC 6 and AC 7)
-Proof: run solver | test each_sub_solver_holds_its_modules ... ok
+Proof: run boundaries | test crate_boundaries::each_sub_solver_holds_its_modules ... ok
 
 **C27** - The analog crate builds alone and passes with the unit tests it received, the singular-Jacobian test among them (SR-04, AC 9)
 Proof: run analog | test singular_system_fails_loud_through_the_existing_error_family ... ok
@@ -801,13 +802,13 @@ Proof: `now=$(mktemp); cargo test -p piperine-solver -p piperine-analog-solver -
 Proof: `! cargo build -p piperine-lang -p piperine-solver -p piperine-analog-solver -p piperine-digital-solver --all-targets 2>&1 | grep -E '^(warning|error)'`
 
 **C34** - `CLAUDE.md` and `AGENTS.md` list the eight kept crates (SR-06, AC 1)
-Proof: run solver | test instructions_list_the_kept_crates ... ok
+Proof: run boundaries | test workspace_shape::instructions_list_the_kept_crates ... ok
 
 **C35** - The crate table of `CLAUDE.md` and the workspace map of `AGENTS.md` hold no entry for a retired crate (SR-06, AC 2)
-Proof: run solver | test instructions_have_no_entry_for_a_retired_crate ... ok
+Proof: run boundaries | test workspace_shape::instructions_have_no_entry_for_a_retired_crate ... ok
 
 **C36** - `.specs/STATE.md` records the three-crate decision under `MD-60` (SR-06, AC 3)
-Proof: run solver | test state_records_the_solver_structure_decision ... ok
+Proof: run boundaries | test workspace_shape::state_records_the_solver_structure_decision ... ok
 
 **C37** - No assertion line was added to or changed in a test file that existed at e129b869, outside the five ported targets (SR-05, AC 4)
 Proof: `! git diff --diff-filter=M e129b869 -- crates/piperine-solver/tests ':(exclude)crates/piperine-solver/tests/sens.rs' ':(exclude)crates/piperine-solver/tests/adjoint_dc.rs' ':(exclude)crates/piperine-solver/tests/adjoint_vs_sens.rs' ':(exclude)crates/piperine-solver/tests/transient_reentry.rs' ':(exclude)crates/piperine-solver/tests/pss.rs' ':(exclude)crates/piperine-solver/tests/helpers/mod.rs' | grep -E '^\+[^+].*assert'`
@@ -816,7 +817,7 @@ Proof: `! git diff --diff-filter=M e129b869 -- crates/piperine-solver/tests ':(e
 Proof: `a=$(mktemp); git grep -h -A2 -e '#\[test\]' e129b869 -- crates/piperine-solver | grep -oE 'fn [A-Za-z_0-9]+' | sed 's/^fn //' | sort -u > "$a"; test -s "$a" && sort -u .specs/features/solver-restructure/baseline.txt > "$a.b" && test -z "$(comm -23 "$a" "$a.b")"`
 
 **C39** - The moved guard passes on the kept sources (SR-07, AC 2)
-Proof: `cargo test -p piperine-lang --test suite_hygiene`
+Proof: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 
 **C40** - The moved guard holds the 11 test functions it had at e129b869, by name (SR-07, AC 4)
 Proof: `a=$(mktemp); b=$(mktemp); git show e129b869:tests/suite_hygiene.rs | grep -A1 '^#\[test\]' | grep -oE '^fn [a-z_0-9]+' | sort > "$a"; grep -oE '^fn [a-z_0-9]+' crates/piperine-lang/tests/suite_hygiene.rs | sort > "$b"; test -s "$a" && test -z "$(comm -23 "$a" "$b")"`
@@ -828,7 +829,7 @@ Proof: `! grep -nE 'crates/piperine-(codegen|ir|python|plugin|plugin-macros)/' c
 Proof: run hygiene | test the_walk_covers_the_three_solver_crates ... ok
 
 **C43** - The guard lives in `crates/piperine-lang/tests/` with its helper, and none remains under the root `tests/` (SR-07, AC 1)
-Proof: run solver | test hygiene_guard_lives_in_piperine_lang ... ok
+Proof: run boundaries | test workspace_shape::hygiene_guard_lives_in_piperine_lang ... ok
 
 **C44** - No detector of the guard was loosened: its detector self-test is unchanged and passes (SR-07, AC 6)
 Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok

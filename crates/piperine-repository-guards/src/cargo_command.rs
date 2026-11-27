@@ -46,25 +46,43 @@ impl CargoTestCommand {
         arguments.iter().enumerate().filter(|(_, a)| a.as_str() == "--test").filter_map(|(at, _)| arguments.get(at + 1)).map(String::as_str).collect()
     }
 
-    /// The command with its `-p` and `--test` replaced and, when `module` is given, its test filter
-    /// prefixed with `module::` (added when the command had none).
-    pub fn retargeted(&self, package: &str, target: &str, module: Option<&str>) -> String {
+    /// The command after the target `from_target` became the module `module` of `to_target` in
+    /// `to_package`: the `-p` and the `--test` replaced, a repeated `--test` dropped, and, when the
+    /// command named that one target alone, its test filter prefixed with `module::` (added when
+    /// there was none) so the run stays as small as it was.
+    pub fn moved(&self, from_target: &str, to_package: &str, to_target: &str, module: &str) -> String {
+        let alone = self.targets().len() == 1;
         let mut tokens = self.tokens.clone();
         if let Some((at, _)) = self.value_after(&["-p", "--package"]) {
-            tokens[at] = package.to_string();
+            tokens[at] = to_package.to_string();
         }
-        let Some((target_at, _)) = self.value_after(&["--test"]) else { return tokens.join(" ") };
-        tokens[target_at] = target.to_string();
-        if let Some(module) = module {
-            let filter_at = target_at + 1;
-            let has_filter = filter_at < self.arguments_end && !tokens[filter_at].starts_with('-');
-            if has_filter {
-                tokens[filter_at] = format!("{module}::{}", tokens[filter_at]);
-            } else {
-                tokens.insert(filter_at, format!("{module}::"));
+        let mut seen = false;
+        let mut at = self.cargo_at + 2;
+        let mut kept: Vec<String> = Vec::new();
+        while at < tokens.len() {
+            let is_flag = at < self.arguments_end && tokens[at] == "--test" && at + 1 < tokens.len();
+            if !is_flag {
+                kept.push(tokens[at].clone());
+                at += 1;
+                continue;
             }
+            let value = if tokens[at + 1] == from_target { to_target.to_string() } else { tokens[at + 1].clone() };
+            if !kept.windows(2).any(|pair| pair[0] == "--test" && pair[1] == value) {
+                kept.push("--test".to_string());
+                kept.push(value.clone());
+            }
+            if alone && !seen {
+                let filter_at = at + 2;
+                let has_filter = filter_at < self.arguments_end && !tokens[filter_at].starts_with('-');
+                kept.push(if has_filter { format!("{module}::{}", tokens[filter_at]) } else { format!("{module}::") });
+                at += usize::from(has_filter);
+                seen = true;
+            }
+            at += 2;
         }
-        tokens.join(" ")
+        let mut result: Vec<String> = tokens[..self.cargo_at + 2].to_vec();
+        result.extend(kept);
+        result.join(" ")
     }
 
     /// The command with its `-p` value replaced.
@@ -92,10 +110,15 @@ mod tests {
     }
 
     #[test]
-    fn retargeting_prefixes_the_filter_with_the_module() {
+    fn a_move_prefixes_the_filter_with_the_module_and_merges_repeated_targets() {
         let plain = CargoTestCommand::parse("cargo test -p a --test old").expect("a cargo test");
-        assert_eq!(plain.retargeted("a", "merged", Some("old")), "cargo test -p a --test merged old::");
+        assert_eq!(plain.moved("old", "a", "merged", "old"), "cargo test -p a --test merged old::");
         let filtered = CargoTestCommand::parse("cargo test -p a --test old inventory_guard").expect("a cargo test");
-        assert_eq!(filtered.retargeted("b", "merged", Some("old")), "cargo test -p b --test merged old::inventory_guard");
+        assert_eq!(filtered.moved("old", "b", "merged", "old"), "cargo test -p b --test merged old::inventory_guard");
+        let several = CargoTestCommand::parse("cargo test -p a --test crate_boundaries --test workspace_shape").expect("a cargo test");
+        let once = several.moved("crate_boundaries", "g", "boundaries", "crate_boundaries");
+        assert_eq!(once, "cargo test -p g --test boundaries --test workspace_shape");
+        let twice = CargoTestCommand::parse(&once).expect("a cargo test").moved("workspace_shape", "g", "boundaries", "workspace_shape");
+        assert_eq!(twice, "cargo test -p g --test boundaries");
     }
 }

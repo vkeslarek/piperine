@@ -266,7 +266,7 @@ impl FeatureRewriter {
 
     fn move_commands(&mut self, from_package: &str, from_target: &str, to_package: &str, to_target: &str, module: &str) {
         self.rewrite_commands(|command| {
-            (command.package() == Some(from_package) && command.targets() == [from_target]).then(|| command.retargeted(to_package, to_target, Some(module)))
+            ((command.package() == Some(from_package) || command.package() == Some(to_package)) && command.targets().contains(&from_target)).then(|| command.moved(from_target, to_package, to_target, module))
         });
     }
 
@@ -321,7 +321,7 @@ impl FeatureRewriter {
             }
             let Some(proof) = FeatureFile::parse_proof(line) else { continue };
             let Some((run_name, expected)) = FeatureFile::parse_run_proof(&proof) else { continue };
-            let targets_it = runs.get(&run_name).and_then(|command| CargoTestCommand::parse(command)).is_some_and(|c| c.package() == Some(&test.package) && c.targets().contains(&test.target.as_str()));
+            let targets_it = runs.get(&run_name).and_then(|command| CargoTestCommand::parse(command)).is_some_and(|c| c.package() == Some(&test.package) && (c.targets().is_empty() || c.targets().contains(&test.target.as_str())));
             if targets_it && FeatureFile::test_named_by(&expected).as_deref() == Some(test.function()) {
                 found.push((index, run_name, check.clone()));
             }
