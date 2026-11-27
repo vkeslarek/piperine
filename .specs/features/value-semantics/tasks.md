@@ -23,12 +23,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run print**: `cargo test -p piperine-lang --test msl_print`
 **Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run goldens**: `cargo test -p piperine-transpile --test golden`
 **Run booklang**: `cargo test -p piperine --test book_language`
 **Run booktypes**: `cargo test -p piperine --test book_types`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -548,8 +548,8 @@ Proof: run print | test the_printer_and_the_object_model_hold_no_removed_form ..
 **C32** - No test lists a specification row or code as ahead of the implementation. (VS-10, AC 1; T9, T10, T13)
 Proof: run resolve | test builtin_table_matches_appendix_h ... ok
 
-**C33** - `GAPS.md` has no S7 and G.71 names no implementation gap. (VS-10, AC 2; T15)
-Proof: run docs | test gaps_drops_the_value_semantics_gap ... ok
+**C33** - `GAPS.md` has no S7 and G.71 names no implementation gap. (VS-10, AC 2; T15) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C34** - The Book names `E0903` for `let mut`, held by the front end. (VS-10, AC 3; T14)
 Proof: run booklang | test e0903_mut_is_not_a_word_of_the_language ... ok

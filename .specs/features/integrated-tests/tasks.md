@@ -25,7 +25,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookguards**: `cargo test -p piperine --test book_inventory --test book_claims`
 **Run sources**: `cargo test -p piperine-parity --test source_commits --test source_records --test source_time`
 **Run sourcehost**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test source_host`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 
 Executors: every task is a Sonnet worker (user rule: Sonnet implements, a different model verifies). The
 worktree is `/home/keslarek/Git/piperine-integrated-tests` on `feature/integrated-tests`. Cargo runs with
@@ -765,13 +764,13 @@ Proof: `! test -e crates/piperine-parity/tests/buck_commits.rs && ! test -e crat
 Proof: `test -f crates/piperine-parity/tests/digital/time.msl && ! grep -rq "buck::" crates/piperine-parity/tests/digital`
 
 **C62** - The README's "On demand" block gives the four lines and when to run them. (IT-13, AC 1; T18)
-Proof: run docs | test the_buck_readme_says_when_to_run_the_buck_on_demand ... ok
+Proof: run hygiene | test repository_records::the_buck_readme_says_when_to_run_the_buck_on_demand ... ok
 
 **C63** - The README keeps what `docs.rs` already holds it to. (IT-13, AC 1; T18)
-Proof: run docs | test the_buck_readme_points_at_the_scenarios ... ok
+Proof: run hygiene | test repository_records::the_buck_readme_points_at_the_scenarios ... ok
 
 **C64** - `CLAUDE.md` names the integrated gate and the buck on demand. (IT-13, AC 2; T19)
-Proof: run docs | test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
+Proof: run hygiene | test repository_records::the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
 
 **C66** - The root `tests/` guard accepts the modules of the declared `tests/integrated/main.rs` target and still refuses an undeclared `.rs`. (IT-03, AC 1; T10)
 Proof: run shape | test root_tests_hold_no_end_to_end_target ... ok

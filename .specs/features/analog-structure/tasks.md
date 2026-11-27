@@ -32,8 +32,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
 **Run apibind**: `cargo test -p piperine-api --test bindings`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run clibook**: `cargo test -p piperine-cli --test book`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree is `/home/keslarek/Git/piperine-analog-structure`, branch `feature/analog-structure`. Every cargo command runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 TMPDIR=/var/tmp/piperine-tmp-a`; where parallel worktrees share the target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources. If `df /` passes 90 %, stop and report.
 
@@ -1072,8 +1072,8 @@ Proof: run elabstruct | test the_water_model_waits_for_generics ... ok
 Proof: run elabstruct | test the_section_18_diode_type_checks_with_its_option_param ... ok
 Proof: run parop | test diode_rs ... ok
 
-**C26** - WHERE `params-and-io` has merged the §18 `Diode` with `rs` left out merges `a` and `ai`; until then `GAPS.md` keeps one L40 line naming the three spec models and their dependencies. (AS-05, AC 4; T36, Q2)
-Proof: run docs | test gaps_keeps_l40_for_the_spec_models_that_wait ... ok
+**C26** - WHERE `params-and-io` has merged the §18 `Diode` with `rs` left out merges `a` and `ai`; until then `GAPS.md` keeps one L40 line naming the three spec models and their dependencies. (AS-05, AC 4; T36, Q2) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C27** - A `limit` under a branch not taken neither vetoes convergence nor moves its last value. (AS-06, AC 1; T21)
 Proof: run sswitch | test a_limit_under_an_untaken_branch_neither_vetoes_nor_moves ... ok
@@ -1241,8 +1241,8 @@ Proof: `git diff --exit-code origin/main -- crates/piperine-parity/src/contract.
 Proof: run partran | test uic_rc_runs_and_prints_the_skip_line_without_ngspice ... ok
 Proof: run parop | test diode_rs_runs_and_prints_the_skip_line_without_ngspice ... ok
 
-**C79** - `GAPS.md` no longer lists L26, L27, L34 to L38, L42, L50 and S4, lists L40 only for the AS-05 models, and the Book's listings equal the binary's output. (AS-18, AC 4; T36)
-Proof: run docs | test gaps_drops_what_analog_structure_closed ... ok
+**C79** - `GAPS.md` no longer lists L26, L27, L34 to L38, L42, L50 and S4, lists L40 only for the AS-05 models, and the Book's listings equal the binary's output. (AS-18, AC 4; T36) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
 ---

@@ -36,8 +36,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run root**: `cargo test --test host_ii`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule). A different model verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
@@ -1384,11 +1384,11 @@ Proof: run clibook | test the_chapter_runs_each_new_analysis ... ok
 **C88** - The Book's `Blinky` listing shows the completing run. (HII-22, AC 3; T40)
 Proof: run clibook | test blinky_runs_to_its_stop_in_the_book ... ok
 
-**C89** - `GAPS.md` drops S2, L56, X3, X4, X7, X8, X9 and keeps L39. (HII-23, AC 1; T41)
-Proof: run docs | test gaps_drops_what_host_ii_closed ... ok
+**C89** - `GAPS.md` drops S2, L56, X3, X4, X7, X8, X9 and keeps L39. (HII-23, AC 1; T41) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C90** - `ROADMAP.md` lists the host follow-up and `root-e2e`. (HII-23, AC 2; T41)
-Proof: run docs | test the_roadmap_lists_the_host_follow_ups ... ok
+**C90** - `ROADMAP.md` lists the host follow-up and `root-e2e`. (HII-23, AC 2; T41) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C91** - The root runs `tf`, a drive and a timed set through `piperine::`. (HII-24, AC 1; T39)
 Proof: run root | test the_root_runs_tf_a_drive_and_a_timed_set ... ok

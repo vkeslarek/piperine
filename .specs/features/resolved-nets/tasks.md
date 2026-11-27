@@ -31,12 +31,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcorestd**: `cargo test -p piperine --test book_core_std`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 **Run typesaggregates**: `cargo test -p piperine-lang --test types_aggregates`
 **Run sourcelogic**: `cargo test -p piperine-parity --test source_logic`
 **Run hostpatterns**: `cargo test -p piperine-api --test host_patterns`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
@@ -1198,8 +1198,8 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 **C54** - With `Pulldown` the alarm prints the exercise answer's records (RN-09, AC 3)
 Proof: run booknatures | test the_pulldown_alarm_prints_the_exercise_answer ... ok
 
-**C55** - `GAPS.md` lists none of L21, L22, L23 nor the resolved-net group of L58 but `TribufDelayed` (RN-10, AC 1)
-Proof: run docs | test gaps_lists_no_resolved_net_gap ... ok
+**C55** - `GAPS.md` lists none of L21, L22, L23 nor the resolved-net group of L58 but `TribufDelayed` (RN-10, AC 1) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C56** - Appendix C.2.3 and G.38 say `Tran` on nets of a `Resolve<Driven>` nature runs (RN-10, AC 2)
 Proof: run spectext | test c_2_3_and_g_38_say_tran_on_a_resolved_nature_runs ... ok
@@ -1267,8 +1267,8 @@ Proof: run bookdigital | test the_four_worked_nets_give_the_tables_of_f_4 ... ok
 **C77** - The chapter's block of signal families (natures#2) elaborates and each carrier starts at the value its line states, `sda` at `Driven::Z` (RN-09, AC 6)
 Proof: run booknatures | test signals_of_every_family_run ... ok
 
-**C78** - `GAPS.md` §11 holds no row for natures#2, natures#3, natures~e99c1920, natures~91c3bffe, digital#16 to digital#20 or core-std#6 (RN-09, AC 7)
-Proof: run docs | test gaps_section_11_holds_no_net_row ... ok
+**C78** - `GAPS.md` §11 holds no row for natures#2, natures#3, natures~e99c1920, natures~91c3bffe, digital#16 to digital#20 or core-std#6 (RN-09, AC 7) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C79** - A nature parameter bound by `Resolve<X, V>` is a resolved carrier in a generic body: drives typed `X`, `others()` typed `V` (RN-06, AC 10)
 Proof: run typesgenmod | test a_nature_parameter_bound_by_resolve_is_a_resolved_carrier_in_the_body ... ok

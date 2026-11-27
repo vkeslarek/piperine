@@ -39,12 +39,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run bookdigital**: `cargo test -p piperine --test book_digital`
 **Run bookcorestd**: `cargo test -p piperine --test book_core_std`
 **Run bookpackages**: `cargo test -p piperine --test book_packages`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -1420,8 +1420,8 @@ Proof: run speccodes | test no_owned_code_is_raised ... ok
 **C74** - At merge the allow-list holds none of this feature's 22 codes, nor `E0810` or `E0811`. (PI-13, AC 4; T44)
 Proof: run speccodes | test this_features_codes_are_all_raised ... ok
 
-**C75** - `GAPS.md` no longer lists L20, L28, L39, L57, X5 and H12, and §10 lists only the allow-list. (PI-14, AC 1; T44)
-Proof: run docs | test gaps_no_longer_lists_this_features_ids ... ok
+**C75** - `GAPS.md` no longer lists L20, L28, L39, L57, X5 and H12, and §10 lists only the allow-list. (PI-14, AC 1; T44) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C76** - `n: u8 = K as u8` evaluates the `as` under Part I §1 rule 1. (edge case; T31)
 Proof: run elabparams | test an_integer_default_converts_with_as ... ok
@@ -1486,8 +1486,8 @@ Proof: run typesvalues | test include_str_in_a_const_is_a_str ... ok
 **C96** - Every stdlib file is a fixed point of the formatter. (PI-11, AC 1; T25)
 Proof: run msformat | test every_stdlib_file_is_in_the_formatters_form ... ok
 
-**C97** - `GAPS.md` no longer lists X5, L20, L39 and H12 after B4. (PI-14, AC 1; T28)
-Proof: run docs | test gaps_no_longer_lists_x5_l20_l39_h12 ... ok
+**C97** - `GAPS.md` no longer lists X5, L20, L39 and H12 after B4. (PI-14, AC 1; T28) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C98** - Integer, enum and `Option` params type check with defaults and `where`. (PI-01, AC 1; T30)
 Proof: run typesmodules | test integer_enum_and_option_params_type_check ... ok
@@ -1532,7 +1532,7 @@ Proof: run bookpackages | test e0610_is_raised_for_include_str_in_a_module ... o
 Proof: run bookcheatsheet | test the_files_card_runs ... ok
 
 **C112** - `GAPS.md` §10 lists exactly the allow-list's codes. (PI-14, AC 1; T44)
-Proof: run docs | test gaps_section_10_lists_exactly_the_owned_codes ... ok
+Proof: run hygiene | test repository_records::gaps_section_10_lists_exactly_the_owned_codes ... ok
 
 ---
 

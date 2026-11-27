@@ -34,8 +34,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -1805,11 +1805,11 @@ Proof: run elabagg | test aggregates_fold_in_const_contexts ... ok
 **C97** - A panic in a const evaluation is an elaboration error naming the expression. (CV-36, AC 2; T27)
 Proof: run elabctl | test a_panic_in_a_const_evaluation_names_the_expression ... ok
 
-**C98** - `GAPS.md` no longer lists L5, L6, L9 (but its `generics` row) and L10, and §9 is updated. (CV-37, AC 1; T29)
-Proof: run docs | test gaps_drops_what_composite_values_phase_a_closed ... ok
+**C98** - `GAPS.md` no longer lists L5, L6, L9 (but its `generics` row) and L10, and §9 is updated. (CV-37, AC 1; T29) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C99** - `GAPS.md` no longer lists L1 to L3, L4 (but generic enums), the H.5 to H.7 rows, `normal` and the §4.7 enum-names note. (CV-37, AC 1; T63)
-Proof: run docs | test gaps_drops_what_composite_values_phase_b_closed ... ok
+**C99** - `GAPS.md` no longer lists L1 to L3, L4 (but generic enums), the H.5 to H.7 rows, `normal` and the §4.7 enum-names note. (CV-37, AC 1; T63) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C100** - Every gallery fence and Book listing these forms let check is held to the checker. (CV-37, AC 2; T29, T63)
 Proof: run galleries | test the_fences_composite_values_lifted_are_checked ... ok

@@ -47,9 +47,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clianalyses**: `cargo test -p piperine-cli --test analyses`
 **Run clioptions**: `cargo test -p piperine-cli --test options`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run inventory**: `cargo test -p piperine --test book_inventory`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree is `/home/keslarek/Git/piperine-analog-operators`, branch `feature/analog-operators`. Every cargo command runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target-b CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 TMPDIR=/var/tmp/piperine-tmp-b`, in the foreground; never `pkill` by pattern; where parallel worktrees share the target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources. If `df /` passes 90 %, stop and report.
 
@@ -1368,8 +1368,8 @@ Proof: run planops | test a_body_without_a_new_form_keeps_its_shape ... ok
 Proof: run contract | test contract::tests::the_five_contracts_carry_bounds_and_rationale ... ok
 Proof: run corpus | test every_twin_has_a_cir_and_a_test ... ok
 
-**C63** - `GAPS.md` no longer lists L43, L44, L45 (but `noise_table`), L49, `simparam` of L47, the noise row of H2 and U7; the Book shows one noise run held to the binary. (AO-12, AC 3; T44)
-Proof: run docs | test gaps_and_roadmap_follow_analog_operators ... ok
+**C63** - `GAPS.md` no longer lists L43, L44, L45 (but `noise_table`), L49, `simparam` of L47, the noise row of H2 and U7; the Book shows one noise run held to the binary. (AO-12, AC 3; T44) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 Proof: run inventory | test every_block_of_the_book_has_one_row ... ok
 

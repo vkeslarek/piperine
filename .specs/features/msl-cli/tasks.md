@@ -32,10 +32,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run commands**: `cargo test -p piperine-cli --test commands`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run book**: `cargo test -p piperine-lang --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run format**: `cargo test -p piperine-lang --test msl_format`
 **Run print**: `cargo test -p piperine-lang --test msl_print`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run suite**: `cargo test -p piperine-repository-guards --test suite`
 
 Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error, or deletes a user's comment: T1, T6, T14, T21, T25, T36, T41, T42, T44, T45, T46, T47. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
@@ -1795,19 +1795,19 @@ Proof: run book | test the_compiler_chapter_says_the_command_line_exists ... ok
 Proof: run book | test the_cheat_sheet_lists_the_seven_commands ... ok
 
 **C153** - `CLAUDE.md` and `AGENTS.md` do not say `piperine-api`, `piperine-cli`, `piperine-project` or the root package does not build; the rows state `Project`/`Session` for `piperine-api`, the seven commands for `piperine-cli` and `msl::format` for `piperine-lang`; `piperine-lang-server` is said to be outside the default build and deferred. (CLI-20, AC 1; T39)
-Proof: run docs | test the_instruction_files_say_the_host_crates_build ... ok
+Proof: run suite | test repository_records::the_instruction_files_say_the_host_crates_build ... ok
 
-**C154** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host sequences from the command line, no Python host, the language server (deferred by the user), no trace records. (CLI-20, AC 2; T40)
-Proof: run docs | test gaps_drops_what_closed_and_lists_what_is_left ... ok
+**C154** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host sequences from the command line, no Python host, the language server (deferred by the user), no trace records. (CLI-20, AC 2; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C155** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40)
-Proof: run docs | test the_roadmap_marks_the_cli_item_done ... ok
+**C155** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C156** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table, the bench crate and `msl::format`. (CLI-20, AC 4; T40)
-Proof: run docs | test state_records_the_cli_decision ... ok
+**C156** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table, the bench crate and `msl::format`. (CLI-20, AC 4; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C157** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38)
-Proof: run docs | test the_buck_readme_says_how_to_run_it ... ok
+Proof: run suite | test repository_records::the_buck_readme_says_how_to_run_it ... ok
 
 **C158** - Part VIII defines **bench**: a module without ports, written in MSL, that places the design with its sources, stimulus and monitors, chosen as the top by the host; the term is in the part's list of terms and in the index's term table. (CLI-21, AC 1; T41)
 Proof: run spectext | test part_viii_defines_a_bench ... ok

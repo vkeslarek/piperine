@@ -61,8 +61,6 @@ crates/piperine-cli/tests/commands.rs::unformatted_lib	1
 crates/piperine-cli/tests/commands.rs::unformatted_rc	1
 crates/piperine-cli/tests/commands.rs::unformatted_step	1
 crates/piperine-cli/tests/commands.rs::walk	1
-crates/piperine-cli/tests/docs.rs::read	1
-crates/piperine-cli/tests/docs.rs::repo	1
 crates/piperine-cli/tests/info.rs::binary	1
 crates/piperine-cli/tests/info.rs::cells	1
 crates/piperine-cli/tests/info.rs::piperine_in	1

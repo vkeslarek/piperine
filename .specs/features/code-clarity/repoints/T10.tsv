@@ -1,0 +1,76 @@
+# T10: tracking-file pins leave docs.rs (CC-12 AC 2, AC 5, P1). The structural tests move to the guards target `suite`.
+replace piperine-cli/docs::the_buck_readme_says_how_to_run_it piperine-repository-guards/suite::repository_records::the_buck_readme_says_how_to_run_it
+replace piperine-cli/docs::the_buck_readme_says_when_to_run_the_buck_on_demand piperine-repository-guards/suite::repository_records::the_buck_readme_says_when_to_run_the_buck_on_demand
+replace piperine-cli/docs::the_instructions_name_the_integrated_gate_and_the_buck_on_demand piperine-repository-guards/suite::repository_records::the_instructions_name_the_integrated_gate_and_the_buck_on_demand
+replace piperine-cli/docs::the_buck_readme_points_at_the_scenarios piperine-repository-guards/suite::repository_records::the_buck_readme_points_at_the_scenarios
+replace piperine-cli/docs::the_instruction_files_say_the_host_crates_build piperine-repository-guards/suite::repository_records::the_instruction_files_say_the_host_crates_build
+retire piperine-cli/docs::gaps_drops_what_closed_and_lists_what_is_left a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_host_ii_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_root_e2e_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_narrows_what_buck_scenarios_ran a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_root_e2e a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_the_derived_param_decision a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_the_cli_decision a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_says_a_host_run_is_bounded a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_the_observation_decision a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_msl_fixes_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_the_value_semantics_gap a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_msl_fixes a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_the_unknown_semantics_decision a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_holds_the_explicit_unknowns_decision a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::the_per_level_feature_is_recorded_as_dropped a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::abi_md_describes_the_unreleased_contract a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_closes_s6_and_tracks_the_flag a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_rows_carry_no_unknown_control_clause a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_analog_structure_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_l40_with_the_stdlib_idt_and_water a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_analog_structure a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_generics_phase_a_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_generics_phase_b_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_the_generics_decision a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::the_buck_spec_holds_the_bench_bounds a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_composite_values_phase_a_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::the_book_no_longer_says_settle_is_not_compiled a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_settle_or_limexp a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_x5_l20_l39_h12 a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_project_or_signal_flow_natures a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_composite_values_phase_b_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+replace piperine-cli/docs::the_roadmap_is_forward_looking piperine-repository-guards/suite::repository_records::the_roadmap_is_forward_looking
+retire piperine-cli/docs::the_scenario_package_states_its_measured_step_count a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::transient_performance_closes_v12 a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_the_observable_landings_and_the_tick_epoch a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_l28_or_its_book_rows a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_this_features_ids a pin on a sentence of a tracking file; the tracking file is not behaviour
+replace piperine-cli/docs::gaps_section_10_lists_exactly_the_owned_codes piperine-repository-guards/suite::repository_records::gaps_section_10_lists_exactly_the_owned_codes
+retire piperine-cli/docs::gaps_drops_s3 a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_generics_phase_c_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_generic_modules_and_generation a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_l70 a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_the_cast_and_same_intrinsics a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_l69 a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_and_roadmap_follow_analog_operators a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_composite_values_phase_c_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_composite_values_phase_d_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_l51_or_l53 a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_l77_is_owned_by_generics_phase_e a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_generics_phase_d_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::state_records_templates_and_run_settings a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_the_reach_rows_nested_reach_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_lists_no_resolved_net_gap a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_section_11_holds_no_net_row a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_no_longer_lists_the_host_write_of_a_logic a pin on a sentence of a tracking file; the tracking file is not behaviour
+retire piperine-cli/docs::gaps_drops_the_generics_group_of_l58 a pin on a sentence of a tracking file; the tracking file is not behaviour
+replace piperine-cli/docs::the_generics_checks_file_holds_every_phase piperine-repository-guards/suite::repository_records::the_generics_checks_file_holds_every_phase
+replace piperine-cli/docs::the_generics_check_ids_are_unique_across_its_phases piperine-repository-guards/suite::repository_records::the_generics_check_ids_are_unique_across_its_phases
+retire piperine-cli/docs::gaps_no_longer_lists_bundles a pin on a sentence of a tracking file; the tracking file is not behaviour
+# proofs of this target that named a test no longer in it (their allowance rows go with them)
+retire piperine-cli/docs::gaps_carries_the_unknown_index_merge_to_composite_values a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::gaps_drops_l18_and_l19 a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::gaps_keeps_l40_for_the_spec_models_that_wait a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::gaps_records_a_reach_three_levels_deep a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::the_roadmap_and_state_record_msl_fixes a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::the_roadmap_and_state_record_root_e2e a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::the_roadmap_lists_the_host_follow_ups a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::the_roadmap_lists_what_the_long_run_leaves a pin on a sentence of a tracking file; the test was already gone
+retire piperine-cli/docs::the_roadmap_marks_the_cli_item_done a pin on a sentence of a tracking file; the test was already gone

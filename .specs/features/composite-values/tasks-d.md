@@ -32,7 +32,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apiw**: `cargo test -p piperine-api --test number_widths`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run book**: `cargo test -p piperine --test book_language --test book_inventory`
-**Run docs**: `cargo test -p piperine-cli --test docs`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -1045,8 +1045,8 @@ Proof: run tw | test number_widths_compile_and_compute_as_their_library ... ok
 Proof: run book | test a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it ... ok
 Proof: run book | test floats_of_every_width_and_wide_integers_run ... ok
 
-**C189** - `GAPS.md` no longer lists L13 and its §9 coverage and counts follow, with no residue. (CV-37, AC 1; T126)
-Proof: run docs | test gaps_drops_what_composite_values_phase_d_closed ... ok
+**C189** - `GAPS.md` no longer lists L13 and its §9 coverage and counts follow, with no residue. (CV-37, AC 1; T126) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C190** - The twins print the bytes they printed before phase D, with `ToleranceContract` unedited. (CV-35, AC 1; T126)
 Proof: `cargo test -p piperine-cli --test twins`

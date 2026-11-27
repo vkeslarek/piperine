@@ -16,7 +16,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run stdlibrary**: `cargo test -p piperine-lang --test std_library`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run elabgenr**: `cargo test -p piperine-lang --test elab_generation`
@@ -26,6 +25,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
 **Run typestempl**: `cargo test -p piperine-lang --test types_templates`
 **Run apisession**: `cargo test -p piperine-api --test session`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run suite**: `cargo test -p piperine-repository-guards --test suite`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -512,10 +513,10 @@ Proof: run srcstd | test noise_table_gives_the_interpolated_psd ... ok
 **C147** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
 Proof: run srcstd | test the_water_model_boils_and_vaporizes ... ok
 
-**C148** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
-Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
-Proof: run docs | test the_generics_checks_file_holds_every_phase ... ok
-Proof: run docs | test the_generics_check_ids_are_unique_across_its_phases ... ok
+**C148** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run suite | test repository_records::the_generics_checks_file_holds_every_phase ... ok
+Proof: run suite | test repository_records::the_generics_check_ids_are_unique_across_its_phases ... ok
 
 **C135** - A hoisted module whose body holds generation is unrolled under its frame and runs; `GAPS.md` has no L77. (GN-17, AC 1; T118, phase C round 5 finding 18)
 Proof: run elabgenr | test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok
@@ -549,13 +550,13 @@ Proof: run elabresults | test a_callable_bound_param_of_a_hoisted_module_places_
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
 
-**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802); all of it in a module without a result and in one with a result (§8.3.12, its frame holds the array as a key). (GN-17, AC 1; T121, GAPS L89; fix round 2, finding 8)
+**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802); all of it in a module without a result and in one with a result (§8.3.12, its frame holds the array as a key). (GN-17, AC 1; T121, GAPS L89; fix round 2, finding 8) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
 Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok
 Proof: run srcgenr | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run apisession | test a_module_typed_param_is_not_set_by_text ... ok
-Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C150** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok

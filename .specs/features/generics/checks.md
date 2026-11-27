@@ -21,7 +21,6 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`
 **Run typesgenr**: `cargo test -p piperine-lang --test types_generation`
@@ -59,6 +58,8 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
 **Run typesresults**: `cargo test -p piperine-lang --test types_results`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run suite**: `cargo test -p piperine-repository-guards --test suite`
 
 ## Checks
 
@@ -204,9 +205,9 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move .
 **C41** - The build gives no warning on the crates this feature touches, and the hygiene guard passes. (GN-30, AC 2; every phase)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 
-**C42** - `GAPS.md` narrows S3, then no longer lists L7, the generic-enum part of L4, S3, X6 and L8, and §9 is updated. (GN-31, AC 1; T6, T43, T52)
-Proof: run docs | test gaps_drops_what_generics_phase_a_closed ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_b_closed ... ok
+**C42** - `GAPS.md` narrows S3, then no longer lists L7, the generic-enum part of L4, S3, X6 and L8, and §9 is updated. (GN-31, AC 1; T6, T43, T52) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C43** - Every gallery fence and Book listing phase A lets check is held to the checker. (GN-31, AC 2; T41)
 Proof: run galleries | test the_fences_generics_lifted_are_checked ... ok
@@ -331,11 +332,11 @@ Proof: run interp | test each_generics_form_is_refused_by_name ... ok
 **C78** - The forms of phases D and E stay `P0001` naming the form. (GN-29, AC 2; T81)
 Proof: run typesgen | test phase_d_and_e_forms_stay_p0001_by_name ... ok
 
-**C81** - `GAPS.md` drops L70, L69, S3, L30 and L31 in the commits that close them. (GN-31, AC 1; T54, T58, T71, T82)
-Proof: run docs | test gaps_drops_l70 ... ok
-Proof: run docs | test gaps_drops_l69 ... ok
-Proof: run docs | test gaps_drops_s3 ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_c_closed ... ok
+**C81** - `GAPS.md` drops L70, L69, S3, L30 and L31 in the commits that close them. (GN-31, AC 1; T54, T58, T71, T82) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C82** - Every Book row and gallery fence phase C lets run is held to it. (GN-31, AC 2; T71, T77, T80, T81)
 Proof: run bookdigital | test the_flip_flop_runs_for_a_type_with_a_default ... ok
@@ -358,11 +359,11 @@ Proof: run srcmods | test a_const_generic_of_zero_makes_an_empty_module ... ok
 **C85** - An empty generation range makes an empty array. (Edge case; T73)
 Proof: run elabgenr | test an_empty_generation_range_makes_an_empty_array ... ok
 
-**C86** - `cast` and `same` compile from `std/values.msl`, agree with the lowering they replace, and a `cast` to a tuple holding an enum runs. (GN-27, AC 1; GN-01, AC 1; T55)
+**C86** - `cast` and `same` compile from `std/values.msl`, agree with the lowering they replace, and a `cast` to a tuple holding an enum runs. (GN-27, AC 1; GN-01, AC 1; T55) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run srcgen | test cast_and_same_from_source_agree_with_the_removed_lowering ... ok
 Proof: run srcgen | test a_cast_to_a_tuple_holding_an_enum_runs ... ok
 Proof: run typesgen | test no_intrinsic_stands_for_cast_or_same ... ok
-Proof: run docs | test gaps_drops_the_cast_and_same_intrinsics ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C120** - The Book listings that contradicted the spec are corrected, and each old form is refused as the spec says: a carrier port left out is `E0312` (§8.1.8), a `[Bit; N]` with no initial value is `E0187` (§3.3.4) and the rule holds per element of an array (one element defined, one handed to an `out` port: `E0187` names the rest; every element named: clean; an initial value beside some element definitions is the others' value, `E0338` once all are defined), a refused whole-array definition is the driver and raises no `E0187`, `Slice` is bounded by `Default` as gallery E.6 is. (GN-31, AC 2; Book amendments BA1 to BA3; T116)
 Proof: run bookcorestd | test a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was ... ok
@@ -447,8 +448,8 @@ Proof: run elabcarrarr | test a_run_time_element_read_in_a_definition_is_one_rea
 Proof: run paritycarrarr | test a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_element ... ok
 Proof: run paritycarrarr | test whole_array_run_time_element_and_reaction_readers_follow_the_elements ... ok
 
-**C138** - L77 (generation in a hoisted module's body) is owned by `generics` phase E, task T118 in `tasks-e.md`, not by a spec lane. (round 5 finding 18)
-Proof: run docs | test gaps_l77_is_owned_by_generics_phase_e ... ok
+**C138** - L77 (generation in a hoisted module's body) is owned by `generics` phase E, task T118 in `tasks-e.md`, not by a spec lane. (round 5 finding 18) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C139** - The Book's `P0001` claim (compiler~79f44db1, `holds`) is shown on a form still unfinished, a module template as a value (`R { r: 2.0 }`, phase D, L32): its refusal names `module template`; its example was a generic module until phase C ran those. (GN-31, AC 2; final suite after the main merge)
 Proof: run bookcompiler | test a_compiler_code_says_what_the_chapter_says ... ok
@@ -499,7 +500,7 @@ Proof: run typestempl | test a_fn_bounded_parameter_is_inferred_from_its_templat
 **C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok
 
-**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; an item of any kind (a `pub` param, a `pub let`, a carrier) is read as a value with the type its context wants, checked against the concrete item at elaboration (`E0180` naming both; `E0181` where no context gives one: a method's receiver, the operand of `as`, a `let` with no type that nothing reads, fix round 3 findings 14 and 15), also from the parent (`bank.c0.cs`) and at a generated iteration (`bank.cells[1].cs`); an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix rounds 1 and 2, L78)
+**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; an item of any kind (a `pub` param, a `pub let`, a carrier) is read as a value with the type its context wants, checked against the concrete item at elaboration (`E0180` naming both; `E0181` where no context gives one: a method's receiver, the operand of `as`, a `let` with no type that nothing reads, fix round 3 findings 14 and 15), also from the parent (`bank.c0.cs`) and at a generated iteration (`bank.cells[1].cs`); an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix rounds 1 and 2, L78) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run elabtempl | test inst_name_through_a_template_param_reads_the_concrete_module ... ok
 Proof: run elabtempl | test a_missing_item_through_a_template_param_is_e0343 ... ok
 Proof: run elabtempl | test inst_name_in_the_module_that_places_the_template_reads_the_concrete_module ... ok
@@ -513,7 +514,7 @@ Proof: run typestempl | test an_unread_let_of_a_template_item_is_e0181 ... ok
 Proof: run elabtempl | test an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal ... ok
 Proof: run srctempl | test the_items_of_a_template_placed_child_read_as_values ... ok
 Proof: run spectext | test a_template_item_takes_the_type_its_context_wants_in_the_spec ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run elabtempl | test an_out_of_range_generated_cell_names_its_element_and_the_length_of_its_own_loop ... ok
 
 **C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92)
@@ -560,8 +561,8 @@ Proof: run interp | test each_generics_form_is_refused_by_name ... ok
 Proof: run irgen | test run_setting_reads_are_built_checked_and_printed ... ok
 Proof: run tgen | test a_device_reads_whether_the_run_set_its_temperature ... ok
 
-**C106** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T102)
-Proof: run docs | test gaps_drops_what_generics_phase_d_closed ... ok
+**C106** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T102) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C107** - The template Book rows flip or narrow to the bundle they still need, and the swappable MOSFET listing runs. (GN-31, AC 2; T93)
 Proof: run bookmodules | test the_swappable_mosfet_listing_runs ... ok
@@ -569,21 +570,21 @@ Proof: run bookmodules | test the_memory_bank_is_refused_only_for_its_bundle ...
 Proof: run bookcheatsheet | test the_template_card_is_refused_only_for_its_bundle ... ok
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
-**C110** - A param default reads the params declared before it, folded per instance over the values they take there, a template param's trait method included (`level: f64 = fet.gain()`); the params a later default reads are structural; a default that reads the param itself or a later one is `E0321`. (§8.1.2, §8.1.16; fix round 2, L80)
+**C110** - A param default reads the params declared before it, folded per instance over the values they take there, a template param's trait method included (`level: f64 = fet.gain()`); the params a later default reads are structural; a default that reads the param itself or a later one is `E0321`. (§8.1.2, §8.1.16; fix round 2, L80) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run typestempl | test a_param_default_reads_earlier_params_and_a_template_params_trait ... ok
 Proof: run elabparams | test a_default_that_reads_earlier_params_is_folded_per_instance ... ok
 Proof: run elabparams | test a_default_that_reads_itself_or_a_later_param_is_e0321 ... ok
 Proof: run elabtempl | test a_param_default_dispatches_the_trait_of_a_template_param ... ok
 Proof: run srctempl | test a_param_default_reads_the_params_before_it ... ok
 Proof: run spectext | test a_param_default_reads_earlier_params_in_the_spec ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C111** - The type of a template of a generic module carries its arguments, `G<2>`: a template of other arguments where it is wanted is `E0180` naming both, an argument the template leaves out is the wanted type's, and a placement through a template (in place, a `const`, a param of type `S<E>`, a param bounded by `Fn(..)`) of a module whose ports are typed by its generic parameters reads them under those arguments (`E0251` for a node of another nature). (§8.4.3, §8.4.5; fix round 2, L79)
+**C111** - The type of a template of a generic module carries its arguments, `G<2>`: a template of other arguments where it is wanted is `E0180` naming both, an argument the template leaves out is the wanted type's, and a placement through a template (in place, a `const`, a param of type `S<E>`, a param bounded by `Fn(..)`) of a module whose ports are typed by its generic parameters reads them under those arguments (`E0251` for a node of another nature). (§8.4.3, §8.4.5; fix round 2, L79) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run typestempl | test the_type_of_a_generic_template_carries_its_arguments ... ok
 Proof: run typestempl | test a_placement_through_a_template_of_a_nature_generic_module_checks_its_ports ... ok
 Proof: run elabtempl | test a_placement_through_a_template_of_a_nature_generic_module_places_its_instance ... ok
 Proof: run srctempl | test a_template_of_a_nature_generic_module_runs_through_its_type ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C112** - A placement through a template param bounded by `Fn(P)` takes at each node input what a placement of the module takes at that port: `gnd` or a node of a compatible nature, `E0251` for another nature. (§8.1.10, §8.4.5; fix round 2, coordinator follow-up)
 Proof: run typestempl | test gnd_connects_through_a_callable_bound_as_at_a_placement ... ok
@@ -644,11 +645,11 @@ Proof: run typeshandles | test a_let_assigned_only_values_of_elaboration_chooses
 Proof: run elabhandles | test a_let_assigned_only_values_of_elaboration_folds_to_the_node_it_holds_there ... ok
 Proof: run srctempl | test a_let_assigned_from_params_picks_the_node ... ok
 
-**C158** - A node connection reached through any depth of children is hardware too: a cross pair and a self-connection through a template two levels deep (`p.c0.sn`) and through a generation (`p.cells[1].sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; three levels deep (`p.mid.c0.sn`) the checker types the cycle and elaboration refuses it as it refuses the forward read, by name (L82); a value read through an open `let`'s child (`p.c0.cs` at a value input) is `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 10, finding 27)
+**C158** - A node connection reached through any depth of children is hardware too: a cross pair and a self-connection through a template two levels deep (`p.c0.sn`) and through a generation (`p.cells[1].sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; three levels deep (`p.mid.c0.sn`) the checker types the cycle and elaboration refuses it as it refuses the forward read, by name (L82); a value read through an open `let`'s child (`p.c0.cs` at a value input) is `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 10, finding 27) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
 Proof: run typeshandles | test a_cycle_of_node_connections_through_any_depth_of_reach_is_hardware ... ok
 Proof: run elabhandles | test a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port ... ok
 Proof: run srctempl | test a_cycle_of_node_connections_two_levels_deep_runs_as_hardware ... ok
-Proof: run docs | test gaps_records_a_reach_three_levels_deep ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C159** - A choice whose condition assigns its `let` first (`if { s = !s; s }`, a `match` over such a block, a `while` over a `let` in the condition) folds at elaboration to the node the condition picks and ends, within a time bound at elaboration and from source; one whose condition assigns a value of the run is `E0133` alone, naming the read. (§1.4.7; fix round 10, finding 28)
 Proof: run elabhandles | test a_choice_whose_condition_assigns_folds_and_ends ... ok
@@ -706,10 +707,10 @@ Proof: run srcstd | test noise_table_gives_the_interpolated_psd ... ok
 **C147** - The spec's `Water` model (Part IV §13) runs over the stdlib `idt`. (GN-28, AC 2; L40; T109)
 Proof: run srcstd | test the_water_model_boils_and_vaporizes ... ok
 
-**C148** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115)
-Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
-Proof: run docs | test the_generics_checks_file_holds_every_phase ... ok
-Proof: run docs | test the_generics_check_ids_are_unique_across_its_phases ... ok
+**C148** - `GAPS.md` drops the L58 generics group and L40's last part; the feature's `checks.md` holds every phase. (GN-31, AC 1; T115) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run suite | test repository_records::the_generics_checks_file_holds_every_phase ... ok
+Proof: run suite | test repository_records::the_generics_check_ids_are_unique_across_its_phases ... ok
 
 **C135** - A hoisted module whose body holds generation is unrolled under its frame and runs; `GAPS.md` has no L77. (GN-17, AC 1; T118, phase C round 5 finding 18)
 Proof: run elabgenr | test generation_in_a_hoisted_module_unrolls_under_its_frame ... ok
@@ -743,10 +744,10 @@ Proof: run elabresults | test a_callable_bound_param_of_a_hoisted_module_places_
 Proof: run elabresults | test an_option_result_of_a_hoisted_module_is_read_as_the_pair_of_its_halves ... ok
 Proof: run srcstd | test inertial_over_an_option_reads_its_result_in_a_reaction ... ok
 
-**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802); all of it in a module without a result and in one with a result (§8.3.12, its frame holds the array as a key). (GN-17, AC 1; T121, GAPS L89; fix round 2, finding 8)
+**C155** - A param declared as an array of templates (`pair: [Cell; 2]`) runs: its default, an override by a literal, a `const` and a choice, `pair[k](x)` at a written and a generation index, the params its elements read are structural, and a host cannot give it a value (E0802); all of it in a module without a result and in one with a result (§8.3.12, its frame holds the array as a key). (GN-17, AC 1; T121, GAPS L89; fix round 2, finding 8) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run typestempl | test a_param_declared_as_an_array_of_templates_checks_its_default_and_its_placement ... ok
 Proof: run elabtemplates | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run elabtemplates | test the_params_an_array_of_templates_reads_become_structural ... ok
 Proof: run srcgenr | test a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override ... ok
 Proof: run apisession | test a_module_typed_param_is_not_set_by_text ... ok
-Proof: run docs | test gaps_drops_the_generics_group_of_l58 ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok

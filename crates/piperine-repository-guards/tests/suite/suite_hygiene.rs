@@ -1001,7 +1001,7 @@ impl RemovedUnknownForms {
 
     /// Each test of the explicit-unknowns range that pinned an unknown, a flag, a merge or a known byte, the test that supersedes it, and the task that writes it when it does
     /// not exist yet (`None`: it exists).
-    const SUCCESSORS: [(&'static str, &'static str, Option<&'static str>); 124] = [
+    const SUCCESSORS: [(&'static str, &'static str, Option<&'static str>); 123] = [
         ("a_function_and_a_definition_merge_an_unknown_if", "control_on_a_carrier_runs_one_path", None),
         ("an_unknown_if_runs_both_arms_without_a_fault", "control_on_a_carrier_runs_one_path", None),
         ("both_arms_committing_commit_their_merge", "control_on_a_carrier_runs_one_path", None),
@@ -1116,7 +1116,6 @@ impl RemovedUnknownForms {
         ("shipped_layouts_have_their_stated_fields", "the_shipped_layouts_hold_the_value_only", None),
         ("an_analog_read_of_a_carrier_outside_the_flag_reads_is_e0150", "an_analog_read_of_a_carrier_is_the_value", None),
         ("an_e0150_carries_a_help_line_naming_the_flag_reads", "an_analog_read_of_a_carrier_is_the_value", None),
-        ("gaps_closes_s6_and_g6_by_the_redesign", "gaps_closes_s6_and_tracks_the_flag", None),
         ("known_resolves_into_std_values", "bit_rise_resolves_into_std_values", None),
         ("the_flag_reads_are_typed", "the_flag_methods_do_not_resolve", None),
         ("the_stdlib_d2a_reads_its_match_scrutinee_at_each_test", "the_stdlib_d2a_gives_transition_the_level_of_its_input", None),

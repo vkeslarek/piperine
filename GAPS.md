@@ -11,7 +11,7 @@ an entry in the commit that closes it.
 **Ranking**, most serious first: **silent** (accepted, then wrong or ignored) › **broken** (does
 not build or run) › **loud** (refused with a diagnostic) › **spec hole** (the spec does not say, or
 says something the code does not do) › **unproven** (works, nothing falsifies it). The section
-numbers are the previous file's (`piperine-cli/tests/docs.rs` reads them), so *Broken* is §2 and
+numbers are the previous file's, so *Broken* is §2 and
 *Silent* §3.
 
 **Evidence.** `probe` means a lone `.msl` file run on 2026-11-17 with

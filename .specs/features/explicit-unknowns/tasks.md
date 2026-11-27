@@ -13,7 +13,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Approved**: 2026-11-21 - user: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run bookvalues**: `cargo test -p piperine --test book_values`
 **Run booklang**: `cargo test -p piperine --test book_language`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
@@ -38,6 +37,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
 **Run ops**: `cargo test -p piperine-lang --test types_operators`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
 
@@ -1463,8 +1463,8 @@ Proof: run spectext | test the_removed_words_are_absent_from_the_specification .
 **C74** - Appendix G holds G.72 and marks G.29, G.46, G.57 closed by it (EU-17, AC 4; T9)
 Proof: run spectext | test appendix_g_records_the_explicit_model ... ok
 
-**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10)
-Proof: run docs | test abi_md_describes_the_unreleased_contract ... ok
+**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C76** - Appendix H holds the `Default` table, `From`, `PartialEq<Rhs, Out>` and H.10 (EU-17, AC 6; T2)
 Proof: run spectext | test appendix_h_holds_default_from_and_the_operator_traits ... ok
@@ -1487,14 +1487,14 @@ Proof: run bookinv | test every_listing_that_does_not_run_names_its_gap ... ok
 **C82** - The Book's "Device ABI" chapter describes the contract without known bytes and says it is unreleased (EU-18, AC 6; T17)
 Proof: run bookabi | test the_abi_chapter_describes_the_unreleased_contract ... ok
 
-**C83** - `STATE.md` holds MD-78 and marks MD-70 superseded by it (EU-19, AC 1; T11)
-Proof: run docs | test state_holds_the_explicit_unknowns_decision ... ok
+**C83** - `STATE.md` holds MD-78 and marks MD-70 superseded by it (EU-19, AC 1; T11) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C84** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40)
-Proof: run docs | test gaps_closes_s6_and_tracks_the_flag ... ok
+**C84** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11)
-Proof: run docs | test the_per_level_feature_is_recorded_as_dropped ... ok
+**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C86** - No `.msl` under `std`, `examples`, `tests` or `crates/*/tests` uses a removed name outside a refusal test (EU-20, AC 1; T27)
 Proof: run hygiene | test no_source_uses_a_removed_unknown_form ... ok

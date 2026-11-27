@@ -16,8 +16,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
 **Run sourcenested**: `cargo test -p piperine-parity --test source_nested_reach`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Opus (the delegating agent's instruction).
 
@@ -169,8 +169,8 @@ Proof: run typesnested | test an_item_that_is_not_pub_is_refused_three_and_four_
 **C15** - A missing or private item is `E0343` from the checker or at elaboration through a template (NR-04, AC 2)
 Proof: run elabnested | test a_missing_or_private_item_is_e0343_three_and_four_levels_below_the_reader ... ok
 
-**C16** - `GAPS.md` has no row L81 or L82, section 9 does not name them, the counts are 17 loud (NR-05, AC 1)
-Proof: run docs | test gaps_drops_the_reach_rows_nested_reach_closed ... ok
+**C16** - `GAPS.md` has no row L81 or L82, section 9 does not name them, the counts are 17 loud (NR-05, AC 1) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C17** - Part III §8.2.8 says each name of the path is `pub` and the item reads as one level down (NR-05, AC 2)
 Proof: run spectext | test section_8_2_8_reads_through_children_of_children_at_any_depth ... ok

@@ -30,8 +30,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -1414,9 +1414,9 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move .
 **C41** - The build gives no warning on the crates this feature touches, and the hygiene guard passes. (GN-30, AC 2; every phase)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 
-**C42** - `GAPS.md` narrows S3, then no longer lists L7, the generic-enum part of L4, S3, X6 and L8, and §9 is updated. (GN-31, AC 1; T6, T43, T52)
-Proof: run docs | test gaps_drops_what_generics_phase_a_closed ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_b_closed ... ok
+**C42** - `GAPS.md` narrows S3, then no longer lists L7, the generic-enum part of L4, S3, X6 and L8, and §9 is updated. (GN-31, AC 1; T6, T43, T52) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C43** - Every gallery fence and Book listing phase A lets check is held to the checker. (GN-31, AC 2; T41)
 Proof: run galleries | test the_fences_generics_lifted_are_checked ... ok

@@ -15,5 +15,4 @@ crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::every_ignored_do
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::mod_rs_declares_only	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::mod_rs_files	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::registered_oversized_mod_rs	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::the_buck_readme_names_every_on_demand_target	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::the_detectors_recognise_what_they_forbid	1

@@ -27,13 +27,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run sourcelimexp**: `cargo test -p piperine-parity --test source_limexp`
 **Run paritytran**: `cargo test -p piperine-parity --test parity_tran`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run bookanalog**: `cargo test -p piperine --test book_analog`
 **Run bookmixed**: `cargo test -p piperine --test book_mixed`
 **Run bookdigital**: `cargo test -p piperine --test book_digital`
 **Run bookvalues**: `cargo test -p piperine --test book_values`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -1740,12 +1740,12 @@ Proof: run clibook | test the_clipper_runs_as_the_book_prints ... ok
 **C35** - The clipper's `v(vout)` agrees with its ngspice twin under `TRAN_VOLTAGE`. (UE-06, AC 4; T20)
 Proof: run paritytran | test tran_clipper ... ok
 
-**C36** - `GAPS.md` no longer lists L52 or `limexp`, then L51 and L53, and §1 names `settle` and `limexp`. (UE-07, AC 1; T23, T31)
-Proof: run docs | test gaps_no_longer_lists_settle_or_limexp ... ok
-Proof: run docs | test gaps_no_longer_lists_l51_or_l53 ... ok
+**C36** - `GAPS.md` no longer lists L52 or `limexp`, then L51 and L53, and §1 names `settle` and `limexp`. (UE-07, AC 1; T23, T31) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C37** - The Book no longer says `settle` is not compiled. (UE-07, AC 2; T22)
-Proof: run docs | test the_book_no_longer_says_settle_is_not_compiled ... ok
+**C37** - The Book no longer says `settle` is not compiled. (UE-07, AC 2; T22) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C38** - A time point with no settle reaction adds no microstep and no record. (Edge case; T11)
 Proof: run sourceevents | test a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record ... ok

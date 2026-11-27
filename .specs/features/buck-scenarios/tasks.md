@@ -16,7 +16,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run scenarios**: `cargo test -p piperine --test buck_scenarios -- --nocapture`
 **Run supervisor**: `cargo test -p piperine-parity --test buck_supervisor`
 **Run clibuck**: `cargo test -p piperine-cli --test buck the_buck_has_its_bench_and_two_runs`
-**Run docs**: `cargo test -p piperine-cli --test docs`
+**Run suite**: `cargo test -p piperine-repository-guards --test suite`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule); a different model verifies. The worktree is
 `/home/keslarek/Git/piperine-buck-scenarios` on `feature/buck-scenarios`. Cargo runs with
@@ -687,14 +688,14 @@ Proof: run scenarios | test steady_state_passes_every_check ... ok
 **C73** - Each hiccup of the supervisor lasts exactly 1000 samples, counted against SPEC §8.5. (BS-09, AC 1; T7)
 Proof: run supervisor | test each_hiccup_lasts_1000_samples ... ok
 
-**C74** - SPEC §4.3 has the 3.3 V column with the ± 14.7 mV total, S2b reads "±0.05 ms", §10.1 exists with its bounds, and the fault codes read `Clear`. (BS-09, AC 2 to AC 5; T8)
-Proof: run docs | test the_buck_spec_holds_the_bench_bounds ... ok
+**C74** - SPEC §4.3 has the 3.3 V column with the ± 14.7 mV total, S2b reads "±0.05 ms", §10.1 exists with its bounds, and the fault codes read `Clear`. (BS-09, AC 2 to AC 5; T8) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C75** - The README points at `tests/buck_scenarios.rs` and `tests/e2e/buck/` and no longer says `piperine-api` has no drives or mid-run `set`. (BS-10, AC 1; T14)
-Proof: run docs | test the_buck_readme_points_at_the_scenarios ... ok
+Proof: run suite | test repository_records::the_buck_readme_points_at_the_scenarios ... ok
 
-**C76** - `GAPS.md` U3 keeps only S1 at 3.3 V and S1b, and H1 no longer says the buck's scenarios have no host. (BS-10, AC 2; T15)
-Proof: run docs | test gaps_narrows_what_buck_scenarios_ran ... ok
+**C76** - `GAPS.md` U3 keeps only S1 at 3.3 V and S1b, and H1 no longer says the buck's scenarios have no host. (BS-10, AC 2; T15) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 ---
 

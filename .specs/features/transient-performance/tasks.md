@@ -30,7 +30,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run options**: `cargo test -p piperine-api --test options an_hour`
 **Run hostset**: `cargo test -p piperine-solver --test host_set`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule); a different model verifies. The worktree is
 `/home/keslarek/Git/piperine-transient-performance` on `feature/transient-performance`. Cargo runs with
@@ -820,18 +820,18 @@ Proof: run parity | test tran_rc ... ok
 **C41** - Without ngspice the parity targets print the skip line and the twins still run (TP-09, AC 5; T23)
 Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity_tran -- --nocapture`
 
-**C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23)
-Proof: run docs | test the_scenario_package_states_its_measured_step_count ... ok
+**C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C43** - `GAPS.md` has no V12 and `ROADMAP.md` marks `multi-rate` delivered here (TP-10, AC 1; T24)
-Proof: run docs | test transient_performance_closes_v12 ... ok
+**C43** - `GAPS.md` has no V12 and `ROADMAP.md` marks `multi-rate` delivered here (TP-10, AC 1; T24) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C44** - Appendix C.2's time-points row describes the as-if rule, its exceptions and the reference mode (TP-10, AC 2; T12)
 Proof: run spectext | test appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode ... ok
 
-**C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24)
-Proof: run docs | test transient_performance_closes_v12 ... ok
-Proof: run docs | test the_scenario_package_states_its_measured_step_count ... ok
+**C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C46** - The two backends print the same bytes for the twins (TP-09, AC 4; T23)
 Proof: run twins | test the_two_backends_print_the_same_bytes ... ok
