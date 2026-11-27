@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use crate::item_scan::{FreeFunctionPermit, ItemScan};
 use crate::source_tree::SourceTree;
 
-/// The crates whose uncited tests carry a verdict (code-clarity T12 and T13): every crate with
-/// tests except the guards crate itself and the two that CC-12 AC 2 leaves out.
-const JUDGED_CRATES: [&str; 13] = [
+/// The crates whose uncited tests carry a verdict (code-clarity T12 and T13, CC-12 AC 2): every
+/// crate with tests except the guards crate itself, whose tests are the guards.
+const JUDGED_CRATES: [&str; 15] = [
     "piperine-abi",
     "piperine-analog-solver",
     "piperine-api",
@@ -18,8 +18,10 @@ const JUDGED_CRATES: [&str; 13] = [
     "piperine-interp",
     "piperine-ir",
     "piperine-lang",
+    "piperine-numbers",
     "piperine-parity",
     "piperine-plan",
+    "piperine-project",
     "piperine-solver",
     "piperine-transpile",
     "piperine",
@@ -86,6 +88,27 @@ impl UnnamedTests {
         root.join(VERDICT_FILE)
     }
 
+    /// Whether a verdict cell is a judgement: `kept: ` followed by the rule the test alone proves,
+    /// not an empty text, `-` or `TODO`.
+    pub fn is_judged(verdict: &str) -> bool {
+        let Some(rule) = verdict.strip_prefix("kept: ") else { return false };
+        let rule = rule.trim();
+        !rule.is_empty() && rule != "-" && !rule.eq_ignore_ascii_case("todo")
+    }
+
+    /// The rows of the verdict file that are not `crate<TAB>target<TAB>test<TAB>kept: <rule>`.
+    pub fn rows_without_a_verdict(root: &Path) -> Vec<String> {
+        let text = std::fs::read_to_string(Self::verdict_path(root)).unwrap_or_default();
+        text.lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .filter(|line| {
+                let cells: Vec<&str> = line.split('\t').collect();
+                cells.len() != 4 || !Self::is_judged(cells[3])
+            })
+            .map(str::to_string)
+            .collect()
+    }
+
     /// The rows of the verdict file as keys, with how many times each stands: `(key, count)`.
     pub fn verdict_rows(root: &Path) -> Vec<(String, usize)> {
         let text = std::fs::read_to_string(Self::verdict_path(root)).unwrap_or_default();
@@ -99,5 +122,18 @@ impl UnnamedTests {
             }
         }
         counts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_verdict_is_a_kept_rule_and_nothing_else() {
+        assert!(UnnamedTests::is_judged("kept: asserts the queue keeps its order"));
+        for unjudged in ["", "-", "TODO", "kept: ", "kept: -", "kept: TODO", "asserts the queue keeps its order", "kept:no space"] {
+            assert!(!UnnamedTests::is_judged(unjudged), "{unjudged:?} passed as a verdict");
+        }
     }
 }

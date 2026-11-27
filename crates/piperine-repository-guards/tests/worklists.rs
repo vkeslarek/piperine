@@ -60,9 +60,10 @@ fn every_unnamed_test_has_exactly_one_verdict() {
     let unlisted: Vec<&String> = inventory.iter().filter(|key| !rows.iter().any(|(row, _)| row == *key)).collect();
     let stale: Vec<&String> = rows.iter().map(|(row, _)| row).filter(|row| !inventory.contains(*row)).collect();
     let repeated: Vec<&String> = rows.iter().filter(|(_, count)| *count > 1).map(|(row, _)| row).collect();
+    let unjudged = UnnamedTests::rows_without_a_verdict(&root);
     assert!(
-        unlisted.is_empty() && stale.is_empty() && repeated.is_empty(),
-        "{}:\nunnamed tests with no row (give each a `kept: <what it asserts that its neighbour does not>` or remove it):\n{unlisted:?}\nrows whose test is gone or now cited (delete them):\n{stale:?}\nrows that stand more than once:\n{repeated:?}",
+        unlisted.is_empty() && stale.is_empty() && repeated.is_empty() && unjudged.is_empty(),
+        "{}:\nunnamed tests with no row (give each a `kept: <what it asserts that its neighbour does not>` or remove it):\n{unlisted:?}\nrows whose test is gone or now cited (delete them):\n{stale:?}\nrows that stand more than once:\n{repeated:?}\nrows whose verdict is not `kept: <rule>` (empty, `-` or `TODO`):\n{unjudged:?}",
         UnnamedTests::verdict_path(&root).display()
     );
 }
