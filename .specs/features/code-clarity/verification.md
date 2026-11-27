@@ -283,3 +283,67 @@ Each throwaway edit below was reverted, and the tree is clean.
 | # | Severity | Finding | Evidence / repro | Fix | Closed |
 | --- | --- | --- | --- | --- | --- |
 | R5-1 | Low | **The result-line greps of lone proofs are neither repointed nor checked.** `move` rewrites the `cargo test` inside a proof but not the proof's own `grep "test $t ... ok"` lines or its `tests/*.rs` path. After a merge they look for `test <name> ... ok` while cargo prints `test <module>::<name> ... ok`, and the ledger does not read them. | `solver-abi-integration/tasks.md:751,754,769`. Repro: move `piperine-solver/protocol_crossings` into a merged target; `:754` then prints `no pass line for a_cap_watch_bounds_the_next_step`. | Two options. (a) Rewrite those three proofs as run proofs (`Proof: run <name> \| test <t> ... ok`), which `check_proofs.py` matches word by word, so a module prefix is tolerated and the ledger checks each name. (b) Have `move` also rewrite `"test $t ... ok"` to `"test <module>::$t ... ok"` and `tests/*.rs` paths. (a) is the simpler. | |
+
+## Phase 1, round 6
+
+**Verdict**: PASS
+**Head**: 09983f4c3 (fixes 2b84ff729 R5-1 and 09983f4c3 the `move` placement)
+**Verifier**: the same independent sub-agent as before; it authored none of the fixes.
+
+### Gates at 09983f4c3
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (all targets) | all pass: lib 45, boundaries 26, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 24, worklists 4 |
+
+### R5-1: solver-abi-integration proofs (closed)
+
+- **C21.** Before, one lone proof ran `cargo test` over `abi_dc`, `abi_tran`, `abi_ac`, `abi_noise` and `limiting_report`, then grepped for 7 exact pass lines. Now `**Run drivers**` runs the same five targets, and there are 7 run-proof rows with the same 7 names. The claim is the same. The ledger now checks every name, and `check_proofs.py` matches word by word, so a `module::` prefix is tolerated.
+- **C22.** It is the same change for `protocol_crossings`, through `**Run crossings**` and two rows.
+- **C27.** Before, the three named tests were grepped from `cargo test -p piperine-solver`. A count required "pass lines of `its_devices_pass_the_partials_verifier`" to equal "files under `tests/*.rs` declaring it", with that count above 20. Now:
+  - the three tests, plus `its_devices_pass_the_partials_verifier`, are run rows under `**Run solver**`;
+  - the count proof matches `^test ([A-Za-z0-9_]+::)*its_devices_pass_the_partials_verifier \.\.\. ok$`;
+  - it compares that with `grep -rhow --include='*.rs' 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests`, which counts declarations, recursively;
+  - it keeps `m > 20`.
+
+  Counting declarations instead of files is at least as strict, because a second declaration in one file must also pass. The old and new `m` are both 27.
+- **Survives a move.** I prefixed every `its_devices…` line of a saved `cargo test -p piperine-solver` output with `merged::inner::`, and the count stayed 27. The recursive grep reads `tests/<folder>/*.rs`, so a folder move does not change it either.
+- **Run once at the head, and both pass.**
+  - `cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting_report` exits 0, and all 7 names print `ok`.
+  - `cargo test -p piperine-solver --test protocol_crossings` exits 0, and both names print `ok`.
+  - The C27 lone proof, run as written, exits 0, with n = m = 27.
+- **The ledger fails on a dangling row.** I made two throwaway edits and reverted both, and the tree is clean.
+  - `Proof: run crossings | test zzqx_cap_gone ... ok` fails with `solver-abi-integration	C22	run crossings names no test zzqx_cap_gone`.
+  - `**Run drivers**` with `--test zzqx_abi` fails with `solver-abi-integration	Run drivers	no test target piperine-solver/zzqx_abi`.
+
+### `move` inside a substitution (closed)
+
+The unit test `a_cargo_test_inside_a_substitution_is_read_and_moved` asserts both cases:
+
+- `x=$( cargo test -p a --test old)` becomes `x=$( cargo test -p b --test merged old::)`;
+- `x=$(cargo test -p a --test old inner);` becomes `x=$(cargo test -p a --test merged old::inner);`.
+
+In both, the filter stays inside the `)`, and the trailing `;` is kept.
+
+### Remaining note: test names in lone proofs
+
+I scanned every lone `Proof:` of every `tasks*.md`, `checks*.md` and `spec.md` `## Checks` section. I looked for `for t in`, `test $t`, a grep of `"test <name>`, or `... ok`. Two lines remain, and neither carries the R5-1 risk:
+
+- `solver-abi-integration/tasks.md:723` (C11) greps `differential.txt`. That is a frozen record of the run T10 took; its target was deleted in T22. It is not live cargo output, so no move can change it.
+- `msl-pom/tasks.md:1315` greps `test result: ok. [1-9][0-9]+ passed` of a doc-test run. That is a count, and no name is involved.
+
+`retire-vams-frontend/spec.md:75` sums `passed` counts and requires 49. That is also count-only, and a merge keeps the count.
+
+### Round 6 findings
+
+None. I probed the following, and every check held:
+
+- the equivalence of the 3 rewritten proofs;
+- the 3 proofs, run at the head;
+- a simulated module and folder move against the C27 count;
+- 2 dangling-row edits;
+- the `)` placement;
+- a tree-wide scan for name-grepping lone proofs.
+
+Phase 1 (T1 to T8) is verified. Every round 1 to round 5 finding is closed by the commits named in the rounds above.
