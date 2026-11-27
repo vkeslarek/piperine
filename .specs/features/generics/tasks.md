@@ -29,7 +29,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apisession**: `cargo test -p piperine-api --test session`
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
@@ -1345,8 +1344,8 @@ Proof: run typesgen | test a_member_no_bound_gives_is_refused_at_the_definition 
 **C21** - An instantiation that makes a `where`, an array length or a const expression invalid is reported at the instantiation, naming the item and its arguments. (GN-07, AC 3; T33)
 Proof: run elabgen | test instantiation_errors_name_the_item_and_its_arguments ... ok
 
-**C22** - §3 rule 9 says which errors belong to a definition and which to an instantiation. (GN-07, AC 4; T19)
-Proof: run spectext | test rule_9_splits_definition_and_instantiation_errors ... ok
+**C22** - §3 rule 9 says which errors belong to a definition and which to an instantiation. (GN-07, AC 4; T19) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C23** - The model check types every function, module, behavior block, `const` and `impl` of every crate, reached or not, and of the package's dependencies. (GN-08, AC 1; T1, T2)
 Proof: run typesmodel | test every_item_kind_of_every_crate_is_checked_unreached ... ok
@@ -1380,9 +1379,9 @@ Proof: run typestraits | test a_non_function_item_in_an_impl_on_a_nature_is_e013
 **C31** - A handle parameter is bound to the carrier passed and is read, probed, passed on and has carrier methods called. (GN-11, AC 1; T44, T49)
 Proof: run srchandles | test a_handle_is_read_probed_passed_on_and_has_carrier_methods ... ok
 
-**C32** - A handle returned, stored in a value or written through is `E0133`. (GN-11, AC 2; T45)
+**C32** - A handle returned, stored in a value or written through is `E0133`. (GN-11, AC 2; T45) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typeshandles | test a_handle_returned_stored_or_written_is_e0133 ... ok
-Proof: run spectext | test a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C33** - A discrete handle reads the carrier's value with its flags. (GN-11, AC 3; T49)
 Proof: run srchandles | test a_discrete_handle_reads_the_value_with_its_flags ... ok
@@ -1394,9 +1393,9 @@ Proof: run srchandles | test a_nature_generic_handle_function_instantiates_per_n
 Proof: run srchandles | test a_probing_function_runs_from_analog_and_a_reaction ... ok
 Proof: run typeshandles | test solve_reading_functions_are_accepted_where_the_table_allows ... ok
 
-**C36** - A solve-reading call where that class is not allowed is `E0122`. (GN-12, AC 2; T47)
+**C36** - A solve-reading call where that class is not allowed is `E0122`. (GN-12, AC 2; T47) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typeshandles | test a_solve_reading_call_in_a_const_context_is_e0122 ... ok
-Proof: run spectext | test a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C37** - A probe of a handle in a function body is not `E0450`. (GN-12, AC 3; T44)
 Proof: run typeshandles | test a_probe_of_a_handle_in_a_function_is_not_e0450 ... ok

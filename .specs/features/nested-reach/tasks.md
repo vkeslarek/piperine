@@ -16,7 +16,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
 **Run sourcenested**: `cargo test -p piperine-parity --test source_nested_reach`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Opus (the delegating agent's instruction).
@@ -172,8 +171,8 @@ Proof: run elabnested | test a_missing_or_private_item_is_e0343_three_and_four_l
 **C16** - `GAPS.md` has no row L81 or L82, section 9 does not name them, the counts are 17 loud (NR-05, AC 1) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C17** - Part III §8.2.8 says each name of the path is `pub` and the item reads as one level down (NR-05, AC 2)
-Proof: run spectext | test section_8_2_8_reads_through_children_of_children_at_any_depth ... ok
+**C17** - Part III §8.2.8 says each name of the path is `pub` and the item reads as one level down (NR-05, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C18** - The reads two levels deep that ran before still run: the cycles by template and generation bind their ports (NR-01, AC 2; regression)
 Proof: run elabhandles | test a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port ... ok

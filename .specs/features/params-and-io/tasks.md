@@ -27,7 +27,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabfiles**: `cargo test -p piperine-lang --test elab_files`
 **Run msformat**: `cargo test -p piperine-lang --test msl_format`
 **Run stdgalleries**: `cargo test -p piperine-lang --test std_galleries`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run irchecks**: `cargo test -p piperine-ir --test check`
 **Run interp**: `cargo test -p piperine-interp --test frozen`
 **Run apisources**: `cargo test -p piperine-api --test host_sources`
@@ -1303,8 +1302,8 @@ Proof: run elabentry | test a_top_value_input_is_e0811 ... ok
 **C35** - Q1 is (a): a value input of the top is refused, never bound by the host (AC 7 applies only under (c)). (PI-07, AC 7; T17)
 Proof: run elabentry | test a_top_value_input_is_e0811 ... ok
 
-**C36** - §8.1.14 and §23.1 state the host's sources and carry `E0810` and `E0811`. (PI-07, AC 8; T16)
-Proof: run spectext | test the_host_drives_a_tops_node_ports_e0810_e0811 ... ok
+**C36** - §8.1.14 and §23.1 state the host's sources and carry `E0810` and `E0811`. (PI-07, AC 8; T16) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C37** - `include_str!` in a `const` gives the file's text, resolved beside the source. (PI-08, AC 1; T24)
 Proof: run elabfiles | test include_str_reads_the_file_beside_the_source ... ok
@@ -1357,8 +1356,8 @@ Proof: run elabfiles | test non_increasing_abscissae_are_e0704 ... ok
 **C53** - The table diode passes the partials verifier. (PI-10, AC 8; T42)
 Proof: run sourcetables | test the_table_diode_passes_the_partials_verifier ... ok
 
-**C54** - Appendix C.2 states the spline end conditions. (PI-10, AC 9; T27)
-Proof: run spectext | test appendix_c2_states_the_spline_end_conditions ... ok
+**C54** - Appendix C.2 states the spline end conditions. (PI-10, AC 9; T27) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C55** - `piperine fmt --check` exits 0 over each stdlib file. (PI-11, AC 1; T26)
 Proof: run clicommands | test fmt_check_passes_on_every_stdlib_file ... ok

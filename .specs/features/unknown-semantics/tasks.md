@@ -27,7 +27,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run records**: `cargo test -p piperine-api --test records`
 **Run verdict**: `cargo test -p piperine-api --lib verdict`
 **Run clirun**: `cargo test -p piperine-cli --test run`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run book**: `cargo test -p piperine-cli --test book`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
@@ -1016,8 +1015,8 @@ Proof: run sourceunknowns | test an_unknown_guard_runs_the_reaction_as_a_maybe .
 **C29** - A definition, a body `let`, an `if` expression and a function body merge an unknown decision as a reaction does. (US-04, AC 10; T19)
 Proof: run sourceunknowns | test definitions_lets_and_functions_merge_alike ... ok
 
-**C30** - The loop bound under unknown control, 64, is written in Appendix C.2. (US-04, AC 11; T33)
-Proof: run spectext | test appendix_c_states_the_loop_bound_under_unknown_control ... ok
+**C30** - The loop bound under unknown control, 64, is written in Appendix C.2. (US-04, AC 11; T33) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C31** - The merge of an unknown index travels with the `composite-values` rows L3/L24 in `GAPS.md`. (US-04, AC 12; T35) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
@@ -1055,8 +1054,8 @@ Proof: run typesunknowns | test a_flag_total_function_may_take_a_carrier_in_anal
 **C42** - `GAPS.md` lists neither L18 nor L19, and keeps S6 and G6. (US-07, AC 1; T35) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C43** - Appendix C.2.1 lists the loop bound among the defaults, guarded by `spec_text`. (US-07, AC 2; T33)
-Proof: run spectext | test appendix_c_lists_the_loop_bound_among_the_defaults ... ok
+**C43** - Appendix C.2.1 lists the loop bound among the defaults, guarded by `spec_text`. (US-07, AC 2; T33) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C44** - Every command-line listing of the Book is what the binary prints. (US-07, AC 3; T35)
 Proof: run book | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok

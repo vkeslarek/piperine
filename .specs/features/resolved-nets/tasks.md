@@ -31,7 +31,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcorestd**: `cargo test -p piperine --test book_core_std`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 **Run typesaggregates**: `cargo test -p piperine-lang --test types_aggregates`
 **Run sourcelogic**: `cargo test -p piperine-parity --test source_logic`
@@ -1201,8 +1200,8 @@ Proof: run booknatures | test the_pulldown_alarm_prints_the_exercise_answer ... 
 **C55** - `GAPS.md` lists none of L21, L22, L23 nor the resolved-net group of L58 but `TribufDelayed` (RN-10, AC 1) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C56** - Appendix C.2.3 and G.38 say `Tran` on nets of a `Resolve<Driven>` nature runs (RN-10, AC 2)
-Proof: run spectext | test c_2_3_and_g_38_say_tran_on_a_resolved_nature_runs ... ok
+**C56** - Appendix C.2.3 and G.38 say `Tran` on nets of a `Resolve<Driven>` nature runs (RN-10, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C57** - No row of `code_owners.tsv` names a code a source raises, `E0203` and `E0225` included (RN-10, AC 3)
 Proof: run speccodes | test no_owned_code_is_raised ... ok
@@ -1318,8 +1317,8 @@ Proof: run hostpatterns | test a_logic_param_of_any_width_is_set_exactly_by_its_
 **C94** - `Ir::check` refuses a net's `Resolution` whose holders do not fit: a count other than the drives', a holder instance or carrier out of range, a holder carrier in range that is no resolved carrier (RN-03, round 3 fix F20)
 Proof: run irresolved | test a_resolution_whose_holders_do_not_fit_its_drives_is_refused ... ok
 
-**C95** - §4 rule 2's Resolution orders the drives one instance holds on one net by its carriers' declaration order, after the instance path (RN-03, AC 3, round 3 fix F21; AFK default 2026-11-24, pending user review)
-Proof: run spectext | test rule_2_orders_the_drives_of_one_instance_by_carrier_declaration ... ok
+**C95** - §4 rule 2's Resolution orders the drives one instance holds on one net by its carriers' declaration order, after the instance path (RN-03, AC 3, round 3 fix F21; AFK default 2026-11-24, pending user review) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C96** - A generic module over a resolved nature parameter lowers, per placement, to a body of the instance's nature whose carrier is a resolved port, and the net holds one drive per placed instance (RN-06, AC 10, T40, round 3 fix F22)
 Proof: run elabgenmod | test a_resolved_nature_parameter_lowers_to_a_resolved_carrier_of_the_instance_nature ... ok

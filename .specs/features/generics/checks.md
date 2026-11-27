@@ -20,7 +20,6 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run apisession**: `cargo test -p piperine-api --test session`
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`
 **Run typesgenr**: `cargo test -p piperine-lang --test types_generation`
@@ -136,8 +135,8 @@ Proof: run typesgen | test a_member_no_bound_gives_is_refused_at_the_definition 
 **C21** - An instantiation that makes a `where`, an array length or a const expression invalid is reported at the instantiation, naming the item and its arguments. (GN-07, AC 3; T33)
 Proof: run elabgen | test instantiation_errors_name_the_item_and_its_arguments ... ok
 
-**C22** - §3 rule 9 says which errors belong to a definition and which to an instantiation. (GN-07, AC 4; T19)
-Proof: run spectext | test rule_9_splits_definition_and_instantiation_errors ... ok
+**C22** - §3 rule 9 says which errors belong to a definition and which to an instantiation. (GN-07, AC 4; T19) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C23** - The model check types every function, module, behavior block, `const` and `impl` of every crate, reached or not, and of the package's dependencies. (GN-08, AC 1; T1, T2)
 Proof: run typesmodel | test every_item_kind_of_every_crate_is_checked_unreached ... ok
@@ -171,9 +170,9 @@ Proof: run typestraits | test a_non_function_item_in_an_impl_on_a_nature_is_e013
 **C31** - A handle parameter is bound to the carrier passed and is read, probed, passed on and has carrier methods called. (GN-11, AC 1; T44, T49)
 Proof: run srchandles | test a_handle_is_read_probed_passed_on_and_has_carrier_methods ... ok
 
-**C32** - A handle returned, stored in a value or written through is `E0133`. (GN-11, AC 2; T45)
+**C32** - A handle returned, stored in a value or written through is `E0133`. (GN-11, AC 2; T45) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typeshandles | test a_handle_returned_stored_or_written_is_e0133 ... ok
-Proof: run spectext | test a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C33** - A discrete handle reads the carrier's value with its flags. (GN-11, AC 3; T49)
 Proof: run srchandles | test a_discrete_handle_reads_the_value_with_its_flags ... ok
@@ -185,9 +184,9 @@ Proof: run srchandles | test a_nature_generic_handle_function_instantiates_per_n
 Proof: run srchandles | test a_probing_function_runs_from_analog_and_a_reaction ... ok
 Proof: run typeshandles | test solve_reading_functions_are_accepted_where_the_table_allows ... ok
 
-**C36** - A solve-reading call where that class is not allowed is `E0122`. (GN-12, AC 2; T47)
+**C36** - A solve-reading call where that class is not allowed is `E0122`. (GN-12, AC 2; T47) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typeshandles | test a_solve_reading_call_in_a_const_context_is_e0122 ... ok
-Proof: run spectext | test a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C37** - A probe of a handle in a function body is not `E0450`. (GN-12, AC 3; T44)
 Proof: run typeshandles | test a_probe_of_a_handle_in_a_function_is_not_e0450 ... ok
@@ -513,13 +512,13 @@ Proof: run elabtempl | test a_cast_of_a_template_item_is_e0181_not_a_node_conver
 Proof: run typestempl | test an_unread_let_of_a_template_item_is_e0181 ... ok
 Proof: run elabtempl | test an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal ... ok
 Proof: run srctempl | test the_items_of_a_template_placed_child_read_as_values ... ok
-Proof: run spectext | test a_template_item_takes_the_type_its_context_wants_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run elabtempl | test an_out_of_range_generated_cell_names_its_element_and_the_length_of_its_own_loop ... ok
 
-**C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92)
-Proof: run spectext | test a_module_type_takes_trait_and_inherent_impls_in_the_spec ... ok
-Proof: run spectext | test a_bound_combines_a_trait_and_fn_p_in_the_spec ... ok
+**C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run typestraits | test an_impl_on_a_module_type_is_accepted ... ok
 Proof: run typestraits | test a_module_impl_function_that_reads_the_solve_is_e0122 ... ok
 Proof: run elabtempl | test a_module_impl_function_runs_on_a_template_at_elaboration ... ok
@@ -539,16 +538,16 @@ Proof: run elabimplicit | test a_function_that_reaches_the_session_parameter_at_
 Proof: run srcimplicit | test an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel ... ok
 Proof: run srcimplicit | test multiplicity_in_a_param_default_is_e0321 ... ok
 
-**C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100)
+**C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typesimplicit | test temperature_is_an_option_of_the_run ... ok
 Proof: run srcimplicit | test a_model_chooses_how_to_use_its_temperature ... ok
-Proof: run spectext | test the_recommended_fallback_is_the_ambient_temperature_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run bookanalog | test the_temperature_listings_run_with_the_ambient_fallback ... ok
 
-**C102** - `m` and `dtemp` are ordinary names: no implicit param exists. (GN-25, AC 3; T94, T97)
+**C102** - `m` and `dtemp` are ordinary names: no implicit param exists. (GN-25, AC 3; T94, T97) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typesimplicit | test m_and_dtemp_are_ordinary_names ... ok
-Proof: run spectext | test instances_have_no_implicit_params_in_the_spec ... ok
-Proof: run spectext | test temperature_and_multiplicity_are_run_settings_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C103** - The run sets its temperature and its `multiplicity` session parameter before it starts, they hold for the whole run, and neither has a placement or `set` spelling. (GN-26, AC 1, AC 2; T100)
 Proof: run srcimplicit | test the_run_settings_hold_for_the_whole_run ... ok
@@ -576,7 +575,7 @@ Proof: run elabparams | test a_default_that_reads_earlier_params_is_folded_per_i
 Proof: run elabparams | test a_default_that_reads_itself_or_a_later_param_is_e0321 ... ok
 Proof: run elabtempl | test a_param_default_dispatches_the_trait_of_a_template_param ... ok
 Proof: run srctempl | test a_param_default_reads_the_params_before_it ... ok
-Proof: run spectext | test a_param_default_reads_earlier_params_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C111** - The type of a template of a generic module carries its arguments, `G<2>`: a template of other arguments where it is wanted is `E0180` naming both, an argument the template leaves out is the wanted type's, and a placement through a template (in place, a `const`, a param of type `S<E>`, a param bounded by `Fn(..)`) of a module whose ports are typed by its generic parameters reads them under those arguments (`E0251` for a node of another nature). (§8.4.3, §8.4.5; fix round 2, L79) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
@@ -609,7 +608,7 @@ Proof: run elabhandles | test an_access_a_let_bound_nodes_nature_lacks_is_e0206 
 Proof: run typeshandles | test parentheses_around_a_node_argument_name_the_node ... ok
 Proof: run elabhandles | test parentheses_around_a_node_argument_lower_to_the_node ... ok
 
-**C117** - A node chosen at elaboration (an `if`, a `match` or a block whose choice reads only params, constants, generation indexes and `let`s of those, whatever statements its arms hold; fix round 8, finding 22) names the node it folds to at a probe, a contribution target, a placement's connection and an `Fn` bound's, and its params are structural; a choice that reads a probe, a signal, a core primitive of the run or a variable whose value depends on the run is `E0133` alone, also written straight at a node argument, and so is one through a function that reads the run (elaboration). (§1.4.7, §8.1.2; user ruling 2026-11-24, finding 21; findings 20 and the round-5 note)
+**C117** - A node chosen at elaboration (an `if`, a `match` or a block whose choice reads only params, constants, generation indexes and `let`s of those, whatever statements its arms hold; fix round 8, finding 22) names the node it folds to at a probe, a contribution target, a placement's connection and an `Fn` bound's, and its params are structural; a choice that reads a probe, a signal, a core primitive of the run or a variable whose value depends on the run is `E0133` alone, also written straight at a node argument, and so is one through a function that reads the run (elaboration). (§1.4.7, §8.1.2; user ruling 2026-11-24, finding 21; findings 20 and the round-5 note) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typeshandles | test a_node_chosen_by_the_run_is_e0133 ... ok
 Proof: run typeshandles | test a_node_chosen_at_elaboration_is_typed_as_the_node ... ok
 Proof: run typeshandles | test a_node_chosen_at_a_node_argument_is_e0133_alone ... ok
@@ -620,7 +619,7 @@ Proof: run elabhandles | test a_node_chosen_at_elaboration_connects_through_a_te
 Proof: run elabhandles | test a_node_chosen_through_a_function_that_reads_the_run_is_e0133 ... ok
 Proof: run elabhandles | test a_node_chosen_through_lets_and_arm_statements_folds_to_the_node ... ok
 Proof: run srctempl | test a_param_picks_the_node_a_module_probes_and_drives ... ok
-Proof: run spectext | test a_node_chosen_by_an_expression_is_e0133_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C118** - A node of a child is a connection like any node: `Th(c0.sn)` with `c0` placed by name or through a template, and `Th(if sel { c0.sn } else { t })`, bind `Th`'s port to the child's node. (§8.1.10, §8.2.8; fix round 8, finding 23)
 Proof: run typeshandles | test a_node_of_a_child_is_a_connection ... ok

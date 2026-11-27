@@ -33,7 +33,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apicomp**: `cargo test -p piperine-api --test composites`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
@@ -1617,8 +1616,8 @@ Proof: run rt | test rt::control::tests::trips_panic_past_two_to_the_twenty_four
 **C32** - `Depth` panics past 1 024 and not before. (CV-07, AC 4; T6)
 Proof: run rt | test rt::control::tests::depth_panics_past_one_thousand_twenty_four ... ok
 
-**C33** - §1 rule 11 states the loop and call-depth bounds. (CV-07, AC 4; T28)
-Proof: run spectext | test section_1_rule_11_states_the_loop_and_depth_bounds ... ok
+**C33** - §1 rule 11 states the loop and call-depth bounds. (CV-07, AC 4; T28) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C34** - An unknown loop condition, guard, `break` or `return` never faults: `unknown-semantics` has landed, so the fault branch is void (D2). (CV-08, AC 1; T9)
 Proof: run tctl | test unknown_decisions_merge_written_locals_and_loop_exits ... ok

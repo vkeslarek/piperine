@@ -22,7 +22,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run print**: `cargo test -p piperine-lang --test msl_print`
 **Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run goldens**: `cargo test -p piperine-transpile --test golden`
@@ -530,8 +529,8 @@ Proof: run stdlib | test std_holds_no_removed_form ... ok
 **C26** - `std` builds with no diagnostic and every Part VII fence is an excerpt of it. (VS-08, AC 2; T6)
 Proof: run excerpts | test every_part_vii_fence_is_in_its_file ... ok
 
-**C27** - §22 no longer says `std` is in the earlier spelling. (VS-08, AC 3; T6)
-Proof: run spectext | test section_22_no_longer_says_std_is_in_the_earlier_spelling ... ok
+**C27** - §22 no longer says `std` is in the earlier spelling. (VS-08, AC 3; T6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C28** - The library items that took borrows give the results they gave. (VS-08, AC 4; T6)
 Proof: run srcvs | test the_library_items_that_took_borrows_give_the_same_results ... ok

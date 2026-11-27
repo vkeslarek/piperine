@@ -125,16 +125,12 @@ msl-fixes	C56	run scat names no test a_row_over_an_unknown_value_is_unknown
 msl-fixes	C78	run clibook names no test the_clipper_refusal_no_longer_names_sin
 msl-fixes	C9	run records names no test a_short_run_without_finish_still_fails
 msl-parser	C26	run parser names no test unknown_as_value_ok_as_name_e0908
-msl-polish	C10	run spec names no test gnd_and_the_implicit_params_are_core_names
 msl-polish	C14	run resolve names no test m_and_dtemp_resolve_inside_a_module
 msl-polish	C15	run resolve names no test m_and_dtemp_are_unknown_outside_a_module
 msl-polish	C16	run resolve names no test a_local_shadows_an_implicit_param
 msl-polish	C18	run resolve names no test fixture_prelude_declares_no_core_name
-msl-polish	C31	run spec names no test shared_borrow_of_any_argument_is_allowed
-msl-polish	C46	run spec names no test b1_still_counts_65_constructs
 msl-pom	C101	run classify names no test named_binding_without_a_target_is_e0161
 msl-pom	C62	run classify names no test impl_on_module_is_e0130
-msl-stdlib	C16	run spec names no test b1_still_counts_65_constructs
 msl-stdlib	C34	run std names no test std_root_declares_nine_namespaces
 msl-stdlib	C36	run std names no test prelude_is_eight_reexports
 msl-stdlib	C58	run std names no test known_resolves_into_std_values
@@ -151,7 +147,6 @@ solver-restructure	C22	run solver names no test sub_solvers_depend_on_no_workspa
 solver-restructure	C23	run solver names no test owner_depends_on_both_sub_solvers_only
 solver-restructure	C28	run digital names no test external_model_emits_through_the_sink
 solver-restructure	C29	run solver names no test same_time_events_order_by_seq
-spec-abi-amendments	C5	run spec names no test zero_bytes_are_the_unknown_value
 unknown-semantics	C1	run sourceunknowns names no test an_unknown_initial_value_starts_every_level_unknown
 unknown-semantics	C10	run sourceunknowns names no test level_with_an_unknown_index_merges_every_level
 unknown-semantics	C11	run sourceunknowns names no test merge_of_equal_known_values_is_that_value
@@ -175,7 +170,6 @@ unknown-semantics	C27	run sourceunknowns names no test short_circuit_operands_fo
 unknown-semantics	C28	run sourceunknowns names no test an_unknown_guard_runs_the_reaction_as_a_maybe
 unknown-semantics	C29	run sourceunknowns names no test definitions_lets_and_functions_merge_alike
 unknown-semantics	C3	run sourceunknowns names no test a_const_holding_unknown_reads_unknown_everywhere
-unknown-semantics	C30	run spectext names no test appendix_c_states_the_loop_bound_under_unknown_control
 unknown-semantics	C32	run sourceunknowns names no test an_unknown_delay_under_unknown_control_commits_unknown_next
 unknown-semantics	C33	run sourceunknowns names no test a_record_under_unknown_control_is_maybe
 unknown-semantics	C34	run clirun names no test a_maybe_record_prints_maybe_and_a_known_one_does_not
@@ -187,7 +181,6 @@ unknown-semantics	C39	run sourceunknowns names no test known_or_with_an_unknown_
 unknown-semantics	C4	run elabunknowns names no test unknown_deciding_structure_is_e0151
 unknown-semantics	C40	run elabunknowns names no test analog_reading_a_maybe_unknown_value_is_e0150
 unknown-semantics	C41	run typesunknowns names no test a_flag_total_function_may_take_a_carrier_in_analog
-unknown-semantics	C43	run spectext names no test appendix_c_lists_the_loop_bound_among_the_defaults
 unknown-semantics	C45	run sourceunknowns names no test neither_arm_committing_commits_nothing
 unknown-semantics	C46	run instant names no test a_merge_commit_equal_to_the_value_fires_no_change
 unknown-semantics	C47	run sourceunknowns names no test merge_of_a_value_with_itself_is_that_value

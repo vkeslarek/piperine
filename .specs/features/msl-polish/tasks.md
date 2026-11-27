@@ -12,7 +12,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Done
 **Approved**: 2026-11-14 - user: "sim"
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning')`
-**Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run lexer**: `cargo test -p piperine-lang --test msl_lexer`
 **Run parser**: `cargo test -p piperine-lang --test msl_parser`
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
@@ -26,6 +25,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run classify**: `cargo test -p piperine-lang --test pom_classify`
 **Run reflect**: `cargo test -p piperine-lang --test pom_reflect`
 **Run docs**: `cargo test -p piperine-lang --test pom_docs`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run spec_structure**: `cargo test -p piperine-lang --test spec_structure`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-msl-spec`, branch `feature/msl-polish`. Do not set `CARGO_TARGET_DIR` (the environment provides it). Never pass `--workspace`: the other crates do not build and are out of scope. `CLAUDE.md` still describes the retired Verilog-AMS pipeline; for this feature the facts are in `spec.md` and `design.md`.
 
@@ -1483,26 +1484,26 @@ T49 → T50 → T51 → T52 → T53 → T54 → T55
 
 One check per acceptance criterion of `spec.md`. Each proof names the line its test prints.
 
-**C1** - B.3.6 holds a row for each of the 17 removed forms and says the list is complete (POL-01, AC 1)
-Proof: run spec | test b36_lists_every_removed_form ... ok
+**C1** - B.3.6 holds a row for each of the 17 removed forms and says the list is complete (POL-01, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C2** - B.3.6 names function-pointer types and the negative literal const argument as taken in (POL-01, AC 2)
-Proof: run spec | test b36_names_the_forms_taken_in ... ok
+**C2** - B.3.6 names function-pointer types and the negative literal const argument as taken in (POL-01, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C3** - every row of the removed-forms table carries one of the four codes and a replacement, and no row starts with a code (POL-01, AC 3)
-Proof: run spec | test b36_rows_carry_a_code_and_a_replacement ... ok
+Proof: run spec_structure | test b36_rows_carry_a_code_and_a_replacement ... ok
 
-**C4** - Appendix H exists with its nine groups and the ten iterator adaptors (POL-02, AC 1)
-Proof: run spec | test appendix_h_has_every_group ... ok
+**C4** - Appendix H exists with its nine groups and the ten iterator adaptors (POL-02, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C5** - every method called in a spec fence is a row of Appendix H, a B.1 method or a function a fence declares (POL-02, AC 2)
-Proof: run spec | test every_method_called_in_a_spec_fence_is_catalogued ... ok
+Proof: run spec_structure | test every_method_called_in_a_spec_fence_is_catalogued ... ok
 
-**C6** - §0.4 and Appendix H both say a library name outside the catalogue is `E0161` (POL-02, AC 3)
-Proof: run spec | test catalogue_is_closed_by_e0161 ... ok
+**C6** - §0.4 and Appendix H both say a library name outside the catalogue is `E0161` (POL-02, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C7** - the §0.8 file map and the mkdocs nav both list `appendix_h_library.md` (POL-02, AC 4)
-Proof: run spec | test appendix_h_is_in_the_file_map_and_nav ... ok
+Proof: run spec_structure | test appendix_h_is_in_the_file_map_and_nav ... ok
 
 **C8** - `T: PartialOrd`, `#[derive(Default)]` and a catalogue type resolve to built-in rows with no `E0161` (POL-02, AC 5)
 Proof: run resolve | test catalogue_traits_and_types_resolve ... ok
@@ -1510,8 +1511,8 @@ Proof: run resolve | test catalogue_traits_and_types_resolve ... ok
 **C9** - the `Trait` and `Type` rows of `BUILTINS` equal Appendix H's lists plus `Repr`, `Nature`, `Fn` and the §1 types (POL-02, AC 6)
 Proof: run resolve | test builtin_table_matches_appendix_h ... ok
 
-**C10** - §6 rule 11, A.1 rule 8 and §3.4.2 say `core name`; no sentence calls `gnd` a prelude name (POL-03, AC 1)
-Proof: run spec | test gnd_and_the_implicit_params_are_core_names ... ok
+**C10** - §6 rule 11, A.1 rule 8 and §3.4.2 say `core name`; no sentence calls `gnd` a prelude name (POL-03, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C11** - `&'static str` resolves `str` to a built-in `Type` with zero diagnostics (POL-03, AC 2)
 Proof: run resolve | test str_is_a_builtin_type ... ok
@@ -1537,11 +1538,11 @@ Proof: run resolve | test core_names_cannot_be_redeclared ... ok
 **C18** - the fixture prelude declares none of the five core names and still builds clean (POL-03, AC 9)
 Proof: run resolve | test fixture_prelude_declares_no_core_name ... ok
 
-**C19** - §3.4 defines `E0162` (elaboration) with its three conditions (POL-04, AC 1)
-Proof: run spec | test e0162_is_defined_in_3_4 ... ok
+**C19** - §3.4 defines `E0162` (elaboration) with its three conditions (POL-04, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C20** - §3.4 states glob shadowing, the two-table names and that `E0143` keeps the function case (POL-04, AC 2)
-Proof: run spec | test glob_shadowing_and_e0143_are_stated ... ok
+**C20** - §3.4 states glob shadowing, the two-table names and that `E0143` keeps the function case (POL-04, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C21** - each later duplicate is one `E0162` at its name, all declarations stay, the name resolves to the first (POL-04, AC 3)
 Proof: run resolve | test duplicate_item_is_e0162_and_both_are_kept ... ok
@@ -1561,11 +1562,11 @@ Proof: run resolve | test two_functions_of_one_name_stay_e0143 ... ok
 **C26** - one name in the type table and in the value table is clean (POL-04, AC 8)
 Proof: run resolve | test one_name_in_two_tables_is_clean ... ok
 
-**C27** - §10 says the names are repeated in order and no longer says `positionally` (POL-05, AC 1)
-Proof: run spec | test behavior_generics_are_repeated_not_positional ... ok
+**C27** - §10 says the names are repeated in order and no longer says `positionally` (POL-05, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C28** - B.2.1 note 3, §8 rule 1 and §3.4.3 say `namespace scope` and allow any namespace of the file (POL-05, AC 2)
-Proof: run spec | test items_sit_at_namespace_scope ... ok
+**C28** - B.2.1 note 3, §8 rule 1 and §3.4.3 say `namespace scope` and allow any namespace of the file (POL-05, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C29** - on `E0403` the block's names link by name (`N` to the const generic `N`), never by position (POL-05, AC 3)
 Proof: run classify | test mismatched_behavior_names_bind_by_name ... ok
@@ -1573,11 +1574,11 @@ Proof: run classify | test mismatched_behavior_names_bind_by_name ... ok
 **C30** - a block binds to its module from another namespace of the same file (POL-05, AC 4)
 Proof: run classify | test behavior_binds_across_namespaces_of_one_file ... ok
 
-**C31** - §1 rule 2 and the `E0102` row allow `&value` as a call argument (POL-06, AC 1)
-Proof: run spec | test shared_borrow_of_any_argument_is_allowed ... ok
+**C31** - §1 rule 2 and the `E0102` row allow `&value` as a call argument (POL-06, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C32** - Part I states the identifier-pattern rule (POL-06, AC 2)
-Proof: run spec | test identifier_pattern_rule_is_stated ... ok
+**C32** - Part I states the identifier-pattern rule (POL-06, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C33** - the pattern `None` resolves to the built-in variant and is not a binding (POL-06, AC 3)
 Proof: run resolve | test identifier_pattern_naming_none_is_a_path ... ok
@@ -1588,41 +1589,41 @@ Proof: run resolve | test identifier_pattern_naming_a_const_variant_or_unit_stru
 **C35** - every other identifier pattern stays a binding (POL-06, AC 5)
 Proof: run resolve | test other_identifier_patterns_stay_bindings ... ok
 
-**C36** - the `E0404` and `E0121` rows cover `signal` and the module body and state that `E0121` wins in a `fn` (POL-07, AC 1)
-Proof: run spec | test e0404_and_e0121_state_their_precedence ... ok
+**C36** - the `E0404` and `E0121` rows cover `signal` and the module body and state that `E0121` wins in a `fn` (POL-07, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C37** - B.3.4 says a value block may hold a contribution or a commit (POL-07, AC 2)
-Proof: run spec | test value_blocks_may_hold_contributions_and_commits ... ok
+**C37** - B.3.4 says a value block may hold a contribution or a commit (POL-07, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C38** - B.3.3 says a place is never parenthesized (POL-07, AC 3)
-Proof: run spec | test place_has_no_parentheses ... ok
+**C38** - B.3.3 says a place is never parenthesized (POL-07, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C39** - A.4 and B.3.2 put `attrs` before statements, reactions, definitions, generation, nature fields, contributions and commits (POL-08, AC 1)
-Proof: run spec | test attrs_are_allowed_before_statements_and_hardware_items ... ok
+**C39** - A.4 and B.3.2 put `attrs` before statements, reactions, definitions, generation, nature fields, contributions and commits (POL-08, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C40** - A.4 and §21 route quantity and reaction docs to metadata and statement docs nowhere (POL-08, AC 2)
-Proof: run spec | test quantity_and_reaction_docs_are_metadata ... ok
+**C40** - A.4 and §21 route quantity and reaction docs to metadata and statement docs nowhere (POL-08, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C41** - B.3.3 names the phase of constraints 8 to 14 (POL-08, AC 3)
-Proof: run spec | test post_parse_constraints_name_their_phase ... ok
+**C41** - B.3.3 names the phase of constraints 8 to 14 (POL-08, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C42** - the `E0125` row covers an `extern` function with a body and a bodiless plain function (POL-08, AC 4)
-Proof: run spec | test e0125_covers_bodies ... ok
+**C42** - the `E0125` row covers an `extern` function with a body and a bodiless plain function (POL-08, AC 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C43** - A.1 rule 6 specifies raw identifiers and G.15 is Closed (POL-08, AC 5)
-Proof: run spec | test raw_identifiers_are_specified_and_g15_is_closed ... ok
+**C43** - A.1 rule 6 specifies raw identifiers and G.15 is Closed (POL-08, AC 5) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C44** - B.3.2 specifies the field shorthand and G.14 is Closed (POL-08, AC 6)
-Proof: run spec | test field_shorthand_is_specified_and_g14_is_closed ... ok
+**C44** - B.3.2 specifies the field shorthand and G.14 is Closed (POL-08, AC 6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C45** - no code is mentioned without a defining row and none is defined twice (POL-08, AC 7)
-Proof: run spec | test every_error_code_is_defined_exactly_once ... ok
+Proof: run spec_structure | test every_error_code_is_defined_exactly_once ... ok
 
-**C46** - B.1 still counts 65 constructs in 65 rows (POL-08, AC 8)
-Proof: run spec | test b1_still_counts_65_constructs ... ok
+**C46** - B.1 still counts 65 constructs in 65 rows (POL-08, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C47** - Appendix G records the sixteen decisions with their sections and G.38 stays Open (POL-08, AC 9)
-Proof: run spec | test appendix_g_records_the_decisions ... ok
+**C47** - Appendix G records the sixteen decisions with their sections and G.38 stays Open (POL-08, AC 9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C48** - `Int< -1 >` and `Int<{ -1 }>` parse clean to a const argument `-1` and print as written (POL-09, AC 1)
 Proof: run parser | test negative_literal_is_a_const_generic_argument ... ok
@@ -1684,8 +1685,8 @@ Proof: run pomcorpus | test docs_at_every_position_round_trip ... ok
 **C67** - `docs()` of a reaction, a quantity, a definition, a generation and a statement return the authored text (POL-12, AC 6)
 Proof: run tree | test docs_reach_reactions_quantities_definitions_and_statements ... ok
 
-**C68** - A.6 defines `E0909` (parse) and A.2 and §1 rule 7 state the range rule (POL-13, AC 1)
-Proof: run spec | test e0909_is_defined_for_out_of_range_literals ... ok
+**C68** - A.6 defines `E0909` (parse) and A.2 and §1 rule 7 state the range rule (POL-13, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C69** - `1e999` and an SI literal past the range are `E0909`; the largest finite `f64` is clean (POL-13, AC 2)
 Proof: run lexer | test float_literal_out_of_range_is_e0909 ... ok
@@ -1735,8 +1736,8 @@ Proof: run errors | test forms_outside_the_grammar_are_parse_errors ... ok
 **C84** - a misplaced `signal` declares nothing: its name is `E0161` and no module lists it (POL-14, AC 8)
 Proof: run resolve | test misplaced_signal_declares_nothing ... ok
 
-**C85** - the `E0910` row separates 256 nesting levels from 4096 chain links (POL-15, AC 1)
-Proof: run spec | test e0910_counts_nesting_and_bounds_chains ... ok
+**C85** - the `E0910` row separates 256 nesting levels from 4096 chain links (POL-15, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C86** - four flat chains of 4096 links parse clean and print, build and convert back on an 8 MiB stack (POL-15, AC 2)
 Proof: run errors | test flat_chains_up_to_4096_links_are_not_nesting ... ok
@@ -1879,8 +1880,8 @@ Proof: run errors | test flat_chains_survive_a_default_2_mib_thread ... ok
 **C132** - every numeric field of a design set to an out-of-range id or to 1 is an `Err` or a design every read survives (POL-21, AC 2)
 Proof: run reflect | test from_json_never_panics_on_a_corrupted_field ... ok
 
-**C133** - Appendix H holds no nested or unclosed code span and states that an unknown derive name is `E0161` (POL-02, AC 1)
-Proof: run spec | test appendix_h_renders_every_code_span ... ok
+**C133** - Appendix H holds no nested or unclosed code span and states that an unknown derive name is `E0161` (POL-02, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C134** - the reserved-keyword help names `r#word` for an added keyword and a doc comment before `else` documents nothing (POL-10, AC 2)
 Proof: run errors | test reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing ... ok
@@ -1888,8 +1889,8 @@ Proof: run errors | test reserved_keyword_help_is_true_and_a_doc_before_else_doc
 **C135** - two items of one name in one table of a block are `E0162` at the later name (POL-04, AC 1)
 Proof: run resolve | test duplicate_items_in_a_block_are_e0162 ... ok
 
-**C136** - §3.4 states the block rule and the `E0162` row names blocks (POL-04, AC 1)
-Proof: run spec | test block_items_follow_the_namespace_rules ... ok
+**C136** - §3.4 states the block rule and the `E0162` row names blocks (POL-04, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 ---
 

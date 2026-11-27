@@ -13,7 +13,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-packages/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning')`
-**Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
 **Run crates**: `cargo test -p piperine-lang --test pom_crates`
 **Run docs**: `cargo test -p piperine-lang --test pom_docs`
@@ -22,6 +21,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run git**: `cargo test -p piperine-project --test git`
 **Run lock**: `cargo test -p piperine-project --test lock`
 **Run project**: `cargo test -p piperine-project --test project`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-msl-spec`, branch `feature/msl-packages`. Do not set `CARGO_TARGET_DIR` (the environment provides it). Never run `cargo clean`. Never pass `--workspace`: only `-p piperine-lang` and `-p piperine-project`; the other crates do not build and stay that way. `CLAUDE.md` still describes the retired Verilog-AMS pipeline; for this feature the facts are in `spec.md` and `design.md`.
 
@@ -789,68 +789,68 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 One check per acceptance criterion of `spec.md`. Each `run` proof names the line its test prints; the two lone proofs are judged by their exit code.
 
-**C1** - §3.5 exists and defines crate, crate root and dependency name once each (PKG-01, AC 1)
-Proof: run spec | test s35_defines_crate_root_and_dependency_name ... ok
+**C1** - §3.5 exists and defines crate, crate root and dependency name once each (PKG-01, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C2** - §3.5 lists the five lookup steps in that order (PKG-01, AC 2)
-Proof: run spec | test s35_orders_the_first_segment_lookup ... ok
+**C2** - §3.5 lists the five lookup steps in that order (PKG-01, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C3** - §3.5 says the local name wins in an ordinary path and a `use` path is `E0163`; no `::` (PKG-01, AC 3)
-Proof: run spec | test s35_local_names_win_in_paths_and_clash_in_use ... ok
+**C3** - §3.5 says the local name wins in an ordinary path and a `use` path is `E0163`; no `::` (PKG-01, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C4** - §3.5 makes `crate`, `self` and `super` relative to the containing crate (PKG-01, AC 4)
-Proof: run spec | test s35_crate_and_super_are_per_crate ... ok
+**C4** - §3.5 makes `crate`, `self` and `super` relative to the containing crate (PKG-01, AC 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C5** - §3.5 says only `pub` crosses a crate boundary, namespace by namespace (PKG-01, AC 5)
-Proof: run spec | test s35_only_pub_crosses_a_crate ... ok
+**C5** - §3.5 says only `pub` crosses a crate boundary, namespace by namespace (PKG-01, AC 5) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C6** - §3.5 makes `std` implicit and reserved; §3.4.2 defines the prelude as `std::prelude` (PKG-01, AC 6)
-Proof: run spec | test std_is_implicit_and_the_prelude_is_std_prelude ... ok
+**C6** - §3.5 makes `std` implicit and reserved; §3.4.2 defines the prelude as `std::prelude` (PKG-01, AC 6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C7** - the `E0161` row covers a path that starts with a crate that is no dependency (PKG-01, AC 7)
-Proof: run spec | test e0161_row_covers_an_unknown_crate ... ok
+**C7** - the `E0161` row covers a path that starts with a crate that is no dependency (PKG-01, AC 7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C8** - B.3.6 has a row for `extern crate` with `E0900` and its replacement (PKG-01, AC 8)
-Proof: run spec | test b36_lists_extern_crate ... ok
+**C8** - B.3.6 has a row for `extern crate` with `E0900` and its replacement (PKG-01, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C9** - `extern crate util;` gives one `E0900` with the targeted message and help (PKG-01, AC 9)
 Proof: run errors | test extern_crate_is_a_removed_form ... ok
 
-**C10** - §3.5 defines `E0163` (elaboration) and names both remedies (PKG-01, AC 10)
-Proof: run spec | test e0163_is_defined_in_3_5 ... ok
+**C10** - §3.5 defines `E0163` (elaboration) and names both remedies (PKG-01, AC 10) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C11** - §0.3 lists five phases, `package` among them, and rule 3 rejects on it (PKG-02, AC 1)
-Proof: run spec | test phase_package_is_listed ... ok
+**C11** - §0.3 lists five phases, `package` among them, and rule 3 rejects on it (PKG-02, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C12** - §3.6 names `Piperine.toml`, `src/lib.msl`, `.msl` and the two `mod` candidates (PKG-02, AC 2)
-Proof: run spec | test s36_fixes_the_package_layout ... ok
+**C12** - §3.6 names `Piperine.toml`, `src/lib.msl`, `.msl` and the two `mod` candidates (PKG-02, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C13** - the manifest table of §3.6 has exactly those eleven key rows and closes the list with `E0171` (PKG-02, AC 3)
-Proof: run spec | test s36_lists_every_manifest_key ... ok
+**C13** - the manifest table of §3.6 has exactly those eleven key rows and closes the list with `E0171` (PKG-02, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C14** - §3.6 states the name rule and the version form (PKG-02, AC 4)
-Proof: run spec | test s36_names_are_identifiers ... ok
+**C14** - §3.6 states the name rule and the version form (PKG-02, AC 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C15** - §3.6 states the two sources and the three exclusive git references (PKG-02, AC 5)
-Proof: run spec | test s36_states_the_dependency_sources ... ok
+**C15** - §3.6 states the two sources and the three exclusive git references (PKG-02, AC 5) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C16** - §3.6 holds the eight-row requirement table with its ranges (PKG-02, AC 6)
-Proof: run spec | test s36_gives_the_version_requirement_table ... ok
+**C16** - §3.6 holds the eight-row requirement table with its ranges (PKG-02, AC 6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C17** - §3.6 excludes every other way to find a crate and forbids cycles (PKG-02, AC 7)
-Proof: run spec | test s36_has_no_search_path_and_no_cycle ... ok
+**C17** - §3.6 excludes every other way to find a crate and forbids cycles (PKG-02, AC 7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C18** - §3.6 states where the lockfile is, its keys and when its commit is used (PKG-02, AC 8)
-Proof: run spec | test s36_states_the_lockfile_rule ... ok
+**C18** - §3.6 states where the lockfile is, its keys and when its commit is used (PKG-02, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C19** - §3.6 defines the seven codes `E0170` to `E0176`, all of phase `package` (PKG-02, AC 9)
-Proof: run spec | test s36_defines_the_package_codes ... ok
+**C19** - §3.6 defines the seven codes `E0170` to `E0176`, all of phase `package` (PKG-02, AC 9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C20** - G.0 excludes search paths and a registry; the closed table has rows P1 to P6 (PKG-02, AC 10)
-Proof: run spec | test appendix_g_records_the_package_decisions ... ok
+**C20** - G.0 excludes search paths and a registry; the closed table has rows P1 to P6 (PKG-02, AC 10) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C21** - §0.9 has the six terms and §0.8's Part I row names crates and packages (PKG-02, AC 11)
-Proof: run spec | test glossary_and_file_map_name_crates_and_packages ... ok
+**C21** - §0.9 has the six terms and §0.8's Part I row names crates and packages (PKG-02, AC 11) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C22** - a graph of three crates reads back names, roots and edges in insertion order (PKG-03, AC 1)
 Proof: run crates | test graph_keeps_crates_and_edges_as_given ... ok

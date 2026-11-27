@@ -21,7 +21,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run reentry**: `cargo test -p piperine-solver --test transient_reentry`
 **Run failure**: `cargo test -p piperine-solver --test failure_rules`
 **Run runerrors**: `cargo test -p piperine-parity --test run_errors`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run truncation**: `cargo test -p piperine-solver --test truncation`
 **Run abitran**: `cargo test -p piperine-solver --test abi_tran`
 **Run abidc**: `cargo test -p piperine-solver --test abi_dc`
@@ -1100,11 +1099,11 @@ Proof: run runerrors | test a_floating_node_from_source_is_e0503 ... ok
 **C30** - A NaN contribution from source fails `E0507` naming the instance. (HYG-02, AC 3; T17)
 Proof: run runerrors | test a_nan_contribution_from_source_is_e0507 ... ok
 
-**C31** - Part V states the restart step, the later start, the truncation basis and the `E0508` condition. (HYG-17, AC 2; T18)
-Proof: run spectext | test part_v_states_the_solver_hygiene_rules ... ok
+**C31** - Part V states the restart step, the later start, the truncation basis and the `E0508` condition. (HYG-17, AC 2; T18) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C32** - Appendix C states the damping, truncation, floor and restart numerics. (HYG-17, AC 2; T19)
-Proof: run spectext | test appendix_c_states_the_solver_hygiene_numerics ... ok
+**C32** - Appendix C states the damping, truncation, floor and restart numerics. (HYG-17, AC 2; T19) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C33** - The state estimate reads `chgtol`. (HYG-07, AC 1; T20)
 Proof: run analoglib | test integration::tests::the_state_estimate_reads_chgtol ... ok

@@ -13,13 +13,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-stdlib/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
 **Run docs**: `cargo test -p piperine-lang --test pom_docs`
 **Run std**: `cargo test -p piperine-lang --test std_library`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run book**: `cargo test -p piperine-lang --test book`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 **Start condition.** Execution starts after `feature/msl-packages` is merged to `main` and this branch (`feature/msl-stdlib`) is rebased onto it. The first worker re-reads `crates/piperine-lang/src/pom/stdlib.rs`, `src/pom/design.rs` and `src/pom/resolve/` before T5: they may have moved since this plan was written.
 
@@ -746,62 +746,62 @@ T21 → T22 → T23 → T24
 
 One check per acceptance criterion of `spec.md`. Each `run` proof names the line its test prints; the one lone proof is judged by its exit code.
 
-**C1** - The section §22 state that the standard library is the crate `std`, that its source files are normative, and that each `rust` fence of Part VII is an excerpt of one of them. (STD-01, AC 1)
-Proof: run spec | test s22_says_std_is_the_normative_source ... ok
+**C1** - The section §22 state that the standard library is the crate `std`, that its source files are normative, and that each `rust` fence of Part VII is an excerpt of one of them. (STD-01, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C2** - The section §22 hold a table "Sources" that maps each of §22.1 to §22.6 to one namespace of `std`, and one row each for `std::constants` (§1) and `std::carriers` (§4, §11). (STD-01, AC 2)
-Proof: run spec | test s22_maps_sections_to_namespaces ... ok
+**C2** - The section §22 hold a table "Sources" that maps each of §22.1 to §22.6 to one namespace of `std`, and one row each for `std::constants` (§1) and `std::carriers` (§4, §11). (STD-01, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C3** - The section §22 does not contain the Resolution that reads listings without `pub` "as if written with `pub`". (STD-01, AC 3)
-Proof: run spec | test s22_drops_the_implied_pub_resolution ... ok
+**C3** - The section §22 does not contain the Resolution that reads listings without `pub` "as if written with `pub`". (STD-01, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C4** - The entry G.38 of Appendix G have the status `Closed` and name the two excerpt guards and the gallery gate. (STD-01, AC 4)
-Proof: run spec | test g38_is_closed ... ok
+**C4** - The entry G.38 of Appendix G have the status `Closed` and name the two excerpt guards and the gallery gate. (STD-01, AC 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C5** - The line of Appendix C that says no part of the specification has been compiled say instead that the library and the galleries are parsed and resolved, and that nothing is executed. (STD-01, AC 5)
-Proof: run spec | test appendix_c_says_parsed_and_resolved ... ok
+**C5** - The line of Appendix C that says no part of the specification has been compiled say instead that the library and the galleries are parsed and resolved, and that nothing is executed. (STD-01, AC 5) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C6** - The table "Prelude constants" of §1 say that the six constants are `pub const` items of `std::constants`. (STD-01, AC 6)
-Proof: run spec | test s1_constants_are_std_items ... ok
+**C6** - The table "Prelude constants" of §1 say that the six constants are `pub const` items of `std::constants`. (STD-01, AC 6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C7** - The lists of analysis kinds in §11.1.1 and in row 23 of Appendix B.1 be `Dc`, `Transient`, `Ac`, `Noise`, `Static`. (STD-01, AC 7)
-Proof: run spec | test analysis_kinds_list_transient ... ok
+**C7** - The lists of analysis kinds in §11.1.1 and in row 23 of Appendix B.1 be `Dc`, `Transient`, `Ac`, `Noise`, `Static`. (STD-01, AC 7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C8** - No file of `docs/spec/` contain the text `analysis(Tran)`. (STD-01, AC 8)
-Proof: run spec | test no_analysis_tran_remains ... ok
+**C8** - No file of `docs/spec/` contain the text `analysis(Tran)`. (STD-01, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C9** - WHEN the token `Tran` occurs in a `rust` or `rust,fragment` fence of `docs/spec/` THEN the next character be `(`. (STD-01, AC 9)
-Proof: run spec | test tran_in_fences_is_the_module ... ok
+**C9** - WHEN the token `Tran` occurs in a `rust` or `rust,fragment` fence of `docs/spec/` THEN the next character be `(`. (STD-01, AC 9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C10** - Appendix G record the five decisions Q1 to Q5 in its decision table, as S1 to S5. (STD-01, AC 10)
-Proof: run spec | test appendix_g_records_the_stdlib_decisions ... ok
+**C10** - Appendix G record the five decisions Q1 to Q5 in its decision table, as S1 to S5. (STD-01, AC 10) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C11** - §3 rule 10 list two ABI strings for a function, `"C"` and `"intrinsic"`, and say that `"intrinsic"` is accepted only in the crate `std`. (STD-02, AC 1)
-Proof: run spec | test s3_lists_the_intrinsic_abi ... ok
+**C11** - §3 rule 10 list two ABI strings for a function, `"C"` and `"intrinsic"`, and say that `"intrinsic"` is accepted only in the crate `std`. (STD-02, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C12** - §3 state that an `extern "intrinsic" fn` has no body, is not restricted to scalar types, takes no `#[derivative]`, and has the contract its entry in Part VII gives. (STD-02, AC 2)
-Proof: run spec | test s3_states_the_intrinsic_contract ... ok
+**C12** - §3 state that an `extern "intrinsic" fn` has no body, is not restricted to scalar types, takes no `#[derivative]`, and has the contract its entry in Part VII gives. (STD-02, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C13** - The `E0125` row of §3 include the condition "the ABI `"intrinsic"` outside the crate `std`". (STD-02, AC 3)
-Proof: run spec | test e0125_covers_intrinsic_outside_std ... ok
+**C13** - The `E0125` row of §3 include the condition "the ABI `"intrinsic"` outside the crate `std`". (STD-02, AC 3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C14** - §22 hold a table "Implemented by the engine" whose rows are exactly `matches_bits`, `logic`, `table_model`, `parse_table` and `parse_hex`, each with its entry and a reason. (STD-02, AC 4)
-Proof: run spec | test s22_lists_the_engine_items ... ok
+**C14** - §22 hold a table "Implemented by the engine" whose rows are exactly `matches_bits`, `logic`, `table_model`, `parse_table` and `parse_hex`, each with its entry and a reason. (STD-02, AC 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C15** - §22 rule 4 say that an item given as a signature and a contract is declared `extern "intrinsic"`. (STD-02, AC 5)
-Proof: run spec | test s22_rule_4_names_extern_intrinsic ... ok
+**C15** - §22 rule 4 say that an item given as a signature and a contract is declared `extern "intrinsic"`. (STD-02, AC 5) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C16** - The count of constructs in Appendix B.1 stay 65. (STD-02, AC 6)
-Proof: run spec | test b1_still_counts_65_constructs ... ok
+**C16** - The count of constructs in Appendix B.1 stay 65. (STD-02, AC 6) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C17** - The error table of Part VII have no `E0707` row, and §22.2.13 and §22.2.14 give `E0317` for a complex root without its conjugate and for a zero denominator. (STD-02, AC 7)
-Proof: run spec | test e0707_is_replaced_by_e0317 ... ok
+**C17** - The error table of Part VII have no `E0707` row, and §22.2.13 and §22.2.14 give `E0317` for a complex root without its conjugate and for a zero denominator. (STD-02, AC 7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C18** - §22.2.14 state that `laplace_nd` requires `D >= 1` and `N <= D`, and that a placement that breaks it is `E0304`. (STD-02, AC 8)
-Proof: run spec | test laplace_states_the_proper_rule ... ok
+**C18** - §22.2.14 state that `laplace_nd` requires `D >= 1` and `N <= D`, and that a placement that breaks it is `E0304`. (STD-02, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C19** - The entry G.64 of Appendix G say that the generator of `normal` is the one written in `std::analog`. (STD-02, AC 9)
-Proof: run spec | test g64_names_the_normal_generator ... ok
+**C19** - The entry G.64 of Appendix G say that the generator of `normal` is the one written in `std::analog`. (STD-02, AC 9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C20** - WHEN a file of the crate `std` declares `extern "intrinsic" fn f(..) -> T;` THEN the POM report no diagnostic for it. (STD-04, AC 1)
 Proof: run resolve | test intrinsic_fn_is_accepted_in_std ... ok

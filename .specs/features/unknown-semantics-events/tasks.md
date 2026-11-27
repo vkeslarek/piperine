@@ -26,7 +26,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run sourceevents**: `cargo test -p piperine-parity --test source_events`
 **Run sourcelimexp**: `cargo test -p piperine-parity --test source_limexp`
 **Run paritytran**: `cargo test -p piperine-parity --test parity_tran`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run bookanalog**: `cargo test -p piperine --test book_analog`
 **Run bookmixed**: `cargo test -p piperine --test book_mixed`
@@ -1655,8 +1654,8 @@ Proof: run typesevents | test an_event_where_another_type_is_expected_is_e0441 .
 **C10** - `on up || dn { q <- up; }` commits whether `up` fired. (UE-02, AC 5; T14)
 Proof: run sourceevents | test a_committed_event_read_commits_whether_it_fired ... ok
 
-**C11** - §13 states that a commit of an event read as a `bool` commits the `bool` (D2). (UE-02, AC 5; T12)
-Proof: run spectext | test the_commit_of_an_event_read_as_a_bool_is_stated ... ok
+**C11** - §13 states that a commit of an event read as a `bool` commits the `bool` (D2). (UE-02, AC 5; T12) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C12** - Reactions on `settle` run once per accepted time point, reading the final state and the solution. (UE-03, AC 1; T11)
 Proof: run sourceevents | test settle_runs_once_per_accepted_time_point ... ok
