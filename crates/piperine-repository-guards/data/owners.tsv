@@ -45,7 +45,7 @@ piperine-project	Resolver	T60
 piperine-project	Lockfile	T60
 piperine-project	Version	T60
 piperine-project	GitCheckout	T60
-piperine-project	Project	T60
+piperine-project	ProjectRoot	T60
 piperine-abi	Validator	T77
 piperine-abi	Thunk	T78
 piperine-analog-solver	DdtStamp	T79

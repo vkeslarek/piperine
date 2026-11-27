@@ -11,7 +11,7 @@ mod support;
 use std::fs;
 use std::path::Path;
 
-use piperine_project::{Options, PackageGraph, resolve};
+use piperine_project::{Options, PackageGraph, Resolver};
 use support::{commit, package, package_files, repo, tag, url, workspace, write};
 
 fn files(list: &[(String, String)]) -> Vec<(&str, &str)> {
@@ -19,7 +19,7 @@ fn files(list: &[(String, String)]) -> Vec<(&str, &str)> {
 }
 
 fn ok(dir: &Path) -> PackageGraph {
-    match resolve(dir, Options::default()) {
+    match Resolver::resolve(dir, Options::default()) {
         Ok(graph) => graph,
         Err(errors) => panic!("resolution failed: {errors:?}"),
     }
@@ -124,7 +124,7 @@ fn update_moves_the_lock_to_the_new_commit() {
     let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
     ok(&app);
     let second = commit(&util, &[("src/lib.msl", "// second\n")], "second");
-    let graph = resolve(&app, Options { update: true }).unwrap();
+    let graph = Resolver::resolve(&app, Options { update: true }).unwrap();
     assert_eq!(graph.packages[1].commit, Some(second.to_string()));
     assert_eq!(fs::read_to_string(&graph.graph.crates()[1].root).unwrap(), "// second\n");
     assert!(lock_of(&app).contains(&second.to_string()) && !lock_of(&app).contains(&first.to_string()));
@@ -164,7 +164,7 @@ fn an_invalid_lockfile_is_e0176() {
     let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
     for text in ["version = 1\n\n[[package]\nname = \"util", "version = 2\n", "[[package]]\nname = \"util\"\n"] {
         write(&app.join("Piperine.lock"), text);
-        let mut errors = resolve(&app, Options::default()).err().expect("the lockfile was accepted");
+        let mut errors = Resolver::resolve(&app, Options::default()).err().expect("the lockfile was accepted");
         assert_eq!(errors.len(), 1, "{errors:?}");
         let error = errors.remove(0);
         assert_eq!(error.code(), "E0176", "{text}");
@@ -173,7 +173,7 @@ fn an_invalid_lockfile_is_e0176() {
         assert!(error.diagnostic.span().end <= text.len() + 1);
         assert!(!app.join("target/deps").exists(), "{text}: something was fetched");
     }
-    let error = resolve(&app, Options { update: true }).err().unwrap().remove(0);
+    let error = Resolver::resolve(&app, Options { update: true }).err().unwrap().remove(0);
     assert_eq!(error.code(), "E0176");
 }
 
@@ -189,7 +189,7 @@ fn a_lockfile_commit_must_be_forty_lowercase_hex_digits() {
         let text = format!("version = 1\n\n[[package]]\nname = \"util\"\nversion = \"1.0.0\"\nsource = \"{source}\"\ncommit = \"{bad}\"\n");
         write(&app.join("Piperine.lock"), &text);
         for options in [Options::default(), Options { update: true }] {
-            let mut errors = resolve(&app, options).err().expect("the lockfile was accepted");
+            let mut errors = Resolver::resolve(&app, options).err().expect("the lockfile was accepted");
             assert_eq!(errors.len(), 1, "{bad}: {errors:?}");
             let error = errors.remove(0);
             assert_eq!(error.code(), "E0176", "{bad}");

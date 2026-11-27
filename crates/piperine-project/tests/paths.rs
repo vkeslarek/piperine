@@ -6,18 +6,18 @@
 #[allow(dead_code)]
 mod support;
 
-use piperine_project::{Manifest, Options, PackageError, PackageGraph, Requirement, Version, resolve};
+use piperine_project::{Manifest, Options, PackageError, PackageGraph, Requirement, Version, Resolver};
 use support::{package, workspace};
 
 fn ok(dir: &std::path::Path) -> PackageGraph {
-    match resolve(dir, Options::default()) {
+    match Resolver::resolve(dir, Options::default()) {
         Ok(graph) => graph,
         Err(errors) => panic!("resolution failed: {errors:?}"),
     }
 }
 
 fn only(dir: &std::path::Path) -> PackageError {
-    let mut errors = resolve(dir, Options::default()).err().expect("the project was accepted");
+    let mut errors = Resolver::resolve(dir, Options::default()).err().expect("the project was accepted");
     assert_eq!(errors.len(), 1, "{errors:?}");
     errors.remove(0)
 }

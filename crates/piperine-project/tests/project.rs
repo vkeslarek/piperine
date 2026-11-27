@@ -1,6 +1,6 @@
 //! Scope: the entry surface of `piperine-project` (feature `msl-packages`): the project root is
 //! the nearest `Piperine.toml` (PKG-14 AC 1), and the crate holds no release-fetch, plugin or
-//! `SourceMap` surface (PKG-15 AC 1); `load_project` builds the design of a package graph, a
+//! `SourceMap` surface (PKG-15 AC 1); `ProjectRoot::load` builds the design of a package graph, a
 //! package error stops it and a language error does not (PKG-14 AC 2 to 4); and the crate reports
 //! exactly the codes of the specification's `package` phase (PKG-15 AC 2).
 
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 mod support;
 
 use piperine_lang::pom::Reflect;
-use piperine_project::{find_project_root, load_project};
+use piperine_project::ProjectRoot;
 
 fn write(path: &Path, text: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -27,19 +27,19 @@ fn the_project_root_is_the_nearest_manifest() {
     write(&app.join("Piperine.toml"), "");
     write(&app.join("src/deep/x.msl"), "");
     // The directory itself, and any directory below it.
-    assert_eq!(find_project_root(&app), Some(app.clone()));
-    assert_eq!(find_project_root(&app.join("src/deep")), Some(app.clone()));
+    assert_eq!(ProjectRoot::find_root(&app), Some(app.clone()));
+    assert_eq!(ProjectRoot::find_root(&app.join("src/deep")), Some(app.clone()));
     // The nearest of two manifests wins.
     let inner = app.join("vendor/inner");
     write(&inner.join("Piperine.toml"), "");
     write(&inner.join("src/x.msl"), "");
-    assert_eq!(find_project_root(&inner.join("src")), Some(inner.clone()));
-    assert_eq!(find_project_root(&app.join("vendor")), Some(app.clone()));
+    assert_eq!(ProjectRoot::find_root(&inner.join("src")), Some(inner.clone()));
+    assert_eq!(ProjectRoot::find_root(&app.join("vendor")), Some(app.clone()));
     // No manifest on the way up: none. (The temporary directory is searched up to the filesystem
     // root, so a manifest above it would make this fail; there is none.)
     let bare = base.join("bare/deeper");
     fs::create_dir_all(&bare).unwrap();
-    assert_eq!(find_project_root(&bare), None);
+    assert_eq!(ProjectRoot::find_root(&bare), None);
 }
 
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -83,7 +83,7 @@ fn load_project_builds_the_design_of_a_package_graph() {
     let (_tmp, base) = support::workspace();
     let app = support::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "use util::Cell;\nmodule Top() { let c = Cell(); }\n");
     support::package(&base.join("util"), "util", "1.0.0", &[], "pub module Cell() {}\n");
-    let design = load_project(&app).expect("a clean project");
+    let design = ProjectRoot::load(&app).expect("a clean project");
     let names: Vec<&str> = design.crates().iter().map(|c| c.name()).collect();
     assert_eq!(names, ["app", "util", "std"]);
     assert_eq!(design.root_crate().name(), "app");
@@ -99,7 +99,7 @@ fn a_package_error_stops_load_project() {
     let app = base.join("app");
     support::write(&app.join("Piperine.toml"), "[package]\nname = \"app\"\nversion = \"1.0.0\"\nflavour = \"x\"\n");
     support::write(&app.join("src/lib.msl"), "");
-    let errors = load_project(&app).err().expect("no design for a package error");
+    let errors = ProjectRoot::load(&app).err().expect("no design for a package error");
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0].code(), "E0171");
 }
@@ -108,7 +108,7 @@ fn a_package_error_stops_load_project() {
 fn a_model_error_is_a_diagnostic_not_a_package_error() {
     let (_tmp, base) = support::workspace();
     let app = support::package(&base.join("app"), "app", "1.0.0", &[], "use nowhere::X;\n");
-    let design = load_project(&app).expect("a language error is not a package error");
+    let design = ProjectRoot::load(&app).expect("a language error is not a package error");
     let codes: Vec<&str> = design.diagnostics().iter().map(|d| d.diagnostic.code.as_ref()).collect();
     assert_eq!(codes, ["E0161"]);
 }
@@ -151,7 +151,7 @@ fn the_rc_example_resolves_with_no_diagnostic() {
     // CLI-19 AC 2 (msl-cli T6): `examples/rc` resolves as the package `rc` and its crate has no
     // diagnostic; its library holds the three parts the bench places
     let rc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc");
-    let design = load_project(&rc).unwrap_or_else(|e| panic!("examples/rc is no package: {e:?}"));
+    let design = ProjectRoot::load(&rc).unwrap_or_else(|e| panic!("examples/rc is no package: {e:?}"));
     let codes: Vec<String> = design.diagnostics().iter().map(|d| format!("{}: {}", d.diagnostic.code, d.diagnostic.message)).collect();
     assert!(codes.is_empty(), "{codes:?}");
     assert_eq!(design.root_crate().name(), "rc");

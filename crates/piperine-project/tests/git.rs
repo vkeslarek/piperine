@@ -9,7 +9,7 @@ mod support;
 
 use std::fs;
 
-use piperine_project::{Options, PackageError, PackageGraph, resolve};
+use piperine_project::{Options, PackageError, PackageGraph, Resolver};
 use support::{branch, commit, package, package_files, repo, switch, tag, url, workspace};
 
 fn files(list: &[(String, String)]) -> Vec<(&str, &str)> {
@@ -17,14 +17,14 @@ fn files(list: &[(String, String)]) -> Vec<(&str, &str)> {
 }
 
 fn ok(dir: &std::path::Path) -> PackageGraph {
-    match resolve(dir, Options::default()) {
+    match Resolver::resolve(dir, Options::default()) {
         Ok(graph) => graph,
         Err(errors) => panic!("resolution failed: {errors:?}"),
     }
 }
 
 fn only(dir: &std::path::Path) -> PackageError {
-    let mut errors = resolve(dir, Options::default()).err().expect("the project was accepted");
+    let mut errors = Resolver::resolve(dir, Options::default()).err().expect("the project was accepted");
     assert_eq!(errors.len(), 1, "{errors:?}");
     errors.remove(0)
 }
@@ -179,13 +179,13 @@ fn local_repositories_util_and_util_dot_git_stay_two_crates() {
 
 #[test]
 fn a_trailing_dot_git_is_stripped_only_from_remote_urls() {
-    use piperine_project::git::normalize_url;
+    use piperine_project::GitCheckout;
     for remote in ["https://h.org/a/util", "http://h.org/a/util", "ssh://git@h.org/a/util", "git://h.org/a/util", "git@h.org:a/util"] {
-        assert_eq!(normalize_url(&format!("{remote}.git")), remote);
-        assert_eq!(normalize_url(&format!("{remote}.git/")), remote);
+        assert_eq!(GitCheckout::normalize_url(&format!("{remote}.git")), remote);
+        assert_eq!(GitCheckout::normalize_url(&format!("{remote}.git/")), remote);
     }
     for local in ["/srv/util.git", "../util.git", "file:///srv/util.git", "util.git"] {
-        assert_eq!(normalize_url(local), local);
+        assert_eq!(GitCheckout::normalize_url(local), local);
     }
 }
 

@@ -13,25 +13,31 @@ pub mod resolver;
 pub use error::PackageError;
 pub use lockfile::{LockedPackage, Lockfile};
 pub use manifest::{Dependency, GitRef, Manifest, Package, Requirement, Source, Version};
-pub use resolver::{Options, PackageGraph, ResolvedPackage, resolve};
+pub use git::GitCheckout;
+pub use resolver::{Options, PackageGraph, ResolvedPackage, Resolver};
 
-/// Finds the root directory of the current project by looking for Piperine.toml.
-/// Starts from `current_dir` and traverses up the directory tree.
-pub fn find_project_root(current_dir: &Path) -> Option<PathBuf> {
-    let mut dir = current_dir.to_path_buf();
-    loop {
-        if dir.join("Piperine.toml").exists() {
-            return Some(dir);
-        }
-        if !dir.pop() {
-            return None;
+/// A project: the directory holding a `Piperine.toml`.
+pub struct ProjectRoot;
+
+impl ProjectRoot {
+    /// Finds the root directory of the current project by looking for Piperine.toml.
+    /// Starts from `current_dir` and traverses up the directory tree.
+    pub fn find_root(current_dir: &Path) -> Option<PathBuf> {
+        let mut dir = current_dir.to_path_buf();
+        loop {
+            if dir.join("Piperine.toml").exists() {
+                return Some(dir);
+            }
+            if !dir.pop() {
+                return None;
+            }
         }
     }
-}
 
-/// Resolve the package at `dir` and read every crate of its graph, `std` last. A package error
-/// returns no design; a language error is a diagnostic of the design that is returned.
-pub fn load_project(dir: &Path) -> Result<Design, Vec<PackageError>> {
-    let packages = resolve(dir, Options::default())?;
-    Ok(Design::load_crates(packages.graph))
+    /// Resolve the package at `dir` and read every crate of its graph, `std` last. A package error
+    /// returns no design; a language error is a diagnostic of the design that is returned.
+    pub fn load(dir: &Path) -> Result<Design, Vec<PackageError>> {
+        let packages = Resolver::resolve(dir, Options::default())?;
+        Ok(Design::load_crates(packages.graph))
+    }
 }

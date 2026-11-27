@@ -154,7 +154,7 @@ impl Manifest {
         let table = match DeTable::parse(text) {
             Ok(table) => table,
             Err(e) => {
-                let span = widen(text, e.span().unwrap_or(0..0));
+                let span = Manifest::widen(text, e.span().unwrap_or(0..0));
                 let diagnostic = Diagnostic::new("E0170", format!("the manifest is not valid TOML: {}", e.message()), span, "not valid TOML");
                 return Err(vec![PackageError { file: file.to_path_buf(), text: text.to_string(), diagnostic }]);
             }
@@ -170,39 +170,11 @@ impl Manifest {
     }
 }
 
-/// A span `toml` reports empty (the place something was expected) covers the next character, so
-/// that a report can underline it; at the end of the text, the last one.
-fn widen(text: &str, range: Range<usize>) -> Span {
-    if range.start != range.end {
-        return Span::new(range.start, range.end);
-    }
-    let at = range.start.min(text.len());
-    match text[at..].chars().next() {
-        Some(c) => Span::new(at, at + c.len_utf8()),
-        None => match text[..at].chars().next_back() {
-            Some(c) => Span::new(at - c.len_utf8(), at),
-            None => Span::new(0, 0),
-        },
-    }
-}
-
 type Key<'i> = Spanned<DeString<'i>>;
 type Value<'i> = Spanned<DeValue<'i>>;
 
-/// The entries of a table in source order (the table itself keeps them sorted by key).
-fn entries<'a, 'i>(table: &'a DeTable<'i>) -> Vec<(&'a Key<'i>, &'a Value<'i>)> {
-    let mut all: Vec<_> = table.iter().collect();
-    all.sort_by_key(|(k, _)| k.span().start);
-    all
-}
-
 const MANIFEST_KEYS: &[&str] = &["package", "dependencies", "run"];
 const PACKAGE_KEYS: &[&str] = &["name", "version", "authors", "description"];
-/// A `rev`: a full or abbreviated commit id.
-fn is_commit_id(text: &str) -> bool {
-    (7..=40).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
 const DEPENDENCY_KEYS: &[&str] = &["path", "git", "branch", "tag", "rev", "version", "package"];
 
 /// The faults of one manifest, found by walking its spanned table.
@@ -213,7 +185,7 @@ struct Walk<'t> {
 
 impl Walk<'_> {
     fn fault(&mut self, span: Range<usize>, message: String, label: &str, help: Option<String>) {
-        let mut d = Diagnostic::new("E0171", message, widen(self.text, span), label);
+        let mut d = Diagnostic::new("E0171", message, Manifest::widen(self.text, span), label);
         d.help = help;
         self.faults.push(d);
     }
@@ -238,7 +210,7 @@ impl Walk<'_> {
         let mut dependencies = Vec::new();
         let mut run = None;
         let mut seen = false;
-        for (key, value) in entries(table) {
+        for (key, value) in Manifest::entries(table) {
             match key.get_ref().as_ref() {
                 "package" => {
                     seen = true;
@@ -266,7 +238,7 @@ impl Walk<'_> {
     }
 
     fn dependencies(&mut self, table: &DeTable<'_>, out: &mut Vec<Dependency>) {
-        for (key, value) in entries(table) {
+        for (key, value) in Manifest::entries(table) {
             let name = key.get_ref().to_string();
             let mut broken = false;
             if !is_crate_name(&name) {
@@ -293,7 +265,7 @@ impl Walk<'_> {
         let (mut path, mut git, mut package, mut requirement) = (None, None, None, None);
         // Reference keys in source order, with the span of the key.
         let mut refs: Vec<(&str, Range<usize>, String)> = Vec::new();
-        for (k, v) in entries(entry) {
+        for (k, v) in Manifest::entries(entry) {
             let k_name = k.get_ref().as_ref();
             match k_name {
                 "path" | "git" | "branch" | "tag" | "rev" | "version" | "package" => {
@@ -305,13 +277,13 @@ impl Walk<'_> {
                     match k_name {
                         "path" => path = Some(s.to_string()),
                         "git" => git = Some(s.to_string()),
-                        "rev" if !is_commit_id(s) => {
+                        "rev" if !GitRef::is_commit_id(s) => {
                             let help = "a `rev` is a commit id: 7 to 40 hexadecimal digits; use `branch` or `tag` for a name".to_string();
                             self.fault(v.span(), format!("`{s}` is not a commit id for `rev`"), "expected 7 to 40 hexadecimal digits", Some(help));
                             ok = false;
                         }
                         "branch" | "tag" | "rev" => refs.push((k_name, k.span(), s.to_string())),
-                        "version" => match parse_requirement(s) {
+                        "version" => match Requirement::parse(s) {
                             Some(r) => requirement = Some(r),
                             None => {
                                 let help = "a version requirement is `MAJOR`, `MAJOR.MINOR` or `MAJOR.MINOR.PATCH`".to_string();
@@ -378,7 +350,7 @@ impl Walk<'_> {
         let (mut name, mut version) = (None, None);
         let (mut authors, mut description) = (Vec::new(), String::new());
         let mut broken = false;
-        for (key, value) in entries(table) {
+        for (key, value) in Manifest::entries(table) {
             match key.get_ref().as_ref() {
                 "name" => match value.get_ref().as_str() {
                     Some(s) if is_crate_name(s) => name = Some(s.to_string()),
@@ -394,7 +366,7 @@ impl Walk<'_> {
                     }
                 },
                 "version" => match value.get_ref().as_str() {
-                    Some(s) => match parse_version(s) {
+                    Some(s) => match Version::parse(s) {
                         Some(v) => version = Some(v),
                         None => {
                             self.fault(value.span(), format!("`{s}` is not a version"), "expected `MAJOR.MINOR.PATCH`", Some("a version is three decimal integers separated by dots, such as `1.0.0`".to_string()));
@@ -451,32 +423,68 @@ impl Walk<'_> {
     }
 }
 
-/// Three decimal integers separated by dots.
-pub(crate) fn parse_version(text: &str) -> Option<Version> {
-    let mut parts = text.split('.');
-    let mut next = || {
-        let part = parts.next()?;
-        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        part.parse::<u64>().ok()
-    };
-    let version = Version { major: next()?, minor: next()?, patch: next()? };
-    parts.next().is_none().then_some(version)
+impl Version {
+    /// Three decimal integers separated by dots.
+    pub(crate) fn parse(text: &str) -> Option<Version> {
+        let mut parts = text.split('.');
+        let mut next = || {
+            let part = parts.next()?;
+            if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            part.parse::<u64>().ok()
+        };
+        let version = Version { major: next()?, minor: next()?, patch: next()? };
+        parts.next().is_none().then_some(version)
+    }
 }
 
-/// `M`, `M.m` or `M.m.p`, each a decimal integer.
-fn parse_requirement(text: &str) -> Option<Requirement> {
-    let parts: Vec<&str> = text.split('.').collect();
-    if parts.len() > 3 {
-        return None;
-    }
-    let mut numbers = Vec::new();
-    for part in parts {
-        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+impl Requirement {
+    /// `M`, `M.m` or `M.m.p`, each a decimal integer.
+    pub(crate) fn parse(text: &str) -> Option<Requirement> {
+        let parts: Vec<&str> = text.split('.').collect();
+        if parts.len() > 3 {
             return None;
         }
-        numbers.push(part.parse::<u64>().ok()?);
+        let mut numbers = Vec::new();
+        for part in parts {
+            if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            numbers.push(part.parse::<u64>().ok()?);
+        }
+        Some(Requirement { major: numbers[0], minor: numbers.get(1).copied(), patch: numbers.get(2).copied() })
     }
-    Some(Requirement { major: numbers[0], minor: numbers.get(1).copied(), patch: numbers.get(2).copied() })
+}
+
+impl GitRef {
+    /// A `rev`: a full or abbreviated commit id.
+    pub(crate) fn is_commit_id(text: &str) -> bool {
+        (7..=40).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
+    }
+}
+
+impl Manifest {
+    /// A span `toml` reports empty (the place something was expected) covers the next character, so
+    /// that a report can underline it; at the end of the text, the last one.
+    pub(crate) fn widen(text: &str, range: Range<usize>) -> Span {
+        if range.start != range.end {
+            return Span::new(range.start, range.end);
+        }
+        let at = range.start.min(text.len());
+        match text[at..].chars().next() {
+            Some(c) => Span::new(at, at + c.len_utf8()),
+            None => match text[..at].chars().next_back() {
+                Some(c) => Span::new(at - c.len_utf8(), at),
+                None => Span::new(0, 0),
+            },
+        }
+    }
+
+    /// The entries of a table in source order (the table itself keeps them sorted by key).
+    fn entries<'a, 'i>(table: &'a DeTable<'i>) -> Vec<(&'a Key<'i>, &'a Value<'i>)> {
+        let mut all: Vec<_> = table.iter().collect();
+        all.sort_by_key(|(k, _)| k.span().start);
+        all
+    }
 }

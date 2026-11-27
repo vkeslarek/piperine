@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use piperine_lang::msl::{Diagnostic, Span};
 use piperine_lang::pom::{CrateGraph, CrateId, Design};
 use piperine_lang::types::Types;
-use piperine_project::{Options, PackageError, PackageGraph, find_project_root, resolve};
+use piperine_project::{Options, PackageError, PackageGraph, ProjectRoot, Resolver};
 
 use crate::failure::Failure;
 use crate::request::{Overrides, RunSpec};
@@ -54,7 +54,7 @@ pub struct Project {
 impl Project {
     /// The package of the nearest `Piperine.toml` upward from `start` (`E0170` when none).
     pub fn discover(start: &Path) -> Result<Project, Failure> {
-        match find_project_root(start) {
+        match ProjectRoot::find_root(start) {
             Some(dir) => Project::at(&dir),
             None => {
                 let message = format!("no `{MANIFEST}` found in `{}` or any directory above it", start.display());
@@ -66,7 +66,7 @@ impl Project {
 
     /// The package at `dir`; no search upward.
     pub fn at(dir: &Path) -> Result<Project, Failure> {
-        let packages = resolve(dir, Options::default()).map_err(Failure::Package)?;
+        let packages = Resolver::resolve(dir, Options::default()).map_err(Failure::Package)?;
         let root = &packages.packages[0];
         let file = root.dir.join(MANIFEST);
         let text = std::fs::read_to_string(&file).map_err(|error| Failure::Io { path: file.clone(), error })?;
@@ -87,7 +87,7 @@ impl Project {
         let file = path.canonicalize().map_err(|error| Failure::Io { path: path.to_path_buf(), error })?;
         let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
         let stem = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let Some(root) = find_project_root(&dir) else {
+        let Some(root) = ProjectRoot::find_root(&dir) else {
             return Ok(Project { name: stem, dir, packages: None, manifest: None, runs: Vec::new(), lone: Some(file) });
         };
         let mut project = Project::at(&root)?;

@@ -67,7 +67,6 @@ crates/piperine-parity/src/scenario/trace.rs::Trace::deviation_from	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::first_crossing	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::largest_rise	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::settled_into	-
-crates/piperine-project/src/lib.rs::::load_project	-
 crates/piperine-solver/src/analyses/solver.rs::Solver::with_policy	kept: a host that fixes a solver's policy
 crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_dt_min	kept: a host bounding the transient step
 crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_probe_selection	kept: a host selecting probes

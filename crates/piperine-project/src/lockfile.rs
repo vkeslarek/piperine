@@ -38,7 +38,7 @@ impl Lockfile {
         let text = match std::fs::read(&file) {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(error(&file, String::new(), Span::new(0, 0), format!("cannot read the lockfile `{}`: {e}", file.display()), "unreadable")),
+            Err(e) => return Err(Lockfile::error(&file, String::new(), Span::new(0, 0), format!("cannot read the lockfile `{}`: {e}", file.display()), "unreadable")),
         };
         Lockfile::parse_at(&file, &text).map(Some)
     }
@@ -49,7 +49,7 @@ impl Lockfile {
     }
 
     fn parse_at(file: &Path, text: &str) -> Result<Lockfile, PackageError> {
-        let fail = |span: Range<usize>, message: String, label: &str| error(file, text.to_string(), widen(text, span), message, label);
+        let fail = |span: Range<usize>, message: String, label: &str| Lockfile::error(file, text.to_string(), Lockfile::widen(text, span), message, label);
         let table = DeTable::parse(text).map_err(|e| fail(e.span().unwrap_or(0..0), format!("the lockfile is not valid TOML: {}", e.message()), "not valid TOML"))?;
         let table = table.get_ref();
         match table.get("version") {
@@ -85,7 +85,7 @@ impl Lockfile {
                         }
                         let (name, version, source, commit) = (field("name")?, field("version")?, field("source")?, field("commit")?);
                         let at = entry_table.get("version").map_or(0..0, |v| v.span());
-                        let version = crate::manifest::parse_version(&version).ok_or_else(|| fail(at, format!("`{version}` is not a version"), "expected `MAJOR.MINOR.PATCH`"))?;
+                        let version = Version::parse(&version).ok_or_else(|| fail(at, format!("`{version}` is not a version"), "expected `MAJOR.MINOR.PATCH`"))?;
                         if commit.len() != 40 || !commit.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
                             let at = entry_table.get("commit").map_or(0..0, |v| v.span());
                             return Err(fail(at, format!("`{commit}` is not a commit: 40 lowercase hexadecimal digits"), "expected a full commit id"));
@@ -106,46 +106,48 @@ impl Lockfile {
         let mut out = String::from("version = 1\n");
         for entry in entries {
             out.push_str("\n[[package]]\n");
-            out.push_str(&format!("name = {}\n", quote(&entry.name)));
-            out.push_str(&format!("version = {}\n", quote(&entry.version.to_string())));
-            out.push_str(&format!("source = {}\n", quote(&entry.source)));
-            out.push_str(&format!("commit = {}\n", quote(&entry.commit)));
+            out.push_str(&format!("name = {}\n", Lockfile::quote(&entry.name)));
+            out.push_str(&format!("version = {}\n", Lockfile::quote(&entry.version.to_string())));
+            out.push_str(&format!("source = {}\n", Lockfile::quote(&entry.source)));
+            out.push_str(&format!("commit = {}\n", Lockfile::quote(&entry.commit)));
         }
         out
     }
 }
 
-/// A TOML basic string.
-fn quote(text: &str) -> String {
-    let mut out = String::from("\"");
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
+impl Lockfile {
+    /// A TOML basic string.
+    fn quote(text: &str) -> String {
+        let mut out = String::from("\"");
+        for c in text.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\t' => out.push_str("\\t"),
+                '\r' => out.push_str("\\r"),
+                c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+        out
+    }
+
+    /// A span that is empty covers the next character, so that a report can underline it.
+    fn widen(text: &str, range: Range<usize>) -> Span {
+        if range.start != range.end {
+            return Span::new(range.start, range.end);
+        }
+        let at = range.start.min(text.len());
+        match text[at..].chars().next() {
+            Some(c) => Span::new(at, at + c.len_utf8()),
+            None => Span::new(at, at),
         }
     }
-    out.push('"');
-    out
-}
 
-/// A span that is empty covers the next character, so that a report can underline it.
-fn widen(text: &str, range: Range<usize>) -> Span {
-    if range.start != range.end {
-        return Span::new(range.start, range.end);
+    /// An `E0176` over the lockfile's own text.
+    pub(crate) fn error(file: &Path, text: String, span: Span, message: String, label: &str) -> PackageError {
+        PackageError { file: file.to_path_buf(), text, diagnostic: Diagnostic::new("E0176", message, span, label) }
     }
-    let at = range.start.min(text.len());
-    match text[at..].chars().next() {
-        Some(c) => Span::new(at, at + c.len_utf8()),
-        None => Span::new(at, at),
-    }
-}
-
-/// An `E0176` over the lockfile's own text.
-pub(crate) fn error(file: &Path, text: String, span: Span, message: String, label: &str) -> PackageError {
-    PackageError { file: file.to_path_buf(), text, diagnostic: Diagnostic::new("E0176", message, span, label) }
 }
