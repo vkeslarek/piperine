@@ -5,7 +5,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use piperine_lang::pom::is_crate_name;
+use piperine_lang::pom::CrateGraph;
 
 use crate::cli::Out;
 use crate::exit::Exit;
@@ -50,7 +50,7 @@ impl NewCommand {
     }
 
     fn create(&self) -> Result<(), String> {
-        if !is_crate_name(&self.name) {
+        if !CrateGraph::is_crate_name(&self.name) {
             let message = format!("`{}` is not a package name: a package name is one identifier (letters, digits and `_`, not starting with a digit), not a keyword and not `std`", self.name);
             return Err(message);
         }

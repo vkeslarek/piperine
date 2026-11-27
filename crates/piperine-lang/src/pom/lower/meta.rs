@@ -3,16 +3,16 @@
 //! expression and are never resolved, except the names in `#[derive(..)]`, which `resolve` looks up as traits (E0161).
 
 use super::Lowerer;
-use super::body::name;
 use crate::msl::ast;
 use crate::pom::ids::FileId;
 use crate::pom::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
 
-pub(super) fn doc(d: &ast::Doc, inner: bool, file: FileId) -> Doc {
-    Doc { text: d.text.clone(), block: d.block, inner, file, span: d.span.0 }
-}
-
 impl Lowerer<'_> {
+    /// A doc comment, as an inner (`//!`) or outer one of `file`.
+    pub(super) fn doc(d: &ast::Doc, inner: bool, file: FileId) -> Doc {
+        Doc { text: d.text.clone(), block: d.block, inner, file, span: d.span.0 }
+    }
+
     /// The docs and attributes of one construct; nodes inside an attribute
     /// are owned by the current owner.
     pub(crate) fn meta(&mut self, meta: &ast::Meta) -> Meta {
@@ -29,7 +29,7 @@ impl Lowerer<'_> {
                             .map(|arg| match arg {
                                 ast::AttrArg::Path(p) => AttrArgNode::Path(self.path(p)),
                                 ast::AttrArg::Lit(l) => AttrArgNode::Lit(l.clone()),
-                                ast::AttrArg::NameValue(n, l) => AttrArgNode::NameValue(name(n), l.clone()),
+                                ast::AttrArg::NameValue(n, l) => AttrArgNode::NameValue(Self::name(n), l.clone()),
                             })
                             .collect(),
                     ),
@@ -37,6 +37,6 @@ impl Lowerer<'_> {
                 AttrNode { path, input, span: a.span.0 }
             })
             .collect();
-        Meta { docs: meta.docs.iter().map(|d| doc(d, false, self.file)).collect(), attrs }
+        Meta { docs: meta.docs.iter().map(|d| Self::doc(d, false, self.file)).collect(), attrs }
     }
 }

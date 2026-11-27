@@ -7,11 +7,11 @@
 
 use piperine_ir::{Ir, ValueType};
 use piperine_lang::elab::LiteralText;
+use piperine_lang::types::LogicPattern;
 
 use crate::composite::CellShape;
 use crate::failure::Failure;
 use crate::leaf_input::LeafInput;
-use crate::logic_pattern::LogicPattern;
 use crate::number_cell::{FloatCell, FloatFormat, NumberCell, WideCell};
 use crate::session::ParamPath;
 
@@ -83,7 +83,7 @@ impl ParamText {
         match &ty {
             number if NumberCell::is_number_width(number) => reading.exact(number).map(|bytes| ParamText::Exact { bytes }),
             ValueType::Option(payload) => reading.option(payload),
-            other if CellShape::of(ir, other).and_then(|shape| LogicPattern::planes_of(&shape)).is_some() => reading.pattern(other),
+            other if CellShape::of(ir, other).and_then(|shape| shape.logic_planes()).is_some() => reading.pattern(other),
             other if ir.is_composite_value(other) => Err(reading.refused("a composite param, an enum with fields included, is set by its leaves, `<param>.<leaf>`".to_string())),
             other => reading.scalar(other).map(ParamText::Whole),
         }
@@ -105,9 +105,10 @@ impl Reading<'_> {
     /// The text as the four-state pattern of a `Logic<N>` param `ty` (§22.1.4): `E0702` for a character outside `0 1 x z` or a
     /// length other than `N`.
     fn pattern(&self, ty: &ValueType) -> Result<ParamText, Failure> {
-        let shape = CellShape::of(self.ir, ty).and_then(|shape| LogicPattern::planes_of(&shape));
+        let shape = CellShape::of(self.ir, ty).and_then(|shape| shape.logic_planes());
         let Some((width, plane)) = shape else { return Err(self.refused(format!("{ty} is no `Logic<N>`"))) };
-        Ok(ParamText::Pattern { bytes: LogicPattern::parse(self.text, width, &format!("`{}`", self.label))?.bytes(plane) })
+        let pattern = LogicPattern::parse_with_width(self.text, width).map_err(|fault| Failure::logic_pattern(fault, self.text, width, &format!("`{}`", self.label)))?;
+        Ok(ParamText::Pattern { bytes: pattern.bytes(plane) })
     }
 
     /// The pin bytes of the text as a value of the number-width type `ty`, read in its own format (A.8 rule 8; an integer by
@@ -115,9 +116,7 @@ impl Reading<'_> {
     fn exact(&self, ty: &ValueType) -> Result<Vec<u8>, Failure> {
         if let Some(format) = FloatFormat::of(ty) {
             let cell = FloatCell::parse(format, self.text).ok_or_else(|| self.refused(format!("it is not a number of type {ty}")))?;
-            let infinite = format.binary().classify(cell.bits) == piperine_numbers::format::FloatClass::Infinite;
-            let spelled_infinite = matches!(self.text.trim_start_matches(['+', '-']).to_ascii_lowercase().as_str(), "inf" | "infinity");
-            if infinite && !spelled_infinite {
+            if LiteralText::is_out_of_range(format.binary(), cell.bits, self.text) {
                 return Err(self.refused(format!("it is outside the range of {ty}")));
             }
             return Ok(cell.to_bytes());

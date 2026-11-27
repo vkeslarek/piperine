@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use piperine_lang::msl::{Diagnostic, Span};
-use piperine_lang::pom::is_crate_name;
+use piperine_lang::pom::CrateGraph;
 use toml::Spanned;
 use toml::de::{DeString, DeTable, DeValue};
 
@@ -241,7 +241,7 @@ impl Walk<'_> {
         for (key, value) in Manifest::entries(table) {
             let name = key.get_ref().to_string();
             let mut broken = false;
-            if !is_crate_name(&name) {
+            if !CrateGraph::is_crate_name(&name) {
                 let help = "a dependency name is an identifier that is no keyword of the language and not `std`".to_string();
                 self.fault(key.span(), format!("`{name}` is not a dependency name"), "not a dependency name", Some(help));
                 broken = true;
@@ -292,7 +292,7 @@ impl Walk<'_> {
                             }
                         },
                         _ => {
-                            if is_crate_name(s) {
+                            if CrateGraph::is_crate_name(s) {
                                 package = Some(s.to_string());
                             } else {
                                 let help = "a package name is an identifier that is no keyword of the language and not `std`".to_string();
@@ -380,7 +380,7 @@ impl Walk<'_> {
         for (key, value) in Manifest::entries(table) {
             match key.get_ref().as_ref() {
                 "name" => match value.get_ref().as_str() {
-                    Some(s) if is_crate_name(s) => name = Some(s.to_string()),
+                    Some(s) if CrateGraph::is_crate_name(s) => name = Some(s.to_string()),
                     Some(s) => {
                         let message = format!("`{s}` is not a package name");
                         let help = "a package name is an identifier that is no keyword of the language and not `std`".to_string();

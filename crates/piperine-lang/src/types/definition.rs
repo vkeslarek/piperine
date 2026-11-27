@@ -257,7 +257,7 @@ impl Checker<'_> {
                 self.carrier_reads(init, out, seen);
             }
         }
-        for child in crate::pom::expr_children(&node.kind, self.design) {
+        for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
             self.carrier_reads(child, out, seen);
         }
     }

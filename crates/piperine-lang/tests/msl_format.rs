@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use piperine_lang::msl::Span;
 use piperine_lang::msl::comments::{Anchor, Comment, Comments};
 use piperine_lang::msl::format::Formatter;
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use spec_corpus::{Class, corpus};
 
 /// The span from the first `from` of `src` to the end of the first `to` after it.
@@ -27,7 +27,7 @@ fn between(src: &str, from: &str, to: &str) -> Span {
 
 /// The anchors of the comments of `src`, which must parse.
 fn anchors(src: &str) -> (Vec<Anchor>, Vec<Span>) {
-    let parsed = parse(src);
+    let parsed = SourceParser::parse(src);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let attached = Comments::of(src).attach(&parsed.file, src);
     (attached.anchors().to_vec(), attached.verbatim().to_vec())
@@ -274,7 +274,7 @@ const CASES: &[&str] = &[
 fn the_formatted_tree_equals_the_sources() {
     for src in CASES {
         let out = formatted(src);
-        let (before, after) = (parse(src), parse(&out));
+        let (before, after) = (SourceParser::parse(src), SourceParser::parse(&out));
         assert!(after.diagnostics.is_empty(), "{:?}\n{out}", after.diagnostics);
         assert!(before.file == after.file, "the formatted text parses to another tree:\n{src}\n---\n{out}");
     }
@@ -463,7 +463,7 @@ module M() {
 #[test]
 fn a_source_that_does_not_parse_gives_diagnostics_and_no_text() {
     let src = "module M( {";
-    let parsed = parse(src);
+    let parsed = SourceParser::parse(src);
     assert!(!parsed.diagnostics.is_empty(), "the source does not parse");
     assert_eq!(Formatter::format(src), Err(parsed.diagnostics.clone()));
     assert_eq!(Formatter::check(src), Err(parsed.diagnostics));
@@ -488,7 +488,7 @@ fn fragment_source(text: &str) -> Option<String> {
         format!("fn fragment() {{\n{text}\n}}"),
     ]
     .into_iter()
-    .find(|src| parse(src).diagnostics.is_empty())
+    .find(|src| SourceParser::parse(src).diagnostics.is_empty())
 }
 
 /// Every `.msl` file under `dir`, recursively, in path order.
@@ -544,14 +544,14 @@ fn sources() -> Vec<(String, String)> {
         for path in files {
             let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
             let label = path.strip_prefix(&repo).unwrap_or(&path).display().to_string();
-            assert!(parse(&text).diagnostics.is_empty(), "{label} parses");
+            assert!(SourceParser::parse(&text).diagnostics.is_empty(), "{label} parses");
             out.push((label, text));
         }
     }
     for dir in ["crates/piperine-cli/tests/projects", "crates/piperine-parity/tests"] {
         for path in msl_files(&repo.join(dir)) {
             let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
-            if parse(&text).diagnostics.is_empty() {
+            if SourceParser::parse(&text).diagnostics.is_empty() {
                 out.push((path.strip_prefix(&repo).unwrap_or(&path).display().to_string(), text));
             }
         }
@@ -579,7 +579,7 @@ fn the_corpus_keeps_every_comment() {
         let expected = Comments::of(src);
         assert_eq!(Comments::of(&out).texts(), expected.texts(), "{label}: the formatted text changed its comments");
         comments += expected.list().len();
-        verbatim += expected.attach(&parse(src).file, src).verbatim().len();
+        verbatim += expected.attach(&SourceParser::parse(src).file, src).verbatim().len();
     }
     println!("{} sources, {comments} plain comments, {verbatim} nodes kept verbatim", sources.len());
     assert!(sources.len() >= 60, "the corpus holds at least 60 sources: {}", sources.len());
@@ -592,7 +592,7 @@ fn the_corpus_keeps_every_comment() {
 fn the_corpus_keeps_every_tree() {
     for (label, src) in sources() {
         let out = Formatter::format(&src).unwrap_or_else(|d| panic!("{label}: {d:?}"));
-        let (before, after) = (parse(&src), parse(&out));
+        let (before, after) = (SourceParser::parse(&src), SourceParser::parse(&out));
         assert!(after.diagnostics.is_empty(), "{label}: {:?}", after.diagnostics);
         assert!(before.file == after.file, "{label}: the formatted text parses to another tree:\n{out}");
     }
@@ -617,7 +617,7 @@ struct Tree;
 impl Tree {
     /// The text of the printed tree of `src`: what `piperine_lang::msl::print` writes for its parse.
     fn printed(src: &str) -> String {
-        piperine_lang::msl::print::print(&parse(src).file)
+        piperine_lang::msl::print::Printer::print(&SourceParser::parse(src).file)
     }
 }
 

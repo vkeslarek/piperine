@@ -30,6 +30,13 @@ impl LiteralText {
         let magnitude = i128::from_str_radix(&digits.replace('_', ""), radix).ok()?;
         Some(if negative { -magnitude } else { magnitude })
     }
+
+    /// Whether the text of a float read as `bits` of `format` is out of the format's range: it rounded to an infinity and the text
+    /// does not spell one (`inf`, `infinity`, signed or not). The one rule the elaborator and the host both apply.
+    pub fn is_out_of_range(format: piperine_numbers::format::BinaryFormat, bits: u128, text: &str) -> bool {
+        let spelled_infinite = matches!(text.trim_start_matches(['+', '-']).to_ascii_lowercase().as_str(), "inf" | "infinity");
+        format.classify(bits) == piperine_numbers::format::FloatClass::Infinite && !spelled_infinite
+    }
 }
 
 impl Elaboration<'_, '_> {
@@ -57,8 +64,7 @@ impl Elaboration<'_, '_> {
                     _ => piperine_numbers::format::BinaryFormat::QUAD,
                 };
                 let bits = piperine_numbers::decimal::DecimalText::nearest(&text.replace('_', ""), format).ok_or_else(|| "it is not a number".to_string())?;
-                let spelled_infinite = matches!(text.trim_start_matches(['+', '-']).to_ascii_lowercase().as_str(), "inf" | "infinity");
-                if format.classify(bits) == piperine_numbers::format::FloatClass::Infinite && !spelled_infinite {
+                if LiteralText::is_out_of_range(format, bits, text) {
                     return Err(format!("it is outside the range of {}", ty.name(self.design)));
                 }
                 Ok(Constant::FloatBits(bits))
@@ -67,7 +73,7 @@ impl Elaboration<'_, '_> {
             Ty::UInt(width) | Ty::Int(width) if *width > 64 => {
                 let signed = matches!(ty, Ty::Int(_));
                 let limbs = piperine_numbers::decimal::DecimalText::integer(text, *width, signed).ok_or_else(|| format!("it is not an integer literal of {} in its range", ty.name(self.design)))?;
-                Ok(self.consts.wide_constant(&super::consts::DynamicInteger::from_pattern(*width, signed, &limbs)))
+                Ok(self.consts.wide_constant(&piperine_numbers::dynamic::DynamicInteger::from_pattern(*width, signed, &limbs)))
             }
             Ty::UInt(_) | Ty::Int(_) => {
                 let (low, high) = Self::integer_range(ty);

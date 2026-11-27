@@ -137,8 +137,8 @@ impl ConstEval<'_, '_> {
     /// The locals the statement `stmt` assigns, anywhere in it.
     fn written_by(&self, stmt: StmtId) -> Vec<DeclId> {
         let mut exprs = Vec::new();
-        for child in crate::pom::stmt_children(self.design, stmt) {
-            crate::pom::preorder(self.design, child, &mut exprs);
+        for child in crate::pom::BodyWalk::new(self.design).statement_children(stmt) {
+            crate::pom::BodyWalk::new(self.design).descendants_depth_first(child, &mut exprs);
         }
         exprs
             .into_iter()

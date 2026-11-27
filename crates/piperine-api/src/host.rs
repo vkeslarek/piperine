@@ -13,10 +13,10 @@ use piperine_solver::prelude::CircuitInstance;
 
 use crate::composite::CellShape;
 use crate::leaf_input::LeafInput;
-use crate::logic_pattern::LogicPattern;
 use crate::params::{Changed, Derive, Params};
 
 use crate::failure::Failure;
+use piperine_lang::types::LogicPattern;
 use crate::request::Analysis;
 use crate::session::{ParamPath, ParamTarget, Session};
 
@@ -84,8 +84,8 @@ impl Session {
         let (net, ty, resolved) = self.top_input(port)?;
         let not_logic = || Failure::Host { code: "E0802", message: format!("`{port}` is a port of type {ty}: a four-state pattern is a value of `Logic<N>`") };
         let shape = CellShape::of(self.ir(), &ty).ok_or_else(not_logic)?;
-        let (levels, plane) = LogicPattern::planes_of(&shape).ok_or_else(not_logic)?;
-        let mut bytes = LogicPattern::parse(pattern, levels, &format!("the port `{port}`"))?.bytes(plane);
+        let (levels, plane) = shape.logic_planes().ok_or_else(not_logic)?;
+        let mut bytes = LogicPattern::parse_with_width(pattern, levels).map_err(|fault| Failure::logic_pattern(fault, pattern, levels, &format!("the port `{port}`")))?.bytes(plane);
         // a drive of a resolved net is present: its `driving` byte follows the value (`abi.md` P3)
         if resolved {
             bytes.push(1);

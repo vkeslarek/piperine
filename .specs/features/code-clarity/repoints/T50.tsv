@@ -1,0 +1,2 @@
+# T50 fix round: a test named for what it asserts (ELAB-06 AC 3, as amended).
+replace piperine-lang/elab_unlowered::m_dtemp_or_extern_at_a_placement_is_p0001 piperine-lang/elab_unlowered::m_or_dtemp_at_a_placement_is_e0320

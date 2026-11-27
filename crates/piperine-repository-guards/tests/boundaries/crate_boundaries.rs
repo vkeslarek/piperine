@@ -27,7 +27,7 @@ impl SolverCrates {
     /// `[dev-dependencies.piperine-x]`, `[build-dependencies.piperine-x]`).
     fn workspace_dependencies(text: &str) -> Vec<String> {
         let mut out = Vec::new();
-        for line in text.lines().map(str::trim) {
+        for line in text.lines().map(str::trim).filter(|line| !line.contains(FIXTURES)) {
             if line.starts_with("piperine-") {
                 out.push(line.split(['=', ' ', '.']).next().unwrap_or("").to_string());
             } else if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
@@ -47,7 +47,7 @@ impl SolverCrates {
     fn sub_solver_violations(text: &str) -> Vec<String> {
         let mut out: Vec<String> = Self::workspace_dependencies(text).into_iter().filter(|d| d != ABI).collect();
         for line in text.lines().map(str::trim) {
-            if line.contains("path =") && !line.starts_with(ABI) {
+            if line.contains("path =") && !line.starts_with(ABI) && !line.starts_with(FIXTURES) {
                 out.push(format!("path dependency: {line}"));
             }
         }
@@ -59,6 +59,8 @@ impl SolverCrates {
 const ANALOG: &str = "piperine-analog-solver";
 /// The digital sub-solver crate.
 const DIGITAL: &str = "piperine-digital-solver";
+/// The dev-only crate of hand-written devices: the one in-tree edge a back-end crate's tests may add.
+const FIXTURES: &str = "piperine-device-fixtures";
 /// The owner crate over both sub-solvers.
 const OWNER: &str = "piperine-solver";
 /// The device ABI crate every sub-solver depends on.
@@ -125,7 +127,7 @@ fn sub_solvers_depend_on_the_abi_crate_only() {
 #[test]
 fn abi_crate_is_a_leaf() {
     let text = SourceTree::crate_manifest(ABI);
-    assert!(!text.contains("path ="), "{ABI} manifest holds a path dependency");
+    assert!(!text.lines().any(|line| line.contains("path =") && !line.starts_with(FIXTURES)), "{ABI} manifest holds a path dependency");
     let deps = SolverCrates::workspace_dependencies(&text);
     assert!(deps.is_empty(), "{ABI} manifest names workspace crates: {deps:?}");
     let root = std::fs::read_to_string(SourceTree::workspace_root().join("Cargo.toml")).expect("read the root manifest");

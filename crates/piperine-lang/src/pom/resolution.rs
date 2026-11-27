@@ -25,7 +25,6 @@ pub enum Resolution {
 pub enum DeferReason {
     ReceiverTypeUnknown,
     AmbiguousAccess,
-    InferredGenerics,
     /// An associated name written through a generic bounded by a catalogue trait.
     BuiltinTraitMember,
 }

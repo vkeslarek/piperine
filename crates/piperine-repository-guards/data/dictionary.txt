@@ -96,6 +96,7 @@ among
 amount
 amperes
 ampersand
+amplifier
 an
 analog
 analyses
@@ -2034,6 +2035,7 @@ positions
 positive
 possible
 post
+postfix
 potential
 potentials
 pound
@@ -2111,6 +2113,7 @@ pull
 pulse
 pulsed
 pulses
+punctuation
 pure
 purity
 purpose
@@ -2197,6 +2200,7 @@ recording
 records
 recover
 recovers
+recovery
 rectangle
 recursing
 recursion
@@ -2898,6 +2902,7 @@ uncatalogued
 unchanged
 unchecked
 unclassified
+unclosed
 unconnected
 undeclared
 undefined
@@ -2984,6 +2989,7 @@ verbose
 verdict
 verdicts
 verification
+verifier
 verify
 version
 versions

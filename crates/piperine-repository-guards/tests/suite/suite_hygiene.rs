@@ -88,38 +88,13 @@ impl ModRsFiles {
                 (path, lines, text)
             })
             .collect();
-        // msl-cli T4 deleted the old `piperine-api` (five `mod.rs`), so the floor is 10; the walk
-        // must also reach the three registered oversized files, which a blind walk would miss.
+        // msl-cli T4 deleted the old `piperine-api` (five `mod.rs`), so the floor is 10.
         assert!(
             files.len() > 10,
             "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
             files.len()
         );
-        for known in ["crates/piperine-lang/src/pom/resolve/mod.rs", "crates/piperine-lang/src/pom/reflect/mod.rs", "crates/piperine-lang/src/pom/lower/mod.rs"] {
-            assert!(files.iter().any(|(path, _, _)| path == known), "the walk does not reach {known}: this guard is blind");
-        }
         files
-    }
-
-    /// The registry of `mod.rs` files allowed to exceed the ceiling: path → why the
-    /// split is not this feature's work. Registry + exhaustiveness (the
-    /// `capabilities_contract.rs` shape used by the other guards here): a new
-    /// exemption fails until it is recorded, and an exemption that becomes
-    /// unnecessary fails just as loudly, so the list cannot rot into a blanket.
-    ///
-    /// Two remain — the parse-tree entries left with the PHDL parser (the
-    /// gate was dark from T21 until T37 and could not prune them), and the
-    /// VAMS-era splits (catalog, ast) shrank their `mod.rs` back under the
-    /// ceiling. The in-file `// hygiene-exempt:` line carries the per-file
-    /// reason for the ones that remain.
-    fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
-        Some(match path {
-            // Follow-up (ROADMAP.md, `code-clarity`): refactor these three into named modules.
-            "crates/piperine-lang/src/pom/resolve/mod.rs" => "name-resolution stages; split pending",
-            "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
-            "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",
-            _ => return None,
-        })
     }
 }
 
@@ -694,19 +669,8 @@ const MOD_RS_MAX_LINES: usize = 60;
 #[test]
 fn mod_rs_declares_only() {
     let mut offences = Vec::new();
-    let mut exempted = Vec::new();
     for (path, lines, text) in ModRsFiles::mod_rs_files() {
-        if lines <= MOD_RS_MAX_LINES {
-            assert!(
-                ModRsFiles::registered_oversized_mod_rs(&path).is_none(),
-                "{path} is {lines} lines — within the {MOD_RS_MAX_LINES}-line ceiling, so its \
-                 exemption is stale. Remove the `// hygiene-exempt:` line and its registry entry."
-            );
-            continue;
-        }
-        if text.lines().any(SourceLines::is_hygiene_exemption) && ModRsFiles::registered_oversized_mod_rs(&path).is_some() {
-            exempted.push(format!("{path} ({lines} lines)"));
-        } else {
+        if lines > MOD_RS_MAX_LINES || text.lines().any(SourceLines::is_hygiene_exemption) {
             offences.push(format!("{path}: {lines} lines (ceiling {MOD_RS_MAX_LINES})"));
         }
     }
@@ -714,14 +678,8 @@ fn mod_rs_declares_only() {
         offences.is_empty(),
         "`mod.rs` files holding implementation (MD-34 — a `mod.rs` declares its \
          modules, re-exports their surface and states the layer's contract; move \
-         the types into files named after them, or add a `// hygiene-exempt: \
-         <reason>` line and register the file in this test):\n  {}",
+         the types into files named after them; no exemption exists):\n  {}",
         offences.join("\n  ")
-    );
-    assert_eq!(
-        exempted.len(),
-        3,
-        "the exempted set changed — update the registry and the count: {exempted:?}"
     );
 }
 

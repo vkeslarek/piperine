@@ -182,7 +182,6 @@ crates/piperine-parity/tests/source_switch.rs::capic_has_the_admittance_of_a_cap
 crates/piperine-parity/tests/source_switch.rs::rdiode_drop	1
 crates/piperine-parity/tests/source_tables.rs::extrapolation_c_and_l_at_each_end	1
 crates/piperine-parity/tests/source_tables.rs::extrapolation_e_outside_is_e0705	1
-crates/piperine-parity/tests/source_tables.rs::the_table_diode_passes_the_partials_verifier	1
 crates/piperine-parity/tests/source_templates.rs::bin	1
 crates/piperine-parity/tests/source_templates.rs::the_swappable_mosfet_runs_each_model	1
 crates/piperine-parity/tests/source_time.rs::every_from_the_stdlib_fires_once_per_period	1

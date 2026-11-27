@@ -6,7 +6,6 @@ use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as Lowered
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::refusal::forms::AnalogForm;
-use crate::pom::nested_stmts;
 use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
@@ -147,7 +146,7 @@ impl Elaboration<'_, '_> {
             if behavior.kind != BehaviorKind::Analog {
                 continue;
             }
-            for stmt in nested_stmts(self.design, &behavior.body) {
+            for stmt in crate::pom::BodyWalk::new(self.design).nested_statements(&behavior.body) {
                 let StmtKind::Contribution { lhs, .. } = self.design.stmt_node(stmt).kind.clone() else { continue };
                 let ExprKind::Call { callee, args, .. } = self.design.expr_node(lhs).kind.clone() else { continue };
                 let potential = self.quantity_role(callee) == Some(crate::pom::QuantityRole::Potential);

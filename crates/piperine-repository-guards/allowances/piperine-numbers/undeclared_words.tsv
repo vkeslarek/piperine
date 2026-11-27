@@ -28,3 +28,5 @@ crates/piperine-numbers/tests/support/random.rs::next_u64	1
 crates/piperine-numbers/tests/transcendental.rs::every_f16_transcendental_is_correctly_rounded_over_all_inputs	1
 crates/piperine-numbers/tests/transcendental.rs::x	1
 crates/piperine-numbers/tests/transcendental.rs::y	1
+crates/piperine-numbers/src/dynamic.rs::from_i128	1
+crates/piperine-numbers/src/dynamic.rs::to_i128	1

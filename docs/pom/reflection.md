@@ -505,7 +505,6 @@ One parameter of a function.
 | `is_const(self)` | `bool` | Whether it is `const`. |
 | `bounds(self)` | `Vec<Path<'d>>` | The bounds of a type parameter, in source order. |
 | `const_type(self)` | `Option<Type<'d>>` | The type of a const parameter. |
-| `default_type(self)` | `Option<Type<'d>>` | The default of a type parameter. |
 | `default_value(self)` | `Option<Expr<'d>>` | The default of a const parameter. |
 
 ### `Struct`

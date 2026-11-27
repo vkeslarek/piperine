@@ -12,8 +12,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-solver -p piperine-plan -p piperine-transpile -p piperine-api -p piperine -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
-**Run solverbounds**: `cargo test -p piperine-solver --test session_bounds`
-**Run solverhost**: `cargo test -p piperine-solver --test host_writes`
+**Run solverbounds**: `cargo test -p piperine-solver --test host session_bounds::`
+**Run solverhost**: `cargo test -p piperine-solver --test host host_writes::`
 **Run baseline**: `cargo test -p piperine-solver --test parity_baseline`
 **Run planlib**: `cargo test -p piperine-plan --lib`
 **Run transpile**: `cargo test -p piperine-transpile --test derive`

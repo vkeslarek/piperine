@@ -170,7 +170,7 @@ impl Checker<'_> {
                 _ => None,
             },
             ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => Some("a probe".to_string()),
-            kind => crate::pom::expr_children(kind, self.design).into_iter().find_map(|child| self.runtime_read(child)),
+            kind => crate::pom::BodyWalk::new(self.design).expression_children(kind).into_iter().find_map(|child| self.runtime_read(child)),
         }
     }
 

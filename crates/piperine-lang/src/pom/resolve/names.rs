@@ -15,7 +15,8 @@ use super::super::decl::{DeclKind, FieldsForm, FnParamData, GenerationData, Gene
 use super::super::decl::BehaviorData;
 use super::super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
-use super::imports::{Prefer, Visit, WalkError, path_diagnostic};
+use super::behaviors::BehaviorBinding;
+use super::imports::{Prefer, Visit, WalkError};
 use super::{Ctx, Output};
 
 /// One level of the scope stack.
@@ -40,7 +41,8 @@ enum Frame {
     Barrier,
 }
 
-struct Names<'c, 'a> {
+/// The walk that resolves the paths of one declaration tree.
+pub(super) struct Names<'c, 'a> {
     ctx: &'c Ctx<'a>,
     out: &'c mut Output,
     frames: Vec<Frame>,
@@ -53,21 +55,19 @@ struct Names<'c, 'a> {
     path_pats: BTreeSet<PatId>,
 }
 
-impl Ctx<'_> {
+impl Names<'_, '_> {
     /// Resolve every path of every declaration.
-    pub(super) fn resolve_names(&self, out: &mut Output) {
-        for i in 0..self.design.decl_count() {
+    pub(super) fn resolve_all(ctx: &Ctx, out: &mut Output) {
+        for i in 0..ctx.design.decl_count() {
             let id = DeclId(i as u32);
-            let data = self.design.decl_data(id);
+            let data = ctx.design.decl_data(id);
             if data.parent.is_none() {
-                let mut names = Names { ctx: self, out: &mut *out, frames: Vec::new(), ns: id, quiet: 0, path_pats: BTreeSet::new() };
+                let mut names = Names { ctx, out: &mut *out, frames: Vec::new(), ns: id, quiet: 0, path_pats: BTreeSet::new() };
                 names.decl(id);
             }
         }
     }
-}
 
-impl Names<'_, '_> {
     fn decl(&mut self, id: DeclId) {
         let design = self.ctx.design;
         let data = design.decl_data(id);
@@ -314,7 +314,7 @@ impl Names<'_, '_> {
     /// Can `res` start a longer path (`prefer` is `Head`: only a type-namespace item can)?
     fn in_head(&self, prefer: Prefer, res: Resolution) -> bool {
         match res {
-            Resolution::Decl(d) if prefer == Prefer::Head => super::imports::occupies(self.ctx.design, d).0,
+            Resolution::Decl(d) if prefer == Prefer::Head => self.ctx.design.decl_data(d).kind.occupies().0,
             _ => true,
         }
     }
@@ -326,7 +326,7 @@ impl Names<'_, '_> {
             match frame {
                 Frame::Barrier => hidden = true,
                 Frame::Items(items) => {
-                    if let Some((_, d)) = items.iter().find(|(n, d)| n == name && (prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0)) {
+                    if let Some((_, d)) = items.iter().find(|(n, d)| n == name && (prefer != Prefer::Head || self.ctx.design.decl_data(*d).kind.occupies().0)) {
                         return Some(Resolution::Decl(*d));
                     }
                 }
@@ -359,7 +359,7 @@ impl Names<'_, '_> {
                 }
                 Frame::Module(module) => {
                     let members = self.ctx.scopes.members.get(module);
-                    if let Some(d) = members.and_then(|m| m.get(name)).filter(|d| prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0) {
+                    if let Some(d) = members.and_then(|m| m.get(name)).filter(|d| prefer != Prefer::Head || self.ctx.design.decl_data(*d).kind.occupies().0) {
                         return Some(Resolution::Decl(d));
                     }
                 }
@@ -407,7 +407,7 @@ impl Names<'_, '_> {
                 return Resolution::Unresolved;
             }
             let file = ctx.design.decl_data(node.owner).file;
-            self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, error)));
+            self.out.diagnostics.push((file, error.diagnostic(self.ctx.design, &node.segments, node.span)));
         }
         for segment in &node.segments {
             if let Some(args) = &segment.args {
@@ -556,9 +556,9 @@ impl Names<'_, '_> {
             data.name.as_ref().map_or(data.span, |n| n.span)
         };
         for (i, (name, decl)) in items.iter().enumerate() {
-            let (types, values) = super::imports::occupies(design, *decl);
+            let (types, values) = design.decl_data(*decl).kind.occupies();
             let first = items[..i].iter().find(|(n, d)| {
-                let (t, v) = super::imports::occupies(design, *d);
+                let (t, v) = design.decl_data(*d).kind.occupies();
                 n == name && ((t && types) || (v && values))
             });
             if let Some((_, first)) = first {
@@ -637,7 +637,7 @@ impl Names<'_, '_> {
             return false;
         }
         let in_block = self.frames.iter().any(|f| match f {
-            Frame::Items(items) => items.iter().any(|(n, d)| n == name && super::imports::occupies(self.ctx.design, *d).0),
+            Frame::Items(items) => items.iter().any(|(n, d)| n == name && self.ctx.design.decl_data(*d).kind.occupies().0),
             Frame::Imports { named, .. } => named.iter().any(|(n, res)| n == name && self.in_head(Prefer::Head, *res)),
             _ => false,
         });
@@ -657,7 +657,7 @@ impl Names<'_, '_> {
                 let node = design.path_node(import.path);
                 if self.block_clash(&node.segments) {
                     let file = design.decl_data(node.owner).file;
-                    self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    self.out.diagnostics.push((file, WalkError::CrateClash { at: 0 }.diagnostic(self.ctx.design, &node.segments, node.span)));
                     if !import.glob {
                         let last = node.segments.last().map(|seg| seg.name.text.clone()).unwrap_or_default();
                         let bound = import.alias.as_ref().map_or(last, |a| a.text.clone());
@@ -668,7 +668,7 @@ impl Names<'_, '_> {
                     continue;
                 }
                 self.frames.push(Frame::Barrier);
-                let res = self.path(import.path, super::imports::import_prefer(import.glob));
+                let res = self.path(import.path, Prefer::of_import(import.glob));
                 self.frames.pop();
                 let Frame::Imports { named, globs, .. } = &mut self.frames[at] else { continue };
                 match (import.glob, res) {
@@ -845,7 +845,7 @@ impl Names<'_, '_> {
             pushed = 2;
         }
         // A block with no module, or with names that are not the module's, has its error already.
-        let quiet = module.is_none_or(|m| !self.ctx.names_match(block, m));
+        let quiet = module.is_none_or(|m| !BehaviorBinding::new(self.ctx).names_match(block, m));
         if quiet {
             self.quiet += 1;
         }

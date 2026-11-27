@@ -1,7 +1,7 @@
 //! `BinaryFormat`: the IEEE 754 binary interchange formats and correct rounding into them
 //! (IEEE 754-2019 sections 3.3, 4.3.1 and 7.4).
 
-use super::limbs::{Limbs, ToLimbs};
+use super::limbs::Limbs;
 
 /// What a bit pattern of a format denotes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -155,10 +155,5 @@ impl BinaryFormat {
             return sign | self.special_field() << self.fraction_bits();
         }
         sign | (biased as u128) << self.fraction_bits() | (significand - (1u128 << self.fraction_bits()))
-    }
-
-    /// The pattern of an exact `u128` magnitude (rounded when it needs more than `precision` bits).
-    pub fn round_integer(&self, negative: bool, magnitude: u128) -> u128 {
-        self.round(negative, &magnitude.to_limbs(), 0, false)
     }
 }

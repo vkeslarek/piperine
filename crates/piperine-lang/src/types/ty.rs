@@ -402,11 +402,6 @@ impl Ty {
         matches!(self, Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) | Ty::Option(_))
     }
 
-    /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
-    pub fn has_repr(&self) -> bool {
-        matches!(self, Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_))
-    }
-
     /// Whether a value of this type can be bound, stored and passed (§1.2): a type a carrier, a
     /// node, a module or an event is not.
     pub fn is_value(&self) -> bool {

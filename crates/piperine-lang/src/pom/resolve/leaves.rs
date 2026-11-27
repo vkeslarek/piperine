@@ -35,15 +35,28 @@ struct LeafSite<'lengths> {
     lengths: &'lengths [ExprId],
 }
 
-/// The leaves to add to every bundle port and signal of a design.
-pub(super) struct LeafPlan<'design> {
+/// The leaves to add to every bundle port and signal of a design, and the step that adds them.
+pub(super) struct LeafResolution<'design> {
     design: &'design mut Design,
 }
 
-impl<'design> LeafPlan<'design> {
+impl<'design> LeafResolution<'design> {
     /// The plan over a classified design.
     pub(super) fn new(design: &'design mut Design) -> Self {
-        LeafPlan { design }
+        LeafResolution { design }
+    }
+
+    /// Adds the leaves of every bundle port and signal to the design.
+    pub(super) fn run(&mut self) {
+        let plan = self.plan();
+        for (owner, planned, levels) in plan {
+            let mut leaves = Vec::new();
+            for leaf in planned {
+                let decl = self.design.push_decl(leaf.data);
+                leaves.push(BundleLeaf { decl, path: leaf.path, nested: leaf.nested });
+            }
+            self.design.add_bundle_leaves(owner, leaves, levels);
+        }
     }
 
     /// The leaves of every owner, in the order of the arena, each with the number of element levels of its owner.
@@ -323,18 +336,5 @@ impl<'design> TypeSubstitution<'design> {
                 _ => argument.clone(),
             },
         }
-    }
-}
-
-/// Adds the leaves of every bundle port and signal to the design.
-pub(super) fn run(design: &mut Design) {
-    let plan = LeafPlan::new(design).plan();
-    for (owner, planned, levels) in plan {
-        let mut leaves = Vec::new();
-        for leaf in planned {
-            let decl = design.push_decl(leaf.data);
-            leaves.push(BundleLeaf { decl, path: leaf.path, nested: leaf.nested });
-        }
-        design.add_bundle_leaves(owner, leaves, levels);
     }
 }

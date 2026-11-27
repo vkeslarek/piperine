@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use piperine_ir::Ir;
 use piperine_lang::msl::Diagnostic;
 use piperine_lang::pom::{Design, DesignDiagnostic};
+use piperine_lang::types::PatternFault;
 use piperine_project::PackageError;
 
 /// Why a request failed.
@@ -33,6 +34,16 @@ pub enum Failure {
 }
 
 impl Failure {
+    /// `E0702` for the text `text`, given for `what` as a pattern of `width` levels, that `fault` says is none (§22.1.4 rule 2).
+    pub fn logic_pattern(fault: PatternFault, text: &str, width: u32, what: &str) -> Failure {
+        let text = text.trim();
+        let message = match fault {
+            PatternFault::Character(bad) => format!("`{text}` for {what}: the character `{bad}` is none of `0`, `1`, `x` and `z` (§22.1.4)"),
+            PatternFault::Length(length) => format!("`{text}` for {what} has {length} levels, and the value has {width} (§22.1.4)"),
+        };
+        Failure::Host { code: "E0702", message }
+    }
+
     /// The stage that failed, as a user reads it.
     pub fn stage(&self) -> &'static str {
         match self {

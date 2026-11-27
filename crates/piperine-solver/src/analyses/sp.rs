@@ -243,87 +243,94 @@ impl<'a> SpSolver<'a> {
 mod tests {
     use super::*;
     use piperine_analog_solver::netlist::NodeIdentifier;
-    use crate::analyses::test_devices as td;
+    use crate::analyses::test_devices::AnalysisDevices;
     use crate::core::builder::CircuitBuilder;
     use num_complex::Complex64;
 
-    // ── test doubles: `analyses/test_devices.rs` ────────────────────────
+    
 
-    /// Series-`R` attenuator: `port1 --Rs-- port2`, both ports referenced to
-    /// ground. A textbook 2-port with a known closed-form `S` at any `z0`.
-    fn series_r_attenuator(rs: f64, z0: f64) -> (CircuitInstance, SpOptions) {
-        let mut b = CircuitBuilder::new("atten");
-        let n1 = b.node("n0");
-        let n2 = b.node("n1");
-        td::resistor(&mut b, "r", &n1, &n2, rs);
-        td::dc_bias(&mut b, "bias1", &n1);
-        td::dc_bias(&mut b, "bias2", &n2);
-        let circuit = b.build().unwrap();
-        let options = SpOptions {
-            ports: vec![
-                SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
-                SpPort { num: 2, node: NodeIdentifier::Anonymous(1), z0 },
-            ],
-            sweep: AcSweepAnalysisOptions { start_frequency: 1e6, stop_frequency: 1e6, steps: 1, logarithmic: false },
-        };
-        (circuit, options)
+    /// The networks the scattering tests solve.
+    struct SpCircuits;
+
+    impl SpCircuits {
+        /// Series-`R` attenuator: `port1 --Rs-- port2`, both ports referenced to
+        /// ground. A textbook 2-port with a known closed-form `S` at any `z0`.
+        fn series_r_attenuator(rs: f64, z0: f64) -> (CircuitInstance, SpOptions) {
+            let mut b = CircuitBuilder::new("atten");
+            let n1 = b.node("n0");
+            let n2 = b.node("n1");
+            AnalysisDevices::resistor(&mut b, "r", &n1, &n2, rs);
+            AnalysisDevices::dc_bias(&mut b, "bias1", &n1);
+            AnalysisDevices::dc_bias(&mut b, "bias2", &n2);
+            let circuit = b.build().unwrap();
+            let options = SpOptions {
+                ports: vec![
+                    SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
+                    SpPort { num: 2, node: NodeIdentifier::Anonymous(1), z0 },
+                ],
+                sweep: AcSweepAnalysisOptions { start_frequency: 1e6, stop_frequency: 1e6, steps: 1, logarithmic: false },
+            };
+            (circuit, options)
+        }
+
+        /// `port1 --wire-- n --wire-- port2`, shunt `C` from `n` to gnd: a
+        /// T-junction 2-port (port1/port2 tied to the same electrical point via
+        /// ideal wires on *distinct* port nodes — not the coincident-node
+        /// SP-05 case) — a first-order low-pass in the port impedance.
+        fn shunt_c_lowpass(cap: f64, z0: f64) -> (CircuitInstance, SpOptions) {
+            let mut b = CircuitBuilder::new("lp");
+            let n1 = b.node("n0");
+            let n2 = b.node("n1");
+            let n_mid = b.node("n2");
+            let gnd = b.ground();
+            AnalysisDevices::wire(&mut b, "w1", &n1, &n_mid);
+            AnalysisDevices::wire(&mut b, "w2", &n2, &n_mid);
+            AnalysisDevices::capacitor(&mut b, "c", &n_mid, &gnd, cap);
+            AnalysisDevices::dc_bias(&mut b, "bias", &n_mid);
+            let circuit = b.build().unwrap();
+            let options = SpOptions {
+                ports: vec![
+                    SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
+                    SpPort { num: 2, node: NodeIdentifier::Anonymous(1), z0 },
+                ],
+                sweep: AcSweepAnalysisOptions {
+                    start_frequency: 1e3,
+                    stop_frequency: 1e9,
+                    steps: 5,
+                    logarithmic: true,
+                },
+            };
+            (circuit, options)
+        }
+
+        /// A reciprocal L-C matching section: `port1 -- L -- n -- C to gnd -- port2`
+        /// is out of reach without a branch-unknown inductor test double; instead
+        /// use a symmetric shunt-C pi-like network: two equal shunt capacitors at
+        /// each port node plus a series resistor between them — reciprocal,
+        /// passive, and buildable from the existing test doubles.
+        fn reciprocal_rc_network(rs: f64, cap: f64, z0: f64) -> (CircuitInstance, SpOptions) {
+            let mut b = CircuitBuilder::new("pi");
+            let n1 = b.node("n0");
+            let n2 = b.node("n1");
+            let gnd = b.ground();
+            AnalysisDevices::resistor(&mut b, "r", &n1, &n2, rs);
+            AnalysisDevices::capacitor(&mut b, "c1", &n1, &gnd, cap);
+            AnalysisDevices::capacitor(&mut b, "c2", &n2, &gnd, cap);
+            AnalysisDevices::dc_bias(&mut b, "bias1", &n1);
+            AnalysisDevices::dc_bias(&mut b, "bias2", &n2);
+            let circuit = b.build().unwrap();
+            let options = SpOptions {
+                ports: vec![
+                    SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
+                    SpPort { num: 2, node: NodeIdentifier::Anonymous(1), z0 },
+                ],
+                sweep: AcSweepAnalysisOptions { start_frequency: 1e6, stop_frequency: 1e6, steps: 1, logarithmic: false },
+            };
+            (circuit, options)
+        }
     }
 
-    /// `port1 --wire-- n --wire-- port2`, shunt `C` from `n` to gnd: a
-    /// T-junction 2-port (port1/port2 tied to the same electrical point via
-    /// ideal wires on *distinct* port nodes — not the coincident-node
-    /// SP-05 case) — a first-order low-pass in the port impedance.
-    fn shunt_c_lowpass(cap: f64, z0: f64) -> (CircuitInstance, SpOptions) {
-        let mut b = CircuitBuilder::new("lp");
-        let n1 = b.node("n0");
-        let n2 = b.node("n1");
-        let n_mid = b.node("n2");
-        let gnd = b.ground();
-        td::wire(&mut b, "w1", &n1, &n_mid);
-        td::wire(&mut b, "w2", &n2, &n_mid);
-        td::capacitor(&mut b, "c", &n_mid, &gnd, cap);
-        td::dc_bias(&mut b, "bias", &n_mid);
-        let circuit = b.build().unwrap();
-        let options = SpOptions {
-            ports: vec![
-                SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
-                SpPort { num: 2, node: NodeIdentifier::Anonymous(1), z0 },
-            ],
-            sweep: AcSweepAnalysisOptions {
-                start_frequency: 1e3,
-                stop_frequency: 1e9,
-                steps: 5,
-                logarithmic: true,
-            },
-        };
-        (circuit, options)
-    }
 
-    /// A reciprocal L-C matching section: `port1 -- L -- n -- C to gnd -- port2`
-    /// is out of reach without a branch-unknown inductor test double; instead
-    /// use a symmetric shunt-C pi-like network: two equal shunt capacitors at
-    /// each port node plus a series resistor between them — reciprocal,
-    /// passive, and buildable from the existing test doubles.
-    fn reciprocal_rc_network(rs: f64, cap: f64, z0: f64) -> (CircuitInstance, SpOptions) {
-        let mut b = CircuitBuilder::new("pi");
-        let n1 = b.node("n0");
-        let n2 = b.node("n1");
-        let gnd = b.ground();
-        td::resistor(&mut b, "r", &n1, &n2, rs);
-        td::capacitor(&mut b, "c1", &n1, &gnd, cap);
-        td::capacitor(&mut b, "c2", &n2, &gnd, cap);
-        td::dc_bias(&mut b, "bias1", &n1);
-        td::dc_bias(&mut b, "bias2", &n2);
-        let circuit = b.build().unwrap();
-        let options = SpOptions {
-            ports: vec![
-                SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
-                SpPort { num: 2, node: NodeIdentifier::Anonymous(1), z0 },
-            ],
-            sweep: AcSweepAnalysisOptions { start_frequency: 1e6, stop_frequency: 1e6, steps: 1, logarithmic: false },
-        };
-        (circuit, options)
-    }
 
     // ── SP-02/SP-03: matched series-R attenuator ────────────────────────
 
@@ -335,7 +342,7 @@ mod tests {
         //   S11 = S22 = Rs / (Rs + 2*z0)
         //   S21 = S12 = 2*z0 / (Rs + 2*z0)
         let (z0, rs) = (50.0, 50.0);
-        let (mut circuit, options) = series_r_attenuator(rs, z0);
+        let (mut circuit, options) = SpCircuits::series_r_attenuator(rs, z0);
         let mut solver = SpSolver::new(&mut circuit, options, Context::default()).unwrap();
         let result = solver.solve_sweep().unwrap();
 
@@ -353,7 +360,7 @@ mod tests {
 
     #[test]
     fn reciprocal_network_has_s12_eq_s21_and_passive_sii() {
-        let (mut circuit, options) = reciprocal_rc_network(200.0, 1e-9, 50.0);
+        let (mut circuit, options) = SpCircuits::reciprocal_rc_network(200.0, 1e-9, 50.0);
         let mut solver = SpSolver::new(&mut circuit, options, Context::default()).unwrap();
         let result = solver.solve_sweep().unwrap();
 
@@ -368,7 +375,7 @@ mod tests {
 
     #[test]
     fn shunt_c_lowpass_s21_rolls_off_with_frequency() {
-        let (mut circuit, options) = shunt_c_lowpass(1e-9, 50.0);
+        let (mut circuit, options) = SpCircuits::shunt_c_lowpass(1e-9, 50.0);
         let mut solver = SpSolver::new(&mut circuit, options.clone(), Context::default()).unwrap();
         let result = solver.solve_sweep().unwrap();
 
@@ -404,7 +411,7 @@ mod tests {
 
     #[test]
     fn non_positive_z0_fails_loud() {
-        let (mut circuit, mut options) = series_r_attenuator(50.0, 50.0);
+        let (mut circuit, mut options) = SpCircuits::series_r_attenuator(50.0, 50.0);
         options.ports[0].z0 = 0.0;
         let result = SpSolver::new(&mut circuit, options, Context::default());
         assert!(result.is_err(), "non-positive z0 must fail loud (SP-05)");
@@ -413,7 +420,7 @@ mod tests {
 
     #[test]
     fn degenerate_ground_port_fails_loud() {
-        let (mut circuit, mut options) = series_r_attenuator(50.0, 50.0);
+        let (mut circuit, mut options) = SpCircuits::series_r_attenuator(50.0, 50.0);
         options.ports[0].node = NodeIdentifier::Gnd;
         let result = SpSolver::new(&mut circuit, options, Context::default());
         assert!(result.is_err(), "a port on ground must fail loud (SP-05)");
@@ -422,7 +429,7 @@ mod tests {
 
     #[test]
     fn duplicate_port_num_fails_loud() {
-        let (mut circuit, mut options) = series_r_attenuator(50.0, 50.0);
+        let (mut circuit, mut options) = SpCircuits::series_r_attenuator(50.0, 50.0);
         options.ports[1].num = options.ports[0].num;
         let result = SpSolver::new(&mut circuit, options, Context::default());
         assert!(result.is_err(), "duplicate port num must fail loud (SP-05)");
@@ -435,7 +442,7 @@ mod tests {
         // zero-length port) -> fail loud." Two *different* port numbers
         // declared on the same node is a distinct failure from duplicate
         // num (which reuses the same `num`, not the same node).
-        let (mut circuit, mut options) = series_r_attenuator(50.0, 50.0);
+        let (mut circuit, mut options) = SpCircuits::series_r_attenuator(50.0, 50.0);
         options.ports[1].node = options.ports[0].node.clone();
         let result = SpSolver::new(&mut circuit, options, Context::default());
         assert!(result.is_err(), "coincident port nodes must fail loud (SP-05)");
@@ -444,7 +451,7 @@ mod tests {
 
     #[test]
     fn unknown_port_node_fails_loud() {
-        let (mut circuit, mut options) = series_r_attenuator(50.0, 50.0);
+        let (mut circuit, mut options) = SpCircuits::series_r_attenuator(50.0, 50.0);
         options.ports[0].node = NodeIdentifier::Anonymous(99);
         let result = SpSolver::new(&mut circuit, options, Context::default());
         assert!(result.is_err(), "a port on a node not in the circuit must fail loud (SP-05)");

@@ -89,8 +89,8 @@ impl Elaboration<'_, '_> {
     /// Whether `body` holds a `return` or a `?`.
     pub(super) fn returns_early(&self, body: &BlockNode) -> bool {
         let mut inside = Vec::new();
-        for expr in crate::pom::block_exprs(self.design, body) {
-            crate::pom::preorder(self.design, expr, &mut inside);
+        for expr in crate::pom::BodyWalk::new(self.design).block_expressions(body) {
+            crate::pom::BodyWalk::new(self.design).descendants_depth_first(expr, &mut inside);
         }
         inside.iter().any(|e| matches!(self.design.expr_node(*e).kind, ExprKind::Return(_) | ExprKind::Try(_)))
     }

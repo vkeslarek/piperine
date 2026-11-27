@@ -115,17 +115,6 @@ impl<'d> Function<'d> {
     }
 }
 
-/// The `impl` blocks whose self type names `target`, in source order.
-fn impls_named<'d>(decl: Decl<'d>) -> Vec<Impl<'d>> {
-    let design = decl.design();
-    design.impls_of(decl.id()).into_iter().filter_map(|i| Decl::new(design, i).as_impl()).collect()
-}
-
-/// The function called `name` in any of `impls`, in source order.
-fn method_of<'d>(impls: Vec<Impl<'d>>, name: &str) -> Option<Function<'d>> {
-    impls.into_iter().flat_map(|i| i.items()).filter_map(Decl::as_function).find(|f| f.name() == Some(name))
-}
-
 /// One parameter of a function.
 #[derive(Clone, Copy)]
 pub struct FnParam<'d> {
@@ -184,14 +173,6 @@ impl<'d> GenericParam<'d> {
         match self.data() {
             GenericParamData::Const { ty, .. } => Some(self.decl.design().ty(*ty)),
             GenericParamData::Type { .. } => None,
-        }
-    }
-
-    /// The default of a type parameter.
-    pub fn default_type(self) -> Option<Type<'d>> {
-        match self.data() {
-            GenericParamData::Type { default, .. } => default.map(|t| self.decl.design().ty(t)),
-            GenericParamData::Const { .. } => None,
         }
     }
 
@@ -312,12 +293,12 @@ impl<'d> Struct<'d> {
     /// The `impl` blocks written for this struct, inherent and trait impls,
     /// in source order.
     pub fn impls(self) -> Vec<Impl<'d>> {
-        impls_named(self.decl)
+        self.decl.impl_blocks()
     }
 
     /// The function called `name` in one of [`Struct::impls`].
     pub fn method(self, name: &str) -> Option<Function<'d>> {
-        method_of(self.impls(), name)
+        Impl::method_named(self.impls(), name)
     }
 }
 
@@ -359,12 +340,12 @@ impl<'d> Enum<'d> {
     /// The `impl` blocks written for this enum, inherent and trait impls,
     /// in source order.
     pub fn impls(self) -> Vec<Impl<'d>> {
-        impls_named(self.decl)
+        self.decl.impl_blocks()
     }
 
     /// The function called `name` in one of [`Enum::impls`].
     pub fn method(self, name: &str) -> Option<Function<'d>> {
-        method_of(self.impls(), name)
+        Impl::method_named(self.impls(), name)
     }
 
     pub fn generics(self) -> Vec<GenericParam<'d>> {
@@ -540,6 +521,11 @@ pub struct Impl<'d> {
 }
 
 impl<'d> Impl<'d> {
+    /// The function called `name` in any of `impls`, in source order.
+    pub(super) fn method_named(impls: Vec<Impl<'d>>, name: &str) -> Option<Function<'d>> {
+        impls.into_iter().flat_map(|i| i.items()).filter_map(Decl::as_function).find(|f| f.name() == Some(name))
+    }
+
     fn data(self) -> &'d ImplData {
         match self.decl.kind() {
             DeclKind::Impl(i) => i,

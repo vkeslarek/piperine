@@ -1224,6 +1224,500 @@ The `?` is not dead code worth deleting. It is the T25-style replacement of an `
 
   No other lane owns those paths in wave 2, so nothing collides. The table should still name them, or T49's item should move to a P10 task.
 
+## Phase 6 (B6a Owners in `msl/`: lexer, printer, parser, T41 to T46)
+
+**Verdict**: PASS (no Medium or High finding; four Low findings and three notes)
+**Head**: 9eb8c0a42 on `feature/code-clarity-p6`, base 7bfe85f7d.
+**Verifier**: independent sub-agent (Opus; author != verifier). Sonnet wrote T41–T43 and T45–T46, and Opus wrote T44. I reran the gates myself, one at a time, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-lang` | 84 result lines, 1 439 passed, 0 failed |
+| `cargo test -p piperine-repository-guards` | 11 result lines, 116 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 12 result lines, 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 64 result lines, 645 passed, 0 failed |
+| `cargo test -p piperine-project` | 7 result lines, 53 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory` | 18 passed, 0 failed |
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| CC-09 behaviour: expression grammar (T44) | A side-by-side read of the base `build`/`block_like`/`stmt` against the head's `ExpressionGrammar` methods | yes. The Pratt table has the same levels, operators and binding powers (15 postfix … 4 `\|\|`). The postfix `first_of` order is method/field, call, index, `?`. The atom `first_of` order is unchanged (14 alternatives, `.labelled("expression")`), as are the range `first_of`, the assignment operator `choice`, the statement `first_of` order (item, then meta + empty/let/signal/on/block-like/simple), the `Recovery::recover` wrapper, and the `else` select that is not listed among expected tokens. `.boxed()` sits where it did on `assignment`, `operators`, `block`, `path_expression` and every `first_of` arm. `emit_expression` folds the four "first argument" arms into one, with the same span per variant and the same message |
+| CC-09 behaviour: printer (T42) | A multiset diff of every non-comment line of the base `print.rs` against the head's `print.rs` + `print/*.rs` | yes. Every differing line is a rename (`enc`→`escape`, `dec`→`restore`, `doc`→`documentation_comment`, `binop`→`binary_operator`, `vis`→`visibility`, `dir`→`direction`), a `Self::` prefix, a `pub(super)`, or a `use`. No format string changed |
+| CC-09 behaviour: check (T46), lexer (T41) | Diff read of `check.rs`; `float_dot`→`closes_float`/`float_closed_by_dot`, `unescape` | yes. `check.rs` is indentation plus `ParseCheck::` prefixes and three renames. The lexer's float rule is the same predicate |
+| CC-09 behaviour, whole crate | The unedited assertions of `msl_errors` (recovery, spans, E0910 depth/chain), `msl_format`/`msl_print` (round trip, idempotence, 20 000-link chains), `msl_corpus`, `std_library`, the CLI twins, the Book inventory | yes, all pass |
+| Test edits are call paths only | `git diff --word-diff` of `crates/piperine-lang/tests` and of the CLI and project changes, as token counts | yes. The only removed or added tokens are `parse`→`SourceParser::parse`, `parse_expr`→`ExpressionGrammar::parse`, `parse_{type,pat,generics,module_item,block}`→`<Grammar>::parse`, `lex`/`lex_bytes`→`Lexer::…`, `print`→`Printer::print`, `render(d, …)`→`d.render(…)`, and their `use` lines. No assertion, literal or expected value changed |
+| T43 deferrals closed | `grep 'fn parse_(expr\|type\|pat\|generics\|module_item\|block)'` over `crates/` | yes. None remain: T44 took `parse_expr`; T45 took `TypeGrammar`/`PatternGrammar`/`GenericsGrammar::parse`; T46 took `ModuleGrammar`/`BlockGrammar::parse` |
+| T46 "0 `free_functions` rows for `msl/`" | `grep -c msl/ allowances/piperine-lang/free_functions.tsv` | yes, 0 rows. `diag::render` is `Diagnostic::render` |
+| T44 split rows | `fnlen` probe: brace-matched length of every `fn` in `msl/` | yes. Every `ExpressionGrammar` method is ≤ 60 lines; `block_like` and `stmt` are gone; `classify_number` and `lex_with_comments` are also under 60. The ten functions over 60 (`expr_inner` 103, `ParseCheck::statement` 80, `expression_inner` 87, `lex_limited` 95, `ItemGrammar::fn_decl` 99, `ItemGrammar::definition` 188, `recover_item` 122, `module_decl` 79, `PatternGrammar::definition` 193, `TypeGrammar::definition` 113) are exactly the ten rows `long_functions.tsv` carries at the head |
+| Cross-lane edits (T46) | Diff of `piperine-cli/src/commands/fmt.rs`, `render/diagnostic.rs`, `piperine-project/src/error.rs` | yes. Each is `diag::render(d, …)`→`d.render(…)` and a dropped `use` |
+| Allowances only delete or move | `git diff` of `allowances/` and `worklists/` | yes. `free_functions` −161, `owners` −11, `repeated_type_names` −2. `undeclared_words` +16/−61: the 16 are printer rows moved from `print.rs` to `print/*.rs`. `undocumented_items` +43/−87: each `+` is the same item moved to its owner, some renamed (`expr`→`expression`, `stmt`→`statement`, `dir`→`direction`, `path_with`→`path_with_sugar`, `build`→`definition`). `long_functions` +10/−15 |
+| Dictionary and glossary | `data/dictionary.txt`, `data/glossary.tsv` | yes. `postfix`, `punctuation`, `recovery` and `unclosed` are English words, used in `apply_postfix`, `TokenInput::punctuation`, `mod recovery` and `unclosed_delimiters`. `si` is a glossary row with a meaning, used in `classify_si`, `is_si_letter`, `malformed_si` and `si_exponent` |
+| No free fn, no macro, no `#[allow]`/`#[expect]` in new code | `grep` over `msl/` | yes. `macro_rules` appears only as the parser's refusal of the token |
+| No `unwrap`/`expect` on user-input paths | `grep 'unwrap(\|expect(\|panic!\|unreachable!'` over `msl/` | yes. The lexer's two `expect`s and the entry's bookkeeping `expect`s are gone. The one `panic!` left is `ParseDiagnostics::removed` (`diagnostics.rs:23`), and every caller passes a `&'static str` literal from the grammar (including the `row: &'static str` of `item.rs:457`), never input. A wrong row is a programming error that a test parse of each form hits |
+| Commit subjects, one per task, `tasks.md` in each | `git show --stat` | yes |
+
+### P6-1 (Low): `ItemGrammar` is a public type with no public method
+
+`crates/piperine-lang/src/msl/parser/mod.rs:34` re-exports `pub use item::ItemGrammar`, and `item.rs:7` declares it `pub`. All of its methods are `pub(crate)` or private, so the type is an inert name in `piperine_lang`'s public surface, and nothing outside the crate names it. Repro: `grep -rn ItemGrammar crates tests | grep -v src/msl/parser/` prints nothing. The fix is `pub(crate)` on both lines (as with `ParseCheck`). `MAX_CHAIN` also became reachable through the new re-export (`mod.rs:38`). That one matches msl-polish's design, which lists it as public surface, so it is not a finding.
+
+### P6-2 (Low): `BlockGrammar` is a shell around one test-only entry point, and the `parse` name hides all six from the test-only worklist
+
+`BlockGrammar` (`expr.rs:97-107`) holds only `parse`; the block production stays `ExpressionGrammar::block`. `GenericsGrammar` is honest by comparison, because it owns the `parameters` production that `ItemGrammar` uses. None of the six fragment `parse` methods (`ExpressionGrammar`, `TypeGrammar`, `PatternGrammar`, `GenericsGrammar`, `ModuleGrammar`, `BlockGrammar`) has a caller outside `tests/`. Repro: `grep -rn 'Grammar::parse' crates --include=*.rs | grep -v /tests/` finds only the definitions. T43's and T44's notes say why the guard misses them: `parse` is a word product code spells, so `test_only_items` cannot see that these particular `parse`s are test-only.
+
+This is not a regression: the base free functions were just as test-only and were not in the worklist either. The design choice is defensible, since a fragment entry point is the grammar's own `parse`. But the method makes the coverage gap invisible rather than recording it. A `kept: <test surface of the grammar>` row for each of the six would be the honest record. `SourceParser` in place of the plan's `Parser` is justified by the `chumsky::Parser` clash through `use super::*` and is fine.
+
+### P6-3 (Low): ten `long_functions` rows were renamed and left open, against design's "each task gives the rows of its files a verdict"
+
+T44 split its rows and deleted them, as its box says. T42, T43, T45 and T46 instead moved their rows to the new paths with verdict `-`:
+
+- `Printer::expr_inner`
+- `SourceParser::lex_limited`
+- `ItemGrammar::{definition,fn_decl}`
+- `PatternGrammar::definition`
+- `TypeGrammar::definition`
+- `ParseCheck::{statement,expression_inner}`
+- `ModuleGrammar::{module_decl,recover_item}`
+
+Source: `worklists/long_functions.tsv:66-75`.
+
+T45's text and Done-when do not ask for a split or a verdict, so T45 is not failed. `design.md:412` does ask for one, though ("each task above gives the rows of its files a verdict, `split` or `kept: <reason>`"), and T41's box is the only one in this phase that says so explicitly. The open rows pass today only because open rows are allowance rows until the closing task (`tasks.md:3739`). They are debt carried forward, not judged.
+
+### P6-4 (Low): five Done-when boxes say "no existing test edited" while their commits edit tests
+
+T41 (`msl_lexer.rs`, `msl_print.rs`, `spec_structure.rs`), T42, T43 (16 test files), T45 and T46 each tick "`cargo test -p piperine-lang` passes with no existing test edited", yet each commit edits test files. Every edit is a call path, so the substance holds. Only T44's box names the exception ("the calls of `parse_expr`"). The other five boxes are literally untrue and should carry the same parenthesis.
+
+### Notes (not findings)
+
+- `Lexer::float_closed_by_dot` (`lexer.rs:365`) replaced `expect` with `let … else { return }`. If the invariant ever broke, the popped token and the dot would be dropped silently instead of panicking. `closes_float` (`lexer.rs:353`) is checked just before and guarantees the `Int`, so the branch is unreachable. Behaviour is unchanged.
+- The renamed undocumented items (`ParseCheck::expression`, `ItemGrammar::direction`, `TypeGrammar::path_with_sugar`, the three `definition`s) kept their `undocumented_items` rows. That is allowed as a move, but these are the identifiers the authors touched most, and a `///` would have closed the rows.
+- a09b3c257 inserted an empty line 3 into `data/dictionary.txt`. It is cosmetic, and the guard ignores it.
+
+### Phase 6 findings
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P6-1 `ItemGrammar` public and inert | Low | open |
+| P6-2 `BlockGrammar` shell; six test-only `parse`s invisible to the worklist | Low | open |
+| P6-3 ten `long_functions` rows renamed with no verdict | Low | open (debt to the closing task) |
+| P6-4 "no existing test edited" boxes untrue as worded | Low | open |
+
+## Phase 5 (B2a Device fixtures and the back-end merges, T33 to T40)
+
+**Verdict**: FAIL (three Medium findings, five Low)
+**Head**: ef7a2da28 on `feature/code-clarity-p5`, base 97d327d58
+**Verifier**: independent sub-agent (Opus; author != verifier). There is no `proofs.md` yet, because `check_proofs.py` runs after T155. This round reran the phase gates itself, one at a time.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (all targets, after touching `src/*.rs`) | all pass: lib 50, boundaries 20, suite 29 (with the two new ratchets), proof_ledger 4, worklists 5, ownership 5, the rest 2 each |
+| `cargo test -p piperine-abi` | 59 passed (58 at the base, plus the T33 test) |
+| `cargo test -p piperine-analog-solver` | 111 passed, the same as the base |
+| `cargo test -p piperine-digital-solver` | 161 passed, the same as the base |
+| `cargo test -p piperine-device-fixtures` | 1 passed (`its_devices_pass_the_partials_verifier`) |
+| `cargo test -p piperine-solver`, and `--tests -- --test-threads=1` | 371 passed both ways, the same as the base |
+| `cargo test -p piperine-parity` | 645 passed |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| CC-09: `git diff 97d327d58..HEAD` over `docs/`, `examples/`, `tests/`, `crates/piperine-{parity,transpile,cli}`, `*.msl` and goldens | empty. `crates/piperine-parity/src/contract.rs` is untouched |
+
+### Timing (the user's goal: a leaner, faster suite)
+
+Measured in the same target dir with a warm dependency cache. The base came from a `git archive` of 97d327d58 in `/var/tmp`, which was deleted afterwards.
+
+| `piperine-solver` | 97d327d58 (57 binaries) | ef7a2da28 (8 binaries) |
+| --- | --- | --- |
+| `touch src/lib.rs`, then `cargo test --no-run` (lib rebuild plus every test link) | 68.2 s | 50.8 s (the fixtures crate rebuild included) |
+| `cargo test -p piperine-solver`, with everything built | 6.25 s | 1.67 s |
+
+The same 371 tests run in both. The gain is real: link time drops by about a quarter and run time to a quarter.
+
+### Tests kept (scrutiny 1)
+
+- I extracted every `#[test] fn` from the five crates at both revisions, 699 before and 701 after. Each name keeps its count.
+- The two additions are the T33 test `a_device_that_only_evaluates_reacts_and_continues` and the fixtures crate's `its_devices_pass_the_partials_verifier` (28 copies of that name now, 27 before).
+- For every test I compared the assertion count and the numeric and string literals between the two revisions. 4 tests differ, and all four are the boundary edits judged under scrutiny 5:
+  - `crate_declares_no_dependency`
+  - `the_crate_depends_on_the_abi_crate_only`, in both analog and digital
+  - `every_hand_written_device_is_in_a_partials_check`, see P5-5
+  - `a_whole_read_cell_holds_an_array_view`, where only the `extern "C" fn` moved into `ArrayViews`
+- Every other body change is a call-path rewrite: a free helper became `Type::method`, and `add_vsrc` became `CircuitBuilding::add_voltage_source`.
+- The repoints are all `move` rows, 11 + 13 + 16 + 22 + 30 = 92. Four modules carry a full-word name rather than the former target's: `abi_sens`→`abi_sensitivity`, `adjoint_vs_sens`→`adjoint_against_sensitivity`, `sens`→`sensitivity`, `stepper_fold`→`step_fold`. Each has its `move` row, and I accept them under the full-words rule.
+- `proof_ledger` passes.
+
+### Seeded allowances (scrutiny 2)
+
+- At T34 (026c8d269), `test_support_shared_by_path` holds 548 rows with a summed count of 548. `allow_in_test_code` holds 243 rows with a summed count of 498, and `allow_attributes` holds 3 rows with a count of 4.
+- At the base, `allow_attributes` held 246 rows with a count of 502. 243 + 3 = 246 and 498 + 4 = 502, so the move is net-zero.
+- At the head, the files hold 401 rows/401 and 169 rows/352. The back-end crates have no row in either file.
+- The rows are exact keys `file::item<TAB>count`, with no wildcard. `Allowance::judge` fails on a count above the real one (stale) and on one below it (unlisted), so a green guard proves the rows are exactly today's violations.
+- Throwaway probes, all reverted, with `git status` clean afterwards:
+  - I appended `#[allow(dead_code)] #[path = "host_set.rs"] mod probe_duplicate;` to `solver/tests/host/main.rs` and raised `piperine-lang/tests/book.rs`'s two rows to 2. Both ratchets failed, each naming the new row as unlisted and the raised row as stale.
+  - I put a free `#[allow]`ed fn into `device-fixtures/src/lib.rs`. `no_free_helper_function_in_test_code` failed on it, so the fixtures crate is held to the test-code rules.
+
+### Judgements
+
+- **Scrutiny 5, the fixtures dev-cycle.**
+  - design.md:255 names the crate's users as "abi, analog-solver, digital-solver, solver (dev-dependency)". The fixtures crate depends on solver, so the dev-cycle is inherent to the approved design. The `DOCUMENTED_ARROWS` row and the three boundary edits are its necessary consequence.
+  - Every loosening is scoped to the one name `piperine-device-fixtures`.
+  - A normal (non-dev) dependency on it from a back-end crate would be a cargo cycle, and `DOCUMENTED_ARROWS` would refuse it anyway. Accepted.
+  - Cost noted: `cargo test -p piperine-abi` now builds the whole back end.
+- **Scrutiny 5, "each device once".** Not met: P5-2.
+- **Scrutiny 5, `*-fixtures` as test code.**
+  - Acceptable as a classification. It is what makes `test_only_items` and the test-code ratchets right, and `#![deny(missing_docs)]` covers the documentation rule.
+  - It also removes the crate from `long_functions` (none over 60 lines today), `single_implementor_traits`, `repeated_type_names` (which would have flagged P5-2) and the module-structure rule.
+  - `is_fixtures_crate` (`source_tree.rs:120`) has no unit test. Low: P5-8.
+- **Scrutiny 6, `context_init`.** The reason is real. `Context::init_global` sets faer's global parallelism behind a process `Once`, and the test asserts that `Context::default()` has not done so. Any earlier solver build in the same binary would make it fail or pass vacuously. The approved T39 text said 6, though: P5-6.
+- **Scrutiny 9, the code rules.**
+  - There is no free function, no macro and no `#[allow]` in the new test or fixtures code (the guards are green, and the probe above shows they reach the fixtures).
+  - Names pass the dictionary guard, and no new undeclared word was added (the allowances only shrank: abi 53→42, analog 120→96, digital 37→27, solver 288→216).
+  - Doc quality is poor: P5-7.
+
+### Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| T33: a device with `eval` only, and its `react` thunk returns `Continue` | `thunks::thunks::a_device_that_only_evaluates_reacts_and_continues` | yes. `EvalOnly` declares one reaction and writes no `react`. The test asserts `status::OK` and that nothing is committed |
+| T34: `#![deny(missing_docs)]`, no free function, one `PartialsCheck` over every device, once | `device-fixtures/tests/partials.rs` `its_devices_pass_the_partials_verifier` | **no**. 27 copies plus 4 variants remain, and the check misses `digital::PulseGenerator` (P5-1, P5-5). "Each device once" and "analog-only ones with no `react`" are unmet (P5-2, P5-4) |
+| T34: the two ratchets pass under `**Run suite**` | `suite::test_code::{no_test_support_is_shared_by_path,no_allow_in_test_code}` | yes, both ways (probes above) |
+| T35: 2 targets, a header each, names kept, no `#[path]`/`#[allow]`/free helper; plan 2 | `target_plan`, the ratchets, the name diff | yes |
+| T36: 3 targets, names kept, `support/devices.rs` gone, plan 3 | the same | yes |
+| T37: 3 targets, names kept, `support/devices.rs` gone, plan 3 | the same | yes |
+| T38: the three targets pass with `--test-threads=1` and the default; names kept | solver run both ways | yes on the Done-when. **no** on the What: the 27 copies did not leave, and there are no `replace` rows (P5-1) |
+| T39: 7 targets, `tests/helpers/` gone, plan 7, both ways | the same | yes, against an approved text the implementer edited from 6 (P5-6) |
+| T40: no row of the four crates in the three allowances | the allowance files | honestly unticked. The `tests/` rows are closed and 36 `src/` rows remain. The named owners do not carry them (P5-3) |
+
+### P5-1 (Medium): the 27 partials-verifier copies were not retired, and nothing owns them
+
+- tasks.md:1166 (T38 What): "the 27 copies of `its_devices_pass_the_partials_verifier` leave with `replace` rows to the one of T34". T34's Done-when (tasks.md:1086) ticks "`its_devices_pass_the_partials_verifier`, once".
+- At the head:
+  - 27 copies remain in `crates/piperine-solver/tests/`, plus `its_device_passes_the_partials_verifier` in `analyses/noise_report.rs:137` and `transient/truncation.rs:222`, and `its_corner_source_…`/`its_once_faulting_device_…` in `truncation.rs:216,227`.
+  - The 59 `impl Device for` in the solver's tests stay target-local.
+  - `repoints/T38.tsv` has no `replace` row.
+- Both boxes are ticked, and no task owns the remainder.
+- Repro: `grep -rln 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests | wc -l` prints 27.
+- Fix: either move the target-local devices into the fixtures crate and retire the copies with `replace` rows, or untick the T34 and T38 items and name an owner task with a Done-when line.
+
+### P5-2 (Medium): "each device once" is not met, and the M6 file was copied rather than replaced
+
+- T34 What: "each device once" and "`solver/src/analyses/test_devices.rs` (M6)" among the sources replaced.
+- The fixtures crate declares one device type several times:
+  - `Resistor` 3× (`examples.rs:30`, `circuit.rs:43`, `analyses.rs:18`).
+  - `Capacitor` and `VoltageSource` 3× each.
+  - `Diode`, `Comparator`, `Counter`, `Timer`, `DataFlipFlop`, `Inverter`, `Recorder`, `Sampler`, `Stub`, `Faulty`, `Tracer`, `Inductor`, `NoisyResistor` and `Call` 2× each, for 18 repeated names in all.
+- The three `Resistor`s are the same `I = V/r` device. They differ in the `origin` string, the default bytes and whether `∂/∂r` is declared. The commit's reason, that "merging would change behaviour", holds for the stateful digital variants but not for these.
+- `fixtures/src/analyses.rs` (391 lines) is a copy of `solver/src/analyses/test_devices.rs`, which still exists and is still what `pz.rs:381` and `sp.rs:246` use. The copy's only consumer is the fixtures partials test.
+- Repro: `grep -rlE '^\s*pub struct Resistor\b' crates/piperine-device-fixtures/src` lists 3 files.
+- Fix: merge the pure-analog duplicates. The `test_devices.rs` side is lane K's `src/**`, so either drop `analyses.rs` until lane K repoints `pz`/`sp` to it, or give that repoint an owner line.
+
+### P5-3 (Medium): the T40 deferral names owners whose text does not carry it, and the dependency is circular
+
+- T40's box (tasks.md:1219) says the 36 `test_helper_functions` rows stay open "for lane K's back-end phase, T77 to T85 (T84 for the solver analyses)". None of T77 to T85 mentions `test_helper_functions`, `#[cfg(test)]` helpers, or `test_devices.rs`.
+  - T84 (tasks.md:2208) closes the **free-function** allowance of product code.
+  - T78 splits `raw.rs` by section.
+- T77 and the lane-K phase "Start after T40" (tasks.md:178, 2057), so T40 waits on lane K and lane K waits on T40.
+- The box itself is honestly unticked.
+- Rows still open: abi `raw.rs` 1; analog `convergence.rs`, `math/{faer,integration,newton_raphson,singular}.rs`, `stamp_validation.rs` 6; solver `pz.rs` 5, `sp.rs` 3, `test_devices.rs` 20, `protocol/statistics.rs` 1.
+- Fix:
+  - Add a Done-when line naming these rows to the owning tasks (T77 for abi, T79 or T80 for analog, T84 for solver).
+  - Make T40's remaining item depend on them, or split T40 so lane K's start does not wait on its open half.
+
+### P5-4 (Low): 55 trivial `react` bodies survive the T33 default
+
+- T34 What: "analog-only ones with no `react`".
+- `crates/piperine-device-fixtures/src` still holds 55 `fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> { Ok(Flow::Continue) }`, for example `circuit.rs:88,159,221`. Each is exactly the new default.
+- Repro: `grep -rn -A1 'fn react' crates/piperine-device-fixtures/src | grep -c 'Ok(Flow::Continue)'`.
+
+### P5-5 (Low): the "every device is in a partials check" guard no longer reaches the shared devices
+
+- At the base, `every_hand_written_device_is_in_a_partials_check` scanned `tests/helpers/*.rs` with `device_impls` and required each helper device in a check.
+- At the head (`solver/tests/abi_devices/abi_devices.rs:77`), it scans only the solver's `tests/`. The fixtures crate's coverage rests on the hand-written list `EveryDevice` (`device-fixtures/tests/partials.rs`), which no scan holds to the crate's `impl Device for` set.
+- That list already misses `digital::PulseGenerator` (`device-fixtures/src/digital.rs:916`). Before, that device lived in digital-solver's support, where no partials check ran, so nothing regressed for it. The guard's reach is what shrank.
+- Repro: `grep -c PulseGenerator crates/piperine-device-fixtures/tests/partials.rs` prints 0.
+- Fix: build `EveryDevice` from a scan of the crate's `impl Device for` items, or add a test that compares the two.
+
+### P5-6 (Low): an approved Done-when was edited without a recorded approval
+
+- T39's Done-when read "6 targets … Plan lowered to 6". The implementer changed it to 7 in tasks.md:1198-1199.
+- The reason is sound (scrutiny 6), and C25's "75 link steps" total shifts with it, as does the new `piperine-device-fixtures 1` plan row.
+- An approved task text needs the coordinator's or the user's word in a Deferred or Notes line. A silent rewrite of the criterion does not do that.
+
+### P5-7 (Low): tautological doc comments and a stray comment
+
+- 147 doc comments in the fixtures crate read "The shape helper `shape`." or "The module helper `module`." (for example `circuit.rs:49,67`). They satisfy `///` on every item and say nothing, against the manual-style docs rule.
+- `crates/piperine-abi/tests/thunks/thunks.rs:321` holds a leftover `// 2.0f64` as the first line of `impl ProbeCalls`.
+
+### P5-8 (Low): `is_fixtures_crate` is unpinned and broader than its doc
+
+- `source_tree.rs:120` treats every crate whose name ends in `-fixtures` as test code. That matches the planned `piperine-ir-fixtures` (T63) and is fine, but no unit test pins it.
+- It also removes the crate from the product-only `repeated_type_names`, `long_functions` and `single_implementor_traits` guards.
+- Fix: add a unit test in `item_scan.rs`'s scenarios. A test-origin `repeated_type_names` would also have caught P5-2.
+
+## Phase 5 round 2
+
+**Verdict**: FAIL (one Medium finding, one Low note)
+**Head**: eacc83455 on `feature/code-clarity-p5` (fix commits e49f059ea, e10dcb63e, 475feb12b, eacc83455 on 472c8c2cb)
+**Verifier**: independent sub-agent (Opus; author != verifier). Same environment as round 1 (`/var/tmp/piperine-target-t`), with the guard sources touched first.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 121 passed, 0 failed |
+| `cargo test -p piperine-abi` | 59 passed |
+| `cargo test -p piperine-analog-solver` | 111 passed |
+| `cargo test -p piperine-digital-solver` | 161 passed |
+| `cargo test -p piperine-device-fixtures` | 2 passed |
+| `cargo test -p piperine-solver`, and `--tests -- --test-threads=1` | 337 passed both ways |
+| `cargo test -p piperine-parity` | **645 passed** over 64 result lines. Every binary's count is identical to round 1. The fixer's "449" is a counting artefact, not lost tests |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| CC-09: `git diff 97d327d58..HEAD` over `docs/`, `examples/`, `tests/`, `crates/piperine-{parity,transpile,cli,api}`, `*.msl` and goldens | empty |
+
+### Timing of `piperine-solver`
+
+- The run, with everything built, took 1.71 s, against 1.67 s in round 1 and 6.25 s at the base.
+- `touch src/lib.rs` followed by `--no-run` took 29.7 s, against 50.8 s in round 1 and 68.2 s at the base.
+
+### Closure of round 1
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P5-1 | 475feb12b | See below; the reconciliation holds. One replaced proof, C61, is not held by its survivor (P5R2-1) |
+| P5-2 | e49f059ea, e10dcb63e | No repeated type name in the fixtures crate (`uniq -d` is empty). `repeated_type_names` now covers fixtures, with a unit test. `test_devices.rs` places the fixtures' devices (`AnalysisDevices`), and `analyses.rs` is no longer a second copy |
+| P5-3 | e49f059ea | The 36 `test_helper_functions` rows are gone: the allowance falls from 1004 to 968 and none of the four crates has the file. The helpers are associated functions of `Cases` structs. No `src/` unit test changed its assertion signature. T40's first box is ticked, with the coordinator's decision recorded |
+| P5-4 | e49f059ea | No `react` in the fixtures crate is the bare `Ok(Flow::Continue)` body |
+| P5-5 | 475feb12b | `every_device_of_the_crate_is_in_the_list` fails on a device with no row and on a row with no device (probes below). `digital::PulseGenerator` is listed |
+| P5-6 | coordinator amendment | T39 carries "Coordinator amendment (user AFK, pending review)" |
+| P5-7 | eacc83455 | 0 "helper `…`" docs remain, and the docs name what the item is. The stray `// 2.0f64` comment at `thunks.rs:321` is gone |
+| P5-8 | e10dcb63e | `item_scan.rs` `a_fixtures_crate_is_test_code_and_a_product_crate_is_not` pins `is_fixtures_crate`, including the negative `piperine-fixtures-core` |
+
+### Tests removed, reconciled
+
+- `piperine-solver` lost 35 tests and gained 1 (`every_hand_written_device_lives_in_the_fixtures_crate`): 371 − 35 + 1 = 337.
+- The 35 removed tests are:
+  - the 27 `its_devices_pass_the_partials_verifier` copies;
+  - 4 variants: `its_device_…` ×2, `its_corner_source_…` and `its_once_faulting_device_…`;
+  - `the_fixture_devices_pass_the_partials_check` (array_windows);
+  - `every_helper_device_passes_at_generic_points`;
+  - `every_hand_written_device_is_in_a_partials_check`;
+  - `a_check_of_another_module_does_not_count`.
+- `repoints/T38.tsv` and `T39.tsv` hold 15 + 20 = **35** `replace` rows, one per removed test. The brief said 36 rows; there are 35, and they match exactly.
+- `piperine-device-fixtures` gained `every_device_of_the_crate_is_in_the_list`.
+
+### The partials checks reproduce on the same points
+
+Each held point of the old copies is carried over unchanged as a `Check::Holding` or `Check::Fixtures` row:
+
+| Device | Check | Point or fixture kind |
+| --- | --- | --- |
+| FlakyC | `Holding` | `(0,3,0.0)` |
+| AcFault | `Holding` | `(0,1,0.0)` |
+| Collapsible | `Holding` | `(0,0,1e3)` |
+| LateOscillator | `Holding` | `(0,2,0)` |
+| JumpOscillator | `Holding` | `(0,3,0)` |
+| LateSource | `Holding` | `(0,3,0)` |
+| OpenAboveDc | `Holding` | `(0,2,0)` |
+| StepSource | `Holding` | `(0,5,0)` |
+| FaultOnce | `Holding` | `(0,2,0)` |
+| NanSource | `Fixtures` | `NonFinite` |
+| Oscillator | `Fixtures` | `Impure` |
+| AlwaysLimited | `Fixtures` | `AlwaysLimited` |
+
+- Every other old copy called `verify_every_function` at the generic points, and its devices are `Check::Generic` rows.
+- The 30 devices of `every_helper_device_passes_at_generic_points` are all `Generic` rows, under their merged names: the mixed copies became `digital::*`, `BitDigitalToAnalog` and `ConductanceTracer`.
+- The exemptions are the round-1 set minus `bad_limit`, which now builds a raw module and has no `impl Device`. Each exemption carries a reason.
+- `every_device_function_passes_the_partials_verifier` (the `Verdict::Exact` table) is kept.
+- The list has 128 rows.
+
+### Merges and the two data changes
+
+- Across every test that kept its name, I compared assertion counts, numbers and strings between ef7a2da28 and HEAD.
+  - 29 tests differ, each only by losing a string literal.
+  - Every lost literal is a module name in a construction that moved to the fixtures crate, such as `module::<Diode>("Diode")`.
+  - No assertion, number or message changed.
+- `circuit` ORIGIN changed from `"abi_devices.rs"` to `"abi.md:11"`. No test or product file names the old string. `boundary/plan.rs` asserted `abi.md:11` on the former `examples::Resistor`, and that assertion is unchanged.
+- The merged `mixed::Comparator` watches changed from `rise`/`fall` to `up`/`down`. No solver, api or parity test reads a watch name of a fixtures device. The `"rise"` in `api/tests/options.rs:350` belongs to that crate's own device, and `assembly_watch.rs:346` builds its own.
+- The digital merges also change the module name, for example `"Timer"` to `"timer"`. They bump the same thread-local counter keyed by the same device name, so `ReactionCounts::of` call sites are unchanged.
+- Conclusion: fixture data only, with no user-visible output.
+
+### Probes (throwaway edits to `device-fixtures/tests/partials.rs`, each reverted; `git status` clean)
+
+| Edit | Result |
+| --- | --- |
+| Delete the `circuit::Resistor` row | `every_device_of_the_crate_is_in_the_list` FAILED: "devices no row of EveryDevice names: [\"circuit::Resistor\"]" |
+| Add a row labelled `circuit::Ghost` | FAILED: "rows whose device is gone: [\"circuit::Ghost\"]" |
+| Keep the label `circuit::Resistor` but give the row `circuit::Capacitor::module()` | **both tests pass**, so the Resistor is never checked (P5R2-1) |
+
+### P5R2-1 (Medium): C61 "a check of another module does not count" is re-pointed to a test that does not hold it
+
+- `a_check_of_another_module_does_not_count` planted a label naming `Foo` over `Bar`'s module and asserted that `Foo` stays unchecked (HYG-16 AC 3; `solver-hygiene/verification.md:112` judged it on exactly that).
+- The `replace` row moves it to `every_device_of_the_crate_is_in_the_list`, and `solver-hygiene/tasks.md:1193-1194` now proves C61 with that test.
+- That test compares labels with the scanned `impl Device for` names only. A row's `module` is never tied to its label. The third probe shows a row labelled `circuit::Resistor` that checks the Capacitor's module, which leaves the Resistor unchecked with every test green.
+- C60 ("in a partials check of its **own** module") has the same gap.
+- Fix: derive each row's label and module from the one type, for example a `ListedDevice::of::<T: Device>(check)` built on `std::any::type_name::<T>()` and `T`'s own `module()`. Alternatively, assert that each row's `module` is the module its label's type builds, and plant the probe-3 case as a test.
+
+### Note (Low, not blocking)
+
+- `BadLimit` (`analog.rs:170`) and `Rogue` (`digital.rs:877`) assemble raw modules by hand, without `impl Device`, so `DeviceScan` cannot see them.
+- Both are deliberate rule-breakers, so leaving them unlisted is right. The scan's doc should say that it only reaches `impl Device` devices.
+
+## Phase 5 round 3
+
+**Verdict**: PASS (one Low note, not blocking)
+**Head**: 7009c644d on `feature/code-clarity-p5` (fix commit 7009c644d on 8e15d6703)
+**Verifier**: independent sub-agent (Opus; author != verifier). Same environment as before, with the guard sources touched first.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-device-fixtures` | 4 passed: `its_devices_pass_the_partials_verifier`, `every_device_of_the_crate_is_in_the_list`, `a_check_of_another_module_does_not_count - should panic`, `a_row_takes_its_label_from_its_type` |
+| `cargo test -p piperine-solver` | 337 passed |
+| `cargo test -p piperine-repository-guards` | 121 passed (`proof_ledger` included) |
+
+### Closure of round 2
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P5R2-1 | 7009c644d | Each row is built as `ListedDevice::of::<T>(module, check)`, with the label taken from `type_name::<T>()`. `of` asserts `ptr::eq(module.prototype_ptr(), T::prototype())`. `a_check_of_another_module_does_not_count` is `#[should_panic(expected = "holds the module of another device")]` and plants round 2's repro (`of::<circuit::Resistor>(circuit::Capacitor::module())`). The C61 proof (`solver-hygiene/tasks.md:1194`) and the T38 `replace` row point at it |
+
+### Judgements
+
+1. **The prototype pointer ties a row to its type, with one harmless exception.**
+   - A throwaway test collected `prototype_ptr` over all 128 rows and found 127 distinct pointers.
+   - The one shared prototype belongs to `solver_devices::lifecycle::{Counted, Failing}`. Both return `LifecycleShapes::shared()` (`solver_devices/lifecycle.rs:31,51`).
+   - `of::<Counted>(Failing::module())` is accepted, which is a false pass. It is harmless: that shape has 0 functions, so `PartialsCheck::run` returns before checking anything for either device, and no function can go unchecked by the swap.
+   - A device whose instance shape varies (for example `Collapsible`) is still tied correctly. Its module's prototype is its type's static prototype, and the check runs on the shape that the module's own `create` returns.
+2. **The `#[should_panic]` test fails for the right reason.**
+   - `expected` names the assertion's message, and only `of`'s assertion carries that text. A panic for another cause would fail the test.
+   - As a throwaway, I replaced the assertion with `let _ = own;`. The test then FAILED ("should panic ... FAILED"), so it holds the rule.
+3. **C60 and C61 are honestly proved.**
+   - C61 ("a check of another module does not count") is the planted swap in the `#[should_panic]` test.
+   - C60 ("every hand-written device is in a partials check of its own module") is `every_device_of_the_crate_is_in_the_list`. It builds every row through `of`, so it fails on a wrong module as well as on a missing or stale row.
+   - The `sees` matcher of `check_proofs.py` requires the proof's words in order on one line. It accepts the printed `test a_check_of_another_module_does_not_count - should panic ... ok`.
+
+All the probes were reverted, and `git status` is clean.
+
+### Note (Low, not blocking)
+
+- **R3-1.** `Counted` and `Failing` share one prototype, so the type-to-module tie cannot tell them apart.
+- No check is lost today.
+- Fix: give `Failing` its own static shape, or assert in `every_device_of_the_crate_is_in_the_list` that the rows' prototype pointers are distinct.
+
+## Phase 7 (B6a Owners in `pom/`, and the front end's small defects, T47 to T52)
+
+**Verdict**: PASS (no Medium or High finding; seven Low findings and three notes)
+**Head**: ed23b656a on `feature/code-clarity-p7`, base 4e027c56b.
+**Verifier**: independent sub-agent (Opus; author != verifier). Sonnet wrote T47–T52. I reran the gates myself, one at a time, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`, after touching `crates/piperine-repository-guards/src/*.rs`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 11 result lines, 117 passed, 0 failed |
+| `cargo test -p piperine-lang` | 84 result lines, 1 439 passed, 0 failed |
+| `cargo test -p piperine-numbers` (`purity` included) | 10 result lines, 22 passed, 0 failed |
+| `cargo test -p piperine-api` (`host_patterns` included) | 28 result lines, 307 passed, 0 failed |
+| `cargo test -p piperine-project` | 7 result lines, 53 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 12 result lines, 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 64 result lines, 645 passed, 0 failed |
+| `cargo test -p piperine-transpile --test golden` | 7 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory` | 18 passed, 0 failed |
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| CC-09 behaviour: `DynamicInteger` (T51) | `diff` of the base `lang/src/elab/consts/integers.rs` against the head's `numbers/src/dynamic.rs` | yes. The only differences are the module `//!` line, three `use piperine_numbers::…` → `use super::…`, and `pub(in crate::elab)` → `pub` on 31 items. No body line changed, so every integer result is the old one. `tests/purity.rs` passes with the new file. `dynamic.rs` is not in `transpile/src/rt.rs`'s `NUMBER_FILES`, so generated code does not move |
+| CC-09 behaviour: E0702 text (T52) | A side-by-side read of the base `api/src/logic_pattern.rs::parse` against the head's `LogicPattern::parse_with_width` + `Failure::logic_pattern`, with my own cases (`""` at width 4, `" 10xz "`, `10X1`, `10xz1`) | yes, byte-identical. Both trim the text and check the character before the length. Both accept only lowercase `0 1 x z`, and the level count equals `chars().count()`. The two format strings are the same character for character, including `(§22.1.4)`. `what` was not dropped. It moved from `parse` to `Failure::logic_pattern(fault, text, width, what)`, and both host call sites (`host.rs:88`, `param_text.rs:110`) pass the same `what` as before (`the port \`{port}\``, `` `{label}` ``) |
+| CC-09 behaviour: the pin bytes (T52) | Read of the base and head `bytes` | yes. The same plane layout, with `PatternLevel::{Zero,One,Z,X}` in place of `'0' '1' 'z' _`. `CellShape::logic_planes` is the old `planes_of`, verbatim. `host_patterns` passes unedited in its assertions |
+| CC-09 behaviour: out-of-range float (T52) | Read of the two removed blocks against `LiteralText::is_out_of_range` (`override_text.rs:36`) | yes. The infinite class and the spelled `inf`/`infinity` (sign-stripped, lowercase) predicate are the same expression the elaborator and the host each wrote |
+| CC-09 behaviour, whole front end | lang (unedited assertions), the CLI twins, parity, transpile goldens, `book_inventory` | yes, all green (table above) |
+| Owner lines closed by earlier deferrals | `grep` over `crates/`, `docs/`, `tests/` | yes. `DeferReason::InferredGenerics`, `Ty::has_repr`, `GenericParam::default_type` and `BinaryFormat::round_integer` have no definition and no use, and their `docs/pom` rows are gone. The api `LogicPattern` file is deleted. `piperine_api::LogicPattern` is now a re-export of `piperine_lang::types::LogicPattern`. `numbers::Limbs` has a `kept:` verdict (see P7-1) |
+| `inventory_types_in_two_crates` empty | `ls allowances/*/inventory_types_in_two_crates.tsv`; `boundaries/inventory_types.rs` | yes. Both files are deleted, and the guard's `OWNERS` (`LogicPattern`→lang, `DynamicInteger`→numbers, `Backend`→api) passes with no allowance |
+| `ShapeCheck` → `DeclarationShapeCheck` (T48) | `data/owners.tsv:19`, `resolve/shape.rs:16`, `transpile/src/shape_check.rs:10` | yes, honest. `piperine-transpile` already declares a public `ShapeCheck`, and the inventory guard would have flagged a second one. The renamed row names a real type with a `run` method that owns the pass. No row was dropped, because `NameResolution`, `MemberResolution` and `LeafResolution` still sit next to it. The four `owners` allowance rows they replace are deleted |
+| Impls away from their type: `Lowerer`, `Decl` | `lower/mod.rs` + `lower/lowerer.rs`; `reflect/mod.rs` + `reflect/handle.rs`, `module.rs`, `nature.rs`, `behavior.rs` | yes, it meets the owner intent. Each struct is declared once, in the `mod.rs` of the family whose files extend it, and every impl sits in a child file of that module. A struct in `lowerer.rs` or `handle.rs` would put `body.rs`/`items.rs`'s `impl Lowerer` and `module.rs`'s `Decl::as_module` beside it rather than below it, which is what the guard measures. Each `mod.rs` `//!` names the file that holds the core impl. Both `mod.rs` files are under the 60-line ceiling |
+| SPEC_DEVIATION comments (T49) | `msl-pom/design.md` diff; `msl-elab/spec.md:151` | partly; see P7-6. The two `pom` ones were design-text divergences (`QuantityRole` because `Quantity` is taken in `pom`, and `ModLayout`'s `is_root`). Amending the feature's design text is the closure that T31's approved text and design.md:612 name, and these are designs that could not be built as written, not a deviation from the spec. They are fixed. The third, in `tests/elab_unlowered.rs`, is a spec-level divergence (ELAB-06 AC 3 says `P0001`, the code gives `E0320`). Its comment now cites amendment (d), which predates this phase. That relabels it; it does not fix it |
+| `suite_hygiene` registry → 0 | `suite_hygiene.rs` diff | stricter, not weaker. The registry now returns `None` for every path and the count is 0, so any `mod.rs` over 60 lines fails. The removed "the walk reaches the three registered files" assertion only existed to prove the exemptions were visible; the `> 10` floor still guards blindness. Leftovers are in P7-3 |
+| Test edits are call paths only | `git diff 4e027c56b..HEAD -- '*/tests/*'` | yes. `is_crate_name` → `CrateGraph::is_crate_name` (3 sites and the `use`); `LogicPattern::parse(t, w, what)` → `parse_with_width(t, w)` plus `Failure::logic_pattern` in the error arm; one comment in `elab_unlowered.rs`; the hygiene registry. No assertion, literal or expected value changed. `BodyWalk::new(design)` is `pub(crate)`, so tests do not call it |
+| Allowances only delete or move | Row multiset diff by item name of `allowances/` and `worklists/` | yes. `free_functions` −86, `owners` −6, `undocumented_items` −26 net (every `+` row is a moved item with a deleted twin), `undeclared_words` −11 net (the four `decl` rows sum 14 → 14, `imports.rs` 1 → `context.rs` 1, and `from_i128`/`to_i128` move lang → numbers), `repeated_type_names` −1 lang/−1 api, `crate_docs` −1, `impls_away` 1 renamed, `long_functions` 2 renamed (see P7-7) |
+| `test_only_items` reflection rows "kept" | `grep` of each of the 15 methods in `docs/pom/reflection.md` | yes. Each one has its own method row (for example `is_binding` at :900, `bundle_view` at :782, `is_intrinsic` at :460, `struct_named` at :70, `is_pub` at :251). They are documented public reflection API with no in-tree consumer yet, which is the honest verdict for a library surface |
+| No free fn, no macro, no `#[allow]`, no `#[expect]` in new code | `grep` of the `+` lines under `crates/*/src` | yes, none. The 5 `unreachable!` are moved from `reflect/hardware.rs` (5 removed, 5 added) and sit on handle-kind invariants, not on user input |
+| No `unwrap` on user-input paths | same grep | yes. `dynamic.rs` uses `unwrap_or_default` on `minus` results that are non-negative by construction, as before |
+| Full words, `///` on new items | read of `BodyWalk`, `NameResolution`, `MemberResolution`, `LeafResolution`, `DeclarationShapeCheck`, `Classifier`, `PatternFault`, `Failure::logic_pattern`, `CellShape::logic_planes`, `LiteralText::is_out_of_range`, `CrateGraph::is_crate_name` | yes. Every new item is documented and spelled in full (`expression_children`, `statement_own_expressions`, `descendants_depth_first`). The undocumented `Decl::{new,id,design,kind}` and `Lowerer` fields are moved code that keeps its rows |
+| Every public path of `piperine_lang::pom` unchanged (T50) | `pub use` lines of base `reflect/mod.rs` against head | yes for T50: the same names are re-exported from `pom`. T49 removed `pom::is_crate_name` (it is now `CrateGraph::is_crate_name`); that is the intended free-fn removal, and every caller was edited |
+| Commits, one per task, `tasks.md` in each | `git show --stat` | yes |
+
+### P7-1 (Low): `Limbs` is kept, but its reason is not written on the trait
+
+T51's Done-when reads "the trait is removed, or kept with its reason written on it (T32)". The verdict exists only in `worklists/single_implementor_traits.tsv:2`. The trait's doc at `crates/piperine-numbers/src/limbs.rs:9` still says only "Arithmetic on a magnitude held as little-endian `u64` limbs." Compare `In` (`msl/parser/base.rs:97-101`) and `NetRead` (`solver/src/protocol/step.rs:18-19`), which carry their reason on the item. Repro: `grep -n -B3 'pub trait Limbs' crates/piperine-numbers/src/limbs.rs`. The row also says "the file is embedded verbatim" as if that blocked the edit. It does not: no transpile golden holds the text of `limbs.rs` (`grep -rl 'Arithmetic on a magnitude' crates/piperine-transpile/tests` is empty), so one `///` line on the trait closes this.
+
+### P7-2 (Low): `docs/pom/model.md` still documents the free `is_crate_name`
+
+T49 removed `piperine_lang::pom::is_crate_name` and made it `CrateGraph::is_crate_name`. `docs/pom/model.md:266` (`InvalidName` unless `is_crate_name(name)`) and `:270` (`` `is_crate_name(name: &str) -> bool` is true for … ``) still describe a free function. It should be a row of the `CrateGraph` method table above it. Repro: `grep -n is_crate_name docs/pom/model.md`.
+
+### P7-3 (Low): `suite_hygiene.rs` keeps dead scaffolding after the registry emptied
+
+These are in `crates/piperine-repository-guards/tests/suite/suite_hygiene.rs`:
+
+- At :91-92 the comment is two half-sentences spliced together ("so the floor is 10; the walk / no `mod.rs` is registered as oversized any more").
+- The `registered_oversized_mod_rs` doc at :102-111 still says "Two remain …", although the registry is now empty.
+- The registry itself is `fn registered_oversized_mod_rs(_path: &str) -> Option<&'static str> { None }`, a function whose parameter is ignored.
+
+The guard is stricter, as it should be. Only the text and the dead registry are wrong. Either keep the registry as a documented empty table or delete it and the two calls in `mod_rs_declares_only` (:692, :698), together with the `exempted` count.
+
+### P7-4 (Low): "no existing test edited" boxes and commit bodies are untrue as worded (P6-4 again)
+
+- T48 and T50 tick "`cargo test -p piperine-lang` passes with no existing test edited", and their commit bodies say "No test edited", yet each edits `tests/suite/suite_hygiene.rs`.
+- T49's box says the same, while its commit edits `lang/tests/pom_crates.rs` and `lang/tests/elab_unlowered.rs`. Its body does say so.
+
+Every edit is a call path, a comment or the exemption registry the task required deleting, so the substance holds. The wording does not.
+
+### P7-5 (Low): the deferral boxes of T30 and T32 stay unticked although Phase 7 closed them
+
+`tasks.md:992` (T30: "The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48") and `tasks.md:1038` (T32: "no open row: `lang::In` (T43) and `numbers::Limbs` (T51)") are still `[ ]`. Their closing tasks have landed (T32's row waits on P7-1). Repro: `sed -n '992p;1038p' .specs/features/code-clarity/tasks.md`.
+
+### P7-6 (Low, for the user): ELAB-06 AC 3 is relabeled, not fixed
+
+`crates/piperine-lang/tests/elab_unlowered.rs:82` replaced `SPEC_DEVIATION (ELAB-06 AC 3)` with "ELAB-06 AC 3 is met earlier than written (msl-elab spec, amendment (d))".
+
+- The criterion (`.specs/features/msl-elab/spec.md:169`) still says a placement that sets `m`/`dtemp` is `P0001`, while the code returns `E0320` from the front end.
+- Amendment (d) (`:151`) was accepted by an orchestrator "under the user's standing delegation", not in the user's words.
+- Under the project rule (code follows spec; a divergence is a defect, never an accepted documented state), the comment change only moved the record.
+
+This comment was not one of M5's nine, the amendment predates this phase, and the model is still refused with no `Ir`. It is not a regression of this phase. The user should decide whether to fix the code (`P0001` at the placement) or rewrite AC 3 itself.
+
+### P7-7 (Low): two renamed `long_functions` rows with no verdict (P6-3 again)
+
+`worklists/long_functions.tsv` renamed `pom/index.rs::::build` → `IndexBuilder::build` and `pom/resolve/mod.rs::::run` → `NameResolution::run`, both still `-`. Both are appended at the end of the file, out of path order (:132-133). design.md:412 asks each task to give its files' rows a verdict.
+
+### Notes (not findings)
+
+- **The `piperine-api` public surface moved in T52.** `pub mod logic_pattern` is gone. `piperine_api::LogicPattern` is the lang type, so `parse` now takes one argument and returns `Result<_, char>`, and `planes_of` became `CellShape::logic_planes`. A host that called the old `parse(text, width, what)` fails to compile; it does not misbehave silently. Nothing in `docs/`, the Book or Python names it. It is a consequence of "declared once", and the commit body states it.
+- `pom/resolve/classify.rs:189`: the doc of `Classifier::run` is indented 8 spaces instead of 4. This is cosmetic.
+- `Classifier` holds `design` only. T47's "holds the `Ctx` they thread" reads loosely: the base functions threaded `design: &Design`, not a `Ctx`, so this is correct.
+
+### Phase 7 findings
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P7-1 `Limbs` reason not on the trait | Low | open |
+| P7-2 `model.md` documents a free `is_crate_name` | Low | open |
+| P7-3 `suite_hygiene` dead registry and stale comments | Low | open |
+| P7-4 "no existing test edited" untrue as worded (T48–T50) | Low | open |
+| P7-5 T30/T32 deferral boxes unticked | Low | open |
+| P7-6 ELAB-06 AC 3 relabeled, not fixed | Low | open (user decision) |
+| P7-7 two `long_functions` rows renamed with no verdict | Low | open (debt to the closing task) |
+
 ## Phase 8 (B5a Owners in ir, plan, transpile, interp, project, api, T53 to T62)
 
 **Verdict**: FAIL (two Medium findings, four Low)

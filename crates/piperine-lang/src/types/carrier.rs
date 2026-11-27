@@ -242,7 +242,7 @@ impl Checker<'_> {
             self.report(file, Diagnostic::new("E0210", message, node.span, format!("{what} in an initial value")));
         }
         if what != Some("a probe") {
-            for child in crate::pom::expr_children(&node.kind, self.design) {
+            for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
                 self.initial_reads(child);
             }
         }

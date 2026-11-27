@@ -262,7 +262,7 @@ impl Lit {
     /// `None` for another kind of literal or a string with an undefined escape.
     pub fn str_value(&self) -> Option<String> {
         let LitKind::Str { text, .. } = &self.kind else { return None };
-        let (value, bad) = super::lexer::unescape(text);
+        let (value, bad) = super::lexer::Lexer::unescape(text);
         bad.is_empty().then_some(value)
     }
 
@@ -270,7 +270,7 @@ impl Lit {
     /// removed); `None` for another kind of literal or one `E0909` rejects.
     pub fn int_value(&self) -> Option<u128> {
         match &self.kind {
-            LitKind::Int(text) => super::lexer::int_value(text),
+            LitKind::Int(text) => super::lexer::NumberLiteral::new(text).int_value(),
             _ => None,
         }
     }
@@ -279,8 +279,8 @@ impl Lit {
     /// SI letter; `None` when there is none.
     pub fn suffix(&self) -> Option<&str> {
         let suffix = match &self.kind {
-            LitKind::Int(text) => super::lexer::int_suffix_text(text),
-            LitKind::Float { raw, .. } => super::lexer::float_suffix(raw),
+            LitKind::Int(text) => super::lexer::NumberLiteral::new(text).int_suffix_text(),
+            LitKind::Float { raw, .. } => super::lexer::NumberLiteral::new(raw).float_suffix(),
             _ => "",
         };
         (!suffix.is_empty()).then_some(suffix)
@@ -315,7 +315,7 @@ impl From<LitKindRepr> for LitKind {
     fn from(r: LitKindRepr) -> Self {
         match r {
             LitKindRepr::Int(t) => LitKind::Int(t),
-            LitKindRepr::Float { raw } => LitKind::Float { value: super::lexer::float_value(&raw), raw },
+            LitKindRepr::Float { raw } => LitKind::Float { value: super::lexer::NumberLiteral::new(&raw).float_value(), raw },
             LitKindRepr::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes },
             LitKindRepr::Bool(b) => LitKind::Bool(b),
         }

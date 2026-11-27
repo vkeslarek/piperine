@@ -11,11 +11,12 @@ use crate::pom::decl::{BindingData, BindingOrigin, DeclKind, Name, ReactionData,
 use crate::pom::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use crate::pom::resolution::{CallClass, Resolution, StructClass};
 
-pub(super) fn name(i: &ast::Ident) -> Name {
-    Name { text: i.name.clone(), raw: i.raw, span: i.span.0 }
-}
-
 impl Lowerer<'_> {
+    /// The name an identifier gives its declaration.
+    pub(super) fn name(i: &ast::Ident) -> Name {
+        Name { text: i.name.clone(), raw: i.raw, span: i.span.0 }
+    }
+
     // ---- paths, generic arguments, types --------------------------------------------------
 
     pub(crate) fn path(&mut self, p: &ast::Path) -> PathId {
@@ -23,7 +24,7 @@ impl Lowerer<'_> {
             .segments
             .iter()
             .map(|s| PathSegment {
-                name: name(&s.ident),
+                name: Self::name(&s.ident),
                 args: s.args.as_ref().map(|a| self.generic_args(a)),
                 res: Resolution::Unresolved,
             })
@@ -73,7 +74,7 @@ impl Lowerer<'_> {
     /// `pat` is patched once the pattern node exists.
     fn binding(&mut self, ident: &ast::Ident, span: crate::msl::Span, origin: BindingOrigin) -> DeclId {
         let data = BindingData { pat: PatId(0), origin };
-        self.new_decl(DeclKind::Binding(data), Some(ident), span, false)
+        self.new_declaration(DeclKind::Binding(data), Some(ident), span, false)
     }
 
     fn set_binding_pat(&mut self, binding: DeclId, pat: PatId) {
@@ -91,7 +92,7 @@ impl Lowerer<'_> {
                 let binding = self.binding(ident, p.span.0, origin);
                 introduced.push(binding);
                 PatKind::Ident {
-                    name: name(ident),
+                    name: Self::name(ident),
                     sub: sub.as_ref().map(|s| self.pat(s, origin)),
                     binding,
                     res: Resolution::Unresolved,
@@ -110,7 +111,7 @@ impl Lowerer<'_> {
                     .iter()
                     .map(|f| match &f.pat {
                         Some(sub) => FieldPatNode {
-                            name: name(&f.name),
+                            name: Self::name(&f.name),
                             pat: Some(self.pat(sub, origin)),
                             binding: None,
                             res: Resolution::Unresolved,
@@ -119,7 +120,7 @@ impl Lowerer<'_> {
                         None => {
                             let binding = self.binding(&f.name, f.span.0, origin);
                             introduced.push(binding);
-                            FieldPatNode { name: name(&f.name), pat: None, binding: Some(binding), res: Resolution::Unresolved, span: f.span.0 }
+                            FieldPatNode { name: Self::name(&f.name), pat: None, binding: Some(binding), res: Resolution::Unresolved, span: f.span.0 }
                         }
                     })
                     .collect();
@@ -143,11 +144,11 @@ impl Lowerer<'_> {
     // ---- expressions ----------------------------------------------------------------------
 
     fn arg(&mut self, a: &ast::Arg) -> Arg {
-        Arg { name: a.name.as_ref().map(name), value: self.expr(&a.value), res: Resolution::Unresolved, span: a.span.0 }
+        Arg { name: a.name.as_ref().map(Self::name), value: self.expr(&a.value), res: Resolution::Unresolved, span: a.span.0 }
     }
 
     pub(crate) fn field_init(&mut self, f: &ast::FieldInit) -> FieldInit {
-        FieldInit { name: name(&f.name), value: self.expr(&f.value), shorthand: f.shorthand, res: Resolution::Unresolved, span: f.span.0 }
+        FieldInit { name: Self::name(&f.name), value: self.expr(&f.value), shorthand: f.shorthand, res: Resolution::Unresolved, span: f.span.0 }
     }
 
     fn opt_expr(&mut self, e: &Option<Box<ast::Expr>>) -> Option<ExprId> {
@@ -178,13 +179,13 @@ impl Lowerer<'_> {
             },
             ast::ExprKind::MethodCall { recv, method, generics, args } => ExprKind::MethodCall {
                 recv: self.expr(recv),
-                method: name(method),
+                method: Self::name(method),
                 generics: generics.as_ref().map(|g| self.generic_args(g)),
                 args: args.iter().map(|a| self.arg(a)).collect(),
                 res: Resolution::Unresolved,
             },
             ast::ExprKind::Field { expr, name: n } => {
-                ExprKind::Field { expr: self.expr(expr), name: name(n), res: Resolution::Unresolved }
+                ExprKind::Field { expr: self.expr(expr), name: Self::name(n), res: Resolution::Unresolved }
             }
             ast::ExprKind::Index { expr, index } => ExprKind::Index { expr: self.expr(expr), index: self.expr(index) },
             ast::ExprKind::Range { lo, hi, inclusive } => {
@@ -261,7 +262,7 @@ impl Lowerer<'_> {
 
     /// A `Reaction` declaration as the last child of the owner.
     pub(crate) fn reaction(&mut self, r: &ast::Reaction, span: crate::msl::Span) -> DeclId {
-        let id = self.new_decl(DeclKind::Error, None, span, false);
+        let id = self.new_declaration(DeclKind::Error, None, span, false);
         let data = self.within(id, |lw| ReactionData { event: lw.expr(&r.event), body: lw.block(&r.body) });
         self.design.decl_mut(id).kind = DeclKind::Reaction(data);
         id
@@ -290,7 +291,7 @@ impl Lowerer<'_> {
             ast::StmtKind::Signal { name: ident, ty, init } => {
                 // The declaration is pushed first so its type and initial
                 // value are owned by it.
-                let id = self.new_decl(DeclKind::Error, Some(ident), s.span.0, false);
+                let id = self.new_declaration(DeclKind::Error, Some(ident), s.span.0, false);
                 let data = self.within(id, |lw| SignalData {
                     ty: lw.ty(ty),
                     init: init.as_ref().map(|e| lw.expr(e)),

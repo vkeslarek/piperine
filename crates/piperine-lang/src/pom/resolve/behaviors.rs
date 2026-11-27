@@ -8,23 +8,33 @@ use super::super::body::{GenericArgNode, GenericArgsNode, TypeKind};
 use super::super::decl::{BehaviorData, DeclKind};
 use super::super::ids::DeclId;
 use super::super::resolution::Resolution;
-use super::imports::{Prefer, WalkError, path_diagnostic};
+use super::imports::{Prefer, WalkError};
 use super::{Ctx, Output};
 use crate::msl::{Diagnostic, Span};
 
-impl Ctx<'_> {
+/// Binds the behavior blocks of one design to the modules they name.
+pub(super) struct BehaviorBinding<'context, 'design> {
+    context: &'context Ctx<'design>,
+}
+
+impl<'context, 'design> BehaviorBinding<'context, 'design> {
+    /// The binding over `context`.
+    pub(super) fn new(context: &'context Ctx<'design>) -> Self {
+        BehaviorBinding { context }
+    }
+
     /// The module each behavior block belongs to, by block. Records the
     /// resolution of every target path and reports the binding errors.
-    pub(super) fn bind_behaviors(&self, out: &mut Output) -> BTreeMap<DeclId, DeclId> {
-        let design = self.design;
+    pub(super) fn bind(&self, out: &mut Output) -> BTreeMap<DeclId, DeclId> {
+        let design = self.context.design;
         let mut links = BTreeMap::new();
         for i in 0..design.decl_count() {
             let id = DeclId(i as u32);
             let data = design.decl_data(id);
             let DeclKind::Behavior(block) = &data.kind else { continue };
-            let Some(ns) = self.parent_namespace(id) else { continue };
+            let Some(ns) = self.context.parent_namespace(id) else { continue };
             let node = design.path_node(block.target);
-            let walked = self.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, prefer, visiting| this.scope_lookup(ns, name, prefer, visiting));
+            let walked = self.context.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, prefer, visiting| this.scope_lookup(ns, name, prefer, visiting));
             for (index, res) in walked.res.iter().enumerate() {
                 out.segments.push((block.target, index, *res));
             }
@@ -33,7 +43,7 @@ impl Ctx<'_> {
                 (Some(WalkError::Missing { .. }), _) => None,
                 (error, Some(Resolution::Decl(d))) => {
                     if let Some(private @ WalkError::Private { .. }) = error {
-                        report(path_diagnostic(self.design, &node.segments, node.span, private));
+                        report(private.diagnostic(self.context.design, &node.segments, node.span));
                     }
                     Some(*d)
                 }
@@ -74,7 +84,7 @@ impl Ctx<'_> {
     /// Are the block's names, and the generic arguments of its target, exactly
     /// the generic parameters of `module`, in order?
     pub(super) fn names_match(&self, block: &BehaviorData, module: DeclId) -> bool {
-        let design = self.design;
+        let design = self.context.design;
         let generics = self.generic_names(module);
         let names: Vec<&str> = block.names.iter().map(|n| n.text.as_str()).collect();
         if names != generics {
@@ -103,7 +113,7 @@ impl Ctx<'_> {
 
     /// The names of the generic parameters of `module`, in the order they are written.
     fn generic_names(&self, module: DeclId) -> Vec<&str> {
-        let design = self.design;
+        let design = self.context.design;
         design
             .decl_data(module)
             .children

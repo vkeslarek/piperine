@@ -4,7 +4,7 @@
 //! integer type fixes it to that type, any read that requires none closes it at `i32`.
 
 use crate::pom::{DeclId, ExprId, ExprKind, Resolution};
-use crate::msl::lexer;
+use crate::msl::lexer::NumberLiteral;
 
 use super::check::Checker;
 use super::Ty;
@@ -24,7 +24,7 @@ impl Checker<'_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_value(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
-                crate::pom::LitKind::Int(text) => lexer::int_value(text),
+                crate::pom::LitKind::Int(text) => NumberLiteral::new(text).int_value(),
                 _ => None,
             },
             _ => None,

@@ -164,9 +164,9 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 
 **Acceptance Criteria**:
 
-1. IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if`, in a function or in a closure THEN the system SHALL reject the model with `P0001` at that form.
+1. IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if` THEN the system SHALL reject the model with `P0001` at that form; IF a `limit` or an `ac_stim` is written in a function or in a closure THEN the system SHALL reject it with `E0450` at that form.
 2. IF `ddt` is written anywhere but as a whole addend of a flow contribution THEN the system SHALL reject the model with `P0001` at the `ddt`.
-3. IF a placement sets `m` or `dtemp`, or places an `extern` module, THEN the system SHALL reject the model with `P0001` at the placement.
+3. IF a placement sets `m` or `dtemp` THEN the system SHALL reject the model with `E0320` at that field (the front end resolves a placement's fields against the module's params only); IF a model declares an `extern` module THEN the system SHALL reject it with `P0001` at the declaration. *(Amended 2026-11-27 by the user, "Precisa corrigir a spec": the spec follows the implemented codes of amendment (d).)*
 4. IF a module of the reachable set has a `digital` block THEN the system SHALL reject the model with `P0001` at the block.
 5. The system SHALL return no `Ir` whenever it returns a diagnostic.
 

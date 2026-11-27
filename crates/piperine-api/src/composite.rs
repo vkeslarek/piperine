@@ -9,6 +9,7 @@
 use piperine_ir::{FieldsForm, Ir, TypeKind, ValueType};
 
 use crate::failure::Failure;
+use crate::number_cell::{FloatFormat, NumberCell, WideCell};
 use crate::table::Cell;
 
 /// The type of a composite value as a decoder reads it: the arena's names and layout, copied.
@@ -98,6 +99,27 @@ impl CellShape {
         let levels: u32 = name.strip_prefix("Logic<")?.strip_suffix('>')?.parse().ok()?;
         let [(first, CellShape::Scalar(_)), (second, CellShape::Scalar(_))] = fields.as_slice() else { return None };
         (first == "binary" && second == "value" && levels > 0).then_some(levels)
+    }
+
+    /// The width of the planes of the library's `Logic<N>` in this shape in bytes, and `N`; `None` for any other shape (a project's
+    /// own struct of the same name included).
+    pub fn logic_planes(&self) -> Option<(u32, usize)> {
+        let width = self.logic_levels()?;
+        let CellShape::Struct { fields, .. } = self else { return None };
+        let [(_, CellShape::Scalar(plane)), _] = fields.as_slice() else { return None };
+        let bytes = match plane {
+            number if NumberCell::is_number_width(number) => FloatFormat::of(number).map_or_else(|| 8 * WideCell::limb_count(Self::plane_levels(number)), FloatFormat::bytes),
+            other => CellShape::Scalar(other.clone()).width(),
+        };
+        Some((width, bytes))
+    }
+
+    /// The levels of an integer plane type.
+    fn plane_levels(ty: &ValueType) -> u32 {
+        match ty {
+            ValueType::UInt(n) | ValueType::Int(n) => *n,
+            _ => 1,
+        }
     }
 
     /// Whether this is an enum no variant of which has a field: its value is its tag.

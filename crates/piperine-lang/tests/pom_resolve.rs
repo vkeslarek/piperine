@@ -688,7 +688,7 @@ fn raw_identifier_names_drop_the_prefix() {
     assert_eq!(sig.name(), Some("out"));
     let read = one(&design, "out");
     assert!(matches!(read[0], Resolution::Decl(d) if d == sig.decl().id()), "{read:?}");
-    let parsed = piperine_lang::msl::parser::parse(src).file;
+    let parsed = piperine_lang::msl::parser::SourceParser::parse(src).file;
     assert_eq!(design.files()[0].to_ast(), parsed);
     assert_eq!(format!("{:?}", design.files()[0].to_ast()), format!("{parsed:?}"));
 }

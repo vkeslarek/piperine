@@ -1,167 +1,19 @@
-// hygiene-exempt: oversized mod.rs predating the restructure; split into named modules after msl-stdlib merges (ROADMAP.md)
 //! Name resolution: the stages that run after lowering and write only into
 //! resolution slots and the diagnostics list. Each stage computes its answers
 //! from the immutable design into an [`Output`], then the answers are applied.
 
 mod behaviors;
 mod classify;
+mod context;
 mod imports;
 mod leaves;
 mod members;
+mod name_resolution;
 mod names;
+mod output;
 mod scopes;
 mod shape;
 
-use std::cell::Cell;
-use std::collections::BTreeMap;
-
-use super::design::Design;
-use super::ids::{DeclId, FileId, PatId, PathId};
-use super::resolution::Resolution;
-use crate::msl::Diagnostic;
-
-/// What the stages computed, not yet written into the design.
-#[derive(Default)]
-pub(super) struct Output {
-    /// `(path, segment index, what the segment names)`.
-    pub segments: Vec<(PathId, usize, Resolution)>,
-    pub diagnostics: Vec<(FileId, Diagnostic)>,
-    /// `(behavior block, module)`.
-    pub links: BTreeMap<DeclId, DeclId>,
-    /// Identifier patterns that name a constant, a unit variant or a unit struct.
-    pub pats: Vec<(PatId, Resolution)>,
-}
-
-/// The read-only state every stage shares.
-pub(super) struct Ctx<'a> {
-    design: &'a Design,
-    scopes: scopes::Scopes,
-    imports: imports::Imports,
-    /// The namespace `prelude` of the standard library's root: its `pub` items are implicit.
-    prelude: Option<DeclId>,
-    /// The dependency names of each crate (by `CrateId`) and the root namespace each names:
-    /// the declared dependencies, and `std`.
-    deps: Vec<BTreeMap<String, DeclId>>,
-    /// The module each behavior block is bound to (stage 4).
-    links: BTreeMap<DeclId, DeclId>,
-    /// The `impl` blocks of each declaration, by the declaration their self
-    /// type names (stage 5 reads associated items through them).
-    impls: BTreeMap<DeclId, Vec<DeclId>>,
-    /// The access names quantities declare (`v`, `i`, ..): a call of one that
-    /// no declaration names is an access call, not an unresolved name.
-    access: BTreeMap<String, Vec<DeclId>>,
-    /// Set by a lookup that found a name through two glob imports of
-    /// different declarations: the walk reports it as `E0162`, not `E0161`.
-    ambiguous: Cell<bool>,
-}
-
-impl<'a> Ctx<'a> {
-    fn new(design: &'a Design) -> Self {
-        Ctx {
-            design,
-            scopes: scopes::Scopes::build(design),
-            imports: imports::Imports::build(design),
-            prelude: std_prelude(design),
-            deps: dependency_names(design),
-            links: BTreeMap::new(),
-            impls: BTreeMap::new(),
-            access: classify::access_table(design),
-            ambiguous: Cell::new(false),
-        }
-    }
-}
-
-/// Run every resolution stage over a freshly lowered design.
-pub(super) fn run(design: &mut Design) {
-    design.fill_parents();
-    let out = {
-        let mut ctx = Ctx::new(design);
-        let mut out = Output::default();
-        out.diagnostics.extend(ctx.scopes.diagnostics(design));
-        ctx.resolve_imports(&mut out);
-        ctx.links = ctx.bind_behaviors(&mut out);
-        ctx.impls = ctx.collect_impls();
-        ctx.resolve_names(&mut out);
-        out.links = ctx.links;
-        out
-    };
-    for (path, index, res) in out.segments {
-        design.set_segment_res(path, index, res);
-    }
-    for (pat, res) in out.pats {
-        design.set_pat_res(pat, res);
-    }
-    for (behavior, module) in out.links {
-        design.bind_behavior(behavior, module);
-    }
-    for (file, diagnostic) in out.diagnostics {
-        design.push_diagnostic(file, diagnostic);
-    }
-    let classified = classify::run(design);
-    for (port, kind) in classified.port_kinds {
-        design.set_port_kind(port, kind);
-    }
-    for (decl, bundle) in classified.bundles {
-        design.set_bundle(decl, bundle);
-    }
-    for facts in classified.structs {
-        design.set_struct(facts.expr, facts.class, &facts.fields);
-    }
-    for (pat, index, res) in classified.pattern_fields {
-        design.set_pattern_field(pat, index, res);
-    }
-    for facts in classified.calls {
-        design.set_call(facts.expr, facts.class, &facts.args, &facts.params);
-    }
-    for (path, index, res) in classified.segments {
-        design.set_segment_res(path, index, res);
-    }
-    for (module, expr) in classified.instances {
-        design.push_instance(module, expr);
-    }
-    for (file, diagnostic) in classified.diagnostics {
-        design.push_diagnostic(file, diagnostic);
-    }
-    leaves::run(design);
-    // A fresh context over the resolved design: stage 7 asks it which traits are in scope.
-    let members = {
-        let ctx = Ctx::new(design);
-        members::run(design, &|from, tr| ctx.trait_in_scope(from, tr))
-    };
-    for (expr, res) in members.res {
-        design.set_member(expr, res);
-    }
-    for (path, index, res) in members.segments {
-        design.set_segment_res(path, index, res);
-    }
-    for (file, diagnostic) in members.diagnostics {
-        design.push_diagnostic(file, diagnostic);
-    }
-    for (file, diagnostic) in shape::run(design) {
-        design.push_diagnostic(file, diagnostic);
-    }
-    design.sort_diagnostics();
-    design.index = super::index::build(design);
-}
-
-/// The `pub` namespace `prelude` declared at the root of the standard library (its first file).
-fn std_prelude(design: &Design) -> Option<DeclId> {
-    let root = design.crate_data(design.std_crate).root;
-    design.decl_data(root).children.iter().copied().find(|c| {
-        let data = design.decl_data(*c);
-        data.public && matches!(data.kind, super::decl::DeclKind::Namespace(_)) && data.name.as_ref().is_some_and(|n| n.text == "prelude")
-    })
-}
-
-/// The dependency names of every crate, each mapped to the root namespace of the crate it names.
-fn dependency_names(design: &Design) -> Vec<BTreeMap<String, DeclId>> {
-    let std_root = design.crate_data(design.std_crate).root;
-    (0..design.crates.len())
-        .map(|i| {
-            let data = design.crate_data(super::ids::CrateId(i as u32));
-            let mut names: BTreeMap<String, DeclId> = data.dependencies.iter().map(|d| (d.name.clone(), design.crate_data(d.krate).root)).collect();
-            names.insert("std".to_string(), std_root);
-            names
-        })
-        .collect()
-}
+use context::Ctx;
+pub(super) use name_resolution::NameResolution;
+use output::Output;

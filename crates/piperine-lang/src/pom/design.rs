@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
-use super::crates::{CrateData, CrateGraph, DependencyData, is_crate_name};
+use super::crates::{CrateData, CrateGraph, DependencyData};
 use super::ids::{CrateId, DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
-use super::lower::lower_file;
+use super::lower::Lowerer;
 use super::source::{DiskSources, MemorySources, SourceProvider};
 use crate::msl::Span;
 use super::meta::Meta;
@@ -46,7 +46,7 @@ pub struct SourceFileRepr {
 
 impl From<SourceFileRepr> for SourceFileData {
     fn from(r: SourceFileRepr) -> Self {
-        let ast = msl::parser::parse(&r.text).file;
+        let ast = msl::parser::SourceParser::parse(&r.text).file;
         SourceFileData { name: r.name, path: r.path, krate: r.krate, text: r.text, ast, root: r.root }
     }
 }
@@ -288,13 +288,13 @@ impl Design {
         let mut parent = vec![None; n];
         let mut stmt = vec![None; n];
         for (i, node) in self.exprs.iter().enumerate() {
-            for c in super::body::expr_children(&node.kind, self) {
+            for c in crate::pom::BodyWalk::new(self).expression_children(&node.kind) {
                 parent[c.index()] = Some(ExprId(i as u32));
             }
         }
         for i in 0..self.stmts.len() {
             let id = StmtId(i as u32);
-            for e in super::body::stmt_own_exprs(self, id) {
+            for e in crate::pom::BodyWalk::new(self).statement_own_expressions(id) {
                 stmt[e.index()] = Some(id);
             }
         }
@@ -529,7 +529,7 @@ impl DesignBuilder {
         } else if let Some(path) = &self.root_file {
             let bytes = DiskSources.read(path);
             let file_name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
-            let (name, reserved) = crate_name(path);
+            let (name, reserved) = CrateGraph::crate_name_of(path);
             let id = design.add_crate(&name, &file_name, path.clone(), bytes, &DiskSources, Vec::new());
             design.report_reserved_stem(id, reserved);
         } else {
@@ -539,38 +539,18 @@ impl DesignBuilder {
             }
             let empty = (String::new(), String::new());
             let (name, text) = self.sources.first().unwrap_or(&empty);
-            let (crate_name, reserved) = crate_name(Path::new(name));
+            let (crate_name, reserved) = CrateGraph::crate_name_of(Path::new(name));
             let id = design.add_crate(&crate_name, name, PathBuf::from(name), Some(text.clone().into_bytes()), &memory, Vec::new());
             design.report_reserved_stem(id, reserved);
         }
         design.add_std(&self.std_sources);
-        super::resolve::run(&mut design);
+        super::resolve::NameResolution::new(&mut design).run();
         design
     }
 }
 
-/// The name of the crate whose root file is `path`: the file stem, with every character that is
-/// no ASCII letter, digit or `_` replaced by `_` and a `_` before a leading digit. A stem that is
-/// then a keyword, `std` or `_` gets a `_` appended, and is returned as the second value so that the
-/// design can report it (`E0171`).
-fn crate_name(path: &Path) -> (String, Option<String>) {
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let mut name: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
-    if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
-        name.insert(0, '_');
-    }
-    // A file with no stem at all (the empty design's synthetic root) is `_` by construction and
-    // reports nothing; a stem that is itself `_` is reserved like any other.
-    if is_crate_name(&name) || stem.is_empty() {
-        return (name, None);
-    }
-    let reserved = name.clone();
-    name.push('_');
-    (name, Some(reserved))
-}
-
 impl Design {
-    /// `E0171` at the root file of `id` when its stem was reserved (see `crate_name`).
+    /// `E0171` at the root file of `id` when its stem was reserved (see `CrateGraph::crate_name_of`).
     fn report_reserved_stem(&mut self, id: CrateId, reserved: Option<String>) {
         let Some(stem) = reserved else { return };
         let file = self.crates[id.index()].root_file;
@@ -608,7 +588,7 @@ impl Design {
 
     fn add_file(&mut self, name: &str, path: PathBuf, bytes: &[u8], krate: CrateId, provider: &dyn SourceProvider) -> FileId {
         let id = FileId(self.files.len() as u32);
-        let parsed = msl::parser::parse_bytes(bytes);
+        let parsed = msl::parser::SourceParser::parse_bytes(bytes);
         for diagnostic in parsed.diagnostics {
             self.diagnostics.push(DesignDiagnostic { file: id, diagnostic });
         }
@@ -631,7 +611,7 @@ impl Design {
             ast: parsed.file.clone(),
             root,
         });
-        lower_file(self, id, root, &parsed.file, provider, path);
+        Lowerer::lower_file(self, id, root, &parsed.file, provider, path);
         id
     }
 }

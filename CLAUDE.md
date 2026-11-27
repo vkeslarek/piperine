@@ -57,6 +57,7 @@ in the IR or in a separate side table, never in the authored module/instance tre
 | `piperine-cli` | The `piperine` binary, a thin shell over `piperine-api`. |
 | `piperine-project` | `Piperine.toml`, dependencies, lockfile. |
 | `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
+| `piperine-device-fixtures` | Test-only: the hand-written ABI devices the back-end test suites share, one type per device, and `PartialsCheck`. Depends on `piperine-abi` alone. |
 | `piperine-repository-guards` | Test-only: the guards over the repository itself (workspace boundaries, suite hygiene, the proof ledger) and the source scan they share. |
 
 ## Build and test
@@ -92,6 +93,8 @@ cargo test -p piperine --test integrated      # small mixed-signal designs end t
    purpose per type; files named for their system role (never `utils.rs`).
 5. **No god methods;** small methods, flat control flow. No file-scope lint suppression,
    no `#[allow]` to hide a design problem (`too_many_arguments` → a parameter object).
+   Only where there is truly no other way, an item-scoped `#[expect(lint, reason = "…")]`
+   is allowed: the reason says why no design avoids it, and the guard lists each one.
 6. **Doc comments on every item.**
 7. **No macros** (`macro_rules!`, proc-macro codegen): data tables and methods instead.
 8. **No language special cases:** builtins follow the same rules as user items and are

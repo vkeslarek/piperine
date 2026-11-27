@@ -5,7 +5,6 @@ use crate::msl::ast;
 use crate::pom::decl::{DeclKind, EnumData, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, Import, StructData, TraitData, UseData, UseTreeKind, UseTreeNode, VariantData};
 use crate::pom::body::{PathNode, PathSegment};
 use crate::pom::resolution::Resolution;
-use super::body::name;
 
 impl Lowerer<'_> {
     /// One `GenericParam` declaration per parameter, as children of the
@@ -15,7 +14,7 @@ impl Lowerer<'_> {
         let Some(g) = generics else { return };
         self.design.decl_mut(self.owner).generics_span = Some(g.span.0);
         for p in &g.params {
-            let id = self.new_decl(DeclKind::Error, Some(&p.name), p.span.0, false);
+            let id = self.new_declaration(DeclKind::Error, Some(&p.name), p.span.0, false);
             let data = self.within(id, |lw| match &p.kind {
                 ast::GenericParamKind::Type { bounds, default } => GenericParamData::Type {
                     bounds: bounds.iter().map(|b| lw.path(b)).collect(),
@@ -47,15 +46,15 @@ impl Lowerer<'_> {
         match p {
             ast::FnParam::SelfValue(loc) => {
                 let name = ast::Ident { name: "self".to_string(), raw: false, span: *loc };
-                self.new_decl(DeclKind::FnParam(FnParamData::SelfValue), Some(&name), loc.0, false);
+                self.new_declaration(DeclKind::FnParam(FnParamData::SelfValue), Some(&name), loc.0, false);
             }
             ast::FnParam::Named { name, ty, span } => {
-                let id = self.new_decl(DeclKind::Error, Some(name), span.0, false);
+                let id = self.new_declaration(DeclKind::Error, Some(name), span.0, false);
                 let ty = self.within(id, |lw| lw.ty(ty));
                 self.design.decl_mut(id).kind = DeclKind::FnParam(FnParamData::Named { ty });
             }
             ast::FnParam::Error(loc) => {
-                self.new_decl(DeclKind::FnParam(FnParamData::Error), None, loc.0, false);
+                self.new_declaration(DeclKind::FnParam(FnParamData::Error), None, loc.0, false);
             }
         }
     }
@@ -71,7 +70,7 @@ impl Lowerer<'_> {
     pub(crate) fn enum_decl(&mut self, e: &ast::EnumDecl) -> DeclKind {
         self.generics(&e.generics);
         for v in &e.variants {
-            let id = self.new_decl(DeclKind::Error, Some(&v.name), v.span.0, false);
+            let id = self.new_declaration(DeclKind::Error, Some(&v.name), v.span.0, false);
             let (kind, meta) = self.within(id, |lw| {
                 let form = lw.fields(&v.fields);
                 let discriminant = v.discriminant.as_ref().map(|d| lw.expr(d));
@@ -92,7 +91,7 @@ impl Lowerer<'_> {
             ast::Fields::Unit => return FieldsForm::Unit,
         };
         for f in list {
-            let id = self.new_decl(DeclKind::Error, f.name.as_ref(), f.span.0, f.public);
+            let id = self.new_declaration(DeclKind::Error, f.name.as_ref(), f.span.0, f.public);
             let (kind, meta) = self.within(id, |lw| {
                 (DeclKind::Field(FieldData { dir: f.dir, ty: lw.ty(&f.ty), init: f.init.as_ref().map(|init| lw.expr(init)) }), lw.meta(&f.meta))
             });
@@ -127,7 +126,7 @@ impl Lowerer<'_> {
                 ast::ImplItemKind::Fn(f) => &f.name,
                 ast::ImplItemKind::Const(c) => &c.name,
             };
-            let id = self.new_decl(DeclKind::Error, Some(name), item.span.0, item.public);
+            let id = self.new_declaration(DeclKind::Error, Some(name), item.span.0, item.public);
             let (kind, meta) = self.within(id, |lw| {
                 let kind = match &item.kind {
                     ast::ImplItemKind::Fn(f) => lw.fn_decl(f),
@@ -143,7 +142,7 @@ impl Lowerer<'_> {
 
     /// A `use`: the tree as written plus the flattened imports.
     pub(crate) fn use_decl(&mut self, u: &ast::UseTree) -> DeclKind {
-        let tree = use_tree(u);
+        let tree = Self::use_tree(u);
         let mut imports = Vec::new();
         self.flatten_use(&tree, &mut Vec::new(), &mut imports);
         DeclKind::Use(UseData { tree, imports })
@@ -183,13 +182,14 @@ impl Lowerer<'_> {
         let path = self.design.push_path(PathNode { segments, span: own, owner: self.owner });
         Import { path, alias, glob }
     }
-}
 
-fn use_tree(u: &ast::UseTree) -> UseTreeNode {
-    let kind = match &u.kind {
-        ast::UseKind::Simple { alias } => UseTreeKind::Simple { alias: alias.as_ref().map(name) },
-        ast::UseKind::Glob => UseTreeKind::Glob,
-        ast::UseKind::Group(children) => UseTreeKind::Group(children.iter().map(use_tree).collect()),
-    };
-    UseTreeNode { path: u.path.iter().map(name).collect(), kind, span: u.span.0 }
+    /// The tree of a `use`, as nodes.
+    fn use_tree(u: &ast::UseTree) -> UseTreeNode {
+        let kind = match &u.kind {
+            ast::UseKind::Simple { alias } => UseTreeKind::Simple { alias: alias.as_ref().map(Self::name) },
+            ast::UseKind::Glob => UseTreeKind::Glob,
+            ast::UseKind::Group(children) => UseTreeKind::Group(children.iter().map(Self::use_tree).collect()),
+        };
+        UseTreeNode { path: u.path.iter().map(Self::name).collect(), kind, span: u.span.0 }
+    }
 }

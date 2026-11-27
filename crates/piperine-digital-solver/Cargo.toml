@@ -5,3 +5,6 @@ edition.workspace = true
 
 [dependencies]
 piperine-abi = { path = "../piperine-abi" }
+
+[dev-dependencies]
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }

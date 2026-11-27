@@ -127,7 +127,7 @@ impl Checker<'_> {
                 return found;
             }
         }
-        crate::pom::expr_children(&node.kind, self.design).into_iter().any(|c| self.reads_decl(c, target, followed))
+        crate::pom::BodyWalk::new(self.design).expression_children(&node.kind).into_iter().any(|c| self.reads_decl(c, target, followed))
     }
 
     // ---- a `let` that reads itself (§8.2.16, §8.3.5) -----------------------------------------

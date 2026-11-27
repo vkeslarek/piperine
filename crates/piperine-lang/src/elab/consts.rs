@@ -32,12 +32,10 @@ mod dispatch;
 mod floats;
 mod generated;
 mod imported;
-mod integers;
 mod numbers;
 mod parsed;
 mod templates;
 
-pub(in crate::elab) use integers::DynamicInteger;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -48,7 +46,7 @@ use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::refusal::forms::{ConstantForm, ValueForm};
 use crate::refusal::{Refusal, RefusedForm};
-use crate::msl::lexer;
+use crate::msl::lexer::NumberLiteral;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StructClass, TypeId, UnOp};
 use crate::types::{Callee, ConstTerm, GenericValue, Intrinsic, Length, Method, Nominal, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
@@ -498,7 +496,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                     Err(_) => Err(ConstFault::refused(expr, ConstantForm::IntegerLiteral)),
                 }
             }
-            LitKind::Int(text) => match (self.width(expr), lexer::int_value(text)) {
+            LitKind::Int(text) => match (self.width(expr), NumberLiteral::new(text).int_value()) {
                 // An `i8` literal `128` is the operand of a unary `-` (the checker allowed it): it
                 // wraps to -128 here and the minus wraps it back.
                 (Some(width), Some(value)) => known(width.wrap(value as i128)),

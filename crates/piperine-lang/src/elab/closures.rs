@@ -50,7 +50,7 @@ impl Elaboration<'_, '_> {
     /// restore and the statements that make the copies.
     fn copy_captured(&mut self, scope: &mut Scope, body: ExprId) -> (Vec<(DeclId, u32)>, Vec<LoweredStmt>) {
         let mut inside = Vec::new();
-        crate::pom::preorder(self.design, body, &mut inside);
+        crate::pom::BodyWalk::new(self.design).descendants_depth_first(body, &mut inside);
         let (mut copies, mut lets) = (Vec::new(), Vec::new());
         for expr in inside {
             let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { continue };

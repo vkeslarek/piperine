@@ -974,6 +974,8 @@ T152 → T153 → T154 → T155
 
 **Deferred**: S21 (the `GND`, `vss` and `VSS` aliases) is deferred to the user: the ground net's public label is `GND` (`core/net.rs`), so removing the alias changes host behaviour. `GroundName` accepts the four names again and `edge_gnd_name_routes_to_ground` keeps its original assertion. (Coordinator decision, user AFK, pending review.)
 
+**S21 decided by the user, 2026-11-27**: "Sim... um gnd só!". The ground reference stays (the solver needs the circuit's zero) and is spelled `gnd` only: the ground net's printed label becomes `gnd`, and `GND`, `vss`, `VSS` stop naming ground and are refused with an error that names the one spelling (never silently a new node). Owned by T83.
+
 ---
 
 ### T30: Dead items leave; test-only items say whom they serve
@@ -989,7 +991,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The 8 back-end items of the 12 are gone and the workspace builds
-- [ ] The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48 (their Done-when lines)
+- [x] The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48 (their Done-when lines)
 - [x] Every back-end row of the worklist has a verdict
 - [x] Gate check passes: Ledger
 
@@ -1035,7 +1037,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] `every_single_implementor_trait_is_removed_or_justified` passes under `**Run worklists**`
-- [ ] no open row: `lang::In` (T43) and `numbers::Limbs` (T51) are closed by their Done-when lines
+- [x] no open row: `lang::In` (T43) and `numbers::Limbs` (T51) are closed by their Done-when lines
 - [x] Gate check passes: Quick for abi, numbers, analog-solver and solver
 
 **Tests**: integration
@@ -1061,8 +1063,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test implements `Device` with `eval` only and its `react` thunk returns `Continue`
-- [ ] Gate check passes: Quick
+- [x] A test implements `Device` with `eval` only and its `react` thunk returns `Continue`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1083,9 +1085,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate builds with `#![deny(missing_docs)]`, no free function and one `PartialsCheck` over every device (`its_devices_pass_the_partials_verifier`, once)
-- [ ] `no_test_support_is_shared_by_path` and `no_allow_in_test_code` pass under `**Run suite**`
-- [ ] Gate check passes: Quick
+- [x] The crate builds with `#![deny(missing_docs)]`, no free function and one `PartialsCheck` over every device (`its_devices_pass_the_partials_verifier`, once)
+- [x] `no_test_support_is_shared_by_path` and `no_allow_in_test_code` pass under `**Run suite**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1106,9 +1108,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 2 targets, each with a `//!` header; every test keeps its name; no `#[path]`, no `#[allow]`, no free helper
-- [ ] `no_crate_has_more_targets_than_its_plan` passes with the plan lowered to 2
-- [ ] Gate check passes: Ledger
+- [x] 2 targets, each with a `//!` header; every test keeps its name; no `#[path]`, no `#[allow]`, no free helper
+- [x] `no_crate_has_more_targets_than_its_plan` passes with the plan lowered to 2
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1129,8 +1131,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
-- [ ] Plan lowered to 3; Gate check passes: Ledger
+- [x] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
+- [x] Plan lowered to 3; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1151,8 +1153,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
-- [ ] Plan lowered to 3; Gate check passes: Ledger
+- [x] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
+- [x] Plan lowered to 3; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1173,8 +1175,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The three targets pass with `--test-threads=1` and with the default
-- [ ] Every other test keeps its name; Gate check passes: Ledger
+- [x] The three targets pass with `--test-threads=1` and with the default
+- [x] Every other test keeps its name; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1195,8 +1197,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 6 targets in the crate; both merged targets pass with `--test-threads=1` and with the default
-- [ ] Plan lowered to 6; Gate check passes: Ledger
+- [x] 7 targets in the crate (`context_init` stays its own: its header requires a fresh process); both merged targets pass with `--test-threads=1` and with the default
+- [x] Plan lowered to 7 (6 plus `context_init`); Gate check passes: Ledger
+- Coordinator amendment (user AFK, pending review): the approved text said 6 targets; `context_init` needs a fresh process, so the target count is 7.
 
 **Tests**: integration
 **Gate**: ledger
@@ -1217,8 +1220,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The four crates have no row in the three allowances
-- [ ] Gate check passes: Quick for the four crates
+- [x] The four crates have no row in the three allowances. Closed in fix round 1 of phase 5: the 36 `test_helper_functions` rows of `#[cfg(test)]` helpers in back-end `src/` (abi `raw.rs` 1, analog-solver 6, solver 29) are gone, each helper being a method of a `Cases` struct of its test module; solver's `analyses/test_devices.rs` now only places the fixtures crate's devices (coordinator decision, user AFK, pending review: lane T edited those `src/` helpers for this round, which breaks the circular wait with lane K)
+- [x] Gate check passes: Quick for the four crates
 
 **Tests**: integration
 **Gate**: quick
@@ -1241,9 +1244,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate's row for the file leaves the free-function allowance; `long_functions.tsv` rows of the file have a verdict
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The crate's row for the file leaves the free-function allowance; `long_functions.tsv` rows of the file have a verdict
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `lex` and `lex_bytes`, now `Lexer::lex` and `Lexer::lex_bytes`)
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1264,8 +1267,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No free function in the printer; the formatter's output is byte-identical (the crate's `msl_*` tests, unedited)
-- [ ] Gate check passes: Quick
+- [x] No free function in the printer; the formatter's output is byte-identical (the crate's `msl_*` tests, unedited but for the one exception: the calls of `print`, now `Printer::print`)
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1286,10 +1289,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] the `lang::In` row of `worklists/single_implementor_traits.tsv` (`msl/parser/base.rs`, a trait alias) has a verdict: removed, or kept with its reason written on the trait (T32)
-- [ ] Gate check passes: Quick
+- [x] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse` and `parse_bytes`, now `SourceParser::parse` and `SourceParser::parse_bytes`)
+- [x] the `lang::In` row of `worklists/single_implementor_traits.tsv` (`msl/parser/base.rs`, a trait alias) has a verdict: removed, or kept with its reason written on the trait (T32): kept, reason on the trait
+- [x] Gate check passes: Quick
+
+**Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr` (closed by T44: `ExpressionGrammar::parse`), T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block` (done: `ModuleGrammar::parse`, `ExpressionGrammar::parse_block`). All six are gone; the first box is ticked. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1310,9 +1315,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The file leaves the free-function allowance; `build`'s row of `long_functions.tsv` is `split`
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The file leaves the free-function allowance; `build`'s row of `long_functions.tsv` is `split` (the rows of `build`, `block_like` and `stmt` are deleted: every method of `ExpressionGrammar` is under 60 lines, and the guard fails a row whose item is gone)
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse_expr`, now `ExpressionGrammar::parse`)
+- [x] Gate check passes: Quick
+
+**Closed from T43**: `parse_expr` is `ExpressionGrammar::parse` (its `free_functions` and `undeclared_words` rows deleted, none added). `parse` is a word product code spells on many lines, so the worklist guard does not list it in `test_only_items.tsv`.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1333,9 +1340,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The three files leave the free-function allowance
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The three files leave the free-function allowance
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse_type`, `parse_pat` and `parse_generics`, now `TypeGrammar::parse`, `PatternGrammar::parse` and `GenericsGrammar::parse`)
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1356,9 +1363,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `crates/piperine-lang/src/msl` has no row in the free-function allowance
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] `crates/piperine-lang/src/msl` has no row in the free-function allowance
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse_module_item`, `parse_block` and `render`, now `ModuleGrammar::parse`, `ExpressionGrammar::parse_block` and `Diagnostic::render`)
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1381,9 +1388,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The file leaves the free-function allowance
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The file leaves the free-function allowance
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1404,10 +1411,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `pom/resolve` has no row in the free-function allowance and no hygiene exemption
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] `DeferReason::InferredGenerics` (`lang/src/pom/resolution.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] Gate check passes: Quick
+- [x] `pom/resolve` has no row in the free-function allowance and no hygiene exemption
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the hygiene registry entry of `resolve/mod.rs` in the guards' `suite_hygiene.rs`, removed with the exemption)
+- [x] `DeferReason::InferredGenerics` (`lang/src/pom/resolution.rs`), never referenced (T30, findings 4.1), is removed
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1428,10 +1435,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `pom/` outside `builtin.rs` and `reflect/` has no row in the free-function allowance; no `SPEC_DEVIATION` in the crate
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] `Ty::has_repr` (`lang/src/types/ty.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] Gate check passes: Quick
+- [x] `pom/` outside `builtin.rs` and `reflect/` has no row in the free-function allowance; no `SPEC_DEVIATION` in the crate
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `is_crate_name`, now `CrateGraph::is_crate_name`, in `lang/tests/pom_crates.rs`, `piperine-cli` and `piperine-project`; and the hygiene registry entry of `lower/mod.rs`)
+- [x] `Ty::has_repr` (`lang/src/types/ty.rs`), never referenced (T30, findings 4.1), is removed
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1452,10 +1459,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No registered oversized `mod.rs`; every public path of `piperine_lang::pom` is unchanged
-- [ ] Verdicts in `test_only_items.tsv` for the POM's reflection items (kept: the public reflection surface `docs/pom/` documents)
-- [ ] `GenericParam::default_type` (`lang/src/pom/reflect/items.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] Gate check passes: Quick
+- [x] No registered oversized `mod.rs`; every public path of `piperine_lang::pom` is unchanged
+- [x] Verdicts in `test_only_items.tsv` for the POM's reflection items (kept: the public reflection surface `docs/pom/` documents)
+- [x] `GenericParam::default_type` (`lang/src/pom/reflect/items.rs`), never referenced (T30, findings 4.1), is removed
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1476,10 +1483,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The A6 row leaves the `boundaries` allowance; `crates/piperine-numbers/tests/purity.rs` passes
-- [ ] `BinaryFormat::round_integer` (`numbers/src/format.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] the `numbers::Limbs` row of `worklists/single_implementor_traits.tsv` has a verdict: the trait is removed, or kept with its reason written on it (T32)
-- [ ] Gate check passes: Golden
+- [x] The A6 row leaves the `boundaries` allowance; `crates/piperine-numbers/tests/purity.rs` passes
+- [x] `BinaryFormat::round_integer` (`numbers/src/format.rs`), never referenced (T30, findings 4.1), is removed
+- [x] the `numbers::Limbs` row of `worklists/single_implementor_traits.tsv` has a verdict: the trait is removed, or kept with its reason written on it (T32)
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -1500,8 +1507,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `no_type_of_the_inventory_is_defined_in_two_crates` passes with no allowance row
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
+- [x] `no_type_of_the_inventory_is_defined_in_two_crates` passes with no allowance row
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api`
 
 **Tests**: integration
 **Gate**: quick
@@ -2204,6 +2211,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
+- [ ] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
 - [ ] No free function in the file; `bind`'s row is `split`
 - [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
 

@@ -169,7 +169,7 @@ impl Checker<'_> {
                 ExprKind::Assign { lhs, .. } if self.bundle_handle_root(*lhs).is_some() => written.push(*lhs),
                 ExprKind::Closure { body, .. } => {
                     let mut inside = Vec::new();
-                    crate::pom::preorder(self.design, *body, &mut inside);
+                    crate::pom::BodyWalk::new(self.design).descendants_depth_first(*body, &mut inside);
                     found.extend(inside.into_iter().filter(|inner| self.handle_held(*inner).is_some()).map(|inner| (self.design.expr_node(inner).span, inner, "captured by a closure")));
                 }
                 _ => {}
@@ -249,7 +249,7 @@ impl Checker<'_> {
                 }),
                 _ => None,
             },
-            kind => crate::pom::expr_children(kind, self.design).into_iter().find_map(|child| self.run_read(child, followed)),
+            kind => crate::pom::BodyWalk::new(self.design).expression_children(kind).into_iter().find_map(|child| self.run_read(child, followed)),
         }
     }
 

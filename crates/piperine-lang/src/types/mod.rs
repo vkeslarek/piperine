@@ -54,6 +54,7 @@ mod table;
 mod traits;
 mod ty;
 
-pub(crate) use self::{coverage::ElementCoverage, logic_pattern::LogicPattern};
+pub(crate) use self::coverage::ElementCoverage;
+pub use self::logic_pattern::{LogicPattern, PatternFault};
 pub use self::{nature::ResolveImpl, traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution, param_requirement::ParamRequirement};
 pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

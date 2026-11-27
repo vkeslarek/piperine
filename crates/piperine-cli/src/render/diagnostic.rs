@@ -6,7 +6,6 @@
 use std::io::{self, Write};
 
 use piperine_api::Failure;
-use piperine_lang::msl::diag;
 
 /// A failure laid out for a terminal.
 pub struct Report;
@@ -27,14 +26,14 @@ impl Report {
                 let files = design.files();
                 for d in found {
                     match files.get(d.file.index()) {
-                        Some(file) => writeln!(err, "{}", diag::render(&d.diagnostic, file.name(), file.text()))?,
+                        Some(file) => writeln!(err, "{}", d.diagnostic.render(file.name(), file.text()))?,
                         None => writeln!(err, "error[{}]: {}", d.diagnostic.code, d.diagnostic.message)?,
                     }
                 }
             }
             Failure::Request { diagnostic, file, text } => {
                 let name = file.file_name().map_or_else(|| file.display().to_string(), |n| n.to_string_lossy().into_owned());
-                writeln!(err, "{}", diag::render(diagnostic, &name, text))?;
+                writeln!(err, "{}", diagnostic.render(&name, text))?;
             }
             Failure::NoRun { .. } | Failure::Host { .. } | Failure::Backend(_) | Failure::Solver { .. } | Failure::Io { .. } => {}
         }

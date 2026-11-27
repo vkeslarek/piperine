@@ -6,13 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 pub use crate::msl::ast::{BehaviorKind, BinOp, Dir, Lit, LitKind, UnOp};
-// SPEC_DEVIATION: the design re-exports `ast::Quantity` under its own name, but the
-// reflection handle `Quantity` (design, Reflection) takes that name in `pom`.
-// Reason: one public name cannot be both; the enum is exported as `QuantityRole`.
 pub use crate::msl::ast::Quantity as QuantityRole;
 
 use super::decl::Name;
-use super::design::Design;
 use super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::meta::Meta;
 use super::resolution::{CallClass, Resolution, StructClass};
@@ -256,97 +252,4 @@ pub enum StmtKind {
     Signal(DeclId),
     /// `on event { ... }`: the `Reaction` declaration.
     Reaction(DeclId),
-}
-
-// ---- navigation ----------------------------------------------------------------------------
-
-/// The direct sub-expressions of an expression, in source order: the one
-/// enumeration of an `ExprKind`'s children that [`Expr::children`], the
-/// parent table and `check()` all read. A form that holds a block lists the
-/// expressions of the block's statements (see [`stmt_children`]) where the
-/// block was written. Types, patterns and generic arguments are not
-/// expressions and are not entered.
-pub(crate) fn expr_children(kind: &ExprKind, design: &Design) -> Vec<ExprId> {
-    let mut out = Vec::new();
-    match kind {
-        ExprKind::Lit(_) | ExprKind::Path(_) | ExprKind::Continue | ExprKind::Error | ExprKind::IncludeStr(_) => {}
-        ExprKind::Unary { expr, .. } | ExprKind::Paren(expr) | ExprKind::Try(expr) | ExprKind::Cast { expr, .. } | ExprKind::Field { expr, .. } => out.push(*expr),
-        ExprKind::Binary { lhs, rhs, .. } | ExprKind::Assign { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
-        ExprKind::Call { callee, args, params, .. } => {
-            out.push(*callee);
-            out.extend(args.iter().map(|a| a.value));
-            out.extend(params.iter().flatten().map(|f| f.value));
-        }
-        ExprKind::MethodCall { recv, args, .. } => {
-            out.push(*recv);
-            out.extend(args.iter().map(|a| a.value));
-        }
-        ExprKind::Index { expr, index } => out.extend([*expr, *index]),
-        ExprKind::Range { lo, hi, .. } => out.extend(lo.iter().chain(hi)),
-        ExprKind::Tuple(items) | ExprKind::Array(items) => out.extend(items),
-        ExprKind::ArrayRepeat { elem, len } => out.extend([*elem, *len]),
-        ExprKind::Struct { fields, .. } | ExprKind::Emit { fields, .. } => out.extend(fields.iter().map(|f| f.value)),
-        ExprKind::Block(b) | ExprKind::Loop { body: b } => out.extend(block_exprs(design, b)),
-        ExprKind::If { cond, then, else_ } => {
-            out.push(*cond);
-            out.extend(block_exprs(design, then));
-            out.extend(else_);
-        }
-        ExprKind::Let { expr, .. } => out.push(*expr),
-        ExprKind::Match { scrutinee, arms } => {
-            out.push(*scrutinee);
-            for a in arms {
-                out.extend(a.guard);
-                out.push(a.body);
-            }
-        }
-        ExprKind::While { cond, body } => {
-            out.push(*cond);
-            out.extend(block_exprs(design, body));
-        }
-        ExprKind::For { iter, body, .. } => {
-            out.push(*iter);
-            out.extend(block_exprs(design, body));
-        }
-        ExprKind::Break(v) | ExprKind::Return(v) => out.extend(v),
-        ExprKind::Closure { body, .. } => out.push(*body),
-    }
-    out
-}
-
-/// The expressions a statement holds without any expression above them: its
-/// own, and those of the statements of a `let .. else` block.
-pub(crate) fn stmt_children(design: &Design, id: StmtId) -> Vec<ExprId> {
-    let mut out = stmt_own_exprs(design, id);
-    if let StmtKind::Let { else_: Some(b), .. } = &design.stmt_node(id).kind {
-        out.extend(block_exprs(design, b));
-    }
-    out
-}
-
-/// The expressions a statement itself holds, in source order; the statements
-/// of a `let .. else` block hold their own.
-pub(crate) fn stmt_own_exprs(design: &Design, id: StmtId) -> Vec<ExprId> {
-    match &design.stmt_node(id).kind {
-        StmtKind::Let { init, .. } => init.iter().copied().collect(),
-        StmtKind::Expr { expr, .. } => vec![*expr],
-        StmtKind::Contribution { lhs, rhs } => vec![*lhs, *rhs],
-        StmtKind::Commit { place, value, after } => [*place, *value].into_iter().chain(*after).collect(),
-        StmtKind::Item(_) | StmtKind::Empty | StmtKind::Signal(_) | StmtKind::Reaction(_) => Vec::new(),
-    }
-}
-
-/// The children of every statement of a block, in order.
-pub(crate) fn block_exprs(design: &Design, block: &BlockNode) -> Vec<ExprId> {
-    block.stmts.iter().flat_map(|s| stmt_children(design, *s)).collect()
-}
-
-/// `id` and everything below it, pre-order.
-pub(crate) fn preorder(design: &Design, id: ExprId, out: &mut Vec<ExprId>) {
-    crate::stack::Stack::deep(|| {
-        out.push(id);
-        for c in expr_children(&design.expr_node(id).kind, design) {
-            preorder(design, c, out);
-        }
-    })
 }

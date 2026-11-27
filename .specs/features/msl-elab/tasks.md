@@ -440,7 +440,7 @@ Proof: run unlowered | test a_site_or_contribution_under_if_is_p0001 ... ok
 Proof: run unlowered | test ddt_off_the_top_of_a_flow_contribution_is_p0001 ... ok
 
 **C31** - IF a placement sets `m` or `dtemp`, THEN the system SHALL reject the model with `E0320` (from the front end); IF a model places an `extern` module, THEN the system SHALL reject it with `P0001` at the `extern` declaration. (amendment (d), accepted by the orchestrator) (ELAB-06, AC 3; T8)
-Proof: run unlowered | test m_dtemp_or_extern_at_a_placement_is_p0001 ... ok
+Proof: run unlowered | test m_or_dtemp_at_a_placement_is_e0320 ... ok
 
 **C32** - IF a module of the reachable set has a `digital` block THEN the system SHALL reject the model with `P0001` at the block. (ELAB-06, AC 4; T8)
 Proof: run unlowered | test a_digital_block_is_p0001 ... ok

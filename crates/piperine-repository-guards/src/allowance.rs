@@ -25,6 +25,11 @@ impl Findings {
         self.by_crate.entry(crate_name.to_string()).or_default().push(key);
     }
 
+    /// How many violations were recorded, over every crate.
+    pub fn count(&self) -> usize {
+        self.by_crate.values().map(Vec::len).sum()
+    }
+
     /// The crates that have a finding, and the crates the workspace has: every crate is judged,
     /// so a crate with no finding and a stale row still fails.
     fn crates_to_judge(&self) -> Vec<String> {

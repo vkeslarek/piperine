@@ -180,7 +180,7 @@ impl Checker<'_> {
         m.behaviors.iter().any(|b| {
             let DeclKind::Behavior(block) = &self.design.decl_data(*b).kind else { return false };
             block.kind == crate::pom::BehaviorKind::Analog
-                && crate::pom::nested_stmts(self.design, &block.body).iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {
+                && crate::pom::BodyWalk::new(self.design).nested_statements(&block.body).iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {
                     crate::pom::StmtKind::Contribution { lhs, .. } => match &self.design.expr_node(*lhs).kind {
                         ExprKind::Call { callee, args: lhs_args, class: crate::pom::CallClass::Probe, .. } => {
                             let role = match &self.design.expr_node(*callee).kind {

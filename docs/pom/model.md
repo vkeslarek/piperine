@@ -263,11 +263,11 @@ The crates of a build in insertion order; the first is the root crate.
 | Method | Meaning |
 | --- | --- |
 | `new() -> CrateGraph` | An empty graph. |
-| `add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError>` | Add a crate; `InvalidName` unless `is_crate_name(name)`. |
+| `add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError>` | Add a crate; `InvalidName` unless `CrateGraph::is_crate_name(name)`. |
 | `add_dependency(&mut self, from: CrateId, name: &str, to: CrateId) -> Result<(), GraphError>` | Give `from` a dependency called `name` on `to`; `UnknownCrate`, `InvalidName`, `DuplicateDependency` or `Cycle`. |
 | `crates(&self) -> &[CrateNode]` | The crates in insertion order. |
 
-`is_crate_name(name: &str) -> bool` is true for one identifier that is no keyword and not `std`.
+`CrateGraph::is_crate_name(name: &str) -> bool` is true for one identifier that is no keyword and not `std`.
 
 ### `CrateNode`
 
@@ -1103,7 +1103,6 @@ Why a member was left `Deferred` instead of resolved.
 | --- | --- | --- |
 | `ReceiverTypeUnknown` | — | The receiver type cannot be read from a declaration. |
 | `AmbiguousAccess` | — | An access call (`v(x)`) whose access name several natures declare and the argument does not decide. |
-| `InferredGenerics` | — | Reserved: needs inference of generic arguments. The resolver does not produce it yet. |
 | `BuiltinTraitMember` | — | An associated name written through a generic bounded by a catalogue trait of Appendix H (`T: PartialOrd`, `T::foo`). |
 
 ### `CallClass`
@@ -1374,85 +1373,85 @@ Methods: [Reflection](reflection.md#commit).
 
 ### `Nature`
 
-*struct* in `src/pom/reflect/hardware.rs`. `nature Name { potential: .., flow: .., value: .. }`
+*struct* in `src/pom/reflect/nature.rs`. `nature Name { potential: .., flow: .., value: .. }`
 
 Methods: [Reflection](reflection.md#nature).
 
 ### `Quantity`
 
-*struct* in `src/pom/reflect/hardware.rs`. `potential: Voltage { access: v, units: "V", abstol: 1u }`
+*struct* in `src/pom/reflect/nature.rs`. `potential: Voltage { access: v, units: "V", abstol: 1u }`
 
 Methods: [Reflection](reflection.md#quantity).
 
 ### `Module`
 
-*struct* in `src/pom/reflect/hardware.rs`. `[extern "abi"] module Name<..>(ports) -> ret where cond { body }`
+*struct* in `src/pom/reflect/module.rs`. `[extern "abi"] module Name<..>(ports) -> ret where cond { body }`
 
 Methods: [Reflection](reflection.md#module).
 
 ### `Port`
 
-*struct* in `src/pom/reflect/hardware.rs`. One port of a module.
+*struct* in `src/pom/reflect/module.rs`. One port of a module.
 
 Methods: [Reflection](reflection.md#port).
 
 ### `Param`
 
-*struct* in `src/pom/reflect/hardware.rs`. `name: ty = default where cond;` in a module body.
+*struct* in `src/pom/reflect/module.rs`. `name: ty = default where cond;` in a module body.
 
 Methods: [Reflection](reflection.md#param).
 
 ### `Signal`
 
-*struct* in `src/pom/reflect/hardware.rs`. `signal name: ty = init;`
+*struct* in `src/pom/reflect/module.rs`. `signal name: ty = init;`
 
 Methods: [Reflection](reflection.md#signal).
 
 ### `Let`
 
-*struct* in `src/pom/reflect/hardware.rs`. `let pat = value;` in a module body.
+*struct* in `src/pom/reflect/module.rs`. `let pat = value;` in a module body.
 
 Methods: [Reflection](reflection.md#let).
 
 ### `Binding`
 
-*struct* in `src/pom/reflect/hardware.rs`. One identifier a pattern introduces.
+*struct* in `src/pom/reflect/module.rs`. One identifier a pattern introduces.
 
 Methods: [Reflection](reflection.md#binding).
 
 ### `Definition`
 
-*struct* in `src/pom/reflect/hardware.rs`. `place = value after delay;`
+*struct* in `src/pom/reflect/module.rs`. `place = value after delay;`
 
 Methods: [Reflection](reflection.md#definition).
 
 ### `Generation`
 
-*struct* in `src/pom/reflect/hardware.rs`. A generation `for` or `if` over module or digital items.
+*struct* in `src/pom/reflect/module.rs`. A generation `for` or `if` over module or digital items.
 
 Methods: [Reflection](reflection.md#generation).
 
 ### `GenArm`
 
-*struct* in `src/pom/reflect/hardware.rs`. One arm of a generation `if` chain.
+*struct* in `src/pom/reflect/module.rs`. One arm of a generation `if` chain.
 
 Methods: [Reflection](reflection.md#genarm).
 
 ### `Behavior`
 
-*struct* in `src/pom/reflect/hardware.rs`. `analog<N> for Target { .. }` or `digital for Target { .. }`
+*struct* in `src/pom/reflect/behavior.rs`. `analog<N> for Target { .. }` or `digital for Target { .. }`
 
 Methods: [Reflection](reflection.md#behavior).
 
 ### `Reaction`
 
-*struct* in `src/pom/reflect/hardware.rs`. `on event { .. }`
+*struct* in `src/pom/reflect/behavior.rs`. `on event { .. }`
 
 Methods: [Reflection](reflection.md#reaction).
 
 ### `Instance`
 
-*struct* in `src/pom/reflect/hardware.rs`. A placement: a view over a call expression classified as an instance. It is not a declaration and not a node of its own.
+*struct* in `src/pom/reflect/instance.rs`. A placement: a view over a call expression classified as an instance. It is not a declaration and not a node of its own.
 
 Methods: [Reflection](reflection.md#instance).
 

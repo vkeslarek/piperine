@@ -656,12 +656,17 @@ mod tests {
         assert_ne!(warm.propose_dt(2.0, 1e-6, &limits).to_bits(), cold.propose_dt(2.0, 1e-6, &limits).to_bits());
     }
 
-    /// A static solve, past the first iteration, with a limit active and a 20 V node step.
-    fn damp(strategy: &dyn NewtonStrategy, context: DampContext, prev: [f64; 3], new: [f64; 3]) -> [f64; 3] {
-        let prev = Array1::from(prev.to_vec());
-        let mut update = Array1::from(new.to_vec());
-        strategy.damp_update(prev.view(), update.view_mut(), &context);
-        [update[0], update[1], update[2]]
+    /// Calls the damping strategy the tests share.
+    struct DampCases;
+
+    impl DampCases {
+        /// A static solve, past the first iteration, with a limit active and a 20 V node step.
+        fn damp(strategy: &dyn NewtonStrategy, context: DampContext, prev: [f64; 3], new: [f64; 3]) -> [f64; 3] {
+            let prev = Array1::from(prev.to_vec());
+            let mut update = Array1::from(new.to_vec());
+            strategy.damp_update(prev.view(), update.view_mut(), &context);
+            [update[0], update[1], update[2]]
+        }
     }
 
     /// ngspice `niiter.c:297-323`: each of the four conditions off leaves the update; on, the
@@ -677,12 +682,12 @@ mod tests {
             (DampContext { iteration: 0, ..on }, "the first iteration"),
             (DampContext { limiting: false, ..on }, "no limit active"),
         ] {
-            assert_eq!(damp(&NodeDamping, off, prev, new), new, "{what} leaves the update");
+            assert_eq!(DampCases::damp(&NodeDamping, off, prev, new), new, "{what} leaves the update");
         }
-        assert_eq!(damp(&NodeDamping, on, prev, [10.9, 4.0, 3.0]), [10.9, 4.0, 3.0], "maxΔv 9.9 V is not above 10 V");
-        let at_20 = damp(&NodeDamping, on, prev, new);
+        assert_eq!(DampCases::damp(&NodeDamping, on, prev, [10.9, 4.0, 3.0]), [10.9, 4.0, 3.0], "maxΔv 9.9 V is not above 10 V");
+        let at_20 = DampCases::damp(&NodeDamping, on, prev, new);
         assert_eq!(at_20, [11.0, 3.0, 3.0], "maxΔv 20 V: factor 0.5 on the nodes, the branch untouched");
-        let at_200 = damp(&NodeDamping, on, prev, [201.0, 4.0, 3.0]);
+        let at_200 = DampCases::damp(&NodeDamping, on, prev, [201.0, 4.0, 3.0]);
         assert!((at_200[0] - 21.0).abs() < 1e-12 && (at_200[1] - 2.2).abs() < 1e-12, "maxΔv 200 V: factor 0.1, got {at_200:?}");
         assert_eq!(at_200[2], 3.0);
     }
@@ -693,7 +698,7 @@ mod tests {
         let nodes = [0usize, 1];
         let on = DampContext { static_solve: true, iteration: 5, limiting: true, nodes: &nodes };
         let new = [201.0, 4.0, 3.0];
-        assert_eq!(damp(&NoDamping, on, [1.0, 2.0, 0.5], new), new);
+        assert_eq!(DampCases::damp(&NoDamping, on, [1.0, 2.0, 0.5], new), new);
         let plan = ConvergencePlan::default();
         let mut update = Array1::from(new.to_vec());
         plan.newton().damp_update(Array1::from(vec![1.0, 2.0, 0.5]).view(), update.view_mut(), &on);
